@@ -47,6 +47,9 @@ from integrations.google_ads.tools.update_campaign_status import (
     DEFINITION as GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
     google_ads_update_campaign_status,
 )
+from integrations.google_ads.tools.update_device_bid_modifiers import (
+    DEFINITION as GOOGLE_ADS_UPDATE_DEVICE_BID_MODIFIERS_DEFINITION,
+)
 from integrations.google_ads.tools.utils import GOOGLE_ADS_BINDING
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
@@ -424,6 +427,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_remove_campaign_negative_keywords": "external_write",
         "google_ads_run_report": "provider_query",
         "google_ads_update_campaign_status": "external_write",
+        "google_ads_update_device_bid_modifiers": "external_write",
         "google_analytics_check_report_fields": "provider_query",
         "google_analytics_list_google_ads_links": "provider_query",
         "google_analytics_list_report_fields": "provider_query",
@@ -490,6 +494,7 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_remove_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
+        "google_ads_update_device_bid_modifiers",
         "google_analytics_check_report_fields",
         "google_analytics_list_google_ads_links",
         "google_analytics_list_report_fields",
@@ -1046,6 +1051,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         GOOGLE_ADS_CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
         GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
         GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
+        GOOGLE_ADS_UPDATE_DEVICE_BID_MODIFIERS_DEFINITION,
     )
     definitions = {definition.name: definition for definition in integration_definitions}
     definitions.update(
@@ -1086,6 +1092,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         "google_ads_create_negative_keyword_list": {"names"},
         "google_ads_remove_negative_keywords": {"keywords", "negative_list"},
         "google_ads_update_campaign_status": {"campaign_ids", "status"},
+        "google_ads_update_device_bid_modifiers": {"adjustments", "campaign_ids"},
         "save_memory": {
             "content",
             "expires_in_days",
@@ -1138,6 +1145,8 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         ("delegate_to_agent", "agent_id"): "entity",
         ("gmail_read_message", "message_id"): "entity",
         ("google_ads_update_campaign_status", "campaign_ids"): "entity_list",
+        ("google_ads_update_device_bid_modifiers", "campaign_ids"): "entity_list",
+        ("google_ads_update_device_bid_modifiers", "adjustments"): "records",
         ("google_ads_add_negative_keywords", "negative_list"): "entity",
         ("google_ads_add_negative_keywords", "keywords"): "records",
         ("google_ads_create_negative_keyword_list", "names"): "list",
@@ -1159,7 +1168,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         definition.name: field
         for definition in GOOGLE_ADS_TOOL_DEFINITIONS
         for field in definition.presentation.arg_fields
-        if field.format == "records"
+        if field.format == "records" and "negative" in definition.name
     }
     assert set(google_ads_keyword_records) == {
         "google_ads_add_ad_group_negative_keywords",

@@ -19,6 +19,9 @@ from integrations.google_ads.operations.remove_negative_keywords import (
     remove_negative_keywords,
 )
 from integrations.google_ads.operations.update_campaign_status import update_campaign_status
+from integrations.google_ads.operations.update_device_bid_modifiers import (
+    update_device_bid_modifiers,
+)
 from integrations.google_ads.references import (
     GoogleAdsSharedSetReference,
 )
@@ -69,6 +72,219 @@ async def test_mutate_uses_partial_failure_and_surfaces_campaign_error() -> None
     assert result["resource_names"] == ["customers/333/campaigns/10"]
     assert result["campaign_errors"][0]["campaign_id"] == "20"
     assert result["campaign_errors"][0]["error_code"] == "CANNOT_MODIFY_REMOVED_CAMPAIGN"
+
+
+async def test_update_device_bid_modifiers_mixes_create_update_and_skip() -> None:
+    client = _OperationClient(
+        {
+            "results": [
+                {"resourceName": "customers/333/campaignCriteria/10~30000"},
+                {"resourceName": "customers/333/campaignCriteria/10~30001"},
+                {"resourceName": "customers/333/campaignCriteria/20~30002"},
+            ]
+        }
+    )
+    result = await update_device_bid_modifiers(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        adjustments=[
+            ("10", "DESKTOP", 1.0),
+            ("10", "MOBILE", 0.0),
+            ("20", "TABLET", 1.2),
+            ("20", "MOBILE", 0.8),
+        ],
+        existing_state={
+            "10": {
+                "bidding_strategy_type": "MANUAL_CPC",
+                "devices": {
+                    "MOBILE": {"criterion_id": "30001", "bid_modifier": 0.7},
+                },
+            },
+            "20": {
+                "bidding_strategy_type": "TARGET_ROAS",
+                "devices": {
+                    "MOBILE": {"criterion_id": "30001", "bid_modifier": 0.8},
+                    "TABLET": {"criterion_id": "30002", "bid_modifier": 1.0},
+                },
+            },
+        },
+    )
+
+    assert client.last_json == {
+        "operations": [
+            {
+                "create": {
+                    "campaign": "customers/333/campaigns/10",
+                    "device": {"type": "DESKTOP"},
+                    "bidModifier": 1.0,
+                }
+            },
+            {
+                "update": {
+                    "resourceName": "customers/333/campaignCriteria/10~30001",
+                    "bidModifier": 0.0,
+                },
+                "updateMask": "bidModifier",
+            },
+            {
+                "update": {
+                    "resourceName": "customers/333/campaignCriteria/20~30002",
+                    "bidModifier": 1.2,
+                },
+                "updateMask": "bidModifier",
+            },
+        ],
+        "partialFailure": True,
+    }
+    assert result.result() == {
+        "updated": [
+            {
+                "campaign_id": "10",
+                "device": "DESKTOP",
+                "bid_modifier": "1.00",
+                "resource_name": "customers/333/campaignCriteria/10~30000",
+            },
+            {
+                "campaign_id": "10",
+                "device": "MOBILE",
+                "bid_modifier": "0.00",
+                "resource_name": "customers/333/campaignCriteria/10~30001",
+            },
+            {
+                "campaign_id": "20",
+                "device": "TABLET",
+                "bid_modifier": "1.20",
+                "resource_name": "customers/333/campaignCriteria/20~30002",
+            },
+        ],
+        "already_set": [{"campaign_id": "20", "device": "MOBILE", "bid_modifier": "0.80"}],
+        "device_errors": [],
+        "resource_names": [
+            "customers/333/campaignCriteria/10~30000",
+            "customers/333/campaignCriteria/10~30001",
+            "customers/333/campaignCriteria/20~30002",
+        ],
+    }
+    skipped_parent = result.parents[3]
+    assert result.skipped_external_ref(skipped_parent) == (
+        "customers/333/campaignCriteria/20~30001"
+    )
+
+
+async def test_update_device_bid_modifiers_uses_two_decimal_skip_comparison() -> None:
+    client = _OperationClient({"results": []})
+    result = await update_device_bid_modifiers(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        adjustments=[("10", "MOBILE", 1.2)],
+        existing_state={
+            "10": {
+                "bidding_strategy_type": "MANUAL_CPC",
+                "devices": {"MOBILE": {"criterion_id": "30001", "bid_modifier": 1.20}},
+            }
+        },
+    )
+
+    assert result["already_set"] == [
+        {"campaign_id": "10", "device": "MOBILE", "bid_modifier": "1.20"}
+    ]
+    assert client.last_json is None
+
+
+async def test_update_device_bid_modifiers_attributes_and_fails_closed() -> None:
+    payload = {
+        "results": [
+            {"resourceName": "customers/333/campaignCriteria/10~30000"},
+            {},
+        ],
+        "partialFailureError": {
+            "details": [
+                {
+                    "errors": [
+                        {
+                            "message": "Modifier rejected",
+                            "errorCode": {"criterionError": "INVALID_BID_MODIFIER"},
+                            "location": {
+                                "fieldPathElements": [{"fieldName": "operations", "index": 1}]
+                            },
+                        }
+                    ]
+                }
+            ]
+        },
+    }
+    state = {
+        "10": {"bidding_strategy_type": "MANUAL_CPC", "devices": {}},
+    }
+    result = await update_device_bid_modifiers(
+        _OperationClient(payload),
+        customer_id="333",
+        login_customer_id="111",
+        adjustments=[("10", "DESKTOP", 1.0), ("10", "MOBILE", 0.7)],
+        existing_state=state,
+    )
+    assert result["updated"][0]["device"] == "DESKTOP"
+    assert result["device_errors"] == [
+        {
+            "campaign_id": "10",
+            "device": "MOBILE",
+            "bid_modifier": "0.70",
+            "message": "Modifier rejected",
+            "error_code": "INVALID_BID_MODIFIER",
+        }
+    ]
+
+    ambiguous = await update_device_bid_modifiers(
+        _OperationClient({"results": [{}]}),
+        customer_id="333",
+        login_customer_id="111",
+        adjustments=[("10", "DESKTOP", 1.0), ("10", "MOBILE", 0.7)],
+        existing_state=state,
+    )
+    assert {item["error_code"] for item in ambiguous["device_errors"]} == {"UNACCOUNTED_OPERATION"}
+    assert all(effect.outcome == "unverified" for effect in ambiguous.effects)
+
+
+async def test_update_device_bid_modifiers_fails_closed_for_unattributed_errors() -> None:
+    client = _OperationClient(
+        {
+            "results": [
+                {"resourceName": "customers/333/campaignCriteria/10~30000"},
+                {"resourceName": "customers/333/campaignCriteria/10~30001"},
+            ],
+            "partialFailureError": {
+                "details": [
+                    {
+                        "errors": [
+                            {
+                                "message": "Unattributed device failure",
+                                "errorCode": {"criterionError": "UNKNOWN_DEVICE_FAILURE"},
+                            }
+                        ]
+                    }
+                ]
+            },
+        }
+    )
+
+    result = await update_device_bid_modifiers(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        adjustments=[("10", "DESKTOP", 1.0), ("10", "MOBILE", 0.7)],
+        existing_state={
+            "10": {
+                "bidding_strategy_type": "MANUAL_CPC",
+                "target_cpa_configured": False,
+                "devices": {},
+            }
+        },
+    )
+
+    assert {item["error_code"] for item in result["device_errors"]} == {"UNKNOWN_DEVICE_FAILURE"}
+    assert all(effect.outcome == "unverified" for effect in result.effects)
 
 
 @pytest.mark.parametrize(

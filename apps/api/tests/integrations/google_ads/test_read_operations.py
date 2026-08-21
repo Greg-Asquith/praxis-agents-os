@@ -10,6 +10,9 @@ from pydantic_ai import (
 )
 
 from integrations.google_ads.operations.list_ad_groups import list_ad_groups
+from integrations.google_ads.operations.list_campaign_device_criteria import (
+    list_campaign_device_criteria,
+)
 from integrations.google_ads.operations.list_campaigns import list_campaigns
 from integrations.google_ads.operations.list_shared_sets import list_shared_sets
 from integrations.google_ads.operations.run_report import run_report
@@ -20,6 +23,7 @@ from integrations.google_ads.operations.utils import (
 )
 from integrations.google_ads.tools.run_report import google_ads_run_report
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.http import IntegrationRequestPolicy
 from tests.integrations.google_ads.support import (
     _OperationClient,
 )
@@ -184,6 +188,102 @@ async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
     assert "campaign.id > 10" in client.last_json["query"]
     assert "LIKE '%Brand\\'s \\\\ sale[%][_][[][]]%'" in client.last_json["query"]
     assert "ORDER BY campaign.id LIMIT 101" in client.last_json["query"]
+
+
+async def test_list_campaign_device_criteria_assembles_strategy_and_device_state() -> None:
+    class Client:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        async def post(self, path: str, **kwargs):
+            self.calls.append({"path": path, **kwargs})
+            if "FROM campaign_criterion" in kwargs["json"]["query"]:
+                return {
+                    "results": [
+                        {
+                            "campaign": {"id": "10"},
+                            "campaignCriterion": {
+                                "criterionId": "30001",
+                                "device": {"type": "MOBILE"},
+                                "bidModifier": 0.7,
+                                "status": "ENABLED",
+                            },
+                        },
+                        {
+                            "campaign": {"id": "10"},
+                            "campaignCriterion": {
+                                "criterionId": "30002",
+                                "device": {"type": "TABLET"},
+                                "bidModifier": 0.6,
+                                "status": "REMOVED",
+                            },
+                        },
+                    ]
+                }
+            return {
+                "results": [
+                    {
+                        "campaign": {
+                            "id": "10",
+                            "status": "ENABLED",
+                            "biddingStrategyType": "MANUAL_CPC",
+                        }
+                    },
+                    {
+                        "campaign": {
+                            "id": "20",
+                            "status": "PAUSED",
+                            "biddingStrategyType": "TARGET_ROAS",
+                            "maximizeConversions": {"targetCpaMicros": "2500000"},
+                        }
+                    },
+                ]
+            }
+
+    client = Client()
+    result = await list_campaign_device_criteria(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111",
+        campaign_ids=("20", "10", "20"),
+    )
+
+    assert result == {
+        "10": {
+            "bidding_strategy_type": "MANUAL_CPC",
+            "target_cpa_configured": False,
+            "devices": {"MOBILE": {"criterion_id": "30001", "bid_modifier": 0.7}},
+        },
+        "20": {
+            "bidding_strategy_type": "TARGET_ROAS",
+            "target_cpa_configured": True,
+            "devices": {},
+        },
+    }
+    campaign_query = client.calls[0]["json"]["query"]
+    criterion_query = client.calls[1]["json"]["query"]
+    assert "campaign.status != 'REMOVED'" in campaign_query
+    assert "campaign.id IN (10, 20)" in campaign_query
+    assert "campaign.maximize_conversions.target_cpa_micros" in campaign_query
+    assert "bidding_strategy.maximize_conversions.target_cpa_micros" in campaign_query
+    assert "campaign_criterion.type = 'DEVICE'" in criterion_query
+    assert "campaign_criterion.status != 'REMOVED'" in criterion_query
+    assert "campaign.id IN (10, 20)" in criterion_query
+    assert all(call["policy"] is IntegrationRequestPolicy.READ for call in client.calls)
+
+
+async def test_list_campaign_device_criteria_rejects_malformed_ids_before_request() -> None:
+    client = AsyncMock()
+
+    with pytest.raises(ValueError, match="ids must contain only digits"):
+        await list_campaign_device_criteria(
+            client,
+            customer_id="333",
+            login_customer_id="111",
+            campaign_ids=("10 OR 1=1",),
+        )
+
+    client.post.assert_not_awaited()
 
 
 async def test_list_ad_groups_validates_exact_ids_and_returns_campaign_rows() -> None:

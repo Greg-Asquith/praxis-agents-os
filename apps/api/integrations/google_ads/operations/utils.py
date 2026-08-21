@@ -4,6 +4,7 @@
 
 import re
 from collections.abc import Callable, Mapping, Sequence
+from decimal import Decimal
 from typing import Any
 
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
@@ -34,6 +35,37 @@ def stream_rows(payload: Any, *, max_rows: int | None = None) -> list[dict[str, 
                 if max_rows is not None and len(rows) >= max_rows:
                     return rows
     return rows
+
+
+def rounded_bid_modifier(value: float) -> Decimal:
+    """Normalize a device bid modifier to the approval and audit precision."""
+    return Decimal(str(value)).quantize(Decimal("0.01"))
+
+
+def valid_exact_mutation_results(
+    results: Any,
+    *,
+    expected_resource_names: Sequence[str],
+    indexed_errors: Mapping[int, object],
+) -> bool:
+    """Validate ordered mutate results against the exact submitted resources."""
+    if not isinstance(results, list) or len(results) != len(expected_resource_names):
+        return False
+    seen: set[str] = set()
+    for index, (item, expected_resource_name) in enumerate(
+        zip(results, expected_resource_names, strict=True)
+    ):
+        if not isinstance(item, Mapping):
+            return False
+        resource_name = item.get("resourceName")
+        if index in indexed_errors:
+            if resource_name is not None:
+                return False
+            continue
+        if resource_name != expected_resource_name or resource_name in seen:
+            return False
+        seen.add(resource_name)
+    return True
 
 
 def escape_gaql_like_literal(value: str, *, max_length: int = 200) -> str:

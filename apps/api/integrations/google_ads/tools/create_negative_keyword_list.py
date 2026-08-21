@@ -25,7 +25,6 @@ from services.agents.runtime.tools.contract import (
 from services.audit_events import (
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
-    IntegrationOperationTarget,
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
@@ -45,7 +44,11 @@ from .utils import (
     google_ads_client,
     login_customer_id,
 )
-from .utils.mutation_evidence import audit_status, terminal_operation_detail
+from .utils.mutation_evidence import (
+    audit_status,
+    google_ads_account_target,
+    terminal_operation_detail,
+)
 
 
 async def google_ads_create_negative_keyword_list(
@@ -100,7 +103,7 @@ def _pending_operation_detail(
     names: list[str],
 ) -> PendingIntegrationOperationDetail:
     return PendingIntegrationOperationDetail(
-        target=_account_target(entry),
+        target=google_ads_account_target(entry),
         intent_groups=[
             IntegrationOperationIntentGroup(
                 key="negative-keyword-lists:create",
@@ -109,15 +112,6 @@ def _pending_operation_detail(
                 items=[IntegrationOperationIntent(fields={"name": name}) for name in names],
             )
         ],
-    )
-
-
-def _account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
-    return IntegrationOperationTarget(
-        entity_type="google_ads_account",
-        external_id=entry.external_id,
-        display_name=entry.display_name,
-        integration_resource_id=str(entry.integration_resource_id),
     )
 
 

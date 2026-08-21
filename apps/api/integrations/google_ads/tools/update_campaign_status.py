@@ -21,7 +21,6 @@ from services.agents.runtime.tools.contract import (
 from services.audit_events import (
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
-    IntegrationOperationTarget,
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
@@ -41,7 +40,11 @@ from .utils import (
     google_ads_client,
     login_customer_id,
 )
-from .utils.mutation_evidence import audit_status, terminal_operation_detail
+from .utils.mutation_evidence import (
+    audit_status,
+    google_ads_account_target,
+    terminal_operation_detail,
+)
 from .verifiers import verify_campaigns
 
 
@@ -123,7 +126,7 @@ def _pending_operation_detail(
     status: Literal["ENABLED", "PAUSED"],
 ) -> PendingIntegrationOperationDetail:
     return PendingIntegrationOperationDetail(
-        target=_account_target(entry),
+        target=google_ads_account_target(entry),
         intent_groups=[
             IntegrationOperationIntentGroup(
                 key="campaigns:update-status",
@@ -141,15 +144,6 @@ def _pending_operation_detail(
                 ],
             )
         ],
-    )
-
-
-def _account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
-    return IntegrationOperationTarget(
-        entity_type="google_ads_account",
-        external_id=entry.external_id,
-        display_name=entry.display_name,
-        integration_resource_id=str(entry.integration_resource_id),
     )
 
 

@@ -76,6 +76,12 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_run_report": ("read", "internal", "auto", False),
         "google_ads_update_campaign_status": ("write", "external", "approval", True),
+        "google_ads_update_device_bid_modifiers": (
+            "write",
+            "external",
+            "approval",
+            True,
+        ),
         "airtable_list_records": ("read", "internal", "auto", False),
         "airtable_get_record": ("read", "internal", "auto", False),
         "airtable_create_record": ("write", "external", "approval", True),
@@ -213,6 +219,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_status",
+        "google_ads_update_device_bid_modifiers",
     }
     assert definitions["google_ads_run_report"].effect == "read"
     for name in (
@@ -225,6 +232,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_remove_negative_keywords",
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_update_campaign_status",
+        "google_ads_update_device_bid_modifiers",
     ):
         spend = definitions[name]
         assert spend.effect == "write"
@@ -327,6 +335,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         create,
         campaign_links,
         definitions["google_ads_update_campaign_status"],
+        definitions["google_ads_update_device_bid_modifiers"],
     ):
         assert summarized_write.max_public_result_chars is None
 

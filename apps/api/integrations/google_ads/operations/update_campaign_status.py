@@ -2,7 +2,6 @@
 
 """Update only campaign status and surface partial failures per campaign."""
 
-from collections.abc import Mapping
 from typing import Any, Literal
 
 from services.integrations.http import IntegrationRequestPolicy
@@ -13,7 +12,7 @@ from .mutation_outcomes import (
     GoogleAdsMutationProjection,
     build_mutation_ledger,
 )
-from .utils import grouped_partial_failure_errors
+from .utils import grouped_partial_failure_errors, valid_exact_mutation_results
 
 _UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
 _UNACCOUNTED_RESPONSE_CODE = "UNACCOUNTED_OPERATION"
@@ -72,7 +71,7 @@ async def update_campaign_status(
                 for _ in normalized_campaign_ids
             ],
         )
-    if not _valid_results(
+    if not valid_exact_mutation_results(
         results,
         expected_resource_names=expected_resource_names,
         indexed_errors=indexed_errors,
@@ -127,28 +126,3 @@ def _ledger(
             errors_key="campaign_errors",
         ),
     )
-
-
-def _valid_results(
-    results: Any,
-    *,
-    expected_resource_names: list[str],
-    indexed_errors: Mapping[int, dict[str, str]],
-) -> bool:
-    if not isinstance(results, list) or len(results) != len(expected_resource_names):
-        return False
-    seen: set[str] = set()
-    for index, (item, expected_resource_name) in enumerate(
-        zip(results, expected_resource_names, strict=True)
-    ):
-        if not isinstance(item, Mapping):
-            return False
-        resource_name = item.get("resourceName")
-        if index in indexed_errors:
-            if resource_name is not None:
-                return False
-            continue
-        if resource_name != expected_resource_name or resource_name in seen:
-            return False
-        seen.add(resource_name)
-    return True

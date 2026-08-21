@@ -14,9 +14,21 @@ from services.audit_events import (
     IntegrationOperationEffect,
     IntegrationOperationOutcome,
     IntegrationOperationOutcomeGroup,
+    IntegrationOperationTarget,
     PendingIntegrationOperationDetail,
     TerminalIntegrationOperationDetail,
 )
+from services.integrations.context.domain import ResolvedContextEntry
+
+
+def google_ads_account_target(entry: ResolvedContextEntry) -> IntegrationOperationTarget:
+    """Build the provider-account target used by Google Ads write evidence."""
+    return IntegrationOperationTarget(
+        entity_type="google_ads_account",
+        external_id=entry.external_id,
+        display_name=entry.display_name,
+        integration_resource_id=str(entry.integration_resource_id),
+    )
 
 
 def terminal_operation_detail(

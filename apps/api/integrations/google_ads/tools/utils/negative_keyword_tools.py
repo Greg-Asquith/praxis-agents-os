@@ -19,7 +19,6 @@ from services.agents.runtime.tools.contract import IntegrationToolBinding
 from services.audit_events import (
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
-    IntegrationOperationTarget,
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
@@ -32,7 +31,11 @@ from services.integrations.operations import (
 
 from .client import google_ads_client
 from .fan_out import fan_out_tool_return
-from .mutation_evidence import audit_status, terminal_operation_detail
+from .mutation_evidence import (
+    audit_status,
+    google_ads_account_target,
+    terminal_operation_detail,
+)
 from .negative_keywords import normalize_negative_keywords
 
 type NegativeKeywordAction = Literal["add", "remove"]
@@ -176,7 +179,7 @@ def pending_operation_detail(
 ) -> PendingIntegrationOperationDetail:
     """Build the pre-dispatch audit detail for a scoped keyword mutation."""
     return PendingIntegrationOperationDetail(
-        target=_account_target(entry),
+        target=google_ads_account_target(entry),
         intent_groups=[
             IntegrationOperationIntentGroup(
                 key=(f"{spec.operation_entity}:{reference.provider_entity_id}:{action}-keywords"),
@@ -265,17 +268,6 @@ def _deduplicate_references(
     if not unique:
         raise ModelRetry(f"Choose at least one Google Ads {spec.selection_label}.")
     return list(unique.values())
-
-
-def _account_target(
-    entry: ResolvedContextEntry,
-) -> IntegrationOperationTarget:
-    return IntegrationOperationTarget(
-        entity_type="google_ads_account",
-        external_id=entry.external_id,
-        display_name=entry.display_name,
-        integration_resource_id=str(entry.integration_resource_id),
-    )
 
 
 def _entity_counts(

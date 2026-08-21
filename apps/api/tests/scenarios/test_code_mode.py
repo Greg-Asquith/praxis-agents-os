@@ -593,6 +593,7 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
             "ANY",
         ),
         "google_ads_remove_negative_keywords": ("EXACT", "PHRASE", "BROAD", "ANY"),
+        "google_ads_update_device_bid_modifiers": ("DESKTOP", "MOBILE", "TABLET"),
     }
     actual: dict[str, tuple[str, ...]] = {}
     for definition in RUNTIME_TOOL_CATALOG.values():
@@ -605,19 +606,30 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
             continue
         assert len(record_fields) == 1
         field = record_fields[0]
-        assert field.key == "keywords"
         assert field.editable is True
         assert field.min_rows == 1
-        assert [(column.key, column.required) for column in field.columns] == [
-            ("text", True),
-            ("match_type", True),
-        ]
         schema = definition.serialized_input_schema()
         assert schema is not None
-        keywords_schema = schema["properties"]["keywords"]
-        assert keywords_schema["minItems"] == 1
-        assert keywords_schema["maxItems"] == 500
-        actual[definition.name] = field.columns[1].options
+        if definition.name == "google_ads_update_device_bid_modifiers":
+            assert field.key == "adjustments"
+            assert [(column.key, column.required) for column in field.columns] == [
+                ("device", True),
+                ("bid_modifier", True),
+            ]
+            adjustments_schema = schema["properties"]["adjustments"]
+            assert adjustments_schema["minItems"] == 1
+            assert adjustments_schema["maxItems"] == 3
+            actual[definition.name] = field.columns[0].options
+        else:
+            assert field.key == "keywords"
+            assert [(column.key, column.required) for column in field.columns] == [
+                ("text", True),
+                ("match_type", True),
+            ]
+            keywords_schema = schema["properties"]["keywords"]
+            assert keywords_schema["minItems"] == 1
+            assert keywords_schema["maxItems"] == 500
+            actual[definition.name] = field.columns[1].options
 
     assert actual == expected
 

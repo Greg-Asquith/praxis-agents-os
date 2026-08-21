@@ -3,6 +3,10 @@
 from .campaign_links import GoogleAdsCampaignLinkOutput
 from .campaign_status import GoogleAdsCampaignStatusOutput
 from .create_negative_keyword_list import GoogleAdsCreateNegativeKeywordListOutput
+from .device_bid_modifiers import (
+    GoogleAdsDeviceAdjustment,
+    GoogleAdsDeviceBidModifierOutput,
+)
 from .negative_keywords import (
     GoogleAdsAddNegativeKeywordsOutput,
     GoogleAdsRemoveNegativeKeywordsOutput,
@@ -22,6 +26,8 @@ __all__ = [
     "GoogleAdsCampaignLinkOutput",
     "GoogleAdsCampaignStatusOutput",
     "GoogleAdsCreateNegativeKeywordListOutput",
+    "GoogleAdsDeviceAdjustment",
+    "GoogleAdsDeviceBidModifierOutput",
     "GoogleAdsJsonValue",
     "GoogleAdsRemoveAdGroupKeywordOutput",
     "GoogleAdsRemoveCampaignKeywordOutput",
