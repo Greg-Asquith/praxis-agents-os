@@ -328,6 +328,7 @@ follows:
 - User-facing workspace File links use the stable Markdown target
   `/files?fileId=<uuid>`. Runtime instructions require agents to use that target
   when a tool returns a File reference and forbid bare download labels.
+  Artifact references use `/artifacts/<uuid>` and must not use File targets.
 - Native batch classification uses the code-eligible `classify` helper-tool
   path for OpenAI, Anthropic, and Google. It always uses a configured cheap
   helper independently from the calling agent, accepts up to 500 items per

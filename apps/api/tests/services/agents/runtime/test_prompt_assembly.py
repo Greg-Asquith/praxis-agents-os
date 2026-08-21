@@ -199,10 +199,12 @@ def test_runtime_instructions_always_include_knowledge_guidance() -> None:
     )
 
 
-def test_runtime_instructions_define_authenticated_workspace_file_links() -> None:
+def test_runtime_instructions_define_workspace_file_and_artifact_links() -> None:
     prompt = _runtime_instructions(_agent(instructions="Reply plainly."), include_delegation=False)
 
     assert "[label](/files?fileId=<entity_id>)" in prompt
+    assert "[label](/artifacts/<entity_id>)" in prompt
+    assert "Keep artifact IDs out of File link targets" in prompt
     assert "Never present text" in prompt
 
 

@@ -144,6 +144,8 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   after a successful move.
 - Conversation Markdown treats `/files?fileId=<uuid>` as an authenticated
   download action: clicking it mints a fresh signed URL through the Files API.
+  If the ID belongs to an artifact instead, the link opens that artifact's
+  management page after the Files API reports that no file exists.
   Other internal and external Markdown links retain their normal behavior.
 - Complete transcript-only tool results may arrive through the persisted
   tool-return `public_result` metadata while the model-facing content remains

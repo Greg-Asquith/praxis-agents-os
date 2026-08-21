@@ -45,9 +45,10 @@ PLANNING_INSTRUCTIONS = """\
 """
 
 FILE_LINK_INSTRUCTIONS = """\
-## Workspace File Links
+## Workspace Links
 
 When a tool result includes a file reference, link that file in user-facing Markdown as `[label](/files?fileId=<entity_id>)`. The application turns this exact internal URL into an authenticated download. Never present text such as "Download the file" unless it has a real Markdown link target.
+When a tool result includes an artifact reference, link that artifact as `[label](/artifacts/<entity_id>)`. Keep artifact IDs out of File link targets.
 """
 
 KNOWLEDGE_INSTRUCTIONS = """\

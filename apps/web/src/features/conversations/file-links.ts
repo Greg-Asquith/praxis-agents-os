@@ -1,5 +1,7 @@
 // apps/web/src/features/conversations/file-links.ts
 
+import { ApiError } from "@/lib/api/errors"
+
 const WORKSPACE_FILE_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const PLACEHOLDER_ORIGIN = "https://praxis.local"
@@ -21,6 +23,24 @@ export function workspaceFileIdFromHref(href: string | undefined): string | null
   }
   const fileId = url.searchParams.get("fileId")
   return fileId !== null && WORKSPACE_FILE_ID.test(fileId) ? fileId : null
+}
+
+export async function artifactHrefForFailedFileDownload(
+  fileId: string,
+  error: unknown,
+  loadArtifact: (artifactId: string) => Promise<unknown>
+): Promise<string | null> {
+  if (!(error instanceof ApiError) || error.status !== 404) {
+    return null
+  }
+
+  try {
+    await loadArtifact(fileId)
+  } catch {
+    return null
+  }
+
+  return `/artifacts/${encodeURIComponent(fileId)}`
 }
 
 function isWorkspaceFilesRoute(url: URL): boolean {

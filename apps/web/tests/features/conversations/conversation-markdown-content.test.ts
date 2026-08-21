@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { workspaceFileIdFromHref } from "@/features/conversations/file-links"
+import { ApiError } from "@/lib/api/errors"
+import {
+  artifactHrefForFailedFileDownload,
+  workspaceFileIdFromHref,
+} from "@/features/conversations/file-links"
 
 const FILE_ID = "245de7d6-0963-4ba4-9b63-45fe64526252"
 
@@ -37,3 +41,30 @@ describe("workspaceFileIdFromHref", () => {
     expect(workspaceFileIdFromHref("http://[bad")).toBeNull()
   })
 })
+
+describe("artifactHrefForFailedFileDownload", () => {
+  it("returns the artifact page after a missing file resolves as an artifact", async () => {
+    const loadArtifact = vi.fn().mockResolvedValue({ id: FILE_ID })
+
+    await expect(
+      artifactHrefForFailedFileDownload(FILE_ID, apiError(404), loadArtifact)
+    ).resolves.toBe(`/artifacts/${FILE_ID}`)
+    expect(loadArtifact).toHaveBeenCalledWith(FILE_ID)
+  })
+
+  it("preserves file errors that do not resolve as artifacts", async () => {
+    const loadArtifact = vi.fn().mockRejectedValue(apiError(404))
+
+    await expect(
+      artifactHrefForFailedFileDownload(FILE_ID, apiError(404), loadArtifact)
+    ).resolves.toBeNull()
+    await expect(
+      artifactHrefForFailedFileDownload(FILE_ID, apiError(403), loadArtifact)
+    ).resolves.toBeNull()
+    expect(loadArtifact).toHaveBeenCalledTimes(1)
+  })
+})
+
+function apiError(status: number) {
+  return new ApiError({ status, message: "Request failed", problem: null })
+}

@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/conversation-markdown-content.tsx
 
 import { useState, type MouseEvent } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 
 import {
   MarkdownAnchor,
@@ -8,7 +9,11 @@ import {
   type MarkdownAnchorProps,
 } from "@/components/markdown/markdown-content"
 import { openWorkspaceFile } from "@/features/files/file-actions"
-import { workspaceFileIdFromHref } from "@/features/conversations/file-links"
+import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
+import {
+  artifactHrefForFailedFileDownload,
+  workspaceFileIdFromHref,
+} from "@/features/conversations/file-links"
 import { getErrorMessage } from "@/lib/api/errors"
 import { reactNodeToText } from "@/lib/react-node"
 
@@ -29,6 +34,7 @@ export function ConversationMarkdownContent({
 }
 
 function ConversationMarkdownLink({ children, href, node: _node, ...props }: MarkdownAnchorProps) {
+  const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
   const fileId = workspaceFileIdFromHref(href)
@@ -57,6 +63,16 @@ function ConversationMarkdownLink({ children, href, node: _node, ...props }: Mar
         { forceDownload: true }
       )
     } catch (downloadError) {
+      const artifactHref = await artifactHrefForFailedFileDownload(
+        workspaceFileId,
+        downloadError,
+        (artifactId) =>
+          queryClient.fetchQuery({ ...artifactQueryOptions(artifactId), retry: false })
+      )
+      if (artifactHref !== null) {
+        window.location.assign(artifactHref)
+        return
+      }
       setError(getErrorMessage(downloadError))
     } finally {
       setDownloading(false)
