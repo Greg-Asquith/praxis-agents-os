@@ -1,94 +1,22 @@
 // apps/web/src/features/conversations/components/tool-call-row-registry.tsx
 
-import {
-  DelegateAgentListRow,
-  DelegationToolRow,
-} from "@/features/conversations/components/delegation-tool-row"
-import { ArtifactToolRow } from "@/features/conversations/components/artifact-tool-row"
-import { ChartToolRow } from "@/features/conversations/components/chart-tool-row"
-import { ClassifierToolRow } from "@/features/conversations/components/classifier-tool-row"
-import { CompletionReportRow } from "@/features/conversations/components/completion-report-row"
-import { CodeModeRow } from "@/features/conversations/components/code-mode-row"
-import { FileToolRow } from "@/features/conversations/components/file-tool-row"
-import { KbToolRow } from "@/features/conversations/components/kb-tool-row"
-import { MemoryToolRow } from "@/features/conversations/components/memory-tool-row"
-import { RunCodeToolRow } from "@/features/conversations/components/run-code-tool-row"
-import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
-import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
-import { TodoListRow } from "@/features/conversations/components/todo-list-row"
-import { webFetchResult, webFetchUrl } from "@/features/conversations/components/web-fetch-result"
-import { WebFetchToolRow } from "@/features/conversations/components/web-fetch-tool-row"
-import {
-  webSearchQuery,
-  webSearchResult,
-} from "@/features/conversations/components/web-search-result"
-import { WebSearchToolRow } from "@/features/conversations/components/web-search-tool-row"
-import {
-  isImageOutputTool,
-  LIST_FILES_TOOL_NAME,
-  READ_FILE_TOOL_NAME,
-  WRITE_FILE_TOOL_NAME,
-  generateImageResult,
-  listFilesResult,
-  readFileContentResult,
-  readFileImageResult,
-  readFileStatusResult,
-  readFileUrlResult,
-  writeFileResult,
-} from "@/features/conversations/native-tools/file-tools"
-import type { ToolActivity } from "@/features/conversations/message-parts"
-import {
-  LIST_DELEGATE_AGENTS_TOOL_NAME,
-  delegateAgentSummaries,
-} from "@/features/conversations/delegation-agent-list"
-import {
-  LOAD_CAPABILITY_TOOL_NAME,
-  skillIdFromCapabilityArgs,
-} from "@/features/conversations/skills/skill-activation"
-import { BUILD_CHART_TOOL_NAME } from "@/features/conversations/native-tools/chart-tool"
-import {
-  CLASSIFY_TOOL_NAME,
-  classifierResult,
-  isClassifierToolName,
-} from "@/features/conversations/native-tools/classifier-tool"
-import {
-  REPORT_COMPLETION_TOOL_NAME,
-  completionReport,
-} from "@/features/conversations/native-tools/completion-tool"
-import { READ_SKILL_DOCUMENT_TOOL_NAME } from "@/features/conversations/skills/skill-document-read"
-import {
-  READ_DOCUMENT_TOOL_NAME,
-  SEARCH_KNOWLEDGE_TOOL_NAME,
-  readDocumentResult,
-  searchKnowledgeResult,
-} from "@/features/conversations/native-tools/kb-tools"
-import {
-  FORGET_MEMORY_TOOL_NAME,
-  SAVE_MEMORY_TOOL_NAME,
-  SEARCH_MEMORY_TOOL_NAME,
-  UPDATE_MEMORY_TOOL_NAME,
-  forgetMemoryResult,
-  saveMemoryResult,
-  searchMemoryResult,
-  updateMemoryResult,
-} from "@/features/conversations/native-tools/memory-tools"
-import {
-  READ_TODOS_TOOL_NAME,
-  WRITE_TODOS_TOOL_NAME,
-  todoItemsFromActivity,
-} from "@/features/conversations/native-tools/todo-tools"
-import { RUN_CODE_TOOL_NAME, runCodeResult } from "@/features/conversations/native-tools/run-code"
-import {
-  CREATE_ARTIFACT_TOOL_NAME,
-  LIST_ARTIFACTS_TOOL_NAME,
-  READ_ARTIFACT_TOOL_NAME,
-  UPDATE_ARTIFACT_TOOL_NAME,
-  artifactListToolResult,
-  artifactReadToolResult,
-  artifactToolResult,
-} from "@/features/conversations/native-tools/artifact-tools"
-import { integrationToolRowPresenters } from "@/integrations/registry"
+import { artifactToolPresenter } from "@/features/conversations/components/artifact-tool-presenter"
+import { chartToolPresenter } from "@/features/conversations/components/chart-tool-presenter"
+import { classifierToolPresenter } from "@/features/conversations/components/classifier-tool-presenter"
+import { codeModeWorkflowPresenter } from "@/features/conversations/components/code-mode-presenter"
+import { completionReportPresenter } from "@/features/conversations/components/completion-report-presenter"
+import { delegationToolPresenters } from "@/features/conversations/components/delegation-tool-presenter"
+import { fileToolPresenter } from "@/features/conversations/components/file-tool-presenter"
+import { kbToolPresenter } from "@/features/conversations/components/kb-tool-presenter"
+import { memoryToolPresenter } from "@/features/conversations/components/memory-tool-presenter"
+import { runCodeToolPresenter } from "@/features/conversations/components/run-code-tool-presenter"
+import { skillActivationPresenter } from "@/features/conversations/components/skill-activation-presenter"
+import { skillDocumentReadPresenter } from "@/features/conversations/components/skill-document-read-presenter"
+import { todoToolPresenters } from "@/features/conversations/components/todo-list-presenter"
+import { webFetchToolPresenter } from "@/features/conversations/components/web-fetch-tool-presenter"
+import { webSearchToolPresenter } from "@/features/conversations/components/web-search-tool-presenter"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
+import { integrationToolRowPresenters } from "@/integrations/registry"
 
 // Tool rows resolve in three layers: a custom presenter registered here wins,
 // otherwise the default row renders from the tool's server-declared presentation
@@ -97,208 +25,23 @@ import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/con
 // config can express; everything else should be configured on its backend
 // runtime_tool definition.
 
-const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
-  {
-    key: "run-code",
-    matches: (activity) =>
-      activity.name === RUN_CODE_TOOL_NAME &&
-      (activity.status === "running" ||
-        (activity.status === "completed" && runCodeResult(activity.result) !== null)),
-    render: ({ activity, defaultOpen }) => (
-      <RunCodeToolRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    handlesApprovals: true,
-    key: "code-mode-workflow",
-    matches: (activity) => activity.name === "run_workflow" && Boolean(activity.script),
-    render: ({ activity, defaultOpen, live }) => (
-      <CodeModeRow activity={activity} defaultOpen={defaultOpen} live={live} />
-    ),
-  },
-  {
-    key: "completion-report",
-    matches: (activity) =>
-      activity.name === REPORT_COMPLETION_TOOL_NAME &&
-      (activity.status === "running" ||
-        (activity.status === "completed" && completionReport(activity.result) !== null)),
-    render: ({ activity, defaultOpen }) => (
-      <CompletionReportRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    key: "artifact-tools",
-    matches: artifactToolRowMatches,
-    render: ({ activity, defaultOpen }) => (
-      <ArtifactToolRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    key: "classifier",
-    matches: (activity) =>
-      isClassifierToolName(activity.name) &&
-      (activity.status === "running" ||
-        activity.status === "failed" ||
-        activity.status === "denied" ||
-        activity.status === "unknown" ||
-        (activity.status === "completed" &&
-          classifierResult(activity.args, activity.result) !== null)),
-    render: ({ activity, defaultOpen, label }) => (
-      <ClassifierToolRow
-        activity={activity}
-        defaultOpen={defaultOpen}
-        label={
-          activity.name === CLASSIFY_TOOL_NAME
-            ? "Classify"
-            : label && label !== activity.name
-              ? label
-              : "Classifier"
-        }
-      />
-    ),
-  },
-  {
-    key: "build-chart",
-    matches: (activity) =>
-      activity.name === BUILD_CHART_TOOL_NAME &&
-      (activity.status === "running" || activity.status === "completed"),
-    render: ({ activity }) => <ChartToolRow activity={activity} />,
-  },
-  {
-    key: "web-fetch",
-    matches: (activity) =>
-      activity.name === "fetch_url" &&
-      (activity.status === "running"
-        ? webFetchUrl(activity.args) !== null
-        : activity.status === "completed" && webFetchResult(activity.result) !== null),
-    render: ({ activity, defaultOpen }) => (
-      <WebFetchToolRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    key: "web-search",
-    matches: (activity) =>
-      activity.name === "web_search" &&
-      (activity.status === "running"
-        ? webSearchQuery(activity.args) !== null
-        : activity.status === "completed" && webSearchResult(activity.result) !== null),
-    render: ({ activity, defaultOpen }) => (
-      <WebSearchToolRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    key: "delegate-agent-list",
-    matches: (activity) =>
-      activity.name === LIST_DELEGATE_AGENTS_TOOL_NAME &&
-      (activity.status === "running" || delegateAgentSummaries(activity.result) !== null),
-    render: ({ activity, defaultOpen }) => (
-      <DelegateAgentListRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    handlesApprovals: true,
-    key: "delegation",
-    matches: (activity) => Boolean(activity.delegate),
-    render: ({ activity, approvalDecision, defaultOpen }) => (
-      <DelegationToolRow
-        activity={activity}
-        {...(approvalDecision ? { approvalDecision } : {})}
-        defaultOpen={defaultOpen}
-      />
-    ),
-  },
-  {
-    key: "skill-activation",
-    matches: (activity) =>
-      (activity.toolKind === "capability-load" || activity.name === LOAD_CAPABILITY_TOOL_NAME) &&
-      skillIdFromCapabilityArgs(activity.args) !== null,
-    render: ({ activity }) => <SkillActivationRow activity={activity} />,
-  },
-  {
-    key: "skill-document-read",
-    matches: (activity) => activity.name === READ_SKILL_DOCUMENT_TOOL_NAME,
-    render: ({ activity, defaultOpen }) => (
-      <SkillDocumentReadRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    key: "todo-plan",
-    matches: (activity) =>
-      activity.name === WRITE_TODOS_TOOL_NAME && todoItemsFromActivity(activity) !== null,
-    render: ({ activity }) => <TodoListRow activity={activity} />,
-  },
-  {
-    key: "todo-lookup",
-    matches: (activity) =>
-      activity.name === READ_TODOS_TOOL_NAME &&
-      (activity.status !== "completed" || todoItemsFromActivity(activity) !== null),
-    render: ({ activity }) => <TodoListRow activity={activity} />,
-  },
-  {
-    handlesApprovals: true,
-    key: "file-tools",
-    matches: fileToolRowMatches,
-    render: ({ activity, approvalDecision, defaultOpen, label, ui }) => (
-      <FileToolRow
-        activity={activity}
-        {...(approvalDecision ? { approvalDecision } : {})}
-        defaultOpen={defaultOpen}
-        label={label ?? activity.name}
-        ui={ui ?? null}
-      />
-    ),
-  },
-  {
-    key: "kb-tools",
-    matches: kbToolRowMatches,
-    render: ({ activity, defaultOpen }) => (
-      <KbToolRow activity={activity} defaultOpen={defaultOpen} />
-    ),
-  },
-  {
-    handlesApprovals: true,
-    key: "memory-tools",
-    matches: memoryToolRowMatches,
-    render: ({ activity, approvalDecision, defaultOpen, label, ui }) => (
-      <MemoryToolRow
-        activity={activity}
-        {...(approvalDecision ? { approvalDecision } : {})}
-        defaultOpen={defaultOpen}
-        label={label ?? activity.name}
-        ui={ui ?? null}
-      />
-    ),
-  },
+export const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+  runCodeToolPresenter,
+  codeModeWorkflowPresenter,
+  completionReportPresenter,
+  artifactToolPresenter,
+  classifierToolPresenter,
+  chartToolPresenter,
+  webFetchToolPresenter,
+  webSearchToolPresenter,
+  ...delegationToolPresenters,
+  skillActivationPresenter,
+  skillDocumentReadPresenter,
+  ...todoToolPresenters,
+  fileToolPresenter,
+  kbToolPresenter,
+  memoryToolPresenter,
 ]
-
-const ARTIFACT_TOOL_NAMES = new Set([
-  CREATE_ARTIFACT_TOOL_NAME,
-  LIST_ARTIFACTS_TOOL_NAME,
-  READ_ARTIFACT_TOOL_NAME,
-  UPDATE_ARTIFACT_TOOL_NAME,
-])
-
-function artifactToolRowMatches(activity: ToolActivity) {
-  if (ARTIFACT_TOOL_NAMES.has(activity.name) && activity.status !== "completed") {
-    return true
-  }
-  if (
-    activity.name === LIST_ARTIFACTS_TOOL_NAME &&
-    artifactListToolResult(activity.result) !== null
-  ) {
-    return true
-  }
-  if (
-    activity.name === READ_ARTIFACT_TOOL_NAME &&
-    artifactReadToolResult(activity.result) !== null
-  ) {
-    return true
-  }
-  return (
-    (activity.name === CREATE_ARTIFACT_TOOL_NAME || activity.name === UPDATE_ARTIFACT_TOOL_NAME) &&
-    artifactToolResult(activity.result) !== null
-  )
-}
 
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
   for (const presenter of [
@@ -320,75 +63,4 @@ export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
     }
   }
   return null
-}
-
-function kbToolRowMatches(activity: ToolActivity) {
-  if (
-    (activity.name === SEARCH_KNOWLEDGE_TOOL_NAME || activity.name === READ_DOCUMENT_TOOL_NAME) &&
-    activity.status !== "completed"
-  ) {
-    return true
-  }
-  if (activity.name === SEARCH_KNOWLEDGE_TOOL_NAME) {
-    return searchKnowledgeResult(activity.result) !== null
-  }
-  if (activity.name === READ_DOCUMENT_TOOL_NAME) {
-    return readDocumentResult(activity.result) !== null
-  }
-  return false
-}
-
-function memoryToolRowMatches(activity: ToolActivity) {
-  if (
-    (activity.name === SAVE_MEMORY_TOOL_NAME ||
-      activity.name === SEARCH_MEMORY_TOOL_NAME ||
-      activity.name === UPDATE_MEMORY_TOOL_NAME ||
-      activity.name === FORGET_MEMORY_TOOL_NAME) &&
-    activity.status !== "completed"
-  ) {
-    return true
-  }
-  if (activity.name === SAVE_MEMORY_TOOL_NAME) {
-    return saveMemoryResult(activity.result) !== null
-  }
-  if (activity.name === SEARCH_MEMORY_TOOL_NAME) {
-    return searchMemoryResult(activity.result) !== null
-  }
-  if (activity.name === UPDATE_MEMORY_TOOL_NAME) {
-    return updateMemoryResult(activity.result) !== null
-  }
-  if (activity.name === FORGET_MEMORY_TOOL_NAME) {
-    return forgetMemoryResult(activity.result) !== null
-  }
-  return false
-}
-
-function fileToolRowMatches(activity: ToolActivity) {
-  if (
-    (activity.name === LIST_FILES_TOOL_NAME ||
-      isImageOutputTool(activity.name) ||
-      activity.name === WRITE_FILE_TOOL_NAME ||
-      activity.name === READ_FILE_TOOL_NAME) &&
-    activity.status !== "completed"
-  ) {
-    return true
-  }
-  if (activity.name === LIST_FILES_TOOL_NAME) {
-    return listFilesResult(activity.result) !== null
-  }
-  if (isImageOutputTool(activity.name)) {
-    return generateImageResult(activity.result) !== null
-  }
-  if (activity.name === WRITE_FILE_TOOL_NAME) {
-    return writeFileResult(activity.result) !== null
-  }
-  if (activity.name === READ_FILE_TOOL_NAME) {
-    return (
-      readFileUrlResult(activity.result) !== null ||
-      readFileContentResult(activity.result) !== null ||
-      readFileStatusResult(activity.result) !== null ||
-      readFileImageResult(activity.result) !== null
-    )
-  }
-  return false
 }

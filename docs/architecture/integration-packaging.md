@@ -407,11 +407,11 @@ export type IntegrationUiModule = {
 
 ### 5.4 Dispatch integration
 
-`renderCustomToolCallRow` keeps its ordered core presenters (delegation,
-skills, files, todos — platform tools, not integrations), then consults
-loaded integration modules keyed by the activity's provider. The tool-UI
-icon resolver checks module-contributed icons before the built-in token
-map. No other shared file changes per provider.
+Core presenter families contribute self-contained presenters from sibling
+feature modules. `renderCustomToolCallRow` preserves their explicit order,
+then consults loaded integration modules keyed by the activity's provider.
+The tool-UI icon resolver checks module-contributed icons before the built-in
+token map. No other shared file changes per provider.
 
 ### 5.5 Boundary rules (enforced in `.dependency-cruiser.cjs`)
 

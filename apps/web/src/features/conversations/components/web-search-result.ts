@@ -3,6 +3,8 @@ import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { isRecord } from "@/lib/guards"
 
+export const WEB_SEARCH_TOOL_NAME = "web_search"
+
 type WebSearchSource = {
   domain: string
   snippet: string | null

@@ -10,14 +10,105 @@ import {
   DelegateAgentListRow,
   DelegationToolRow,
 } from "@/features/conversations/components/delegation-tool-row"
+import { artifactToolPresenter } from "@/features/conversations/components/artifact-tool-presenter"
 import { ArtifactToolRow } from "@/features/conversations/components/artifact-tool-row"
+import { chartToolPresenter } from "@/features/conversations/components/chart-tool-presenter"
 import { FileToolRow } from "@/features/conversations/components/file-tool-row"
+import { runCodeToolPresenter } from "@/features/conversations/components/run-code-tool-presenter"
 import { SkillActivationRow } from "@/features/conversations/components/skill-activation-row"
 import { SkillDocumentReadRow } from "@/features/conversations/components/skill-document-read-row"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { skillsQueryOptions } from "@/features/skills/api/list-skills"
 import { toolPresentationsQueryOptions } from "@/features/tools/api/list-tool-presentations"
 import { filesQueryKeys } from "@/features/files/api/list-files"
+import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
+
+describe("native computation presenters", () => {
+  it("matches and renders a running native script without exposing its task", () => {
+    const toolActivity = activity({
+      id: "run-code-1",
+      kind: "call",
+      name: "run_code",
+      status: "running",
+      args: { task: "A very long operator-authored presentation brief" },
+    })
+
+    expect(runCodeToolPresenter.matches(toolActivity)).toBe(true)
+    const html = renderPresenter(runCodeToolPresenter, toolActivity)
+
+    expect(html).toContain("Run Script")
+    expect(html).toContain("Computing and preparing any requested files…")
+    expect(html).not.toContain("A very long operator-authored presentation brief")
+    expect(html).toContain('aria-busy="true"')
+  })
+
+  it("matches and renders a native script edit as a revision", () => {
+    const toolActivity = activity({
+      id: "run-code-edit-1",
+      name: "run_code",
+      result: {
+        model: "claude-sonnet-5",
+        model_provider: "anthropic",
+        outputs: [
+          {
+            kind: "file",
+            media_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            name: "budget.xlsx",
+            reference: {
+              entity_id: "file-1",
+              entity_kind: "file",
+              label: "budget.xlsx",
+            },
+            revision_id: "revision-2",
+            revision_number: 2,
+            size_bytes: 8192,
+            updated_existing: true,
+          },
+        ],
+        result: "Added the totals column.",
+        skipped_outputs: [],
+      },
+    })
+
+    expect(runCodeToolPresenter.matches(toolActivity)).toBe(true)
+    const html = renderPresenter(runCodeToolPresenter, toolActivity, true)
+
+    expect(html).toContain("1 updated")
+    expect(html).toContain("Updated")
+    expect(html).toContain("Revision 2")
+    expect(html).toContain("budget.xlsx")
+    expect(html).not.toContain("1 created")
+  })
+
+  it("matches and renders a completed native chart", () => {
+    const toolActivity = activity({
+      id: "chart-1",
+      name: "build_chart",
+      args: {
+        chart_type: "bar",
+        title: "Revenue by region",
+        x_axis: { data_key: "region" },
+        series: [
+          {
+            data_key: "revenue",
+            label: "Revenue",
+            format: "currency",
+            currency_code: "GBP",
+          },
+        ],
+        data: [{ region: "North", revenue: 1250 }],
+      },
+      result: { title: "Revenue by region", points: 1, series: 1 },
+    })
+
+    expect(chartToolPresenter.matches(toolActivity)).toBe(true)
+    const html = renderPresenter(chartToolPresenter, toolActivity)
+
+    expect(html).toContain("Build Chart")
+    expect(html).toContain("Revenue by region")
+    expect(html).toContain("Loading chart…")
+  })
+})
 
 describe("delegation tool rows", () => {
   it("renders available agents through a result card and a running skeleton", () => {
@@ -269,39 +360,37 @@ describe("artifact tool rows", () => {
   })
 
   it("renders artifact discovery as linked workspace entities", () => {
-    const html = render(
-      createElement(ArtifactToolRow, {
-        activity: activity({
-          args: { search: "quarterly" },
-          name: "list_artifacts",
-          result: {
-            items: [
-              {
-                id: "artifact-1",
-                reference: artifactReference("artifact-1", "Quarterly report"),
-                title: "Quarterly report",
-                artifact_type: "markdown",
-                version_count: 3,
-                updated_at: "2026-08-14T10:00:00Z",
-                conversation_id: "conversation-1",
-              },
-              {
-                id: "artifact-2",
-                reference: artifactReference("artifact-2", "Revenue chart"),
-                title: "Revenue chart",
-                artifact_type: "image-ref",
-                version_count: 1,
-                updated_at: "2026-08-13T10:00:00Z",
-                conversation_id: null,
-              },
-            ],
-            total: 4,
-            returned: 2,
+    const toolActivity = activity({
+      args: { search: "quarterly" },
+      name: "list_artifacts",
+      result: {
+        items: [
+          {
+            id: "artifact-1",
+            reference: artifactReference("artifact-1", "Quarterly report"),
+            title: "Quarterly report",
+            artifact_type: "markdown",
+            version_count: 3,
+            updated_at: "2026-08-14T10:00:00Z",
+            conversation_id: "conversation-1",
           },
-        }),
-        defaultOpen: true,
-      })
-    )
+          {
+            id: "artifact-2",
+            reference: artifactReference("artifact-2", "Revenue chart"),
+            title: "Revenue chart",
+            artifact_type: "image-ref",
+            version_count: 1,
+            updated_at: "2026-08-13T10:00:00Z",
+            conversation_id: null,
+          },
+        ],
+        total: 4,
+        returned: 2,
+      },
+    })
+
+    expect(artifactToolPresenter.matches(toolActivity)).toBe(true)
+    const html = renderPresenter(artifactToolPresenter, toolActivity, true)
 
     expect(html).toContain("Artifacts")
     expect(html).toContain("4 Artifacts")
@@ -900,6 +989,25 @@ function render(
   return renderToStaticMarkup(
     createElement(QueryClientProvider, { client: queryClient, children: element })
   )
+}
+
+function renderPresenter(
+  presenter: ToolRowPresenter,
+  toolActivity: ToolActivity,
+  defaultOpen = false
+) {
+  return render(presenter.render(presenterProps(toolActivity, defaultOpen)) as ReactElement)
+}
+
+function presenterProps(toolActivity: ToolActivity, defaultOpen: boolean): ToolRowPresenterProps {
+  return {
+    activity: toolActivity,
+    compact: false,
+    defaultOpen,
+    live: false,
+    providerKey: null,
+    ui: null,
+  }
 }
 
 function activity(overrides: Partial<ToolActivity>): ToolActivity {

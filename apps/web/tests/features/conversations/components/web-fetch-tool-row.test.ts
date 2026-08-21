@@ -1,10 +1,10 @@
-import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import { webFetchResult } from "@/features/conversations/components/web-fetch-result"
-import { WebFetchToolRow } from "@/features/conversations/components/web-fetch-tool-row"
+import { webFetchToolPresenter } from "@/features/conversations/components/web-fetch-tool-presenter"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import type { ToolRowPresenterProps } from "@/integrations/contract"
 
 describe("WebFetchToolRow", () => {
   it("shows the exact URL while fetching", () => {
@@ -16,6 +16,9 @@ describe("WebFetchToolRow", () => {
       args: { url: "https://docs.example.com/page?approved=yes" },
     })
 
+    expect(
+      webFetchToolPresenter.matches(activityFromUrl("https://docs.example.com/page?approved=yes"))
+    ).toBe(true)
     expect(html).toContain("https://docs.example.com/page?approved=yes")
     expect(html).toContain('aria-busy="true"')
     expect(html).toContain("Web Fetch")
@@ -41,6 +44,7 @@ describe("WebFetchToolRow", () => {
       },
     })
 
+    expect(webFetchToolPresenter.matches(completedActivity())).toBe(true)
     expect(html).toContain("Praxis documentation")
     expect(html).toContain(">page content</strong>")
     expect(html).toContain("Fetched Page Content")
@@ -69,5 +73,40 @@ describe("WebFetchToolRow", () => {
 })
 
 function render(activity: ToolActivity): string {
-  return renderToStaticMarkup(createElement(WebFetchToolRow, { activity, defaultOpen: true }))
+  return renderToStaticMarkup(webFetchToolPresenter.render(presenterProps(activity)))
+}
+
+function presenterProps(activity: ToolActivity): ToolRowPresenterProps {
+  return {
+    activity,
+    compact: false,
+    defaultOpen: true,
+    live: false,
+    providerKey: null,
+  }
+}
+
+function activityFromUrl(url: string): ToolActivity {
+  return { id: "fetch-1", kind: "call", name: "fetch_url", status: "running", args: { url } }
+}
+
+function completedActivity(): ToolActivity {
+  return {
+    id: "fetch-1",
+    kind: "result",
+    name: "fetch_url",
+    status: "completed",
+    result: {
+      content: {
+        node: "praxis_untrusted",
+        source_kind: "web_fetch",
+        source_ref: "https://docs.example.com/page",
+        content: "# Praxis documentation",
+      },
+      model: "claude-sonnet-5",
+      model_provider: "anthropic",
+      sources: [],
+      url: "https://docs.example.com/page",
+    },
+  }
 }

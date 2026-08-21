@@ -1,14 +1,14 @@
-import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { ClassifierToolRow } from "@/features/conversations/components/classifier-tool-row"
+import { classifierToolPresenter } from "@/features/conversations/components/classifier-tool-presenter"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   classifierArgs,
   classifierItems,
   classifierResult,
 } from "@/features/conversations/native-tools/classifier-tool"
+import type { ToolRowPresenterProps } from "@/integrations/contract"
 
 describe("classifier tool row", () => {
   it("renders a completed batch with item context, label counts, and table actions", () => {
@@ -32,6 +32,7 @@ describe("classifier tool row", () => {
       true
     )
 
+    expect(classifierToolPresenter.matches(activity({}))).toBe(true)
     expect(html).toContain("Classify")
     expect(html).toContain("3 Classified")
     expect(html).toContain('aria-label="Label distribution"')
@@ -143,14 +144,13 @@ describe("classifier tool row", () => {
       },
     })
     const html = renderToStaticMarkup(
-      createElement(ClassifierToolRow, {
-        activity: workspaceActivity,
-        defaultOpen: true,
-        label: "Location Search Term",
-      })
+      classifierToolPresenter.render(
+        presenterProps(workspaceActivity, true, "Location Search Term")
+      )
     )
 
     expect(classifierItems(workspaceActivity.args)).toEqual(["London plumber", "boiler repair"])
+    expect(classifierToolPresenter.matches(workspaceActivity)).toBe(true)
     expect(html).toContain("Location Search Term")
     expect(html).toContain("2 Classified")
     expect(html).toContain("London plumber")
@@ -158,7 +158,22 @@ describe("classifier tool row", () => {
 })
 
 function render(value: ToolActivity, defaultOpen = false) {
-  return renderToStaticMarkup(createElement(ClassifierToolRow, { activity: value, defaultOpen }))
+  return renderToStaticMarkup(classifierToolPresenter.render(presenterProps(value, defaultOpen)))
+}
+
+function presenterProps(
+  activity: ToolActivity,
+  defaultOpen: boolean,
+  label?: string
+): ToolRowPresenterProps {
+  return {
+    activity,
+    compact: false,
+    defaultOpen,
+    ...(label ? { label } : {}),
+    live: false,
+    providerKey: null,
+  }
 }
 
 function activity(overrides: Partial<ToolActivity>): ToolActivity {

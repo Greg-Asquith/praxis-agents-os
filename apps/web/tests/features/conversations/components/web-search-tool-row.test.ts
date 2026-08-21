@@ -1,10 +1,10 @@
-import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { WebSearchToolRow } from "@/features/conversations/components/web-search-tool-row"
+import { webSearchToolPresenter } from "@/features/conversations/components/web-search-tool-presenter"
 import { webSearchResult } from "@/features/conversations/components/web-search-result"
 import type { ToolActivity } from "@/features/conversations/message-parts"
+import type { ToolRowPresenterProps } from "@/integrations/contract"
 
 describe("WebSearchToolRow", () => {
   it("uses the query as the running headline with a search skeleton", () => {
@@ -16,6 +16,15 @@ describe("WebSearchToolRow", () => {
       args: { query: "Praxis Agents" },
     })
 
+    expect(
+      webSearchToolPresenter.matches({
+        id: "search-1",
+        kind: "call",
+        name: "web_search",
+        status: "running",
+        args: { query: "Praxis Agents" },
+      })
+    ).toBe(true)
     expect(html).toContain("Praxis Agents")
     expect(html).toContain('aria-busy="true"')
     expect(html).toContain("Searching Praxis Agents…")
@@ -83,5 +92,15 @@ describe("WebSearchToolRow", () => {
 })
 
 function render(activity: ToolActivity): string {
-  return renderToStaticMarkup(createElement(WebSearchToolRow, { activity, defaultOpen: true }))
+  return renderToStaticMarkup(webSearchToolPresenter.render(presenterProps(activity)))
+}
+
+function presenterProps(activity: ToolActivity): ToolRowPresenterProps {
+  return {
+    activity,
+    compact: false,
+    defaultOpen: true,
+    live: false,
+    providerKey: null,
+  }
 }

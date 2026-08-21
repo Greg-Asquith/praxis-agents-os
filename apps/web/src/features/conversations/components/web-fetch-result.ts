@@ -4,6 +4,8 @@ import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { isRecord } from "@/lib/guards"
 
+export const WEB_FETCH_TOOL_NAME = "fetch_url"
+
 type WebFetchSource = {
   domain: string
   title: string
