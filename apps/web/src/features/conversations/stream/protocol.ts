@@ -10,7 +10,7 @@ import type {
 export const STREAM_PROTOCOL_VERSION = "1"
 export const STREAM_VERSION_HEADER = "X-Praxis-Stream-Version"
 
-const STREAM_EVENT_NAMES = [
+export const STREAM_EVENT_NAMES = [
   "conversation.created",
   "conversation.updated",
   "run.status",
@@ -63,7 +63,7 @@ export type StreamEvent =
       data: StreamEnvelope & {
         message_id: string
         role: "assistant"
-        channel?: MessageChannel
+        channel: MessageChannel
       }
     }
   | {
@@ -87,7 +87,7 @@ export type StreamEvent =
       event: "tool.result"
       data: StreamEnvelope & {
         tool_call_id: string
-        name?: string | null
+        name: string | null
         result: unknown
         parent_tool_call_id?: string
       }

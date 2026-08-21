@@ -54,7 +54,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - SSE handling lives in `src/features/conversations/stream/`: a hand-written
   parser, a typed versioned event protocol, and a reducer. The parser throws
   on unknown event names, so a new server-side event breaks stale clients —
-  ship the client change first. The transient `queued` run status means an
+  ship the client change first. Checked backend schema and sample artifacts
+  live under `tests/features/conversations/stream/fixtures/`; regenerate them
+  from the repository root with `make stream-protocol-export`. The transient
+  `queued` run status means an
   interactive turn is waiting for API capacity; keep it in stream state and
   map it to persisted `pending` state wherever an `AgentRun` is required.
 - The conversation active-run read also returns the latest run outcome so a

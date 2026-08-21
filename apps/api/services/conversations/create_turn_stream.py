@@ -16,12 +16,12 @@ from services.agent_runs import create_agent_run, reap_abandoned_runs
 from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
 from services.agents.runtime import streaming as runtime_streaming
 from services.agents.runtime.events import (
-    EVENT_RUN_STATUS,
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
 from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
 from services.agents.runtime.sinks import StreamSink
+from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.agents.runtime.worker import run_turn_worker
 from services.conversations.schemas import ConversationTurnCreateRequest
 from services.conversations.utils import (
@@ -138,7 +138,7 @@ async def create_conversation_turn_stream(
     await db.commit()
 
     sink = StreamSink(run_id=run.id, conversation_id=conversation.id)
-    await sink.emit(EVENT_RUN_STATUS, {"status": run.status})
+    await sink.emit(RunStatusEvent(status=run.status))
     run_task_registry.spawn(
         run.id,
         run_turn_worker(

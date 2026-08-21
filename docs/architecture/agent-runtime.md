@@ -327,24 +327,26 @@ POST works.
 Each event: SSE `event:` = type, `data:` = JSON carrying `run_id`,
 `conversation_id`, and a monotonic `seq`.
 
-| `event:`                 | `data` payload                                                  |
-| ------------------------ | --------------------------------------------------------------- |
-| `conversation.created`   | `{ conversation }` first event on create stream                 |
-| `conversation.updated`   | `{ conversation }` e.g. async title update                      |
-| `run.status`             | `{ status }`; `queued` is transient while the turn waits to run |
-| `message.start`          | `{ message_id, role }`                                          |
-| `message.delta`          | `{ message_id, text }` (token chunk)                            |
-| `message.end`            | `{ message_id }`                                                |
-| `tool.call`              | `{ tool_call_id, name, args }`                                  |
-| `tool.result`            | `{ tool_call_id, name?, result }`                               |
-| `tool.approval_required` | `{ tool_call_id, name, args }`                                  |
-| `error`                  | `{ code, message }`                                             |
-| `done`                   | `{ status }` terminal — client closes                           |
+`services/agents/runtime/stream_protocol.py` is the authoritative contract for
+event names, payload fields, enum values, and representative frames. Its export
+script writes the checked-in browser contract to
+`apps/web/tests/features/conversations/stream/fixtures/`. The backend check
+compares those artifacts with the models. The frontend check verifies that the
+handwritten parser accepts representative, minimal, nullable, and nested
+contract forms and rejects missing required fields. Run
+`make stream-protocol-export` after changing the contract.
 
-The protocol is versioned so client and runtime can evolve independently: the
+The payload models cover conversation creation and updates, run status,
+assistant text and thinking messages, tool calls and results, approval details,
+Code Mode workflow state, errors, and terminal completion. Approval payloads
+include replay arguments, nested workflow parents, delegated-run context, and
+untrusted-content provenance when those values apply. `tool.call.args` and
+`tool.result.result` remain JSON values because individual tool contracts own
+their shapes.
+
+The protocol is versioned so client and runtime can evolve independently. The
 backend sends `X-Praxis-Stream-Version: 1` on turn streams and exposes that
-header through CORS for the Vite client. Keep the event set small; this table is
-the contract.
+header through cross-origin resource sharing (CORS) for the Vite client.
 
 ## Frontend (Vite SPA)
 
@@ -362,7 +364,7 @@ apps/web/src/features/
   conversations/
     api/                       # typed REST/SSE calls for conversations and runs
     stream/
-      protocol.ts              # event types - mirrors runtime/events.py
+      protocol.ts              # typed event facade checked against backend schema
       sse.ts                   # POST-compatible SSE parser
       reducer.ts               # stream events -> render state
       use-agent-stream.ts      # create, turn, and resume stream orchestration
@@ -379,9 +381,10 @@ apps/web/src/features/
   and expose stream state/actions to the route shell.
 - **Server state:** TanStack Query for REST. **Routing:** the existing TanStack
   Router setup.
-- **`protocol.ts` mirrors `events.py`.** Generate it from the backend (e.g. an
-  OpenAPI/JSON-schema export of the event union) rather than hand-syncing, so the two
-  ends can't drift.
+- **The backend owns the stream contract.** Regenerate the checked-in schema
+  and samples after changing a payload model. `make check` rejects stale
+  artifacts. `pnpm check` verifies the handwritten parser against the
+  checked-in contract but does not load Python models.
 
 ### Auth / CORS / cookies (do not loosen — add explicit local config)
 

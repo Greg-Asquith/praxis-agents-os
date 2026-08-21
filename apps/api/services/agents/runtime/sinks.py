@@ -2,14 +2,17 @@
 
 """Runtime event sinks for tests, SSE routes, and scheduled execution."""
 
+from __future__ import annotations
+
 import asyncio
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
-from pydantic_core import to_jsonable_python
+if TYPE_CHECKING:
+    from services.agents.runtime.stream_protocol import StreamEventPayload
 
 DEFAULT_STREAM_QUEUE_SIZE = 5_000
 
@@ -25,7 +28,10 @@ class SinkEvent:
 class EventSink(Protocol):
     """Receives normalized runtime events from ``execute_run``."""
 
-    async def emit(self, event: str, payload: Mapping[str, Any] | None = None) -> None:
+    async def emit(
+        self,
+        payload: StreamEventPayload,
+    ) -> None:
         """Emit one event."""
 
     async def close(self) -> None:
@@ -40,22 +46,28 @@ class SequencedSink:
         self.conversation_id = conversation_id
         self._seq = 0
 
-    def _event(self, event: str, payload: Mapping[str, Any] | None = None) -> SinkEvent:
+    def _event(
+        self,
+        payload: StreamEventPayload,
+    ) -> SinkEvent:
         self._seq += 1
         data = {
             "run_id": str(self.run_id),
             "conversation_id": str(self.conversation_id),
             "seq": self._seq,
         }
-        data.update(to_jsonable_python(dict(payload or {})))
-        return SinkEvent(event=event, data=data)
+        data.update(payload.serialize_payload())
+        return SinkEvent(event=payload.event_name, data=data)
 
 
 class NullSink(SequencedSink):
     """Sink for scheduled/background runs where no live client is listening."""
 
-    async def emit(self, event: str, payload: Mapping[str, Any] | None = None) -> None:
-        self._event(event, payload)
+    async def emit(
+        self,
+        payload: StreamEventPayload,
+    ) -> None:
+        self._event(payload)
 
     async def close(self) -> None:
         return None
@@ -68,8 +80,11 @@ class CollectingSink(SequencedSink):
         super().__init__(run_id=run_id, conversation_id=conversation_id)
         self.events: list[SinkEvent] = []
 
-    async def emit(self, event: str, payload: Mapping[str, Any] | None = None) -> None:
-        self.events.append(self._event(event, payload))
+    async def emit(
+        self,
+        payload: StreamEventPayload,
+    ) -> None:
+        self.events.append(self._event(payload))
 
     async def close(self) -> None:
         return None
@@ -90,11 +105,14 @@ class StreamSink(SequencedSink):
         self._closed = False
         self._detached = False
 
-    async def emit(self, event: str, payload: Mapping[str, Any] | None = None) -> None:
+    async def emit(
+        self,
+        payload: StreamEventPayload,
+    ) -> None:
         if self._closed or self._detached:
             return
         try:
-            self._queue.put_nowait(self._event(event, payload))
+            self._queue.put_nowait(self._event(payload))
         except asyncio.QueueFull:
             self.detach()
 

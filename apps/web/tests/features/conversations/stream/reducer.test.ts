@@ -342,7 +342,12 @@ describe("agentStreamReducer", () => {
     const beforeResult = reduceEvents([
       {
         event: "message.start",
-        data: { ...eventWithSeq(1), message_id: "text-1", role: "assistant" },
+        data: {
+          ...eventWithSeq(1),
+          message_id: "text-1",
+          role: "assistant",
+          channel: "text",
+        },
       },
       {
         event: "message.delta",
@@ -359,7 +364,12 @@ describe("agentStreamReducer", () => {
       },
       {
         event: "message.start",
-        data: { ...eventWithSeq(4), message_id: "text-2", role: "assistant" },
+        data: {
+          ...eventWithSeq(4),
+          message_id: "text-2",
+          role: "assistant",
+          channel: "text",
+        },
       },
       {
         event: "message.delta",

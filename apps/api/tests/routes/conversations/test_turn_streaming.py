@@ -39,7 +39,6 @@ from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
     EVENT_CONVERSATION_CREATED,
-    EVENT_CONVERSATION_UPDATED,
     EVENT_DONE,
     EVENT_RUN_STATUS,
     EVENT_TOOL_CALL,
@@ -50,8 +49,13 @@ from services.agents.runtime.events import (
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import CollectingSink, EventSink
+from services.agents.runtime.stream_protocol import (
+    ConversationUpdatedEvent,
+    DoneEvent,
+    RunStatusEvent,
+)
 from services.conversations.create_turn_stream import create_conversation_turn_stream
-from services.conversations.schemas import ConversationTurnCreateRequest
+from services.conversations.schemas import ConversationRead, ConversationTurnCreateRequest
 from services.jobs.handlers.sweep_expired_agent_run_approvals import (
     sweep_expired_agent_run_approvals,
 )
@@ -130,8 +134,8 @@ async def test_create_turn_stream_returns_ordered_sse_events(
         assert user_prompt == "Hello"
         assert list(attachment_file_ids) == []
         assert client_message_id == "client-1"
-        await sink.emit(EVENT_RUN_STATUS, {"status": "running"})
-        await sink.emit(EVENT_DONE, {"status": "completed"})
+        await sink.emit(RunStatusEvent(status="running"))
+        await sink.emit(DoneEvent(status="completed"))
         await sink.close()
 
     monkeypatch.setattr(
@@ -206,16 +210,16 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         conversation.title = "Launch planning"
         conversation.metadata_json = {"title": {"source": "model", "model": "function:title"}}
         await db_session.flush()
+        await db_session.refresh(conversation)
         await sink.emit(
-            EVENT_CONVERSATION_UPDATED,
-            {
-                "conversation": {
-                    "id": str(conversation.id),
-                    "title": "Launch planning",
-                    "active_agent_id": str(agent.id),
-                    "agent_slug": agent.slug,
-                }
-            },
+            ConversationUpdatedEvent(
+                conversation=ConversationRead.from_projection(
+                    conversation,
+                    agent_name=agent.name,
+                    active_run_id=None,
+                    active_run_status=None,
+                )
+            )
         )
 
     async def fake_worker(
@@ -233,8 +237,8 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         assert user_prompt == "Plan the launch"
         assert list(attachment_file_ids) == []
         assert client_message_id == "first-message"
-        await sink.emit(EVENT_RUN_STATUS, {"status": "running"})
-        await sink.emit(EVENT_DONE, {"status": "completed"})
+        await sink.emit(RunStatusEvent(status="running"))
+        await sink.emit(DoneEvent(status="completed"))
         await sink.close()
 
     # Patch the module object directly: the services.conversations package re-exports a
@@ -351,7 +355,7 @@ async def test_read_only_member_can_create_conversation_with_active_context(
         sink: EventSink,
         **_kwargs: object,
     ) -> None:
-        await sink.emit(EVENT_DONE, {"status": "completed"})
+        await sink.emit(DoneEvent(status="completed"))
         await sink.close()
 
     create_conversation_stream_module = importlib.import_module(

@@ -24,7 +24,6 @@ from services.agents.runtime.cancellation import (
     clear_agent_run_cancel_request,
     is_agent_run_cancel_request,
 )
-from services.agents.runtime.events import EVENT_RUN_STATUS
 from services.agents.runtime.load_context import (
     load_actor_context,
     load_agent_skills,
@@ -37,6 +36,7 @@ from services.agents.runtime.persistence import (
     persist_eager_user_prompt,
 )
 from services.agents.runtime.sinks import EventSink, NullSink
+from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 from services.ai_usage.domain import PURPOSE_AGENT_RUN, AIUsageEventData
 from services.ai_usage.utils import sum_response_usage, usage_values
@@ -137,7 +137,7 @@ async def execute_run(
             await db.commit()
             eager_message_count = len(eager_rows)
             user_prompt_persisted = True
-        await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_RUNNING})
+        await event_sink.emit(RunStatusEvent(status=RUN_STATUS_RUNNING))
 
         prepared = await prepare_runtime(
             db,

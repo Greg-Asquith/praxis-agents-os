@@ -27,7 +27,6 @@ from services.agents.runtime.approval_events import (
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_policy_approval_request_audit_events
-from services.agents.runtime.events import EVENT_DONE, EVENT_ERROR, EVENT_RUN_STATUS
 from services.agents.runtime.run_persistence import (
     persist_cancelled_run,
     persist_failed_run,
@@ -35,6 +34,7 @@ from services.agents.runtime.run_persistence import (
     persist_suspended_run,
 )
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.stream_protocol import DoneEvent, ErrorEvent, RunStatusEvent
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 from services.ai_usage.domain import AIUsageEventData
 
@@ -130,10 +130,9 @@ async def finalize_suspended_run(
     )
     await emit_approval_required_events(event_sink, deferred_tool_requests)
     await event_sink.emit(
-        EVENT_RUN_STATUS,
-        {"status": RUN_STATUS_AWAITING_APPROVAL},
+        RunStatusEvent(status=RUN_STATUS_AWAITING_APPROVAL),
     )
-    await event_sink.emit(EVENT_DONE, {"status": RUN_STATUS_AWAITING_APPROVAL})
+    await event_sink.emit(DoneEvent(status=RUN_STATUS_AWAITING_APPROVAL))
     return ExecuteRunResult(
         run=suspended_run,
         output=deferred_tool_requests,
@@ -177,19 +176,18 @@ async def finalize_successful_run(
         usage_event=usage_event,
     )
     if final_run.status == RUN_STATUS_COMPLETED:
-        await event_sink.emit(EVENT_RUN_STATUS, {"status": RUN_STATUS_COMPLETED})
-        await event_sink.emit(EVENT_DONE, {"status": RUN_STATUS_COMPLETED})
+        await event_sink.emit(RunStatusEvent(status=RUN_STATUS_COMPLETED))
+        await event_sink.emit(DoneEvent(status=RUN_STATUS_COMPLETED))
     else:
-        await event_sink.emit(EVENT_RUN_STATUS, {"status": final_run.status})
+        await event_sink.emit(RunStatusEvent(status=final_run.status))
         if final_run.status == RUN_STATUS_FAILED:
             await event_sink.emit(
-                EVENT_ERROR,
-                {
-                    "code": final_run.error_code or RUN_STATUS_FAILED,
-                    "message": final_run.error_message or "Agent run failed",
-                },
+                ErrorEvent(
+                    code=final_run.error_code or RUN_STATUS_FAILED,
+                    message=final_run.error_message or "Agent run failed",
+                ),
             )
-        await event_sink.emit(EVENT_DONE, {"status": final_run.status})
+        await event_sink.emit(DoneEvent(status=final_run.status))
 
     return ExecuteRunResult(
         run=final_run,
@@ -230,24 +228,16 @@ async def emit_failure_events(
         )
         if failed_run is not None:
             terminal_status = failed_run.status
-            await event_sink.emit(EVENT_RUN_STATUS, {"status": failed_run.status})
+            await event_sink.emit(RunStatusEvent(status=failed_run.status))
             if failed_run.status == RUN_STATUS_FAILED:
                 await event_sink.emit(
-                    EVENT_ERROR,
-                    {
-                        "code": public_error.code,
-                        "message": public_error.message,
-                    },
+                    ErrorEvent(code=public_error.code, message=public_error.message),
                 )
     else:
         await event_sink.emit(
-            EVENT_ERROR,
-            {
-                "code": public_error.code,
-                "message": public_error.message,
-            },
+            ErrorEvent(code=public_error.code, message=public_error.message),
         )
-    await event_sink.emit(EVENT_DONE, {"status": terminal_status})
+    await event_sink.emit(DoneEvent(status=terminal_status))
 
 
 async def finalize_cancelled_run(
@@ -275,5 +265,5 @@ async def finalize_cancelled_run(
             status = str(cancelled_run.status)
 
     with suppress(BaseException):
-        await event_sink.emit(EVENT_RUN_STATUS, {"status": status})
-        await event_sink.emit(EVENT_DONE, {"status": status})
+        await event_sink.emit(RunStatusEvent(status=status))
+        await event_sink.emit(DoneEvent(status=status))

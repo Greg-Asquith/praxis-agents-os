@@ -4,8 +4,7 @@
 
 import asyncio
 import logging
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Sequence
 from uuid import UUID
 
 from fastapi import Request
@@ -24,13 +23,16 @@ from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
 from services.agents.runtime import streaming as runtime_streaming
 from services.agents.runtime.events import (
-    EVENT_CONVERSATION_CREATED,
-    EVENT_RUN_STATUS,
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
 from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
 from services.agents.runtime.sinks import StreamSink
+from services.agents.runtime.stream_protocol import (
+    ConversationCreatedEvent,
+    RunStatusEvent,
+    StreamEventPayload,
+)
 from services.agents.runtime.worker import run_turn_worker
 from services.conversations.naming import (
     ConversationTitle,
@@ -131,17 +133,16 @@ async def create_conversation_stream(
 
     sink = StreamSink(run_id=run.id, conversation_id=conversation.id)
     await sink.emit(
-        EVENT_CONVERSATION_CREATED,
-        {
-            "conversation": ConversationRead.from_projection(
+        ConversationCreatedEvent(
+            conversation=ConversationRead.from_projection(
                 conversation,
                 agent_name=agent.name,
                 active_run_id=run.id,
                 active_run_status=run.status,
-            ).model_dump(mode="json", by_alias=True)
-        },
+            )
+        ),
     )
-    await sink.emit(EVENT_RUN_STATUS, {"status": run.status})
+    await sink.emit(RunStatusEvent(status=run.status))
     run_task_registry.spawn(
         run.id,
         _run_initial_conversation_worker(
@@ -273,8 +274,11 @@ class _CloseAfterTitleTaskSink:
         self._wait_timeout_seconds = wait_timeout_seconds
         self._waited = False
 
-    async def emit(self, event: str, payload: Mapping[str, Any] | None = None) -> None:
-        await self._delegate.emit(event, payload)
+    async def emit(
+        self,
+        payload: StreamEventPayload,
+    ) -> None:
+        await self._delegate.emit(payload)
 
     async def close(self) -> None:
         await self._wait_for_pending_task()

@@ -139,7 +139,11 @@ follows:
   model continuation. `RunTaskRegistry` bounds admitted turns per API
   process and emits a transient `queued` stream status while a turn waits;
   this value is not a persisted run lifecycle status. Stream sinks use a
-  bounded queue and detach slow consumers when that queue fills.
+  bounded queue and detach slow consumers when that queue fills. Define stream
+  event names and payloads in `runtime/stream_protocol.py`, construct those
+  models at production emit sites, and run `make stream-protocol-export` after
+  any contract change. `make stream-protocol-check` verifies the checked-in
+  web test contract without writing files.
 - Process startup composes built-in job handlers, internal entity resolvers,
   core runtime tools, and enabled integration providers through the idempotent
   `services/runtime_catalogs/assemble_runtime_catalogs.py` operation. Registry

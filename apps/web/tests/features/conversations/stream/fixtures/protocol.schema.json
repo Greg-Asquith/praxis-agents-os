@@ -1,0 +1,1069 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "enums": {
+    "agent_run_statuses": [
+      "pending",
+      "running",
+      "awaiting_approval",
+      "completed",
+      "failed",
+      "cancelled"
+    ],
+    "conversation_sources": [
+      "direct",
+      "scheduled",
+      "delegated",
+      "event"
+    ],
+    "message_channels": [
+      "text",
+      "thinking"
+    ],
+    "stream_run_statuses": [
+      "pending",
+      "running",
+      "awaiting_approval",
+      "completed",
+      "failed",
+      "cancelled",
+      "queued"
+    ],
+    "workflow_states": [
+      "started",
+      "completed",
+      "failed"
+    ]
+  },
+  "event_names": [
+    "conversation.created",
+    "conversation.updated",
+    "run.status",
+    "message.start",
+    "message.delta",
+    "message.end",
+    "tool.call",
+    "tool.result",
+    "tool.approval_required",
+    "workflow.state",
+    "error",
+    "done"
+  ],
+  "events": {
+    "conversation.created": {
+      "$defs": {
+        "ConversationRead": {
+          "properties": {
+            "active_agent_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Active Agent Id"
+            },
+            "active_run_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Run Id"
+            },
+            "active_run_status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Run Status"
+            },
+            "agent_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Name"
+            },
+            "agent_slug": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Slug"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "created_by": {
+              "format": "uuid",
+              "title": "Created By",
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Description"
+            },
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "last_message_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last Message At"
+            },
+            "metadata": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata"
+            },
+            "needs_approval": {
+              "default": false,
+              "title": "Needs Approval",
+              "type": "boolean"
+            },
+            "source": {
+              "$ref": "#/$defs/ConversationSource"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Title"
+            },
+            "unread": {
+              "title": "Unread",
+              "type": "boolean"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            },
+            "user_id": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            },
+            "workspace_id": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "user_id",
+            "workspace_id",
+            "created_by",
+            "title",
+            "description",
+            "status",
+            "metadata",
+            "unread",
+            "source",
+            "last_message_at",
+            "active_agent_id",
+            "agent_slug",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "ConversationRead",
+          "type": "object"
+        },
+        "ConversationSource": {
+          "enum": [
+            "direct",
+            "scheduled",
+            "delegated",
+            "event"
+          ],
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/ConversationRead"
+        },
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "conversation"
+      ],
+      "title": "ConversationCreatedEvent",
+      "type": "object"
+    },
+    "conversation.updated": {
+      "$defs": {
+        "ConversationRead": {
+          "properties": {
+            "active_agent_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Active Agent Id"
+            },
+            "active_run_id": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Run Id"
+            },
+            "active_run_status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Run Status"
+            },
+            "agent_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Agent Name"
+            },
+            "agent_slug": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Slug"
+            },
+            "created_at": {
+              "format": "date-time",
+              "title": "Created At",
+              "type": "string"
+            },
+            "created_by": {
+              "format": "uuid",
+              "title": "Created By",
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Description"
+            },
+            "id": {
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            },
+            "last_message_at": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last Message At"
+            },
+            "metadata": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metadata"
+            },
+            "needs_approval": {
+              "default": false,
+              "title": "Needs Approval",
+              "type": "boolean"
+            },
+            "source": {
+              "$ref": "#/$defs/ConversationSource"
+            },
+            "status": {
+              "title": "Status",
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Title"
+            },
+            "unread": {
+              "title": "Unread",
+              "type": "boolean"
+            },
+            "updated_at": {
+              "format": "date-time",
+              "title": "Updated At",
+              "type": "string"
+            },
+            "user_id": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            },
+            "workspace_id": {
+              "format": "uuid",
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "user_id",
+            "workspace_id",
+            "created_by",
+            "title",
+            "description",
+            "status",
+            "metadata",
+            "unread",
+            "source",
+            "last_message_at",
+            "active_agent_id",
+            "agent_slug",
+            "created_at",
+            "updated_at"
+          ],
+          "title": "ConversationRead",
+          "type": "object"
+        },
+        "ConversationSource": {
+          "enum": [
+            "direct",
+            "scheduled",
+            "delegated",
+            "event"
+          ],
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/ConversationRead"
+        },
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "conversation"
+      ],
+      "title": "ConversationUpdatedEvent",
+      "type": "object"
+    },
+    "done": {
+      "$defs": {
+        "RunStatus": {
+          "enum": [
+            "pending",
+            "running",
+            "awaiting_approval",
+            "completed",
+            "failed",
+            "cancelled"
+          ],
+          "title": "RunStatus",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "status"
+      ],
+      "title": "DoneEvent",
+      "type": "object"
+    },
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "code",
+        "message"
+      ],
+      "title": "ErrorEvent",
+      "type": "object"
+    },
+    "message.delta": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message_id": {
+          "minLength": 1,
+          "title": "Message Id",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "message_id",
+        "text"
+      ],
+      "title": "MessageDeltaEvent",
+      "type": "object"
+    },
+    "message.end": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message_id": {
+          "minLength": 1,
+          "title": "Message Id",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "message_id"
+      ],
+      "title": "MessageEndEvent",
+      "type": "object"
+    },
+    "message.start": {
+      "$defs": {
+        "MessageChannel": {
+          "enum": [
+            "text",
+            "thinking"
+          ],
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "$ref": "#/$defs/MessageChannel"
+        },
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "message_id": {
+          "minLength": 1,
+          "title": "Message Id",
+          "type": "string"
+        },
+        "role": {
+          "const": "assistant",
+          "title": "Role",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "message_id",
+        "role",
+        "channel"
+      ],
+      "title": "MessageStartEvent",
+      "type": "object"
+    },
+    "run.status": {
+      "$defs": {
+        "RunStatus": {
+          "enum": [
+            "pending",
+            "running",
+            "awaiting_approval",
+            "completed",
+            "failed",
+            "cancelled"
+          ],
+          "title": "RunStatus",
+          "type": "string"
+        },
+        "StreamRunStatus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunStatus"
+            },
+            {
+              "const": "queued",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/StreamRunStatus"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "status"
+      ],
+      "title": "RunStatusEvent",
+      "type": "object"
+    },
+    "tool.approval_required": {
+      "$defs": {
+        "PendingDelegatedApprovalRead": {
+          "properties": {
+            "child_agent_id": {
+              "format": "uuid",
+              "title": "Child Agent Id",
+              "type": "string"
+            },
+            "child_agent_name": {
+              "title": "Child Agent Name",
+              "type": "string"
+            },
+            "child_conversation_id": {
+              "format": "uuid",
+              "title": "Child Conversation Id",
+              "type": "string"
+            },
+            "child_run_id": {
+              "format": "uuid",
+              "title": "Child Run Id",
+              "type": "string"
+            },
+            "parent_tool_call_id": {
+              "title": "Parent Tool Call Id",
+              "type": "string"
+            },
+            "pending_approval_count": {
+              "minimum": 0,
+              "title": "Pending Approval Count",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "parent_tool_call_id",
+            "child_agent_id",
+            "child_agent_name",
+            "child_conversation_id",
+            "child_run_id",
+            "pending_approval_count"
+          ],
+          "title": "PendingDelegatedApprovalRead",
+          "type": "object"
+        },
+        "TaintSource": {
+          "additionalProperties": false,
+          "properties": {
+            "source_kind": {
+              "minLength": 1,
+              "title": "Source Kind",
+              "type": "string"
+            },
+            "source_ref": {
+              "minLength": 1,
+              "title": "Source Ref",
+              "type": "string"
+            }
+          },
+          "required": [
+            "source_kind",
+            "source_ref"
+          ],
+          "title": "TaintSource",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "title": "Args"
+        },
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "delegation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PendingDelegatedApprovalRead"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "derived_from_untrusted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derived From Untrusted"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "parent_tool_call_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Tool Call Id"
+        },
+        "replay_args": {
+          "default": null,
+          "title": "Replay Args"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "taint_sources": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TaintSource"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Taint Sources"
+        },
+        "tool_call_id": {
+          "minLength": 1,
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "tool_call_id",
+        "name",
+        "args"
+      ],
+      "title": "ToolApprovalRequiredEvent",
+      "type": "object"
+    },
+    "tool.call": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "title": "Args"
+        },
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "parent_tool_call_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Tool Call Id"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tool_call_id": {
+          "minLength": 1,
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "tool_call_id",
+        "name",
+        "args"
+      ],
+      "title": "ToolCallEvent",
+      "type": "object"
+    },
+    "tool.result": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "parent_tool_call_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Tool Call Id"
+        },
+        "result": {
+          "title": "Result"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "tool_call_id": {
+          "minLength": 1,
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "tool_call_id",
+        "name",
+        "result"
+      ],
+      "title": "ToolResultEvent",
+      "type": "object"
+    },
+    "workflow.state": {
+      "$defs": {
+        "WorkflowState": {
+          "enum": [
+            "started",
+            "completed",
+            "failed"
+          ],
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "error_excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Excerpt"
+        },
+        "output_excerpt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Excerpt"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/WorkflowState"
+        },
+        "tool_call_id": {
+          "minLength": 1,
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "tool_call_id",
+        "state"
+      ],
+      "title": "WorkflowStateEvent",
+      "type": "object"
+    }
+  },
+  "header": "X-Praxis-Stream-Version",
+  "title": "Praxis agent stream protocol",
+  "version": "1"
+}

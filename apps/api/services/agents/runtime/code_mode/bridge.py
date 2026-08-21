@@ -64,7 +64,11 @@ from services.agents.runtime.dispatch import (
     digest_args,
     record_invocation,
 )
-from services.agents.runtime.events import EVENT_TOOL_CALL, EVENT_TOOL_RESULT, EVENT_WORKFLOW_STATE
+from services.agents.runtime.stream_protocol import (
+    ToolCallEvent,
+    ToolResultEvent,
+    WorkflowStateEvent,
+)
 from services.agents.runtime.tools.contract import TOOL_EFFECT_WRITE
 from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
@@ -289,13 +293,12 @@ class CodeModeBridge:
             }
             self._trace.append(trace_entry)
             await self._ctx.deps.sink.emit(
-                EVENT_TOOL_CALL,
-                {
-                    "tool_call_id": call.tool_call_id,
-                    "parent_tool_call_id": self._outer_tool_call_id,
-                    "name": tool_name,
-                    "args": normalized_args,
-                },
+                ToolCallEvent(
+                    tool_call_id=call.tool_call_id,
+                    parent_tool_call_id=self._outer_tool_call_id,
+                    name=tool_name,
+                    args=normalized_args,
+                ),
             )
             definition = resolve_runtime_tool_definition(
                 tool_name,
@@ -390,13 +393,12 @@ class CodeModeBridge:
             trace_entry["presentation_result"] = presentation_result
             self._record_effect(call=call, args_sha256=args_sha256)
             await self._ctx.deps.sink.emit(
-                EVENT_TOOL_RESULT,
-                {
-                    "tool_call_id": call.tool_call_id,
-                    "parent_tool_call_id": self._outer_tool_call_id,
-                    "name": tool_name,
-                    "result": presentation_result,
-                },
+                ToolResultEvent(
+                    tool_call_id=call.tool_call_id,
+                    parent_tool_call_id=self._outer_tool_call_id,
+                    name=tool_name,
+                    result=presentation_result,
+                ),
             )
             return normalized_result
 
@@ -491,13 +493,12 @@ class CodeModeBridge:
         )
         self._record_effect(call=call, args_sha256=args_sha256)
         await self._ctx.deps.sink.emit(
-            EVENT_TOOL_RESULT,
-            {
-                "tool_call_id": call.tool_call_id,
-                "parent_tool_call_id": self._outer_tool_call_id,
-                "name": tool_name,
-                "result": presentation,
-            },
+            ToolResultEvent(
+                tool_call_id=call.tool_call_id,
+                parent_tool_call_id=self._outer_tool_call_id,
+                name=tool_name,
+                result=presentation,
+            ),
         )
         return {"return_value": normalized}
 
@@ -592,13 +593,12 @@ class CodeModeBridge:
         trace_entry["status"] = status
         trace_entry["excerpt"] = excerpt
         await self._ctx.deps.sink.emit(
-            EVENT_TOOL_RESULT,
-            {
-                "tool_call_id": trace_entry["tool_call_id"],
-                "parent_tool_call_id": self._outer_tool_call_id,
-                "name": trace_entry["tool_name"],
-                "result": {"status": status, "error": excerpt},
-            },
+            ToolResultEvent(
+                tool_call_id=trace_entry["tool_call_id"],
+                parent_tool_call_id=self._outer_tool_call_id,
+                name=trace_entry["tool_name"],
+                result={"status": status, "error": excerpt},
+            ),
         )
 
 
@@ -682,8 +682,7 @@ async def execute_code_mode_workflow(
     )
     resolved_executor = executor or await get_code_mode_executor()
     await ctx.deps.sink.emit(
-        EVENT_WORKFLOW_STATE,
-        {"tool_call_id": outer_tool_call_id, "state": "started"},
+        WorkflowStateEvent(tool_call_id=outer_tool_call_id, state="started"),
     )
     try:
         started = monotonic()
@@ -818,21 +817,19 @@ async def execute_code_mode_workflow(
         raise
     except Exception as exc:
         await ctx.deps.sink.emit(
-            EVENT_WORKFLOW_STATE,
-            {
-                "tool_call_id": outer_tool_call_id,
-                "state": "failed",
-                "error_excerpt": _bounded_excerpt(str(exc)),
-            },
+            WorkflowStateEvent(
+                tool_call_id=outer_tool_call_id,
+                state="failed",
+                error_excerpt=_bounded_excerpt(str(exc)),
+            ),
         )
         raise
     await ctx.deps.sink.emit(
-        EVENT_WORKFLOW_STATE,
-        {
-            "tool_call_id": outer_tool_call_id,
-            "state": "completed",
+        WorkflowStateEvent(
+            tool_call_id=outer_tool_call_id,
+            state="completed",
             **({"output_excerpt": _bounded_excerpt(execution.output)} if execution.output else {}),
-        },
+        ),
     )
     return result
 

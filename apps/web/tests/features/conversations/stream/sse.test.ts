@@ -175,7 +175,7 @@ describe("parseSseStream", () => {
   it("parses multiple events from one chunk", async () => {
     await expect(
       collectEvents([
-        'event: message.start\ndata: {"run_id":"run-1","conversation_id":"conversation-1","seq":3,"message_id":"message-1","role":"assistant"}\n\n' +
+        'event: message.start\ndata: {"run_id":"run-1","conversation_id":"conversation-1","seq":3,"message_id":"message-1","role":"assistant","channel":"text"}\n\n' +
           'event: message.end\ndata: {"run_id":"run-1","conversation_id":"conversation-1","seq":4,"message_id":"message-1"}\n\n',
       ])
     ).resolves.toEqual([
@@ -187,6 +187,7 @@ describe("parseSseStream", () => {
           seq: 3,
           message_id: "message-1",
           role: "assistant",
+          channel: "text",
         },
       },
       {
@@ -285,8 +286,6 @@ describe("parseSseStream", () => {
 
   it("accepts omitted and null optional fields", async () => {
     const events = [
-      ["message.start", { ...envelope, message_id: "message-1", role: "assistant" }],
-      ["tool.result", { ...envelope, tool_call_id: "tool-1", result: null }],
       ["workflow.state", { ...envelope, tool_call_id: "workflow-1", state: "started" }],
       [
         "tool.approval_required",
@@ -333,11 +332,15 @@ describe("parseSseStream", () => {
       "data.conversation.needs_approval",
     ],
     ["run.status", { ...envelope, status: "surprising" }, "data.status"],
-    ["message.start", { ...envelope, message_id: "message-1", role: "user" }, "data.role"],
+    [
+      "message.start",
+      { ...envelope, message_id: "message-1", role: "user", channel: "text" },
+      "data.role",
+    ],
     ["message.delta", { ...envelope, message_id: "message-1", text: 42 }, "data.text"],
     ["message.end", { ...envelope, message_id: null }, "data.message_id"],
     ["tool.call", { ...envelope, tool_call_id: "tool-1", name: "search" }, "data.args"],
-    ["tool.result", { ...envelope, tool_call_id: "tool-1" }, "data.result"],
+    ["tool.result", { ...envelope, tool_call_id: "tool-1", name: "search" }, "data.result"],
     ["workflow.state", { ...envelope, tool_call_id: "workflow-1" }, "data.state"],
     [
       "tool.approval_required",

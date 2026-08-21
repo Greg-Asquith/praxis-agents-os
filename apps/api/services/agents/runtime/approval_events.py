@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_core import to_jsonable_python
 
+from services.agent_runs.schemas import PendingDelegatedApprovalRead
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY,
     DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
@@ -29,15 +30,17 @@ from services.agents.delegation_approval import (
 )
 from services.agents.runtime.code_mode.approval import code_mode_nested_call
 from services.agents.runtime.events import (
-    EVENT_TOOL_APPROVAL_REQUIRED,
-    EVENT_TOOL_CALL,
-    EVENT_TOOL_RESULT,
     public_function_tool_result,
 )
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.staged_tool_content import (
     tool_args_for_display,
     tool_replay_args_for_editing,
+)
+from services.agents.runtime.stream_protocol import (
+    ToolApprovalRequiredEvent,
+    ToolCallEvent,
+    ToolResultEvent,
 )
 
 
@@ -67,11 +70,10 @@ async def emit_live_deferred_tool_event(
     if isinstance(event, FunctionToolCallEvent):
         part = event.part
         await sink.emit(
-            EVENT_TOOL_CALL,
-            {
-                "tool_call_id": part.tool_call_id,
-                "name": part.tool_name,
-                "args": to_jsonable_python(
+            ToolCallEvent(
+                tool_call_id=part.tool_call_id,
+                name=part.tool_name,
+                args=to_jsonable_python(
                     tool_args_for_display(
                         tool_name=part.tool_name,
                         args=_effective_tool_args(
@@ -81,18 +83,17 @@ async def emit_live_deferred_tool_event(
                         ),
                     )
                 ),
-            },
+            ),
         )
         return None
 
     part = event.part
     await sink.emit(
-        EVENT_TOOL_RESULT,
-        {
-            "tool_call_id": part.tool_call_id,
-            "name": getattr(part, "tool_name", None),
-            "result": public_function_tool_result(part),
-        },
+        ToolResultEvent(
+            tool_call_id=part.tool_call_id,
+            name=getattr(part, "tool_name", None),
+            result=public_function_tool_result(part),
+        ),
     )
     return part.tool_call_id
 
@@ -110,7 +111,7 @@ async def emit_approval_required_events(
         )
         if delegated_approvals is not None:
             for delegated_approval in delegated_approvals:
-                await sink.emit(EVENT_TOOL_APPROVAL_REQUIRED, delegated_approval)
+                await sink.emit(delegated_approval)
             continue
 
         nested_call = code_mode_nested_call(metadata)
@@ -120,12 +121,11 @@ async def emit_approval_required_events(
                 args=nested_call.args,
             )
             await sink.emit(
-                EVENT_TOOL_APPROVAL_REQUIRED,
-                {
-                    "tool_call_id": nested_call.tool_call_id,
-                    "parent_tool_call_id": approval.tool_call_id,
-                    "name": nested_call.tool_name,
-                    "args": to_jsonable_python(
+                ToolApprovalRequiredEvent(
+                    tool_call_id=nested_call.tool_call_id,
+                    parent_tool_call_id=approval.tool_call_id,
+                    name=nested_call.tool_name,
+                    args=to_jsonable_python(
                         tool_args_for_display(
                             tool_name=nested_call.tool_name,
                             args=nested_call.args,
@@ -146,7 +146,7 @@ async def emit_approval_required_events(
                         and metadata.get("derived_from_untrusted") is True
                         else {}
                     ),
-                },
+                ),
             )
             continue
 
@@ -155,11 +155,10 @@ async def emit_approval_required_events(
             args=approval.args,
         )
         await sink.emit(
-            EVENT_TOOL_APPROVAL_REQUIRED,
-            {
-                "tool_call_id": approval.tool_call_id,
-                "name": approval.tool_name,
-                "args": to_jsonable_python(
+            ToolApprovalRequiredEvent(
+                tool_call_id=approval.tool_call_id,
+                name=approval.tool_name,
+                args=to_jsonable_python(
                     tool_args_for_display(
                         tool_name=approval.tool_name,
                         args=approval.args,
@@ -171,7 +170,7 @@ async def emit_approval_required_events(
                     if replay_args is not None
                     else {}
                 ),
-            },
+            ),
         )
 
 
@@ -179,7 +178,7 @@ def _delegated_pending_approvals(
     metadata: dict[str, Any] | None,
     *,
     parent_tool_call_id: str,
-) -> list[dict[str, Any]] | None:
+) -> list[ToolApprovalRequiredEvent] | None:
     if not isinstance(metadata, dict):
         return None
     if metadata.get(DELEGATED_APPROVAL_KIND_KEY) != DELEGATED_APPROVAL_KIND:
@@ -193,7 +192,7 @@ def _delegated_pending_approvals(
         parent_tool_call_id=parent_tool_call_id,
         pending_approval_count=len(pending_approvals),
     )
-    approvals: list[dict[str, Any]] = []
+    approvals: list[ToolApprovalRequiredEvent] = []
     for pending_approval in pending_approvals:
         if not isinstance(pending_approval, dict):
             return None
@@ -203,10 +202,10 @@ def _delegated_pending_approvals(
             return None
         replay_args = pending_approval.get("replay_args")
         approvals.append(
-            {
-                "tool_call_id": tool_call_id,
-                "name": name,
-                "args": tool_args_for_display(
+            ToolApprovalRequiredEvent(
+                tool_call_id=tool_call_id,
+                name=name,
+                args=tool_args_for_display(
                     tool_name=name,
                     args=pending_approval.get("args"),
                     metadata=(
@@ -216,8 +215,8 @@ def _delegated_pending_approvals(
                     ),
                 ),
                 **({"replay_args": replay_args} if replay_args is not None else {}),
-                "delegation": delegation,
-            }
+                delegation=delegation,
+            )
         )
     return approvals
 
@@ -227,7 +226,7 @@ def _delegated_approval_projection(
     *,
     parent_tool_call_id: str,
     pending_approval_count: int,
-) -> dict[str, Any] | None:
+) -> PendingDelegatedApprovalRead | None:
     child_agent_id = metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY)
     child_agent_name = metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)
     child_conversation_id = metadata.get(DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY)
@@ -240,14 +239,14 @@ def _delegated_approval_projection(
     ):
         return None
 
-    return {
-        "parent_tool_call_id": parent_tool_call_id,
-        "child_agent_id": child_agent_id,
-        "child_agent_name": child_agent_name,
-        "child_conversation_id": child_conversation_id,
-        "child_run_id": child_run_id,
-        "pending_approval_count": pending_approval_count,
-    }
+    return PendingDelegatedApprovalRead(
+        parent_tool_call_id=parent_tool_call_id,
+        child_agent_id=child_agent_id,
+        child_agent_name=child_agent_name,
+        child_conversation_id=child_conversation_id,
+        child_run_id=child_run_id,
+        pending_approval_count=pending_approval_count,
+    )
 
 
 async def emit_deferred_tool_resume_events(
@@ -274,11 +273,10 @@ async def emit_deferred_tool_resume_events(
             call = tool_calls.get(tool_call_id)
             if call is not None:
                 await sink.emit(
-                    EVENT_TOOL_CALL,
-                    {
-                        "tool_call_id": tool_call_id,
-                        "name": call.tool_name,
-                        "args": to_jsonable_python(
+                    ToolCallEvent(
+                        tool_call_id=tool_call_id,
+                        name=call.tool_name,
+                        args=to_jsonable_python(
                             tool_args_for_display(
                                 tool_name=call.tool_name,
                                 args=_effective_tool_args(
@@ -288,15 +286,14 @@ async def emit_deferred_tool_resume_events(
                                 ),
                             )
                         ),
-                    },
+                    ),
                 )
             await sink.emit(
-                EVENT_TOOL_RESULT,
-                {
-                    "tool_call_id": tool_call_id,
-                    "name": getattr(part, "tool_name", None),
-                    "result": to_jsonable_python(getattr(part, "content", None)),
-                },
+                ToolResultEvent(
+                    tool_call_id=tool_call_id,
+                    name=getattr(part, "tool_name", None),
+                    result=to_jsonable_python(getattr(part, "content", None)),
+                ),
             )
 
 

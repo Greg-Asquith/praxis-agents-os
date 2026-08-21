@@ -7,8 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from services.agents.runtime.events import EVENT_DONE
 from services.agents.runtime.sinks import StreamSink
+from services.agents.runtime.stream_protocol import DoneEvent
 from services.conversations.create_conversation_stream import _CloseAfterTitleTaskSink
 
 pytestmark = pytest.mark.asyncio
@@ -29,7 +29,7 @@ async def test_title_task_sink_forwards_done_before_waiting_to_close() -> None:
     )
 
     await asyncio.wait_for(
-        title_update_sink.emit(EVENT_DONE, {"status": "completed"}),
+        title_update_sink.emit(DoneEvent(status="completed")),
         timeout=1,
     )
 

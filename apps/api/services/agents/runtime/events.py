@@ -3,7 +3,7 @@
 """Runtime event names and Pydantic AI event translation."""
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
@@ -24,24 +24,36 @@ from pydantic_ai.messages import (
 from pydantic_core import to_jsonable_python
 
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.stream_protocol import (
+    STREAM_PROTOCOL_VERSION as STREAM_PROTOCOL_VERSION,
+    STREAM_VERSION_HEADER as STREAM_VERSION_HEADER,
+    ConversationCreatedEvent,
+    ConversationUpdatedEvent,
+    DoneEvent,
+    ErrorEvent,
+    MessageChannel,
+    MessageDeltaEvent,
+    MessageEndEvent,
+    MessageStartEvent,
+    RunStatusEvent,
+    ToolApprovalRequiredEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+    WorkflowStateEvent,
+)
 
-type MessageChannel = Literal["text", "thinking"]
-
-EVENT_RUN_STATUS = "run.status"
-EVENT_MESSAGE_START = "message.start"
-EVENT_MESSAGE_DELTA = "message.delta"
-EVENT_MESSAGE_END = "message.end"
-EVENT_TOOL_CALL = "tool.call"
-EVENT_TOOL_RESULT = "tool.result"
-EVENT_TOOL_APPROVAL_REQUIRED = "tool.approval_required"
-EVENT_WORKFLOW_STATE = "workflow.state"
-EVENT_CONVERSATION_CREATED = "conversation.created"
-EVENT_CONVERSATION_UPDATED = "conversation.updated"
-EVENT_ERROR = "error"
-EVENT_DONE = "done"
-
-STREAM_PROTOCOL_VERSION = "1"
-STREAM_VERSION_HEADER = "X-Praxis-Stream-Version"
+EVENT_RUN_STATUS = RunStatusEvent.event_name
+EVENT_MESSAGE_START = MessageStartEvent.event_name
+EVENT_MESSAGE_DELTA = MessageDeltaEvent.event_name
+EVENT_MESSAGE_END = MessageEndEvent.event_name
+EVENT_TOOL_CALL = ToolCallEvent.event_name
+EVENT_TOOL_RESULT = ToolResultEvent.event_name
+EVENT_TOOL_APPROVAL_REQUIRED = ToolApprovalRequiredEvent.event_name
+EVENT_WORKFLOW_STATE = WorkflowStateEvent.event_name
+EVENT_CONVERSATION_CREATED = ConversationCreatedEvent.event_name
+EVENT_CONVERSATION_UPDATED = ConversationUpdatedEvent.event_name
+EVENT_ERROR = ErrorEvent.event_name
+EVENT_DONE = DoneEvent.event_name
 
 
 @dataclass
@@ -83,52 +95,47 @@ async def emit_agent_stream_event(
         channel: MessageChannel = "thinking" if isinstance(event.part, ThinkingPart) else "text"
         message_id = state.start_message(event.index, run_id, channel)
         await sink.emit(
-            EVENT_MESSAGE_START,
-            {"message_id": message_id, "role": "assistant", "channel": channel},
+            MessageStartEvent(message_id=message_id, role="assistant", channel=channel),
         )
         if event.part.content:
             await sink.emit(
-                EVENT_MESSAGE_DELTA,
-                {"message_id": message_id, "text": event.part.content},
+                MessageDeltaEvent(message_id=message_id, text=event.part.content),
             )
         return
 
     if isinstance(event, PartStartEvent) and isinstance(event.part, NativeToolCallPart):
         part = event.part
         await sink.emit(
-            EVENT_TOOL_CALL,
-            {
-                "tool_call_id": part.tool_call_id,
-                "name": part.tool_name,
-                "args": to_jsonable_python(part.args),
-            },
+            ToolCallEvent(
+                tool_call_id=part.tool_call_id,
+                name=part.tool_name,
+                args=to_jsonable_python(part.args),
+            ),
         )
         return
 
     if isinstance(event, PartStartEvent) and isinstance(event.part, ToolCallPart):
         part = event.part
         await sink.emit(
-            EVENT_TOOL_CALL,
-            {
-                "tool_call_id": part.tool_call_id,
-                "name": part.tool_name,
+            ToolCallEvent(
+                tool_call_id=part.tool_call_id,
+                name=part.tool_name,
                 # Function-tool arguments may be very large and are incomplete at
                 # part start. Emit the identity now so clients can show progress;
                 # FunctionToolCallEvent replaces this with validated arguments.
-                "args": None,
-            },
+                args=None,
+            ),
         )
         return
 
     if isinstance(event, PartStartEvent) and isinstance(event.part, NativeToolReturnPart):
         part = event.part
         await sink.emit(
-            EVENT_TOOL_RESULT,
-            {
-                "tool_call_id": part.tool_call_id,
-                "name": part.tool_name,
-                "result": to_jsonable_python(part.content),
-            },
+            ToolResultEvent(
+                tool_call_id=part.tool_call_id,
+                name=part.tool_name,
+                result=to_jsonable_python(part.content),
+            ),
         )
         return
 
@@ -139,38 +146,35 @@ async def emit_agent_stream_event(
         message_id = state.active_message(event.index)
         if message_id is not None and text_delta:
             await sink.emit(
-                EVENT_MESSAGE_DELTA,
-                {"message_id": message_id, "text": text_delta},
+                MessageDeltaEvent(message_id=message_id, text=text_delta),
             )
         return
 
     if isinstance(event, PartEndEvent):
         message_id = state.end_message(event.index)
         if message_id is not None:
-            await sink.emit(EVENT_MESSAGE_END, {"message_id": message_id})
+            await sink.emit(MessageEndEvent(message_id=message_id))
         return
 
     if isinstance(event, FunctionToolCallEvent):
         part = event.part
         await sink.emit(
-            EVENT_TOOL_CALL,
-            {
-                "tool_call_id": part.tool_call_id,
-                "name": part.tool_name,
-                "args": to_jsonable_python(part.args),
-            },
+            ToolCallEvent(
+                tool_call_id=part.tool_call_id,
+                name=part.tool_name,
+                args=to_jsonable_python(part.args),
+            ),
         )
         return
 
     if isinstance(event, FunctionToolResultEvent):
         part = event.part
         await sink.emit(
-            EVENT_TOOL_RESULT,
-            {
-                "tool_call_id": part.tool_call_id,
-                "name": part.tool_name,
-                "result": public_function_tool_result(part),
-            },
+            ToolResultEvent(
+                tool_call_id=part.tool_call_id,
+                name=part.tool_name,
+                result=public_function_tool_result(part),
+            ),
         )
 
 

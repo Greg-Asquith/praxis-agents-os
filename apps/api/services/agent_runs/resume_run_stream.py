@@ -30,12 +30,12 @@ from services.agents.runtime.approval_state import (
     load_suspended_run_state,
 )
 from services.agents.runtime.events import (
-    EVENT_RUN_STATUS,
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
 from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
 from services.agents.runtime.sinks import StreamSink
+from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.audit_events.utils import request_audit_context
 
 
@@ -100,7 +100,7 @@ async def resume_agent_run_stream(
     await db.commit()
 
     sink = StreamSink(run_id=run.id, conversation_id=run.conversation_id)
-    await sink.emit(EVENT_RUN_STATUS, {"status": run.status})
+    await sink.emit(RunStatusEvent(status=run.status))
     from services.agents.runtime.worker import run_resume_worker
 
     run_task_registry.spawn(

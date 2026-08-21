@@ -10,9 +10,9 @@ import pytest
 
 from core.settings import settings
 from services.agents.runtime import heartbeat as heartbeat_module, run_manager as run_manager_module
-from services.agents.runtime.events import EVENT_DONE, EVENT_RUN_STATUS
 from services.agents.runtime.run_manager import QueuedRunLease, RunTaskRegistry
 from services.agents.runtime.sinks import CollectingSink, StreamSink
+from services.agents.runtime.stream_protocol import DoneEvent, RunStatusEvent
 from services.conversations.create_turn_stream import SSE_KEEPALIVE_FRAME, _drain_sse_sink
 
 pytestmark = pytest.mark.asyncio
@@ -197,7 +197,7 @@ async def test_run_task_registry_bounds_forty_turns_below_ten_connection_slots()
 
 async def test_stream_drain_detaches_sink_when_consumer_closes() -> None:
     sink = StreamSink(run_id=uuid4(), conversation_id=uuid4())
-    await sink.emit(EVENT_RUN_STATUS, {"status": "pending"})
+    await sink.emit(RunStatusEvent(status="pending"))
 
     stream = _drain_sse_sink(sink)
     frame = await anext(stream)
@@ -206,15 +206,15 @@ async def test_stream_drain_detaches_sink_when_consumer_closes() -> None:
     assert "event: run.status" in frame
     assert sink.detached
 
-    await sink.emit(EVENT_DONE, {"status": "completed"})
+    await sink.emit(DoneEvent(status="completed"))
     await sink.close()
 
 
 async def test_stream_sink_detaches_when_bounded_queue_is_full() -> None:
     sink = StreamSink(run_id=uuid4(), conversation_id=uuid4(), max_queue_size=1)
 
-    await sink.emit(EVENT_RUN_STATUS, {"status": "pending"})
-    await sink.emit(EVENT_RUN_STATUS, {"status": "running"})
+    await sink.emit(RunStatusEvent(status="pending"))
+    await sink.emit(RunStatusEvent(status="running"))
 
     assert sink.detached
     assert await sink.next_frame() is None
@@ -230,7 +230,7 @@ async def test_stream_drain_emits_keepalive_without_dropping_later_events(
     keepalive = await asyncio.wait_for(anext(stream), timeout=1)
     assert keepalive == SSE_KEEPALIVE_FRAME
 
-    await sink.emit(EVENT_DONE, {"status": "completed"})
+    await sink.emit(DoneEvent(status="completed"))
     frame = await asyncio.wait_for(anext(stream), timeout=1)
     assert "event: done" in frame
 

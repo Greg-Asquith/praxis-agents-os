@@ -9,14 +9,25 @@ on agent_schedule_runs.
 """
 
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Literal
 
-RUN_STATUS_PENDING = "pending"
-RUN_STATUS_RUNNING = "running"
-RUN_STATUS_AWAITING_APPROVAL = "awaiting_approval"
-RUN_STATUS_COMPLETED = "completed"
-RUN_STATUS_FAILED = "failed"
-RUN_STATUS_CANCELLED = "cancelled"
+
+class RunStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    AWAITING_APPROVAL = "awaiting_approval"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+RUN_STATUS_PENDING = RunStatus.PENDING
+RUN_STATUS_RUNNING = RunStatus.RUNNING
+RUN_STATUS_AWAITING_APPROVAL = RunStatus.AWAITING_APPROVAL
+RUN_STATUS_COMPLETED = RunStatus.COMPLETED
+RUN_STATUS_FAILED = RunStatus.FAILED
+RUN_STATUS_CANCELLED = RunStatus.CANCELLED
 
 RUN_OUTCOME_SUCCESS = "success"
 RUN_OUTCOME_GATE_FAILED = "gate_failed"
@@ -45,16 +56,7 @@ ALL_RUN_OUTCOMES = frozenset(
     }
 )
 
-ALL_RUN_STATUSES = frozenset(
-    {
-        RUN_STATUS_PENDING,
-        RUN_STATUS_RUNNING,
-        RUN_STATUS_AWAITING_APPROVAL,
-        RUN_STATUS_COMPLETED,
-        RUN_STATUS_FAILED,
-        RUN_STATUS_CANCELLED,
-    }
-)
+ALL_RUN_STATUSES = frozenset(RunStatus)
 
 TERMINAL_RUN_STATUSES = frozenset({RUN_STATUS_COMPLETED, RUN_STATUS_FAILED, RUN_STATUS_CANCELLED})
 

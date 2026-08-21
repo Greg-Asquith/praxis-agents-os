@@ -12,12 +12,12 @@ from uuid import UUID
 
 from core.settings import settings
 from services.agents.runtime.cancellation import request_agent_run_task_cancel
-from services.agents.runtime.events import EVENT_RUN_STATUS
 from services.agents.runtime.heartbeat import (
     agent_run_owner_instance_id,
     heartbeat_agent_run_lease,
 )
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.stream_protocol import RunStatusEvent
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ class RunTaskRegistry:
         try:
             queued = self._turn_slots.locked()
             if queued and state.sink is not None:
-                await state.sink.emit(EVENT_RUN_STATUS, {"status": "queued"})
+                await state.sink.emit(RunStatusEvent(status="queued"))
             if queued and queued_lease is not None:
                 heartbeat_stop = asyncio.Event()
                 heartbeat_task = asyncio.create_task(

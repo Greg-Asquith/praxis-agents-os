@@ -2,3 +2,5 @@ coverage
 dist
 node_modules
 pnpm-lock.yaml
+tests/features/conversations/stream/fixtures/protocol.samples.json
+tests/features/conversations/stream/fixtures/protocol.schema.json

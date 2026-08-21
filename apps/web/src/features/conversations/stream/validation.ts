@@ -14,7 +14,7 @@ import type {
 } from "@/features/conversations/stream/protocol"
 import { isNonNegativeInteger, isOneOf, isPositiveInteger, isRecord } from "@/lib/guards"
 
-const AGENT_RUN_STATUSES: ReadonlySet<AgentRunStatus> = new Set([
+export const AGENT_RUN_STATUSES: ReadonlySet<AgentRunStatus> = new Set([
   "pending",
   "running",
   "awaiting_approval",
@@ -22,17 +22,24 @@ const AGENT_RUN_STATUSES: ReadonlySet<AgentRunStatus> = new Set([
   "failed",
   "cancelled",
 ])
-const STREAM_RUN_STATUSES: ReadonlySet<StreamRunStatus> = new Set([...AGENT_RUN_STATUSES, "queued"])
+export const STREAM_RUN_STATUSES: ReadonlySet<StreamRunStatus> = new Set([
+  ...AGENT_RUN_STATUSES,
+  "queued",
+])
 
-const CONVERSATION_SOURCES: ReadonlySet<Conversation["source"]> = new Set([
+export const CONVERSATION_SOURCES: ReadonlySet<Conversation["source"]> = new Set([
   "direct",
   "scheduled",
   "delegated",
   "event",
 ])
 
-const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set(["text", "thinking"])
-const WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set(["started", "completed", "failed"])
+export const MESSAGE_CHANNELS: ReadonlySet<MessageChannel> = new Set(["text", "thinking"])
+export const WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set([
+  "started",
+  "completed",
+  "failed",
+])
 
 type StreamEnvelope = {
   run_id: string
@@ -70,10 +77,10 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         },
       }
     case "message.start": {
-      const channel = optionalEnum(
+      const channel = requiredEnum(
         eventName,
-        data,
-        "channel",
+        "data.channel",
+        data["channel"],
         MESSAGE_CHANNELS,
         "a supported message channel"
       )
@@ -83,7 +90,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ...envelope,
           message_id: requiredNonEmptyString(eventName, "data.message_id", data["message_id"]),
           role: requiredLiteral(eventName, "data.role", data["role"], "assistant"),
-          ...(channel === undefined ? {} : { channel }),
+          channel,
         },
       }
     }
@@ -105,7 +112,11 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         },
       }
     case "tool.call": {
-      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
+      const parentToolCallId = optionalNullableNonEmptyString(
+        eventName,
+        data,
+        "parent_tool_call_id"
+      )
       return {
         event: "tool.call",
         data: {
@@ -122,8 +133,12 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
       }
     }
     case "tool.result": {
-      const name = optionalNullableNonEmptyString(eventName, data, "name")
-      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
+      const name = requiredNullableNonEmptyString(eventName, "data.name", data["name"])
+      const parentToolCallId = optionalNullableNonEmptyString(
+        eventName,
+        data,
+        "parent_tool_call_id"
+      )
       return {
         event: "tool.result",
         data: {
@@ -133,7 +148,7 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
             "data.tool_call_id",
             data["tool_call_id"]
           ),
-          ...(name === undefined ? {} : { name }),
+          name,
           result: requiredField(eventName, data, "result"),
           ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
         },
@@ -141,9 +156,17 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
     }
     case "tool.approval_required": {
       const replayArgs = optionalField(data, "replay_args")
-      const parentToolCallId = optionalNonEmptyString(eventName, data, "parent_tool_call_id")
+      const parentToolCallId = optionalNullableNonEmptyString(
+        eventName,
+        data,
+        "parent_tool_call_id"
+      )
       const delegation = optionalNullableDelegation(eventName, data)
-      const derivedFromUntrusted = optionalBoolean(eventName, data, "derived_from_untrusted")
+      const derivedFromUntrusted = optionalNullableBoolean(
+        eventName,
+        data,
+        "derived_from_untrusted"
+      )
       const taintSources = optionalTaintSources(eventName, data)
       return {
         event: "tool.approval_required",
@@ -215,6 +238,9 @@ function optionalTaintSources(eventName: StreamEventName, data: Record<string, u
     return undefined
   }
   const value = data["taint_sources"]
+  if (value === null) {
+    return undefined
+  }
   if (!Array.isArray(value)) {
     invalidField(eventName, "data.taint_sources", "must be an array")
   }
@@ -297,26 +323,11 @@ function parseConversation(eventName: StreamEventName, value: unknown): Conversa
       `${field}.agent_slug`,
       conversation["agent_slug"]
     ),
-    agent_name: requiredNullableString(
-      eventName,
-      `${field}.agent_name`,
-      conversation["agent_name"]
-    ),
-    active_run_id: requiredNullableString(
-      eventName,
-      `${field}.active_run_id`,
-      conversation["active_run_id"]
-    ),
-    active_run_status: requiredNullableAgentRunStatus(
-      eventName,
-      `${field}.active_run_status`,
-      conversation["active_run_status"]
-    ),
-    needs_approval: requiredBoolean(
-      eventName,
-      `${field}.needs_approval`,
-      conversation["needs_approval"]
-    ),
+    agent_name: optionalNullableString(eventName, conversation, "agent_name") ?? null,
+    active_run_id: optionalNullableString(eventName, conversation, "active_run_id") ?? null,
+    active_run_status:
+      optionalNullableAgentRunStatus(eventName, conversation, "active_run_status") ?? null,
+    needs_approval: optionalBoolean(eventName, conversation, "needs_approval") ?? false,
     created_at: requiredNonEmptyString(
       eventName,
       `${field}.created_at`,
@@ -415,6 +426,17 @@ function requiredNullableString(
   return requiredString(eventName, field, value)
 }
 
+function requiredNullableNonEmptyString(
+  eventName: StreamEventName,
+  field: string,
+  value: unknown
+): string | null {
+  if (value === null) {
+    return null
+  }
+  return requiredNonEmptyString(eventName, field, value)
+}
+
 function requiredBoolean(eventName: StreamEventName, field: string, value: unknown): boolean {
   if (typeof value !== "boolean") {
     invalidField(eventName, field, "must be a boolean")
@@ -493,17 +515,15 @@ function requiredNullableAgentRunStatus(
   return value === null ? null : requiredAgentRunStatus(eventName, field, value)
 }
 
-function optionalEnum<T extends string>(
+function optionalNullableAgentRunStatus(
   eventName: StreamEventName,
   record: Record<string, unknown>,
-  key: string,
-  values: ReadonlySet<T>,
-  expectation: string
-): T | undefined {
+  key: string
+): AgentRunStatus | null | undefined {
   if (!Object.hasOwn(record, key)) {
     return undefined
   }
-  return requiredEnum(eventName, `data.${key}`, record[key], values, expectation)
+  return requiredNullableAgentRunStatus(eventName, `data.conversation.${key}`, record[key])
 }
 
 function optionalBoolean(
@@ -514,6 +534,20 @@ function optionalBoolean(
   if (!Object.hasOwn(record, key)) {
     return undefined
   }
+  return requiredBoolean(eventName, `data.conversation.${key}`, record[key])
+}
+
+function optionalNullableBoolean(
+  eventName: StreamEventName,
+  record: Record<string, unknown>,
+  key: string
+): boolean | undefined {
+  if (!Object.hasOwn(record, key)) {
+    return undefined
+  }
+  if (record[key] === null) {
+    return undefined
+  }
   return requiredBoolean(eventName, `data.${key}`, record[key])
 }
 
@@ -521,20 +555,11 @@ function optionalNullableNonEmptyString(
   eventName: StreamEventName,
   record: Record<string, unknown>,
   key: string
-): string | null | undefined {
+): string | undefined {
   if (!Object.hasOwn(record, key)) {
     return undefined
   }
-  const value = record[key]
-  return value === null ? null : requiredNonEmptyString(eventName, `data.${key}`, value)
-}
-
-function optionalNonEmptyString(
-  eventName: StreamEventName,
-  record: Record<string, unknown>,
-  key: string
-): string | undefined {
-  if (!Object.hasOwn(record, key)) {
+  if (record[key] === null) {
     return undefined
   }
   return requiredNonEmptyString(eventName, `data.${key}`, record[key])

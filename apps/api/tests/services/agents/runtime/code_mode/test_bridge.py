@@ -48,6 +48,7 @@ from services.agents.runtime.dispatch import digest_args
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.events import EVENT_TOOL_RESULT
 from services.agents.runtime.sinks import SinkEvent
+from services.agents.runtime.stream_protocol import StreamEventPayload
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_WRITE,
@@ -117,8 +118,8 @@ class _RecordingSink:
     def __init__(self) -> None:
         self.events: list[SinkEvent] = []
 
-    async def emit(self, event: str, payload: Any = None) -> None:
-        self.events.append(SinkEvent(event=event, data=dict(payload or {})))
+    async def emit(self, payload: StreamEventPayload) -> None:
+        self.events.append(SinkEvent(event=payload.event_name, data=payload.serialize_payload()))
 
     async def close(self) -> None:
         return None
@@ -1443,10 +1444,10 @@ async def test_stale_nested_decision_keeps_schema_mismatch_reason(
 
 
 class _FailingResultSink(_RecordingSink):
-    async def emit(self, event: str, payload: Any = None) -> None:
-        if event == EVENT_TOOL_RESULT:
+    async def emit(self, payload: StreamEventPayload) -> None:
+        if payload.event_name == EVENT_TOOL_RESULT:
             raise RuntimeError("event sink offline")
-        await super().emit(event, payload)
+        await super().emit(payload)
 
 
 async def test_operational_failure_during_settlement_is_labeled_resume_crash(
