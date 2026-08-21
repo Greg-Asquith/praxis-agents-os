@@ -60,6 +60,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   `queued` run status means an
   interactive turn is waiting for API capacity; keep it in stream state and
   map it to persisted `pending` state wherever an `AgentRun` is required.
+- `message-parts/timeline.ts` is the pure projection owner for persisted
+  messages, live stream activity, approvals, and optimistic user messages.
+  Keep `MessageList` focused on rendering and interaction wiring.
 - The conversation active-run read also returns the latest run outcome so a
   terminal approval expiry can mark its unresolved tool row failed and show
   plain-language outcome copy without keeping the conversation blocked. It

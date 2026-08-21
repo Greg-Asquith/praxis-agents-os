@@ -4,9 +4,9 @@ import {
   delegationDetailsForPendingApproval,
   delegationDetailsForToolActivity,
   mergeDelegationDetails,
-  normalizeToolArgs,
-  type ToolActivity,
-} from "@/features/conversations/message-parts"
+} from "@/features/conversations/message-parts/delegation"
+import type { ToolActivity } from "@/features/conversations/message-parts/types"
+import { normalizeToolArgs } from "@/features/conversations/message-parts/utils"
 import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skills/skill-activation"
 import {
   selectChildToolCalls,

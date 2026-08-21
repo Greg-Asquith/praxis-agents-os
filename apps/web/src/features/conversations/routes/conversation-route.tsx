@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/routes/conversation-route.tsx
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useParams } from "@tanstack/react-router"
 import {
   useQuery,
@@ -34,7 +34,7 @@ import {
   conversationAgentLabel,
   conversationScheduleContext,
 } from "@/features/conversations/format"
-import { pendingMessagesForConversation } from "@/features/conversations/message-parts"
+import { projectConversationTimeline } from "@/features/conversations/message-parts/timeline"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
 import { conversationRunInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import {
@@ -182,16 +182,53 @@ function ConversationDetail({
     stream,
     submittingApprovalRunId,
   })
-  const visiblePendingUserMessages = pendingMessagesForConversation(
-    pendingUserMessages,
-    conversationId,
-    messagesQuery.data.messages,
-    shouldRenderStream ? stream.conversationId : null
+  const assistantLabel = conversationAgentLabel(conversation, "Agent")
+  const assistantAgentId = activeRun?.agent_id ?? conversation.active_agent_id ?? "unassigned-agent"
+  const assistantAgentMetadata =
+    agentQuery.data.id === assistantAgentId ? agentQuery.data.metadata : null
+  const timeline = useMemo(
+    () =>
+      projectConversationTimeline({
+        approvals: pendingApprovals,
+        assistantAgentId,
+        conversationId,
+        messages: messagesQuery.data.messages,
+        pendingDelegations,
+        pendingUserMessages,
+        pendingWorkflow: approvalStateQuery.data?.workflow ?? null,
+        stream: {
+          approvals: visibleStreamApprovals,
+          conversationId: shouldRenderStream ? stream.conversationId : null,
+          isStreaming: shouldRenderStream && stream.isStreaming,
+          messages: streamMessages,
+          runId: shouldRenderStream ? stream.runId : null,
+          toolCalls: streamToolCalls,
+        },
+        transcriptRun,
+      }),
+    [
+      approvalStateQuery.data?.workflow,
+      assistantAgentId,
+      conversationId,
+      messagesQuery.data.messages,
+      pendingApprovals,
+      pendingDelegations,
+      pendingUserMessages,
+      shouldRenderStream,
+      stream.conversationId,
+      stream.isStreaming,
+      stream.runId,
+      streamMessages,
+      streamToolCalls,
+      transcriptRun,
+      visibleStreamApprovals,
+    ]
   )
+  const pendingMessageCount = timeline.rows.filter((row) => row.kind === "pending-message").length
   const { handleScroll, isAwayFromBottom, scrollRef, scrollToBottom } = useConversationAutoScroll({
     approvalCount: pendingApprovals.length,
     messageCount: messagesQuery.data.messages.length,
-    pendingMessageCount: visiblePendingUserMessages.length,
+    pendingMessageCount,
     streamMessages,
     streamToolCalls,
   })
@@ -204,10 +241,6 @@ function ConversationDetail({
   const composerDisabledReason = getConversationComposerDisabledReason(activeRun)
   const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
   const isResumingRun = activeRunId !== null && submittingApprovalRunId === activeRunId
-  const assistantLabel = conversationAgentLabel(conversation, "Agent")
-  const assistantAgentId = activeRun?.agent_id ?? conversation.active_agent_id ?? "unassigned-agent"
-  const assistantAgentMetadata =
-    agentQuery.data.id === assistantAgentId ? agentQuery.data.metadata : null
   const isReadOnlyTranscript = conversation.source === "delegated"
   const showScrollToBottom = shouldRenderStream && stream.isStreaming && isAwayFromBottom
 
@@ -256,28 +289,16 @@ function ConversationDetail({
         <div ref={scrollRef} className="h-full overflow-y-auto" onScroll={handleScroll}>
           <div className="mx-auto w-full max-w-4xl px-6 py-6 pb-8">
             <MessageList
-              activeRun={transcriptRun}
               approvalError={approvalError}
               runInterruption={runInterruption}
-              approvals={pendingApprovals}
-              assistantAgentId={assistantAgentId}
               assistantAgentMetadata={assistantAgentMetadata}
               assistantLabel={assistantLabel}
               conversationId={conversationId}
               isApprovalLoading={approvalStateQuery.isLoading}
               isApprovalSubmitting={isResumingRun}
-              isStreaming={shouldRenderStream && stream.isStreaming}
-              messages={messagesQuery.data.messages}
               onApprovalSubmit={handleApprovalSubmit}
-              pendingDelegations={pendingDelegations}
-              pendingWorkflow={approvalStateQuery.data?.workflow ?? null}
-              pendingUserMessages={visiblePendingUserMessages}
-              streamApprovals={visibleStreamApprovals}
-              streamConversationId={shouldRenderStream ? stream.conversationId : null}
-              streamRunId={shouldRenderStream ? stream.runId : null}
               streamError={streamError}
-              streamMessages={streamMessages}
-              streamToolCalls={streamToolCalls}
+              timeline={timeline}
             />
           </div>
         </div>
