@@ -10,6 +10,8 @@ Praxis Agents OS is the open source platform behind
 create agents, talk with them, approve sensitive actions in the tools they
 use, schedule work, connect data, and audit what happened afterwards.
 
+[![Watch the Praxis Agents OS launch video](https://img.youtube.com/vi/iEHWiGvVpT8/maxresdefault.jpg)](https://youtu.be/iEHWiGvVpT8)
+
 The codebase is intentionally compact enough for a small team to understand,
 run, and maintain. The complexity stays in the platform so users get clear
 defaults, visible controls, and a useful audit trail.
@@ -21,7 +23,6 @@ audited tool dispatch, and approval-gated side effects around the agents they
 run.
 
 <!-- Screenshot: seeded Home action surface -->
-<!-- Demo GIF: conversation with a tool approval and rich result -->
 
 ## Quickstart (Docker only)
 
