@@ -5,6 +5,8 @@
 Pure unit tests: no database, no network, no provider construction.
 """
 
+import importlib
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -120,6 +122,15 @@ def test_list_models_excludes_deprecated_by_default():
     assert {m.qualified_id for m in visible} <= {m.qualified_id for m in all_models}
 
 
+def test_every_catalog_model_has_a_supported_model_type():
+    assert {model.model_type for model in list_models(include_deprecated=True)} <= {
+        "light",
+        "standard",
+        "powerful",
+        "max",
+    }
+
+
 # Catalog route payload
 
 
@@ -140,8 +151,16 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
     providers = {provider.provider: provider for provider in response.providers}
     assert providers[PROVIDER_OPENAI].configured is True
     assert providers[PROVIDER_OPENAI].model_count == len(response.models)
+    assert providers[PROVIDER_OPENAI].model_type_defaults == {
+        "max": "openai:gpt-5.6-sol",
+        "powerful": "openai:gpt-5.6-terra",
+        "standard": "openai:gpt-5.6-luna",
+        "light": "openai:gpt-5.4-nano",
+    }
     assert providers[PROVIDER_ANTHROPIC].configured is False
+    assert providers[PROVIDER_ANTHROPIC].model_type_defaults == {}
     assert providers[PROVIDER_GOOGLE].configured is False
+    assert all(model.model_type for model in response.models)
 
 
 def test_model_catalog_treats_blank_api_keys_as_unconfigured(monkeypatch):
@@ -185,6 +204,55 @@ def test_model_catalog_reports_configured_azure_without_catalog_models(monkeypat
     providers = {provider.provider: provider for provider in response.providers}
     assert providers[PROVIDER_AZURE].configured is True
     assert providers[PROVIDER_AZURE].model_count == 0
+    assert providers[PROVIDER_AZURE].model_type_defaults == {}
+
+
+def test_model_catalog_uses_first_visible_model_for_each_provider_type(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("anthropic-key"))
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("google-key"))
+
+    response = list_model_catalog()
+    providers = {provider.provider: provider for provider in response.providers}
+
+    assert providers[PROVIDER_ANTHROPIC].model_type_defaults == {
+        "max": "anthropic:claude-fable-5",
+        "powerful": "anthropic:claude-opus-4-8",
+        "standard": "anthropic:claude-sonnet-5",
+        "light": "anthropic:claude-haiku-4-5",
+    }
+    assert providers[PROVIDER_GOOGLE].model_type_defaults == {
+        "standard": "google:gemini-3.7-flash",
+        "light": "google:gemini-3.5-flash-lite",
+        "powerful": "google:gemini-3.1-pro",
+    }
+    assert "max" not in providers[PROVIDER_GOOGLE].model_type_defaults
+
+
+def test_model_catalog_excludes_deprecated_models_from_type_defaults(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-test"))
+    catalog_module = importlib.import_module("services.agents.models.list_model_catalog")
+    models = list_models()
+    newest_standard = next(
+        model
+        for model in models
+        if model.provider == PROVIDER_OPENAI and model.model_type == "standard"
+    )
+    catalog_with_deprecation = [
+        replace(model, deprecated=True) if model == newest_standard else model for model in models
+    ]
+    monkeypatch.setattr(
+        catalog_module,
+        "list_models",
+        lambda: [model for model in catalog_with_deprecation if not model.deprecated],
+    )
+
+    response = catalog_module.list_model_catalog()
+    providers = {provider.provider: provider for provider in response.providers}
+
+    assert newest_standard.qualified_id not in {model.id for model in response.models}
+    assert providers[PROVIDER_OPENAI].model_type_defaults["standard"] == ("openai:gpt-5.4-mini")
 
 
 # Resolution

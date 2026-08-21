@@ -30,7 +30,7 @@ import {
 import { countApprovalPolicyTools } from "@/features/agents/agent-metrics"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { AgentStatusBadges } from "@/features/agents/components/agent-status-badges"
-import { formatAgentModel } from "@/features/agents/components/agent-model-label"
+import { formatAgentModelType } from "@/features/agents/components/agent-model-label"
 import type { Agent } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import { formatDateTime, pluralize } from "@/lib/format"
@@ -78,9 +78,8 @@ export function AgentsTable({
         columnHelper.display({
           id: "model",
           header: ({ header }) => <header.ColumnHeader />,
-          cell: ({ row }) =>
-            formatAgentModel(row.original, modelCatalog, { showDefaultLabel: false }),
-          meta: { label: "Model" },
+          cell: ({ row }) => formatAgentModelType(row.original, modelCatalog),
+          meta: { label: "Model type" },
         }),
         columnHelper.display({
           id: "tools",
@@ -243,8 +242,8 @@ function AgentMobileRow({
         ) : null}
 
         <dl className="grid gap-3 sm:grid-cols-2">
-          <ResponsiveListMeta label="Model">
-            {formatAgentModel(agent, modelCatalog, { showDefaultLabel: false })}
+          <ResponsiveListMeta label="Model type">
+            {formatAgentModelType(agent, modelCatalog)}
           </ResponsiveListMeta>
           <ResponsiveListMeta label="Tools">
             <AgentToolsSummary

@@ -4,7 +4,9 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from services.agents.models.domain import ModelType
 
 
 class ModelCatalogProvider(BaseModel):
@@ -12,6 +14,7 @@ class ModelCatalogProvider(BaseModel):
     display_name: str
     configured: bool
     model_count: int
+    model_type_defaults: dict[str, str] = Field(default_factory=dict)
 
 
 class ModelCatalogEntry(BaseModel):
@@ -20,6 +23,7 @@ class ModelCatalogEntry(BaseModel):
     model: str
     display_name: str
     context_window: int
+    model_type: ModelType
     supports_tools: bool
     supports_thinking: bool
     supports_vision: bool

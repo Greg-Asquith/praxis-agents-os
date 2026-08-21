@@ -28,6 +28,27 @@ export function formatAgentModel(
   return "Workspace default"
 }
 
+export function formatAgentModelType(agent: AgentModelSelection, catalog: ModelCatalogResponse) {
+  const qualifiedId =
+    agent.model_provider && agent.model
+      ? `${agent.model_provider}:${agent.model}`
+      : catalog.defaults.agent_model
+  if (!qualifiedId) {
+    return "Workspace default"
+  }
+
+  const model = catalog.models.find((item) => item.id === qualifiedId)
+  const providerName = model?.provider ?? agent.model_provider
+  const provider = catalog.providers.find((item) => item.provider === providerName)
+  const providerLabel = provider?.display_name ?? providerName
+
+  if (!model) {
+    return providerLabel ? `${providerLabel} · Custom` : "Custom"
+  }
+
+  return `${providerLabel ?? model.provider} · ${modelTypeLabel(model.model_type)}`
+}
+
 export function modelDisplayName(catalog: ModelCatalogResponse, qualifiedId: string) {
   const model = catalog.models.find((item) => item.id === qualifiedId)
   if (!model) {
@@ -36,4 +57,8 @@ export function modelDisplayName(catalog: ModelCatalogResponse, qualifiedId: str
 
   const provider = catalog.providers.find((item) => item.provider === model.provider)
   return `${provider?.display_name ?? model.provider} · ${model.display_name}`
+}
+
+function modelTypeLabel(modelType: ModelCatalogResponse["models"][number]["model_type"]) {
+  return `${modelType.charAt(0).toUpperCase()}${modelType.slice(1)}`
 }

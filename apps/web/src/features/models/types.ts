@@ -1,10 +1,13 @@
 // apps/web/src/features/models/types.ts
 
+export type ModelType = "light" | "standard" | "powerful" | "max"
+
 type ModelCatalogProvider = {
   provider: string
   display_name: string
   configured: boolean
   model_count: number
+  model_type_defaults: Partial<Record<ModelType, string>>
 }
 
 type ModelCatalogEntry = {
@@ -13,6 +16,7 @@ type ModelCatalogEntry = {
   model: string
   display_name: string
   context_window: number
+  model_type: ModelType
   supports_tools: boolean
   supports_thinking: boolean
   supports_vision: boolean

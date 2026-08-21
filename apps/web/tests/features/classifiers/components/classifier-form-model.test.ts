@@ -40,6 +40,7 @@ const modelCatalog: ModelCatalogResponse = {
       display_name: "GPT 5.6 Luna",
       id: "openai:gpt-5.6-luna",
       model: "gpt-5.6-luna",
+      model_type: "standard",
       provider: "openai",
       supports_structured_output: true,
       supports_thinking: false,
@@ -52,6 +53,7 @@ const modelCatalog: ModelCatalogResponse = {
       display_name: "Unstructured",
       id: "openai:unstructured",
       model: "unstructured",
+      model_type: "standard",
       provider: "openai",
       supports_structured_output: false,
       supports_thinking: false,
@@ -64,6 +66,7 @@ const modelCatalog: ModelCatalogResponse = {
       display_name: "Unavailable",
       id: "anthropic:unavailable",
       model: "unavailable",
+      model_type: "standard",
       provider: "anthropic",
       supports_structured_output: true,
       supports_thinking: false,
@@ -72,8 +75,20 @@ const modelCatalog: ModelCatalogResponse = {
     },
   ],
   providers: [
-    { configured: true, display_name: "OpenAI", model_count: 2, provider: "openai" },
-    { configured: false, display_name: "Anthropic", model_count: 1, provider: "anthropic" },
+    {
+      configured: true,
+      display_name: "OpenAI",
+      model_count: 2,
+      model_type_defaults: { standard: "openai:gpt-5.6-luna" },
+      provider: "openai",
+    },
+    {
+      configured: false,
+      display_name: "Anthropic",
+      model_count: 1,
+      model_type_defaults: {},
+      provider: "anthropic",
+    },
   ],
 }
 

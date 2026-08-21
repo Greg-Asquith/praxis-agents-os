@@ -8,7 +8,7 @@ import type {
   AgentUpdateRequest,
   ToolPolicyValue,
 } from "@/features/agents/types"
-import type { ModelCatalogResponse } from "@/features/models/types"
+import type { ModelCatalogResponse, ModelType } from "@/features/models/types"
 import type { ToolCatalogEntry } from "@/features/tools/types"
 import { agentIdentityColorIndex } from "@/lib/agent-identity"
 import type { FormValidationEntry } from "@/lib/forms"
@@ -17,6 +17,31 @@ const DEFAULT_MODEL_SELECTION = "Default"
 export const NO_AGENT_SELECTION = "None"
 export const IDENTITY_COLOR_AUTO = "Auto"
 const THINKING_DEFAULT = "Default"
+const AUTOMATIC_MODEL_TYPE_SELECTION = "automatic"
+const CUSTOM_MODEL_TYPE_SELECTION = "custom"
+
+const MODEL_TYPE_OPTIONS = [
+  {
+    value: "light",
+    label: "Light",
+    description: "Fastest and lowest cost, for simple tasks.",
+  },
+  {
+    value: "standard",
+    label: "Standard",
+    description: "Fast and capable, best for most tasks.",
+  },
+  {
+    value: "powerful",
+    label: "Powerful",
+    description: "Larger models for complex work, higher cost.",
+  },
+  {
+    value: "max",
+    label: "Max",
+    description: "The most powerful model available, very high cost.",
+  },
+] as const satisfies readonly { value: ModelType; label: string; description: string }[]
 
 export const THINKING_OPTIONS = [
   {
@@ -94,6 +119,23 @@ export type ModelOption = {
   value: string
 }
 
+export type ProviderOption = ModelOption
+
+export type ModelTypeSelection =
+  typeof AUTOMATIC_MODEL_TYPE_SELECTION | typeof CUSTOM_MODEL_TYPE_SELECTION | ModelType
+
+export type ModelTypeOption = {
+  description: string
+  label: string
+  value: Exclude<ModelTypeSelection, "custom">
+}
+
+export type SimpleModelSelection = {
+  modelType: ModelTypeSelection
+  provider: string | null
+  selectedLabel: string
+}
+
 type ModelSelection = {
   azure_deployment: string | null
   model: string | null
@@ -153,6 +195,113 @@ export function buildModelOptions(
   }
 
   return options
+}
+
+export function buildProviderOptions(catalog: ModelCatalogResponse): ProviderOption[] {
+  return catalog.providers
+    .filter((provider) => provider.configured && provider.model_count > 0)
+    .map((provider) => ({ label: provider.display_name, value: provider.provider }))
+}
+
+export function buildModelTypeOptions(
+  catalog: ModelCatalogResponse,
+  providerName: string
+): ModelTypeOption[] {
+  const provider = catalog.providers.find((candidate) => candidate.provider === providerName)
+  const options: ModelTypeOption[] = []
+
+  if (catalog.defaults.agent_model) {
+    options.push({
+      value: AUTOMATIC_MODEL_TYPE_SELECTION,
+      label: "Automatic (recommended)",
+      description: `Workspace default (${modelDisplayName(catalog, catalog.defaults.agent_model) ?? catalog.defaults.agent_model}).`,
+    })
+  }
+
+  for (const option of MODEL_TYPE_OPTIONS) {
+    if (provider?.model_type_defaults[option.value]) {
+      options.push(option)
+    }
+  }
+
+  return options
+}
+
+export function modelSelectionForType(
+  catalog: ModelCatalogResponse,
+  providerName: string,
+  modelType: Exclude<ModelTypeSelection, "custom">
+): string | null {
+  if (modelType === AUTOMATIC_MODEL_TYPE_SELECTION) {
+    return DEFAULT_MODEL_SELECTION
+  }
+
+  const provider = catalog.providers.find((candidate) => candidate.provider === providerName)
+  return provider?.model_type_defaults[modelType] ?? null
+}
+
+export function modelSelectionForProvider(
+  catalog: ModelCatalogResponse,
+  providerName: string,
+  currentSelection: string
+): string {
+  const simpleSelection = simpleSelectionFromModel(catalog, currentSelection)
+  const requestedType =
+    simpleSelection.modelType === AUTOMATIC_MODEL_TYPE_SELECTION ||
+    simpleSelection.modelType === CUSTOM_MODEL_TYPE_SELECTION
+      ? "standard"
+      : simpleSelection.modelType
+  const provider = catalog.providers.find((candidate) => candidate.provider === providerName)
+
+  return (
+    provider?.model_type_defaults[requestedType] ??
+    provider?.model_type_defaults.standard ??
+    currentSelection
+  )
+}
+
+export function simpleSelectionFromModel(
+  catalog: ModelCatalogResponse,
+  modelSelection: string
+): SimpleModelSelection {
+  if (modelSelection === DEFAULT_MODEL_SELECTION) {
+    return {
+      modelType: AUTOMATIC_MODEL_TYPE_SELECTION,
+      provider: providerFromQualifiedId(catalog.defaults.agent_model),
+      selectedLabel: "Automatic (recommended)",
+    }
+  }
+
+  const providerName = providerFromQualifiedId(modelSelection)
+  const provider = catalog.providers.find((candidate) => candidate.provider === providerName)
+  const modelType = MODEL_TYPE_OPTIONS.find(
+    (option) => provider?.model_type_defaults[option.value] === modelSelection
+  )?.value
+
+  if (modelType) {
+    return {
+      modelType,
+      provider: providerName,
+      selectedLabel:
+        MODEL_TYPE_OPTIONS.find((option) => option.value === modelType)?.label ?? modelType,
+    }
+  }
+
+  const modelLabel = modelDisplayName(catalog, modelSelection) ?? modelSelection
+  return {
+    modelType: CUSTOM_MODEL_TYPE_SELECTION,
+    provider: providerName,
+    selectedLabel: `Custom (${modelLabel})`,
+  }
+}
+
+function providerFromQualifiedId(qualifiedId: string | null): string | null {
+  if (!qualifiedId) {
+    return null
+  }
+
+  const separatorIndex = qualifiedId.indexOf(":")
+  return separatorIndex > 0 ? qualifiedId.slice(0, separatorIndex) : null
 }
 
 export function buildAgentPayload(

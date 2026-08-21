@@ -11,8 +11,10 @@ import {
   buildModelOptions,
   initialAgentFormState,
   isAgentFormDirty,
+  simpleSelectionFromModel,
   validateAgentFormState,
   type AgentFormState,
+  type AgentFormValidationEntry,
 } from "@/features/agents/components/agent-form-model"
 import {
   AGENT_CREATE_STEPS,
@@ -65,7 +67,11 @@ export function AgentForm(props: AgentFormProps) {
   const [state, setState] = useState<AgentFormState>(() => initialState)
   const [formError, setFormError] = useState<string | null>(null)
   const [validationStep, setValidationStep] = useState<AgentWizardStepId | null>(null)
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(
+    () =>
+      simpleSelectionFromModel(props.modelCatalog, initialState.modelSelection).modelType ===
+      "custom"
+  )
   const modelOptions = useMemo(
     () => buildModelOptions(props.modelCatalog, agent),
     [agent, props.modelCatalog]
@@ -93,10 +99,7 @@ export function AgentForm(props: AgentFormProps) {
     const nextValidationEntries = validateAgentFormState(state)
     if (nextValidationEntries.length > 0) {
       const earliestStep = stepForAgentField(nextValidationEntries[0]?.fieldId)
-      if (
-        earliestStep === "model" &&
-        nextValidationEntries.some((entry) => entry.fieldId === "agent-max-steps")
-      ) {
+      if (earliestStep === "model" && hasAdvancedModelFieldError(nextValidationEntries)) {
         setAdvancedOpen(true)
       }
       setValidationStep(earliestStep)
@@ -129,10 +132,7 @@ export function AgentForm(props: AgentFormProps) {
 
   function validateStep(stepId: AgentWizardStepId) {
     const stepValidationEntries = agentValidationEntriesForStep(fullValidationEntries, stepId)
-    if (
-      stepId === "model" &&
-      stepValidationEntries.some((entry) => entry.fieldId === "agent-max-steps")
-    ) {
+    if (stepId === "model" && hasAdvancedModelFieldError(stepValidationEntries)) {
       setAdvancedOpen(true)
     }
     setValidationStep(stepId)
@@ -191,6 +191,7 @@ export function AgentForm(props: AgentFormProps) {
                       maxSteps: fieldErrors["agent-max-steps"],
                       modelSelection: fieldErrors["agent-model"],
                     }}
+                    modelCatalog={props.modelCatalog}
                     modelOptions={modelOptions}
                     onAdvancedOpenChange={setAdvancedOpen}
                     selectedModelLabel={selectedModelOption?.label ?? "Workspace default"}
@@ -241,5 +242,11 @@ export function AgentForm(props: AgentFormProps) {
         }}
       </FormWizard>
     </form>
+  )
+}
+
+function hasAdvancedModelFieldError(entries: AgentFormValidationEntry[]) {
+  return entries.some(
+    (entry) => entry.fieldId === "agent-model" || entry.fieldId === "agent-max-steps"
   )
 }

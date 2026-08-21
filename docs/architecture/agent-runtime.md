@@ -246,7 +246,13 @@ apps/api/
   cases still resolve through the same catalog/factory seam: conversation naming
   uses settings constants, while native helper tools can take provider/model as
   runtime tool arguments. The SPA reads model metadata from the API and never
-  re-encodes it, so the catalog cannot drift between languages.
+  re-encodes it, so the catalog cannot drift between languages. Each catalog
+  entry has a hand-assigned model type: light, standard, powerful, or max. The
+  catalog response maps each configured provider to its default model for every
+  available type. The agent form presents the provider and model type, while
+  the full model list stays in the Advanced section. The Agents table shows
+  each catalog-backed selection by provider and model type instead of its model
+  name.
 - **Library:** build the loop on **Pydantic AI** (typed tools, structured output,
   streaming, multi-provider — fits the existing Pydantic stack). If provider breadth
   ever outgrows it, drop **LiteLLM** in as the provider layer underneath the factory

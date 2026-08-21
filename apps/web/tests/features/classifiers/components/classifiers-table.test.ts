@@ -34,6 +34,7 @@ const modelCatalog: ModelCatalogResponse = {
       display_name: "GPT 5.6 Luna",
       id: "openai:gpt-5.6-luna",
       model: "gpt-5.6-luna",
+      model_type: "standard",
       provider: "openai",
       supports_structured_output: true,
       supports_thinking: false,
@@ -41,7 +42,15 @@ const modelCatalog: ModelCatalogResponse = {
       supports_vision: false,
     },
   ],
-  providers: [{ configured: true, display_name: "OpenAI", model_count: 1, provider: "openai" }],
+  providers: [
+    {
+      configured: true,
+      display_name: "OpenAI",
+      model_count: 1,
+      model_type_defaults: { standard: "openai:gpt-5.6-luna" },
+      provider: "openai",
+    },
+  ],
 }
 
 describe("ClassifiersTable", () => {

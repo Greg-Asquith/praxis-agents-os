@@ -8,7 +8,7 @@ model and a fully-resolved model spec ready for the factory to instantiate.
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from core.exceptions.general import ProblemDetailsError
 
@@ -21,6 +21,8 @@ ALL_PROVIDERS = frozenset({PROVIDER_ANTHROPIC, PROVIDER_OPENAI, PROVIDER_GOOGLE,
 
 # Fallback step ceiling when an agent does not pin max_steps.
 DEFAULT_MAX_STEPS = 20
+
+ModelType = Literal["light", "standard", "powerful", "max"]
 
 
 class ModelConfigurationError(ProblemDetailsError):
@@ -59,6 +61,7 @@ class ModelInfo:
     model: str
     display_name: str
     context_window: int
+    model_type: ModelType
     chars_per_token: float = 4.0
     supports_tools: bool = True
     supports_thinking: bool = False

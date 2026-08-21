@@ -18,6 +18,7 @@ def _model_info(*, structured_output: bool = True) -> ModelInfo:
         model="helper-model",
         display_name="Helper model",
         context_window=1_000,
+        model_type="standard",
         supports_structured_output=structured_output,
         default_settings={"temperature": 0.2},
     )

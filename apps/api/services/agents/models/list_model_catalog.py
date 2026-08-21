@@ -49,6 +49,7 @@ def list_model_catalog() -> ModelCatalogResponse:
                 display_name=_PROVIDER_DISPLAY_NAMES[provider],
                 configured=provider in configured_providers,
                 model_count=sum(1 for model in available_models if model.provider == provider),
+                model_type_defaults=_model_type_defaults(provider, available_models),
             )
             for provider in _PROVIDER_ORDER
         ],
@@ -70,12 +71,21 @@ def _catalog_entry(model: ModelInfo) -> ModelCatalogEntry:
         model=model.model,
         display_name=model.display_name,
         context_window=model.context_window,
+        model_type=model.model_type,
         supports_tools=model.supports_tools,
         supports_thinking=model.supports_thinking,
         supports_vision=model.supports_vision,
         supports_structured_output=model.supports_structured_output,
         default_settings=dict(model.default_settings),
     )
+
+
+def _model_type_defaults(provider: str, models: list[ModelInfo]) -> dict[str, str]:
+    defaults: dict[str, str] = {}
+    for model in models:
+        if model.provider == provider and model.model_type not in defaults:
+            defaults[model.model_type] = model.qualified_id
+    return defaults
 
 
 def _default_if_available(provider: str, model: str, available_ids: set[str]) -> str | None:

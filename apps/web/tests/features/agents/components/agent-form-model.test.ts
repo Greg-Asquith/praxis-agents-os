@@ -2,14 +2,19 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildAgentPayload,
+  buildModelTypeOptions,
   buildModelOptions,
+  buildProviderOptions,
   initialAgentFormState,
   isAgentFormDirty,
+  modelSelectionForProvider,
+  modelSelectionForType,
+  simpleSelectionFromModel,
   validateAgentFormState,
   type AgentFormState,
 } from "@/features/agents/components/agent-form-model"
 import type { Agent } from "@/features/agents/types"
-import type { ModelCatalogResponse } from "@/features/models/types"
+import type { ModelCatalogResponse, ModelType } from "@/features/models/types"
 import type { ToolCatalogEntry } from "@/features/tools/types"
 
 const toolCatalog: ToolCatalogEntry[] = [
@@ -67,6 +72,128 @@ const agent: Agent = {
   updated_at: "2026-07-07T10:00:00.000Z",
   deleted: false,
   deleted_at: null,
+}
+
+function catalogModel({
+  displayName,
+  id,
+  modelType,
+}: {
+  displayName: string
+  id: string
+  modelType: ModelType
+}): ModelCatalogResponse["models"][number] {
+  const [provider = "", model = ""] = id.split(":")
+  return {
+    context_window: 128_000,
+    default_settings: {},
+    display_name: displayName,
+    id,
+    model,
+    model_type: modelType,
+    provider,
+    supports_structured_output: true,
+    supports_thinking: true,
+    supports_tools: true,
+    supports_vision: true,
+  }
+}
+
+const modelCatalog: ModelCatalogResponse = {
+  defaults: { agent_model: "openai:gpt-5.6-luna" },
+  models: [
+    catalogModel({ displayName: "GPT-5.6 Luna", id: "openai:gpt-5.6-luna", modelType: "standard" }),
+    catalogModel({ displayName: "GPT-5.4 Nano", id: "openai:gpt-5.4-nano", modelType: "light" }),
+    catalogModel({
+      displayName: "Claude Fable 5",
+      id: "anthropic:claude-fable-5",
+      modelType: "max",
+    }),
+    catalogModel({
+      displayName: "Claude Opus 4.8",
+      id: "anthropic:claude-opus-4-8",
+      modelType: "powerful",
+    }),
+    catalogModel({
+      displayName: "Claude Opus 4.7",
+      id: "anthropic:claude-opus-4-7",
+      modelType: "powerful",
+    }),
+    catalogModel({
+      displayName: "Claude Sonnet 5",
+      id: "anthropic:claude-sonnet-5",
+      modelType: "standard",
+    }),
+    catalogModel({
+      displayName: "Claude Haiku 4.5",
+      id: "anthropic:claude-haiku-4-5",
+      modelType: "light",
+    }),
+    catalogModel({
+      displayName: "Gemini 3.7 Flash",
+      id: "google:gemini-3.7-flash",
+      modelType: "standard",
+    }),
+    catalogModel({
+      displayName: "Gemini 3.5 Flash-Lite",
+      id: "google:gemini-3.5-flash-lite",
+      modelType: "light",
+    }),
+    catalogModel({
+      displayName: "Gemini 3.1 Pro",
+      id: "google:gemini-3.1-pro",
+      modelType: "powerful",
+    }),
+  ],
+  providers: [
+    {
+      configured: true,
+      display_name: "OpenAI",
+      model_count: 2,
+      model_type_defaults: {
+        light: "openai:gpt-5.4-nano",
+        standard: "openai:gpt-5.6-luna",
+      },
+      provider: "openai",
+    },
+    {
+      configured: true,
+      display_name: "Anthropic",
+      model_count: 4,
+      model_type_defaults: {
+        light: "anthropic:claude-haiku-4-5",
+        max: "anthropic:claude-fable-5",
+        powerful: "anthropic:claude-opus-4-8",
+        standard: "anthropic:claude-sonnet-5",
+      },
+      provider: "anthropic",
+    },
+    {
+      configured: true,
+      display_name: "Google",
+      model_count: 3,
+      model_type_defaults: {
+        light: "google:gemini-3.5-flash-lite",
+        powerful: "google:gemini-3.1-pro",
+        standard: "google:gemini-3.7-flash",
+      },
+      provider: "google",
+    },
+    {
+      configured: true,
+      display_name: "Azure OpenAI",
+      model_count: 0,
+      model_type_defaults: {},
+      provider: "azure",
+    },
+    {
+      configured: false,
+      display_name: "Unavailable",
+      model_count: 1,
+      model_type_defaults: {},
+      provider: "unavailable",
+    },
+  ],
 }
 
 function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
@@ -262,6 +389,7 @@ describe("buildModelOptions", () => {
           id: "openai:gpt-5.4",
           provider: "openai",
           model: "gpt-5.4",
+          model_type: "powerful",
           display_name: "GPT-5.4",
           context_window: 128000,
           supports_tools: true,
@@ -279,5 +407,98 @@ describe("buildModelOptions", () => {
       "openai:gpt-5.4-mini",
       "openai:gpt-5.4",
     ])
+  })
+})
+
+describe("simple model selection", () => {
+  it("includes only configured providers that have catalog models", () => {
+    expect(buildProviderOptions(modelCatalog)).toEqual([
+      { label: "OpenAI", value: "openai" },
+      { label: "Anthropic", value: "anthropic" },
+      { label: "Google", value: "google" },
+    ])
+  })
+
+  it("orders available model types and omits types the provider lacks", () => {
+    expect(buildModelTypeOptions(modelCatalog, "google")).toEqual([
+      {
+        description: "Workspace default (OpenAI · GPT-5.6 Luna).",
+        label: "Automatic (recommended)",
+        value: "automatic",
+      },
+      {
+        description: "Fastest and lowest cost, for simple tasks.",
+        label: "Light",
+        value: "light",
+      },
+      {
+        description: "Fast and capable, best for most tasks.",
+        label: "Standard",
+        value: "standard",
+      },
+      {
+        description: "Larger models for complex work, higher cost.",
+        label: "Powerful",
+        value: "powerful",
+      },
+    ])
+    expect(buildModelTypeOptions(modelCatalog, "anthropic").at(-1)).toEqual({
+      description: "The most powerful model available, very high cost.",
+      label: "Max",
+      value: "max",
+    })
+  })
+
+  it("omits Automatic when the workspace default is unavailable", () => {
+    const catalogWithoutDefault = { ...modelCatalog, defaults: { agent_model: null } }
+
+    expect(
+      buildModelTypeOptions(catalogWithoutDefault, "openai").map((option) => option.value)
+    ).toEqual(["light", "standard"])
+  })
+
+  it("maps model types and Automatic to the stored selection", () => {
+    expect(modelSelectionForType(modelCatalog, "openai", "standard")).toBe("openai:gpt-5.6-luna")
+    expect(modelSelectionForType(modelCatalog, "anthropic", "light")).toBe(
+      "anthropic:claude-haiku-4-5"
+    )
+    expect(modelSelectionForType(modelCatalog, "google", "light")).toBe(
+      "google:gemini-3.5-flash-lite"
+    )
+    expect(modelSelectionForType(modelCatalog, "openai", "automatic")).toBe("Default")
+    expect(buildAgentPayload(validState({ modelSelection: "Default" }), "create")).toMatchObject({
+      model: null,
+      model_provider: null,
+    })
+  })
+
+  it("derives Automatic, provider picks, and custom selections", () => {
+    expect(simpleSelectionFromModel(modelCatalog, "Default")).toMatchObject({
+      modelType: "automatic",
+      provider: "openai",
+    })
+    expect(simpleSelectionFromModel(modelCatalog, "anthropic:claude-sonnet-5")).toMatchObject({
+      modelType: "standard",
+      provider: "anthropic",
+    })
+    expect(simpleSelectionFromModel(modelCatalog, "anthropic:claude-opus-4-7")).toEqual({
+      modelType: "custom",
+      provider: "anthropic",
+      selectedLabel: "Custom (Anthropic · Claude Opus 4.7)",
+    })
+    expect(simpleSelectionFromModel(modelCatalog, "azure:deployment-model")).toEqual({
+      modelType: "custom",
+      provider: "azure",
+      selectedLabel: "Custom (azure:deployment-model)",
+    })
+  })
+
+  it("keeps the type across providers and falls back to Standard when unavailable", () => {
+    expect(modelSelectionForProvider(modelCatalog, "anthropic", "openai:gpt-5.4-nano")).toBe(
+      "anthropic:claude-haiku-4-5"
+    )
+    expect(modelSelectionForProvider(modelCatalog, "google", "anthropic:claude-fable-5")).toBe(
+      "google:gemini-3.7-flash"
+    )
   })
 })

@@ -188,6 +188,7 @@ async def test_resolve_chat_attachments_rejects_images_for_non_vision_models(
             model="no-vision",
             display_name="No Vision",
             context_window=1000,
+            model_type="standard",
             supports_vision=False,
         ),
     )
