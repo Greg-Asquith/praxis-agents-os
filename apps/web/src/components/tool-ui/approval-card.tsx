@@ -46,6 +46,7 @@ export function ToolApprovalDecisionCard({
   prompt,
   title = label,
   toolName,
+  validationError = null,
   derivedFromUntrusted = false,
   taintSources = NO_TAINT_SOURCES,
 }: {
@@ -61,6 +62,7 @@ export function ToolApprovalDecisionCard({
   prompt?: string
   title?: string
   toolName: string
+  validationError?: string | null
   derivedFromUntrusted?: boolean
   taintSources?: { source_kind: string; source_ref: string }[]
 }) {
@@ -97,7 +99,12 @@ export function ToolApprovalDecisionCard({
         <ApprovalFooter
           approveLabel={approveLabel}
           controls={controls}
-          disabled={disabled || invalidEntityFields.size > 0 || hasInvalidRecordFields}
+          disabled={
+            disabled ||
+            invalidEntityFields.size > 0 ||
+            hasInvalidRecordFields ||
+            validationError !== null
+          }
           isDeclining={isDeclining}
           label={label}
           onApprove={() => {
@@ -149,6 +156,11 @@ export function ToolApprovalDecisionCard({
             onEntityValidityChange={handleEntityValidityChange}
             toolName={toolName}
           />
+          {validationError ? (
+            <p aria-live="polite" className="text-destructive text-xs">
+              {validationError}
+            </p>
+          ) : null}
         </>
       )}
       {controls.decision.decision === "denied" && controls.decision.message ? (

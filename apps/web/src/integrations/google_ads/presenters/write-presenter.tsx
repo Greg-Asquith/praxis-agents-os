@@ -19,6 +19,7 @@ type ApprovalSpec<Args> = {
   prompt: string | ((args: Args) => string)
   renderSummary?: (value: unknown, fallback: Args) => ReactNode
   title: string | ((args: Args) => string)
+  validateArgs?: (value: unknown) => string | null
 }
 
 export type GoogleAdsWriteVariant<Args, Result> = {
@@ -57,6 +58,7 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
       const fields = ui?.arg_fields ?? []
       const currentArgs = mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
       const currentParsedArgs = variant.approval.parseArgs(currentArgs) ?? args
+      const validationError = variant.approval.validateArgs?.(currentArgs) ?? null
       return (
         <ToolApprovalDecisionCard
           activityId={activity.id}
@@ -70,8 +72,9 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
           prompt={approvalCopy(variant.approval.prompt, currentParsedArgs)}
           title={approvalCopy(variant.approval.title, currentParsedArgs)}
           toolName={activity.name}
+          validationError={validationError}
         >
-          {variant.approval.renderSummary?.(currentArgs, args)}
+          {validationError ? null : variant.approval.renderSummary?.(currentArgs, args)}
         </ToolApprovalDecisionCard>
       )
     }

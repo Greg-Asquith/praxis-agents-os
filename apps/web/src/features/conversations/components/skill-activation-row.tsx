@@ -33,7 +33,7 @@ export function SkillActivationRow({ activity }: SkillActivationRowProps) {
       ariaLabel={`Activated skill: ${label}`}
       expandable={false}
       heading={
-        <span className="inline-flex min-w-0 items-center gap-2">
+        <span className="inline-flex min-w-0 items-center gap-2 p-2">
           <SparklesIcon className="text-muted-foreground size-4 shrink-0" />
           <span className="truncate">Activated Skill: {label}</span>
         </span>

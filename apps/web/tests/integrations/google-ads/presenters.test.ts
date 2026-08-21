@@ -16,6 +16,7 @@ import googleAdsModule from "@/integrations/google_ads"
 import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters/accounts"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
+import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import {
   googleAdsAdGroupNegativeKeywordsPresenter,
@@ -343,6 +344,232 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("20")
     expect(html).toContain("Campaign is removed.")
     expect(html).toContain("Updated")
+  })
+
+  it("reviews edited device multipliers with plain-language effects", () => {
+    const controls = approvalControls()
+    controls.decision.edits = {
+      adjustments: [
+        { device: "MOBILE", bid_modifier: 0.7 },
+        { device: "TABLET", bid_modifier: 0 },
+      ],
+      campaign_ids: [campaignReference("20", "Brand Awareness")],
+    }
+    const declaredFields = deviceBidModifierFields()
+    const rendered = googleAdsDeviceBidModifiersPresenter.render(
+      props(
+        {
+          id: "device-bids-approval",
+          kind: "approval",
+          name: "google_ads_update_device_bid_modifiers",
+          status: "awaiting_approval",
+          args: {
+            campaign_ids: [
+              campaignReference("10", "Summer Sale"),
+              campaignReference("20", "Brand Awareness"),
+            ],
+            adjustments: [{ device: "DESKTOP", bid_modifier: 1.2 }],
+          },
+        },
+        controls,
+        toolUi(declaredFields)
+      )
+    )
+
+    expect(isValidElement(rendered)).toBe(true)
+    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
+      expect(rendered.type).toBe(ToolApprovalDecisionCard)
+      expect(rendered.props.controls).toBe(controls)
+      expect(rendered.props.fields).toBe(declaredFields)
+    }
+    const html = render(rendered)
+    expect(html).toContain("Review the campaigns and multipliers")
+    expect(html).toContain("Applies to 1 campaign")
+    expect(html).toContain("Mobile")
+    expect(html).toContain("Tablet")
+    expect(html).toContain("Lower by 30% (0.7×)")
+    expect(html).toContain("Exclude (0×)")
+    expect(html).toContain("Approve &amp; Update")
+  })
+
+  it.each([
+    {
+      adjustments: [{ device: "MOBILE", bid_modifier: 0.05 }],
+      error: "Set each bid modifier to 0 or between 0.1 and 10 before approving.",
+    },
+    {
+      adjustments: [
+        { device: "MOBILE", bid_modifier: 0.7 },
+        { device: "MOBILE", bid_modifier: 0.8 },
+      ],
+      error: "Choose each device only once before approving.",
+    },
+  ])("blocks invalid edited device adjustments: $error", ({ adjustments, error }) => {
+    const controls = approvalControls()
+    controls.decision.edits = { adjustments }
+    const html = render(
+      googleAdsDeviceBidModifiersPresenter.render(
+        props(
+          {
+            id: "device-bids-invalid-approval",
+            kind: "approval",
+            name: "google_ads_update_device_bid_modifiers",
+            status: "awaiting_approval",
+            args: {
+              campaign_ids: [campaignReference("10", "Summer Sale")],
+              adjustments: [{ device: "DESKTOP", bid_modifier: 1.2 }],
+            },
+          },
+          controls,
+          toolUi(deviceBidModifierFields())
+        )
+      )
+    )
+
+    expect(html).toContain(error)
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
+    expect(html).not.toContain("Raise by 20% (1.2×)")
+  })
+
+  it("renders device before-and-after evidence, bidding context, and honest outcomes", () => {
+    const html = render(
+      googleAdsDeviceBidModifiersPresenter.render(
+        props({
+          id: "device-bids-result",
+          kind: "result",
+          name: "google_ads_update_device_bid_modifiers",
+          status: "completed",
+          args: {
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            adjustments: [
+              { device: "MOBILE", bid_modifier: 0.7 },
+              { device: "TABLET", bid_modifier: 0 },
+              { device: "DESKTOP", bid_modifier: 1 },
+            ],
+          },
+          result: {
+            results: [
+              entry({
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Summer Sale",
+                    bidding_strategy_type: "TARGET_ROAS",
+                    target_cpa_configured: false,
+                    devices: [
+                      {
+                        device: "MOBILE",
+                        requested_bid_modifier: 0.7,
+                        previous_bid_modifier: 1,
+                        outcome: "updated",
+                        external_ref: "customers/123/campaignCriteria/10~30001",
+                        message: null,
+                        error_code: null,
+                        note: "TARGET_ROAS does not use non-zero device bid adjustments for bidding.",
+                      },
+                      {
+                        device: "TABLET",
+                        requested_bid_modifier: 0,
+                        previous_bid_modifier: 0,
+                        outcome: "already_set",
+                        external_ref: "customers/123/campaignCriteria/10~30002",
+                        message: null,
+                        error_code: null,
+                        note: null,
+                      },
+                      {
+                        device: "DESKTOP",
+                        requested_bid_modifier: 1,
+                        previous_bid_modifier: null,
+                        outcome: "failed",
+                        external_ref: null,
+                        message: "Campaign criterion could not be updated.",
+                        error_code: "CANNOT_MODIFY_CRITERION",
+                        note: null,
+                      },
+                    ],
+                  },
+                ],
+              }),
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain('aria-label="Google Ads device bid adjustment results"')
+    expect(html).toContain("Previous")
+    expect(html).toContain("Requested")
+    expect(html).toContain("No adjustment (1×)")
+    expect(html).toContain("Lower by 30% (0.7×)")
+    expect(html).toContain("Exclude (0×)")
+    expect(html).toContain("Not set")
+    expect(html).toContain("Target ROAS")
+    expect(html).toContain("does not use non-zero device bid adjustments")
+    expect(html).toContain("Campaign criterion could not be updated.")
+    expect(html).toContain("Cannot Modify Criterion")
+    expect(html).toContain("Already set")
+    expect(html).toContain("Download Report CSV")
+  })
+
+  it("isolates malformed device outcomes and protects unverified writes", () => {
+    const malformedHtml = render(
+      googleAdsDeviceBidModifiersPresenter.render(
+        props({
+          id: "device-bids-malformed",
+          kind: "result",
+          name: "google_ads_update_device_bid_modifiers",
+          status: "completed",
+          args: {
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            adjustments: [{ device: "MOBILE", bid_modifier: 0.7 }],
+          },
+          result: { results: [entry({ campaigns: [{ campaign_id: "10" }] })] },
+        })
+      )
+    )
+    const emptyHtml = render(
+      googleAdsDeviceBidModifiersPresenter.render(
+        props({
+          id: "device-bids-empty",
+          kind: "result",
+          name: "google_ads_update_device_bid_modifiers",
+          status: "completed",
+          result: { results: [entry({ campaigns: [] })] },
+        })
+      )
+    )
+    const unverifiedHtml = render(
+      googleAdsDeviceBidModifiersPresenter.render(
+        props({
+          id: "device-bids-unverified",
+          kind: "result",
+          name: "google_ads_update_device_bid_modifiers",
+          status: "completed",
+          args: {
+            campaign_ids: [campaignReference("10", "Summer Sale")],
+            adjustments: [{ device: "MOBILE", bid_modifier: 0.7 }],
+          },
+          result: {
+            results: [
+              {
+                ...entry(null),
+                status: "error",
+                error_code: "unverified_mutation",
+                error_message: "request outcome unknown",
+              },
+            ],
+          },
+        })
+      )
+    )
+
+    expect(malformedHtml).toContain(
+      "couldn&#x27;t verify this account&#x27;s device bid adjustment"
+    )
+    expect(emptyHtml).toContain("couldn&#x27;t verify this account&#x27;s device bid adjustment")
+    expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads applied")
+    expect(unverifiedHtml).not.toContain("request outcome unknown")
   })
 
   it("reviews the edited negative-list campaign selection in the approval card", () => {
@@ -1546,6 +1773,14 @@ describe("Google Ads tool presenters", () => {
         name: "google_ads_update_campaign_status",
         presenter: googleAdsCampaignStatusPresenter,
       },
+      {
+        args: {
+          campaign_ids: [campaignReference("10", "Summer Sale")],
+          adjustments: [{ device: "MOBILE", bid_modifier: 0.7 }],
+        },
+        name: "google_ads_update_device_bid_modifiers",
+        presenter: googleAdsDeviceBidModifiersPresenter,
+      },
     ]
 
     for (const testCase of cases) {
@@ -1625,10 +1860,12 @@ describe("Google Ads tool presenters", () => {
       "google-ads-ad-group-negative-keywords",
       "google-ads-negative-list-campaign-links",
       "google-ads-update-campaign-status",
+      "google-ads-update-device-bid-modifiers",
     ])
     expect(googleAdsCampaignLinksPresenter.handlesApprovals).toBe(true)
     expect(googleAdsCampaignNegativeKeywordsPresenter.handlesApprovals).toBe(true)
     expect(googleAdsCampaignStatusPresenter.handlesApprovals).toBe(true)
+    expect(googleAdsDeviceBidModifiersPresenter.handlesApprovals).toBe(true)
     expect(googleAdsListNegativeKeywordsPresenter.handlesApprovals).toBe(true)
   })
 
@@ -1637,6 +1874,9 @@ describe("Google Ads tool presenters", () => {
 
     expect(integrationToolRowPresenters("google_ads").map((presenter) => presenter.key)).toContain(
       "google-ads-run-report"
+    )
+    expect(integrationToolRowPresenters("google_ads").map((presenter) => presenter.key)).toContain(
+      "google-ads-update-device-bid-modifiers"
     )
     const row = renderCustomToolCallRow(
       props({
@@ -1661,6 +1901,42 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain('aria-label="Google Ads report results"')
     expect(html).toContain("Run Google Ads Report")
     expect(html).not.toContain("GAQL Query")
+
+    const deviceRow = renderCustomToolCallRow(
+      props({
+        id: "device-bids-registry-1",
+        kind: "result",
+        name: "google_ads_update_device_bid_modifiers",
+        status: "completed",
+        result: {
+          results: [
+            entry({
+              campaigns: [
+                {
+                  campaign_id: "10",
+                  campaign_name: "Summer Sale",
+                  bidding_strategy_type: "MANUAL_CPC",
+                  target_cpa_configured: false,
+                  devices: [
+                    {
+                      device: "MOBILE",
+                      requested_bid_modifier: 0.7,
+                      previous_bid_modifier: 1,
+                      outcome: "updated",
+                      external_ref: "customers/123/campaignCriteria/10~30001",
+                      message: null,
+                      error_code: null,
+                      note: null,
+                    },
+                  ],
+                },
+              ],
+            }),
+          ],
+        },
+      })
+    )
+    expect(render(deviceRow)).toContain('aria-label="Google Ads device bid adjustment results"')
   })
 })
 
@@ -1712,6 +1988,32 @@ function toolUi(argFields: ToolUiField[]): ToolUi {
     result_fields: [],
     running_label: "",
   }
+}
+
+function deviceBidModifierFields(): ToolUiField[] {
+  return [
+    field("campaign_ids", "Campaigns", "entity_list", true),
+    {
+      ...field("adjustments", "Device Bid Adjustments", "records", true),
+      min_rows: 1,
+      columns: [
+        {
+          key: "device",
+          label: "Device",
+          options: ["DESKTOP", "MOBILE", "TABLET"],
+          placeholder: "",
+          required: true,
+        },
+        {
+          key: "bid_modifier",
+          label: "Bid Modifier",
+          options: [],
+          placeholder: "",
+          required: true,
+        },
+      ],
+    },
+  ]
 }
 
 function campaignReference(externalId: string, label: string) {
