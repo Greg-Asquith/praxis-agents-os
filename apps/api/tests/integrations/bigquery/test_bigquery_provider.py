@@ -26,6 +26,7 @@ def test_manifest_declares_read_only_workspace_dataset_provider() -> None:
     assert manifest.requires_discovery is True
     assert manifest.capability_flags == frozenset({"read"})
     assert PROVIDER.metadata_sync_job_kind == SYNC_TABLE_SCHEMAS_KIND
+    assert PROVIDER.table_scope_adapter is not None
     assert {definition.name for definition in PROVIDER.tool_definitions} == {
         "bigquery_list_tables",
         "bigquery_get_table_schema",

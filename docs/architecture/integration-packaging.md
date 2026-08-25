@@ -172,6 +172,7 @@ class IntegrationProviderPlugin:
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
     entity_resolvers: tuple[EntityResolverDefinition, ...] = ()
     event_definition: IntegrationEventDefinition | None = None
+    table_scope_adapter: TableScopeAdapter | None = None
 ```
 
 Each provider package's `__init__.py` exports exactly one
@@ -186,6 +187,13 @@ beyond this is a sign the engine is missing a seam; extend the engine,
 don't grow the contract ad hoc. The optional metadata job kind lets a
 warehouse-style provider trigger provider-owned cache refresh from discovery
 and selection without an engine branch.
+
+The optional table-scope adapter is the support signal for provider-neutral
+row-filter management. Shared integration code owns persisted rules and the
+dialect-parametric rewrite engine. A warehouse provider contributes column
+eligibility, SQL predicate and parameter emission, reference exceptions, and
+modifier validation. The rule model, shared rewrite substrate, and BigQuery
+adapter exist; query enforcement, routes, and operator UI remain pending.
 
 ### 4.3 The loader
 

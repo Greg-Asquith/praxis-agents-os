@@ -27,6 +27,7 @@ dependencies = [
     "pyjwt>=2.13.0",
     "pyotp>=2.10.0",
     "sqlalchemy>=2.0.51",
+    "sqlglot>=30.0.0",
     "tzdata>=2026.3",
     "uvicorn>=0.52.1",
 ]

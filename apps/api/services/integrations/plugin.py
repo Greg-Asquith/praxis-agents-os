@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     )
     from services.agents.runtime.entity_references.registry import EntityResolverDefinition
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
+    from services.integrations.table_scopes.adapter import TableScopeAdapter
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,7 @@ class IntegrationProviderPlugin:
     preview_definitions: tuple[IntegrationPreviewDefinition, ...] = ()
     entity_resolvers: tuple["EntityResolverDefinition", ...] = ()
     event_definition: IntegrationEventDefinition | None = None
+    table_scope_adapter: "TableScopeAdapter | None" = None
 
 
 PROVIDER_PLUGINS: dict[str, IntegrationProviderPlugin] = {}

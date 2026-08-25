@@ -58,6 +58,7 @@ INDIRECT_TABLES = (
     "integration_webhooks",
     "integration_events",
     "integration_table_schemas",
+    "integration_table_scope_rules",
     "integration_context_group_members",
 )
 RLS_TABLES = (*DIRECT_TABLES, *DUAL_OWNER_TABLES, *INDIRECT_TABLES)
@@ -97,6 +98,7 @@ def _required_value(
         ("file_references", "target_type"): "conversation",
         ("integration_events", "payload_digest"): marker * 64,
         ("integration_table_schemas", "table_type"): "table",
+        ("integration_table_scope_rules", "column_type"): "string",
         ("kb_documents", "source_type"): "manual",
         ("ai_usage_events", "provider"): "openai",
         ("ai_usage_events", "model"): "gpt-5.6-luna",
@@ -237,7 +239,7 @@ async def _seed_protected_row(
         )
         if "connection_id" in table.columns:
             overrides["connection_id"] = connection_id
-        if table.name == "integration_table_schemas":
+        if table.name in {"integration_table_schemas", "integration_table_scope_rules"}:
             resource_table = await _reflect_table(db, "integration_resources")
             resource_id = await _insert_seed(
                 db,
@@ -247,6 +249,8 @@ async def _seed_protected_row(
                 overrides={"connection_id": connection_id},
             )
             overrides["resource_id"] = resource_id[0]
+            if table.name == "integration_table_scope_rules":
+                overrides["allowed_values"] = ["client-1"]
         if table.name == "integration_context_group_members":
             resource_table = await _reflect_table(db, "integration_resources")
             resource_id = await _insert_seed(
