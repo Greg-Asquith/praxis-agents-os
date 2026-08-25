@@ -189,11 +189,12 @@ warehouse-style provider trigger provider-owned cache refresh from discovery
 and selection without an engine branch.
 
 The optional table-scope adapter is the support signal for provider-neutral
-row-filter management. Shared integration code owns persisted rules and the
-dialect-parametric rewrite engine. A warehouse provider contributes column
-eligibility, SQL predicate and parameter emission, reference exceptions, and
-modifier validation. The rule model, shared rewrite substrate, and BigQuery
-adapter exist; query enforcement, routes, and operator UI remain pending.
+row-filter management. Shared integration code owns persisted rules, management
+services and routes, the dialect-parametric rewrite engine, and the operator
+UI. A warehouse provider contributes column eligibility, SQL predicate and
+parameter emission, reference exceptions, modifier validation, and enforcement
+wiring in its query tool. BigQuery is the first adapter. A later warehouse
+provider reuses the shared layers without adding provider branches to them.
 
 ### 4.3 The loader
 

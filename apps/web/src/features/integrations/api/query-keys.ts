@@ -8,6 +8,10 @@ export const integrationsQueryKeys = {
   connections: () => [...baseIntegrationQueryKeys.workspace(), "connections"] as const,
   resources: (connectionId: string) =>
     [...baseIntegrationQueryKeys.detail(connectionId), "resources"] as const,
+  tableScopes: (connectionId: string) =>
+    [...baseIntegrationQueryKeys.detail(connectionId), "table-scopes"] as const,
+  resourceTables: (connectionId: string, resourceId: string) =>
+    [...baseIntegrationQueryKeys.detail(connectionId), "resources", resourceId, "tables"] as const,
   enabledResources: () => [...baseIntegrationQueryKeys.workspace(), "enabled-resources"] as const,
   contextGroups: () => [...baseIntegrationQueryKeys.workspace(), "context-groups"] as const,
   activeContexts: () => [...baseIntegrationQueryKeys.workspace(), "active-context"] as const,

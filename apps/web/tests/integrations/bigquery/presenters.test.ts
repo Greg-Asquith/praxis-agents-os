@@ -119,6 +119,7 @@ describe("BigQuery tool presenters", () => {
             truncated: true,
             total_bytes_processed: 2048,
             cache_hit: false,
+            row_filters_applied: true,
           },
         })
       )
@@ -131,6 +132,7 @@ describe("BigQuery tool presenters", () => {
     expect(html).toContain("Showing 2 of 12 rows.")
     expect(html).toContain("Download Report CSV")
     expect(html).toContain("Limited")
+    expect(html).toContain("Operator-defined row filters limited this result")
     expect(html).not.toContain("praxis_untrusted")
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
@@ -164,18 +166,18 @@ describe("BigQuery tool presenters", () => {
       [bigQuerySchemaPresenter, "bigquery_get_table_schema", "Reading BigQuery table schema"],
       [bigQueryQueryPresenter, "bigquery_run_query", "Running BigQuery query"],
     ] as const) {
-      expect(
-        render(
-          presenter.render(
-            props({
-              id: name,
-              kind: "call",
-              name,
-              status: "running",
-            })
-          )
+      const html = render(
+        presenter.render(
+          props({
+            id: name,
+            kind: "call",
+            name,
+            status: "running",
+          })
         )
-      ).toContain(expected)
+      )
+      expect(html).toContain(expected)
+      expect(html).toContain("text-sm font-medium")
     }
 
     expect(

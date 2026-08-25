@@ -44,6 +44,7 @@ export type BigQueryQueryResult = {
   totalBytesProcessed: number
   totalRows: number
   truncated: boolean
+  rowFiltersApplied: boolean
 }
 
 export function bigQueryDatasets(value: unknown): BigQueryDataset[] | null {
@@ -147,6 +148,12 @@ export function bigQueryQueryResult(value: unknown): BigQueryQueryResult | null 
   ) {
     return null
   }
+  if (
+    value["row_filters_applied"] !== undefined &&
+    typeof value["row_filters_applied"] !== "boolean"
+  ) {
+    return null
+  }
   const rows: DataRow[] = []
   const keys: string[] = []
   const seen = new Set<string>()
@@ -178,6 +185,7 @@ export function bigQueryQueryResult(value: unknown): BigQueryQueryResult | null 
     totalBytesProcessed: value["total_bytes_processed"],
     totalRows: value["total_rows"],
     truncated: value["truncated"],
+    rowFiltersApplied: value["row_filters_applied"] === true,
   }
 }
 

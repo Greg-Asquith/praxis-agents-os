@@ -24,6 +24,7 @@ export type IntegrationProvider = {
   required_form_fields: string[]
   capability_flags: string[]
   requires_discovery: boolean
+  table_scopes_supported: boolean
   configured: boolean
   configured_auth_modes: Record<string, boolean>
 }
@@ -100,6 +101,48 @@ export type ResourceSelectionResponse = {
   connection_id: string
   enabled_resource_ids: string[]
   status: string
+}
+
+type TableScopeColumn = {
+  name: string
+  column_type: "string" | "integer"
+  description: string | null
+}
+
+type TableScopeTable = {
+  table_external_id: string
+  description: string | null
+  columns: TableScopeColumn[]
+}
+
+export type TableScopeTableListResponse = {
+  connection_id: string
+  resource_id: string
+  tables: TableScopeTable[]
+  next_cursor: string | null
+}
+
+export type TableScopeRule = {
+  id: string
+  resource_id: string
+  resource_external_id: string
+  resource_display_name: string
+  table_external_id: string
+  column_name: string
+  column_type: "string" | "integer"
+  allowed_values: string[]
+}
+
+export type TableScopeListResponse = {
+  connection_id: string
+  rules: TableScopeRule[]
+}
+
+export type TableScopeRuleInput = {
+  resource_id: string
+  table_external_id: string
+  column_name: string
+  allowed_values: string[]
 }
 
 export type OAuthConnectResponse = {

@@ -15,6 +15,7 @@ const provider: IntegrationProvider = {
   required_form_fields: [],
   requires_discovery: true,
   resource_types: ["mailbox"],
+  table_scopes_supported: false,
 }
 
 function connection(status: IntegrationConnection["status"]): IntegrationConnection {

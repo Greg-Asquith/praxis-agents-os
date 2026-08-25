@@ -47,6 +47,11 @@ export const bigQueryQueryPresenter: ToolRowPresenter = {
           </Badge>
         }
       >
+        {result.rowFiltersApplied ? (
+          <p className="bg-muted/50 text-muted-foreground mb-3 rounded-lg border px-3 py-2 text-xs">
+            Operator-defined row filters limited this result to allowed values.
+          </p>
+        ) : null}
         {result.rows.length > 0 && result.columns.length > 0 ? (
           <DataTable
             columns={result.columns}

@@ -1,7 +1,7 @@
 // apps/web/src/features/integrations/components/resource-selection-panel.tsx
 
 import { useState } from "react"
-import { RefreshCwIcon } from "lucide-react"
+import { FilterIcon, RefreshCwIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,15 @@ import { useRetryDiscoveryMutation } from "@/features/integrations/api/retry-dis
 import { useIntegrationResourcesForConnectionQuery } from "@/features/integrations/api/list-resources"
 import { useUpdateResourceSelectionMutation } from "@/features/integrations/api/update-resource-selection"
 import { ResourceRow } from "@/features/integrations/components/resource-row"
+import { tableScopeResourceIsFilterable } from "@/features/integrations/components/table-scope-editor-model"
+import {
+  TableScopeFilterChip,
+  TableScopeFilterFootnote,
+} from "@/features/integrations/components/table-scope-row-filters"
+import {
+  type TableScopeRowFiltersController,
+  useTableScopeRowFilters,
+} from "@/features/integrations/components/use-table-scope-row-filters"
 import {
   discoveryIsInFlight,
   discoveryNeedsRecovery,
@@ -27,21 +36,54 @@ import { formatDateTime } from "@/lib/format"
 export function ResourceSelectionPanel({
   canEdit,
   connection,
+  tableScopesSupported,
 }: {
   canEdit: boolean
   connection: IntegrationConnection
+  tableScopesSupported: boolean
 }) {
   const { data: resources } = useIntegrationResourcesForConnectionQuery(connection.id)
   const signature = resources
     .map((resource) => `${resource.id}:${resource.enabled ? "1" : "0"}:${resource.availability}`)
     .join("|")
 
+  if (canEdit && tableScopesSupported) {
+    return (
+      <FilteredResourceSelectionForm
+        canEdit={canEdit}
+        connection={connection}
+        key={signature}
+        resources={resources}
+      />
+    )
+  }
   return (
     <ResourceSelectionForm
       canEdit={canEdit}
       connection={connection}
       key={signature}
       resources={resources}
+      rowFilters={null}
+    />
+  )
+}
+
+function FilteredResourceSelectionForm({
+  canEdit,
+  connection,
+  resources,
+}: {
+  canEdit: boolean
+  connection: IntegrationConnection
+  resources: IntegrationResource[]
+}) {
+  const rowFilters = useTableScopeRowFilters(connection)
+  return (
+    <ResourceSelectionForm
+      canEdit={canEdit}
+      connection={connection}
+      resources={resources}
+      rowFilters={rowFilters}
     />
   )
 }
@@ -50,10 +92,12 @@ function ResourceSelectionForm({
   canEdit,
   connection,
   resources,
+  rowFilters,
 }: {
   canEdit: boolean
   connection: IntegrationConnection
   resources: IntegrationResource[]
+  rowFilters: TableScopeRowFiltersController | null
 }) {
   const saveMutation = useUpdateResourceSelectionMutation()
   const discoveryMutation = useRetryDiscoveryMutation()
@@ -67,6 +111,7 @@ function ResourceSelectionForm({
   const discoveryRun = connection.latest_discovery_run
   const discoveryPending = discoveryIsInFlight(connection)
   const discoveryStalled = discoveryNeedsRecovery(connection)
+  const filterFootnoteId = `table-scope-filter-note-${connection.id}`
 
   async function save() {
     setError(null)
@@ -105,6 +150,12 @@ function ResourceSelectionForm({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+      {rowFilters?.error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Row filters not saved</AlertTitle>
+          <AlertDescription>{rowFilters.error}</AlertDescription>
+        </Alert>
+      ) : null}
       <div className="flex flex-col gap-4">
         {groups.length > 0 ? (
           groups.map(([resourceType, items]) => (
@@ -113,38 +164,77 @@ function ResourceSelectionForm({
                 {integrationResourceTypeLabel(resourceType)}
               </h4>
               <div className="bg-background max-h-80 overflow-y-auto rounded-lg border p-1">
-                {resourcesWithExpandedParents(items, collapsedManagers).map((resource) => (
-                  <ResourceRow
-                    canEdit={canEdit}
-                    checked={selected.has(resource.id)}
-                    collapsed={collapsedManagers.has(resource.external_id)}
-                    key={resource.id}
-                    onCheckedChange={(checked) => {
-                      setSelected((current) => {
-                        const next = new Set(current)
-                        if (checked) {
-                          next.add(resource.id)
-                        } else {
-                          next.delete(resource.id)
-                        }
-                        return next
-                      })
-                    }}
-                    onToggleCollapsed={() => {
-                      setCollapsedManagers((current) => {
-                        const next = new Set(current)
-                        if (next.has(resource.external_id)) {
-                          next.delete(resource.external_id)
-                        } else {
-                          next.add(resource.external_id)
-                        }
-                        return next
-                      })
-                    }}
-                    providerKey={connection.provider_key}
-                    resource={resource}
-                  />
-                ))}
+                {resourcesWithExpandedParents(items, collapsedManagers).map((resource) => {
+                  const filterRules = rowFilters ? rowFilters.rulesFor(resource.id) : []
+                  return (
+                    <ResourceRow
+                      action={
+                        rowFilters && tableScopeResourceIsFilterable(resource) ? (
+                          <Button
+                            aria-label={`Add filter for ${resource.display_name}`}
+                            className="text-muted-foreground"
+                            disabled={rowFilters.pending}
+                            onClick={() => {
+                              rowFilters.beginAdd(resource)
+                            }}
+                            size="xs"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <FilterIcon data-icon="inline-start" />
+                            Add Filter
+                          </Button>
+                        ) : null
+                      }
+                      canEdit={canEdit}
+                      checked={selected.has(resource.id)}
+                      collapsed={collapsedManagers.has(resource.external_id)}
+                      key={resource.id}
+                      onCheckedChange={(checked) => {
+                        setSelected((current) => {
+                          const next = new Set(current)
+                          if (checked) {
+                            next.add(resource.id)
+                          } else {
+                            next.delete(resource.id)
+                          }
+                          return next
+                        })
+                      }}
+                      onToggleCollapsed={() => {
+                        setCollapsedManagers((current) => {
+                          const next = new Set(current)
+                          if (next.has(resource.external_id)) {
+                            next.delete(resource.external_id)
+                          } else {
+                            next.add(resource.external_id)
+                          }
+                          return next
+                        })
+                      }}
+                      providerKey={connection.provider_key}
+                      resource={resource}
+                      selectionDisabled={selected.has(resource.id) && filterRules.length > 0}
+                      selectionDisabledReasonId={filterFootnoteId}
+                    >
+                      {rowFilters && filterRules.length > 0
+                        ? filterRules.map((rule) => (
+                            <TableScopeFilterChip
+                              disabled={rowFilters.pending}
+                              key={rule.id}
+                              onEdit={() => {
+                                rowFilters.beginEdit(rule)
+                              }}
+                              onRemove={() => {
+                                rowFilters.beginRemove(rule)
+                              }}
+                              rule={rule}
+                            />
+                          ))
+                        : null}
+                    </ResourceRow>
+                  )
+                })}
               </div>
             </section>
           ))
@@ -154,6 +244,9 @@ function ResourceSelectionForm({
           </p>
         )}
       </div>
+      {rowFilters && rowFilters.rules.length > 0 ? (
+        <TableScopeFilterFootnote id={filterFootnoteId} />
+      ) : null}
       <div className="flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-muted-foreground flex flex-col gap-0.5 text-xs">
           <span>
@@ -207,6 +300,7 @@ function ResourceSelectionForm({
           </div>
         ) : null}
       </div>
+      {rowFilters?.dialogs}
     </div>
   )
 }

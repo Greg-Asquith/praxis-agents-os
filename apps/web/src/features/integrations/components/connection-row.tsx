@@ -279,7 +279,11 @@ export function ConnectionRow({
       </div>
       {expanded && provider.requires_discovery ? (
         <Suspense fallback={<Skeleton className="m-4 h-40" />}>
-          <ResourceSelectionPanel canEdit={canEditResources} connection={connection} />
+          <ResourceSelectionPanel
+            canEdit={canEditResources}
+            connection={connection}
+            tableScopesSupported={provider.table_scopes_supported}
+          />
         </Suspense>
       ) : null}
       <ConfirmDialog

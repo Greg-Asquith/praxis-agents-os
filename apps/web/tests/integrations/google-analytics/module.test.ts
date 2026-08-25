@@ -43,6 +43,7 @@ describe("Google Analytics integration module", () => {
           required_form_fields: [],
           requires_discovery: true,
           resource_types: ["google_analytics_property"],
+          table_scopes_supported: false,
         },
       })
     )

@@ -128,6 +128,16 @@ injection eval. Workspace scoping, dry-run statement/context authorization,
 rejection of persistent routines, query byte/row/serialized-result caps, typed
 output validation, and audit remain enforced.
 
+BigQuery row-scope rules add a deterministic platform-enforced filter for
+operator-selected base tables. When a connection has any rule, a fail-closed
+SQLGlot rewrite wraps every governed table reference and binds allowed values
+as typed parameters. The BigQuery dry run remains authoritative for statement
+type, referenced tables, and bytes processed, and it evaluates the rewritten
+query with the same parameters used for execution. Queries fail when parsing
+or table resolution is incomplete. Views, materialized views, external tables,
+wildcards, and cache-unknown tables are unavailable while any rule exists.
+Connections without rules retain the original query path.
+
 **Agent-memory boundary (operator decision, 2026-07-27):** memory is
 Praxis-internal agent state, not an external-content channel. `search_memory`
 returns plain typed title/content plus server-minted provenance, and core-memory

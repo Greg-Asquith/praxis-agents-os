@@ -20,6 +20,7 @@ const mixedModeGoogleAds: IntegrationProvider = {
   required_form_fields: [],
   requires_discovery: true,
   resource_types: ["customer_account"],
+  table_scopes_supported: false,
 }
 
 const serviceAccountConnection: IntegrationConnection = {
