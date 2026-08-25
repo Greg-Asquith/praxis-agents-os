@@ -1,7 +1,9 @@
 // apps/web/src/features/skills/components/skills-table.tsx
 
 import { Link } from "@tanstack/react-router"
-import { PencilIcon, PlusIcon, SparklesIcon } from "lucide-react"
+import type { OnChangeFn, PaginationState } from "@tanstack/react-table"
+import { EyeIcon, PencilIcon, PlusIcon, SparklesIcon } from "lucide-react"
+import { useMemo } from "react"
 
 import {
   createAppColumnHelper,
@@ -10,6 +12,10 @@ import {
   useHeaderContext,
   useTableContext,
 } from "@/components/data-table/table"
+import {
+  paginationStateFromServer,
+  paginationStateToServer,
+} from "@/components/data-table/server-state"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -32,74 +38,106 @@ import { formatDateTime, pluralize } from "@/lib/format"
 
 const columnHelper = createAppColumnHelper<Skill>()
 
-const columns = columnHelper.columns([
-  columnHelper.display({
-    id: "name",
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ row }) => (
-      <div className="flex min-w-40 flex-col gap-1">
-        <Link
-          className="font-medium hover:underline"
-          params={{ skillId: row.original.id }}
-          to="/skills/$skillId"
+function skillColumns(canManagePlatformSkills: boolean) {
+  return columnHelper.columns([
+    columnHelper.display({
+      id: "name",
+      header: ({ header }) => <header.ColumnHeader />,
+      cell: ({ row }) => (
+        <div className="flex min-w-40 flex-col gap-1">
+          <Link
+            className="font-medium hover:underline"
+            params={{ skillId: row.original.id }}
+            to="/skills/$skillId"
+          >
+            {skillDisplayName(row.original)}
+          </Link>
+          {row.original.scope === "platform" && !canManagePlatformSkills ? (
+            <span className="text-muted-foreground text-xs">Managed by Admins</span>
+          ) : null}
+        </div>
+      ),
+      meta: { label: "Name" },
+    }),
+    columnHelper.accessor("description", {
+      header: ({ header }) => <header.ColumnHeader />,
+      cell: ({ getValue }) => (
+        <span className="text-muted-foreground block max-w-md truncate text-sm">{getValue()}</span>
+      ),
+      meta: { label: "Description" },
+    }),
+    columnHelper.display({
+      id: "documents",
+      header: ({ header }) => <header.ColumnHeader />,
+      cell: ({ row }) => {
+        const documentCount = Object.keys(row.original.documentation_refs).length
+        return `${String(documentCount)} ${pluralize(documentCount, "document")}`
+      },
+      meta: { label: "Documents" },
+    }),
+    columnHelper.display({
+      id: "status",
+      header: ({ header }) => <header.ColumnHeader />,
+      cell: ({ row }) => <SkillStatusBadges skill={row.original} />,
+      meta: { label: "Status" },
+    }),
+    columnHelper.accessor("last_used_at", {
+      header: ({ header }) => <header.ColumnHeader />,
+      cell: ({ getValue }) => formatDateTime(getValue()),
+      meta: { label: "Last used" },
+    }),
+    columnHelper.display({
+      id: "actions",
+      header: ({ header }) => <header.ColumnHeader />,
+      cell: ({ row }) => (
+        <Button
+          render={<Link params={{ skillId: row.original.id }} to="/skills/$skillId" />}
+          size="sm"
+          variant="outline"
         >
-          {skillDisplayName(row.original)}
-        </Link>
-        {row.original.is_favorite ? (
-          <span className="text-muted-foreground text-xs">Favorite</span>
-        ) : null}
-      </div>
-    ),
-    meta: { label: "Name" },
-  }),
-  columnHelper.accessor("description", {
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => (
-      <span className="text-muted-foreground block max-w-md truncate text-sm">{getValue()}</span>
-    ),
-    meta: { label: "Description" },
-  }),
-  columnHelper.display({
-    id: "documents",
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ row }) => {
-      const documentCount = Object.keys(row.original.documentation_refs).length
-      return `${String(documentCount)} ${pluralize(documentCount, "document")}`
-    },
-    meta: { label: "Documents" },
-  }),
-  columnHelper.display({
-    id: "status",
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ row }) => <SkillStatusBadges skill={row.original} />,
-    meta: { label: "Status" },
-  }),
-  columnHelper.accessor("last_used_at", {
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ getValue }) => formatDateTime(getValue()),
-    meta: { label: "Last used" },
-  }),
-  columnHelper.display({
-    id: "actions",
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ row }) => (
-      <Button
-        render={<Link params={{ skillId: row.original.id }} to="/skills/$skillId" />}
-        size="sm"
-        variant="outline"
-      >
-        <PencilIcon data-icon="inline-start" />
-        Edit
-      </Button>
-    ),
-    meta: { label: "Actions", labelClassName: "sr-only" },
-  }),
-])
+          {row.original.scope === "platform" && !canManagePlatformSkills ? (
+            <EyeIcon data-icon="inline-start" />
+          ) : (
+            <PencilIcon data-icon="inline-start" />
+          )}
+          {row.original.scope === "platform" && !canManagePlatformSkills ? "View" : "Edit"}
+        </Button>
+      ),
+      meta: { label: "Actions", labelClassName: "sr-only" },
+    }),
+  ])
+}
 
-export function SkillsTable({ skills }: { skills: Skill[] }) {
-  const table = useAppTable({ columns, data: skills })
+export function SkillsTable({
+  canManagePlatformSkills,
+  limit,
+  offset,
+  onPageChange,
+  skills,
+  total,
+}: {
+  canManagePlatformSkills: boolean
+  limit: number
+  offset: number
+  onPageChange: (offset: number) => void
+  skills: Skill[]
+  total: number
+}) {
+  const columns = useMemo(() => skillColumns(canManagePlatformSkills), [canManagePlatformSkills])
+  const pagination = paginationStateFromServer({ limit, offset }, total)
+  const table = useAppTable({
+    columns,
+    data: skills,
+    manualPagination: true,
+    onPaginationChange: ((updater) => {
+      const nextPagination = typeof updater === "function" ? updater(pagination) : updater
+      onPageChange(paginationStateToServer(nextPagination).offset)
+    }) satisfies OnChangeFn<PaginationState>,
+    rowCount: total,
+    state: { pagination },
+  })
 
-  if (skills.length === 0) {
+  if (total === 0) {
     return (
       <EmptyState
         action={
@@ -120,12 +158,17 @@ export function SkillsTable({ skills }: { skills: Skill[] }) {
     <div className="flex flex-col gap-3">
       <ResponsiveList>
         {skills.map((skill) => (
-          <SkillMobileRow key={skill.id} skill={skill} />
+          <SkillMobileRow
+            canManagePlatformSkills={canManagePlatformSkills}
+            key={skill.id}
+            skill={skill}
+          />
         ))}
       </ResponsiveList>
 
       <table.AppTable>
         <SkillsDesktopTable />
+        <table.Pagination ariaLabel="Skills pagination" total={total} />
       </table.AppTable>
     </div>
   )
@@ -178,19 +221,20 @@ function SkillBodyCell() {
   )
 }
 
-function SkillMobileRow({ skill }: { skill: Skill }) {
+function SkillMobileRow({
+  canManagePlatformSkills,
+  skill,
+}: {
+  canManagePlatformSkills: boolean
+  skill: Skill
+}) {
   const documentCount = Object.keys(skill.documentation_refs).length
 
   return (
     <ResponsiveListItem>
       <div className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium">{skillDisplayName(skill)}</p>
-            {skill.is_favorite ? (
-              <p className="text-muted-foreground truncate text-xs">Favorite</p>
-            ) : null}
-          </div>
+          <p className="min-w-0 truncate font-medium">{skillDisplayName(skill)}</p>
           <SkillStatusBadges skill={skill} />
         </div>
 
@@ -210,8 +254,12 @@ function SkillMobileRow({ skill }: { skill: Skill }) {
           variant="outline"
           render={<Link to="/skills/$skillId" params={{ skillId: skill.id }} />}
         >
-          <PencilIcon data-icon="inline-start" />
-          Edit
+          {skill.scope === "platform" && !canManagePlatformSkills ? (
+            <EyeIcon data-icon="inline-start" />
+          ) : (
+            <PencilIcon data-icon="inline-start" />
+          )}
+          {skill.scope === "platform" && !canManagePlatformSkills ? "View" : "Edit"}
         </Button>
       </div>
     </ResponsiveListItem>
@@ -224,7 +272,10 @@ function SkillStatusBadges({ skill }: { skill: Skill }) {
       <Badge variant={skill.is_active ? "success" : "outline"}>
         {skill.is_active ? "Active" : "Inactive"}
       </Badge>
-      {skill.is_favorite ? <Badge variant="outline">Favorite</Badge> : null}
+      {skill.scope === "platform" ? <Badge variant="secondary">Platform</Badge> : null}
+      {skill.scope === "workspace" && skill.is_favorite ? (
+        <Badge variant="outline">Favorite</Badge>
+      ) : null}
     </div>
   )
 }

@@ -10,7 +10,7 @@ async function getSkill(skillId: string) {
   return apiRequest<Skill>(`/skills/${skillId}`)
 }
 
-function skillQueryOptions(skillId: string) {
+export function skillQueryOptions(skillId: string) {
   return queryOptions({
     queryKey: skillsQueryKeys.detail(skillId),
     queryFn: () => getSkill(skillId),

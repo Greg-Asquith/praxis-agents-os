@@ -19,6 +19,14 @@ export const SKILL_CREATE_STEPS = [
   ...FormWizardStep<SkillWizardStepId>[],
 ]
 
+export const PLATFORM_SKILL_CREATE_STEPS = [
+  { id: "identity", title: "What does this skill do?" },
+  { id: "instructions", title: "How should it work?" },
+] as const satisfies readonly [
+  FormWizardStep<SkillWizardStepId>,
+  ...FormWizardStep<SkillWizardStepId>[],
+]
+
 export const SKILL_EDIT_STEPS = [
   { id: "identity", title: "What does this skill do?" },
   { id: "instructions", title: "How should it work?" },
@@ -28,6 +36,15 @@ export const SKILL_EDIT_STEPS = [
     optional: true,
     title: "Reference documents",
   },
+  { id: "availability", title: "Availability" },
+] as const satisfies readonly [
+  FormWizardStep<SkillWizardStepId>,
+  ...FormWizardStep<SkillWizardStepId>[],
+]
+
+export const PLATFORM_SKILL_EDIT_STEPS = [
+  { id: "identity", title: "What does this skill do?" },
+  { id: "instructions", title: "How should it work?" },
   { id: "availability", title: "Availability" },
 ] as const satisfies readonly [
   FormWizardStep<SkillWizardStepId>,

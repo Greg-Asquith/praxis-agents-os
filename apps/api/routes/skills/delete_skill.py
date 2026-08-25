@@ -1,6 +1,6 @@
 # apps/api/routes/skills/delete_skill.py
 
-"""Route for soft-deleting a workspace skill."""
+"""Route for soft-deleting a workspace or platform skill."""
 
 from typing import Annotated
 from uuid import UUID

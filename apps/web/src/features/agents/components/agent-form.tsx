@@ -1,6 +1,7 @@
 // apps/web/src/features/agents/components/agent-form.tsx
 
 import { useId, useMemo, useRef, useState, type SyntheticEvent } from "react"
+import { useQueries } from "@tanstack/react-query"
 
 import { FormAlerts } from "@/components/forms/form-alerts"
 import { FormWizard, type FormWizardNavigation } from "@/components/forms/form-wizard"
@@ -30,6 +31,7 @@ import { AgentToolsSection } from "@/features/agents/components/agent-tools-sect
 import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { Agent, AgentCreateRequest, AgentUpdateRequest } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
+import { skillQueryOptions } from "@/features/skills/api/get-skill"
 import { useSkillsQuery } from "@/features/skills/api/list-skills"
 import { useToolCatalogQuery } from "@/features/tools/api/list-tool-catalog"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -54,17 +56,33 @@ type AgentFormProps =
       onSubmit: (payload: AgentUpdateRequest) => Promise<void>
     }
 
+const SKILL_PAGE_SIZE = 50
+
 export function AgentForm(props: AgentFormProps) {
   const formId = useId()
   const wizardNavigationRef = useRef<FormWizardNavigation<AgentWizardStepId>>(null)
   const agent = props.mode === "edit" ? props.agent : null
   const { data: toolCatalog } = useToolCatalogQuery()
-  const { data: skillsData } = useSkillsQuery({ limit: 100 })
   const initialState = useMemo(
     () => initialAgentFormState(agent, toolCatalog.tools),
     [agent, toolCatalog.tools]
   )
   const [state, setState] = useState<AgentFormState>(() => initialState)
+  const [skillOffset, setSkillOffset] = useState(0)
+  const { data: skillsData } = useSkillsQuery({ limit: SKILL_PAGE_SIZE, offset: skillOffset })
+  const pagedSkillIds = new Set(skillsData.skills.map((skill) => skill.id))
+  const selectedSkillQueries = useQueries({
+    queries: state.skillIds
+      .filter((skillId) => !pagedSkillIds.has(skillId))
+      .map((skillId) => ({ ...skillQueryOptions(skillId), retry: false })),
+  })
+  const skillsById = new Map(skillsData.skills.map((skill) => [skill.id, skill]))
+  for (const query of selectedSkillQueries) {
+    if (query.data) {
+      skillsById.set(query.data.id, query.data)
+    }
+  }
+  const skills = [...skillsById.values()]
   const [formError, setFormError] = useState<string | null>(null)
   const [validationStep, setValidationStep] = useState<AgentWizardStepId | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(
@@ -199,9 +217,13 @@ export function AgentForm(props: AgentFormProps) {
                     state={state}
                   />
                   <AgentSkillsSection
+                    limit={skillsData.limit}
+                    offset={skillsData.offset}
+                    onPageChange={setSkillOffset}
                     setField={setField}
                     skillIds={state.skillIds}
-                    skills={skillsData.skills}
+                    skills={skills}
+                    total={skillsData.total}
                   />
                 </div>
               ) : null}

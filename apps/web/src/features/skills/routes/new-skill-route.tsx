@@ -1,11 +1,13 @@
 // apps/web/src/features/skills/routes/new-skill-route.tsx
 
 import { Link, useNavigate } from "@tanstack/react-router"
+import { useSuspenseQuery } from "@tanstack/react-query"
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react"
 import { useState } from "react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useCreateSkillMutation } from "@/features/skills/api/create-skill"
 import {
   useConfirmSkillDocumentUploadMutation,
@@ -20,10 +22,12 @@ import { contentTypeForFile } from "@/lib/file"
 
 export function NewSkillRoute() {
   const navigate = useNavigate()
+  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const createSkillMutation = useCreateSkillMutation()
   const createDocumentUploadMutation = useCreateSkillDocumentUploadMutation()
   const confirmDocumentUploadMutation = useConfirmSkillDocumentUploadMutation()
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false)
+  const [scope, setScope] = useState<"workspace" | "platform">("workspace")
   const [postCreateWarning, setPostCreateWarning] = useState<{
     message: string
   } | null>(null)
@@ -125,10 +129,13 @@ export function NewSkillRoute() {
         </Alert>
       ) : (
         <SkillForm
+          canSetPlatformScope={user.is_super_admin}
           cancelLabel="Cancel"
           isSubmitting={isSubmitting}
           mode="create"
+          onScopeChange={setScope}
           onSubmit={handleCreateSkill}
+          scope={scope}
         />
       )}
     </div>

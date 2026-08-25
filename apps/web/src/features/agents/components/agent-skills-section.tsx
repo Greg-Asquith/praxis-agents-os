@@ -4,8 +4,10 @@ import { useMemo, useState } from "react"
 import { PlusIcon, XIcon } from "lucide-react"
 
 import { FormSection } from "@/components/forms/form-section"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { PaginationControls } from "@/components/ui/pagination-controls"
 import {
   Select,
   SelectContent,
@@ -24,13 +26,21 @@ import type { Skill } from "@/features/skills/types"
 const NO_SKILL_SELECTION = "None"
 
 export function AgentSkillsSection({
+  limit,
+  offset,
+  onPageChange,
   setField,
   skillIds,
   skills,
+  total,
 }: {
+  limit: number
+  offset: number
+  onPageChange: (offset: number) => void
   setField: AgentFormFieldSetter
   skillIds: AgentFormState["skillIds"]
   skills: Skill[]
+  total: number
 }) {
   const [skillSelection, setSkillSelection] = useState(NO_SKILL_SELECTION)
   const skillIdSet = useMemo(() => new Set(skillIds), [skillIds])
@@ -69,7 +79,7 @@ export function AgentSkillsSection({
 
   return (
     <FormSection
-      description="Optionally give this agent reusable instructions and reference material from workspace skills."
+      description="Optionally give this agent reusable instructions and reference material from available skills."
       eyebrow="Optional"
       title="Attached skills"
     >
@@ -96,7 +106,10 @@ export function AgentSkillsSection({
                     <SelectItem key={skill.id} label={skillDisplayName(skill)} value={skill.id}>
                       <span className="flex min-w-0 flex-col items-start gap-0.5">
                         <span className="truncate">{skillDisplayName(skill)}</span>
-                        <span className="text-muted-foreground truncate text-xs">{skill.name}</span>
+                        <span className="text-muted-foreground truncate text-xs">
+                          {skill.name}
+                          {skill.scope === "platform" ? " · Platform" : ""}
+                        </span>
                       </span>
                     </SelectItem>
                   ))}
@@ -117,6 +130,15 @@ export function AgentSkillsSection({
             Only active skills can be attached. Inactive attached skills remain visible until
             removed.
           </FieldDescription>
+          {total > limit ? (
+            <PaginationControls
+              ariaLabel="Available skills pagination"
+              limit={limit}
+              offset={offset}
+              onPageChange={onPageChange}
+              total={total}
+            />
+          ) : null}
         </Field>
 
         <div className="flex flex-col gap-2">
@@ -136,7 +158,14 @@ export function AgentSkillsSection({
                   key={id}
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{label}</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate text-sm font-medium">{label}</p>
+                      {skill?.scope === "platform" ? (
+                        <Badge className="shrink-0" variant="secondary">
+                          Platform
+                        </Badge>
+                      ) : null}
+                    </div>
                     <p className="text-muted-foreground truncate text-xs">{description}</p>
                   </div>
                   <Button

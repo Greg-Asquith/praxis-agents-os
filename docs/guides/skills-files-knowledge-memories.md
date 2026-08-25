@@ -21,6 +21,11 @@ short description first and loads the full instructions only when the task
 requires them. A skill can also include supporting documents, such as a report
 template or style guide.
 
+Super admins can also publish a platform skill to every workspace. Platform
+skills contain instructions only, are marked **Platform** in the Skills list,
+and can be changed only by a super admin. Workspace members can assign them to
+agents but cannot edit or delete them.
+
 Use a skill if you repeat the same instructions in several conversations. For
 example, create a skill when every customer onboarding email
 must follow the same structure.

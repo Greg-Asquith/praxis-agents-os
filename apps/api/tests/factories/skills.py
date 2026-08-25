@@ -3,7 +3,7 @@
 
 from uuid import uuid4
 
-from models.skills import Skill
+from models.skills import Skill, SkillScope
 from models.user import User
 from models.workspace import Workspace
 
@@ -20,6 +20,7 @@ def build_skill(
         "human_name": "Test Skill",
         "description": "Reusable operating guidance.",
         "instructions": "Follow the documented workflow.",
+        "scope": SkillScope.WORKSPACE,
         "workspace_id": workspace.id,
         "created_by": created_by.id,
     }

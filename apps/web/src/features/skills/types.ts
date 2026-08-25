@@ -24,7 +24,8 @@ export type Skill = {
   human_name: string | null
   description: string
   instructions: string
-  workspace_id: string
+  scope: "workspace" | "platform"
+  workspace_id: string | null
   created_by: string
   documentation_refs: Record<string, SkillDocumentManifestEntry>
   is_active: boolean
@@ -52,9 +53,10 @@ export type SkillCreateRequest = {
   is_active?: boolean
   is_favorite?: boolean
   metadata?: Record<string, unknown> | null
+  scope?: "workspace" | "platform"
 }
 
-export type SkillUpdateRequest = Partial<SkillCreateRequest>
+export type SkillUpdateRequest = Partial<Omit<SkillCreateRequest, "scope">>
 
 export type SkillDocumentUploadRequest = {
   document_name: string

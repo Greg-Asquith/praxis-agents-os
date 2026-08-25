@@ -56,9 +56,8 @@ describe("skill wizard configuration", () => {
   })
 
   it("keeps safe create defaults out of the create steps", () => {
-    expect(initialSkillFormState(null)).toMatchObject({
-      isActive: "true",
-      isFavorite: "false",
-    })
+    const initialState = initialSkillFormState(null)
+
+    expect(initialState).toMatchObject({ isActive: "true", isFavorite: "false" })
   })
 })

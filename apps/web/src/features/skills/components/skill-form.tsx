@@ -23,6 +23,8 @@ import { SkillInstructionsSection } from "@/features/skills/components/skill-ins
 import {
   SKILL_CREATE_STEPS,
   SKILL_EDIT_STEPS,
+  PLATFORM_SKILL_CREATE_STEPS,
+  PLATFORM_SKILL_EDIT_STEPS,
   skillValidationEntriesForStep,
   stepForSkillField,
   type SkillWizardStepId,
@@ -35,8 +37,11 @@ type SkillFormProps =
   | {
       cancelLabel: string
       children?: ReactNode
+      canSetPlatformScope: boolean
       isSubmitting: boolean
       mode: "create"
+      onScopeChange: (scope: "workspace" | "platform") => void
+      scope: "workspace" | "platform"
       onSubmit: (
         payload: SkillCreateRequest,
         documents: PendingSkillDocumentUpload[]
@@ -55,6 +60,8 @@ export function SkillForm(props: SkillFormProps) {
   const formId = useId()
   const wizardNavigationRef = useRef<FormWizardNavigation<SkillWizardStepId>>(null)
   const skill = props.mode === "edit" ? props.skill : null
+  const isPlatform =
+    props.mode === "create" ? props.scope === "platform" : skill?.scope === "platform"
   const initialState = useMemo(() => initialSkillFormState(skill), [skill])
   const [state, setState] = useState<SkillFormState>(() => initialState)
   const [formError, setFormError] = useState<string | null>(null)
@@ -91,7 +98,14 @@ export function SkillForm(props: SkillFormProps) {
           setFormError(payload)
           return
         }
-        await props.onSubmit(payload, pendingDocuments)
+        await props.onSubmit(
+          {
+            ...payload,
+            is_favorite: props.scope === "platform" ? false : (payload.is_favorite ?? false),
+            scope: props.scope,
+          },
+          props.scope === "platform" ? [] : pendingDocuments
+        )
       } else {
         const payload = buildSkillPayload(state, "edit")
         if (typeof payload === "string") {
@@ -120,7 +134,15 @@ export function SkillForm(props: SkillFormProps) {
       isSubmitting={props.isSubmitting}
       navigationRef={wizardNavigationRef}
       pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
-      steps={props.mode === "create" ? SKILL_CREATE_STEPS : SKILL_EDIT_STEPS}
+      steps={
+        props.mode === "create"
+          ? isPlatform
+            ? PLATFORM_SKILL_CREATE_STEPS
+            : SKILL_CREATE_STEPS
+          : isPlatform
+            ? PLATFORM_SKILL_EDIT_STEPS
+            : SKILL_EDIT_STEPS
+      }
       submitLabel={props.mode === "create" ? "Create Skill" : "Save Changes"}
       validateStep={validateStep}
     >
@@ -140,8 +162,10 @@ export function SkillForm(props: SkillFormProps) {
             />
             {activeStepId === "identity" ? (
               <SkillIdentitySection
+                canSetPlatformScope={props.mode === "create" && props.canSetPlatformScope}
                 description={state.description}
                 fieldErrors={fieldErrors}
+                isPlatform={isPlatform}
                 mode={props.mode}
                 name={state.name}
                 onDescriptionChange={(description) => {
@@ -149,6 +173,11 @@ export function SkillForm(props: SkillFormProps) {
                 }}
                 onNameChange={(name) => {
                   setField("name", name)
+                }}
+                onPlatformChange={(checked) => {
+                  if (props.mode === "create") {
+                    props.onScopeChange(checked ? "platform" : "workspace")
+                  }
                 }}
               />
             ) : null}
@@ -184,6 +213,7 @@ export function SkillForm(props: SkillFormProps) {
                 onFavoriteChange={(isFavorite) => {
                   setField("isFavorite", isFavorite)
                 }}
+                showFavorite={!isPlatform}
               />
             ) : null}
           </div>

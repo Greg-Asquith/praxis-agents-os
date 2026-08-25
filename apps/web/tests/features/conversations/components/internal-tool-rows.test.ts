@@ -968,6 +968,7 @@ function render(
           human_name: "Source Research",
           description: "Researches primary sources.",
           instructions: "Use primary sources.",
+          scope: "workspace",
           workspace_id: "workspace-1",
           created_by: "user-1",
           documentation_refs: {},

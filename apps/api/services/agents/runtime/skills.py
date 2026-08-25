@@ -12,7 +12,7 @@ from pydantic_ai import ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import AgentCapability, Capability
 
 from models.agent_run import AgentRun
-from models.skills import Skill
+from models.skills import Skill, SkillScope
 from services.agents.runtime.context import RuntimeDeps
 from services.skills.documents.domain import SkillDocumentEntry
 from services.skills.documents.utils import (
@@ -75,7 +75,8 @@ def record_skill_activation(
     for skill in skills:
         if skill_capability_id(skill) != capability_id:
             continue
-        skill.last_used_at = datetime.now(UTC)
+        if skill.scope == SkillScope.WORKSPACE:
+            skill.last_used_at = datetime.now(UTC)
         logger.info(
             "Recorded runtime skill activation",
             extra={
@@ -126,7 +127,7 @@ def _ready_document_entries(skill: Skill) -> list[tuple[str, SkillDocumentEntry]
 def _build_read_skill_document_tool(
     skills: Sequence[Skill],
 ) -> Tool[RuntimeDeps]:
-    skills_by_name = {skill.name: skill for skill in skills}
+    skills_by_name = {skill.name: skill for skill in skills if _ready_document_entries(skill)}
 
     async def read_skill_document(
         ctx: RunContext[RuntimeDeps],

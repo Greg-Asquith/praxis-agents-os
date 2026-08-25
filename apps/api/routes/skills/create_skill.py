@@ -1,6 +1,6 @@
 # apps/api/routes/skills/create_skill.py
 
-"""Route for creating a workspace skill."""
+"""Route for creating a workspace or platform skill."""
 
 from fastapi import APIRouter, Request, status
 

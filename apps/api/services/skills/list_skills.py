@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.skills import Skill
 from models.workspace import Workspace
 from services.skills.schemas import SkillRead, SkillsListResponse
+from services.skills.utils import visible_skill_filter
 from utils.pagination import paginate
 
 
@@ -20,7 +21,7 @@ async def list_skills(
     include_inactive: bool,
 ) -> SkillsListResponse:
     filters = [
-        Skill.workspace_id == workspace.id,
+        visible_skill_filter(workspace),
         Skill.deleted == False,  # noqa: E712
     ]
     if not include_inactive:

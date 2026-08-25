@@ -1,6 +1,6 @@
 # apps/api/routes/skills/update_skill.py
 
-"""Route for updating a workspace skill."""
+"""Route for updating a workspace or platform skill."""
 
 from typing import Annotated
 from uuid import UUID

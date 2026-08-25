@@ -400,6 +400,72 @@ async def test_ai_usage_ledger_is_runtime_append_only_and_workspace_cascade_safe
         )
 
 
+async def test_platform_skills_are_runtime_read_only_across_workspaces(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    workspace_a = uuid4()
+    workspace_b = uuid4()
+    platform_skill_id = uuid4()
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        async with maintenance_db.begin_nested():
+            await maintenance_db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+            skills = await _reflect_table(maintenance_db, "skills")
+            await _insert_seed(
+                maintenance_db,
+                skills,
+                workspace_id=workspace_a,
+                marker="platform",
+                overrides={
+                    "id": platform_skill_id,
+                    "scope": "platform",
+                    "workspace_id": None,
+                    "name": "platform-rls-test",
+                },
+            )
+            await maintenance_db.flush()
+            await maintenance_db.execute(sa.text("SET LOCAL session_replication_role = origin"))
+
+        for workspace_id in (workspace_a, workspace_b):
+            async with db_session_factory() as runtime_db:
+                await set_session_tenant_context(runtime_db, workspace_id=workspace_id)
+                assert (
+                    await runtime_db.scalar(
+                        sa.select(skills.c.id).where(skills.c.id == platform_skill_id)
+                    )
+                    == platform_skill_id
+                )
+
+        async with db_session_factory() as runtime_db:
+            await set_session_tenant_context(runtime_db, workspace_id=workspace_a)
+            blocked_values = _seed_values(
+                skills,
+                workspace_id=workspace_a,
+                marker="blocked-platform",
+                overrides={"scope": "platform", "workspace_id": None},
+            )
+            with pytest.raises(DBAPIError):
+                async with runtime_db.begin_nested():
+                    await runtime_db.execute(sa.insert(skills).values(**blocked_values))
+
+            update_result = await runtime_db.execute(
+                sa.update(skills)
+                .where(skills.c.id == platform_skill_id)
+                .values(description="Runtime mutation")
+            )
+            delete_result = await runtime_db.execute(
+                sa.delete(skills).where(skills.c.id == platform_skill_id)
+            )
+            assert update_result.rowcount == 0
+            assert delete_result.rowcount == 0
+
+        assert (
+            await maintenance_db.scalar(
+                sa.select(skills.c.description).where(skills.c.id == platform_skill_id)
+            )
+            != "Runtime mutation"
+        )
+
+
 @pytest.mark.parametrize("table_name", RLS_TABLES)
 async def test_raw_select_is_blind_to_other_workspace_rows(
     table_name: str,

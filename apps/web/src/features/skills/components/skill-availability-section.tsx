@@ -16,11 +16,13 @@ export function SkillAvailabilitySection({
   isFavorite,
   onActiveChange,
   onFavoriteChange,
+  showFavorite,
 }: {
   isActive: "true" | "false"
   isFavorite: "true" | "false"
   onActiveChange: (isActive: "true" | "false") => void
   onFavoriteChange: (isFavorite: "true" | "false") => void
+  showFavorite: boolean
 }) {
   return (
     <FormSection
@@ -28,8 +30,8 @@ export function SkillAvailabilitySection({
       eyebrow="State"
       title="Availability"
     >
-      <FieldGroup className="grid gap-5 sm:grid-cols-2">
-        <Field>
+      <FieldGroup className={showFavorite ? "grid gap-5 sm:grid-cols-2" : undefined}>
+        <Field className={showFavorite ? undefined : "max-w-sm"}>
           <FieldLabel htmlFor="skill-active">Status</FieldLabel>
           <Select
             onValueChange={(value) => {
@@ -52,26 +54,28 @@ export function SkillAvailabilitySection({
           </FieldDescription>
         </Field>
 
-        <Field>
-          <FieldLabel htmlFor="skill-favorite">Favorite</FieldLabel>
-          <Select
-            onValueChange={(value) => {
-              onFavoriteChange(value === "true" ? "true" : "false")
-            }}
-            value={isFavorite}
-          >
-            <SelectTrigger id="skill-favorite" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                <SelectItem value="false">No</SelectItem>
-                <SelectItem value="true">Yes</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <FieldDescription>Favorites are easier to find when choosing skills.</FieldDescription>
-        </Field>
+        {showFavorite ? (
+          <Field>
+            <FieldLabel htmlFor="skill-favorite">Favorite</FieldLabel>
+            <Select
+              onValueChange={(value) => {
+                onFavoriteChange(value === "true" ? "true" : "false")
+              }}
+              value={isFavorite}
+            >
+              <SelectTrigger id="skill-favorite" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  <SelectItem value="false">No</SelectItem>
+                  <SelectItem value="true">Yes</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>Favorites are easier to find when choosing skills.</FieldDescription>
+          </Field>
+        ) : null}
       </FieldGroup>
     </FormSection>
   )

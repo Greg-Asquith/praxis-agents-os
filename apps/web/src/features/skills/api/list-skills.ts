@@ -21,6 +21,10 @@ export const skillsQueryKeys = {
     [...baseSkillsQueryKeys.detail(skillId), "documents", documentName, "markdown"] as const,
 }
 
+export function skillMutationQueryKey(scope: "workspace" | "platform") {
+  return scope === "platform" ? skillsQueryKeys.all : skillsQueryKeys.workspace()
+}
+
 async function listSkills({
   includeInactive = false,
   limit = 100,

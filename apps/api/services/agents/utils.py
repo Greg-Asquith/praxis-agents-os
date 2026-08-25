@@ -19,6 +19,7 @@ from services.agents.models.domain import ALL_PROVIDERS, PROVIDER_AZURE
 from services.agents.models.registry import find_model
 from services.agents.runtime.tools.contract import VALID_TOOL_POLICIES
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.skills.utils import visible_skill_filter
 from services.workspaces.utils import EDITOR_ROLES
 
 AGENT_SLUG_UNIQUE_INDEX = "ix_agents_slug_workspace"
@@ -296,7 +297,7 @@ async def _ensure_active_skills_exist(
         await db.scalars(
             select(Skill.id).where(
                 Skill.id.in_(skill_ids),
-                Skill.workspace_id == workspace.id,
+                visible_skill_filter(workspace),
                 Skill.deleted == False,  # noqa: E712
                 Skill.is_active.is_(True),
             )

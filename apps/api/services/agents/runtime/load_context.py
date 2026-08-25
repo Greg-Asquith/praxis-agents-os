@@ -19,6 +19,7 @@ from models.files import File, FileFolder, FileReference
 from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
+from services.skills.utils import visible_skill_filter
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,7 @@ async def load_agent_skills(db: AsyncSession, agent: Agent) -> list[Skill]:
         await db.scalars(
             select(Skill).where(
                 Skill.id.in_(unique_skill_ids),
-                Skill.workspace_id == agent.workspace_id,
+                visible_skill_filter(agent.workspace_id),
                 Skill.deleted == False,  # noqa: E712
                 Skill.is_active.is_(True),
             )

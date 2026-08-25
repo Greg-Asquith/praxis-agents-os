@@ -2,11 +2,14 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
-import { skillsQueryKeys } from "@/features/skills/api/list-skills"
+import { skillMutationQueryKey } from "@/features/skills/api/list-skills"
+import type { Skill } from "@/features/skills/types"
 import { apiRequestNoContent } from "@/lib/api/client"
 
-async function deleteSkill(skillId: string) {
-  return apiRequestNoContent(`/skills/${skillId}`, {
+type DeleteSkillInput = Pick<Skill, "id" | "scope">
+
+async function deleteSkill({ id }: DeleteSkillInput) {
+  return apiRequestNoContent(`/skills/${id}`, {
     method: "DELETE",
   })
 }
@@ -16,8 +19,8 @@ export function useDeleteSkillMutation() {
 
   return useMutation({
     mutationFn: deleteSkill,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.workspace() })
+    onSuccess: async (_result, skill) => {
+      await queryClient.invalidateQueries({ queryKey: skillMutationQueryKey(skill.scope) })
     },
   })
 }

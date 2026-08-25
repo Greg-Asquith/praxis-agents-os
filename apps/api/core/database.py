@@ -4,6 +4,7 @@
 
 import logging
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import Request
@@ -232,6 +233,13 @@ async def get_async_db_session(request: Request) -> AsyncGenerator[AsyncSession]
 
 async def get_maintenance_async_db_session() -> AsyncGenerator[AsyncSession]:
     """Yield a deliberate cross-workspace session for capability lookups."""
+    async with maintenance_async_db_session() as session:
+        yield session
+
+
+@asynccontextmanager
+async def maintenance_async_db_session() -> AsyncGenerator[AsyncSession]:
+    """Manage one configured maintenance session and its transaction."""
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as session:
         await configure_async_db_session(session)

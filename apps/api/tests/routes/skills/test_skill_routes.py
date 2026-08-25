@@ -10,6 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from core.database import get_maintenance_async_db_session_factory
+from core.settings import settings
 from models.audit_event import AuditEvent
 from models.user import User
 from models.workspace import Workspace, WorkspaceRole
@@ -29,8 +31,9 @@ async def _authenticated_workspace(
     db: AsyncSession,
     *,
     role: WorkspaceRole = WorkspaceRole.OWNER,
+    email: str | None = None,
 ) -> tuple[User, Workspace, dict[str, str]]:
-    user = build_user(email=f"skill-{uuid4().hex}@example.com")
+    user = build_user(email=email or f"skill-{uuid4().hex}@example.com")
     workspace = build_workspace(slug=f"skills-{uuid4().hex[:8]}")
     membership = build_workspace_membership(
         workspace_id=workspace.id,
@@ -71,6 +74,7 @@ async def test_create_skill_route_persists_public_model_shape_and_audit(
     assert body["description"] == "Use verified sources."
     assert body["instructions"] == "Follow the research workflow."
     assert body["workspace_id"] == str(workspace.id)
+    assert body["scope"] == "workspace"
     assert body["created_by"] == str(user.id)
     assert body["documentation_refs"] == {}
     assert body["is_active"] is True
@@ -266,6 +270,136 @@ async def test_get_skill_from_another_workspace_returns_not_found(
 
     assert response.status_code == 404
     assert response.json()["resource_type"] == "skill"
+
+
+async def test_platform_skills_are_global_assignable_and_super_admin_managed(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin_email = f"platform-skill-admin-{uuid4().hex}@example.com"
+    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", admin_email)
+    admin, _admin_workspace, admin_headers = await _authenticated_workspace(
+        db_session,
+        email=admin_email,
+    )
+    _member, member_workspace, member_headers = await _authenticated_workspace(db_session)
+
+    denied_create = await db_async_client.post(
+        "/api/v1/skills/",
+        headers=member_headers,
+        json={
+            "name": "platform-research",
+            "description": "Global research guidance.",
+            "instructions": "Use verified sources.",
+            "scope": "platform",
+        },
+    )
+    assert denied_create.status_code == 403
+
+    create_response = await db_async_client.post(
+        "/api/v1/skills/",
+        headers=admin_headers,
+        json={
+            "name": "platform-research",
+            "human_name": "Platform research",
+            "description": "Global research guidance.",
+            "instructions": "Use verified sources.",
+            "scope": "platform",
+        },
+    )
+    assert create_response.status_code == 201
+    platform_skill = create_response.json()
+    assert platform_skill["scope"] == "platform"
+    assert platform_skill["workspace_id"] is None
+    assert platform_skill["created_by"] == str(admin.id)
+    assert platform_skill["documentation_refs"] == {}
+    assert platform_skill["is_favorite"] is False
+
+    list_response = await db_async_client.get("/api/v1/skills/", headers=member_headers)
+    assert list_response.status_code == 200
+    assert [row["id"] for row in list_response.json()["skills"]] == [platform_skill["id"]]
+
+    denied_update = await db_async_client.patch(
+        f"/api/v1/skills/{platform_skill['id']}",
+        headers=member_headers,
+        json={"instructions": "Tenant override."},
+    )
+    denied_delete = await db_async_client.delete(
+        f"/api/v1/skills/{platform_skill['id']}",
+        headers=member_headers,
+    )
+    assert denied_update.status_code == 403
+    assert denied_delete.status_code == 403
+
+    agent_response = await db_async_client.post(
+        "/api/v1/agents/",
+        headers=member_headers,
+        json={
+            "name": "Platform skill agent",
+            "instructions": "Use assigned guidance.",
+            "skill_ids": [platform_skill["id"]],
+            "model_provider": "openai",
+            "model": "gpt-5.4-mini",
+        },
+    )
+    assert agent_response.status_code == 201
+    assert agent_response.json()["workspace_id"] == str(member_workspace.id)
+    assert agent_response.json()["skill_ids"] == [platform_skill["id"]]
+
+    document_response = await db_async_client.post(
+        f"/api/v1/skills/{platform_skill['id']}/documents/upload",
+        headers=admin_headers,
+        json={
+            "document_name": "guide",
+            "filename": "guide.md",
+            "content_type": "text/markdown",
+            "size_bytes": 10,
+        },
+    )
+    assert document_response.status_code == 404
+
+    update_response = await db_async_client.patch(
+        f"/api/v1/skills/{platform_skill['id']}",
+        headers=admin_headers,
+        json={"description": "Updated global guidance.", "is_active": False},
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["description"] == "Updated global guidance."
+    assert update_response.json()["is_active"] is False
+
+    include_inactive = await db_async_client.get(
+        "/api/v1/skills/?include_inactive=true",
+        headers=member_headers,
+    )
+    assert [row["id"] for row in include_inactive.json()["skills"]] == [platform_skill["id"]]
+
+    delete_response = await db_async_client.delete(
+        f"/api/v1/skills/{platform_skill['id']}",
+        headers=admin_headers,
+    )
+    assert delete_response.status_code == 204
+    assert (await db_async_client.get("/api/v1/skills/", headers=member_headers)).json()[
+        "skills"
+    ] == []
+
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        audit_events = (
+            await maintenance_db.scalars(
+                select(AuditEvent)
+                .where(
+                    AuditEvent.workspace_id.is_(None),
+                    AuditEvent.resource_type == AuditResourceType.SKILL.value,
+                    AuditEvent.resource_id == platform_skill["id"],
+                )
+                .order_by(AuditEvent.occurred_at, AuditEvent.id)
+            )
+        ).all()
+    assert [event.action for event in audit_events] == [
+        AuditAction.CREATE.value,
+        AuditAction.UPDATE.value,
+        AuditAction.DELETE.value,
+    ]
 
 
 async def test_update_skill_rejects_null_name(

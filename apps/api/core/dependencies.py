@@ -250,6 +250,12 @@ async def require_super_admin(user: CurrentUserDep) -> User:
 
     Returns the authenticated `User` when authorized; raises `AuthorizationError` otherwise.
     """
+    require_super_admin_user(user)
+    return user
+
+
+def require_super_admin_user(user: User) -> None:
+    """Require deployment-wide super-admin access for a resolved user."""
     if not is_super_admin_email(user.email):
         raise AuthorizationError(
             "Requires super admin role",
@@ -258,7 +264,6 @@ async def require_super_admin(user: CurrentUserDep) -> User:
                 "email": user.email,
             },
         )
-    return user
 
 
 def require_role(allowed_roles: list[str]):

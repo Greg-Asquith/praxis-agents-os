@@ -6,6 +6,7 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -17,10 +18,12 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import get_maintenance_async_db_session_factory
 from core.settings import settings
 from models.agent import Agent
+from models.agent_run import AgentRun
 from models.conversation import Conversation
-from models.skills import Skill
+from models.skills import Skill, SkillScope
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_STATUS_COMPLETED
 from services.agents.runtime.events import EVENT_TOOL_CALL
@@ -31,6 +34,7 @@ from services.agents.runtime.skills import (
     READ_SKILL_DOCUMENT_TOOL_NAME,
     SKILL_DOCUMENTS_CAPABILITY_ID,
     build_skill_capabilities,
+    record_skill_activation,
     skill_capability_id,
 )
 from services.storage.domain import StorageBucket, make_storage_object_ref
@@ -295,6 +299,71 @@ async def test_load_agent_skills_skips_malformed_and_unavailable_ids(
     skills = await load_agent_skills(db_session, agent)
 
     assert [skill.id for skill in skills] == [second_skill.id, first_skill.id]
+
+
+async def test_load_agent_skills_includes_platform_skills_in_configured_order(
+    db_session: AsyncSession,
+) -> None:
+    user = build_user(email=f"runtime-platform-skills-{uuid4().hex}@example.com")
+    workspace = build_workspace(slug=f"runtime-platform-skills-{uuid4().hex[:8]}")
+    db_session.add_all([user, workspace])
+    await db_session.flush()
+
+    workspace_skill = build_skill(
+        workspace=workspace,
+        created_by=user,
+        name="workspace-guidance",
+    )
+    db_session.add(workspace_skill)
+    await db_session.flush()
+
+    platform_skill = build_skill(
+        workspace=workspace,
+        created_by=user,
+        name="platform-guidance",
+        scope=SkillScope.PLATFORM,
+        workspace_id=None,
+    )
+    async with get_maintenance_async_db_session_factory()() as maintenance_db:
+        maintenance_db.add(platform_skill)
+        await maintenance_db.commit()
+
+    agent = Agent(
+        name="Platform Skill Runtime Agent",
+        slug=f"platform-skill-runtime-{uuid4().hex[:8]}",
+        instructions="Reply plainly.",
+        workspace_id=workspace.id,
+        created_by=user.id,
+        skill_ids=[str(platform_skill.id), str(workspace_skill.id)],
+    )
+    db_session.add(agent)
+    await db_session.flush()
+
+    skills = await load_agent_skills(db_session, agent)
+
+    assert [skill.id for skill in skills] == [platform_skill.id, workspace_skill.id]
+    capabilities = build_skill_capabilities(skills)
+    assert [capability.id for capability in capabilities] == [
+        skill_capability_id(platform_skill),
+        skill_capability_id(workspace_skill),
+    ]
+
+
+async def test_platform_skill_activation_does_not_mutate_global_usage_state() -> None:
+    user = build_user()
+    workspace = build_workspace()
+    platform_skill = build_skill(
+        workspace=workspace,
+        created_by=user,
+        scope=SkillScope.PLATFORM,
+        workspace_id=None,
+    )
+    run = AgentRun(id=uuid4(), agent_id=uuid4())
+    part = SimpleNamespace(args={"id": skill_capability_id(platform_skill)})
+
+    record_skill_activation([platform_skill], part, run=run)
+
+    assert platform_skill.last_used_at is None
 
 
 async def _create_runtime_skill_context(db: AsyncSession) -> RuntimeSkillContext:

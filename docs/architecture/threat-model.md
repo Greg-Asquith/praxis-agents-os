@@ -66,6 +66,12 @@ denormalization avoids a credential/connection insertion cycle while the
 connection foreign key remains the lifecycle link. Global audit events with
 no workspace remain maintenance-only.
 
+Platform skills are the narrow exception to workspace-only skill visibility.
+They have no workspace owner and tenant RLS permits them only in `SELECT`.
+Configured super admins perform platform-skill mutations through the
+maintenance role, with global audit events. Tenant sessions cannot create,
+update, or delete platform rows.
+
 ### Object-storage workspace-isolation backstop
 
 Private objects fail closed unless their key is under

@@ -1,6 +1,6 @@
 # apps/api/routes/skills/list_skills.py
 
-"""Route for listing workspace skills."""
+"""Route for listing skills visible in a workspace."""
 
 from typing import Annotated
 

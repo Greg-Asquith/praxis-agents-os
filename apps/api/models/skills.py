@@ -7,7 +7,19 @@ Skills are user-created instruction packages with compact discovery metadata,
 raw instructions, and requestable documentation references.
 """
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from enum import StrEnum
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
@@ -15,8 +27,15 @@ from sqlalchemy.sql import text
 from models.base import BaseModel
 
 
+class SkillScope(StrEnum):
+    """Ownership boundary for a skill."""
+
+    WORKSPACE = "workspace"
+    PLATFORM = "platform"
+
+
 class Skill(BaseModel):
-    """Workspace-scoped instruction package for agent workflows.
+    """Workspace or platform instruction package for agent workflows.
 
     Progressive disclosure:
     - metadata: name, human_name, description for discovery
@@ -34,9 +53,12 @@ class Skill(BaseModel):
     human_name = Column(String(255), nullable=True)
     description = Column(Text, nullable=False)
 
-    # Ownership — always scoped to a workspace (personal or team)
+    # Workspace skills belong to one workspace. Platform skills have no tenant owner.
+    scope = Column(
+        String(16), nullable=False, default=SkillScope.WORKSPACE, server_default="workspace"
+    )
     workspace_id = Column(
-        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True
     )
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
 
@@ -71,6 +93,16 @@ class Skill(BaseModel):
     creator = relationship("User", foreign_keys=[created_by])
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) "
+            "OR (scope = 'platform' AND workspace_id IS NULL)",
+            name="skills_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'workspace' OR "
+            "(is_favorite = false AND COALESCE(documentation_refs, '{}'::jsonb) = '{}'::jsonb)",
+            name="skills_platform_content_check",
+        ),
         # Unique name per workspace
         UniqueConstraint("workspace_id", "name", name="uq_skills_workspace_name"),
         # Workspace index
@@ -86,6 +118,17 @@ class Skill(BaseModel):
         ),
         # Workspace + created_at for listing
         Index("ix_skills_workspace_created", "workspace_id", "created_at"),
+        Index(
+            "uq_skills_platform_name",
+            "name",
+            unique=True,
+            postgresql_where=text("scope = 'platform'"),
+        ),
+        Index(
+            "idx_skills_platform_active",
+            "created_at",
+            postgresql_where=text("scope = 'platform' AND is_active = true AND deleted = false"),
+        ),
     )
 
     def __repr__(self) -> str:

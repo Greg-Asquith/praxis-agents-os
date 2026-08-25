@@ -1,6 +1,6 @@
 # apps/api/services/skills/schemas.py
 
-"""Pydantic contracts for workspace skill routes."""
+"""Pydantic contracts for skill routes."""
 
 import re
 from datetime import datetime
@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from models.skills import Skill
+from models.skills import Skill, SkillScope
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -23,7 +23,8 @@ class SkillRead(BaseModel):
     human_name: str | None = None
     description: str
     instructions: str
-    workspace_id: UUID
+    scope: SkillScope
+    workspace_id: UUID | None
     created_by: UUID
     documentation_refs: dict[str, Any] = Field(default_factory=dict)
     is_active: bool
@@ -54,6 +55,7 @@ class SkillCreateRequest(BaseModel):
     is_active: bool = True
     is_favorite: bool = False
     metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
+    scope: SkillScope = SkillScope.WORKSPACE
 
     model_config = ConfigDict(populate_by_name=True)
 

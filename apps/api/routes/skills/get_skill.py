@@ -1,6 +1,6 @@
 # apps/api/routes/skills/get_skill.py
 
-"""Route for reading a workspace skill."""
+"""Route for reading a skill visible in a workspace."""
 
 from typing import Annotated
 from uuid import UUID

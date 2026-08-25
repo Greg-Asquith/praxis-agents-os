@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
-import { skillsQueryKeys } from "@/features/skills/api/list-skills"
+import { skillMutationQueryKey } from "@/features/skills/api/list-skills"
 import type { Skill, SkillUpdateRequest } from "@/features/skills/types"
 import { apiRequest } from "@/lib/api/client"
 
@@ -23,8 +23,8 @@ export function useUpdateSkillMutation() {
 
   return useMutation({
     mutationFn: updateSkill,
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: skillsQueryKeys.workspace() })
+    onSuccess: async (skill) => {
+      await queryClient.invalidateQueries({ queryKey: skillMutationQueryKey(skill.scope) })
     },
   })
 }

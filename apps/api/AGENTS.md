@@ -49,6 +49,13 @@ Repo-wide expectations are in the root `AGENTS.md`.
   predicates, and be added to `tests/security/test_workspace_rls.py`.
   Missing GUCs must continue to fail closed. Never grant the runtime role
   `BYPASSRLS`, ownership, or superuser privileges.
+- Skills have exactly two immutable scopes. Workspace skills retain a required
+  `workspace_id` and normal tenant ownership. Platform skills have
+  `workspace_id = NULL`, are readable and assignable in every workspace, and
+  are mutable only by configured super admins through a maintenance session;
+  tenant RLS policies must remain select-only for those rows. Platform skills
+  are text-only: do not add workspace document storage, copying, forking, or
+  ownership transitions to their lifecycle.
 - `ai_usage_events` is runtime append-only: `praxis_app` may select and insert,
   but may not update or delete. Its exact cardinality is one row per logical
   agent-run invocation (including each approval resume), helper invocation, or

@@ -1,24 +1,38 @@
 // apps/web/src/features/skills/components/skill-identity-section.tsx
 
 import { FormSection } from "@/components/forms/form-section"
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 
 export function SkillIdentitySection({
+  canSetPlatformScope,
   description,
   fieldErrors,
+  isPlatform,
   mode,
   name,
   onDescriptionChange,
   onNameChange,
+  onPlatformChange,
 }: {
+  canSetPlatformScope: boolean
   description: string
   fieldErrors: Record<string, string>
+  isPlatform: boolean
   mode: "create" | "edit"
   name: string
   onDescriptionChange: (description: string) => void
   onNameChange: (name: string) => void
+  onPlatformChange: (isPlatform: boolean) => void
 }) {
   return (
     <FormSection
@@ -72,6 +86,25 @@ export function SkillIdentitySection({
           </FieldDescription>
           <FieldError>{fieldErrors["skill-description"]}</FieldError>
         </Field>
+
+        {canSetPlatformScope ? (
+          <Field orientation="horizontal">
+            <Checkbox
+              aria-label="Make available to every workspace"
+              checked={isPlatform}
+              id="skill-platform-scope"
+              onCheckedChange={onPlatformChange}
+            />
+            <FieldContent>
+              <FieldLabel htmlFor="skill-platform-scope">
+                Make available to every workspace
+              </FieldLabel>
+              <FieldDescription>
+                Creates a text-only platform skill that only super admins can change.
+              </FieldDescription>
+            </FieldContent>
+          </Field>
+        ) : null}
       </FieldGroup>
     </FormSection>
   )
