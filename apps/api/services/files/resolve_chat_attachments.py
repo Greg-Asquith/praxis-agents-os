@@ -17,22 +17,10 @@ from services.agents.models.resolution import resolve_agent_model
 from services.assets.utils import normalize_content_type
 from services.files.contract import FileCategory, contract_for_content_type
 
-# Probed against pydantic-ai 2.1.0 in plan 036: these are the media
-# types we send to the model, independent of the broader workspace file contract.
+# Pydantic AI accepts these image types and PDFs as native model input.
+# Other accepted workspace documents are converted to text before model dispatch.
 IMAGE_MEDIA_TYPES = frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"})
-DOCUMENT_MEDIA_TYPES = frozenset(
-    {
-        "application/msword",
-        "application/pdf",
-        "application/vnd.ms-excel",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "text/csv",
-        "text/html",
-        "text/markdown",
-        "text/plain",
-    }
-)
+PDF_MEDIA_TYPE = "application/pdf"
 
 
 async def resolve_chat_attachments(
@@ -145,19 +133,18 @@ def _validate_image_attachment(file: File, *, media_type: str, agent: Agent) -> 
 
 
 def _validate_document_attachment(file: File, *, media_type: str) -> None:
-    if media_type not in DOCUMENT_MEDIA_TYPES:
-        raise AppValidationError(
-            "Document type is not supported for chat attachments",
-            field="attachments",
-            details={"file_id": str(file.id), "content_type": file.content_type},
-        )
-    if file.size_bytes > settings.MAX_MULTIMODAL_DOCUMENT_BYTES:
+    max_size_bytes = (
+        settings.MAX_MULTIMODAL_DOCUMENT_BYTES
+        if media_type == PDF_MEDIA_TYPE
+        else settings.MAX_FILE_SIZE_DOCUMENT
+    )
+    if file.size_bytes > max_size_bytes:
         raise AppValidationError(
             "Document attachment is too large",
             field="attachments",
             details={
                 "file_id": str(file.id),
                 "size_bytes": file.size_bytes,
-                "max_size_bytes": settings.MAX_MULTIMODAL_DOCUMENT_BYTES,
+                "max_size_bytes": max_size_bytes,
             },
         )

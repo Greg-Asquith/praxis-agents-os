@@ -2,10 +2,12 @@
 
 """Tests for runtime file tools."""
 
+import asyncio
 import base64
 import importlib
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -69,8 +71,11 @@ from services.files.utils import private_ref_from_key, sha256_hex
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision, build_user, build_workspace
 from tests.support.storage import reset_storage_provider_cache
+from utils.document_markdown import DocumentConversionError
 
 pytestmark = pytest.mark.asyncio
+
+FIXTURES_DIR = Path(__file__).parents[3] / "fixtures" / "files"
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,10 @@ async def test_file_tool_catalog_policies() -> None:
     assert RUNTIME_TOOL_CATALOG["write_file"].effect == TOOL_EFFECT_WRITE
     assert RUNTIME_TOOL_CATALOG["write_file"].effect_scope == "internal"
     assert RUNTIME_TOOL_CATALOG["write_file"].default_policy == TOOL_POLICY_AUTO
+    assert (
+        RUNTIME_TOOL_CATALOG["read_file"].timeout
+        == settings.CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS + 5.0
+    )
     assert "promote_scratch" not in RUNTIME_TOOL_CATALOG
     for tool_name in ("list_files", "read_file", "write_file"):
         assert RUNTIME_TOOL_CATALOG[tool_name].configurable is False
@@ -631,9 +640,13 @@ async def test_ready_document_content_reaches_the_post_tool_model_request(
     local_storage_settings: None,
 ) -> None:
     context = await _runtime_file_context(db_session)
-    document, _revision = await _persist_ready_document(
+    document, _revision = await _persist_document(
         db_session,
         context=context,
+        content=b"source-pdf",
+        content_type="application/pdf",
+        filename="brief.pdf",
+        processing_status="ready",
         markdown=b"# Extracted\n\nThe document is model-visible.",
     )
     observed_returns: list[ToolReturnPart] = []
@@ -676,6 +689,115 @@ async def test_ready_document_content_reaches_the_post_tool_model_request(
     assert tool_return.content["source"] == "markdown"
     assert tool_return.content["content"] == "# Extracted\n\nThe document is model-visible."
     assert "url" not in tool_return.content
+
+
+async def test_pending_document_converts_on_demand_without_persisting_derived_state(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    document, revision = await _persist_document(
+        db_session,
+        context=context,
+        content=(FIXTURES_DIR / "sample.pptx").read_bytes(),
+        content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename="sample.pptx",
+        processing_status="pending",
+    )
+
+    output = await read_file(_run_context(db_session, context), file_id=document.id)
+
+    assert output["source"] == "markdown-on-demand"
+    assert output["processing_status"] == "pending"
+    assert "Deck Title Slide" in output["content"]
+    assert document.processing_status == "pending"
+    assert revision.markdown_object_key is None
+
+
+async def test_document_conversion_failure_points_to_run_code(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    document, _revision = await _persist_document(
+        db_session,
+        context=context,
+        content=b"not a document",
+        content_type="application/msword",
+        filename="brief.doc",
+        processing_status="pending",
+    )
+    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
+
+    async def failed_conversion(*_args, **_kwargs) -> str:
+        raise DocumentConversionError("conversion failed")
+
+    monkeypatch.setattr(read_file_module, "markdown_for_revision", failed_conversion)
+
+    with pytest.raises(ModelRetry) as exc_info:
+        await read_file(_run_context(db_session, context), file_id=document.id)
+
+    assert str(exc_info.value) == (
+        "The document couldn't be read. You can still pass this file id to run_code to work "
+        "with the original bytes."
+    )
+
+
+async def test_failed_background_processing_guidance_survives_on_demand_failure(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    document, _revision = await _persist_document(
+        db_session,
+        context=context,
+        content=b"not a document",
+        content_type="application/msword",
+        filename="brief.doc",
+        processing_status="error",
+        processing_error="unsupported document structure",
+    )
+    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
+
+    async def failed_conversion(*_args, **_kwargs) -> str:
+        raise DocumentConversionError("conversion failed")
+
+    monkeypatch.setattr(read_file_module, "markdown_for_revision", failed_conversion)
+
+    with pytest.raises(ModelRetry) as exc_info:
+        await read_file(_run_context(db_session, context), file_id=document.id)
+
+    message = str(exc_info.value)
+    assert "File processing failed: unsupported document structure." in message
+    assert "pass this file id to run_code" in message
+
+
+async def test_document_conversion_timeout_points_to_run_code(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = await _runtime_file_context(db_session)
+    document, _revision = await _persist_document(
+        db_session,
+        context=context,
+        content=b"not a document",
+        content_type="application/msword",
+        filename="brief.doc",
+        processing_status="pending",
+    )
+    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
+
+    async def conversion_that_does_not_finish(*_args, **_kwargs) -> str:
+        await asyncio.Future()
+
+    monkeypatch.setattr(read_file_module, "markdown_for_revision", conversion_that_does_not_finish)
+    monkeypatch.setattr(settings, "CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS", 0.001)
+
+    with pytest.raises(ModelRetry, match="run_code"):
+        await read_file(_run_context(db_session, context), file_id=document.id)
 
 
 async def test_image_content_failure_does_not_present_url_as_inspection(
@@ -878,18 +1000,28 @@ async def _persist_image_file(
     return file, revision
 
 
-async def _persist_ready_document(
+async def _persist_document(
     db: AsyncSession,
     *,
     context: RuntimeFileTestContext,
-    markdown: bytes,
+    content: bytes,
+    content_type: str,
+    filename: str,
+    processing_status: str,
+    markdown: bytes | None = None,
+    processing_error: str | None = None,
 ):
+    extension = Path(filename).suffix
+    content_hash = sha256_hex(content)
     file = build_file(
         workspace=context.workspace,
-        name="brief.pdf",
-        size_bytes=10,
-        content_hash=sha256_hex(b"source-pdf"),
-        processing_status="ready",
+        name=filename,
+        content_type=content_type,
+        extension=extension,
+        size_bytes=len(content),
+        content_hash=content_hash,
+        processing_status=processing_status,
+        processing_error=processing_error,
     )
     db.add(file)
     await db.flush()
@@ -897,16 +1029,22 @@ async def _persist_ready_document(
     revision = build_file_revision(
         file,
         created_by_agent_id=context.agent.id,
-        size_bytes=10,
-        content_hash=file.content_hash,
+        size_bytes=len(content),
+        content_hash=content_hash,
     )
-    revision.markdown_object_key = f"{revision.object_key}.extracted.md"
-    revision.markdown_size_bytes = len(markdown)
     await get_storage_provider().put_object(
-        private_ref_from_key(revision.markdown_object_key),
-        markdown,
-        content_type="text/markdown",
+        private_ref_from_key(revision.object_key),
+        content,
+        content_type=content_type,
     )
+    if markdown is not None:
+        revision.markdown_object_key = f"{revision.object_key}.extracted.md"
+        revision.markdown_size_bytes = len(markdown)
+        await get_storage_provider().put_object(
+            private_ref_from_key(revision.markdown_object_key),
+            markdown,
+            content_type="text/markdown",
+        )
     db.add(revision)
     await db.flush()
 

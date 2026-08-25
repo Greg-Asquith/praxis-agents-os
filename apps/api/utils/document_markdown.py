@@ -9,10 +9,13 @@ from services.assets.utils import normalize_content_type
 from services.storage.paths import safe_filename
 
 TRUNCATION_MARKER = "\n\n[Truncated: document exceeds the converted size limit.]"
-_TEXT_CONTENT_TYPES = frozenset({"text/plain", "text/markdown"})
+_TEXT_CONTENT_TYPES = frozenset({"application/json", "text/plain", "text/markdown"})
 _HTML_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 _CONTENT_TYPE_EXTENSIONS = {
     "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.ms-powerpoint": ".ppt",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",

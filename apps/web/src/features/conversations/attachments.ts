@@ -4,26 +4,14 @@ import { confirmFileUpload } from "@/features/files/api/confirm-file-upload"
 import { requestFileUpload } from "@/features/files/api/request-file-upload"
 import type { WorkspaceFile } from "@/features/files/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
-import { contentTypeForWorkspaceFile } from "@/lib/file"
+import { contentTypeForWorkspaceFile, WORKSPACE_FILE_MIME_TYPES } from "@/lib/file"
 import { isRecord, stringValue } from "@/lib/guards"
 
 export const MAX_CHAT_ATTACHMENTS = 5
 
-const CHAT_ATTACHMENT_EXTENSIONS = [
-  ".csv",
-  ".docx",
-  ".html",
-  ".jpeg",
-  ".jpg",
-  ".markdown",
-  ".md",
-  ".mdx",
-  ".pdf",
-  ".png",
-  ".txt",
-  ".webp",
-  ".xlsx",
-]
+const CHAT_ATTACHMENT_EXTENSIONS = Object.entries(WORKSPACE_FILE_MIME_TYPES)
+  .filter(([, contentType]) => !contentType.startsWith("video/"))
+  .map(([extension]) => `.${extension}`)
 
 export type MessageAttachment = {
   fileId: string

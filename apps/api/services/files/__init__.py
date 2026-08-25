@@ -3,6 +3,7 @@
 """Workspace file service operations."""
 
 from services.files.append_file_revision import append_file_revision
+from services.files.attachment_text import attachment_text_payload, markdown_for_revision
 from services.files.build_attachment_user_content import build_attachment_user_content
 from services.files.confirm_file_upload import confirm_file_upload
 from services.files.create_conversation_file_references import create_conversation_file_references
@@ -34,6 +35,7 @@ from services.files.write_generated_image import write_generated_image
 
 __all__ = [
     "append_file_revision",
+    "attachment_text_payload",
     "build_attachment_user_content",
     "confirm_file_upload",
     "create_conversation_file_references",
@@ -53,6 +55,7 @@ __all__ = [
     "list_file_revisions",
     "list_files",
     "list_folders",
+    "markdown_for_revision",
     "move_files",
     "purge_file",
     "resolve_chat_attachments",

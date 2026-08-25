@@ -83,6 +83,8 @@ export function FileEntityRow({ file }: { file: FileEntitySnapshot }) {
               file={{
                 id: file.fileId,
                 ...(file.category ? { category: file.category } : {}),
+                ...(file.contentType ? { content_type: file.contentType } : {}),
+                name: file.name,
                 ...(file.processingStatus ? { processing_status: file.processingStatus } : {}),
               }}
               size="sm"

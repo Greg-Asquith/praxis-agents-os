@@ -81,8 +81,15 @@ handing an agent a specific document to work on.
      artifact-only runs do not create one. Generated Files retain a
      conversation reference so they appear in `available_files`. Artifact
      drafting and versioning use `create_artifact`/`update_artifact`.
-  3. Turn attachments: attached file content is spliced directly into the
-     user prompt (`services/files/resolve_chat_attachments.py`).
+  3. Turn attachments: images and PDF files enter the user prompt as
+     provider-native bytes. Every other accepted document enters as bounded
+     `text/plain`, using stored Markdown when present and AnyDoc conversion of
+     the current revision on demand otherwise. A provenance header names the
+     file, its file ID, and its original format. The conversation file
+     reference keeps the original available through `read_file` and
+     provider-native `run_code`
+     (`services/files/resolve_chat_attachments.py` and
+     `services/files/build_attachment_user_content.py`).
 - **Management.** `/files` routes, `services/files/`, web UI at `/files` with
   root folder cards, folder-scoped search and upload, single/bulk move,
   delete-with-contents, revisions, diffs, previews, and restore. Deleting a

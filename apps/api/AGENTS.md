@@ -26,6 +26,14 @@ Repo-wide expectations are in the root `AGENTS.md`.
 - Maintain the middleware ordering notes in `apps/api/main.py` when adding or
   moving middleware. The comment there is authoritative.
 
+The document attachment settings are defined as follows:
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `MAX_FILE_SIZE_DOCUMENT` | `104857600` | Maximum raw upload size for documents. Configuration accepts up to `262144000` bytes. |
+| `MAX_MULTIMODAL_DOCUMENT_BYTES` | `20971520` | Maximum PDF attachment size sent to a model as raw bytes. |
+| `CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS` | `60` | Maximum time for on-demand chat attachment conversion. Configuration accepts 5–300 seconds. |
+
 ## Database Tenancy
 
 - Runtime API and tenant-owned worker sessions use `DATABASE_URL` and execute

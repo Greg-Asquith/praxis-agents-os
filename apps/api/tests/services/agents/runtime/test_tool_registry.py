@@ -11,6 +11,7 @@ import pytest
 from pydantic import BaseModel
 
 from core.exceptions.general import AppValidationError
+from core.settings import settings
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.airtable.tools.create_record import (
     DEFINITION as AIRTABLE_CREATE_RECORD_DEFINITION,
@@ -1324,7 +1325,7 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         10.0,
         30,
         15,
-        30.0,
+        settings.CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS + 5.0,
         5,
         15,
         30,

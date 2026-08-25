@@ -24,12 +24,35 @@ def test_contract_entries_round_trip_by_content_type() -> None:
         assert contract_for_content_type(entry.content_type) == entry
 
 
+@pytest.mark.parametrize(
+    ("content_type", "extension"),
+    [
+        ("application/msword", ".doc"),
+        ("application/vnd.ms-powerpoint", ".ppt"),
+        ("application/vnd.ms-excel", ".xls"),
+    ],
+)
+def test_legacy_office_contract_entries_are_ingestible(
+    content_type: str,
+    extension: str,
+) -> None:
+    entry = require_matching_pair(content_type, extension)
+
+    assert entry.category == FileCategory.INGESTIBLE_DOCUMENT
+    assert entry.max_size_setting == "MAX_FILE_SIZE_DOCUMENT"
+    assert entry.editable is False
+    assert entry.ingestible is True
+
+
 def test_require_matching_pair_rejects_mismatch_and_unknown_type() -> None:
     with pytest.raises(AppValidationError):
         require_matching_pair("application/pdf", ".docx")
 
     with pytest.raises(AppValidationError):
         require_matching_pair("application/octet-stream", ".bin")
+
+    with pytest.raises(AppValidationError):
+        require_matching_pair("application/msword", ".docx")
 
 
 def test_extensions_are_unique_across_catalog() -> None:

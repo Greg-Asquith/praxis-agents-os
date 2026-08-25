@@ -228,7 +228,9 @@ def _render_available_files(files: Sequence[AvailableFile]) -> str:
     instruction = (
         "These workspace files are attached to this conversation. "
         "Use read_file in content mode with the id to inspect one; request url mode only when "
-        "the user needs a download. Use list_files to see everything available."
+        "the user needs a download. Use list_files to see everything available. Documents "
+        "attached in a turn arrive as text; pass the file id to run_code when you need the "
+        "original file."
     )
     lines = [
         "## Available Files",

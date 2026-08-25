@@ -2,6 +2,7 @@
 
 import importlib
 from collections.abc import Iterator
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -36,6 +37,8 @@ from tests.factories import (
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
+
+FIXTURES_DIR = Path(__file__).parents[3] / "fixtures" / "files"
 
 
 @pytest.fixture
@@ -116,6 +119,46 @@ async def test_execute_run_persists_multimodal_user_prompt_round_trip(
     assert isinstance(history_binary, BinaryContent)
     assert history_binary.data == b"png"
     assert history_binary.identifier == str(file.id)
+
+
+async def test_execute_run_persists_converted_powerpoint_prompt_round_trip(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    context = await _persist_runtime_context(db_session)
+    file, _revision = await _persist_file(
+        db_session,
+        workspace_id=context.workspace_id,
+        created_by_user_id=context.user_id,
+        content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename="sample.pptx",
+        content=(FIXTURES_DIR / "sample.pptx").read_bytes(),
+    )
+    sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
+
+    await execute_run(
+        db_session,
+        conversation_id=context.conversation_id,
+        run_id=context.run_id,
+        user_prompt="What's in this deck?",
+        attachment_file_ids=[file.id],
+        sink=sink,
+        model=TestModel(call_tools=[]),
+    )
+
+    history = await load_message_history(db_session, conversation_id=context.conversation_id)
+    history_request = history[0]
+    assert isinstance(history_request, ModelRequest)
+    history_prompt = history_request.parts[0]
+    assert isinstance(history_prompt, UserPromptPart)
+    assert isinstance(history_prompt.content, list)
+    history_binary = history_prompt.content[1]
+    assert isinstance(history_binary, BinaryContent)
+    assert history_binary.media_type == "text/plain"
+    assert history_binary.identifier == str(file.id)
+    payload = history_binary.data.decode()
+    assert "Original format: PowerPoint" in payload
+    assert "Deck Title Slide" in payload
 
 
 async def test_execute_run_text_only_prompt_stays_plain_string(

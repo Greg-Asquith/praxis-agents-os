@@ -29,6 +29,30 @@ describe("fileTypeLabel", () => {
       "Spreadsheet",
     ],
     [
+      {
+        category: "ingestible_document",
+        content_type: "application/msword",
+        extension: ".doc",
+      },
+      "Word",
+    ],
+    [
+      {
+        category: "ingestible_document",
+        content_type: "application/vnd.ms-powerpoint",
+        extension: ".ppt",
+      },
+      "PowerPoint",
+    ],
+    [
+      {
+        category: "ingestible_document",
+        content_type: "application/vnd.ms-excel",
+        extension: ".xls",
+      },
+      "Spreadsheet",
+    ],
+    [
       { category: "editable_text", content_type: "text/markdown; charset=utf-8", extension: ".md" },
       "Markdown",
     ],

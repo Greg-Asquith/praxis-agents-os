@@ -4,7 +4,10 @@ import type { WorkspaceFile } from "@/features/files/types"
 
 const FILE_TYPE_LABELS: Readonly<Record<string, string>> = {
   "application/json": "JSON",
+  "application/msword": "Word",
   "application/pdf": "PDF",
+  "application/vnd.ms-excel": "Spreadsheet",
+  "application/vnd.ms-powerpoint": "PowerPoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Spreadsheet",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",

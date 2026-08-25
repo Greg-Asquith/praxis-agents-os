@@ -168,6 +168,8 @@ def test_runtime_instructions_includes_available_files_block() -> None:
     assert "brief.md" in prompt
     assert "Use read_file in content mode with the id to inspect one" in prompt
     assert "request url mode only when the user needs a download" in prompt
+    assert "Documents attached in a turn arrive as text" in prompt
+    assert "pass the file id to run_code when you need the original file" in prompt
 
 
 def test_runtime_instructions_omits_available_files_when_none_are_attached() -> None:

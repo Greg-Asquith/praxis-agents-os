@@ -2,12 +2,14 @@
 
 """Runtime tool for reading workspace files."""
 
+import asyncio
 from datetime import timedelta
 from typing import Literal
 
 from pydantic_ai import ModelRetry, RunContext, ToolReturn
 from pydantic_ai.messages import BinaryContent
 
+from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.tools.contract import (
@@ -24,9 +26,11 @@ from services.agents.runtime.tools.files.utils import (
     slice_text,
 )
 from services.agents.runtime.tools.registry import runtime_tool
+from services.files.attachment_text import markdown_for_revision
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
 from services.storage.factory import get_storage_provider
+from utils.document_markdown import DocumentConversionError
 
 
 @runtime_tool(
@@ -40,7 +44,7 @@ from services.storage.factory import get_storage_provider
     ),
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
-    timeout=30.0,
+    timeout=settings.CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS + 5.0,
     configurable=False,
     auto_mount=True,
     presentation=ToolPresentation(
@@ -99,21 +103,31 @@ async def read_file(
         )
 
     if file.category == FileCategory.INGESTIBLE_DOCUMENT.value:
-        if file.processing_status == "ready" and revision.markdown_object_key:
-            data = await get_storage_provider().get_object(
-                private_ref_from_key(revision.markdown_object_key)
+        source = "markdown" if revision.markdown_object_key else "markdown-on-demand"
+        try:
+            markdown = await asyncio.wait_for(
+                markdown_for_revision(
+                    file,
+                    revision,
+                    max_bytes=settings.FILES_MAX_MARKDOWN_BYTES,
+                ),
+                timeout=settings.CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS,
             )
-            return slice_text(
-                data.decode("utf-8", errors="replace"),
-                offset=offset,
-                max_bytes=normalized_limit,
-                metadata=file_metadata(file, revision, source="markdown"),
-            )
-        return {
-            **file_metadata(file, revision, source="markdown"),
-            "status": file.processing_status,
-            "message": processing_guidance(file),
-        }
+        except (TimeoutError, DocumentConversionError) as exc:
+            if file.processing_status == "error":
+                message = processing_guidance(file)
+            else:
+                message = "The document couldn't be read."
+            raise ModelRetry(
+                f"{message} You can still pass this file id to run_code to work with the "
+                "original bytes."
+            ) from exc
+        return slice_text(
+            markdown,
+            offset=offset,
+            max_bytes=normalized_limit,
+            metadata=file_metadata(file, revision, source=source),
+        )
 
     if file.category == FileCategory.IMAGE.value:
         if not agent_model_supports_vision(ctx.deps):

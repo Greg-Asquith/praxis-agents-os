@@ -19,6 +19,7 @@ import { formString } from "@/lib/forms"
 
 const KNOWLEDGE_FILE_ACCEPT = [
   ".csv",
+  ".doc",
   ".docx",
   ".html",
   ".json",
@@ -26,8 +27,10 @@ const KNOWLEDGE_FILE_ACCEPT = [
   ".md",
   ".mdx",
   ".pdf",
+  ".ppt",
   ".pptx",
   ".txt",
+  ".xls",
   ".xlsx",
 ].join(",")
 

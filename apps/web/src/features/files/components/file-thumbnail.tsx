@@ -2,9 +2,9 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { FileIcon, FileTextIcon, HeadphonesIcon, ImageIcon, VideoIcon } from "lucide-react"
 
 import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
+import { FileTypeIcon } from "@/features/files/components/file-type-icon"
 import type { FileContractCategory, FileProcessingStatus } from "@/features/files/types"
 import { cn } from "@/lib/utils"
 
@@ -12,6 +12,9 @@ type FileThumbnailProps = {
   file: {
     id: string
     category?: FileContractCategory
+    content_type?: string
+    extension?: string
+    name?: string
     processing_status?: FileProcessingStatus
   }
   size?: "sm" | "md"
@@ -29,9 +32,7 @@ export function FileThumbnail({ file, size = "md" }: FileThumbnailProps) {
     )
   }
 
-  return (
-    <FileIconTile className={className} {...(file.category ? { category: file.category } : {})} />
-  )
+  return <FileIconTile className={className} file={file} />
 }
 
 function ImageThumbnail({
@@ -45,7 +46,7 @@ function ImageThumbnail({
   const [imageFailed, setImageFailed] = useState(false)
 
   if (previewQuery.isPending || previewQuery.isError || imageFailed) {
-    return <FileIconTile category={file.category} className={className} />
+    return <FileIconTile className={className} file={file} />
   }
 
   return (
@@ -62,11 +63,11 @@ function ImageThumbnail({
 }
 
 function FileIconTile({
-  category,
   className,
+  file,
 }: {
-  category?: FileContractCategory
   className: string
+  file: FileThumbnailProps["file"]
 }) {
   return (
     <span
@@ -75,27 +76,15 @@ function FileIconTile({
         className
       )}
     >
-      {iconForCategory(category)}
+      <FileTypeIcon
+        className="size-6"
+        file={{
+          ...(file.category ? { category: file.category } : {}),
+          ...(file.content_type ? { contentType: file.content_type } : {}),
+          ...(file.extension ? { extension: file.extension } : {}),
+          ...(file.name ? { name: file.name } : {}),
+        }}
+      />
     </span>
   )
-}
-
-function iconForCategory(category?: FileContractCategory) {
-  switch (category) {
-    case "editable_text":
-    case "ingestible_document":
-      return <FileTextIcon className="size-4" />
-    case "image":
-      return <ImageIcon className="size-4" />
-    case "video":
-      return <VideoIcon className="size-4" />
-    case "audio":
-      return <HeadphonesIcon className="size-4" />
-    case "html":
-      return <FileIcon className="size-4" />
-    case undefined:
-      return <FileIcon className="size-4" />
-    default:
-      return <FileIcon className="size-4" />
-  }
 }

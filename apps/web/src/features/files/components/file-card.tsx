@@ -1,9 +1,10 @@
 // apps/web/src/features/files/components/file-card.tsx
 
 import { useState } from "react"
-import { DownloadIcon, ExternalLinkIcon, FileIcon } from "lucide-react"
+import { DownloadIcon, ExternalLinkIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { FileTypeIcon } from "@/features/files/components/file-type-icon"
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { fileCategoryLabel } from "@/features/files/format"
 import { getErrorMessage } from "@/lib/api/errors"
@@ -33,7 +34,14 @@ export function FileCard({ file }: { file: FileCardFile }) {
     <div className="bg-muted/40 flex min-w-0 items-center justify-between gap-3 rounded-md border p-3">
       <div className="flex min-w-0 items-center gap-3">
         <div className="bg-background text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-md border">
-          <FileIcon className="size-4" />
+          <FileTypeIcon
+            className="size-6"
+            file={{
+              ...(file.category ? { category: file.category } : {}),
+              ...(file.contentType ? { contentType: file.contentType } : {}),
+              name: file.name,
+            }}
+          />
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{file.name}</p>

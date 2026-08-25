@@ -9,10 +9,13 @@ import {
   isImageAttachmentMediaType,
   type MessageAttachment,
 } from "@/features/conversations/attachments"
+import { fileQueryOptions } from "@/features/files/api/get-file"
 import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { FileCard } from "@/features/files/components/file-card"
 import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { openWorkspaceFile } from "@/features/files/file-actions"
+import { fileTypeLabel } from "@/features/files/format"
+import type { WorkspaceFile } from "@/features/files/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatBytes } from "@/lib/format"
 
@@ -21,7 +24,18 @@ export function MessageAttachmentCard({ attachment }: { attachment: MessageAttac
     return <ImageAttachmentCard attachment={attachment} />
   }
 
-  return <FileCard file={fileCardFromAttachment(attachment)} />
+  return <DocumentAttachmentCard attachment={attachment} />
+}
+
+function DocumentAttachmentCard({ attachment }: { attachment: MessageAttachment }) {
+  const shouldLoadFile = attachment.name === null
+  const fileQuery = useQuery({
+    ...fileQueryOptions(attachment.fileId),
+    enabled: shouldLoadFile,
+  })
+  const file = shouldLoadFile ? fileQuery.data : undefined
+
+  return <FileCard file={fileCardFromAttachment(attachment, file)} />
 }
 
 function ImageAttachmentCard({ attachment }: { attachment: MessageAttachment }) {
@@ -131,7 +145,17 @@ function ImageAttachmentCard({ attachment }: { attachment: MessageAttachment }) 
   )
 }
 
-function fileCardFromAttachment(attachment: MessageAttachment) {
+function fileCardFromAttachment(attachment: MessageAttachment, file?: WorkspaceFile) {
+  if (file) {
+    return {
+      category: fileTypeLabel(file),
+      contentType: file.content_type,
+      fileId: file.id,
+      name: file.name,
+      sizeBytes: file.size_bytes,
+    }
+  }
+
   return {
     contentType: attachment.mediaType,
     fileId: attachment.fileId,

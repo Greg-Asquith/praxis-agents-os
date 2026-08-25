@@ -6,6 +6,17 @@ from tests.support.documents import tiny_docx, tiny_pdf, tiny_pptx, tiny_xlsx
 from utils.document_markdown import DocumentConversionError, convert_document_to_markdown
 
 
+async def test_convert_document_to_markdown_decodes_json_as_text() -> None:
+    markdown = await convert_document_to_markdown(
+        b'{"status": "ready"}',
+        content_type="application/json",
+        filename="status.json",
+        max_bytes=1_000,
+    )
+
+    assert markdown == '{"status": "ready"}'
+
+
 @pytest.mark.parametrize("content_type", ["text/html", "application/xhtml+xml"])
 async def test_convert_document_to_markdown_converts_html_directly(
     content_type: str,

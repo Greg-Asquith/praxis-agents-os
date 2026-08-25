@@ -47,10 +47,10 @@ class FilesSettingsMixin:
         description="Max workspace icon file size (2MB)",
     )
     MAX_FILE_SIZE_DOCUMENT: int = Field(
-        default=52428800,
+        default=104857600,
         ge=1048576,
-        le=104857600,
-        description="Max document file size (50MB)",
+        le=262144000,
+        description="Max document file size (100MB)",
     )
     MAX_SKILL_DOCUMENTS_PER_SKILL: int = Field(
         default=20,
@@ -104,7 +104,13 @@ class FilesSettingsMixin:
         default=20971520,
         ge=1048576,
         le=33554432,
-        description="Max document size passed to the model as multimodal input (20MB)",
+        description="Max PDF attachment size sent to the model as raw bytes (20MB)",
+    )
+    CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS: int = Field(
+        default=60,
+        ge=5,
+        le=300,
+        description="Seconds allowed for on-demand chat attachment conversion",
     )
     FILES_WORKSPACE_STORAGE_SOFT_LIMIT_BYTES: int = Field(
         default=10737418240,
