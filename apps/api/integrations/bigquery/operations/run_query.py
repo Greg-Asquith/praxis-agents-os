@@ -46,7 +46,16 @@ async def run_query(
     max_rows: int,
     max_result_chars: int,
     timeout_seconds: int,
+    query_parameters: tuple[dict[str, object], ...] | None = None,
+    permitted_tables: frozenset[tuple[str, str, str]] | None = None,
 ) -> dict[str, Any]:
+    dry_run_query: dict[str, Any] = {
+        "query": query,
+        "useLegacySql": False,
+    }
+    if query_parameters is not None:
+        dry_run_query["parameterMode"] = "NAMED"
+        dry_run_query["queryParameters"] = list(query_parameters)
     dry_run = await client.post(
         f"projects/{quote(billing_project_id, safe='')}/jobs",
         operation="dry_run_query",
@@ -54,10 +63,7 @@ async def run_query(
         json={
             "configuration": {
                 "dryRun": True,
-                "query": {
-                    "query": query,
-                    "useLegacySql": False,
-                },
+                "query": dry_run_query,
             }
         },
     )
@@ -94,6 +100,20 @@ async def run_query(
             + ", ".join(sorted(outside_context))
             + ". Ask the user to change the active context or revise the query."
         )
+    if permitted_tables is not None:
+        outside_permitted = [
+            f"{project_id}.{dataset_id}.{table_id}"
+            for project_id, dataset_id, table_id in references
+            if not _is_information_schema_reference(dataset_id, table_id)
+            and (project_id, dataset_id, table_id) not in permitted_tables
+        ]
+        if outside_permitted:
+            raise ModelRetry(
+                "The query references a view or table that is unavailable while row filters "
+                "are active: "
+                + ", ".join(sorted(outside_permitted))
+                + ". Use an available base table instead."
+            )
 
     estimated_bytes = _nonnegative_int(query_statistics.get("totalBytesProcessed"))
     if estimated_bytes is None:
@@ -105,22 +125,26 @@ async def run_query(
         )
 
     location = _query_location(references, allowed_datasets)
+    execution_query: dict[str, Any] = {
+        "query": query,
+        "useLegacySql": False,
+        "useQueryCache": True,
+        "maximumBytesBilled": str(max_bytes_billed),
+        "maxResults": max_rows + 1,
+        "timeoutMs": timeout_seconds * 1000,
+        "jobTimeoutMs": str(timeout_seconds * 1000),
+        "location": location,
+        "labels": dict(labels),
+        "requestId": request_id,
+    }
+    if query_parameters is not None:
+        execution_query["parameterMode"] = "NAMED"
+        execution_query["queryParameters"] = list(query_parameters)
     response = await client.post(
         f"projects/{quote(billing_project_id, safe='')}/queries",
         operation="run_query",
         policy=IntegrationRequestPolicy.READ,
-        json={
-            "query": query,
-            "useLegacySql": False,
-            "useQueryCache": True,
-            "maximumBytesBilled": str(max_bytes_billed),
-            "maxResults": max_rows + 1,
-            "timeoutMs": timeout_seconds * 1000,
-            "jobTimeoutMs": str(timeout_seconds * 1000),
-            "location": location,
-            "labels": dict(labels),
-            "requestId": request_id,
-        },
+        json=execution_query,
         request_timeout=timeout_seconds + 5,
     )
     _raise_query_errors(response)
@@ -133,6 +157,13 @@ async def run_query(
         response,
         max_rows=max_rows,
         max_result_chars=max_result_chars,
+        row_filters_applied=bool(query_parameters),
+    )
+
+
+def _is_information_schema_reference(dataset_id: str, table_id: str) -> bool:
+    return dataset_id.upper() == "INFORMATION_SCHEMA" or table_id.upper().startswith(
+        "INFORMATION_SCHEMA."
     )
 
 
@@ -224,6 +255,7 @@ def _query_result(
     *,
     max_rows: int,
     max_result_chars: int,
+    row_filters_applied: bool,
 ) -> dict[str, Any]:
     schema = payload.get("schema")
     raw_fields = schema.get("fields") if isinstance(schema, dict) else None
@@ -239,6 +271,7 @@ def _query_result(
         "truncated": truncated,
         "total_bytes_processed": _nonnegative_int(payload.get("totalBytesProcessed")) or 0,
         "cache_hit": bool(payload.get("cacheHit")),
+        "row_filters_applied": row_filters_applied,
     }
     bounded_rows: list[dict[str, str | None]] = []
     for raw_row in rows[:max_rows]:

@@ -268,9 +268,13 @@ follows:
   dry-run-gated SELECT query tool with active-dataset, routine, reference-count,
   byte, serialized-result, and row bounds. Query jobs bill through the service
   account's own project. BigQuery warehouse values are plain typed data under
-  the operator-controlled database trust boundary. A forced-RLS rule model,
-  provider-neutral SQL rewrite substrate, and BigQuery adapter exist for
-  pending row-scope enforcement. The query tool does not enforce those rules.
+  the operator-controlled database trust boundary. Editor-gated neutral routes
+  manage forced-RLS table row-scope rules against the schema cache. When any
+  rule exists, the BigQuery query tool loads rules fresh, rewrites governed
+  base-table references into typed parameter filters, rejects non-base or
+  cache-unknown references, and sends the same rewritten query and parameters
+  through the dry-run and execution requests. The zero-rule request bodies
+  remain unchanged.
   Google Analytics contributes workspace OAuth and service-account connection,
   a bearer-only Data/Admin REST client, and bounded Admin API discovery of
   read-only GA4 properties. Its five code-eligible read tools discover bounded

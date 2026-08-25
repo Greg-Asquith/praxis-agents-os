@@ -11,6 +11,7 @@ from .domain import (
     TableScopeColumnType,
     TableScopeQueryParameter,
     TableScopeRewriteError,
+    TableScopeValueError,
 )
 
 if TYPE_CHECKING:
@@ -26,6 +27,14 @@ class TableScopeAdapter(Protocol):
         self,
         schema_fields: Sequence[Mapping[str, object]],
     ) -> tuple[EligibleTableScopeColumn, ...]: ...
+
+    def validate_allowed_values(
+        self,
+        *,
+        column_type: TableScopeColumnType,
+        values: tuple[str, ...],
+    ) -> None:
+        """Raises TableScopeValueError when values exceed provider limits."""
 
     def should_skip_reference(self, table: TableCoordinate) -> bool: ...
 
@@ -48,4 +57,4 @@ class TableScopeAdapter(Protocol):
     ) -> TableScopeQueryParameter: ...
 
 
-__all__ = ["TableScopeAdapter", "TableScopeRewriteError"]
+__all__ = ["TableScopeAdapter", "TableScopeRewriteError", "TableScopeValueError"]

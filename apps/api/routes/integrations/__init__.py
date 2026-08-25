@@ -13,12 +13,14 @@ from routes.integrations.get_connection import router as get_connection_router
 from routes.integrations.get_context import router as get_context_router
 from routes.integrations.get_context_preview import router as get_context_preview_router
 from routes.integrations.get_preview import router as get_preview_router
+from routes.integrations.get_table_scopes import router as get_table_scopes_router
 from routes.integrations.list_connection_resources import (
     router as list_connection_resources_router,
 )
 from routes.integrations.list_connections import router as list_connections_router
 from routes.integrations.list_context_groups import router as list_context_groups_router
 from routes.integrations.list_providers import router as list_providers_router
+from routes.integrations.list_resource_tables import router as list_resource_tables_router
 from routes.integrations.oauth_callback import router as oauth_callback_router
 from routes.integrations.receive_event import router as receive_event_router
 from routes.integrations.refresh_connection import router as refresh_connection_router
@@ -33,12 +35,15 @@ from routes.integrations.update_context_group import router as update_context_gr
 from routes.integrations.update_resource_selection import (
     router as update_resource_selection_router,
 )
+from routes.integrations.update_table_scopes import router as update_table_scopes_router
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 router.include_router(list_providers_router)
 router.include_router(list_connections_router)
 router.include_router(get_connection_router)
 router.include_router(list_connection_resources_router)
+router.include_router(get_table_scopes_router)
+router.include_router(list_resource_tables_router)
 router.include_router(get_preview_router)
 router.include_router(get_context_preview_router)
 router.include_router(get_context_router)
@@ -59,6 +64,7 @@ router.include_router(replace_credential_router)
 router.include_router(receive_event_router)
 router.include_router(revoke_connection_router)
 router.include_router(update_resource_selection_router)
+router.include_router(update_table_scopes_router)
 router.include_router(trigger_discovery_router)
 
 __all__ = ["router"]

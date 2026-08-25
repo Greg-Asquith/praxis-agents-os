@@ -23,14 +23,17 @@ from integrations.bigquery.tools.schemas import (
     BigQueryRunQueryOutput,
     BigQueryTableSchemaOutput,
 )
-from models.integrations import IntegrationConnection
+from models.integrations import IntegrationConnection, IntegrationResource
+from models.user import User
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.table_scopes.domain import TableScopeEnforcementState
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
     build_integration_resource,
     build_integration_table_schema,
+    build_integration_table_scope_rule,
     build_user,
     build_workspace,
 )
@@ -242,6 +245,115 @@ async def test_query_stamps_labels_location_and_caps_rows() -> None:
     assert query_request["json"]["requestId"] == "00000000-0000-0000-0000-000000000089"
     assert query_request["request_timeout"] == 65
     assert result["rows"][0]["campaign"] == "Quarterly revenue"
+    assert result["row_filters_applied"] is False
+    assert client.calls[0]["json"] == {
+        "configuration": {
+            "dryRun": True,
+            "query": {
+                "query": "SELECT * FROM `analytics.marketing.campaign_daily`",
+                "useLegacySql": False,
+            },
+        }
+    }
+    assert "parameterMode" not in query_request["json"]
+    assert "queryParameters" not in query_request["json"]
+
+
+async def test_query_sends_row_filter_parameters_to_dry_run_and_execution() -> None:
+    client = _QueryClient(dry_run=_dry_run())
+    parameters = (
+        {
+            "name": "praxis_scope_0",
+            "parameterType": {"type": "ARRAY", "arrayType": {"type": "STRING"}},
+            "parameterValue": {"arrayValues": [{"value": "account-1"}]},
+        },
+    )
+
+    result = await run_query(
+        client,
+        query="SELECT * FROM filtered",
+        billing_project_id="analytics",
+        allowed_datasets={
+            ("analytics", "marketing"): AllowedDataset(
+                project_id="analytics",
+                dataset_id="marketing",
+                location="EU",
+            )
+        },
+        labels={},
+        request_id="request-id",
+        max_bytes_billed=1024,
+        max_rows=10,
+        max_result_chars=16_000,
+        timeout_seconds=60,
+        query_parameters=parameters,
+        permitted_tables=frozenset({("analytics", "marketing", "campaign_daily")}),
+    )
+
+    for request in client.calls:
+        query_config = (
+            request["json"]["configuration"]["query"]
+            if request["operation"] == "dry_run_query"
+            else request["json"]
+        )
+        assert query_config["parameterMode"] == "NAMED"
+        assert query_config["queryParameters"] == list(parameters)
+    assert result["row_filters_applied"] is True
+
+
+async def test_query_reports_no_filter_when_enforcement_emits_no_parameters() -> None:
+    client = _QueryClient(dry_run=_dry_run())
+
+    result = await run_query(
+        client,
+        query="SELECT * FROM `analytics.marketing.campaign_daily`",
+        billing_project_id="analytics",
+        allowed_datasets={
+            ("analytics", "marketing"): AllowedDataset(
+                project_id="analytics",
+                dataset_id="marketing",
+                location="EU",
+            )
+        },
+        labels={},
+        request_id="request-id",
+        max_bytes_billed=1024,
+        max_rows=10,
+        max_result_chars=16_000,
+        timeout_seconds=60,
+        query_parameters=(),
+        permitted_tables=frozenset({("analytics", "marketing", "campaign_daily")}),
+    )
+
+    assert result["row_filters_applied"] is False
+
+
+async def test_query_rejects_dry_run_reference_outside_permitted_tables() -> None:
+    client = _QueryClient(dry_run=_dry_run(references=[("analytics", "marketing", "hidden_view")]))
+
+    with pytest.raises(ModelRetry, match="unavailable while row filters are active"):
+        await run_query(
+            client,
+            query="SELECT * FROM rewritten",
+            billing_project_id="analytics",
+            allowed_datasets={
+                ("analytics", "marketing"): AllowedDataset(
+                    project_id="analytics",
+                    dataset_id="marketing",
+                    location="EU",
+                )
+            },
+            labels={},
+            request_id="request-id",
+            max_bytes_billed=1024,
+            max_rows=10,
+            max_result_chars=16_000,
+            timeout_seconds=60,
+            query_parameters=(),
+            permitted_tables=frozenset({("analytics", "marketing", "campaign_daily")}),
+        )
+
+    assert len(client.calls) == 1
 
 
 async def test_query_bounds_structured_result_characters() -> None:
@@ -290,6 +402,7 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
             "truncated": False,
             "total_bytes_processed": 0,
             "cache_hit": False,
+            "row_filters_applied": False,
         }
     )
     audit = AsyncMock()
@@ -300,6 +413,15 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
     monkeypatch.setattr(
         "integrations.bigquery.tools.run_query.run_query",
         provider_run,
+    )
+    monkeypatch.setattr(
+        "integrations.bigquery.tools.run_query.load_table_scope_enforcement_state",
+        AsyncMock(
+            return_value=TableScopeEnforcementState(
+                rules=(),
+                permitted_table_ids_by_resource={},
+            )
+        ),
     )
     monkeypatch.setattr(
         "services.integrations.operations.record_integration_operation_audit_event",
@@ -321,6 +443,146 @@ async def test_query_tool_audits_each_active_dataset_and_stamps_runtime_ids(
         entry.integration_resource_id for entry in entries
     }
     assert all(call.kwargs["external_ref"] is None for call in audit.await_args_list)
+
+
+async def test_query_tool_rewrites_with_fresh_rules_and_discloses_filtering(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entry, cached = await _cached_table_context(db_session)
+    resource = await db_session.get(IntegrationResource, cached.resource_id)
+    assert resource is not None
+    connection = await db_session.get(IntegrationConnection, resource.connection_id)
+    assert connection is not None
+    user = await db_session.get(User, connection.connected_by_user_id)
+    assert user is not None
+    db_session.add(
+        build_integration_table_scope_rule(
+            connection=connection,
+            resource=resource,
+            user=user,
+            table_external_id="campaign_daily",
+            column_name="account_id",
+            allowed_values=["account-1"],
+        )
+    )
+    await db_session.flush()
+    client = _QueryClient(dry_run=_dry_run())
+    monkeypatch.setattr(
+        "integrations.bigquery.tools.run_query.bigquery_query_client",
+        AsyncMock(return_value=(client, "analytics")),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(),
+    )
+
+    result = await bigquery_run_query(
+        _ctx(db_session, (entry,), tool_name="bigquery_run_query"),
+        "SELECT * FROM `analytics.marketing.campaign_daily`",
+    )
+
+    assert result["row_filters_applied"] is True
+    dry_query = client.calls[0]["json"]["configuration"]["query"]
+    execution_query = client.calls[1]["json"]
+    assert dry_query["query"] == execution_query["query"]
+    assert "UNNEST(@praxis_scope_0)" in dry_query["query"]
+    assert dry_query["queryParameters"] == execution_query["queryParameters"]
+    assert dry_query["queryParameters"][0]["parameterValue"] == {
+        "arrayValues": [{"value": "account-1"}]
+    }
+
+
+@pytest.mark.parametrize(
+    "schema_fields",
+    [
+        [{"name": "other_id", "type": "STRING", "mode": "REQUIRED"}],
+        [{"name": "account_id", "type": "STRING", "mode": "REPEATED"}],
+        [{"name": "account_id", "type": "FLOAT64", "mode": "REQUIRED"}],
+    ],
+)
+async def test_query_tool_rejects_rules_that_no_longer_match_cached_columns(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    schema_fields: list[dict[str, str]],
+) -> None:
+    entry, cached = await _cached_table_context(db_session)
+    resource = await db_session.get(IntegrationResource, cached.resource_id)
+    assert resource is not None
+    connection = await db_session.get(IntegrationConnection, resource.connection_id)
+    assert connection is not None
+    user = await db_session.get(User, connection.connected_by_user_id)
+    assert user is not None
+    cached.schema_fields = schema_fields
+    db_session.add(
+        build_integration_table_scope_rule(
+            connection=connection,
+            resource=resource,
+            user=user,
+            table_external_id="campaign_daily",
+            column_name="account_id",
+        )
+    )
+    await db_session.flush()
+    query_client = AsyncMock(return_value=(object(), "analytics"))
+    monkeypatch.setattr(
+        "integrations.bigquery.tools.run_query.bigquery_query_client",
+        query_client,
+    )
+
+    with pytest.raises(ModelRetry, match="no longer matches the cached table schema"):
+        await bigquery_run_query(
+            _ctx(db_session, (entry,), tool_name="bigquery_run_query"),
+            "SELECT * FROM `analytics.marketing.campaign_daily`",
+        )
+
+    query_client.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("table_type", "queried_table", "expected_message"),
+    [
+        ("view", "campaign_daily", "available base table"),
+        ("materialized_view", "campaign_daily", "available base table"),
+        ("external", "campaign_daily", "available base table"),
+        ("table", "missing_table", "view or unknown table"),
+    ],
+)
+async def test_query_tool_rejects_non_base_and_unknown_tables_when_rules_exist(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    table_type: str,
+    queried_table: str,
+    expected_message: str,
+) -> None:
+    entry, cached = await _cached_table_context(db_session)
+    resource = await db_session.get(IntegrationResource, cached.resource_id)
+    assert resource is not None
+    connection = await db_session.get(IntegrationConnection, resource.connection_id)
+    assert connection is not None
+    user = await db_session.get(User, connection.connected_by_user_id)
+    assert user is not None
+    cached.table_type = table_type
+    db_session.add(
+        build_integration_table_scope_rule(
+            connection=connection,
+            resource=resource,
+            user=user,
+            table_external_id="campaign_daily",
+            column_name="account_id",
+        )
+    )
+    await db_session.flush()
+    monkeypatch.setattr(
+        "integrations.bigquery.tools.run_query.bigquery_query_client",
+        AsyncMock(return_value=(object(), "analytics")),
+    )
+
+    with pytest.raises(ModelRetry, match=expected_message):
+        await bigquery_run_query(
+            _ctx(db_session, (entry,), tool_name="bigquery_run_query"),
+            f"SELECT * FROM `analytics.marketing.{queried_table}`",  # noqa: S608
+        )
 
 
 async def _run_operation(
@@ -467,7 +729,13 @@ async def _cached_table_context(db: AsyncSession):
                 "type": "DATE",
                 "mode": "REQUIRED",
                 "description": "Reporting date",
-            }
+            },
+            {
+                "name": "account_id",
+                "type": "STRING",
+                "mode": "REQUIRED",
+                "description": "Client account",
+            },
         ],
         partitioning={
             "type": "DAY",

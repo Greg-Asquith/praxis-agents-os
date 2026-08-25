@@ -11,6 +11,7 @@ from services.integrations.table_scopes.domain import (
     TableScopeColumnType,
     TableScopeQueryParameter,
     TableScopeRewriteError,
+    TableScopeValueError,
 )
 
 if TYPE_CHECKING:
@@ -21,6 +22,8 @@ _ELIGIBLE_TYPES: dict[str, TableScopeColumnType] = {
     "INT64": "integer",
     "INTEGER": "integer",
 }
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
 
 
 class BigQueryTableScopeAdapter:
@@ -41,6 +44,17 @@ class BigQueryTableScopeAdapter:
             if name and "." not in name and mode != "REPEATED" and column_type is not None:
                 eligible.append(EligibleTableScopeColumn(name=name, column_type=column_type))
         return tuple(eligible)
+
+    def validate_allowed_values(
+        self,
+        *,
+        column_type: TableScopeColumnType,
+        values: tuple[str, ...],
+    ) -> None:
+        if column_type != "integer":
+            return
+        if any(not _INT64_MIN <= int(value) <= _INT64_MAX for value in values):
+            raise TableScopeValueError("Integer row-filter values must fit BigQuery INT64")
 
     def should_skip_reference(self, table: TableCoordinate) -> bool:
         parts = (table.catalog.upper(), table.schema.upper(), table.table.upper())

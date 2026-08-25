@@ -61,3 +61,4 @@ class BigQueryRunQueryOutput(_StrictModel):
     truncated: bool
     total_bytes_processed: int
     cache_hit: bool
+    row_filters_applied: bool

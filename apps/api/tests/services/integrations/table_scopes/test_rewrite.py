@@ -200,6 +200,14 @@ class _PostgresStubAdapter:
     def should_skip_reference(self, _table: TableCoordinate) -> bool:
         return False
 
+    def validate_allowed_values(
+        self,
+        *,
+        column_type: TableScopeColumnType,
+        values: tuple[str, ...],
+    ) -> None:
+        return None
+
     def validate_governed_table(self, _table: exp.Table) -> None:
         return None
 

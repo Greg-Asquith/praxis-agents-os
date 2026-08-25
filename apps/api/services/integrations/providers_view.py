@@ -6,6 +6,7 @@ from core.settings import settings
 from services.integrations.connections.schemas import ProviderRead
 from services.integrations.manifest import PROVIDER_MANIFESTS, IntegrationProviderManifest
 from services.integrations.oauth.resolve_provider_config import resolve_provider_oauth_config
+from services.integrations.plugin import PROVIDER_PLUGINS
 
 
 def list_providers() -> list[ProviderRead]:
@@ -21,6 +22,7 @@ def list_providers() -> list[ProviderRead]:
             connect_help=manifest.connect_help,
             capability_flags=manifest.capability_flags,
             requires_discovery=manifest.requires_discovery,
+            table_scopes_supported=_table_scopes_supported(manifest.provider_key),
             configured=is_provider_configured(manifest),
             configured_auth_modes={
                 auth_mode: is_auth_mode_configured(manifest, auth_mode)
@@ -29,6 +31,11 @@ def list_providers() -> list[ProviderRead]:
         )
         for manifest in sorted(PROVIDER_MANIFESTS.values(), key=lambda item: item.display_name)
     ]
+
+
+def _table_scopes_supported(provider_key: str) -> bool:
+    plugin = PROVIDER_PLUGINS.get(provider_key)
+    return plugin is not None and plugin.table_scope_adapter is not None
 
 
 def is_provider_configured(manifest: IntegrationProviderManifest) -> bool:

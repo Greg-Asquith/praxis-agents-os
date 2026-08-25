@@ -4,6 +4,7 @@
 
 from dataclasses import dataclass
 from typing import Literal
+from uuid import UUID
 
 TableScopeColumnType = Literal["string", "integer"]
 
@@ -62,3 +63,27 @@ class TableScopeRewriteResult:
 
 class TableScopeRewriteError(ValueError):
     """The query cannot be safely rewritten under active row-scope rules."""
+
+
+class TableScopeValueError(ValueError):
+    """A rule value is invalid for the provider's column type."""
+
+
+@dataclass(frozen=True)
+class StoredTableScopeRule:
+    """A persisted rule plus neutral resource coordinates needed by a provider."""
+
+    resource_id: UUID
+    resource_metadata: dict[str, object]
+    table_external_id: str
+    column_name: str
+    column_type: TableScopeColumnType
+    allowed_values: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TableScopeEnforcementState:
+    """Fresh rules and permitted base tables for one query invocation."""
+
+    rules: tuple[StoredTableScopeRule, ...]
+    permitted_table_ids_by_resource: dict[UUID, frozenset[str]]

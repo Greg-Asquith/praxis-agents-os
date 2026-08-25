@@ -1,10 +1,11 @@
 """Real-pipeline corpus fixtures for the Gate G4 retrieval harness."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -17,6 +18,7 @@ from core.database import set_session_tenant_context
 from models.kb import KBDocument
 from models.user import User
 from models.workspace import Workspace
+from services.ai_usage import record_durable as record_durable_module
 from services.kb import create_kb_document
 from services.kb.embed_chunks import embed_kb_chunks
 from services.kb.ingest_document import ingest_kb_document
@@ -124,9 +126,17 @@ async def _seed_document(
     return document
 
 
+@pytest.fixture(scope="module")
+def module_monkeypatch() -> Iterator[pytest.MonkeyPatch]:
+    """Apply patches for the lifetime of a module-scoped fixture."""
+    with pytest.MonkeyPatch.context() as patch:
+        yield patch
+
+
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def retrieval_corpus(
     migrated_test_database: str,
+    module_monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[RetrievalCorpus]:
     """Seed one isolated module corpus through create, ingest, and embed services."""
     engine = create_async_engine(
@@ -140,6 +150,11 @@ async def retrieval_corpus(
             class_=AsyncSession,
             expire_on_commit=False,
             join_transaction_mode="create_savepoint",
+        )
+        module_monkeypatch.setattr(
+            record_durable_module,
+            "get_ai_usage_async_db_session_factory",
+            lambda: session_factory,
         )
         async with session_factory() as db:
             suffix = uuid4().hex

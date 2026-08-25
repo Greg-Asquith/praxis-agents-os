@@ -12,6 +12,7 @@ from models.integration_context import (
     IntegrationContextGroupMember,
 )
 from models.integration_table_schema import IntegrationTableSchema
+from models.integration_table_scope_rule import IntegrationTableScopeRule
 from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
@@ -98,6 +99,27 @@ def build_integration_table_schema(
     }
     defaults.update(overrides)
     return IntegrationTableSchema(**defaults)
+
+
+def build_integration_table_scope_rule(
+    *,
+    connection: IntegrationConnection,
+    resource: IntegrationResource,
+    user: User,
+    **overrides,
+) -> IntegrationTableScopeRule:
+    defaults = {
+        "id": uuid4(),
+        "connection_id": connection.id,
+        "resource_id": resource.id,
+        "table_external_id": "table_1",
+        "column_name": "account_id",
+        "column_type": "string",
+        "allowed_values": ["account-1"],
+        "created_by_user_id": user.id,
+    }
+    defaults.update(overrides)
+    return IntegrationTableScopeRule(**defaults)
 
 
 def build_integration_discovery_run(

@@ -1,5 +1,6 @@
 # apps/api/integrations/bigquery/tools/run_query.py
 
+from collections.abc import Sequence
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -14,6 +15,17 @@ from services.agents.runtime.tools.contract import (
     RuntimeToolDefinition,
     ToolFieldPresentation,
     ToolPresentation,
+)
+from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.table_scopes.domain import (
+    TableCoordinate,
+    TableNamespace,
+    TableScopeEnforcementState,
+    TableScopeRewriteError,
+    TableScopeRule,
+)
+from services.integrations.table_scopes.load_enforcement_state import (
+    load_table_scope_enforcement_state,
 )
 
 from ..operations.run_query import AllowedDataset, run_query
@@ -61,13 +73,35 @@ async def bigquery_run_query(
             dataset_id=dataset_id,
             location=dataset_location(entry),
         )
+    from ..operations.scope_rewrite import BIGQUERY_TABLE_SCOPE_ADAPTER
+
+    try:
+        enforcement = await load_table_scope_enforcement_state(
+            ctx.deps.db,
+            connection_id=next(iter(connection_ids)),
+            active_resource_ids=[entry.integration_resource_id for entry in entries],
+            adapter=BIGQUERY_TABLE_SCOPE_ADAPTER,
+        )
+    except TableScopeRewriteError as exc:
+        raise ModelRetry(str(exc)) from exc
 
     async def execute():
         client, billing_project_id = await bigquery_query_client(ctx, entries[0])
         try:
+            if enforcement.rules:
+                rewritten_query, query_parameters, permitted_tables = _apply_row_filters(
+                    normalized,
+                    billing_project_id=billing_project_id,
+                    entries=entries,
+                    enforcement=enforcement,
+                )
+            else:
+                rewritten_query = normalized
+                query_parameters = None
+                permitted_tables = None
             return await run_query(
                 client,
-                query=normalized,
+                query=rewritten_query,
                 billing_project_id=billing_project_id,
                 allowed_datasets=allowed_datasets,
                 labels=query_labels(ctx),
@@ -76,8 +110,14 @@ async def bigquery_run_query(
                 max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
                 max_result_chars=bigquery_settings.BIGQUERY_MAX_RESULT_CHARS,
                 timeout_seconds=bigquery_settings.BIGQUERY_QUERY_TIMEOUT_SECONDS,
+                query_parameters=query_parameters,
+                permitted_tables=permitted_tables,
             )
-        except (IntegrationTimeoutError, IntegrationValidationError) as exc:
+        except (
+            IntegrationTimeoutError,
+            IntegrationValidationError,
+            TableScopeRewriteError,
+        ) as exc:
             provider_message = str(exc).partition(" | ")[0]
             raise ModelRetry(provider_message) from exc
 
@@ -90,13 +130,79 @@ async def bigquery_run_query(
     )
 
 
+def _apply_row_filters(
+    query: str,
+    *,
+    billing_project_id: str,
+    entries: Sequence[ResolvedContextEntry],
+    enforcement: TableScopeEnforcementState,
+) -> tuple[
+    str,
+    tuple[dict[str, object], ...],
+    frozenset[tuple[str, str, str]],
+]:
+    # Keep sqlglot off the unchanged no-rule path.
+    from services.integrations.table_scopes.rewrite import rewrite_table_scopes
+
+    rules: dict[TableCoordinate, TableScopeRule] = {}
+    for stored in enforcement.rules:
+        project_id = str(stored.resource_metadata.get("project_id", "")).strip()
+        dataset_id = str(stored.resource_metadata.get("dataset_id", "")).strip()
+        if not project_id or not dataset_id:
+            raise TableScopeRewriteError(
+                "A row-filtered dataset is missing routing metadata. Refresh the connection."
+            )
+        coordinate = TableCoordinate(
+            catalog=project_id,
+            schema=dataset_id,
+            table=stored.table_external_id,
+        )
+        rules[coordinate] = TableScopeRule(
+            table=coordinate,
+            column_name=stored.column_name,
+            column_type=stored.column_type,
+            allowed_values=stored.allowed_values,
+        )
+
+    permitted_tables: set[tuple[str, str, str]] = set()
+    for entry in entries:
+        project_id, dataset_id = dataset_coordinates(entry)
+        for table_id in enforcement.permitted_table_ids_by_resource.get(
+            entry.integration_resource_id, ()
+        ):
+            permitted_tables.add((project_id, dataset_id, table_id))
+
+    from ..operations.scope_rewrite import BIGQUERY_TABLE_SCOPE_ADAPTER
+
+    result = rewrite_table_scopes(
+        query,
+        default_namespace=TableNamespace(catalog=billing_project_id),
+        rules=rules,
+        adapter=BIGQUERY_TABLE_SCOPE_ADAPTER,
+    )
+    resolved = {(table.catalog, table.schema, table.table) for table in result.referenced_tables}
+    outside_permitted = resolved - permitted_tables
+    if outside_permitted:
+        rendered = ", ".join(".".join(table) for table in sorted(outside_permitted))
+        raise TableScopeRewriteError(
+            "The query references a view or unknown table while row filters are active: "
+            f"{rendered}. Use an available base table instead."
+        )
+    return (
+        result.query,
+        tuple(parameter.payload for parameter in result.parameters),
+        frozenset(permitted_tables),
+    )
+
+
 DEFINITION = RuntimeToolDefinition(
     name="bigquery_run_query",
     function=bigquery_run_query,
     description=(
         "Run exactly one bounded GoogleSQL SELECT query. Active BigQuery datasets define which "
         "tables that query may reference; the query is not repeated for each dataset. "
-        "Use fully qualified backticked `project.dataset.table` names."
+        "Use fully qualified backticked `project.dataset.table` names. Some tables may have "
+        "operator-defined row filters, so results can contain a subset of the table's rows."
     ),
     provider="bigquery",
     label="Run BigQuery Query",
