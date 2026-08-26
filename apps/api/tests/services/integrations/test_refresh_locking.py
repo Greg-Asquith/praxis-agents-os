@@ -292,15 +292,25 @@ async def test_identity_failure_transition_survives_request_style_rollback(
         "services.integrations.connections.test_connection",
         fromlist=["resolve_external_principal"],
     )
+    identity_tokens: list[str] = []
 
     async def rejected_identity(**kwargs):
+        identity_tokens.append(kwargs["access_token"])
         raise IntegrationAuthError(
             "Identity rejected",
             provider_key="gmail",
             operation="oauth_userinfo",
         )
 
+    async def refresh_credential(_credential):
+        return {
+            "access_token": "still-rejected-access",
+            "refresh_token": "rotated-refresh-token",
+            "expires_in": 3600,
+        }
+
     monkeypatch.setattr(module, "resolve_external_principal", rejected_identity)
+    monkeypatch.setattr(module, "refresh_oauth_credential", refresh_credential)
     try:
         async with committed_db_session_factory() as request_db:
             await set_session_tenant_context(
@@ -324,6 +334,7 @@ async def test_identity_failure_transition_survives_request_style_rollback(
                 )
             await request_db.rollback()
 
+        assert identity_tokens == ["rejected-access", "still-rejected-access"]
         async with committed_db_session_factory() as verify:
             await set_session_tenant_context(
                 verify,

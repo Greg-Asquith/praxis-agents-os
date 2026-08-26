@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import timedelta
 from importlib import import_module
+from types import SimpleNamespace
 
 import pytest
 from httpx2 import AsyncClient
@@ -310,6 +311,49 @@ async def test_connection_test_keeps_stored_label_when_live_identity_omits_it(
 
     assert response.status_code == 200, response.text
     assert response.json()["external_principal_label"] == "owner@example.com"
+
+
+async def test_connection_test_forces_refresh_after_identity_auth_rejection(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = await _oauth_connection(db_session, integration_identity)
+    module = import_module("services.integrations.connections.test_connection")
+    refresh_calls: list[bool] = []
+
+    async def ensure_fresh_credential(*args, force: bool = False, **kwargs):
+        refresh_calls.append(force)
+        return SimpleNamespace(
+            access_token="fresh-access" if force else "stale-access",
+            provider_key="gmail",
+        )
+
+    async def resolve_external_principal(
+        *, provider_key: str, access_token: str
+    ) -> ExternalPrincipal:
+        assert provider_key == "gmail"
+        if access_token == "stale-access":
+            raise IntegrationAuthError(
+                "Access token rejected",
+                provider_key=provider_key,
+                operation="oauth_userinfo",
+            )
+        assert access_token == "fresh-access"
+        return ExternalPrincipal("principal-lifecycle", "refreshed@example.com")
+
+    monkeypatch.setattr(module, "ensure_fresh_credential", ensure_fresh_credential)
+    monkeypatch.setattr(module, "resolve_external_principal", resolve_external_principal)
+
+    response = await db_async_client.post(
+        f"/api/v1/integrations/connections/{connection.id}/test",
+        headers=integration_identity["headers"],
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["external_principal_label"] == "refreshed@example.com"
+    assert refresh_calls == [False, True]
 
 
 async def test_identity_auth_failure_marks_connection_needs_reauth(

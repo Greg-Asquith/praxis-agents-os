@@ -242,6 +242,57 @@ async def test_oauth_provider_auth_failure_requires_sign_in(
     assert connection.status == "needs_reauth"
 
 
+async def test_oauth_discovery_forces_refresh_after_provider_auth_rejection(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = discovery_connection["connection"]
+    credential = discovery_connection["credential"]
+    provider = discovery_connection["provider"]
+    credential.auth_mode = "oauth"
+    credential.secret_provider = None
+    credential.secret_name = None
+    credential.secret_version = None
+    credential.access_token_encrypted = "ciphertext"
+    await db_session.flush()
+    refresh_calls: list[bool] = []
+
+    async def resolve_oauth(*args, force: bool = False, **kwargs):
+        refresh_calls.append(force)
+        return (
+            "fresh-access" if force else "stale-access",
+            frozenset(),
+            None,
+        )
+
+    async def discover_resources(access_token: str, _principal_label: str | None = None):
+        if access_token == "stale-access":
+            raise IntegrationAuthError(
+                "OAuth rejected",
+                provider_key=connection.provider_key,
+                operation="discover_resources",
+            )
+        assert access_token == "fresh-access"
+        return tuple(provider["resources"])
+
+    module = __import__(
+        "services.integrations.discovery.run_discovery",
+        fromlist=["_resolve_credential_value"],
+    )
+    monkeypatch.setattr(module, "_resolve_credential_value", resolve_oauth)
+    monkeypatch.setitem(
+        PROVIDER_PLUGINS,
+        connection.provider_key,
+        replace(PROVIDER_PLUGINS[connection.provider_key], discover_resources=discover_resources),
+    )
+
+    result = await run_discovery(db_session, connection_id=connection.id)
+
+    assert result.status == "succeeded"
+    assert refresh_calls == [False, True]
+
+
 async def test_vault_unavailability_preserves_prior_success_and_recovers(
     db_session: AsyncSession,
     discovery_connection: dict[str, object],

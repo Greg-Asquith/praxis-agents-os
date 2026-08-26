@@ -31,10 +31,16 @@ from services.integrations.plugin import (
 
 @pytest.fixture(autouse=True)
 def clear_loaded_provider_state():
-    for kind, resolver in tuple(ENTITY_RESOLVERS.items()):
-        if resolver.provider_key is not None:
-            ENTITY_RESOLVERS.pop(kind)
-    for name in tuple(RUNTIME_TOOL_CATALOG):
+    original_manifests = dict(PROVIDER_MANIFESTS)
+    original_plugins = dict(PROVIDER_PLUGINS)
+    original_resolvers = {
+        kind: resolver
+        for kind, resolver in ENTITY_RESOLVERS.items()
+        if resolver.provider_key is not None
+    }
+    original_tools = {
+        name: definition
+        for name, definition in RUNTIME_TOOL_CATALOG.items()
         if name.startswith(
             (
                 "airtable_",
@@ -44,9 +50,8 @@ def clear_loaded_provider_state():
                 "google_analytics_",
                 "notion_",
             )
-        ):
-            RUNTIME_TOOL_CATALOG.pop(name)
-    yield
+        )
+    }
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
     for kind, resolver in tuple(ENTITY_RESOLVERS.items()):
@@ -64,6 +69,28 @@ def clear_loaded_provider_state():
             )
         ):
             RUNTIME_TOOL_CATALOG.pop(name)
+    yield
+    PROVIDER_MANIFESTS.clear()
+    PROVIDER_MANIFESTS.update(original_manifests)
+    PROVIDER_PLUGINS.clear()
+    PROVIDER_PLUGINS.update(original_plugins)
+    for kind, resolver in tuple(ENTITY_RESOLVERS.items()):
+        if resolver.provider_key is not None:
+            ENTITY_RESOLVERS.pop(kind)
+    ENTITY_RESOLVERS.update(original_resolvers)
+    for name in tuple(RUNTIME_TOOL_CATALOG):
+        if name.startswith(
+            (
+                "airtable_",
+                "bigquery_",
+                "gmail_",
+                "google_ads_",
+                "google_analytics_",
+                "notion_",
+            )
+        ):
+            RUNTIME_TOOL_CATALOG.pop(name)
+    RUNTIME_TOOL_CATALOG.update(original_tools)
 
 
 def _oauth_manifest(key: str = "example") -> IntegrationProviderManifest:
@@ -88,6 +115,20 @@ def _api_key_manifest(key: str = "example") -> IntegrationProviderManifest:
 
 async def _fetch_provider_identity(access_token: str) -> ExternalPrincipal:
     return ExternalPrincipal(external_id=access_token, label=None)
+
+
+def _notion_protocol() -> OAuthProtocol:
+    return OAuthProtocol(
+        authorization_params=(("owner", "user"),),
+        scope_parameter=False,
+        pkce="none",
+        token_auth="client_secret_basic",  # noqa: S106 - protocol enum, not a credential
+        token_encoding="json",  # noqa: S106 - protocol enum, not a credential
+        identity_source="provider",
+        fetch_identity=_fetch_provider_identity,
+        request_headers=(("Notion-Version", "2026-03-11"),),
+        revoke_token="access",  # noqa: S106 - protocol enum, not a credential
+    )
 
 
 def _oauth_plugin(
@@ -145,11 +186,7 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
         PROVIDER=_oauth_plugin(
             key="notion",
             oauth_scopes=(),
-            protocol=OAuthProtocol(
-                scope_parameter=False,
-                identity_source="provider",
-                fetch_identity=_fetch_provider_identity,
-            ),
+            protocol=_notion_protocol(),
         )
     )
 
@@ -281,11 +318,7 @@ def test_loader_accepts_supported_oauth_protocols() -> None:
     notion_config = _validate_plugin(
         _oauth_plugin(
             oauth_scopes=(),
-            protocol=OAuthProtocol(
-                scope_parameter=False,
-                identity_source="provider",
-                fetch_identity=_fetch_provider_identity,
-            ),
+            protocol=_notion_protocol(),
         ),
         expected_key="example",
     )
@@ -311,11 +344,7 @@ def test_loader_applies_oauth_protocol_rules_only_to_oauth_manifests() -> None:
         ((), OAuthProtocol(), "must declare scopes"),
         (
             ("scope",),
-            OAuthProtocol(
-                scope_parameter=False,
-                identity_source="provider",
-                fetch_identity=_fetch_provider_identity,
-            ),
+            _notion_protocol(),
             "must not declare scopes",
         ),
         (

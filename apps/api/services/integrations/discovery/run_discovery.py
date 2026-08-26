@@ -123,11 +123,24 @@ async def run_discovery(
         credential_value, granted_scopes, principal_label = await _resolve_credential_value(
             db, connection
         )
-        resources = await _fetch_resources(
-            provider_key=connection.provider_key,
-            credential_value=credential_value,
-            principal_label=principal_label,
-        )
+        try:
+            resources = await _fetch_resources(
+                provider_key=connection.provider_key,
+                credential_value=credential_value,
+                principal_label=principal_label,
+            )
+        except IntegrationAuthError:
+            credential = await db.get(ExternalCredential, connection.credential_id)
+            if credential is None or credential.auth_mode != "oauth":
+                raise
+            credential_value, granted_scopes, principal_label = await _resolve_credential_value(
+                db, connection, force=True
+            )
+            resources = await _fetch_resources(
+                provider_key=connection.provider_key,
+                credential_value=credential_value,
+                principal_label=principal_label,
+            )
         resources = _apply_granted_scope_permissions(resources, granted_scopes=granted_scopes)
         counters = await _reconcile_resources(
             db,
@@ -192,6 +205,8 @@ async def run_discovery(
 async def _resolve_credential_value(
     db: AsyncSession,
     connection: IntegrationConnection,
+    *,
+    force: bool = False,
 ) -> tuple[str, frozenset[str], str | None]:
     credential = await db.get(ExternalCredential, connection.credential_id)
     if credential is None or credential.deleted:
@@ -205,6 +220,7 @@ async def _resolve_credential_value(
             db,
             credential_id=credential.id,
             refresh_token=refresh_oauth_credential,
+            force=force,
         )
         access_token = fresh.access_token
         if not access_token:

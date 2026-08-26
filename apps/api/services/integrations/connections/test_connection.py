@@ -31,7 +31,7 @@ from services.integrations.connections.utils import (
     require_connection_mutation_allowed,
 )
 from services.integrations.credentials import ensure_fresh_credential
-from services.integrations.oauth import resolve_external_principal
+from services.integrations.oauth import ExternalPrincipal, resolve_external_principal
 from services.integrations.utils import record_integration_audit
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
@@ -73,17 +73,17 @@ async def test_connection(
             credential_id=credential.id,
             refresh_token=refresh_oauth_credential,
         )
-        access_token = fresh.access_token
-        if not access_token:
-            raise IntegrationConnectionError(
-                "Connection has no access token",
-                provider_key=fresh.provider_key,
-                operation="test_connection",
-            )
         try:
-            principal = await resolve_external_principal(
-                provider_key=fresh.provider_key, access_token=access_token
-            )
+            try:
+                principal = await _resolve_credential_principal(fresh)
+            except IntegrationAuthError:
+                fresh = await ensure_fresh_credential(
+                    db,
+                    credential_id=credential.id,
+                    refresh_token=refresh_oauth_credential,
+                    force=True,
+                )
+                principal = await _resolve_credential_principal(fresh)
         except (IntegrationAuthError, IntegrationPermissionError):
             await _mark_identity_test_failed(
                 db,
@@ -119,6 +119,20 @@ async def test_connection(
         verification_scope=(
             "provider_identity" if credential.auth_mode == "oauth" else "credential_resolution"
         ),
+    )
+
+
+async def _resolve_credential_principal(credential: ExternalCredential) -> ExternalPrincipal:
+    access_token = credential.access_token
+    if not access_token:
+        raise IntegrationConnectionError(
+            "Connection has no access token",
+            provider_key=credential.provider_key,
+            operation="test_connection",
+        )
+    return await resolve_external_principal(
+        provider_key=credential.provider_key,
+        access_token=access_token,
     )
 
 
