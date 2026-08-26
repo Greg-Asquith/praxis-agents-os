@@ -33,6 +33,13 @@ describe("AgentToolProviderGroup", () => {
     expect(html).not.toContain("Run a bounded query.")
   })
 
+  it("offers a Set all menu in the header outside the expand button", () => {
+    const html = renderGroup({ forceOpen: false, toolModes: {} })
+
+    expect(html).toContain('aria-label="Set all BigQuery tools"')
+    expect(html.indexOf("</button>")).toBeLessThan(html.indexOf("Set all"))
+  })
+
   it("opens matching providers while searching", () => {
     const html = renderGroup({ forceOpen: true, toolModes: {} })
 
@@ -53,6 +60,7 @@ function renderGroup({
       forceOpen,
       group,
       onModeChange: () => undefined,
+      onModesChange: () => undefined,
       onOpenChange: () => undefined,
       openOverride: undefined,
       toolModes,

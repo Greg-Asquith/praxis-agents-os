@@ -44,11 +44,13 @@ import type { ToolCatalogEntry } from "@/features/tools/types"
 export function AgentToolsSection({
   onCodeModeEnabledChange,
   onToolModeChange,
+  onToolModesChange,
   state,
   toolCatalog,
 }: {
   onCodeModeEnabledChange: (enabled: boolean) => void
   onToolModeChange: (toolName: string, mode: RuntimeToolMode) => void
+  onToolModesChange: (modes: Record<string, RuntimeToolMode>) => void
   state: AgentFormState
   toolCatalog: ToolCatalogEntry[]
 }) {
@@ -158,63 +160,70 @@ export function AgentToolsSection({
             )}
           </p>
           <div className="grid gap-4">
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
-              <Field>
-                <FieldLabel htmlFor="agent-tool-search">Search tools</FieldLabel>
-                <div className="relative">
-                  <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                  <Input
-                    className="pl-9"
-                    id="agent-tool-search"
-                    onChange={(event) => {
-                      setSearch(event.currentTarget.value)
+            <div className="bg-card sticky -top-5 z-10 -mt-2 grid gap-3 border-b pt-2 pb-3 md:-top-6">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
+                <Field>
+                  <FieldLabel htmlFor="agent-tool-search">Search tools</FieldLabel>
+                  <div className="relative">
+                    <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+                    <Input
+                      className="pl-9"
+                      id="agent-tool-search"
+                      onChange={(event) => {
+                        setSearch(event.currentTarget.value)
+                      }}
+                      placeholder="Name, provider, or description"
+                      type="search"
+                      value={search}
+                    />
+                  </div>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="agent-tool-provider">Provider</FieldLabel>
+                  <Select
+                    value={providerFilter}
+                    onValueChange={(value) => {
+                      setProviderFilter(value ?? ALL_TOOL_PROVIDERS_VALUE)
                     }}
-                    placeholder="Name, provider, or description"
-                    type="search"
-                    value={search}
-                  />
-                </div>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="agent-tool-provider">Provider</FieldLabel>
-                <Select
-                  value={providerFilter}
-                  onValueChange={(value) => {
-                    setProviderFilter(value ?? ALL_TOOL_PROVIDERS_VALUE)
-                  }}
-                >
-                  <SelectTrigger id="agent-tool-provider" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    <SelectGroup>
-                      <SelectLabel>Provider</SelectLabel>
-                      {providerOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                      {allUnavailableToolNames.length > 0 ? (
-                        <SelectItem value={UNAVAILABLE_TOOL_PROVIDER_VALUE}>Unavailable</SelectItem>
-                      ) : null}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
+                  >
+                    <SelectTrigger id="agent-tool-provider" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end">
+                      <SelectGroup>
+                        <SelectLabel>Provider</SelectLabel>
+                        {providerOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                        {allUnavailableToolNames.length > 0 ? (
+                          <SelectItem value={UNAVAILABLE_TOOL_PROVIDER_VALUE}>
+                            Unavailable
+                          </SelectItem>
+                        ) : null}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+              {hasActiveFilter ? (
+                <p aria-live="polite" className="text-muted-foreground -mt-1 text-right text-xs">
+                  Showing {resultCount} of {totalToolCount}{" "}
+                  {totalToolCount === 1 ? "tool" : "tools"}
+                </p>
+              ) : null}
             </div>
-            {hasActiveFilter ? (
-              <p aria-live="polite" className="text-muted-foreground -mt-1 text-right text-xs">
-                Showing {resultCount} of {totalToolCount} {totalToolCount === 1 ? "tool" : "tools"}
-              </p>
-            ) : null}
             {toolGroups.map((group) => (
               <AgentToolProviderGroup
                 key={group.provider}
                 group={group}
                 forceOpen={normalizedSearch.length > 0}
                 openOverride={providerOpenOverrides[group.provider]}
+                searchActive={normalizedSearch.length > 0}
                 toolModes={state.toolModes}
                 onModeChange={onToolModeChange}
+                onModesChange={onToolModesChange}
                 onOpenChange={(open) => {
                   setProviderOpenOverrides((current) => ({
                     ...current,

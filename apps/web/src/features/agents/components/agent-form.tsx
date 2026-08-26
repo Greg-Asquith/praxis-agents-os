@@ -104,9 +104,13 @@ export function AgentForm(props: AgentFormProps) {
   }
 
   function setToolMode(toolName: string, mode: RuntimeToolMode) {
+    setToolModes({ [toolName]: mode })
+  }
+
+  function setToolModes(modes: Record<string, RuntimeToolMode>) {
     setState((current) => ({
       ...current,
-      toolModes: { ...current.toolModes, [toolName]: mode },
+      toolModes: { ...current.toolModes, ...modes },
     }))
   }
 
@@ -233,6 +237,7 @@ export function AgentForm(props: AgentFormProps) {
                     setField("codeModeEnabled", enabled)
                   }}
                   onToolModeChange={setToolMode}
+                  onToolModesChange={setToolModes}
                   state={state}
                   toolCatalog={toolCatalog.tools}
                 />

@@ -64,6 +64,7 @@ function renderSection(toolCatalog: ToolCatalogEntry[]) {
     createElement(AgentToolsSection, {
       onCodeModeEnabledChange: vi.fn(),
       onToolModeChange: vi.fn(),
+      onToolModesChange: vi.fn(),
       state: initialAgentFormState(null, toolCatalog),
       toolCatalog,
     })

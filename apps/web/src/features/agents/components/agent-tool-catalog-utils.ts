@@ -87,3 +87,45 @@ export function unavailableModeOptions(mode: RuntimeToolMode | undefined): Runti
   }
   return ["off"]
 }
+
+export type BulkToolTarget = "off" | "auto" | "approval"
+
+export type BulkToolPlan = {
+  modes: Record<string, RuntimeToolMode>
+  autoCount: number
+  approvalCount: number
+}
+
+// "auto" falls back to approval for tools that only support approval, so one action covers a mixed group.
+export function planBulkToolModes(tools: ToolCatalogEntry[], target: BulkToolTarget): BulkToolPlan {
+  const plan: BulkToolPlan = { modes: {}, autoCount: 0, approvalCount: 0 }
+  for (const tool of tools) {
+    const mode = resolveBulkMode(tool, target)
+    if (mode === undefined) {
+      continue
+    }
+    plan.modes[tool.name] = mode
+    if (mode === "auto") {
+      plan.autoCount += 1
+    } else if (mode === "approval") {
+      plan.approvalCount += 1
+    }
+  }
+  return plan
+}
+
+function resolveBulkMode(
+  tool: ToolCatalogEntry,
+  target: BulkToolTarget
+): RuntimeToolMode | undefined {
+  if (target === "off") {
+    return "off"
+  }
+  if (tool.supported_policies.includes(target)) {
+    return target
+  }
+  if (target === "auto" && tool.supported_policies.includes("approval")) {
+    return "approval"
+  }
+  return undefined
+}
