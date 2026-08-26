@@ -10,6 +10,7 @@ from pydantic import BaseModel, create_model
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS as GMAIL_TOOL_DEFINITIONS
+from integrations.google_ads.client import GOOGLE_ADS_API_VERSION
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
@@ -136,6 +137,54 @@ def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:
     assert "one fan-out entry per selected account" in rendered
     assert "`data.rows`" in rendered
     assert "mirrors the GAQL SELECT paths" in rendered
+
+
+def test_google_ads_report_field_stubs_are_typed_and_versioned() -> None:
+    definitions = {
+        item.name: item
+        for item in GOOGLE_ADS_TOOL_DEFINITIONS
+        if item.name
+        in {
+            "google_ads_get_report_field",
+            "google_ads_list_report_fields",
+        }
+    }
+
+    assert set(definitions) == {
+        "google_ads_get_report_field",
+        "google_ads_list_report_fields",
+    }
+
+    listed = render_tool_stub(definitions["google_ads_list_report_fields"])
+    assert "class GoogleAdsReportFieldSummary(TypedDict):" in listed
+    assert "class GoogleAdsListReportFieldsOutput(TypedDict):" in listed
+    assert "attribute_resources: GoogleAdsFieldNames" in listed
+    assert "compatibility_truncated: bool" in listed
+    assert "fields: list[GoogleAdsReportFieldSummary]" in listed
+    assert "field_count: int" in listed
+    assert (
+        "async def google_ads_list_report_fields(*, resource: str, "
+        "search: str | None = None, limit: int = 50) "
+        "-> GoogleAdsListReportFieldsOutput"
+    ) in listed
+
+    exact = render_tool_stub(definitions["google_ads_get_report_field"])
+    assert "class GoogleAdsGetReportFieldOutput(TypedDict):" in exact
+    assert "type_url: str | None" in exact
+    assert "enum_values: GoogleAdsFieldNames" in exact
+    assert "selectable_with: GoogleAdsFieldNames" in exact
+    assert "selectable_with_count: int" in exact
+    assert (
+        "async def google_ads_get_report_field(*, field_name: str) "
+        "-> GoogleAdsGetReportFieldOutput"
+    ) in exact
+
+    for rendered in (listed, exact):
+        assert f"Google Ads {GOOGLE_ADS_API_VERSION}" in rendered
+        assert "google_ads_run_report to execute it" in rendered
+        assert "customer_id" not in rendered
+        assert "integration_resource_id" not in rendered
+        assert "connection_id" not in rendered
 
 
 def test_google_analytics_report_stub_declares_typed_inputs_and_rows() -> None:

@@ -30,6 +30,7 @@ from integrations.gmail.tools.search_messages import (
 )
 from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSAGE_DEFINITION
 from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
+from integrations.google_ads.client import GOOGLE_ADS_API_VERSION
 from integrations.google_ads.references import GoogleAdsCampaignReference
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
@@ -1713,6 +1714,64 @@ def test_google_ads_field_tools_are_auto_only_and_not_configurable() -> None:
         definition.name for definition in list_allowed_tool_definitions(workspace=object())
     }
     assert field_tool_names.isdisjoint(allowed_names)
+
+
+def test_google_ads_field_tool_contracts_are_complete_and_versioned() -> None:
+    definitions = {
+        definition.name: definition
+        for definition in GOOGLE_ADS_TOOL_DEFINITIONS
+        if definition.name
+        in {
+            "google_ads_get_report_field",
+            "google_ads_list_report_fields",
+        }
+    }
+
+    assert set(definitions) == {
+        "google_ads_get_report_field",
+        "google_ads_list_report_fields",
+    }
+
+    get_definition = definitions["google_ads_get_report_field"]
+    get_schema = get_definition.serialized_input_schema()
+    assert set(get_schema["properties"]) == {"field_name"}
+    assert get_schema["required"] == ["field_name"]
+    assert get_schema["properties"]["field_name"]["minLength"] == 1
+    assert get_schema["properties"]["field_name"]["maxLength"] == 256
+    assert get_definition.output_model is not None
+    assert get_definition.output_model.__name__ == "GoogleAdsGetReportFieldOutput"
+
+    list_definition = definitions["google_ads_list_report_fields"]
+    list_schema = list_definition.serialized_input_schema()
+    assert set(list_schema["properties"]) == {"resource", "search", "limit"}
+    assert list_schema["required"] == ["resource"]
+    assert list_schema["properties"]["resource"]["minLength"] == 1
+    assert list_schema["properties"]["resource"]["maxLength"] == 128
+    assert list_schema["properties"]["search"]["default"] is None
+    assert list_schema["properties"]["limit"] == {
+        "default": 50,
+        "description": (
+            "Maximum matching fields, metrics, and segments returned per collection."
+        ),
+        "maximum": 100,
+        "minimum": 1,
+        "type": "integer",
+    }
+    assert list_definition.output_model is not None
+    assert list_definition.output_model.__name__ == "GoogleAdsListReportFieldsOutput"
+
+    for definition in definitions.values():
+        assert definition.effect == "read"
+        assert definition.egress == "provider_query"
+        assert definition.code_eligible is True
+        assert definition.configurable is False
+        assert definition.auto_mount is True
+        assert definition.default_policy == TOOL_POLICY_AUTO
+        assert definition.supports_auto is True
+        assert definition.supports_approval is False
+        assert definition.integration_binding == GOOGLE_ADS_BINDING
+        assert f"Google Ads {GOOGLE_ADS_API_VERSION}" in definition.description
+        assert "google_ads_run_report" in definition.description
 
 
 def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
