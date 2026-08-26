@@ -119,7 +119,7 @@ const appRoute = createRoute({
 })
 
 const homeRoute = createRoute({
-  getParentRoute: () => appRoute,
+  getParentRoute: () => conversationRuntimeRoute,
   path: "/",
   component: lazyRouteComponent(() => import("@/routes/home"), "HomeRoute"),
 })
@@ -491,10 +491,9 @@ const integrationOauthCallbackRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   authRoute.addChildren([loginRoute, registerRoute, oauthLoginCallbackRoute]),
   appRoute.addChildren([
-    homeRoute,
     contextRoute,
     conversationsRoute,
-    conversationRuntimeRoute.addChildren([newConversationRoute, conversationRoute]),
+    conversationRuntimeRoute.addChildren([homeRoute, newConversationRoute, conversationRoute]),
     agentsRoute,
     newAgentRoute,
     agentDetailRoute,

@@ -7,7 +7,7 @@ import { ConversationList } from "@/features/conversations/components/conversati
 import type { Conversation } from "@/features/conversations/types"
 import { HomeSection } from "@/features/home/components/home-section"
 
-const RECENT_LIMIT = 6
+const RECENT_LIMIT = 10
 
 export function RecentConversations({ conversations }: { conversations: Conversation[] }) {
   const recent = conversations
@@ -25,10 +25,10 @@ export function RecentConversations({ conversations }: { conversations: Conversa
           View All
         </Button>
       }
-      description="Pick up where you left off."
+      description="Pick up where you left off"
       title="Continue Conversations"
     >
-      <ConversationList className="lg:grid-cols-2" conversations={recent} showRunStatus />
+      <ConversationList className="lg:grid-cols-2" conversations={recent} showRunStatus={false} />
     </HomeSection>
   )
 }

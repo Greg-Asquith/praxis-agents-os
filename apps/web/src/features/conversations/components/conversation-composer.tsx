@@ -70,6 +70,7 @@ type ConversationComposerProps =
       initialAgentId?: string
       conversationId?: never
       disabledReason?: string | null
+      showDisclaimer?: boolean
     }
   | {
       mode: "turn"
@@ -78,6 +79,7 @@ type ConversationComposerProps =
       modelCatalog: ModelCatalogResponse
       conversationId: string
       disabledReason?: string | null
+      showDisclaimer?: boolean
     }
 
 export type ComposerAttachment = {
@@ -626,9 +628,11 @@ export function ConversationComposer(props: ConversationComposerProps) {
         ) : null}
       </div>
 
-      <p className="text-muted-foreground text-center text-xs">
-        Agents can make mistakes. Review important results.
-      </p>
+      {props.showDisclaimer !== false ? (
+        <p className="text-muted-foreground text-center text-xs">
+          Agents can make mistakes. Review important results.
+        </p>
+      ) : null}
     </form>
   )
 }

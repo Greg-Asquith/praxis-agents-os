@@ -1,12 +1,14 @@
 // apps/web/src/features/conversations/routes/new-conversation-route.tsx
 
 import { useRouterState } from "@tanstack/react-router"
-import { CircleDashedIcon, MessageSquarePlusIcon } from "lucide-react"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
+import {
+  ConversationStartingNotice,
+  NoActiveAgentsAlert,
+} from "@/features/conversations/components/conversation-starting-notice"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
 
@@ -28,18 +30,9 @@ export function NewConversationRoute() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col items-center justify-center px-4 py-8 text-center">
           {activeAgents.length === 0 ? (
-            <Alert className="max-w-lg text-left">
-              <MessageSquarePlusIcon />
-              <AlertTitle>No active agents</AlertTitle>
-              <AlertDescription>
-                Activate an agent before starting a workspace conversation.
-              </AlertDescription>
-            </Alert>
+            <NoActiveAgentsAlert />
           ) : stream.isStreaming ? (
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <CircleDashedIcon aria-hidden="true" className="size-4 animate-spin" />
-              Starting your conversation
-            </div>
+            <ConversationStartingNotice />
           ) : (
             <>
               <div aria-hidden="true" className="mb-5 flex items-center">
@@ -77,16 +70,18 @@ export function NewConversationRoute() {
         </div>
       </div>
 
-      <footer className="shrink-0">
-        <div className="mx-auto w-full max-w-4xl px-4 pt-2 pb-4">
-          <ConversationComposer
-            mode="create"
-            agents={agentsData.agents}
-            {...(search.agent ? { initialAgentId: search.agent } : {})}
-            modelCatalog={modelCatalog}
-          />
-        </div>
-      </footer>
+      {activeAgents.length > 0 ? (
+        <footer className="shrink-0">
+          <div className="mx-auto w-full max-w-4xl px-4 pt-2 pb-4">
+            <ConversationComposer
+              mode="create"
+              agents={agentsData.agents}
+              {...(search.agent ? { initialAgentId: search.agent } : {})}
+              modelCatalog={modelCatalog}
+            />
+          </div>
+        </footer>
+      ) : null}
     </div>
   )
 }

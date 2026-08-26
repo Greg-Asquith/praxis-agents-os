@@ -19,6 +19,9 @@ describe("conversation route pending behavior", () => {
     const router = createAppRouter(new QueryClient())
 
     expect(router.routesByPath["/"].options.loader).toBeUndefined()
+    expect(Reflect.get(router.routesByPath["/"].parentRoute, "id")).toBe(
+      "/app/conversation-runtime"
+    )
   })
 
   it("keeps only UUID agent preselection values", () => {
