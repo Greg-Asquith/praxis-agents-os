@@ -209,3 +209,26 @@ class GoogleAdsApplyRecommendationsEntry(IntegrationFanOutEntry):
 
 class GoogleAdsApplyRecommendationsOutput(IntegrationFanOutOutput):
     results: list[GoogleAdsApplyRecommendationsEntry]
+
+
+class GoogleAdsDismissRecommendationOutcome(GoogleAdsStrictModel):
+    recommendation_resource_name: str
+    recommendation_type: str
+    recommendation_label: str
+    affected_campaigns: list[str]
+    outcome: Literal["dismissed", "already_dismissed", "failed", "unverified"]
+    external_ref: str | None = None
+    message: str | None = None
+    error_code: str | None = None
+
+
+class GoogleAdsDismissRecommendationsData(GoogleAdsStrictModel):
+    recommendations: list[GoogleAdsDismissRecommendationOutcome]
+
+
+class GoogleAdsDismissRecommendationsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsDismissRecommendationsData | None = None
+
+
+class GoogleAdsDismissRecommendationsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsDismissRecommendationsEntry]

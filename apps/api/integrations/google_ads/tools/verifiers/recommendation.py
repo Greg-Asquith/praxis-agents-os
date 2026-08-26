@@ -19,8 +19,9 @@ async def verify_recommendations(
     *,
     entry: ResolvedContextEntry,
     references: Sequence[GoogleAdsRecommendationReference],
+    allow_dismissed: bool = False,
 ) -> dict[str, Mapping[str, Any]]:
-    """Returns live rows after verifying every recommendation remains actionable."""
+    """Returns live rows after verifying every recommendation still matches its reference."""
     resource_names = tuple(dict.fromkeys(reference.resource_name for reference in references))
     if not resource_names or len(resource_names) != len(references):
         raise ModelRetry("Choose each Google Ads recommendation only once.")
@@ -44,7 +45,7 @@ async def verify_recommendations(
         )
     for reference in references:
         live = rows_by_name[reference.resource_name]
-        if live.get("dismissed") is True:
+        if live.get("dismissed") is True and not allow_dismissed:
             raise ModelRetry(
                 "A selected Google Ads recommendation has been dismissed. "
                 "Run the recommendation report again before retrying."
