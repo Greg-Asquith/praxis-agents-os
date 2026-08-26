@@ -13,6 +13,7 @@ const MODULE_LOADERS: Record<string, IntegrationUiModuleLoader> = {
   gmail: () => import("@/integrations/gmail"),
   google_ads: () => import("@/integrations/google_ads"),
   google_analytics: () => import("@/integrations/google_analytics"),
+  notion: () => import("@/integrations/notion"),
 }
 const loadedModules = new Map<string, IntegrationUiModule>()
 const loadingModules = new Map<string, Promise<IntegrationUiModule | null>>()
