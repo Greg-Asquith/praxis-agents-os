@@ -5,6 +5,8 @@ import { googleAdsAccountsPresenter } from "@/integrations/google_ads/presenters
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
+import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
+import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsNegativeKeywordsPresenters } from "@/integrations/google_ads/presenters/negative-keywords"
@@ -22,5 +24,7 @@ export default {
     googleAdsCampaignLinksPresenter,
     googleAdsCampaignStatusPresenter,
     googleAdsDeviceBidModifiersPresenter,
+    googleAdsApplyRecommendationsPresenter,
+    googleAdsDismissRecommendationsPresenter,
   ],
 } satisfies IntegrationUiModule

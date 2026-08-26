@@ -1861,6 +1861,8 @@ describe("Google Ads tool presenters", () => {
       "google-ads-negative-list-campaign-links",
       "google-ads-update-campaign-status",
       "google-ads-update-device-bid-modifiers",
+      "google-ads-apply-recommendations",
+      "google-ads-dismiss-recommendations",
     ])
     expect(googleAdsCampaignLinksPresenter.handlesApprovals).toBe(true)
     expect(googleAdsCampaignNegativeKeywordsPresenter.handlesApprovals).toBe(true)
