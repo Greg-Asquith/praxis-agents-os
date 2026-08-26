@@ -1,6 +1,7 @@
 """Manifest invariants and settings-driven provider loading."""
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from pydantic import SecretStr
@@ -19,10 +20,12 @@ from services.integrations.manifest import (
 )
 from services.integrations.plugin import (
     PROVIDER_PLUGINS,
+    ExternalPrincipal,
     IntegrationPreviewDefinition,
     IntegrationPreviewPayload,
     IntegrationProviderPlugin,
     OAuthClientConfig,
+    OAuthProtocol,
 )
 
 
@@ -33,7 +36,14 @@ def clear_loaded_provider_state():
             ENTITY_RESOLVERS.pop(kind)
     for name in tuple(RUNTIME_TOOL_CATALOG):
         if name.startswith(
-            ("airtable_", "bigquery_", "gmail_", "google_ads_", "google_analytics_")
+            (
+                "airtable_",
+                "bigquery_",
+                "gmail_",
+                "google_ads_",
+                "google_analytics_",
+                "notion_",
+            )
         ):
             RUNTIME_TOOL_CATALOG.pop(name)
     yield
@@ -44,7 +54,14 @@ def clear_loaded_provider_state():
             ENTITY_RESOLVERS.pop(kind)
     for name in tuple(RUNTIME_TOOL_CATALOG):
         if name.startswith(
-            ("airtable_", "bigquery_", "gmail_", "google_ads_", "google_analytics_")
+            (
+                "airtable_",
+                "bigquery_",
+                "gmail_",
+                "google_ads_",
+                "google_analytics_",
+                "notion_",
+            )
         ):
             RUNTIME_TOOL_CATALOG.pop(name)
 
@@ -69,20 +86,39 @@ def _api_key_manifest(key: str = "example") -> IntegrationProviderManifest:
     )
 
 
+async def _fetch_provider_identity(access_token: str) -> ExternalPrincipal:
+    return ExternalPrincipal(external_id=access_token, label=None)
+
+
+def _oauth_plugin(
+    *,
+    key: str = "example",
+    oauth_scopes: tuple[str, ...] = ("scope",),
+    protocol: OAuthProtocol | None = None,
+) -> IntegrationProviderPlugin:
+    manifest = replace(_oauth_manifest(key), oauth_scopes=oauth_scopes)
+    endpoint_root = "https://accounts.example.com"
+    config = OAuthClientConfig(
+        client_id=f"{key}-client",
+        client_secret=SecretStr(f"{key}-secret"),
+        authorization_url=f"{endpoint_root}/authorize",
+        token_url=f"{endpoint_root}/token",
+        revoke_url=f"{endpoint_root}/revoke",
+        protocol=protocol or OAuthProtocol(),
+    )
+    return IntegrationProviderPlugin(
+        manifest=manifest,
+        discover_resources=None,
+        oauth_config=lambda: config,
+    )
+
+
 def test_manifest_rejects_duplicate_and_invalid_contracts() -> None:
     PROVIDER_MANIFESTS.clear()
     register_provider_manifest(_oauth_manifest())
     with pytest.raises(RuntimeError, match="Duplicate"):
         register_provider_manifest(_oauth_manifest())
-    with pytest.raises(RuntimeError, match="scopes"):
-        register_provider_manifest(
-            IntegrationProviderManifest(
-                provider_key="no_scopes",
-                display_name="No scopes",
-                auth_modes=("oauth",),
-                owner_scope="user",
-            )
-        )
+    register_provider_manifest(replace(_oauth_manifest("no_scopes"), oauth_scopes=()))
     with pytest.raises(RuntimeError, match="form fields"):
         register_provider_manifest(
             IntegrationProviderManifest(
@@ -102,13 +138,34 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
     load_enabled_providers()
     assert PROVIDER_MANIFESTS == {}
 
+    from services.integrations import loader
+
+    import_module = loader.importlib.import_module
+    notion_module = SimpleNamespace(
+        PROVIDER=_oauth_plugin(
+            key="notion",
+            oauth_scopes=(),
+            protocol=OAuthProtocol(
+                scope_parameter=False,
+                identity_source="provider",
+                fetch_identity=_fetch_provider_identity,
+            ),
+        )
+    )
+
+    def import_provider_module(name: str):
+        if name == "integrations.notion":
+            return notion_module
+        return import_module(name)
+
+    monkeypatch.setattr(loader.importlib, "import_module", import_provider_module)
     monkeypatch.setattr(
         settings,
         "INTEGRATIONS_ENABLED_PROVIDERS",
-        ["airtable", "bigquery", "gmail", "google_ads", "google_analytics"],
+        ["airtable", "bigquery", "gmail", "google_ads", "google_analytics", "notion"],
     )
     load_enabled_providers()
-    expected = ["airtable", "bigquery", "gmail", "google_ads", "google_analytics"]
+    expected = ["airtable", "bigquery", "gmail", "google_ads", "google_analytics", "notion"]
     assert sorted(PROVIDER_MANIFESTS) == expected
     assert sorted(PROVIDER_PLUGINS) == expected
     assert not hasattr(settings, "INTEGRATIONS_AIRTABLE_ENABLED")
@@ -217,6 +274,82 @@ def test_loader_resolves_each_oauth_configuration_once(monkeypatch) -> None:
     load_enabled_providers()
 
     assert calls == 1
+
+
+def test_loader_accepts_supported_oauth_protocols() -> None:
+    google_config = _validate_plugin(_oauth_plugin(), expected_key="example")
+    notion_config = _validate_plugin(
+        _oauth_plugin(
+            oauth_scopes=(),
+            protocol=OAuthProtocol(
+                scope_parameter=False,
+                identity_source="provider",
+                fetch_identity=_fetch_provider_identity,
+            ),
+        ),
+        expected_key="example",
+    )
+
+    assert google_config is not None
+    assert google_config.protocol.identity_source == "google_userinfo"
+    assert notion_config is not None
+    assert notion_config.protocol.identity_source == "provider"
+
+
+def test_loader_applies_oauth_protocol_rules_only_to_oauth_manifests() -> None:
+    plugin = replace(
+        _oauth_plugin(oauth_scopes=(), protocol=OAuthProtocol(identity_source="provider")),
+        manifest=_api_key_manifest(),
+    )
+
+    assert _validate_plugin(plugin, expected_key="example") is not None
+
+
+@pytest.mark.parametrize(
+    ("oauth_scopes", "protocol", "message"),
+    [
+        ((), OAuthProtocol(), "must declare scopes"),
+        (
+            ("scope",),
+            OAuthProtocol(
+                scope_parameter=False,
+                identity_source="provider",
+                fetch_identity=_fetch_provider_identity,
+            ),
+            "must not declare scopes",
+        ),
+        (
+            (),
+            OAuthProtocol(scope_parameter=False, identity_source="provider"),
+            "must implement access-token identity fetching",
+        ),
+        (
+            ("scope",),
+            OAuthProtocol(
+                extract_identity=lambda payload: ExternalPrincipal(
+                    external_id=str(payload),
+                    label=None,
+                )
+            ),
+            "must not declare provider identity callables",
+        ),
+        (
+            ("scope",),
+            OAuthProtocol(fetch_identity=_fetch_provider_identity),
+            "must not declare provider identity callables",
+        ),
+    ],
+)
+def test_loader_rejects_inconsistent_oauth_protocols(
+    oauth_scopes: tuple[str, ...],
+    protocol: OAuthProtocol,
+    message: str,
+) -> None:
+    with pytest.raises(RuntimeError, match=message):
+        _validate_plugin(
+            _oauth_plugin(oauth_scopes=oauth_scopes, protocol=protocol),
+            expected_key="example",
+        )
 
 
 def test_loader_requires_discovery_callable_when_manifest_advertises_it() -> None:

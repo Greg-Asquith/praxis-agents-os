@@ -88,6 +88,30 @@ def _validate_plugin(
                 f"OAuth integration provider '{expected_key}' overrides reserved "
                 f"authorization parameters: {names}"
             )
+        if "oauth" in manifest.auth_modes:
+            protocol = oauth_config.protocol
+            if protocol.scope_parameter and not manifest.oauth_scopes:
+                raise RuntimeError(
+                    f"OAuth integration provider '{expected_key}' must declare scopes "
+                    "when its protocol sends the scope parameter"
+                )
+            if not protocol.scope_parameter and manifest.oauth_scopes:
+                raise RuntimeError(
+                    f"OAuth integration provider '{expected_key}' must not declare scopes "
+                    "when its protocol omits the scope parameter"
+                )
+            if protocol.identity_source == "provider" and protocol.fetch_identity is None:
+                raise RuntimeError(
+                    f"OAuth integration provider '{expected_key}' must implement "
+                    "access-token identity fetching"
+                )
+            if protocol.identity_source == "google_userinfo" and (
+                protocol.extract_identity is not None or protocol.fetch_identity is not None
+            ):
+                raise RuntimeError(
+                    f"OAuth integration provider '{expected_key}' must not declare provider "
+                    "identity callables for the Google userinfo source"
+                )
     if plugin.event_definition is not None and manifest.event_delivery == "none":
         raise RuntimeError(
             f"Integration provider '{expected_key}' contributes events but declares no delivery"

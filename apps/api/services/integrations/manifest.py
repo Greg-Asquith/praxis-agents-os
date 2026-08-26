@@ -42,8 +42,6 @@ def _validate_manifest(manifest: IntegrationProviderManifest) -> None:
         raise RuntimeError("Integration provider display name must not be blank")
     if not manifest.auth_modes or not set(manifest.auth_modes).issubset(AUTH_MODES):
         raise RuntimeError("Integration provider has unsupported auth modes")
-    if "oauth" in manifest.auth_modes and not manifest.oauth_scopes:
-        raise RuntimeError("OAuth integration providers must declare scopes")
     if "api_key" in manifest.auth_modes and not manifest.required_form_fields:
         raise RuntimeError("API-key integration providers must declare form fields")
     if manifest.requires_discovery and not manifest.resource_types:
