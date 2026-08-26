@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/get_report_field.py
 
-"""Get bounded metadata for one Google Ads report resource or field."""
+"""Get metadata for one Google Ads report resource or field."""
 
 import re
 from collections.abc import Mapping
@@ -13,7 +13,6 @@ from services.integrations.http import IntegrationRequestPolicy
 from ..client import GOOGLE_ADS_API_VERSION, GoogleAdsClient
 
 _FIELD_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$")
-_ARRAY_LIMIT = 100
 _OPERATION = "get_report_field"
 
 
@@ -37,11 +36,6 @@ async def get_report_field(
             operation=_OPERATION,
         )
 
-    enum_values = field["enum_values"]
-    selectable_with = field["selectable_with"]
-    attribute_resources = field["attribute_resources"]
-    metrics = field["metrics"]
-    segments = field["segments"]
     return {
         "api_version": GOOGLE_ADS_API_VERSION,
         "name": field["name"],
@@ -52,23 +46,11 @@ async def get_report_field(
         "sortable": field["sortable"],
         "is_repeated": field["is_repeated"],
         "type_url": field["type_url"],
-        "enum_values": enum_values[:_ARRAY_LIMIT],
-        "enum_value_count": len(enum_values),
-        "selectable_with": selectable_with[:_ARRAY_LIMIT],
-        "selectable_with_count": len(selectable_with),
-        "attribute_resources": attribute_resources[:_ARRAY_LIMIT],
-        "metrics": metrics[:_ARRAY_LIMIT],
-        "segments": segments[:_ARRAY_LIMIT],
-        "truncated": any(
-            len(values) > _ARRAY_LIMIT
-            for values in (
-                enum_values,
-                selectable_with,
-                attribute_resources,
-                metrics,
-                segments,
-            )
-        ),
+        "enum_values": field["enum_values"],
+        "selectable_with": field["selectable_with"],
+        "attribute_resources": field["attribute_resources"],
+        "metrics": field["metrics"],
+        "segments": field["segments"],
     }
 
 

@@ -307,14 +307,14 @@ async def test_get_report_field_supports_each_catalog_artifact(
     assert result["data_type"] == data_type
     assert result["type_url"] == "type.googleapis.com/example"
     assert result["enum_values"] == ["ALPHA", "ZETA"]
-    assert result["enum_value_count"] == 2
     assert result["selectable_with"] == ["campaign", "segments.date"]
-    assert result["selectable_with_count"] == 2
-    assert result["truncated"] is False
+    assert result["attribute_resources"] == ["customer"]
+    assert result["metrics"] == ["metrics.clicks"]
+    assert result["segments"] == ["segments.date"]
     assert client.calls[0]["path"] == f"googleAdsFields/{field_name}"
 
 
-async def test_get_report_field_bounds_every_array_and_preserves_primary_counts() -> None:
+async def test_get_report_field_returns_every_value_in_each_metadata_array() -> None:
     values = [f"value_{index:03}" for index in range(101)]
     client = _ReportFieldClient(
         resource_payload=_report_field(
@@ -332,11 +332,10 @@ async def test_get_report_field_bounds_every_array_and_preserves_primary_counts(
 
     result = await get_report_field(client, field_name="campaign.status")
 
+    assert GoogleAdsGetReportFieldOutput.model_validate(result)
     assert result["type_url"] is None
-    assert result["enum_value_count"] == 101
-    assert result["selectable_with_count"] == 101
     assert all(
-        len(result[key]) == 100
+        result[key] == values
         for key in (
             "enum_values",
             "selectable_with",
@@ -345,7 +344,6 @@ async def test_get_report_field_bounds_every_array_and_preserves_primary_counts(
             "segments",
         )
     )
-    assert result["truncated"] is True
 
 
 @pytest.mark.parametrize(

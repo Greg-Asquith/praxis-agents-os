@@ -11,6 +11,7 @@ import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsNegativeKeywordsPresenters } from "@/integrations/google_ads/presenters/negative-keywords"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
+import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
@@ -18,6 +19,7 @@ export default {
   providerKey: "google_ads",
   toolRowPresenters: [
     googleAdsReportPresenter,
+    googleAdsReportFieldsPresenter,
     googleAdsAccountsPresenter,
     googleAdsNegativeKeywordListsPresenter,
     ...googleAdsNegativeKeywordsPresenters,

@@ -254,13 +254,10 @@ async def test_get_report_field_records_success_and_failure_audits(monkeypatch) 
             "is_repeated": False,
             "type_url": None,
             "enum_values": [],
-            "enum_value_count": 0,
             "selectable_with": [],
-            "selectable_with_count": 0,
             "attribute_resources": [],
             "metrics": [],
             "segments": [],
-            "truncated": False,
         }
     )
     monkeypatch.setattr(

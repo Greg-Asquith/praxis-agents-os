@@ -39,11 +39,8 @@ class GoogleAdsListReportFieldsOutput(GoogleAdsStrictModel):
 class GoogleAdsGetReportFieldOutput(GoogleAdsReportFieldSummary):
     api_version: str
     type_url: str | None
-    enum_values: GoogleAdsFieldNames
-    enum_value_count: int = Field(ge=0)
-    selectable_with: GoogleAdsFieldNames
-    selectable_with_count: int = Field(ge=0)
-    attribute_resources: GoogleAdsFieldNames
-    metrics: GoogleAdsFieldNames
-    segments: GoogleAdsFieldNames
-    truncated: bool
+    enum_values: list[str]
+    selectable_with: list[str]
+    attribute_resources: list[str]
+    metrics: list[str]
+    segments: list[str]

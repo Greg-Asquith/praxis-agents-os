@@ -1853,6 +1853,7 @@ describe("Google Ads tool presenters", () => {
     ).toBeNull()
     expect(googleAdsModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
       "google-ads-run-report",
+      "google-ads-report-fields",
       "google-ads-list-accounts",
       "google-ads-create-negative-keyword-list",
       "google-ads-list-negative-keywords",

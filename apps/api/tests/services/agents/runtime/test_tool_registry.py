@@ -1750,9 +1750,7 @@ def test_google_ads_field_tool_contracts_are_complete_and_versioned() -> None:
     assert list_schema["properties"]["search"]["default"] is None
     assert list_schema["properties"]["limit"] == {
         "default": 50,
-        "description": (
-            "Maximum matching fields, metrics, and segments returned per collection."
-        ),
+        "description": ("Maximum matching fields, metrics, and segments returned per collection."),
         "maximum": 100,
         "minimum": 1,
         "type": "integer",
