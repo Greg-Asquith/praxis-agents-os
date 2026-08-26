@@ -276,7 +276,10 @@ follows:
   `entity_resolvers/` tree, with one module per entity kind. The package
   `__init__.py` only composes exported resolver definitions so provider
   manifests stay concise as their catalogs grow.
-- Packaged integrations are Gmail, Google Ads, Airtable, BigQuery, and Google Analytics.
+- Packaged integrations are Gmail, Google Ads, Airtable, BigQuery, Google
+  Analytics, and Notion. OAuth packages declare their wire behavior and
+  identity source through `OAuthProtocol`; the shared flow keeps state
+  validation and bounded non-secret connection metadata provider-neutral.
   BigQuery contributes service-account dataset discovery, a job-synchronized
   table-schema cache for enabled datasets (connection jobs fan out into
   independently retryable dataset jobs), two cache-backed schema tools, and a
@@ -302,6 +305,10 @@ follows:
   metadata, and discovery must not add per-property enrichment calls. Its OAuth
   settings stay in the provider package
   and use a Google Cloud client isolated from every other Google service.
+  Notion contributes a personal public OAuth grant, a versioned REST client,
+  provider-owned token and live identity resolution, and one stable workspace
+  resource. Its authorization picker controls page access. The provider has no
+  agent tools until the later read and write slices land.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

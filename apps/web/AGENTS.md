@@ -21,8 +21,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   (non-visual helpers such as arg parsing and detail builders), and `api/`
   (TanStack Query operations, one per file) when the provider calls the API.
   Follow this layout for new providers.
-- Packaged provider UI modules are Gmail, Google Ads, Airtable, BigQuery, and
-  Google Analytics. Google Analytics contributes its logo, catalog description,
+- Packaged provider UI modules are Gmail, Google Ads, Airtable, BigQuery,
+  Google Analytics, and Notion. Notion contributes its logo, catalog
+  description, and personal-authorization guidance without tool presenters.
+  Google Analytics contributes its logo, catalog description,
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.

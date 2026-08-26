@@ -124,7 +124,8 @@ Replace `DOMAIN` with your deployment's domain, such as `example.com`.
 
 - [ ] Register the login OAuth redirect URI (`https://app.DOMAIN/oauth/callback`)
       and integration redirect URI (`INTEGRATIONS_OAUTH_REDIRECT_URI`) in each
-      enabled provider's console.
+      enabled provider's console. For Notion, register the integration redirect
+      URI in the public integration settings on `api.notion.com`.
 
 There is no CI deploy workflow; deploys run from an authenticated operator
 machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.

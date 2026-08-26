@@ -163,6 +163,28 @@ are a package boundary, not a subdirectory convention. Tests mirror it at
 
 ```python
 @dataclass(frozen=True)
+class ExternalPrincipal:
+    external_id: str
+    label: str | None
+    connection_metadata: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class OAuthProtocol:
+    authorization_params: tuple[tuple[str, str], ...]
+    scope_parameter: bool
+    scope_separator: str
+    pkce: Literal["s256", "none"]
+    token_auth: Literal["client_secret_post", "client_secret_basic"]
+    token_encoding: Literal["form", "json"]
+    identity_source: Literal["google_userinfo", "provider"]
+    extract_identity: Callable[[dict[str, Any]], ExternalPrincipal] | None
+    fetch_identity: Callable[[str], Awaitable[ExternalPrincipal]] | None
+    request_headers: tuple[tuple[str, str], ...]
+    revoke_token: Literal["refresh_or_access", "access"]
+
+
+@dataclass(frozen=True)
 class IntegrationProviderPlugin:
     manifest: IntegrationProviderManifest
     discover_resources: DiscoverResourcesFn | None  # required iff manifest.requires_discovery
@@ -174,6 +196,25 @@ class IntegrationProviderPlugin:
     event_definition: IntegrationEventDefinition | None = None
     table_scope_adapter: TableScopeAdapter | None = None
 ```
+
+`OAuthClientConfig.protocol` declares each provider's authorization
+parameters, scope behavior, Proof Key for Code Exchange (PKCE) mode, token
+authentication and encoding, identity source, request headers, and revocation
+token choice. Its defaults preserve the Google provider wire contract. A
+provider can supply identity extraction from the token response and must also
+supply access-token identity fetching when it owns identity resolution.
+
+`ExternalPrincipal.connection_metadata` carries only bounded, non-secret
+strings needed to identify a connection. The callback accepts at most 16
+snake-case keys with values of at most 255 characters. It rejects credential
+and authorization material before any connection row changes. Access and
+refresh tokens remain in `external_credentials`.
+
+The shared OAuth state lifecycle doesn't vary by provider. Every flow uses a
+signed JSON Web Token (JWT), one server-side state row, expiry checks, and
+single-use consumption. Providers use PKCE by default. A provider can declare
+`pkce="none"` only when its documented authorization protocol doesn't support
+PKCE; that exception doesn't change state validation.
 
 Each provider package's `__init__.py` exports exactly one
 `PROVIDER: IntegrationProviderPlugin`. The contract is intentionally
@@ -221,11 +262,16 @@ def load_enabled_providers() -> None:
 - **Fail-fast at boot**: an unknown key (module missing), a package without
   `PROVIDER`, or a plugin failing validation raises at startup. A
   misconfigured deployment must not come up half-integrated.
-- Import-time invariants (extending the manifest and registry checks): `manifest.provider_key == key == package name`; every
-  tool's `provider == key`; every tool name starts with `f"{key}_"`; oauth
-  mode ⇒ scopes, api_key mode ⇒ form fields; `requires_discovery` ⇒
-  `discover_resources` is not None; every tool carries a complete
-  `ToolPresentation` (principle 2 is machine-checked, not aspirational).
+- Import-time invariants (extending the manifest and registry checks):
+  `manifest.provider_key == key == package name`; every tool's
+  `provider == key`; every tool name starts with `f"{key}_"`; API-key mode
+  requires form fields; `requires_discovery` requires
+  `discover_resources`; and every tool carries a complete `ToolPresentation`
+  (principle 2 is machine-checked, not aspirational). For OAuth providers, a
+  protocol that sends `scope` requires declared scopes, while a protocol that
+  omits `scope` forbids them. Provider-owned identity requires an access-token
+  fetch function. Google userinfo identity forbids provider identity
+  functions.
 - A future _external_ distribution path (separately installed provider
   wheels discovered via an entry-point group) slots in behind the same
   contract: the loader gains a second source of `IntegrationProviderPlugin`
@@ -486,8 +532,9 @@ Adding a provider touches:
 10. Declare `IntegrationRequestPolicy` on every provider-client call. Query
     POSTs are reads; external writes are mutations unless a real provider
     idempotency mechanism is documented and covered.
-11. For Google OAuth providers, add the provider key to the shared Google
-    userinfo allowlist when `openid email` supplies the external principal.
+11. Declare `identity_source` on the OAuth protocol. Provider-owned identity
+    also declares the token-response extractor when available and the required
+    access-token fetch function.
 12. Extend test-only provider enumeration fixtures; these are coverage seams,
     not runtime registration.
 
@@ -497,8 +544,8 @@ or any `features/` code. Reviewers hold the line here.
 
 ## 9. Provider set
 
-The shipped providers are Gmail, Google Ads, Airtable, BigQuery, and Google
-Analytics. Each follows the section 8 checklist. There is no sample provider in product
+The shipped providers are Gmail, Google Ads, Airtable, BigQuery, Google
+Analytics, and Notion. Each follows the section 8 checklist. There is no sample provider in product
 code: contract and loader tests use a suite-local test provider registered
 through the loader in test code — fixtures under the test tree — with provider
 HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
@@ -538,3 +585,13 @@ They also expose each property's bounded Admin API Google Ads link list without
 creator email addresses so an agent can verify the provider-native bridge before
 comparing reports. Standard reports also surface access-restriction and sampling
 metadata.
+
+Notion demonstrates a user-owned public OAuth integration whose provider
+protocol differs from Google's. It omits scopes and PKCE, uses HTTP Basic
+authentication with JSON token bodies, resolves the personal grant from the
+token response or the authenticated bot endpoint, and sends the pinned Notion
+API version on every request. Its package discovers one stable
+`notion_workspace` resource for the grant. The authorization picker controls
+page access; discovery doesn't claim to enumerate those pages. The lazy
+frontend module contributes the provider mark and connection guidance without
+adding runtime tools.
