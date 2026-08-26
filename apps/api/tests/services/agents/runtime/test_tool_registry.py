@@ -35,6 +35,9 @@ from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DE
 from integrations.google_ads.tools.add_negative_keywords import (
     DEFINITION as GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
 )
+from integrations.google_ads.tools.apply_recommendations import (
+    DEFINITION as GOOGLE_ADS_APPLY_RECOMMENDATIONS_DEFINITION,
+)
 from integrations.google_ads.tools.create_negative_keyword_list import (
     DEFINITION as GOOGLE_ADS_CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
 )
@@ -421,6 +424,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_add_ad_group_negative_keywords": "external_write",
         "google_ads_add_campaign_negative_keywords": "external_write",
         "google_ads_add_negative_keywords": "external_write",
+        "google_ads_apply_recommendations": "external_write",
         "google_ads_create_negative_keyword_list": "external_write",
         "google_ads_link_negative_keyword_list": "external_write",
         "google_ads_remove_negative_keywords": "external_write",
@@ -488,6 +492,7 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
+        "google_ads_apply_recommendations",
         "google_ads_create_negative_keyword_list",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_ad_group_negative_keywords",
@@ -1049,6 +1054,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         GMAIL_SEND_MESSAGE_DEFINITION,
         GOOGLE_ADS_RUN_REPORT_DEFINITION,
         GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
+        GOOGLE_ADS_APPLY_RECOMMENDATIONS_DEFINITION,
         GOOGLE_ADS_CREATE_NEGATIVE_KEYWORD_LIST_DEFINITION,
         GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
         GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
@@ -1090,6 +1096,7 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         "gmail_send_message": {"bcc", "body_html", "cc", "subject", "to"},
         "google_ads_run_report": {"query"},
         "google_ads_add_negative_keywords": {"keywords", "negative_list"},
+        "google_ads_apply_recommendations": {"parameters", "recommendations"},
         "google_ads_create_negative_keyword_list": {"names"},
         "google_ads_remove_negative_keywords": {"keywords", "negative_list"},
         "google_ads_update_campaign_status": {"campaign_ids", "status"},

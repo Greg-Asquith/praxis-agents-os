@@ -59,6 +59,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_ads_add_ad_group_negative_keywords": ("write", "external", "approval", True),
         "google_ads_add_campaign_negative_keywords": ("write", "external", "approval", True),
         "google_ads_add_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_apply_recommendations": ("write", "external", "approval", True),
         "google_ads_link_negative_keyword_list": ("write", "external", "approval", True),
         "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
         "google_ads_remove_campaign_negative_keywords": (
@@ -212,6 +213,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
+        "google_ads_apply_recommendations",
         "google_ads_create_negative_keyword_list",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_negative_keywords",
@@ -226,6 +228,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
+        "google_ads_apply_recommendations",
         "google_ads_create_negative_keyword_list",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_ad_group_negative_keywords",

@@ -101,6 +101,14 @@ class IntegrationError(Exception):
         return problem
 
 
+class IntegrationUnverifiedMutationError(IntegrationError):
+    """Report an ambiguous mutation while retaining a validated public result."""
+
+    def __init__(self, message: str, *, result_data: Any | None = None, **kwargs: Any):
+        super().__init__(message, **kwargs)
+        self.result_data = result_data
+
+
 class IntegrationConnectionError(IntegrationError):
     """Raised when connection is invalid or not active."""
 

@@ -5,7 +5,11 @@
 from collections.abc import Awaitable, Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
-from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from core.exceptions.integration import (
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationUnverifiedMutationError,
+)
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import IntegrationContextResult
 from services.integrations.context.utils import sanitize_context_error
@@ -59,6 +63,11 @@ async def _run_authorized_entries[T](
                 IntegrationContextResult(
                     entry=entry,
                     status="error",
+                    data=(
+                        exc.result_data
+                        if isinstance(exc, IntegrationUnverifiedMutationError)
+                        else None
+                    ),
                     error_code=error_code,
                     error_message=sanitize_context_error(
                         exc.user_message if isinstance(exc, IntegrationError) else str(exc)

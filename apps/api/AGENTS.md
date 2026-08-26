@@ -251,7 +251,14 @@ follows:
   layer. The runtime rejects caller-supplied tool names or context bindings
   that do not match the actually dispatched definition, and outcomes must be
   terminal. An unverified terminal outcome is persisted before the outer
-  fan-out reports `unverified_mutation`.
+  fan-out reports `unverified_mutation`. When a tool supplies bounded,
+  output-model-compatible per-item ambiguity evidence through
+  `unverified_result`, the error entry retains that data without changing its
+  unverified status.
+  Provider reads needed to build pending evidence belong in the runner's
+  preparation callback so their latency, retries, and failures remain part of
+  the same audited operation. The pending row is written after preparation and
+  immediately before the external mutation.
   Do not add provider-local audit runners, durability booleans, denial
   callbacks, fan-out serializers, or copied outer result fields. A genuine
   one-request/many-context topology may retain a narrowly named adapter that

@@ -197,6 +197,9 @@ def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids(
     rendered = render_stub_catalog(definitions)
 
     assert "async def google_ads_run_report(" in rendered
+    assert "async def google_ads_apply_recommendations(" in rendered
+    assert "GoogleAdsCampaignBudgetParameters" in rendered
+    assert "GoogleAdsSetTargetRoasParameters" in rendered
     assert "async def google_analytics_list_google_ads_links(" in rendered
     assert "class GoogleAnalyticsGoogleAdsLink(TypedDict):" in rendered
     assert "customer_id: str" in rendered

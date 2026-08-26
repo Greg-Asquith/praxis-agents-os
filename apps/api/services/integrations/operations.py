@@ -12,7 +12,10 @@ from uuid import UUID
 
 from pydantic_ai import RunContext
 
-from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from core.exceptions.integration import (
+    IntegrationFailureDisposition,
+    IntegrationUnverifiedMutationError,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
@@ -54,6 +57,7 @@ class IntegrationAuditOutcome[T]:
     status: IntegrationTerminalAuditStatus = AuditStatus.SUCCESS
     external_ref: str | None = None
     operation_detail: TerminalIntegrationOperationDetail | None = None
+    unverified_result: object | None = None
 
 
 async def run_audited_integration_operation[T](
@@ -64,30 +68,46 @@ async def run_audited_integration_operation[T](
     operation: str,
     execute: Callable[[], Awaitable[IntegrationAuditOutcome[T]]],
     pending_operation_detail: PendingIntegrationOperationDetail | None = None,
+    prepare_pending_operation: Callable[[], Awaitable[PendingIntegrationOperationDetail]]
+    | None = None,
 ) -> T:
     """Execute one provider operation with metadata-derived audit durability."""
     definition = _resolve_integration_definition(ctx, tool_name, entry)
     durable = _is_external_write(definition)
-    if durable and pending_operation_detail is None:
+    if pending_operation_detail is not None and prepare_pending_operation is not None:
+        raise ValueError("Pass pending operation detail directly or prepare it, not both")
+    if durable and pending_operation_detail is None and prepare_pending_operation is None:
         raise ValueError("External integration writes require pending operation detail")
-    if durable and not isinstance(pending_operation_detail, PendingIntegrationOperationDetail):
+    if (
+        durable
+        and prepare_pending_operation is None
+        and not isinstance(pending_operation_detail, PendingIntegrationOperationDetail)
+    ):
         raise ValueError("External integration writes require pending-phase operation detail")
 
+    resolved_pending_detail = pending_operation_detail
     pending_event_id = None
-    if durable:
-        pending_event_id = await _record_operation(
-            ctx,
-            entry,
-            tool_name=tool_name,
-            operation=operation,
-            status=AuditStatus.PENDING,
-            operation_detail=pending_operation_detail,
-            raise_on_error=True,
-        )
-
     started = monotonic()
     with track_transport_attempts() as transport:
         try:
+            if prepare_pending_operation is not None:
+                resolved_pending_detail = await prepare_pending_operation()
+            if durable and not isinstance(
+                resolved_pending_detail, PendingIntegrationOperationDetail
+            ):
+                raise ValueError(
+                    "External integration writes require pending-phase operation detail"
+                )
+            if durable:
+                pending_event_id = await _record_operation(
+                    ctx,
+                    entry,
+                    tool_name=tool_name,
+                    operation=operation,
+                    status=AuditStatus.PENDING,
+                    operation_detail=resolved_pending_detail,
+                    raise_on_error=True,
+                )
             outcome = await execute()
             if outcome.status not in _TERMINAL_AUDIT_STATUSES:
                 raise ValueError("Integration audit outcomes must have a terminal status")
@@ -99,6 +119,8 @@ async def run_audited_integration_operation[T](
                 raise ValueError(
                     "Integration audit outcomes require terminal-phase operation detail"
                 )
+            if outcome.status != AuditStatus.UNVERIFIED and outcome.unverified_result is not None:
+                raise ValueError("Only unverified integration outcomes may retain result data")
         except asyncio.CancelledError as exc:
             disposition = getattr(
                 exc,
@@ -107,15 +129,21 @@ async def run_audited_integration_operation[T](
             )
             if durable:
                 exc.failure_disposition = disposition
+            exception_detail = _exception_operation_detail(exc, resolved_pending_detail)
             with suppress(BaseException):
                 await _record_terminal_operation(
                     ctx,
                     entry,
                     tool_name=tool_name,
                     operation=operation,
-                    status=AuditStatus.FAILURE,
+                    status=(
+                        AuditStatus.UNVERIFIED
+                        if disposition is IntegrationFailureDisposition.AMBIGUOUS
+                        and isinstance(exception_detail, TerminalIntegrationOperationDetail)
+                        else AuditStatus.FAILURE
+                    ),
                     error_code=_failure_error_code(exc, disposition),
-                    operation_detail=pending_operation_detail,
+                    operation_detail=exception_detail,
                     related_event_id=pending_event_id,
                     latency_ms=_elapsed_ms(started),
                     transport=transport,
@@ -125,16 +153,26 @@ async def run_audited_integration_operation[T](
         except Exception as exc:
             disposition = getattr(exc, "failure_disposition", None)
             if durable and disposition is None:
-                disposition = IntegrationFailureDisposition.AMBIGUOUS
+                disposition = (
+                    IntegrationFailureDisposition.AMBIGUOUS
+                    if pending_event_id is not None
+                    else IntegrationFailureDisposition.NOT_DISPATCHED
+                )
                 exc.failure_disposition = disposition
+            exception_detail = _exception_operation_detail(exc, resolved_pending_detail)
             await _record_terminal_operation(
                 ctx,
                 entry,
                 tool_name=tool_name,
                 operation=operation,
-                status=AuditStatus.FAILURE,
+                status=(
+                    AuditStatus.UNVERIFIED
+                    if disposition is IntegrationFailureDisposition.AMBIGUOUS
+                    and isinstance(exception_detail, TerminalIntegrationOperationDetail)
+                    else AuditStatus.FAILURE
+                ),
                 error_code=_failure_error_code(exc, disposition),
-                operation_detail=pending_operation_detail,
+                operation_detail=exception_detail,
                 related_event_id=pending_event_id,
                 latency_ms=_elapsed_ms(started),
                 transport=transport,
@@ -156,14 +194,27 @@ async def run_audited_integration_operation[T](
             raise_on_error=durable,
         )
     if outcome.status == AuditStatus.UNVERIFIED:
-        raise IntegrationError(
+        raise IntegrationUnverifiedMutationError(
             "The provider mutation outcome could not be verified exactly.",
             provider_key=entry.provider_key,
             connection_id=str(entry.connection_id),
             operation=operation,
             failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
+            result_data=outcome.unverified_result,
         )
     return outcome.value
+
+
+def _exception_operation_detail(
+    exc: BaseException,
+    pending_detail: object,
+) -> IntegrationOperationDetail | None:
+    detail = getattr(exc, "operation_detail", None)
+    if isinstance(detail, TerminalIntegrationOperationDetail):
+        return detail
+    if isinstance(pending_detail, PendingIntegrationOperationDetail):
+        return pending_detail
+    return None
 
 
 def _elapsed_ms(started: float) -> int:

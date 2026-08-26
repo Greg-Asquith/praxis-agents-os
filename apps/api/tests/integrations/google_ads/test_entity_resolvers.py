@@ -19,6 +19,9 @@ from integrations.google_ads.entity_resolvers.campaign import (
     resolve_google_ads_campaigns,
     search_google_ads_campaigns,
 )
+from integrations.google_ads.entity_resolvers.recommendation import (
+    search_google_ads_recommendations,
+)
 from integrations.google_ads.entity_resolvers.shared_set import (
     _choice as shared_set_choice,
     resolve_google_ads_shared_sets,
@@ -69,6 +72,41 @@ def test_campaign_reference_rejects_removed_campaign() -> None:
     )
 
     assert choice is None
+
+
+async def test_recommendation_pages_interleave_every_active_account(monkeypatch) -> None:
+    first = _writable_google_ads_entry()
+    second = replace(
+        first,
+        integration_resource_id=uuid4(),
+        external_id="222",
+        connection_id=uuid4(),
+    )
+    ctx = SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, second)))
+
+    async def query(_ctx, entry, *, limit, **_kwargs):
+        return [
+            {
+                "resourceName": f"customers/{entry.external_id}/recommendations/r{index}",
+                "type": "CAMPAIGN_BUDGET",
+                "dismissed": False,
+            }
+            for index in range(min(limit, 4))
+        ]
+
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.recommendation._query",
+        query,
+    )
+
+    first_page = await search_google_ads_recommendations(ctx, "", {}, 2, None)
+    second_page = await search_google_ads_recommendations(ctx, "", {}, 2, first_page.next_cursor)
+
+    assert [choice.value["customer_id"] for choice in first_page.choices] == ["111", "222"]
+    assert [choice.value["resource_name"] for choice in second_page.choices] == [
+        "customers/111/recommendations/r1",
+        "customers/222/recommendations/r1",
+    ]
 
 
 def test_scoped_reference_grouping_is_context_ordered_deduplicated_and_bounded() -> None:

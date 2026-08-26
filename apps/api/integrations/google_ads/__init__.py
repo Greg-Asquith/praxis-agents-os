@@ -9,6 +9,7 @@ from .discover_resources import discover_resources
 from .entity_resolvers import (
     GOOGLE_ADS_AD_GROUP_RESOLVER,
     GOOGLE_ADS_CAMPAIGN_RESOLVER,
+    GOOGLE_ADS_RECOMMENDATION_RESOLVER,
     GOOGLE_ADS_SHARED_SET_RESOLVER,
 )
 from .settings import google_ads_settings
@@ -51,6 +52,7 @@ PROVIDER = IntegrationProviderPlugin(
     entity_resolvers=(
         GOOGLE_ADS_AD_GROUP_RESOLVER,
         GOOGLE_ADS_CAMPAIGN_RESOLVER,
+        GOOGLE_ADS_RECOMMENDATION_RESOLVER,
         GOOGLE_ADS_SHARED_SET_RESOLVER,
     ),
 )

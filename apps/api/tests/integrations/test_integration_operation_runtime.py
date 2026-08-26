@@ -10,8 +10,8 @@ import pytest
 
 from core.exceptions.integration import (
     IntegrationConnectionError,
-    IntegrationError,
     IntegrationFailureDisposition,
+    IntegrationUnverifiedMutationError,
 )
 from core.settings import settings
 from services.agents.runtime.tools.contract import (
@@ -351,6 +351,63 @@ async def test_terminal_audit_records_latency_and_transport_attempts(
     assert terminal["http_attempts"] == 3
 
 
+async def test_write_preflight_is_included_in_audit_transport_evidence(
+    synthetic_provider,
+    monkeypatch,
+) -> None:
+    recorded: list[dict] = []
+
+    async def audit(**kwargs):
+        recorded.append(kwargs)
+        return uuid4()
+
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    entry = _entry()
+    pending_detail = _pending_detail(entry)
+
+    async def prepare_pending_operation():
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(200, request=request))
+        ) as client:
+            await integration_http.request_with_retries(
+                "GET",
+                "https://provider.example/resource",
+                operation="verify_before_write",
+                provider_key="test_provider",
+                policy=IntegrationRequestPolicy.READ,
+                client=client,
+            )
+        return pending_detail
+
+    async def execute():
+        return IntegrationAuditOutcome(
+            {"created": 1},
+            external_ref="record-1",
+            operation_detail=terminal_applied_operation_detail(
+                pending_detail,
+                external_ref="record-1",
+            ),
+        )
+
+    value = await run_audited_integration_operation(
+        _ctx(entry, WRITE_TOOL),
+        entry,
+        tool_name=WRITE_TOOL,
+        operation="write",
+        execute=execute,
+        prepare_pending_operation=prepare_pending_operation,
+    )
+
+    assert value == {"created": 1}
+    assert [item["status"] for item in recorded] == [AuditStatus.PENDING, AuditStatus.SUCCESS]
+    terminal = recorded[1]
+    assert terminal["latency_ms"] >= 1
+    assert terminal["http_requests"] == 1
+    assert terminal["http_attempts"] == 1
+
+
 async def test_external_write_cannot_disable_durable_evidence(synthetic_provider) -> None:
     entry = _entry()
     called = False
@@ -456,9 +513,10 @@ async def test_unverified_outcome_is_persisted_before_outer_failure(
             {"created": 0},
             status=AuditStatus.UNVERIFIED,
             operation_detail=detail,
+            unverified_result={"rows": [{"outcome": "unverified"}]},
         )
 
-    with pytest.raises(IntegrationError) as exc_info:
+    with pytest.raises(IntegrationUnverifiedMutationError) as exc_info:
         await run_audited_integration_operation(
             _ctx(entry, WRITE_TOOL),
             entry,
@@ -469,12 +527,35 @@ async def test_unverified_outcome_is_persisted_before_outer_failure(
         )
 
     assert exc_info.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
+    assert exc_info.value.result_data == {"rows": [{"outcome": "unverified"}]}
     assert [call.kwargs["status"] for call in audit.await_args_list] == [
         AuditStatus.PENDING,
         AuditStatus.UNVERIFIED,
     ]
     assert audit.await_args_list[1].kwargs["operation_detail"] is detail
     assert audit.await_args_list[1].kwargs["related_event_id"] == pending_event_id
+
+
+async def test_unverified_outer_error_retains_validated_result_data(synthetic_provider) -> None:
+    entry = _entry()
+    expected = {"rows": [{"outcome": "unverified"}]}
+
+    async def operation(_entry):
+        raise IntegrationUnverifiedMutationError(
+            "The provider result is ambiguous.",
+            failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
+            result_data=expected,
+        )
+
+    results = await run_context_fan_out(
+        _ctx(entry, WRITE_TOOL),
+        binding=WRITE_BINDING,
+        operation=operation,
+    )
+
+    assert results[0].status == "error"
+    assert results[0].error_code == "unverified_mutation"
+    assert results[0].data == expected
 
 
 @pytest.mark.parametrize(

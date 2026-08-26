@@ -39,6 +39,7 @@ _SCHEMA_METADATA_KEYS = frozenset(
         "default",
         "description",
         "examples",
+        "exclusiveMinimum",
         "format",
         "maxItems",
         "maxLength",
@@ -329,10 +330,12 @@ class _SchemaRenderer:
             ]
             return " | ".join(dict.fromkeys(rendered))
         if "oneOf" in schema:
-            _reject_unknown_keys(schema, {"oneOf"}, hint=hint)
+            _reject_unknown_keys(schema, {"oneOf", "discriminator"}, hint=hint)
             variants = schema["oneOf"]
             if not isinstance(variants, list) or not variants:
                 raise UnsupportedCodeModeSchemaError(f"{hint} has an empty oneOf")
+            if "discriminator" in schema:
+                _validate_discriminator(schema["discriminator"], variants, hint=hint)
             rendered = [
                 self.type_expr(variant, hint=f"{hint}Option{index + 1}")
                 for index, variant in enumerate(variants)
@@ -454,6 +457,35 @@ def _required_keys(schema: Mapping[str, Any], properties: Mapping[str, Any]) -> 
     if not set(required).issubset(properties):
         raise UnsupportedCodeModeSchemaError("required names a missing property")
     return frozenset(required)
+
+
+def _validate_discriminator(raw_value: Any, variants: list[Any], *, hint: str) -> None:
+    discriminator = _mapping(raw_value, key=f"{hint}.discriminator")
+    _reject_unknown_keys(
+        discriminator,
+        {"propertyName", "mapping"},
+        hint=f"{hint}.discriminator",
+    )
+    property_name = discriminator.get("propertyName")
+    if not isinstance(property_name, str) or not property_name:
+        raise UnsupportedCodeModeSchemaError(f"{hint}.discriminator must name a property")
+    mapping = discriminator.get("mapping")
+    if mapping is None:
+        return
+    mapping = _mapping(mapping, key=f"{hint}.discriminator.mapping")
+    variant_references = {
+        variant["$ref"]
+        for variant in variants
+        if isinstance(variant, Mapping) and isinstance(variant.get("$ref"), str)
+    }
+    if not all(isinstance(key, str) and isinstance(value, str) for key, value in mapping.items()):
+        raise UnsupportedCodeModeSchemaError(
+            f"{hint}.discriminator mapping must contain string references"
+        )
+    if not set(mapping.values()).issubset(variant_references):
+        raise UnsupportedCodeModeSchemaError(
+            f"{hint}.discriminator mapping references a missing oneOf option"
+        )
 
 
 def _reject_unknown_keys(
