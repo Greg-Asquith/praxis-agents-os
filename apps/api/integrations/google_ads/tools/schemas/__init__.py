@@ -16,6 +16,11 @@ from .recommendations import (
     GoogleAdsDismissRecommendationsOutput,
     GoogleAdsRecommendationApplyParameters,
 )
+from .report_fields import (
+    GoogleAdsGetReportFieldOutput,
+    GoogleAdsListReportFieldsOutput,
+    GoogleAdsReportFieldSummary,
+)
 from .run_report import GoogleAdsJsonValue, GoogleAdsRunReportOutput
 from .scoped_negative_keywords import (
     GoogleAdsAddAdGroupKeywordOutput,
@@ -35,10 +40,13 @@ __all__ = [
     "GoogleAdsDeviceAdjustment",
     "GoogleAdsDeviceBidModifierOutput",
     "GoogleAdsDismissRecommendationsOutput",
+    "GoogleAdsGetReportFieldOutput",
     "GoogleAdsJsonValue",
+    "GoogleAdsListReportFieldsOutput",
     "GoogleAdsRecommendationApplyParameters",
     "GoogleAdsRemoveAdGroupKeywordOutput",
     "GoogleAdsRemoveCampaignKeywordOutput",
     "GoogleAdsRemoveNegativeKeywordsOutput",
+    "GoogleAdsReportFieldSummary",
     "GoogleAdsRunReportOutput",
 ]
