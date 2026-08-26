@@ -87,7 +87,9 @@ DEFINITION = RuntimeToolDefinition(
         "`data` also contains `currency_code`, `row_count`, `truncated`, and `truncation_note`. "
         "Each row mirrors the GAQL SELECT paths as nested lowerCamelCase objects: selecting "
         "`campaign.id` and `metrics.clicks` yields `row['campaign']['id']` and "
-        "`row['metrics']['clicks']`. Google Ads int64 values may be serialized as strings."
+        "`row['metrics']['clicks']`. Use google_ads_list_report_fields to discover names and "
+        "google_ads_get_report_field to inspect exact compatibility or enum values when needed. "
+        "These lookups are optional. Google Ads int64 values may be serialized as strings."
     ),
     provider="google_ads",
     label="Run Google Ads Report",

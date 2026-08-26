@@ -6,8 +6,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx2
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from pydantic_ai import (
     Agent,
     DeferredToolRequests,
@@ -18,6 +19,8 @@ from pydantic_ai import (
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
+from core.exceptions.integration import IntegrationValidationError
+from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.references import (
     GoogleAdsCampaignReference,
     GoogleAdsSharedSetReference,
@@ -30,10 +33,12 @@ from integrations.google_ads.tools.create_negative_keyword_list import (
     _pending_operation_detail as create_list_pending_operation_detail,
     google_ads_create_negative_keyword_list,
 )
+from integrations.google_ads.tools.get_report_field import google_ads_get_report_field
 from integrations.google_ads.tools.link_negative_keyword_list import (
     _campaign_link_result,
     google_ads_link_negative_keyword_list,
 )
+from integrations.google_ads.tools.list_report_fields import google_ads_list_report_fields
 from integrations.google_ads.tools.schemas.negative_keyword import (
     NegativeKeywordEntry,
     NegativeKeywordRemovalEntry,
@@ -71,6 +76,302 @@ from tests.integrations.google_ads.support import (
     _writable_google_ads_entry,
     mutation_ledger,
 )
+
+
+def _read_entry(external_id: str = "111") -> ResolvedContextEntry:
+    return ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id=external_id,
+        display_name=f"Ads account {external_id}",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=False,
+        permissions_metadata={"login_customer_id": "999"},
+    )
+
+
+def _read_ctx(*entries: ResolvedContextEntry, tool_name: str):
+    return SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=entries),
+            workspace=SimpleNamespace(id=uuid4()),
+            user=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4(), user_id=uuid4()),
+        ),
+        tool_name=tool_name,
+        tool_call_id="call-google-ads-fields",
+    )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"resource": "campaign.id"},
+        {"resource": "campaign", "search": "x" * 101},
+        {"resource": "campaign", "limit": 0},
+        {"resource": "campaign", "limit": 101},
+    ],
+)
+async def test_list_report_fields_rejects_invalid_input_before_dispatch(
+    monkeypatch,
+    kwargs: dict[str, Any],
+) -> None:
+    client = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.list_report_fields.google_ads_client",
+        client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.list_report_fields.run_audited_integration_operation",
+        audit,
+    )
+
+    with pytest.raises(ModelRetry):
+        await google_ads_list_report_fields(
+            _read_ctx(_read_entry(), tool_name="google_ads_list_report_fields"),
+            **kwargs,
+        )
+
+    client.assert_not_awaited()
+    audit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("field_name", ["campaign..id", "Campaign.id", "a" * 257])
+async def test_get_report_field_rejects_invalid_input_before_dispatch(
+    monkeypatch,
+    field_name: str,
+) -> None:
+    client = AsyncMock()
+    audit = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.get_report_field.google_ads_client",
+        client,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.get_report_field.run_audited_integration_operation",
+        audit,
+    )
+
+    with pytest.raises(ModelRetry):
+        await google_ads_get_report_field(
+            _read_ctx(_read_entry(), tool_name="google_ads_get_report_field"),
+            field_name,
+        )
+
+    client.assert_not_awaited()
+    audit.assert_not_awaited()
+
+
+async def test_report_field_tools_require_compatible_active_context() -> None:
+    ctx = _read_ctx(tool_name="google_ads_list_report_fields")
+
+    with pytest.raises(ModelRetry, match="includes Google Ads"):
+        await google_ads_list_report_fields(ctx, "campaign")
+
+    ctx.tool_name = "google_ads_get_report_field"
+    with pytest.raises(ModelRetry, match="includes Google Ads"):
+        await google_ads_get_report_field(ctx, "campaign.id")
+
+
+async def test_list_report_fields_uses_one_context_entry_and_one_read_audit(monkeypatch) -> None:
+    entries = (_read_entry("111"), _read_entry("222"))
+    client = object()
+    client_factory = AsyncMock(return_value=client)
+    operation = AsyncMock(
+        return_value={
+            "api_version": "v24",
+            "resource": "campaign",
+            "attribute_resources": [],
+            "attribute_resource_count": 0,
+            "metrics": ["metrics.clicks"],
+            "metric_count": 1,
+            "segments": [],
+            "segment_count": 0,
+            "compatibility_truncated": False,
+            "fields": [],
+            "field_count": 0,
+            "truncated": False,
+        }
+    )
+    audited_entries: list[ResolvedContextEntry] = []
+
+    async def passthrough_audit(_ctx, entry, **kwargs):
+        audited_entries.append(entry)
+        return (await kwargs["execute"]()).value
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.list_report_fields.google_ads_client",
+        client_factory,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.list_report_fields.list_report_fields",
+        operation,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.list_report_fields.run_audited_integration_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_list_report_fields(
+        _read_ctx(*entries, tool_name="google_ads_list_report_fields"),
+        " campaign ",
+        " clicks ",
+        25,
+    )
+
+    client_factory.assert_awaited_once()
+    assert client_factory.await_args.args[1] is entries[0]
+    operation.assert_awaited_once_with(
+        client,
+        resource="campaign",
+        search="clicks",
+        limit=25,
+    )
+    assert audited_entries == [entries[0]]
+    serialized = json.dumps(result)
+    for entry in entries:
+        assert str(entry.connection_id) not in serialized
+        assert str(entry.integration_resource_id) not in serialized
+
+
+async def test_get_report_field_records_success_and_failure_audits(monkeypatch) -> None:
+    entry = _read_entry()
+    audit = AsyncMock(return_value=uuid4())
+    operation = AsyncMock(
+        return_value={
+            "api_version": "v24",
+            "name": "campaign.id",
+            "category": "ATTRIBUTE",
+            "data_type": "INT64",
+            "selectable": True,
+            "filterable": True,
+            "sortable": True,
+            "is_repeated": False,
+            "type_url": None,
+            "enum_values": [],
+            "enum_value_count": 0,
+            "selectable_with": [],
+            "selectable_with_count": 0,
+            "attribute_resources": [],
+            "metrics": [],
+            "segments": [],
+            "truncated": False,
+        }
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        audit,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.get_report_field.google_ads_client",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.get_report_field.get_report_field",
+        operation,
+    )
+    ctx = _read_ctx(entry, tool_name="google_ads_get_report_field")
+
+    result = await google_ads_get_report_field(ctx, " campaign.id ")
+
+    assert result["name"] == "campaign.id"
+    assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
+    assert audit.await_args.kwargs["operation"] == "get_report_field"
+    assert audit.await_args.kwargs["operation_detail"] is None
+
+    operation.side_effect = IntegrationValidationError(
+        "Google Ads returned invalid metadata",
+        provider_key="google_ads",
+        operation="get_report_field",
+    )
+    audit.reset_mock()
+
+    with pytest.raises(IntegrationValidationError, match="invalid metadata"):
+        await google_ads_get_report_field(ctx, "campaign.id")
+
+    assert audit.await_args.kwargs["status"] == AuditStatus.FAILURE
+    assert audit.await_args.kwargs["error_code"] == "IntegrationValidationError"
+
+
+async def test_list_report_fields_refreshes_oauth_once_after_auth_rejection(monkeypatch) -> None:
+    attempts = 0
+    forces: list[bool] = []
+
+    async def token(force: bool) -> str:
+        forces.append(force)
+        return "fresh" if force else "stale"
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx2.Response(401, json={}, request=request)
+        if request.method == "GET":
+            payload = {
+                "name": "campaign",
+                "category": "RESOURCE",
+                "dataType": "MESSAGE",
+                "metrics": [],
+                "segments": [],
+                "attributeResources": [],
+            }
+        else:
+            payload = {
+                "results": [
+                    {
+                        "name": "campaign.id",
+                        "category": "ATTRIBUTE",
+                        "dataType": "INT64",
+                        "selectable": True,
+                    }
+                ],
+                "totalResultsCount": "1",
+            }
+        return httpx2.Response(200, json=payload, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = GoogleAdsClient(
+            token,
+            developer_token=SecretStr("developer-secret"),
+            client=http_client,
+        )
+
+        async def passthrough_audit(_ctx, _entry, **kwargs):
+            return (await kwargs["execute"]()).value
+
+        monkeypatch.setattr(
+            "integrations.google_ads.tools.list_report_fields.google_ads_client",
+            AsyncMock(return_value=client),
+        )
+        monkeypatch.setattr(
+            "integrations.google_ads.tools.list_report_fields.run_audited_integration_operation",
+            passthrough_audit,
+        )
+
+        result = await google_ads_list_report_fields(
+            _read_ctx(_read_entry(), tool_name="google_ads_list_report_fields"),
+            "campaign",
+        )
+
+    assert attempts == 3
+    assert forces == [False, True, False]
+    assert result["fields"] == [
+        {
+            "name": "campaign.id",
+            "category": "ATTRIBUTE",
+            "data_type": "INT64",
+            "selectable": True,
+            "filterable": False,
+            "sortable": False,
+            "is_repeated": False,
+        }
+    ]
+    assert "developer-secret" not in json.dumps(result)
 
 
 async def test_durable_audit_failure_after_provider_write_is_not_silenced(monkeypatch) -> None:

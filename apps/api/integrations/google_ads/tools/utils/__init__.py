@@ -2,7 +2,12 @@
 
 """Stable exports for focused Google Ads runtime-tool helpers."""
 
-from .bindings import GOOGLE_ADS_BINDING, GOOGLE_ADS_WRITE_BINDING, RESULTS_FIELD
+from .bindings import (
+    GOOGLE_ADS_BINDING,
+    GOOGLE_ADS_WRITE_BINDING,
+    RESULTS_FIELD,
+    active_google_ads_entries,
+)
 from .campaign_negative_keywords import (
     MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS,
     run_campaign_negative_keyword_tool,
@@ -27,6 +32,7 @@ __all__ = [
     "MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS",
     "MAX_NEGATIVE_KEYWORD_RESULT_CHARS",
     "RESULTS_FIELD",
+    "active_google_ads_entries",
     "bounded_negative_keyword_removal_result",
     "bounded_negative_keyword_result",
     "complete_negative_keyword_removal_result",

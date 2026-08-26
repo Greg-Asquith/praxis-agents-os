@@ -53,6 +53,9 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
 
     assert response.status_code == 200
     body = response.json()
+    catalog_names = {tool["name"] for tool in body["tools"]}
+    assert "google_ads_get_report_field" not in catalog_names
+    assert "google_ads_list_report_fields" not in catalog_names
     web_search = next(tool for tool in body["tools"] if tool["name"] == "web_search")
     assert web_search == {
         "name": "web_search",
@@ -281,6 +284,8 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
     assert "web_search" in names
     assert "write_file" in names  # non-configurable tools are included
     assert "delegate_to_agent" in names  # policy-injected tools are included
+    assert "google_ads_get_report_field" in names
+    assert "google_ads_list_report_fields" in names
     for entry in body["tools"]:
         if entry["name"].startswith("test_"):
             continue

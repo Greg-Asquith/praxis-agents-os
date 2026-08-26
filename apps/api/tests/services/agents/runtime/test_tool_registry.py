@@ -8,7 +8,7 @@ from typing import get_args, get_type_hints
 from uuid import uuid4
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
@@ -31,6 +31,7 @@ from integrations.gmail.tools.search_messages import (
 from integrations.gmail.tools.send_message import DEFINITION as GMAIL_SEND_MESSAGE_DEFINITION
 from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
 from integrations.google_ads.references import GoogleAdsCampaignReference
+from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from integrations.google_ads.tools.add_negative_keywords import (
     DEFINITION as GOOGLE_ADS_ADD_NEGATIVE_KEYWORDS_DEFINITION,
@@ -429,8 +430,10 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_add_negative_keywords": "external_write",
         "google_ads_apply_recommendations": "external_write",
         "google_ads_dismiss_recommendations": "external_write",
+        "google_ads_get_report_field": "provider_query",
         "google_ads_create_negative_keyword_list": "external_write",
         "google_ads_link_negative_keyword_list": "external_write",
+        "google_ads_list_report_fields": "provider_query",
         "google_ads_remove_negative_keywords": "external_write",
         "google_ads_remove_ad_group_negative_keywords": "external_write",
         "google_ads_remove_campaign_negative_keywords": "external_write",
@@ -498,8 +501,10 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_add_negative_keywords",
         "google_ads_apply_recommendations",
         "google_ads_dismiss_recommendations",
+        "google_ads_get_report_field",
         "google_ads_create_negative_keyword_list",
         "google_ads_link_negative_keyword_list",
+        "google_ads_list_report_fields",
         "google_ads_remove_ad_group_negative_keywords",
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_remove_negative_keywords",
@@ -1587,6 +1592,127 @@ def test_code_mode_applies_integration_context_filter_before_both_mount_paths(
     assert "test_context_code_read" in present_workflow.description
     assert "test_context_code_read" in wrapped_tool_names
     assert "test_context_direct_read" in {tool.name for tool in with_context}
+
+
+def test_google_ads_field_tools_auto_mount_once_with_compatible_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    field_tool_names = {
+        "google_ads_get_report_field",
+        "google_ads_list_report_fields",
+    }
+
+    class _ActiveContext:
+        def __init__(self, provider_key: str, compatible_count: int) -> None:
+            self.provider_key = provider_key
+            self.compatible_count = compatible_count
+
+        def compatible_entries(self, binding) -> list[object]:
+            if self.provider_key not in binding.provider_keys:
+                return []
+            return [object() for _ in range(self.compatible_count)]
+
+    monkeypatch.setattr(
+        google_ads_settings,
+        "GOOGLE_ADS_DEVELOPER_TOKEN",
+        SecretStr("developer-token"),
+    )
+    agent = _agent(tool_names=[])
+
+    without_context = build_runtime_tools(agent)
+    with_other_provider = build_runtime_tools(
+        agent,
+        active_context=_ActiveContext("gmail", 1),
+    )
+    with_one_account = build_runtime_tools(
+        agent,
+        active_context=_ActiveContext("google_ads", 1),
+    )
+    with_multiple_accounts = build_runtime_tools(
+        agent,
+        active_context=_ActiveContext("google_ads", 2),
+    )
+
+    assert field_tool_names.isdisjoint(tool.name for tool in without_context)
+    assert field_tool_names.isdisjoint(tool.name for tool in with_other_provider)
+    assert [tool.name for tool in with_one_account if tool.name in field_tool_names] == sorted(
+        field_tool_names
+    )
+    assert [
+        tool.name for tool in with_multiple_accounts if tool.name in field_tool_names
+    ] == sorted(field_tool_names)
+
+
+def test_google_ads_field_tools_follow_code_mode_and_safety_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    field_tool_names = {
+        "google_ads_get_report_field",
+        "google_ads_list_report_fields",
+    }
+
+    class _ActiveContext:
+        def compatible_entries(self, binding) -> list[object]:
+            return [object()] if "google_ads" in binding.provider_keys else []
+
+    context = _ActiveContext()
+    monkeypatch.setattr(
+        google_ads_settings,
+        "GOOGLE_ADS_DEVELOPER_TOKEN",
+        SecretStr("developer-token"),
+    )
+    wrapped_tool_names: list[str] = []
+    tools = build_runtime_tools(
+        _agent(tool_names=[], code_mode_enabled=True),
+        active_context=context,
+        wrapped_tool_names=wrapped_tool_names,
+    )
+    workflow = next(tool for tool in tools if tool.name == "run_workflow")
+
+    assert field_tool_names.issubset(wrapped_tool_names)
+    assert field_tool_names.isdisjoint(tool.name for tool in tools)
+    assert all(tool_name in workflow.description for tool_name in field_tool_names)
+
+    disabled = build_runtime_tools(
+        _agent(tool_names=[]),
+        active_context=context,
+        workspace=object(),
+        disabled_tool_names=frozenset(field_tool_names),
+    )
+    assert field_tool_names.isdisjoint(tool.name for tool in disabled)
+
+    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_DEVELOPER_TOKEN", None)
+    unavailable = build_runtime_tools(
+        _agent(tool_names=[]),
+        active_context=context,
+    )
+    assert field_tool_names.isdisjoint(tool.name for tool in unavailable)
+
+
+def test_google_ads_field_tools_are_auto_only_and_not_configurable() -> None:
+    field_tool_names = {
+        "google_ads_get_report_field",
+        "google_ads_list_report_fields",
+    }
+    definitions = {
+        definition.name: definition
+        for definition in GOOGLE_ADS_TOOL_DEFINITIONS
+        if definition.name in field_tool_names
+    }
+
+    assert set(definitions) == field_tool_names
+    for definition in definitions.values():
+        assert definition.configurable is False
+        assert definition.auto_mount is True
+        assert definition.supports_auto is True
+        assert definition.supports_approval is False
+        assert definition.allowed_policies() == frozenset({TOOL_POLICY_AUTO})
+        assert definition.timeout == 30
+
+    allowed_names = {
+        definition.name for definition in list_allowed_tool_definitions(workspace=object())
+    }
+    assert field_tool_names.isdisjoint(allowed_names)
 
 
 def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
