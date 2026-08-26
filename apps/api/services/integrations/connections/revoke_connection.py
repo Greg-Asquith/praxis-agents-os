@@ -19,6 +19,7 @@ from services.integrations.connections.utils import (
 )
 from services.integrations.credentials import revoke_credential
 from services.integrations.oauth import revoke_authorization_token
+from services.integrations.oauth.resolve_provider_config import resolve_provider_oauth_config
 
 logger = logging.getLogger(__name__)
 
@@ -41,19 +42,24 @@ async def revoke_connection(
     require_connection_mutation_allowed(connection, actor=actor, membership=membership)
     credential = await db.get(ExternalCredential, connection.credential_id)
     if credential is not None and credential.auth_mode == "oauth":
-        token = credential.refresh_token or credential.access_token
-        if token:
-            try:
+        try:
+            protocol = resolve_provider_oauth_config(credential.provider_key).protocol
+            token = (
+                credential.access_token
+                if protocol.revoke_token == "access"
+                else credential.refresh_token or credential.access_token
+            )
+            if token:
                 await revoke_authorization_token(
                     provider_key=credential.provider_key,
                     token=token,
                 )
-            except Exception:
-                logger.warning(
-                    "Remote integration token revocation failed for provider %s",
-                    credential.provider_key,
-                    exc_info=True,
-                )
+        except Exception:
+            logger.warning(
+                "Remote integration token revocation failed for provider %s",
+                credential.provider_key,
+                exc_info=True,
+            )
     await revoke_credential(
         db,
         credential_id=connection.credential_id,

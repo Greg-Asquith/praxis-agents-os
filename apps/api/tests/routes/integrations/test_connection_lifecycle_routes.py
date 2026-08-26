@@ -1,5 +1,6 @@
 """Connection read, rename, and revoke lifecycle tests."""
 
+from dataclasses import replace
 from datetime import timedelta
 from importlib import import_module
 
@@ -13,7 +14,8 @@ from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
 from models.jobs import Job
 from services.integrations.credentials import store_oauth_credential
-from services.integrations.oauth.fetch_external_principal import ExternalPrincipal
+from services.integrations.oauth import ExternalPrincipal
+from services.integrations.plugin import PROVIDER_PLUGINS
 from tests.factories import build_integration_discovery_run
 
 pytestmark = pytest.mark.asyncio
@@ -85,6 +87,77 @@ async def test_rename_and_revoke_crypto_shreds_even_when_remote_fails(
         headers=integration_identity["headers"],
     )
     assert rejected.status_code == 400
+
+
+async def test_revocation_protocol_can_require_the_access_token(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = await _oauth_connection(db_session, integration_identity)
+    connection_id = connection.id
+    module = import_module("services.integrations.connections.revoke_connection")
+    gmail_plugin = PROVIDER_PLUGINS["gmail"]
+    assert gmail_plugin.oauth_config is not None
+    gmail_config = gmail_plugin.oauth_config()
+    access_only_config = replace(
+        gmail_config,
+        protocol=replace(gmail_config.protocol, revoke_token="access"),  # noqa: S106
+    )
+    monkeypatch.setitem(
+        PROVIDER_PLUGINS,
+        "gmail",
+        replace(gmail_plugin, oauth_config=lambda: access_only_config),
+    )
+    revoked_tokens: list[str] = []
+
+    async def revoke_authorization_token(*, provider_key: str, token: str) -> None:
+        assert provider_key == "gmail"
+        revoked_tokens.append(token)
+
+    monkeypatch.setattr(module, "revoke_authorization_token", revoke_authorization_token)
+    response = await db_async_client.post(
+        f"/api/v1/integrations/connections/{connection_id}/revoke",
+        headers=integration_identity["headers"],
+    )
+
+    assert response.status_code == 200, response.text
+    assert revoked_tokens == ["access-value"]
+
+
+async def test_revocation_crypto_shreds_when_provider_config_is_unavailable(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = await _oauth_connection(db_session, integration_identity)
+    connection_id = connection.id
+    module = import_module("services.integrations.connections.revoke_connection")
+
+    def unavailable_config(_provider_key: str):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr(
+        module,
+        "resolve_provider_oauth_config",
+        unavailable_config,
+    )
+    response = await db_async_client.post(
+        f"/api/v1/integrations/connections/{connection_id}/revoke",
+        headers=integration_identity["headers"],
+    )
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    persisted = await db_session.get(IntegrationConnection, connection_id)
+    assert persisted is not None
+    credential = await db_session.get(ExternalCredential, persisted.credential_id)
+    assert credential is not None
+    assert credential.access_token_encrypted is None
+    assert credential.refresh_token_encrypted is None
+    assert credential.revoked_at is not None
 
 
 async def test_read_only_connection_list_omits_credential_values(
@@ -183,7 +256,7 @@ async def test_refresh_and_test_connection_happy_paths(
         assert refresh_token == "refresh-value"
         return {"access_token": "refreshed-access", "expires_in": 7200}
 
-    async def fetch_external_principal(*, provider_key: str, access_token: str):
+    async def resolve_external_principal(*, provider_key: str, access_token: str):
         assert provider_key == "gmail"
         assert access_token == "refreshed-access"
         return ExternalPrincipal("principal-lifecycle", "refreshed@example.com")
@@ -193,7 +266,7 @@ async def test_refresh_and_test_connection_happy_paths(
         "refresh_authorization_token",
         refresh_authorization_token,
     )
-    monkeypatch.setattr(test_module, "fetch_external_principal", fetch_external_principal)
+    monkeypatch.setattr(test_module, "resolve_external_principal", resolve_external_principal)
     refreshed = await db_async_client.post(
         f"/api/v1/integrations/connections/{connection_id}/refresh",
         headers=integration_identity["headers"],
@@ -207,6 +280,36 @@ async def test_refresh_and_test_connection_happy_paths(
     )
     assert tested.status_code == 200, tested.text
     assert tested.json()["external_principal_label"] == "refreshed@example.com"
+
+
+async def test_connection_test_keeps_stored_label_when_live_identity_omits_it(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = await _oauth_connection(db_session, integration_identity)
+    module = import_module("services.integrations.connections.test_connection")
+
+    async def resolve_external_principal(
+        *, provider_key: str, access_token: str
+    ) -> ExternalPrincipal:
+        assert provider_key == "gmail"
+        assert access_token == "access-value"
+        return ExternalPrincipal("principal-lifecycle", None)
+
+    monkeypatch.setattr(
+        module,
+        "resolve_external_principal",
+        resolve_external_principal,
+    )
+    response = await db_async_client.post(
+        f"/api/v1/integrations/connections/{connection.id}/test",
+        headers=integration_identity["headers"],
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["external_principal_label"] == "owner@example.com"
 
 
 async def test_identity_auth_failure_marks_connection_needs_reauth(
@@ -226,7 +329,7 @@ async def test_identity_auth_failure_marks_connection_needs_reauth(
             operation="oauth_userinfo",
         )
 
-    monkeypatch.setattr(module, "fetch_external_principal", rejected_identity)
+    monkeypatch.setattr(module, "resolve_external_principal", rejected_identity)
     failed = await db_async_client.post(
         f"/api/v1/integrations/connections/{connection_id}/test",
         headers=integration_identity["headers"],

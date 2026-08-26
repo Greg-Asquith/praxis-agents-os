@@ -23,7 +23,8 @@ from services.integrations.connections import (
 )
 from services.integrations.credentials import revoke_credential, store_oauth_credential
 from services.integrations.domain import CONNECTION_STATUS_TRANSITIONS
-from services.integrations.oauth.fetch_external_principal import ExternalPrincipal
+from services.integrations.oauth import ExternalPrincipal
+from services.integrations.plugin import PROVIDER_PLUGINS
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -211,6 +212,7 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
         "gmail",
         GMAIL_PROVIDER.manifest,
     )
+    monkeypatch.setitem(PROVIDER_PLUGINS, "gmail", GMAIL_PROVIDER)
     remote_revocation_started = asyncio.Event()
     finish_remote_revocation = asyncio.Event()
     callback_reached_swap = asyncio.Event()
@@ -255,7 +257,7 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
     monkeypatch.setattr(callback_module, "_consume_pending_state", consume_state)
     monkeypatch.setattr(callback_module, "decrypt_code_verifier", decrypt_verifier)
     monkeypatch.setattr(callback_module, "exchange_authorization_code", exchange)
-    monkeypatch.setattr(callback_module, "fetch_external_principal", principal)
+    monkeypatch.setattr(callback_module, "resolve_external_principal", principal)
 
     async def revoke() -> None:
         async with committed_db_session_factory() as db:

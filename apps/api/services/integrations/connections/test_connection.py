@@ -31,7 +31,7 @@ from services.integrations.connections.utils import (
     require_connection_mutation_allowed,
 )
 from services.integrations.credentials import ensure_fresh_credential
-from services.integrations.oauth import fetch_external_principal
+from services.integrations.oauth import resolve_external_principal
 from services.integrations.utils import record_integration_audit
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
@@ -81,7 +81,7 @@ async def test_connection(
                 operation="test_connection",
             )
         try:
-            principal = await fetch_external_principal(
+            principal = await resolve_external_principal(
                 provider_key=fresh.provider_key, access_token=access_token
             )
         except (IntegrationAuthError, IntegrationPermissionError):
@@ -92,7 +92,7 @@ async def test_connection(
                 audit_workspace_id=workspace.id,
             )
             raise
-        principal_label = principal.label
+        principal_label = principal.label or credential.external_principal_label
     else:
         await resolve_secret(
             db,

@@ -7,6 +7,7 @@ from services.integrations.plugin import (
     IntegrationPreviewDefinition,
     IntegrationProviderPlugin,
     OAuthClientConfig,
+    OAuthProtocol,
 )
 
 from .discover_resources import discover_resources
@@ -28,6 +29,7 @@ def oauth_config() -> OAuthClientConfig:
         authorization_url=GOOGLE_AUTHORIZATION_URL,
         token_url=GOOGLE_TOKEN_URL,
         revoke_url=GOOGLE_REVOKE_URL,
+        protocol=OAuthProtocol(identity_source="google_userinfo"),
     )
 
 

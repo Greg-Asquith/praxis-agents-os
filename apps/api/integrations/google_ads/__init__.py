@@ -3,7 +3,11 @@
 """Google Ads provider manifest contribution."""
 
 from services.integrations.manifest import IntegrationProviderManifest
-from services.integrations.plugin import IntegrationProviderPlugin, OAuthClientConfig
+from services.integrations.plugin import (
+    IntegrationProviderPlugin,
+    OAuthClientConfig,
+    OAuthProtocol,
+)
 
 from .discover_resources import discover_resources
 from .entity_resolvers import (
@@ -28,6 +32,7 @@ def oauth_config() -> OAuthClientConfig:
         authorization_url=GOOGLE_AUTHORIZATION_URL,
         token_url=GOOGLE_TOKEN_URL,
         revoke_url=GOOGLE_REVOKE_URL,
+        protocol=OAuthProtocol(identity_source="google_userinfo"),
     )
 
 

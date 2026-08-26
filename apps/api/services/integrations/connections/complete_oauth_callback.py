@@ -2,6 +2,8 @@
 
 """Consume one OAuth callback and replace its pending credential atomically."""
 
+import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -35,13 +37,17 @@ from services.integrations.domain import (
     CONNECTION_STATUS_DISCOVERY_PENDING,
 )
 from services.integrations.manifest import PROVIDER_MANIFESTS
-from services.integrations.oauth import exchange_authorization_code, fetch_external_principal
+from services.integrations.oauth import (
+    exchange_authorization_code,
+    resolve_external_principal,
+)
 from services.integrations.oauth.utils import (
     decrypt_code_verifier,
     verify_integration_oauth_state,
 )
 from services.integrations.utils import record_integration_audit
 from services.security import SecurityEventType, safe_record_security_event_committed
+from utils.json_safe import is_sensitive_key
 
 
 async def complete_oauth_callback(
@@ -135,9 +141,14 @@ async def complete_oauth_callback(
             code_verifier=verifier,
         )
         access_token = str(token_payload["access_token"])
-        principal = await fetch_external_principal(
+        principal = await resolve_external_principal(
             provider_key=connection.provider_key,
             access_token=access_token,
+            token_payload=token_payload,
+        )
+        connection_metadata = _validated_connection_metadata(
+            principal.connection_metadata,
+            provider_key=connection.provider_key,
         )
         connection = await _lock_pending_connection(
             db,
@@ -186,6 +197,10 @@ async def complete_oauth_callback(
     )
     previous_credential = await db.get(ExternalCredential, expected_credential_id)
     connection.credential_id = credential.id
+    connection.provider_metadata = {
+        **(connection.provider_metadata or {}),
+        **connection_metadata,
+    }
     if previous_credential is not None:
         if previous_credential.principal_fingerprint.startswith("pending:"):
             await db.delete(previous_credential)
@@ -216,6 +231,38 @@ async def complete_oauth_callback(
         connection=await connection_to_read(db, connection, include_credential=True),
         next_path=claims.get("next_path"),
     )
+
+
+_CONNECTION_METADATA_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validated_connection_metadata(
+    metadata: object,
+    *,
+    provider_key: str,
+) -> dict[str, str]:
+    if not isinstance(metadata, Mapping) or len(metadata) > 16:
+        raise IntegrationAuthError(
+            "Provider connection metadata was rejected",
+            provider_key=provider_key,
+            operation="oauth_callback_metadata",
+        )
+    validated: dict[str, str] = {}
+    for key, value in metadata.items():
+        if (
+            not isinstance(key, str)
+            or not _CONNECTION_METADATA_KEY.fullmatch(key)
+            or is_sensitive_key(key)
+            or not isinstance(value, str)
+            or len(value) > 255
+        ):
+            raise IntegrationAuthError(
+                "Provider connection metadata was rejected",
+                provider_key=provider_key,
+                operation="oauth_callback_metadata",
+            )
+        validated[key] = value
+    return validated
 
 
 async def _lock_pending_connection(

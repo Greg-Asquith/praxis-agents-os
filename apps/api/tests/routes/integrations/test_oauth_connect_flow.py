@@ -18,7 +18,7 @@ from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection, IntegrationOAuthState
 from models.jobs import Job
 from services.integrations.manifest import PROVIDER_MANIFESTS
-from services.integrations.oauth.fetch_external_principal import ExternalPrincipal
+from services.integrations.oauth import ExternalPrincipal
 from services.integrations.oauth.utils import code_challenge
 from services.integrations.plugin import PROVIDER_PLUGINS
 
@@ -72,6 +72,8 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
     assert connection is not None
     assert connection.status == "auth_pending"
     assert connection.label == "Client inbox"
+    connection.provider_metadata = {"preserved": "value"}
+    await db_session.commit()
     assert await db_session.scalar(select(func.count()).select_from(IntegrationOAuthState)) == 1
 
     module = import_module("services.integrations.connections.complete_oauth_callback")
@@ -90,12 +92,17 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
             ),
         }
 
-    async def principal(*, provider_key: str, access_token: str):
+    async def principal(*, provider_key: str, access_token: str, token_payload: object):
         assert access_token == "access-secret"
-        return ExternalPrincipal("principal-1", "owner@example.com")
+        assert isinstance(token_payload, dict)
+        return ExternalPrincipal(
+            "principal-1",
+            "owner@example.com",
+            {"workspace_id": "workspace-1", "api_version": "2026-03-11"},
+        )
 
     monkeypatch.setattr(module, "exchange_authorization_code", exchange)
-    monkeypatch.setattr(module, "fetch_external_principal", principal)
+    monkeypatch.setattr(module, "resolve_external_principal", principal)
     callback = await db_async_client.post(
         "/api/v1/integrations/oauth/callback",
         headers=headers,
@@ -119,6 +126,12 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
     db_session.expire_all()
     connection = await db_session.get(IntegrationConnection, payload["connection_id"])
     assert connection is not None and connection.status == "discovery_pending"
+    assert connection.provider_metadata == {
+        "preserved": "value",
+        "workspace_id": "workspace-1",
+        "api_version": "2026-03-11",
+    }
+    assert "provider_metadata" not in callback.json()["connection"]
     credential = await db_session.get(ExternalCredential, connection.credential_id)
     assert credential is not None
     assert credential.access_token_encrypted != "access-secret"
@@ -148,11 +161,11 @@ async def test_duplicate_principal_is_reported_but_not_blocked(
             "scope": "https://www.googleapis.com/auth/gmail.readonly",
         }
 
-    async def principal(*, provider_key: str, access_token: str):
+    async def principal(*, provider_key: str, access_token: str, token_payload: object):
         return ExternalPrincipal("shared-principal", "shared@example.com")
 
     monkeypatch.setattr(module, "exchange_authorization_code", exchange)
-    monkeypatch.setattr(module, "fetch_external_principal", principal)
+    monkeypatch.setattr(module, "resolve_external_principal", principal)
     connection_ids: list[str] = []
     for label in ("Primary inbox", "Secondary inbox"):
         started = await db_async_client.post(

@@ -1,5 +1,7 @@
 """Manifest invariants and settings-driven provider loading."""
 
+from dataclasses import replace
+
 import pytest
 from pydantic import SecretStr
 
@@ -20,6 +22,7 @@ from services.integrations.plugin import (
     IntegrationPreviewDefinition,
     IntegrationPreviewPayload,
     IntegrationProviderPlugin,
+    OAuthClientConfig,
 )
 
 
@@ -191,6 +194,29 @@ def test_loader_fails_fast_for_unknown_provider(monkeypatch) -> None:
     monkeypatch.setattr(settings, "INTEGRATIONS_ENABLED_PROVIDERS", ["does_not_exist"])
     with pytest.raises(RuntimeError, match="Unknown enabled"):
         load_enabled_providers()
+
+
+def test_loader_resolves_each_oauth_configuration_once(monkeypatch) -> None:
+    import integrations.gmail as gmail_module
+
+    config = gmail_module.PROVIDER.oauth_config()
+    calls = 0
+
+    def oauth_config() -> OAuthClientConfig:
+        nonlocal calls
+        calls += 1
+        return config
+
+    monkeypatch.setattr(
+        gmail_module,
+        "PROVIDER",
+        replace(gmail_module.PROVIDER, oauth_config=oauth_config),
+    )
+    monkeypatch.setattr(settings, "INTEGRATIONS_ENABLED_PROVIDERS", ["gmail"])
+
+    load_enabled_providers()
+
+    assert calls == 1
 
 
 def test_loader_requires_discovery_callable_when_manifest_advertises_it() -> None:

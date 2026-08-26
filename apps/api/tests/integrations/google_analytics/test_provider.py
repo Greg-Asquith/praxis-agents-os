@@ -8,7 +8,6 @@ from integrations.google_analytics.tools.utils.bindings import (
 )
 from services.agents.runtime.tools.contract import VALID_TOOL_ICONS
 from services.integrations.loader import _validate_plugin
-from services.integrations.oauth.fetch_external_principal import GOOGLE_PROVIDER_KEYS
 
 
 def test_manifest_declares_read_only_workspace_property_provider() -> None:
@@ -30,7 +29,7 @@ def test_manifest_declares_read_only_workspace_property_provider() -> None:
         "google_analytics_run_realtime_report",
         "google_analytics_run_report",
     }
-    assert "google_analytics" in GOOGLE_PROVIDER_KEYS
+    assert PROVIDER.oauth_config().protocol.identity_source == "google_userinfo"
     assert "google_analytics" in VALID_TOOL_ICONS
     _validate_plugin(PROVIDER, expected_key="google_analytics")
 

@@ -290,7 +290,7 @@ async def test_identity_failure_transition_survives_request_style_rollback(
 
     module = __import__(
         "services.integrations.connections.test_connection",
-        fromlist=["fetch_external_principal"],
+        fromlist=["resolve_external_principal"],
     )
 
     async def rejected_identity(**kwargs):
@@ -300,7 +300,7 @@ async def test_identity_failure_transition_survives_request_style_rollback(
             operation="oauth_userinfo",
         )
 
-    monkeypatch.setattr(module, "fetch_external_principal", rejected_identity)
+    monkeypatch.setattr(module, "resolve_external_principal", rejected_identity)
     try:
         async with committed_db_session_factory() as request_db:
             await set_session_tenant_context(

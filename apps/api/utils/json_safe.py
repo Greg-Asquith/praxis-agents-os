@@ -23,6 +23,15 @@ SENSITIVE_DETAIL_KEY_MARKERS = (
     "signature",
     "token",
 )
+SENSITIVE_DETAIL_KEYS = frozenset(
+    {
+        "api_key",
+        "code",
+        "credential",
+        "credentials",
+        "private_key",
+    }
+)
 REDACTED_VALUE = "[REDACTED]"
 
 
@@ -37,7 +46,7 @@ def json_safe_details(details: Mapping[str, Any]) -> dict[str, Any]:
 
 def json_safe_value(value: Any, *, key: str | None = None) -> Any:
     """Coerce *value* to a JSON-safe type, redacting sensitive keys."""
-    if key is not None and _is_sensitive_key(key):
+    if key is not None and is_sensitive_key(key):
         return REDACTED_VALUE
     if isinstance(value, Mapping):
         return {
@@ -57,6 +66,9 @@ def json_safe_value(value: Any, *, key: str | None = None) -> Any:
     return str(value)
 
 
-def _is_sensitive_key(key: str) -> bool:
+def is_sensitive_key(key: str) -> bool:
+    """Checks whether a field name indicates sensitive content."""
     normalized = key.lower().replace("-", "_").replace(" ", "_")
-    return any(marker in normalized for marker in SENSITIVE_DETAIL_KEY_MARKERS)
+    return normalized in SENSITIVE_DETAIL_KEYS or any(
+        marker in normalized for marker in SENSITIVE_DETAIL_KEY_MARKERS
+    )

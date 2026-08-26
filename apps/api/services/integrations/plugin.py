@@ -3,13 +3,25 @@
 """Provider contribution contract used by the settings-driven loader."""
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from pydantic import SecretStr
 
 from services.integrations.manifest import IntegrationProviderManifest
+
+OAUTH_AUTHORIZATION_RESERVED_PARAMETERS = frozenset(
+    {
+        "client_id",
+        "code_challenge",
+        "code_challenge_method",
+        "redirect_uri",
+        "response_type",
+        "scope",
+        "state",
+    }
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +56,36 @@ DiscoverResourcesFn = Callable[
 
 
 @dataclass(frozen=True)
+class ExternalPrincipal:
+    """Stable provider identity and bounded non-secret connection metadata."""
+
+    external_id: str
+    label: str | None
+    connection_metadata: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class OAuthProtocol:
+    """Provider-declared OAuth wire and identity behavior."""
+
+    authorization_params: tuple[tuple[str, str], ...] = (
+        ("access_type", "offline"),
+        ("prompt", "consent"),
+        ("include_granted_scopes", "false"),
+    )
+    scope_parameter: bool = True
+    scope_separator: str = " "
+    pkce: Literal["s256", "none"] = "s256"
+    token_auth: Literal["client_secret_post", "client_secret_basic"] = "client_secret_post"
+    token_encoding: Literal["form", "json"] = "form"
+    identity_source: Literal["google_userinfo", "provider"] = "google_userinfo"
+    extract_identity: Callable[[dict[str, Any]], ExternalPrincipal] | None = None
+    fetch_identity: Callable[[str], Awaitable[ExternalPrincipal]] | None = None
+    request_headers: tuple[tuple[str, str], ...] = ()
+    revoke_token: Literal["refresh_or_access", "access"] = "refresh_or_access"
+
+
+@dataclass(frozen=True)
 class OAuthClientConfig:
     """Provider-owned OAuth application credentials and endpoints."""
 
@@ -52,6 +94,7 @@ class OAuthClientConfig:
     authorization_url: str
     token_url: str
     revoke_url: str
+    protocol: OAuthProtocol = field(default_factory=OAuthProtocol)
 
 
 OAuthConfigFn = Callable[[], OAuthClientConfig]

@@ -7,7 +7,12 @@ import re
 
 from core.settings import settings
 from services.integrations.manifest import register_provider_manifest
-from services.integrations.plugin import IntegrationProviderPlugin, register_provider_plugin
+from services.integrations.plugin import (
+    OAUTH_AUTHORIZATION_RESERVED_PARAMETERS,
+    IntegrationProviderPlugin,
+    OAuthClientConfig,
+    register_provider_plugin,
+)
 from services.jobs.domain import is_valid_job_kind
 from services.jobs.registry import get_job_handler
 
@@ -27,9 +32,9 @@ def load_enabled_providers() -> None:
         plugin = getattr(module, "PROVIDER", None)
         if not isinstance(plugin, IntegrationProviderPlugin):
             raise TypeError(f"Integration provider package '{key}' has no valid PROVIDER")
-        _validate_plugin(plugin, expected_key=key)
-        if plugin.oauth_config is not None:
-            client_id = plugin.oauth_config().client_id.strip()
+        oauth_config = _validate_plugin(plugin, expected_key=key)
+        if oauth_config is not None:
+            client_id = oauth_config.client_id.strip()
             previous_owner = oauth_client_owners.get(client_id) if client_id else None
             if previous_owner is not None:
                 raise RuntimeError(
@@ -54,7 +59,11 @@ def load_enabled_providers() -> None:
                 register_tool_definition(definition)
 
 
-def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) -> None:
+def _validate_plugin(
+    plugin: IntegrationProviderPlugin,
+    *,
+    expected_key: str,
+) -> OAuthClientConfig | None:
     manifest = plugin.manifest
     if manifest.provider_key != expected_key:
         raise RuntimeError(
@@ -69,6 +78,16 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
         raise RuntimeError(
             f"OAuth integration provider '{expected_key}' must own its OAuth configuration"
         )
+    oauth_config = plugin.oauth_config() if plugin.oauth_config is not None else None
+    if oauth_config is not None:
+        authorization_params = dict(oauth_config.protocol.authorization_params)
+        collisions = OAUTH_AUTHORIZATION_RESERVED_PARAMETERS.intersection(authorization_params)
+        if collisions:
+            names = ", ".join(sorted(collisions))
+            raise RuntimeError(
+                f"OAuth integration provider '{expected_key}' overrides reserved "
+                f"authorization parameters: {names}"
+            )
     if plugin.event_definition is not None and manifest.event_delivery == "none":
         raise RuntimeError(
             f"Integration provider '{expected_key}' contributes events but declares no delivery"
@@ -133,3 +152,4 @@ def _validate_plugin(plugin: IntegrationProviderPlugin, *, expected_key: str) ->
         if not definition.operation.strip():
             raise RuntimeError("Integration preview operation must not be blank")
         preview_kinds.add(definition.kind)
+    return oauth_config

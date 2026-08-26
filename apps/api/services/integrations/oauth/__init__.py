@@ -8,14 +8,16 @@ from services.integrations.oauth.exchange_authorization_code import (
     refresh_authorization_token,
     revoke_authorization_token,
 )
-from services.integrations.oauth.fetch_external_principal import fetch_external_principal
+from services.integrations.oauth.resolve_external_principal import resolve_external_principal
 from services.integrations.oauth.resolve_provider_config import resolve_provider_oauth_config
+from services.integrations.plugin import ExternalPrincipal
 
 __all__ = [
+    "ExternalPrincipal",
     "build_authorization_url",
     "exchange_authorization_code",
-    "fetch_external_principal",
     "refresh_authorization_token",
+    "resolve_external_principal",
     "resolve_provider_oauth_config",
     "revoke_authorization_token",
 ]
