@@ -9,6 +9,12 @@ KB_STATUS_PROCESSING = "processing"
 KB_STATUS_READY = "ready"
 KB_STATUS_ERROR = "error"
 
+KB_SYNC_PENDING = "pending"
+KB_SYNC_READY = "ready"
+KB_SYNC_UNAVAILABLE = "unavailable"
+KB_SYNC_DISCONNECTED = "disconnected"
+KB_SYNC_ERROR = "error"
+
 KB_SOURCE_UPLOAD = "upload"
 KB_SOURCE_URL = "url"
 KB_SOURCE_MANUAL = "manual"

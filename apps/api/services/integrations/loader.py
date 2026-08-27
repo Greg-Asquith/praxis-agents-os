@@ -116,6 +116,21 @@ def _validate_plugin(
         raise RuntimeError(
             f"Integration provider '{expected_key}' contributes events but declares no delivery"
         )
+    if plugin.knowledge_source is not None:
+        if not plugin.knowledge_source.resource_types:
+            raise RuntimeError(
+                f"Integration provider '{expected_key}' contributes a Knowledge Base source "
+                "without any resource types"
+            )
+        undeclared_resource_types = plugin.knowledge_source.resource_types.difference(
+            manifest.resource_types
+        )
+        if undeclared_resource_types:
+            raise RuntimeError(
+                f"Integration provider '{expected_key}' contributes Knowledge Base source "
+                "resource types not declared by its manifest: "
+                f"{', '.join(sorted(undeclared_resource_types))}"
+            )
     if plugin.metadata_sync_job_kind is not None:
         if not is_valid_job_kind(plugin.metadata_sync_job_kind):
             raise RuntimeError(

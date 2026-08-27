@@ -48,8 +48,15 @@ class KBDocument(BaseModel):
         ForeignKey("file_revisions.id", ondelete="SET NULL"),
         nullable=True,
     )
+    integration_resource_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("integration_resources.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     external_id = Column(String(255), nullable=True)
     external_url = Column(Text, nullable=True)
+    source_sync_status = Column(String(24), nullable=True)
+    source_synced_at = Column(DateTime(timezone=True), nullable=True)
     is_private = Column(Boolean, nullable=False, server_default=text("false"))
     created_by_user_id = Column(
         UUID(as_uuid=True),
@@ -78,11 +85,37 @@ class KBDocument(BaseModel):
             name="ck_kb_documents_status",
         ),
         CheckConstraint(
+            "source_sync_status IN ('pending','ready','unavailable','disconnected','error')",
+            name="ck_kb_documents_source_sync_status",
+        ),
+        CheckConstraint(
+            "(source_type = 'integration' AND external_id IS NOT NULL "
+            "AND source_sync_status IS NOT NULL) OR "
+            "(source_type <> 'integration' AND integration_resource_id IS NULL "
+            "AND source_sync_status IS NULL AND source_synced_at IS NULL)",
+            name="ck_kb_documents_integration_source",
+        ),
+        CheckConstraint(
             "processing_attempts >= 0",
             name="ck_kb_documents_processing_attempts_nonnegative",
         ),
         CheckConstraint("chunk_count >= 0", name="ck_kb_documents_chunk_count_nonnegative"),
         Index("ix_kb_documents_workspace_status", "workspace_id", "status"),
+        Index("ix_kb_documents_integration_resource", "integration_resource_id"),
+        Index(
+            "ix_kb_documents_integration_source",
+            "integration_resource_id",
+            "external_id",
+            postgresql_where=text("source_type = 'integration' AND deleted = false"),
+        ),
+        Index(
+            "ix_kb_documents_integration_scan",
+            "source_synced_at",
+            postgresql_where=text(
+                "source_type = 'integration' AND deleted = false "
+                "AND source_sync_status IN ('ready', 'error', 'unavailable')"
+            ),
+        ),
         Index("ix_kb_documents_tsv", "tsv", postgresql_using="gin"),
     )
 

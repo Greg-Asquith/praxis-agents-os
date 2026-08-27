@@ -41,22 +41,37 @@ async def ensure_fresh_credential(
     credential_id: UUID,
     refresh_token: RefreshTokenFn | None = None,
     force: bool = False,
+    expected_provider_key: str | None = None,
+    expected_owner: tuple[UUID | None, UUID | None] | None = None,
 ) -> ExternalCredential:
     """Return a usable credential from an isolated, row-locked transaction.
 
     The OAuth connect slice supplies the provider-specific manifest-driven
     refresh callable once token endpoints and client settings exist. Refresh
-    commits never include unrelated work pending on the caller's session.
+    commits never include unrelated work pending on the caller's session. An
+    expected provider or owner binding is enforced before token access or refresh.
     """
     await ensure_credential_keys_loaded(db)
     session_factory = get_async_db_session_factory()
     async with session_factory() as refresh_db:
         await configure_async_db_session(refresh_db)
         await inherit_session_tenant_context(refresh_db, db)
+        credential_filters = [
+            ExternalCredential.id == credential_id,
+            ExternalCredential.deleted.is_(False),
+        ]
+        if expected_provider_key is not None:
+            credential_filters.append(ExternalCredential.provider_key == expected_provider_key)
+        if expected_owner is not None:
+            expected_owner_user_id, expected_owner_workspace_id = expected_owner
+            credential_filters.extend(
+                (
+                    ExternalCredential.owner_user_id == expected_owner_user_id,
+                    ExternalCredential.owner_workspace_id == expected_owner_workspace_id,
+                )
+            )
         credential = await refresh_db.scalar(
-            select(ExternalCredential)
-            .where(ExternalCredential.id == credential_id, ExternalCredential.deleted.is_(False))
-            .with_for_update()
+            select(ExternalCredential).where(*credential_filters).with_for_update()
         )
         if credential is None:
             raise IntegrationNotFoundError(

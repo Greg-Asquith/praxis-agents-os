@@ -4,11 +4,13 @@
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from pydantic import SecretStr
 
+from core.exceptions.integration import IntegrationError
 from services.integrations.manifest import IntegrationProviderManifest
 
 OAUTH_AUTHORIZATION_RESERVED_PARAMETERS = frozenset(
@@ -116,6 +118,88 @@ IntegrationPreviewFetchFn = Callable[
 
 
 @dataclass(frozen=True)
+class KnowledgeSourceSearchResult:
+    """Provider-neutral Knowledge Base source returned by a title search."""
+
+    reference: dict[str, Any]
+    title: str
+    url: str
+    source_updated_at: datetime | None
+
+
+@dataclass(frozen=True)
+class KnowledgeSourcePreview:
+    """Bounded provider source preview returned to the management UI."""
+
+    reference: dict[str, Any]
+    title: str
+    url: str
+    source_updated_at: datetime | None
+    markdown_excerpt: str
+
+
+@dataclass(frozen=True)
+class KnowledgeSourceDocument:
+    """Canonical provider document returned to the Knowledge Base pipeline."""
+
+    external_id: str
+    title: str
+    url: str
+    source_updated_at: datetime | None
+    markdown: str
+
+
+class KnowledgeSourceAccessLostError(IntegrationError):
+    """Raised when a provider definitively denies or cannot find a source."""
+
+
+class KnowledgeSourceDisconnectedError(IntegrationError):
+    """Raised when a source no longer has a usable connection binding."""
+
+
+ParseKnowledgeSourceFn = Callable[[str | dict[str, Any]], dict[str, Any]]
+SearchKnowledgeSourcesFn = Callable[
+    [
+        "AsyncSession",
+        "IntegrationConnection",
+        "IntegrationResource",
+        str | None,
+        int,
+    ],
+    Awaitable[Sequence[KnowledgeSourceSearchResult]],
+]
+PreviewKnowledgeSourceFn = Callable[
+    [
+        "AsyncSession",
+        "IntegrationConnection",
+        "IntegrationResource",
+        dict[str, Any],
+    ],
+    Awaitable[KnowledgeSourcePreview],
+]
+FetchKnowledgeSourceFn = Callable[
+    [
+        "AsyncSession",
+        "IntegrationConnection",
+        "IntegrationResource",
+        str,
+    ],
+    Awaitable[KnowledgeSourceDocument],
+]
+
+
+@dataclass(frozen=True)
+class IntegrationKnowledgeSourceDefinition:
+    """Provider-owned Knowledge Base source operations."""
+
+    resource_types: frozenset[str]
+    parse_source: ParseKnowledgeSourceFn
+    search: SearchKnowledgeSourcesFn
+    preview: PreviewKnowledgeSourceFn
+    fetch: FetchKnowledgeSourceFn
+
+
+@dataclass(frozen=True)
 class IntegrationPreviewDefinition:
     """One provider-owned preview kind exposed through the generic route."""
 
@@ -202,6 +286,7 @@ class IntegrationProviderPlugin:
     entity_resolvers: tuple["EntityResolverDefinition", ...] = ()
     event_definition: IntegrationEventDefinition | None = None
     table_scope_adapter: "TableScopeAdapter | None" = None
+    knowledge_source: IntegrationKnowledgeSourceDefinition | None = None
 
 
 PROVIDER_PLUGINS: dict[str, IntegrationProviderPlugin] = {}

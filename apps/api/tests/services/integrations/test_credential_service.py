@@ -9,6 +9,7 @@ from sqlalchemy import func, select, update
 from core.database import set_session_tenant_context
 from core.exceptions.integration import (
     IntegrationAuthError,
+    IntegrationNotFoundError,
     IntegrationRateLimitError,
     IntegrationValidationError,
 )
@@ -241,6 +242,18 @@ async def test_revoked_credential_is_rejected_by_freshness_seam(db_session) -> N
 
     with pytest.raises(IntegrationAuthError, match="revoked"):
         await ensure_fresh_credential(db_session, credential_id=credential.id)
+
+
+async def test_freshness_seam_rejects_a_mismatched_expected_binding(db_session) -> None:
+    credential = await _stored(db_session)
+
+    with pytest.raises(IntegrationNotFoundError):
+        await ensure_fresh_credential(
+            db_session,
+            credential_id=credential.id,
+            expected_provider_key=credential.provider_key,
+            expected_owner=(None, uuid4()),
+        )
 
 
 @pytest.mark.parametrize("revoked_state", ["connection", "credential"])

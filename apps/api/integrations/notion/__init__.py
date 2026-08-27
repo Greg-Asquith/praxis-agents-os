@@ -13,6 +13,7 @@ from .client import NOTION_API_VERSION
 from .discover_resources import discover_resources
 from .entity_resolvers import ENTITY_RESOLVERS
 from .identity import extract_token_identity, fetch_token_identity
+from .knowledge_source import KNOWLEDGE_SOURCE
 from .settings import notion_settings
 from .tools import TOOL_DEFINITIONS
 
@@ -66,4 +67,5 @@ PROVIDER = IntegrationProviderPlugin(
     oauth_config=oauth_config,
     tool_definitions=TOOL_DEFINITIONS,
     entity_resolvers=ENTITY_RESOLVERS,
+    knowledge_source=KNOWLEDGE_SOURCE,
 )

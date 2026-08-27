@@ -315,7 +315,11 @@ follows:
   provider retry handling. Data-source records cap compact properties at 24 KiB
   each and report omitted properties; every complete Notion tool result must fit
   within a 768 KiB serialized UTF-8 budget. Provider-authored content stays
-  untrusted. Notion writes remain pending.
+  untrusted. A provider-neutral Knowledge Base source contribution and the
+  Notion page adapter provide bounded search, preview, and canonical Markdown
+  fetch operations for the pending import flow. The provider catalog declares
+  this support without a provider-name branch. Notion Knowledge Base routes and
+  ingestion remain pending. Notion writes remain pending.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

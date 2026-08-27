@@ -109,6 +109,7 @@ class ProviderRead(BaseModel):
     capability_flags: frozenset[str]
     requires_discovery: bool
     table_scopes_supported: bool
+    knowledge_source_supported: bool
     configured: bool
     configured_auth_modes: dict[str, bool]
 

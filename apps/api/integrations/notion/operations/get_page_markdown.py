@@ -15,7 +15,12 @@ from .utils import bounded_utf8, untrusted_text
 MAX_MARKDOWN_BYTES = 64 * 1024
 
 
-async def get_page_markdown(client: NotionClient, *, page_id: str) -> dict[str, Any]:
+async def get_page_markdown(
+    client: NotionClient,
+    *,
+    page_id: str,
+    max_bytes: int = MAX_MARKDOWN_BYTES,
+) -> dict[str, Any]:
     payload = await client.get(
         f"pages/{quote(page_id, safe='')}/markdown",
         operation="get_page_markdown",
@@ -27,9 +32,7 @@ async def get_page_markdown(client: NotionClient, *, page_id: str) -> dict[str, 
             provider_key="notion",
             operation="get_page_markdown",
         )
-    markdown, bytes_returned, truncated = bounded_utf8(
-        payload["markdown"], max_bytes=MAX_MARKDOWN_BYTES
-    )
+    markdown, bytes_returned, truncated = bounded_utf8(payload["markdown"], max_bytes=max_bytes)
     unknown = payload.get("unknown_block_ids")
     return {
         "markdown": untrusted_text(

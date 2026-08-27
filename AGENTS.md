@@ -109,6 +109,11 @@ it as pending instead of implying it works.
 - Read nearby code before editing and follow existing local patterns. Keep
   changes focused; do the simplest thing that works well and avoid
   refactors, new abstractions, or features beyond what the task requires.
+- Keep functions easy to follow. Treat [cyclomatic complexity](https://oxc.rs/docs/guide/usage/linter/rules/eslint/complexity)
+  as design feedback when adding or changing code: avoid accumulating branches
+  and split complex control flow into focused helpers when that improves
+  clarity. This is a guideline, not a fixed threshold or a reason to rewrite
+  otherwise-sound existing code.
 - Add tests in proportion to risk, especially around auth, permissions, audit
   records, scheduling, migrations, approvals, and provider boundaries.
 - Do not commit secrets, generated caches, local virtualenvs, local databases,
