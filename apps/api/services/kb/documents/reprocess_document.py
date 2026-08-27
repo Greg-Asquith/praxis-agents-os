@@ -18,7 +18,12 @@ from services.kb.documents.utils import (
     require_kb_write_access,
     user_provenance,
 )
-from services.kb.domain import KB_STATUS_PENDING, KB_STATUS_PROCESSING
+from services.kb.domain import (
+    KB_SOURCE_INTEGRATION,
+    KB_STATUS_PENDING,
+    KB_STATUS_PROCESSING,
+    KB_SYNC_PENDING,
+)
 from services.kb.schemas import KBDocumentRead
 from services.kb.utils import document_origin_ref
 from services.kb.write_policy import enforce_kb_write_policy
@@ -58,6 +63,8 @@ async def reprocess_document(
         existing=document,
     )
     document.status = KB_STATUS_PENDING
+    if document.source_type == KB_SOURCE_INTEGRATION:
+        document.source_sync_status = KB_SYNC_PENDING
     document.processing_error = None
     document.processing_attempts = 0
     await enqueue_job(

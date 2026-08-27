@@ -173,6 +173,15 @@ class KBFileDocumentCreateRequest(BaseModel):
     is_private: bool = False
 
 
+class KBIntegrationDocumentCreateRequest(BaseModel):
+    """Import one provider-backed document through a personal connection."""
+
+    integration_resource_id: UUID
+    source: str | dict[str, Any]
+    title: str | None = Field(default=None, min_length=1, max_length=KB_DOCUMENT_TITLE_MAX_CHARS)
+    is_private: bool = True
+
+
 class KBDocumentUpdateRequest(BaseModel):
     """Editable fields for one knowledge document."""
 

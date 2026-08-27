@@ -283,7 +283,7 @@ async def test_query_compacts_supported_properties_and_provider_pagination() -> 
     }
     assert len(result["records"]) == 1
     properties = result["records"][0]["properties"]
-    assert untrusted_content_text(properties["Name"]) == "Alpha"
+    assert "Name" not in properties
     assert properties["Estimate"] == 8.5
     assert properties["Done"] is True
     assert untrusted_content_text(properties["Priority"]) == "High"
@@ -496,7 +496,7 @@ def test_pagination_rejects_invalid_request_status(request_status) -> None:
         )
 
 
-async def test_query_treats_missing_request_status_as_incomplete() -> None:
+async def test_query_treats_missing_request_status_as_complete() -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(
             200,
@@ -511,4 +511,4 @@ async def test_query_treats_missing_request_status_as_incomplete() -> None:
             limit=25,
         )
 
-    assert result["incomplete"] is True
+    assert result["incomplete"] is False

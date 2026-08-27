@@ -23,7 +23,7 @@ from models.files import FileRevision
 from models.kb import KBDocument
 from services.files.contract import is_editable
 from services.files.utils import private_ref_from_key
-from services.kb.domain import KB_SOURCE_UPLOAD, KB_SOURCE_URL
+from services.kb.domain import KB_SOURCE_INTEGRATION, KB_SOURCE_UPLOAD, KB_SOURCE_URL
 from services.storage.factory import get_storage_provider
 from utils.digests import sha256_text as compute_markdown_hash
 from utils.document_markdown import convert_document_to_markdown, truncate_markdown
@@ -75,6 +75,8 @@ def require_kb_workspace_id(workspace_id: UUID | None) -> UUID:
 def document_origin_ref(document: KBDocument) -> str | None:
     """Return the durable source reference used for write provenance."""
     if document.source_type == KB_SOURCE_URL:
+        return document.external_url
+    if document.source_type == KB_SOURCE_INTEGRATION:
         return document.external_url
     if document.source_type == KB_SOURCE_UPLOAD and document.file_revision_id is not None:
         return str(document.file_revision_id)

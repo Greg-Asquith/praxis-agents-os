@@ -125,6 +125,7 @@ async def preview_source(
             **canonical_reference.model_dump(mode="json"),
             "page_id": _normalized_page_id(canonical_reference.page_id),
         },
+        external_id=_normalized_page_id(canonical_reference.page_id),
         title=untrusted_content_text(metadata["title"])[:500] or "(untitled)",
         url=_validated_page_url(
             metadata["url"],

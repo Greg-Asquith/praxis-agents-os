@@ -19,6 +19,7 @@ from services.kb.domain import (
     KB_SOURCE_MANUAL,
     KB_SOURCE_UPLOAD,
     KB_SOURCE_URL,
+    KB_SYNC_PENDING,
 )
 from services.kb.ensure_sweep_job import ensure_kb_sweep_job
 from services.kb.utils import compute_markdown_hash, validate_source_url
@@ -26,6 +27,15 @@ from services.kb.write_policy import (
     KBProvenance,
     enforce_kb_write_policy,
     lock_and_find_kb_duplicate,
+)
+
+_INTEGRATION_META_KEYS = frozenset(
+    {
+        "provider_key",
+        "source_title",
+        "last_source_updated_at",
+        "last_error_code",
+    }
 )
 
 
@@ -39,6 +49,8 @@ async def create_kb_document(
     content: str | None = None,
     url: str | None = None,
     file_revision_id: UUID | None = None,
+    external_id: str | None = None,
+    integration_resource_id: UUID | None = None,
     is_private: bool = False,
     annotate: bool | None = None,
     meta: dict[str, Any] | None = None,
@@ -57,17 +69,11 @@ async def create_kb_document(
             field="source_type",
             details={"planned_owner": "knowledge document sources"},
         )
-    if source_type == KB_SOURCE_INTEGRATION:
-        raise AppValidationError(
-            "Integration knowledge sources are pending provider source support",
-            field="source_type",
-            details={"planned_owner": "integration knowledge sources"},
-        )
-
     canonical_content: str | None = None
     content_hash = ""
     external_url: str | None = None
     source_updated_at = None
+    document_meta = dict(meta or {})
 
     if source_type == KB_SOURCE_MANUAL:
         if content is None or not content.strip():
@@ -82,6 +88,33 @@ async def create_kb_document(
             db,
             workspace_id=workspace_id,
             file_revision_id=file_revision_id,
+        )
+    elif source_type == KB_SOURCE_INTEGRATION:
+        external_id = _require_integration_external_id(external_id)
+        if integration_resource_id is None:
+            raise AppValidationError(
+                "Integration documents require a source resource",
+                field="integration_resource_id",
+            )
+        if created_by_user_id is None:
+            raise AppValidationError(
+                "Integration documents require a creating user",
+                field="created_by_user_id",
+            )
+        if url is None or not url.strip():
+            raise AppValidationError(
+                "Integration documents require a source URL",
+                field="url",
+            )
+        external_url = url.strip()
+        document_meta = _validate_integration_meta(document_meta)
+
+    if source_type != KB_SOURCE_INTEGRATION and (
+        external_id is not None or integration_resource_id is not None
+    ):
+        raise AppValidationError(
+            "Integration source bindings require an integration document",
+            field="integration_resource_id",
         )
 
     effective_provenance = provenance or KBProvenance(
@@ -115,11 +148,14 @@ async def create_kb_document(
         content_hash=content_hash,
         content_md=canonical_content,
         file_revision_id=file_revision_id,
+        integration_resource_id=integration_resource_id,
+        external_id=external_id,
         external_url=external_url,
+        source_sync_status=(KB_SYNC_PENDING if source_type == KB_SOURCE_INTEGRATION else None),
         is_private=is_private,
         created_by_user_id=created_by_user_id,
         annotation_enabled=ANNOTATION_DEFAULTS[source_type] if annotate is None else annotate,
-        meta=dict(meta or {}),
+        meta=document_meta,
     )
     db.add(document)
     await db.flush()
@@ -136,6 +172,45 @@ async def create_kb_document(
     )
     await ensure_kb_sweep_job(db)
     return document
+
+
+def _require_integration_external_id(external_id: str | None) -> str:
+    if external_id is None or not external_id.strip():
+        raise AppValidationError(
+            "Integration documents require an external source ID",
+            field="external_id",
+        )
+    normalized = external_id.strip()
+    if len(normalized) > 255:
+        raise AppValidationError(
+            "Integration source ID must be 255 characters or fewer",
+            field="external_id",
+        )
+    return normalized
+
+
+def _validate_integration_meta(meta: dict[str, Any]) -> dict[str, Any]:
+    if set(meta).difference(_INTEGRATION_META_KEYS):
+        raise AppValidationError(
+            "Integration document metadata contains unsupported fields",
+            field="meta",
+        )
+    provider_key = meta.get("provider_key")
+    source_title = meta.get("source_title")
+    if not isinstance(provider_key, str) or not provider_key.strip():
+        raise AppValidationError(
+            "Integration documents require a provider key",
+            field="meta",
+        )
+    if not isinstance(source_title, str) or not source_title.strip():
+        raise AppValidationError(
+            "Integration documents require a source title",
+            field="meta",
+        )
+    normalized = dict(meta)
+    normalized["provider_key"] = provider_key.strip()[:64]
+    normalized["source_title"] = source_title.strip()[:500]
+    return normalized
 
 
 async def _validate_file_revision(

@@ -149,6 +149,8 @@ def compact_properties(payload: Any, *, page_id: str) -> CompactPropertiesResult
         if not name or not isinstance(raw_property, Mapping):
             continue
         property_type = str(raw_property.get("type", "unknown"))[:100]
+        if property_type == "title":
+            continue
         value = _compact_property(raw_property, property_type, page_id=page_id)
         candidate = {**result, name: value}
         if serialized_json_bytes(candidate) > MAX_COMPACT_PROPERTIES_BYTES:

@@ -161,7 +161,6 @@ async def test_upload_requires_revision_in_the_same_workspace(
     ("source_type", "message"),
     [
         ("conversation", "document-source workflow"),
-        ("integration", "provider source support"),
     ],
 )
 async def test_unavailable_source_producers_are_rejected_honestly(
@@ -176,6 +175,44 @@ async def test_unavailable_source_producers_are_rejected_honestly(
             workspace_id=kb_actors.workspace.id,
             source_type=source_type,
             title="Pending source",
+        )
+
+
+async def test_integration_create_requires_complete_binding(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+) -> None:
+    with pytest.raises(AppValidationError, match="source resource"):
+        await create_kb_document(
+            db_session,
+            workspace_id=kb_actors.workspace.id,
+            source_type="integration",
+            title="Notion guide",
+            created_by_user_id=kb_actors.user.id,
+            external_id="page-id",
+            url="https://www.notion.so/Guide-0123456789abcdef0123456789abcdef",
+        )
+
+    with pytest.raises(AppValidationError, match="integration document"):
+        await create_kb_document(
+            db_session,
+            workspace_id=kb_actors.workspace.id,
+            source_type="manual",
+            title="Manual guide",
+            content="Manual content.",
+            external_id="page-id",
+        )
+
+    with pytest.raises(AppValidationError, match="provider key"):
+        await create_kb_document(
+            db_session,
+            workspace_id=kb_actors.workspace.id,
+            source_type="integration",
+            title="Notion guide",
+            created_by_user_id=kb_actors.user.id,
+            integration_resource_id=uuid4(),
+            external_id="page-id",
+            url="https://www.notion.so/Guide-0123456789abcdef0123456789abcdef",
         )
 
 

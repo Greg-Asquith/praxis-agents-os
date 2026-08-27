@@ -317,9 +317,15 @@ follows:
   within a 768 KiB serialized UTF-8 budget. Provider-authored content stays
   untrusted. A provider-neutral Knowledge Base source contribution and the
   Notion page adapter provide bounded search, preview, and canonical Markdown
-  fetch operations for the pending import flow. The provider catalog declares
-  this support without a provider-name branch. Notion Knowledge Base routes and
-  ingestion remain pending. Notion writes remain pending.
+  fetch operations. The provider catalog declares this support without a
+  provider-name branch. The import service creates private documents by
+  default, and ingestion resolves the creator's personal grant on a dedicated
+  runtime session carrying workspace and user context. The workspace-owned job
+  session remains workspace-only, and provider calls run after the dedicated
+  session commits. Import and ingestion revalidate workspace and source access
+  after provider reads before they persist content. Notion Knowledge Base
+  routes, fail-closed access loss, periodic reconciliation, and management UI
+  remain pending. Notion writes remain pending.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

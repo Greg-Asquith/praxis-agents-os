@@ -132,6 +132,7 @@ class KnowledgeSourcePreview:
     """Bounded provider source preview returned to the management UI."""
 
     reference: dict[str, Any]
+    external_id: str
     title: str
     url: str
     source_updated_at: datetime | None

@@ -2,6 +2,7 @@
 
 """Ingest one knowledge-base document into lexical chunks."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -12,17 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.kb import KBChunk, KBDocument
+from services.integrations.plugin import KnowledgeSourceDocument
 from services.jobs.utils import sanitize_error_message
 from services.kb.annotation import annotate_chunks
 from services.kb.chunking import chunk_markdown
 from services.kb.domain import (
+    KB_SOURCE_INTEGRATION,
     KB_SOURCE_MANUAL,
     KB_SOURCE_UPLOAD,
     KB_SOURCE_URL,
     KB_STATUS_ERROR,
     KB_STATUS_PROCESSING,
     KB_STATUS_READY,
+    KB_SYNC_READY,
 )
+from services.kb.integration_sources.fetch import fetch_integration_source
 from services.kb.utils import (
     compute_markdown_hash,
     convert_html_to_markdown,
@@ -63,7 +68,8 @@ async def ingest_kb_document(
     await db.commit()
 
     try:
-        markdown = await _load_markdown(db, document)
+        loaded = await _load_markdown(db, document)
+        markdown = loaded.markdown
         content_hash = compute_markdown_hash(markdown)
         duplicate = await lock_and_find_kb_duplicate(
             db,
@@ -86,6 +92,7 @@ async def ingest_kb_document(
             duplicate=duplicate,
         )
         if content_hash == document.content_hash and document.chunk_count > 0:
+            _apply_integration_source_success(document, loaded.source_document)
             document.status = KB_STATUS_READY
             document.processing_error = None
             await db.flush()
@@ -94,7 +101,7 @@ async def ingest_kb_document(
         content_changed = content_hash != document.content_hash
         document.content_md = markdown
         document.content_hash = content_hash
-        if content_changed:
+        if loaded.source_document is None and content_changed:
             document.source_updated_at = datetime.now(UTC)
         # Publish the guarded hash and release its advisory lock before annotation work.
         await db.commit()
@@ -133,8 +140,10 @@ async def ingest_kb_document(
                 model=annotation_model,
             )
 
+        _apply_integration_source_success(document, loaded.source_document)
         document.status = KB_STATUS_READY
         document.processing_error = None
+        await db.flush()
         from services.jobs.enqueue_job import enqueue_job
 
         await enqueue_job(
@@ -177,7 +186,8 @@ async def _load_live_document(
     )
 
 
-async def _load_markdown(db: AsyncSession, document: KBDocument) -> str:
+async def _load_markdown(db: AsyncSession, document: KBDocument) -> "_LoadedMarkdown":
+    source_document = None
     if document.source_type == KB_SOURCE_MANUAL:
         markdown = document.content_md or ""
     elif document.source_type == KB_SOURCE_URL:
@@ -193,6 +203,9 @@ async def _load_markdown(db: AsyncSession, document: KBDocument) -> str:
         if document.file_revision_id is None:
             raise AppValidationError("Upload document has no file revision")
         markdown = await get_revision_markdown(db, document.file_revision_id)
+    elif document.source_type == KB_SOURCE_INTEGRATION:
+        source_document = await fetch_integration_source(document)
+        markdown = source_document.markdown
     else:
         raise AppValidationError("Knowledge-base source producer is not available")
 
@@ -202,4 +215,33 @@ async def _load_markdown(db: AsyncSession, document: KBDocument) -> str:
     )
     if not canonical.strip():
         raise AppValidationError("Knowledge-base document contains no readable content")
-    return canonical
+    return _LoadedMarkdown(markdown=canonical, source_document=source_document)
+
+
+@dataclass(frozen=True)
+class _LoadedMarkdown:
+    markdown: str
+    source_document: KnowledgeSourceDocument | None
+
+
+def _apply_integration_source_success(
+    document: KBDocument,
+    source_document: KnowledgeSourceDocument | None,
+) -> None:
+    if source_document is None:
+        return
+    synced_at = datetime.now(UTC)
+    document.external_id = source_document.external_id
+    document.external_url = source_document.url
+    document.source_updated_at = source_document.source_updated_at
+    document.source_sync_status = KB_SYNC_READY
+    document.source_synced_at = synced_at
+    document.meta = {
+        "provider_key": document.meta.get("provider_key"),
+        "source_title": source_document.title[:500],
+        "last_source_updated_at": (
+            source_document.source_updated_at.isoformat()
+            if source_document.source_updated_at is not None
+            else None
+        ),
+    }

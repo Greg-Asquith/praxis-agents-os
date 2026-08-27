@@ -171,6 +171,7 @@ async def test_preview_accepts_a_url_reference_and_bounds_unicode_markdown(
         preview = await preview_source(None, None, _resource(), parse_source(PAGE_URL))
 
     assert preview.reference["page_id"] == PAGE_ID
+    assert preview.external_id == PAGE_ID
     assert len(preview.markdown_excerpt.encode("utf-8")) <= 8 * 1024
 
 
