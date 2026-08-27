@@ -43,6 +43,7 @@ _SCHEMA_METADATA_KEYS = frozenset(
         "format",
         "maxItems",
         "maxLength",
+        "maxProperties",
         "maximum",
         "minItems",
         "minLength",

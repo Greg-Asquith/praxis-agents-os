@@ -86,6 +86,72 @@ async def test_retry_after_is_honored_capped_and_bounded(monkeypatch) -> None:
     assert sleeps == [7, 7]
 
 
+async def test_overload_retry_after_is_honored_before_success(monkeypatch) -> None:
+    responses = iter([529, 200])
+    sleeps: list[float] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            next(responses),
+            headers={"Retry-After": "0.25"},
+            request=request,
+        )
+
+    original_client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        integration_http.httpx2,
+        "AsyncClient",
+        lambda: original_client(transport=httpx2.MockTransport(handler)),
+    )
+    monkeypatch.setattr(settings, "INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(settings, "INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR", 0.5)
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(integration_http.asyncio, "sleep", fake_sleep)
+
+    response = await integration_http.request_with_retries(
+        "GET",
+        "https://provider.example/resource",
+        operation="read_resource",
+        provider_key="example",
+        policy=IntegrationRequestPolicy.READ,
+    )
+
+    assert response.status_code == 200
+    assert sleeps == [0.25]
+
+
+async def test_overload_exhaustion_maps_to_connection_error(monkeypatch) -> None:
+    attempts = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx2.Response(529, headers={"Retry-After": "0"}, request=request)
+
+    original_client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        integration_http.httpx2,
+        "AsyncClient",
+        lambda: original_client(transport=httpx2.MockTransport(handler)),
+    )
+    monkeypatch.setattr(settings, "INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(integration_http.asyncio, "sleep", AsyncMock())
+
+    with pytest.raises(IntegrationConnectionError):
+        await integration_http.request_with_retries(
+            "GET",
+            "https://provider.example/resource",
+            operation="read_resource",
+            provider_key="example",
+            policy=IntegrationRequestPolicy.READ,
+        )
+
+    assert attempts == 2
+
+
 async def test_transport_attempts_are_counted_across_retries(monkeypatch) -> None:
     responses = iter([503, 503, 200])
 
@@ -161,10 +227,11 @@ async def test_401_maps_without_retry(monkeypatch) -> None:
     assert exc_info.value.failure_disposition is IntegrationFailureDisposition.REJECTED
 
 
-async def test_http_date_retry_after_parser() -> None:
+@pytest.mark.parametrize("status_code", [429, 503, 529])
+async def test_http_date_retry_after_parser(status_code: int) -> None:
     request = httpx2.Request("GET", "https://provider.example")
     response = httpx2.Response(
-        503,
+        status_code,
         headers={"Retry-After": "Fri, 10 Jul 2099 12:00:00 GMT"},
         request=request,
     )
@@ -270,6 +337,7 @@ async def test_timeout_maps_to_timeout_error(monkeypatch) -> None:
     [
         (429, IntegrationRateLimitError, IntegrationFailureDisposition.AMBIGUOUS),
         (503, IntegrationConnectionError, IntegrationFailureDisposition.AMBIGUOUS),
+        (529, IntegrationConnectionError, IntegrationFailureDisposition.AMBIGUOUS),
         (
             httpx2.ConnectError("connect failed"),
             IntegrationConnectionError,

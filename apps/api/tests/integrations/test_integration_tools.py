@@ -21,6 +21,7 @@ from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DE
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
 )
+from integrations.notion.tools import TOOL_DEFINITIONS as NOTION_TOOL_DEFINITIONS
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -50,6 +51,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *AIRTABLE_TOOL_DEFINITIONS,
             *BIGQUERY_TOOL_DEFINITIONS,
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+            *NOTION_TOOL_DEFINITIONS,
         )
     }
     expected = {
@@ -98,6 +100,9 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_analytics_list_report_fields": ("read", "internal", "auto", False),
         "google_analytics_run_realtime_report": ("read", "internal", "auto", False),
         "google_analytics_run_report": ("read", "internal", "auto", False),
+        "notion_search_pages": ("read", "internal", "auto", False),
+        "notion_read_page": ("read", "internal", "auto", False),
+        "notion_query_data_source": ("read", "internal", "auto", False),
     }
     assert set(definitions) == set(expected)
     denylisted = {
@@ -133,6 +138,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *AIRTABLE_TOOL_DEFINITIONS,
         *BIGQUERY_TOOL_DEFINITIONS,
         *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+        *NOTION_TOOL_DEFINITIONS,
     )
 
     for definition in definitions:
@@ -153,6 +159,8 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
                     ".properties.minimums.items",
                 )
             )
+        if definition.name == "notion_query_data_source":
+            allowed_dynamic_markers.append(".NotionRecordData.properties.properties")
         for path in _dynamic_object_paths(definition.output_model.model_json_schema()):
             assert any(marker in path for marker in allowed_dynamic_markers), (
                 definition.name,

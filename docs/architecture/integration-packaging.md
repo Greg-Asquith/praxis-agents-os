@@ -592,6 +592,13 @@ authentication with JSON token bodies, resolves the personal grant from the
 token response or the authenticated bot endpoint, and sends the pinned Notion
 API version on every request. Its package discovers one stable
 `notion_workspace` resource for the grant. The authorization picker controls
-page access; discovery doesn't claim to enumerate those pages. The lazy
-frontend module contributes the provider mark and connection guidance without
-adding runtime tools.
+page access; discovery doesn't claim to enumerate those pages. Three bounded
+read tools search titles, read enhanced Markdown, and query data-source records.
+Search continuation cursors are opaque and bind subsequent requests to the
+active Notion workspace that issued them. Process-local connection pacing
+complements the shared provider retry policy. Each queried record caps its
+compact property payload at 24 KiB and reports whether properties were omitted.
+The complete serialized output of every Notion tool is capped at 768 KiB; an
+oversized result asks the model to retry with a lower result count. The lazy
+frontend module contributes the provider mark, connection guidance, and
+read-result presenters.

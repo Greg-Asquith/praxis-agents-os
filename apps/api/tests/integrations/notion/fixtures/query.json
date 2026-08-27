@@ -1,0 +1,28 @@
+{
+  "object": "list",
+  "results": [
+    {
+      "object": "page",
+      "id": "record-1",
+      "url": "https://www.notion.so/record-1",
+      "last_edited_time": "2026-08-25T11:00:00.000Z",
+      "properties": {
+        "Name": {"type": "title", "title": [{"plain_text": "Alpha"}]},
+        "Notes": {"type": "rich_text", "rich_text": [{"plain_text": "Review this"}]},
+        "Estimate": {"type": "number", "number": 8.5},
+        "Done": {"type": "checkbox", "checkbox": true},
+        "Website": {"type": "url", "url": "https://example.com"},
+        "Owner email": {"type": "email", "email": "dana@example.com"},
+        "Phone": {"type": "phone_number", "phone_number": "800-555-0100"},
+        "Due": {"type": "date", "date": {"start": "2026-09-01", "end": null, "time_zone": null}},
+        "Priority": {"type": "select", "select": {"name": "High"}},
+        "Status": {"type": "status", "status": {"name": "In progress"}},
+        "Tags": {"type": "multi_select", "multi_select": [{"name": "Launch"}, {"name": "P1"}]},
+        "Formula": {"type": "formula", "formula": {"type": "number", "number": 1}}
+      }
+    }
+  ],
+  "next_cursor": "cursor-2",
+  "has_more": true,
+  "request_status": {"type": "incomplete", "incomplete_reason": "time_limit_reached"}
+}

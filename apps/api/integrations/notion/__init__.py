@@ -11,8 +11,10 @@ from services.integrations.plugin import (
 
 from .client import NOTION_API_VERSION
 from .discover_resources import discover_resources
+from .entity_resolvers import ENTITY_RESOLVERS
 from .identity import extract_token_identity, fetch_token_identity
 from .settings import notion_settings
+from .tools import TOOL_DEFINITIONS
 
 NOTION_AUTHORIZATION_URL = "https://api.notion.com/v1/oauth/authorize"
 NOTION_TOKEN_URL = "https://api.notion.com/v1/oauth/token"
@@ -62,4 +64,6 @@ PROVIDER = IntegrationProviderPlugin(
     ),
     discover_resources=discover_resources,
     oauth_config=oauth_config,
+    tool_definitions=TOOL_DEFINITIONS,
+    entity_resolvers=ENTITY_RESOLVERS,
 )

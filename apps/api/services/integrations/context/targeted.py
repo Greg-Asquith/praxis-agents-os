@@ -57,3 +57,31 @@ async def run_context_targets(
         ),
         operation=operation,
     )
+
+
+async def run_context_scope(
+    ctx: "RunContext[RuntimeDeps]",
+    *,
+    binding: "IntegrationToolBinding",
+    provider_scope_id: str,
+    operation: Callable[[ResolvedContextEntry], Awaitable[Any]],
+) -> list[IntegrationContextResult]:
+    """Execute once against exactly one active provider scope."""
+    active_context = ctx.deps.active_context
+    compatible = active_context.compatible_entries(binding) if active_context is not None else ()
+    matching = tuple(entry for entry in compatible if entry.external_id == provider_scope_id)
+    if len(matching) != 1:
+        raise ModelRetry(
+            "The selected continuation is no longer in the active integration context. "
+            "Start the search again."
+        )
+
+    async def execute(entry: ResolvedContextEntry, _operation_input: None) -> Any:
+        return await operation(entry)
+
+    return await _run_authorized_entries(
+        ctx,
+        binding=binding,
+        selected=((matching[0], None),),
+        operation=execute,
+    )

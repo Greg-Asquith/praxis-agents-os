@@ -47,11 +47,11 @@ module.exports = {
     {
       name: "integration-modules-use-published-seams",
       severity: "error",
-      comment: "Integration UI modules stay isolated from application feature internals.",
+      comment: "Integration UI modules use only published shared components and helpers.",
       from: { path: "^src/integrations/(?!contract\\.ts$)" },
       to: {
         path: "^src/",
-        pathNot: "^src/(components/(ui|tool-ui)/|lib/|integrations/)",
+        pathNot: "^src/(components/(ui|tool-ui|markdown)/|lib/|integrations/)",
       },
     },
     {
@@ -68,7 +68,7 @@ module.exports = {
       name: "integration-modules-enter-through-registry",
       severity: "error",
       comment: "Application code reaches provider UI only through its public registry or contract.",
-      from: { path: "^src/(features|routes|app)/" },
+      from: { path: "^src/(components|features|routes|app)/" },
       to: {
         path: "^src/integrations/",
         pathNot: "^src/integrations/(registry|contract)\\.ts$",

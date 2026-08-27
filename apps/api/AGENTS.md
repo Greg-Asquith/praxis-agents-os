@@ -307,8 +307,15 @@ follows:
   and use a Google Cloud client isolated from every other Google service.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
-  resource. Its authorization picker controls page access. The provider has no
-  agent tools until the later read and write slices land.
+  resource. Its authorization picker controls page access. Three code-eligible
+  read tools search shared page and data-source titles, read bounded enhanced
+  Markdown, and query bounded data-source records through scoped Active
+  Context references. Opaque search continuations bind to the active Notion
+  workspace that issued them. Per-connection process pacing complements
+  provider retry handling. Data-source records cap compact properties at 24 KiB
+  each and report omitted properties; every complete Notion tool result must fit
+  within a 768 KiB serialized UTF-8 budget. Provider-authored content stays
+  untrusted. Notion writes remain pending.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials
@@ -547,7 +554,9 @@ follows:
   `TEST_DATABASE_URL` is set; `make api-test` provisions the local test
   database and sets that variable automatically. Use the fixtures in
   `conftest.py` and the helpers in `tests/factories/` and `tests/support/`
-  instead of hand-rolling setup. Live LLM calls are blocked in tests.
+  instead of hand-rolling setup. The session fixture serializes pytest
+  processes that target the same mutable test database; do not bypass that
+  fixture for database-backed tests. Live LLM calls are blocked in tests.
 - The shared database fixture runs ordinary test sessions under `praxis_app`.
   Multi-workspace fixtures must switch tenant context explicitly; use a
   maintenance session only when the behavior under test is intentionally

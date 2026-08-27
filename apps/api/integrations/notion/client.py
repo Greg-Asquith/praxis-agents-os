@@ -7,7 +7,11 @@ from typing import Any
 
 import httpx2
 
-from core.exceptions.integration import IntegrationAuthError, IntegrationValidationError
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationFailureDisposition,
+    IntegrationValidationError,
+)
 from services.integrations.http import (
     IntegrationRequestPolicy,
     request_with_retries,
@@ -40,9 +44,11 @@ class NotionClient:
         access_token: AccessTokenFn,
         *,
         client: httpx2.AsyncClient | None = None,
+        pacing_key: str | None = None,
     ) -> None:
         self._access_token = access_token
         self._client = client
+        self._pacing_key = pacing_key
 
     async def get(
         self,
@@ -51,12 +57,65 @@ class NotionClient:
         operation: str,
         policy: IntegrationRequestPolicy,
     ) -> Any:
+        return await self._request("GET", path, operation=operation, policy=policy)
+
+    async def post(
+        self,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        json: dict[str, Any],
+    ) -> Any:
+        return await self._request(
+            "POST",
+            path,
+            operation=operation,
+            policy=policy,
+            json=json,
+        )
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        **kwargs: Any,
+    ) -> Any:
         token = await resolve_before_dispatch(lambda: self._access_token(False))
         try:
-            response = await self._send(path, operation=operation, policy=policy, token=token)
+            response = await self._send(
+                method,
+                path,
+                operation=operation,
+                policy=policy,
+                token=token,
+                **kwargs,
+            )
         except IntegrationAuthError:
             token = await resolve_before_dispatch(lambda: self._access_token(True))
-            response = await self._send(path, operation=operation, policy=policy, token=token)
+            response = await self._send(
+                method,
+                path,
+                operation=operation,
+                policy=policy,
+                token=token,
+                **kwargs,
+            )
+        content_type = response.headers.get("Content-Type", "").lower()
+        if not content_type.startswith("application/json"):
+            raise IntegrationValidationError(
+                "Notion returned an unsupported response format",
+                provider_key="notion",
+                operation=operation,
+                failure_disposition=(
+                    IntegrationFailureDisposition.AMBIGUOUS
+                    if policy is not IntegrationRequestPolicy.READ
+                    else None
+                ),
+            )
         try:
             return response.json()
         except ValueError as exc:
@@ -65,18 +124,29 @@ class NotionClient:
                 provider_key="notion",
                 operation=operation,
                 original_error=exc,
+                failure_disposition=(
+                    IntegrationFailureDisposition.AMBIGUOUS
+                    if policy is not IntegrationRequestPolicy.READ
+                    else None
+                ),
             ) from exc
 
     async def _send(
         self,
+        method: str,
         path: str,
         *,
         operation: str,
         policy: IntegrationRequestPolicy,
         token: str,
+        **kwargs: Any,
     ) -> httpx2.Response:
+        if self._pacing_key is not None:
+            from .pacing import acquire
+
+            await acquire(self._pacing_key)
         return await request_with_retries(
-            "GET",
+            method,
             f"{NOTION_API_BASE_URL}/{path.lstrip('/')}",
             operation=operation,
             provider_key="notion",
@@ -86,4 +156,5 @@ class NotionClient:
                 "Authorization": f"Bearer {token}",
                 "Notion-Version": NOTION_API_VERSION,
             },
+            **kwargs,
         )

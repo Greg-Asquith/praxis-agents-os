@@ -137,6 +137,7 @@ VALID_TOOL_ICONS = frozenset(
         "google_analytics",
         "airtable",
         "bigquery",
+        "notion",
         "chart",
         "code",
         "workflow",

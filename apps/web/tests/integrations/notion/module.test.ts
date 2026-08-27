@@ -16,7 +16,11 @@ describe("Notion integration module", () => {
 
     expect(providerKeyForToolName("notion_search_pages")).toBe("notion")
     expect(integrationIcon("notion")).toBe(notionModule.icons.notion)
-    expect(integrationToolRowPresenters("notion")).toEqual([])
+    expect(integrationToolRowPresenters("notion").map((presenter) => presenter.key)).toEqual([
+      "notion-search-pages",
+      "notion-read-page",
+      "notion-query-data-source",
+    ])
     expect(notionModule.catalogDescription).toContain("choose which pages")
   })
 

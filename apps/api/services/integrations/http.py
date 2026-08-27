@@ -226,7 +226,7 @@ async def _request_with_client(
 
 
 def _retry_after_seconds(response: httpx2.Response) -> float | None:
-    if response.status_code not in {429, 503}:
+    if response.status_code not in {429, 503, 529}:
         return None
     raw = response.headers.get("Retry-After")
     if not raw:

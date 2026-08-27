@@ -1,5 +1,6 @@
 """BigQuery cache tools, query authorization, bounds, and audit."""
 
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -95,6 +96,10 @@ async def test_cache_tools_scope_rows_to_active_resources(
     assert schema["requires_partition_filter"] is True
     assert schema["fields"][0]["name"] == "report_date"
     assert schema["fields"][0]["description"] == "Reporting date"
+    assert listed["datasets"][0]["tables"][0]["last_synced_at"] == cached.last_synced_at.isoformat()
+    assert schema["last_synced_at"] == cached.last_synced_at.isoformat()
+    json.dumps(listed, allow_nan=False)
+    json.dumps(schema, allow_nan=False)
     assert audit.await_count == 2
     assert {call.kwargs["operation"] for call in audit.await_args_list} == {
         "list_cached_tables",

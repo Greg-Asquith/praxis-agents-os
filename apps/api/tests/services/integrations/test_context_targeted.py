@@ -11,7 +11,7 @@ from pydantic_ai import ModelRetry
 from services.agents.runtime.entity_references.domain import ScopedEntityReference
 from services.agents.runtime.tools.contract import IntegrationToolBinding
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
-from services.integrations.context.targeted import run_context_targets
+from services.integrations.context.targeted import run_context_scope, run_context_targets
 
 pytestmark = pytest.mark.asyncio
 
@@ -122,3 +122,51 @@ async def test_target_missing_from_active_context_fails_closed() -> None:
             references=[_reference(removed, "m1")],
             operation=AsyncMock(),
         )
+
+
+async def test_single_scope_executes_only_the_exact_active_entry() -> None:
+    first = _entry("first@example.com")
+    second = _entry("second@example.com")
+    operation = AsyncMock(return_value="continued")
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, second))),
+        tool_name="gmail_read_message",
+    )
+    binding = IntegrationToolBinding(
+        provider_keys=frozenset({"gmail"}),
+        resource_types=frozenset({"gmail_mailbox"}),
+    )
+
+    results = await run_context_scope(
+        ctx,
+        binding=binding,
+        provider_scope_id=second.external_id,
+        operation=operation,
+    )
+
+    operation.assert_awaited_once_with(second)
+    assert results[0].data == "continued"
+
+
+async def test_single_scope_fails_closed_when_the_scope_is_missing_or_ambiguous() -> None:
+    first = _entry("shared@example.com")
+    duplicate = _entry("shared@example.com")
+    operation = AsyncMock()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, duplicate))),
+        tool_name="gmail_read_message",
+    )
+    binding = IntegrationToolBinding(
+        provider_keys=frozenset({"gmail"}),
+        resource_types=frozenset({"gmail_mailbox"}),
+    )
+
+    for provider_scope_id in ("shared@example.com", "missing@example.com"):
+        with pytest.raises(ModelRetry, match="no longer in the active integration context"):
+            await run_context_scope(
+                ctx,
+                binding=binding,
+                provider_scope_id=provider_scope_id,
+                operation=operation,
+            )
+    operation.assert_not_awaited()

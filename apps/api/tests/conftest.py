@@ -4,7 +4,7 @@
 # ruff: noqa: E402
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
@@ -20,7 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
-from tests.support.database import make_async_test_database_url, require_test_database_url
+from tests.support.database import (
+    make_async_test_database_url,
+    require_test_database_url,
+    serialize_test_database,
+)
 from tests.support.settings import configure_test_environment
 
 configure_test_environment()
@@ -300,18 +304,19 @@ def test_database_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def migrated_test_database(test_database_url: str) -> str:
-    """Apply migrations once to the configured PostgreSQL test database."""
+def migrated_test_database(test_database_url: str) -> Iterator[str]:
+    """Serialize one database across pytest processes and apply migrations."""
     from alembic.config import Config
 
     from alembic import command
 
-    os.environ["DATABASE_URL"] = test_database_url
-    os.environ["DATABASE_MAINTENANCE_URL"] = test_database_url
-    api_root = Path(__file__).resolve().parents[1]
-    config = Config(str(api_root / "alembic.ini"))
-    command.upgrade(config, "heads")
-    return test_database_url
+    with serialize_test_database(test_database_url):
+        os.environ["DATABASE_URL"] = test_database_url
+        os.environ["DATABASE_MAINTENANCE_URL"] = test_database_url
+        api_root = Path(__file__).resolve().parents[1]
+        config = Config(str(api_root / "alembic.ini"))
+        command.upgrade(config, "heads")
+        yield test_database_url
 
 
 @pytest_asyncio.fixture
