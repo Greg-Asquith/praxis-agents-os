@@ -8,7 +8,7 @@ from pydantic import Field, field_validator, model_validator
 
 from services.integrations.entity_references import ScopedEntityReference
 
-from ..recommendation_utils import recommendation_customer_id
+from ..tools.utils.recommendation_utils import recommendation_customer_id
 
 
 class GoogleAdsRecommendationReference(ScopedEntityReference):

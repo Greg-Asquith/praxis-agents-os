@@ -11,7 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from integrations.google_ads.operations.list_recommendations import list_recommendations
-from integrations.google_ads.recommendation_utils import (
+from apps.api.integrations.google_ads.tools.utils.recommendation_utils import (
     affected_campaigns,
     recommendation_type_label,
 )

@@ -11,7 +11,7 @@ from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from integrations.google_ads.operations.mutation_outcomes import thaw_fields
-from integrations.google_ads.recommendation_utils import (
+from apps.api.integrations.google_ads.tools.utils.recommendation_utils import (
     affected_campaign_label,
     affected_campaigns,
 )

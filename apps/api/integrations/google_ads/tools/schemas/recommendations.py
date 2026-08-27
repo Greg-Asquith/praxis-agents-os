@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from integrations.google_ads.recommendation_utils import (
+from apps.api.integrations.google_ads.tools.utils.recommendation_utils import (
     ad_group_customer_id,
     recommendation_customer_id,
 )

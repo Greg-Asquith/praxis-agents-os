@@ -8,7 +8,7 @@ from typing import Any
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from ..recommendation_utils import recommendation_customer_id
+from ..tools.utils.recommendation_utils import recommendation_customer_id
 from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
