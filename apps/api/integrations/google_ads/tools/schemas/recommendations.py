@@ -6,10 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from apps.api.integrations.google_ads.tools.utils.recommendation_utils import (
-    ad_group_customer_id,
-    recommendation_customer_id,
-)
+from integrations.google_ads.references.recommendation import recommendation_customer_id
 from services.integrations.context.results import (
     IntegrationFanOutEntry,
     IntegrationFanOutOutput,
@@ -48,7 +45,7 @@ class GoogleAdsKeywordParameters(_RecommendationParameterBase):
 
     @model_validator(mode="after")
     def validate_ad_group_scope(self) -> "GoogleAdsKeywordParameters":
-        if ad_group_customer_id(self.ad_group) != recommendation_customer_id(
+        if self.ad_group.split("/")[1] != recommendation_customer_id(
             self.recommendation_resource_name
         ):
             raise ValueError("Keyword ad group must belong to the recommendation customer")

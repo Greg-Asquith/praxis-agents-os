@@ -11,10 +11,6 @@ from typing import Any
 from uuid import UUID
 
 from integrations.google_ads.operations.list_recommendations import list_recommendations
-from apps.api.integrations.google_ads.tools.utils.recommendation_utils import (
-    affected_campaigns,
-    recommendation_type_label,
-)
 from integrations.google_ads.references import GoogleAdsRecommendationReference
 from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
@@ -32,6 +28,7 @@ from .utils import MAX_GOOGLE_ADS_ENTITY_CURSOR_LENGTH, entity_search_fingerprin
 
 _MAX_QUERY_ROWS = 10_000
 _CURSOR_PATTERN = re.compile(r"3\.([0-9a-f]{16})\.(\d{1,6})")
+_CAMPAIGN_RESOURCE_PATTERN = re.compile(r"^customers/\d{1,32}/campaigns/\d{1,32}$")
 
 
 @dataclass(frozen=True)
@@ -39,12 +36,25 @@ class _RecommendationCursor:
     next_choice_index: int
 
 
+def _affected_campaigns(recommendation: Mapping[str, Any]) -> tuple[str, ...]:
+    values: list[str] = []
+    campaign = recommendation.get("campaign")
+    if isinstance(campaign, str) and campaign:
+        values.append(campaign)
+    campaigns = recommendation.get("campaigns")
+    if isinstance(campaigns, list):
+        values.extend(value for value in campaigns if isinstance(value, str) and value)
+    return tuple(
+        dict.fromkeys(value for value in values if _CAMPAIGN_RESOURCE_PATTERN.fullmatch(value))
+    )
+
+
 def _choice(entry, recommendation: Mapping[str, Any]) -> EntityChoice | None:
     resource_name = str(recommendation.get("resourceName", "")).strip()
     recommendation_type = str(recommendation.get("type", "")).strip()
     if not resource_name or not recommendation_type or recommendation.get("dismissed") is True:
         return None
-    campaign_resources = affected_campaigns(recommendation)
+    campaign_resources = _affected_campaigns(recommendation)
     description = (
         f"Affects {len(campaign_resources)} campaign{'s' if len(campaign_resources) != 1 else ''}"
         if campaign_resources
@@ -55,7 +65,7 @@ def _choice(entry, recommendation: Mapping[str, Any]) -> EntityChoice | None:
             customer_id=entry.external_id,
             resource_name=resource_name,
             recommendation_type=recommendation_type,
-            label=recommendation_type_label(recommendation_type),
+            label=recommendation_type.replace("_", " ").title(),
             description=description,
             scope_label=entry.display_name,
         ),

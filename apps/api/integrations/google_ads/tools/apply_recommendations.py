@@ -11,10 +11,6 @@ from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from integrations.google_ads.operations.mutation_outcomes import thaw_fields
-from apps.api.integrations.google_ads.tools.utils.recommendation_utils import (
-    affected_campaign_label,
-    affected_campaigns,
-)
 from integrations.google_ads.references import GoogleAdsRecommendationReference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
@@ -61,6 +57,7 @@ from .utils.mutation_evidence import (
     google_ads_account_target,
     terminal_operation_detail,
 )
+from .utils.recommendations import affected_campaign_label, affected_campaigns
 from .verifiers import verify_recommendations
 
 _PARAMETER_TYPES_BY_RECOMMENDATION: dict[str, frozenset[str]] = {

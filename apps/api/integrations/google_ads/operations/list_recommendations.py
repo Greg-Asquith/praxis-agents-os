@@ -8,8 +8,7 @@ from typing import Any
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from ..tools.utils.recommendation_utils import recommendation_customer_id
-from .utils import stream_rows
+from .utils import recommendation_customer_id, stream_rows
 
 
 async def list_recommendations(

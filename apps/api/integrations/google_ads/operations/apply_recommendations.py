@@ -8,13 +8,16 @@ from typing import Any
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from ..tools.utils.recommendation_utils import recommendation_customer_id
 from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
     build_mutation_ledger,
 )
-from .utils import grouped_partial_failure_errors, valid_exact_mutation_results
+from .utils import (
+    grouped_partial_failure_errors,
+    recommendation_customer_id,
+    valid_exact_mutation_results,
+)
 
 type GoogleAdsRecommendationApplyOperation = tuple[
     str,

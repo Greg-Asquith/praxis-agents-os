@@ -9,6 +9,9 @@ from typing import Any
 
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
 _ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.id")
+_RECOMMENDATION_RESOURCE_PATTERN = re.compile(
+    r"^customers/(?P<customer_id>\d{1,32})/recommendations/[A-Za-z0-9_.~-]{1,256}$"
+)
 _MAX_ENTITY_ID = (1 << 63) - 1
 _GAQL_LIKE_LITERAL_ESCAPES = {
     "\\": "\\\\",
@@ -18,6 +21,12 @@ _GAQL_LIKE_LITERAL_ESCAPES = {
     "%": "[%]",
     "_": "[_]",
 }
+
+
+def recommendation_customer_id(resource_name: str) -> str | None:
+    """Return the customer ID from one valid recommendation resource name."""
+    match = _RECOMMENDATION_RESOURCE_PATTERN.fullmatch(resource_name)
+    return match.group("customer_id") if match is not None else None
 
 
 def stream_rows(payload: Any, *, max_rows: int | None = None) -> list[dict[str, Any]]:

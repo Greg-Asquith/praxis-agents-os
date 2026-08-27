@@ -2,13 +2,22 @@
 
 """Provider-owned reference to one Google Ads recommendation."""
 
+import re
 from typing import Any, ClassVar, Literal
 
 from pydantic import Field, field_validator, model_validator
 
 from services.integrations.entity_references import ScopedEntityReference
 
-from ..tools.utils.recommendation_utils import recommendation_customer_id
+_RESOURCE_NAME_PATTERN = re.compile(
+    r"^customers/(?P<customer_id>\d{1,32})/recommendations/[A-Za-z0-9_.~-]{1,256}$"
+)
+
+
+def recommendation_customer_id(resource_name: str) -> str | None:
+    """Return the customer ID from one valid recommendation resource name."""
+    match = _RESOURCE_NAME_PATTERN.fullmatch(resource_name)
+    return match.group("customer_id") if match is not None else None
 
 
 class GoogleAdsRecommendationReference(ScopedEntityReference):
