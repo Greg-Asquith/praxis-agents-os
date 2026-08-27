@@ -55,5 +55,5 @@ async def query_data_source(
         "count": len(records),
         "has_more": envelope["has_more"],
         "next_cursor": envelope["next_cursor"],
-        "incomplete": request_status is None or request_status.get("type") == "incomplete",
+        "incomplete": request_status is not None and request_status.get("type") == "incomplete",
     }

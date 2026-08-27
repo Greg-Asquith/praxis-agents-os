@@ -20,6 +20,7 @@ const FENCE_START = /^\s*(`{3,}|~{3,})/
 const MARKDOWN_BLOCK_START = /^\s*(?:#{1,6}\s|>|[-+*]\s|\d+[.)]\s|`{3,}|~{3,}|---(?:\s|$))/
 const NOTION_EMPTY_BLOCK = /^\s*<empty-block\s*\/>\s*$/
 const NOTION_ESCAPED_MARKDOWN = /\\([\\`*_[\]#~])/g
+const NOTION_DATE_KEYS = new Set(["start", "end", "time_zone"])
 
 export type NotionSearchData = {
   coverageNote: string
@@ -193,8 +194,16 @@ export function displayNotionValue(value: unknown): string {
     return value.map(displayNotionValue).join(", ")
   }
   if (isRecord(value)) {
-    if (Object.keys(value).length === 1 && value["type"] === "formula") {
-      return "Result unavailable"
+    const keys = Object.keys(value)
+    if (
+      keys.length === 1 &&
+      (typeof value["type"] === "string" || typeof value["unsupported_formula_type"] === "string")
+    ) {
+      return "Unavailable"
+    }
+    const notionDate = displayNotionDate(value, keys)
+    if (notionDate !== null) {
+      return notionDate
     }
     return Object.entries(value)
       .map(([key, item]) => `${humanizeKey(key)}: ${displayNotionValue(item)}`)
@@ -207,6 +216,20 @@ export function displayNotionValue(value: unknown): string {
     return String(value)
   }
   return value === null || value === undefined ? "—" : "Unsupported value"
+}
+
+function displayNotionDate(value: Record<string, unknown>, keys: string[]): string | null {
+  if (keys.length === 0 || !keys.every((key) => NOTION_DATE_KEYS.has(key))) {
+    return null
+  }
+  const start = nodeText(value["start"])
+  if (start === null) {
+    return null
+  }
+  const end = nodeText(value["end"])
+  const timeZone = nodeText(value["time_zone"])
+  const range = end === null ? start : `${start} – ${end}`
+  return timeZone === null ? range : `${range} (${timeZone})`
 }
 
 function parseSearchItem(value: unknown): NotionSearchItem | null {
@@ -307,5 +330,7 @@ function notionRecordTable(records: NotionRecord[]): { columns: DataColumn[]; ro
 }
 
 function tableValue(value: unknown): unknown {
-  return Array.isArray(value) || isRecord(value) ? displayNotionValue(value) : value
+  return typeof value === "boolean" || Array.isArray(value) || isRecord(value)
+    ? displayNotionValue(value)
+    : value
 }

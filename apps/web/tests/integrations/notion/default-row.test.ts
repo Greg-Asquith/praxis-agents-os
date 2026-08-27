@@ -158,9 +158,13 @@ describe("Notion read-tool presentation", () => {
       last_edited_time: "2026-08-25T10:00:00Z",
       properties: {
         "6 Months": index === 0 ? { type: "formula" } : 6,
+        Archived: index === 0,
+        Due: { start: untrusted("2023-10-13") },
         Estimate: index + 1,
         Priority: untrusted(index === 0 ? "High" : "Normal"),
+        Related: { type: "relation" },
         Tags: [untrusted("Launch"), untrusted("P1")],
+        "Unsupported formula": { unsupported_formula_type: "future_type" },
       },
       properties_truncated: index === 0,
       ...(index === 0 ? { future_quality_note: "Provider supplied a partial row" } : {}),
@@ -197,7 +201,10 @@ describe("Notion read-tool presentation", () => {
     expect(html).toContain("Last edited")
     expect(html).toContain(formatDateTime("2026-08-25T10:00:00Z"))
     expect(html).toContain("Estimate")
-    expect(html).toContain("Result unavailable")
+    expect(html).toContain("Unavailable")
+    expect(html).toContain(">Yes<")
+    expect(html).toContain(">No<")
+    expect(html).toContain(">2023-10-13<")
     expect(html).toContain("Priority")
     expect(html).toContain("Launch, P1")
     expect(html).toContain("Future quality note")
@@ -206,6 +213,9 @@ describe("Notion read-tool presentation", () => {
     expect(html).toContain("Showing 1-25 of 26")
     expect(html).not.toContain("praxis_untrusted")
     expect(html).not.toContain("Type: formula")
+    expect(html).not.toContain("Type: relation")
+    expect(html).not.toContain("Unsupported formula type")
+    expect(html).not.toContain("Start: 2023-10-13")
   })
 
   it("falls through to the declarative row when search or query payloads are malformed", () => {
