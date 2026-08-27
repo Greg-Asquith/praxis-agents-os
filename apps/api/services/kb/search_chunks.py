@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 _VISIBILITY_FILTERS = """
       AND c.workspace_id = :workspace_id
       AND d.deleted_at IS NULL
+      AND (d.source_type <> 'integration' OR d.source_sync_status = 'ready')
       AND (NOT d.is_private OR d.created_by_user_id = :user_id)
       AND (NOT :private_only OR d.is_private)
       AND (:source_types IS NULL OR d.source_type = ANY(:source_types))

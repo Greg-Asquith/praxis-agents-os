@@ -207,6 +207,41 @@ async def test_search_filters_and_privacy_apply_to_every_candidate_path(
     assert {hit.document_id for hit in filtered.results} == {public.id}
 
 
+async def test_search_excludes_integration_chunks_unless_source_is_ready(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+) -> None:
+    ready, _ = await _add_document(
+        db_session,
+        actors=kb_actors,
+        title="Ready integration source",
+        content="integration visibility phrase",
+    )
+    ready.source_type = "integration"
+    ready.external_id = "ready-page"
+    ready.source_sync_status = "ready"
+    unavailable, _ = await _add_document(
+        db_session,
+        actors=kb_actors,
+        title="Unavailable integration source",
+        content="integration visibility phrase",
+    )
+    unavailable.source_type = "integration"
+    unavailable.external_id = "unavailable-page"
+    unavailable.source_sync_status = "unavailable"
+    await db_session.flush()
+
+    result = await search_chunks(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        user_id=kb_actors.user.id,
+        query="integration visibility phrase",
+        provider=FakeEmbeddingProvider(),
+    )
+
+    assert {hit.document_id for hit in result.results} == {ready.id}
+
+
 @pytest.mark.parametrize(
     ("query", "source_types"),
     [

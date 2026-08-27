@@ -11,9 +11,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
+from core.exceptions.integration import IntegrationRateLimitError, IntegrationTimeoutError
 from core.settings import settings
 from models.kb import KBChunk, KBDocument
-from services.integrations.plugin import KnowledgeSourceDocument
+from services.integrations.plugin import (
+    KnowledgeSourceAccessLostError,
+    KnowledgeSourceDisconnectedError,
+    KnowledgeSourceDocument,
+)
 from services.jobs.utils import sanitize_error_message
 from services.kb.annotation import annotate_chunks
 from services.kb.chunking import chunk_markdown
@@ -25,7 +30,10 @@ from services.kb.domain import (
     KB_STATUS_ERROR,
     KB_STATUS_PROCESSING,
     KB_STATUS_READY,
+    KB_SYNC_DISCONNECTED,
+    KB_SYNC_ERROR,
     KB_SYNC_READY,
+    KB_SYNC_UNAVAILABLE,
 )
 from services.kb.integration_sources.fetch import fetch_integration_source
 from services.kb.utils import (
@@ -154,21 +162,100 @@ async def ingest_kb_document(
             subject_id=document.id,
             initiated_by_user_id=initiated_by_user_id,
         )
+    except KnowledgeSourceAccessLostError:
+        await _record_definitive_source_failure(
+            db,
+            document_id=document_id,
+            workspace_id=workspace_id,
+            sync_status=KB_SYNC_UNAVAILABLE,
+            error_code="access_lost",
+            message="This page is no longer accessible through the connected Notion account.",
+        )
+    except KnowledgeSourceDisconnectedError:
+        await _record_definitive_source_failure(
+            db,
+            document_id=document_id,
+            workspace_id=workspace_id,
+            sync_status=KB_SYNC_DISCONNECTED,
+            error_code="disconnected",
+            message="The Notion connection for this document is no longer available.",
+        )
     except Exception as exc:
         await db.rollback()
-        failed_document = await db.scalar(
-            select(KBDocument).where(
-                KBDocument.id == document_id,
-                KBDocument.workspace_id == workspace_id,
-            )
+        failed_document = await _load_live_document(
+            db,
+            document_id=document_id,
+            workspace_id=workspace_id,
         )
         if failed_document is not None and not failed_document.deleted:
             failed_document.status = KB_STATUS_ERROR
             failed_document.processing_error = sanitize_error_message(
                 str(exc) or exc.__class__.__name__
             )
+            if failed_document.source_type == KB_SOURCE_INTEGRATION:
+                failed_document.source_sync_status = KB_SYNC_ERROR
+                failed_document.meta = _integration_meta_with_error(
+                    failed_document,
+                    error_code=_transient_source_error_code(exc),
+                )
             await db.commit()
         raise
+
+
+async def _record_definitive_source_failure(
+    db: AsyncSession,
+    *,
+    document_id: UUID,
+    workspace_id: UUID,
+    sync_status: str,
+    error_code: str,
+    message: str,
+) -> None:
+    await db.rollback()
+    failed_document = await _load_live_document(
+        db,
+        document_id=document_id,
+        workspace_id=workspace_id,
+    )
+    if failed_document is None:
+        await db.rollback()
+        return
+
+    failed_document.source_sync_status = sync_status
+    failed_document.content_md = None
+    failed_document.summary = None
+    failed_document.content_hash = ""
+    failed_document.chunk_count = 0
+    failed_document.status = KB_STATUS_ERROR
+    failed_document.processing_error = message
+    failed_document.meta = _integration_meta_with_error(
+        failed_document,
+        error_code=error_code,
+    )
+    await db.execute(delete(KBChunk).where(KBChunk.document_id == failed_document.id))
+    await db.commit()
+
+
+def _integration_meta_with_error(
+    document: KBDocument,
+    *,
+    error_code: str,
+) -> dict[str, object]:
+    meta = {
+        key: document.meta[key]
+        for key in ("provider_key", "source_title", "last_source_updated_at")
+        if key in document.meta
+    }
+    meta["last_error_code"] = error_code
+    return meta
+
+
+def _transient_source_error_code(exc: Exception) -> str:
+    if isinstance(exc, IntegrationRateLimitError):
+        return "rate_limited"
+    if isinstance(exc, (IntegrationTimeoutError, TimeoutError)):
+        return "timeout"
+    return "refresh_failed"
 
 
 async def _load_live_document(

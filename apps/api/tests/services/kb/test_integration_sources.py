@@ -3,10 +3,12 @@
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 from fastapi import Request
+from pydantic_ai import ModelRetry
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,19 +20,24 @@ from core.database import (
 )
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
-from core.exceptions.integration import IntegrationTimeoutError
+from core.exceptions.integration import IntegrationRateLimitError, IntegrationTimeoutError
 from models.audit_event import AuditEvent
 from models.integrations import IntegrationConnection, IntegrationResource
 from models.jobs import Job
 from models.kb import KBChunk, KBDocument
 from models.workspace import WorkspaceMembership, WorkspaceRole
+from services.agents.runtime.tools.kb import read_document
 from services.integrations.plugin import (
     PROVIDER_PLUGINS,
-    KnowledgeSourceDisconnectedError,
+    KnowledgeSourceAccessLostError,
     KnowledgeSourceDocument,
     KnowledgeSourcePreview,
 )
+from services.jobs.domain import JOB_STATUS_RUNNING, JOB_STATUS_SUCCEEDED
+from services.jobs.finalize_job import finalize_job_success
+from services.jobs.handlers.ingest_kb_document import handle_ingest_kb_document
 from services.kb.documents import reprocess_document
+from services.kb.get_document import get_kb_document
 from services.kb.ingest_document import ingest_kb_document
 from services.kb.integration_sources import import_integration_document
 from services.kb.schemas import KBIntegrationDocumentCreateRequest
@@ -474,14 +481,14 @@ async def test_ingest_rechecks_source_access_after_provider_fetch(
 
     scenario.state.after_fetch = revoke_after_fetch
 
-    with pytest.raises(KnowledgeSourceDisconnectedError):
-        await _ingest(db_session, kb_actors, imported.id)
+    await _ingest(db_session, kb_actors, imported.id)
 
     document = await db_session.get(KBDocument, imported.id)
     assert document is not None
     await db_session.refresh(document)
     assert scenario.state.fetch_in_transaction is False
     assert document.status == "error"
+    assert document.source_sync_status == "disconnected"
     assert document.content_md is None
 
 
@@ -587,11 +594,11 @@ async def test_refresh_rejects_disconnected_creator_grants(
         await db_session.refresh(document)
         assert document.integration_resource_id is None
 
-    with pytest.raises(KnowledgeSourceDisconnectedError):
-        await _ingest(db_session, kb_actors, imported.id)
+    await _ingest(db_session, kb_actors, imported.id)
 
     await db_session.refresh(document)
     assert document.status == "error"
+    assert document.source_sync_status == "disconnected"
     assert document.content_md is None
 
 
@@ -622,5 +629,195 @@ async def test_provider_failures_do_not_publish_new_content(
     assert document is not None
     await db_session.refresh(document)
     assert document.status == "error"
+    assert document.source_sync_status == "error"
     assert document.content_md is None
     assert document.content_hash == ""
+    assert document.meta["last_error_code"] == (
+        "timeout" if failure == "timeout" else "refresh_failed"
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (
+            IntegrationTimeoutError(
+                "Notion did not respond before the timeout",
+                provider_key="notion",
+                operation="fetch_knowledge_source",
+            ),
+            "timeout",
+        ),
+        (
+            IntegrationRateLimitError(
+                "Notion request limit reached",
+                provider_key="notion",
+                operation="fetch_knowledge_source",
+            ),
+            "rate_limited",
+        ),
+    ],
+)
+async def test_transient_refresh_failure_retains_last_ready_content(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    scenario = await _scenario(db_session, kb_actors, monkeypatch)
+    imported = await _import(db_session, kb_actors, scenario)
+    await _ingest(db_session, kb_actors, imported.id)
+    document = await db_session.get(KBDocument, imported.id)
+    assert document is not None
+    original_content = document.content_md
+    original_hash = document.content_hash
+    original_chunk_ids = tuple(
+        await db_session.scalars(
+            select(KBChunk.id)
+            .where(KBChunk.document_id == imported.id)
+            .order_by(KBChunk.chunk_index)
+        )
+    )
+    scenario.state.fetch_error = failure
+
+    with pytest.raises(type(failure)):
+        await _ingest(db_session, kb_actors, imported.id)
+
+    await db_session.refresh(document)
+    retained_chunk_ids = tuple(
+        await db_session.scalars(
+            select(KBChunk.id)
+            .where(KBChunk.document_id == imported.id)
+            .order_by(KBChunk.chunk_index)
+        )
+    )
+    assert document.status == "error"
+    assert document.source_sync_status == "error"
+    assert document.content_md == original_content
+    assert document.content_hash == original_hash
+    assert retained_chunk_ids == original_chunk_ids
+    assert document.meta["last_error_code"] == expected_code
+
+
+async def test_access_loss_clears_every_content_read_and_restores_after_refresh(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = await _scenario(db_session, kb_actors, monkeypatch)
+    imported = await _import(db_session, kb_actors, scenario)
+    await _ingest(db_session, kb_actors, imported.id)
+    document = await db_session.get(KBDocument, imported.id)
+    assert document is not None
+    document.summary = "Cached summary"
+    await db_session.flush()
+    scenario.state.fetch_error = KnowledgeSourceAccessLostError(
+        "Notion no longer exposes this page",
+        provider_key="notion",
+        operation="fetch_knowledge_source",
+    )
+
+    await _ingest(db_session, kb_actors, imported.id)
+
+    await db_session.refresh(document)
+    assert document.status == "error"
+    assert document.source_sync_status == "unavailable"
+    assert document.processing_error == (
+        "This page is no longer accessible through the connected Notion account."
+    )
+    assert document.content_md is None
+    assert document.summary is None
+    assert document.content_hash == ""
+    assert document.chunk_count == 0
+    assert document.meta["last_error_code"] == "access_lost"
+    assert (
+        await db_session.scalar(
+            select(func.count(KBChunk.id)).where(KBChunk.document_id == imported.id)
+        )
+        == 0
+    )
+    direct_read = await get_kb_document(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        user_id=kb_actors.user.id,
+        document_id=imported.id,
+    )
+    assert direct_read.content_md is None
+    other_user = build_user(email=f"kb-access-loss-{uuid4().hex}@example.com")
+    db_session.add(other_user)
+    await db_session.flush()
+    with pytest.raises(NotFoundError):
+        await get_kb_document(
+            db_session,
+            workspace_id=kb_actors.workspace.id,
+            user_id=other_user.id,
+            document_id=imported.id,
+        )
+    context = SimpleNamespace(
+        deps=SimpleNamespace(
+            db=db_session,
+            workspace=kb_actors.workspace,
+            user=kb_actors.user,
+        )
+    )
+    with pytest.raises(ModelRetry, match="no readable content"):
+        await read_document(context, imported.id)
+
+    scenario.state.fetch_error = None
+    scenario.state.markdown = "# Guide\n\nRestored knowledge."
+    await reprocess_document(
+        db_session,
+        request=_request(),
+        actor=kb_actors.user,
+        workspace=kb_actors.workspace,
+        membership=scenario.membership,
+        document_id=imported.id,
+    )
+    await _ingest(db_session, kb_actors, imported.id)
+
+    await db_session.refresh(document)
+    assert document.status == "ready"
+    assert document.source_sync_status == "ready"
+    assert document.content_md == scenario.state.markdown
+    assert document.chunk_count > 0
+    assert "last_error_code" not in document.meta
+
+
+async def test_definitive_access_loss_finishes_the_ingestion_job_successfully(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = await _scenario(db_session, kb_actors, monkeypatch)
+    imported = await _import(db_session, kb_actors, scenario)
+    scenario.state.fetch_error = KnowledgeSourceAccessLostError(
+        "Notion no longer exposes this page",
+        provider_key="notion",
+        operation="fetch_knowledge_source",
+    )
+    job = await db_session.scalar(
+        select(Job).where(Job.kind == "kb.ingest_document", Job.subject_id == imported.id)
+    )
+    assert job is not None
+    owner_id = f"kb-access-loss-{uuid4().hex}"
+    job.status = JOB_STATUS_RUNNING
+    job.attempts = 1
+    job.locked_by = owner_id
+    job.locked_at = datetime.now(UTC)
+    job.lock_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+
+    await handle_ingest_kb_document(db_session, job)
+    finalized = await finalize_job_success(
+        db_session,
+        job,
+        owner_instance_id=owner_id,
+    )
+
+    document = await db_session.get(KBDocument, imported.id)
+    assert document is not None
+    await db_session.refresh(document)
+    assert finalized is True
+    assert job.status == JOB_STATUS_SUCCEEDED
+    assert job.last_error_code is None
+    assert document.source_sync_status == "unavailable"
