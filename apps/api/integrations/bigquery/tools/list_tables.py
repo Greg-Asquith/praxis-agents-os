@@ -54,7 +54,7 @@ async def bigquery_list_tables(ctx: RunContext[RuntimeDeps]) -> dict[str, Any]:
                         "table_type": row.table_type,
                         "description": row.description,
                         "row_count": row.row_count,
-                        "last_synced_at": row.last_synced_at,
+                        "last_synced_at": row.last_synced_at.isoformat(),
                     }
                     for row in rows
                 ],

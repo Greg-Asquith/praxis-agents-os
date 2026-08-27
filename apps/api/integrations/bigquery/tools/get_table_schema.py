@@ -105,7 +105,7 @@ async def bigquery_get_table_schema(
         "clustering_fields": list(row.clustering_fields or []),
         "row_count": row.row_count,
         "size_bytes": row.size_bytes,
-        "last_synced_at": row.last_synced_at,
+        "last_synced_at": row.last_synced_at.isoformat(),
         "requires_partition_filter": bool(partitioning.get("require_partition_filter")),
     }
 
