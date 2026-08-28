@@ -80,6 +80,18 @@ class KBSettingsMixin:
         le=86_400,
         description="Delay between knowledge-base retention sweeps.",
     )
+    KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS: int = Field(
+        default=21_600,
+        gt=0,
+        le=86_400,
+        description="Delay between integration-source refresh scans.",
+    )
+    KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE: int = Field(
+        default=100,
+        gt=0,
+        le=1_000,
+        description="Maximum integration-source documents scanned in one pass.",
+    )
     KB_DELETED_RETENTION_DAYS: int = Field(
         default=30,
         ge=1,

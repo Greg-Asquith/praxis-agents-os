@@ -37,6 +37,9 @@ from services.jobs.heartbeat_job_lease import heartbeat_job_lease
 from services.jobs.log_concurrency_warnings import log_job_concurrency_warnings
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import get_job_handler
+from services.kb.integration_sources.ensure_reconcile_job import (
+    ensure_kb_integration_reconcile_job,
+)
 from services.memories.ensure_sweep_job import ensure_memory_sweep_job
 from services.runtime_catalogs import assemble_runtime_catalogs
 from services.security import ensure_application_encryption_keys_loaded
@@ -95,6 +98,7 @@ async def run_once(
         await ensure_memory_sweep_job(db)
         await ensure_integrations_rediscover_job(db)
         await ensure_refresh_webhooks_job(db)
+        await ensure_kb_integration_reconcile_job(db)
         await log_job_concurrency_warnings(db)
         await db.commit()
 

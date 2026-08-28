@@ -60,6 +60,7 @@ def _disable_periodic_enqueuers(monkeypatch: pytest.MonkeyPatch) -> None:
         "workers.job_runner.ensure_memory_sweep_job",
         "workers.job_runner.ensure_integrations_rediscover_job",
         "workers.job_runner.ensure_refresh_webhooks_job",
+        "workers.job_runner.ensure_kb_integration_reconcile_job",
     ):
         monkeypatch.setattr(target, noop)
 

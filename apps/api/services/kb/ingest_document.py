@@ -194,6 +194,7 @@ async def ingest_kb_document(
             )
             if failed_document.source_type == KB_SOURCE_INTEGRATION:
                 failed_document.source_sync_status = KB_SYNC_ERROR
+                failed_document.source_synced_at = datetime.now(UTC)
                 failed_document.meta = _integration_meta_with_error(
                     failed_document,
                     error_code=_transient_source_error_code(exc),
@@ -222,6 +223,7 @@ async def _record_definitive_source_failure(
         return
 
     failed_document.source_sync_status = sync_status
+    failed_document.source_synced_at = datetime.now(UTC)
     failed_document.content_md = None
     failed_document.summary = None
     failed_document.content_hash = ""

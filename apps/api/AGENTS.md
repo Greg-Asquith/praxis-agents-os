@@ -323,9 +323,15 @@ follows:
   runtime session carrying workspace and user context. The workspace-owned job
   session remains workspace-only, and provider calls run after the dedicated
   session commits. Import and ingestion revalidate workspace and source access
-  after provider reads before they persist content. Notion Knowledge Base
-  routes, fail-closed access loss, periodic reconciliation, and management UI
-  remain pending. Notion writes remain pending.
+  after provider reads before they persist content. Definitive access loss
+  clears canonical content and chunks before completing without retry. An
+  ownerless, bounded maintenance job periodically selects due source bindings
+  and coalesces workspace-owned ingestion jobs with manual refreshes.
+  Successful and failed refresh attempts advance the source synchronization
+  timestamp so persistently unavailable sources cannot monopolize later scans.
+  `KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS` controls the scan interval,
+  and `KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE` bounds each pass. Notion Knowledge
+  Base routes and management UI remain pending. Notion writes remain pending.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

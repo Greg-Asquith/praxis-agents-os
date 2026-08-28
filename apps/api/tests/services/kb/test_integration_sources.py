@@ -672,6 +672,7 @@ async def test_transient_refresh_failure_retains_last_ready_content(
     assert document is not None
     original_content = document.content_md
     original_hash = document.content_hash
+    original_synced_at = document.source_synced_at
     original_chunk_ids = tuple(
         await db_session.scalars(
             select(KBChunk.id)
@@ -694,6 +695,9 @@ async def test_transient_refresh_failure_retains_last_ready_content(
     )
     assert document.status == "error"
     assert document.source_sync_status == "error"
+    assert document.source_synced_at is not None
+    assert original_synced_at is not None
+    assert document.source_synced_at > original_synced_at
     assert document.content_md == original_content
     assert document.content_hash == original_hash
     assert retained_chunk_ids == original_chunk_ids
@@ -710,6 +714,7 @@ async def test_access_loss_clears_every_content_read_and_restores_after_refresh(
     await _ingest(db_session, kb_actors, imported.id)
     document = await db_session.get(KBDocument, imported.id)
     assert document is not None
+    original_synced_at = document.source_synced_at
     document.summary = "Cached summary"
     await db_session.flush()
     scenario.state.fetch_error = KnowledgeSourceAccessLostError(
@@ -723,6 +728,9 @@ async def test_access_loss_clears_every_content_read_and_restores_after_refresh(
     await db_session.refresh(document)
     assert document.status == "error"
     assert document.source_sync_status == "unavailable"
+    assert document.source_synced_at is not None
+    assert original_synced_at is not None
+    assert document.source_synced_at > original_synced_at
     assert document.processing_error == (
         "This page is no longer accessible through the connected Notion account."
     )
