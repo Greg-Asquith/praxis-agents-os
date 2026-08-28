@@ -110,6 +110,7 @@ class ProviderRead(BaseModel):
     requires_discovery: bool
     table_scopes_supported: bool
     knowledge_source_supported: bool
+    knowledge_source_resource_types: tuple[str, ...]
     configured: bool
     configured_auth_modes: dict[str, bool]
 

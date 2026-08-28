@@ -19,3 +19,10 @@ export function hasActiveProcessing(
     (document) => document.status === "pending" || document.status === "processing"
   )
 }
+
+export function canReprocessDocument(document: Pick<KbDocument, "source_type" | "status">) {
+  if (document.status === "pending" || document.status === "processing") {
+    return false
+  }
+  return document.source_type === "integration" || document.status === "error"
+}

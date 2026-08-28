@@ -82,6 +82,7 @@ def test_parse_source_normalizes_scoped_page_ids(page_id: str) -> None:
         PAGE_URL,
         f"https://notion.so/{PAGE_ID_COMPACT}",
         f"https://www.notion.so/{PAGE_ID_COMPACT}",
+        f"https://app.notion.com/Launch-plan-{PAGE_ID_COMPACT}",
         f"https://example-team.notion.site/Roadmap-{PAGE_ID_COMPACT}",
     ],
 )
@@ -444,3 +445,4 @@ def test_provider_view_exposes_knowledge_source_support() -> None:
         PROVIDER_PLUGINS.update(original_plugins)
 
     assert provider.knowledge_source_supported is True
+    assert provider.knowledge_source_resource_types == ("notion_workspace",)

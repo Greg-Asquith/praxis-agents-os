@@ -272,7 +272,7 @@ def _reference_for_resource(
 def _page_id_from_url(value: str) -> str:
     parsed = urlparse(value.strip())
     hostname = (parsed.hostname or "").lower().rstrip(".")
-    allowed_host = hostname in {"notion.so", "www.notion.so"} or (
+    allowed_host = hostname in {"app.notion.com", "notion.so", "www.notion.so"} or (
         hostname.endswith(".notion.site") and hostname != "notion.site"
     )
     segment = parsed.path.rstrip("/").rsplit("/", 1)[-1]

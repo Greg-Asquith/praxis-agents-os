@@ -5,6 +5,7 @@
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.integration import IntegrationAuthError
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction
@@ -17,6 +18,7 @@ from services.kb.domain import KB_SOURCE_INTEGRATION
 from services.kb.integration_sources.reauthorize import (
     reauthorize_integration_knowledge_source,
 )
+from services.kb.integration_sources.utils import map_knowledge_source_auth_error
 from services.kb.schemas import KBDocumentRead, KBIntegrationDocumentCreateRequest
 
 
@@ -41,12 +43,15 @@ async def import_integration_document(
 
     # Credential refresh and provider reads must not inherit the authorization transaction.
     await db.commit()
-    preview = await authorized.definition.preview(
-        db,
-        authorized.connection,
-        authorized.resource,
-        normalized_reference,
-    )
+    try:
+        preview = await authorized.definition.preview(
+            db,
+            authorized.connection,
+            authorized.resource,
+            normalized_reference,
+        )
+    except IntegrationAuthError as exc:
+        raise map_knowledge_source_auth_error(exc) from exc
     authorized = await reauthorize_integration_knowledge_source(
         db,
         integration_resource_id=payload.integration_resource_id,

@@ -16,6 +16,8 @@ const provider: IntegrationProvider = {
   requires_discovery: true,
   resource_types: ["mailbox"],
   table_scopes_supported: false,
+  knowledge_source_supported: false,
+  knowledge_source_resource_types: [],
 }
 
 function connection(status: IntegrationConnection["status"]): IntegrationConnection {

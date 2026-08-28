@@ -29,8 +29,10 @@ import {
 } from "@/components/ui/table"
 import { useReprocessDocumentMutation } from "@/features/knowledge/api/reprocess-document"
 import { DocumentStatusBadge } from "@/features/knowledge/components/document-status-badge"
+import { SourceSyncBadge } from "@/features/knowledge/components/source-sync-badge"
 import { SourceTypeBadge } from "@/features/knowledge/components/source-type-badge"
 import type { KbDocument } from "@/features/knowledge/types"
+import { canReprocessDocument } from "@/features/knowledge/status"
 import { getErrorMessage } from "@/lib/api/errors"
 import { relativeDateTime } from "@/lib/format"
 
@@ -113,7 +115,7 @@ export function DocumentsTable({
           id: "actions",
           header: ({ header }) => <header.ColumnHeader />,
           cell: ({ row }) =>
-            canWrite && row.original.status === "error" ? (
+            canWrite && canReprocessDocument(row.original) ? (
               <Button
                 disabled={mutation.isPending}
                 onClick={() => void reprocess(row.original.id)}
@@ -122,7 +124,7 @@ export function DocumentsTable({
                 variant="outline"
               >
                 <RefreshCwIcon data-icon="inline-start" />
-                Reprocess
+                {row.original.source_type === "integration" ? "Refresh" : "Reprocess"}
               </Button>
             ) : null,
           meta: { label: "Actions", labelClassName: "sr-only" },
@@ -148,7 +150,7 @@ export function DocumentsTable({
     <div className="flex flex-col gap-3">
       {error ? (
         <Alert variant="destructive">
-          <AlertTitle>Couldn’t reprocess document</AlertTitle>
+          <AlertTitle>Couldn’t update document</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
@@ -222,6 +224,9 @@ function StatusCell({ document }: { document: KbDocument }) {
   return (
     <div className="flex max-w-xs flex-col items-start gap-1">
       <DocumentStatusBadge status={document.status} />
+      {document.source_type === "integration" && document.source_sync_status ? (
+        <SourceSyncBadge status={document.source_sync_status} />
+      ) : null}
       {document.status === "error" ? (
         <span
           className="text-destructive line-clamp-2 text-xs"
@@ -260,7 +265,12 @@ function DocumentMobileRow({
         >
           {document.title}
         </Link>
-        <DocumentStatusBadge status={document.status} />
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <DocumentStatusBadge status={document.status} />
+          {document.source_type === "integration" && document.source_sync_status ? (
+            <SourceSyncBadge status={document.source_sync_status} />
+          ) : null}
+        </div>
       </div>
       {document.status === "error" ? (
         <p className="text-destructive text-xs">
@@ -280,7 +290,7 @@ function DocumentMobileRow({
           {relativeDateTime(document.updated_at)}
         </ResponsiveListMeta>
       </dl>
-      {canWrite && document.status === "error" ? (
+      {canWrite && canReprocessDocument(document) ? (
         <Button
           className="w-full"
           disabled={isPending}
@@ -289,7 +299,7 @@ function DocumentMobileRow({
           variant="outline"
         >
           <RefreshCwIcon data-icon="inline-start" />
-          Reprocess
+          {document.source_type === "integration" ? "Refresh" : "Reprocess"}
         </Button>
       ) : null}
     </div>

@@ -48,6 +48,27 @@ describe("unauthorized responses", () => {
 
     expect(onUnauthorized).not.toHaveBeenCalled()
   })
+
+  it("does not report provider authorization loss as Praxis session loss", async () => {
+    const onUnauthorized = vi.fn()
+    setApiUnauthorizedHandler(onUnauthorized)
+    stubFetch(
+      jsonResponse(
+        {
+          detail: "The integration connection must be reauthorized",
+          status: 409,
+          title: "Knowledge Source Unavailable",
+          type: "https://httpstatuses.com/409",
+        },
+        { status: 409, statusText: "Conflict" }
+      )
+    )
+
+    await expect(apiRequest("/kb/integration-sources/preview")).rejects.toMatchObject({
+      status: 409,
+    })
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
 })
 
 describe("response contracts", () => {

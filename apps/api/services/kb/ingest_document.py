@@ -109,11 +109,12 @@ async def ingest_kb_document(
         content_changed = content_hash != document.content_hash
         document.content_md = markdown
         document.content_hash = content_hash
+        document.chunk_count = 0
         if loaded.source_document is None and content_changed:
             document.source_updated_at = datetime.now(UTC)
-        # Publish the guarded hash and release its advisory lock before annotation work.
-        await db.commit()
+        # Publish an incomplete materialization and release its advisory lock before annotation.
         await db.execute(delete(KBChunk).where(KBChunk.document_id == document.id))
+        await db.commit()
 
         drafts = chunk_markdown(
             markdown,
@@ -169,7 +170,7 @@ async def ingest_kb_document(
             workspace_id=workspace_id,
             sync_status=KB_SYNC_UNAVAILABLE,
             error_code="access_lost",
-            message="This page is no longer accessible through the connected Notion account.",
+            message="This source is no longer accessible through its connected account.",
         )
     except KnowledgeSourceDisconnectedError:
         await _record_definitive_source_failure(
@@ -178,7 +179,7 @@ async def ingest_kb_document(
             workspace_id=workspace_id,
             sync_status=KB_SYNC_DISCONNECTED,
             error_code="disconnected",
-            message="The Notion connection for this document is no longer available.",
+            message="The connection for this source is no longer available.",
         )
     except Exception as exc:
         await db.rollback()

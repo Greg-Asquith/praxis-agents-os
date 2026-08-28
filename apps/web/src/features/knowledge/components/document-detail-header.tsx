@@ -22,6 +22,7 @@ import { useUpdateDocumentMutation } from "@/features/knowledge/api/update-docum
 import { DocumentStatusBadge } from "@/features/knowledge/components/document-status-badge"
 import { ManualDocumentForm } from "@/features/knowledge/components/manual-document-form"
 import { SourceTypeBadge } from "@/features/knowledge/components/source-type-badge"
+import { SourceSyncBadge } from "@/features/knowledge/components/source-sync-badge"
 import type { KbDocumentDetail } from "@/features/knowledge/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
@@ -95,7 +96,7 @@ export function DocumentDetailHeader({
                   variant="outline"
                 >
                   <RefreshCwIcon data-icon="inline-start" />
-                  Reprocess
+                  {document.source_type === "integration" ? "Refresh" : "Reprocess"}
                 </Button>
               ) : null}
               <Button
@@ -115,6 +116,9 @@ export function DocumentDetailHeader({
           <span className="flex flex-wrap items-center gap-2">
             <SourceTypeBadge sourceType={document.source_type} />
             <DocumentStatusBadge status={document.status} />
+            {document.source_type === "integration" && document.source_sync_status ? (
+              <SourceSyncBadge status={document.source_sync_status} />
+            ) : null}
             {document.is_private ? (
               <Badge variant="outline">
                 <LockIcon data-icon="inline-start" />
@@ -132,6 +136,12 @@ export function DocumentDetailHeader({
           <dt className="text-foreground inline font-medium">Chunks: </dt>
           <dd className="inline">{document.chunk_count}</dd>
         </div>
+        {document.source_type === "integration" && document.source_synced_at ? (
+          <div>
+            <dt className="text-foreground inline font-medium">Last synced: </dt>
+            <dd className="inline">{formatDateTime(document.source_synced_at)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt className="text-foreground inline font-medium">Created: </dt>
           <dd className="inline">{formatDateTime(document.created_at)}</dd>

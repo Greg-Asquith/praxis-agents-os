@@ -25,6 +25,8 @@ export type IntegrationProvider = {
   capability_flags: string[]
   requires_discovery: boolean
   table_scopes_supported: boolean
+  knowledge_source_supported: boolean
+  knowledge_source_resource_types: string[]
   configured: boolean
   configured_auth_modes: Record<string, boolean>
 }

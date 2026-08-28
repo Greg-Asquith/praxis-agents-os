@@ -1,7 +1,8 @@
 // apps/web/src/features/knowledge/components/add-document-menu.tsx
 
-import { useState } from "react"
-import { FileUpIcon, LinkIcon, PlusIcon, SquarePenIcon } from "lucide-react"
+import { useMemo, useState } from "react"
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query"
+import { FileUpIcon, LinkIcon, PlusIcon, RefreshCwIcon, SquarePenIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -15,9 +16,20 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
+import { integrationConnectionsQueryOptions } from "@/features/integrations/api/list-connections"
+import { integrationProvidersQueryOptions } from "@/features/integrations/api/list-providers"
+import { ProviderMark } from "@/features/integrations/components/provider-mark"
 import { DocumentUploadButton } from "@/features/knowledge/components/document-upload-button"
+import { IntegrationImportDialog } from "@/features/knowledge/components/integration-import-dialog"
+import {
+  eligibleKnowledgeSourceProviders,
+  type KnowledgeSourceProviderOption,
+} from "@/features/knowledge/components/integration-import-form-model"
 import { ManualDocumentForm } from "@/features/knowledge/components/manual-document-form"
 import { UrlDocumentForm } from "@/features/knowledge/components/url-document-form"
 
@@ -39,7 +51,27 @@ const DIALOG_COPY: Record<AddMode, { title: string; description: string }> = {
 }
 
 export function AddDocumentMenu() {
+  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const providersQuery = useQuery(integrationProvidersQueryOptions())
+  const connectionsQuery = useQuery(integrationConnectionsQueryOptions())
   const [mode, setMode] = useState<AddMode | null>(null)
+  const [integrationOption, setIntegrationOption] = useState<KnowledgeSourceProviderOption | null>(
+    null
+  )
+  const integrationOptions = useMemo(
+    () =>
+      eligibleKnowledgeSourceProviders(
+        providersQuery.data ?? [],
+        connectionsQuery.data?.items ?? [],
+        user.id
+      ),
+    [connectionsQuery.data?.items, providersQuery.data, user.id]
+  )
+  const integrationCatalogError = providersQuery.isError || connectionsQuery.isError
+  const integrationCatalogLoading =
+    !integrationCatalogError &&
+    integrationOptions.length === 0 &&
+    (providersQuery.isPending || connectionsQuery.isPending)
   const copy = mode ? DIALOG_COPY[mode] : null
 
   return (
@@ -74,6 +106,36 @@ export function AddDocumentMenu() {
             <FileUpIcon />
             Upload Document
           </DropdownMenuItem>
+          {integrationOptions.map((option) => (
+            <DropdownMenuItem
+              key={option.provider.provider_key}
+              onClick={() => {
+                setIntegrationOption(option)
+              }}
+            >
+              <ProviderMark providerKey={option.provider.provider_key} />
+              Import from {option.provider.display_name}
+            </DropdownMenuItem>
+          ))}
+          {integrationCatalogLoading || integrationCatalogError ? <DropdownMenuSeparator /> : null}
+          {integrationCatalogLoading ? (
+            <DropdownMenuLabel>Loading import options…</DropdownMenuLabel>
+          ) : null}
+          {integrationCatalogError ? (
+            <>
+              <DropdownMenuLabel className="text-destructive max-w-56 whitespace-normal">
+                Import options unavailable.
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => {
+                  void Promise.all([providersQuery.refetch(), connectionsQuery.refetch()])
+                }}
+              >
+                <RefreshCwIcon />
+                Try Again
+              </DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog
@@ -114,6 +176,19 @@ export function AddDocumentMenu() {
           ) : null}
         </DialogContent>
       </Dialog>
+      {integrationOption ? (
+        <IntegrationImportDialog
+          connections={integrationOption.connections}
+          key={integrationOption.provider.provider_key}
+          onOpenChange={(open) => {
+            if (!open) {
+              setIntegrationOption(null)
+            }
+          }}
+          open
+          provider={integrationOption.provider}
+        />
+      ) : null}
     </>
   )
 }

@@ -162,6 +162,8 @@ async def test_get_document_allows_read_only_and_maps_hidden_to_404(
     assert response.json()["content_md"] == visible.content_md
     assert response.json()["created_by_user_id"] == str(user.id)
     assert response.json()["processing_attempts"] == 2
+    assert response.json()["source_sync_status"] is None
+    assert response.json()["source_synced_at"] is None
 
     external_response = await db_async_client.get(
         f"/api/v1/kb/documents/{external.id}",

@@ -20,7 +20,11 @@ from core.database import (
 )
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
-from core.exceptions.integration import IntegrationRateLimitError, IntegrationTimeoutError
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationRateLimitError,
+    IntegrationTimeoutError,
+)
 from models.audit_event import AuditEvent
 from models.integrations import IntegrationConnection, IntegrationResource
 from models.jobs import Job
@@ -489,6 +493,7 @@ async def test_ingest_rechecks_source_access_after_provider_fetch(
     assert scenario.state.fetch_in_transaction is False
     assert document.status == "error"
     assert document.source_sync_status == "disconnected"
+    assert document.processing_error == "The connection for this source is no longer available."
     assert document.content_md is None
 
 
@@ -704,6 +709,36 @@ async def test_transient_refresh_failure_retains_last_ready_content(
     assert document.meta["last_error_code"] == expected_code
 
 
+async def test_provider_auth_loss_clears_last_ready_content(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scenario = await _scenario(db_session, kb_actors, monkeypatch)
+    imported = await _import(db_session, kb_actors, scenario)
+    await _ingest(db_session, kb_actors, imported.id)
+    scenario.state.fetch_error = IntegrationAuthError(
+        "Notion authorization expired",
+        provider_key="notion",
+        operation="fetch_knowledge_source",
+    )
+
+    await _ingest(db_session, kb_actors, imported.id)
+
+    document = await db_session.get(KBDocument, imported.id)
+    assert document is not None
+    await db_session.refresh(document)
+    chunk_count = await db_session.scalar(
+        select(func.count()).select_from(KBChunk).where(KBChunk.document_id == imported.id)
+    )
+    assert document.status == "error"
+    assert document.source_sync_status == "disconnected"
+    assert document.content_md is None
+    assert document.content_hash == ""
+    assert chunk_count == 0
+    assert document.meta["last_error_code"] == "disconnected"
+
+
 async def test_access_loss_clears_every_content_read_and_restores_after_refresh(
     db_session: AsyncSession,
     kb_actors: KBActors,
@@ -732,7 +767,7 @@ async def test_access_loss_clears_every_content_read_and_restores_after_refresh(
     assert original_synced_at is not None
     assert document.source_synced_at > original_synced_at
     assert document.processing_error == (
-        "This page is no longer accessible through the connected Notion account."
+        "This source is no longer accessible through its connected account."
     )
     assert document.content_md is None
     assert document.summary is None

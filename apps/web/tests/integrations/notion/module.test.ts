@@ -40,6 +40,8 @@ describe("Notion integration module", () => {
           requires_discovery: true,
           resource_types: ["notion_workspace"],
           table_scopes_supported: false,
+          knowledge_source_supported: true,
+          knowledge_source_resource_types: ["notion_workspace"],
         },
       })
     )

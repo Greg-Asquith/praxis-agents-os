@@ -11,6 +11,13 @@ const baseKnowledgeQueryKeys = createWorkspaceScopedQueryKeys("knowledge")
 
 export const knowledgeQueryKeys = {
   ...baseKnowledgeQueryKeys,
+  integrationSourceSearches: () =>
+    [...baseKnowledgeQueryKeys.workspace(), "integration-source-search"] as const,
+  integrationSourceSearch: (params: {
+    integrationResourceId: string
+    limit: number
+    query: string
+  }) => [...baseKnowledgeQueryKeys.workspace(), "integration-source-search", params] as const,
   searches: () => [...baseKnowledgeQueryKeys.workspace(), "search"] as const,
   search: (query: string) => [...baseKnowledgeQueryKeys.workspace(), "search", query] as const,
 }

@@ -21,6 +21,8 @@ const mixedModeGoogleAds: IntegrationProvider = {
   requires_discovery: true,
   resource_types: ["customer_account"],
   table_scopes_supported: false,
+  knowledge_source_supported: false,
+  knowledge_source_resource_types: [],
 }
 
 const serviceAccountConnection: IntegrationConnection = {

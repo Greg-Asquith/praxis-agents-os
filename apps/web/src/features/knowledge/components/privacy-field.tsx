@@ -8,9 +8,11 @@ import { Label } from "@/components/ui/label"
 export function PrivacyField({
   checked,
   onCheckedChange,
+  sharedDescription,
 }: {
   checked: boolean
   onCheckedChange: (checked: boolean) => void
+  sharedDescription?: string
 }) {
   const inputId = useId()
 
@@ -24,7 +26,9 @@ export function PrivacyField({
       />
       <div className="grid gap-0.5">
         <Label htmlFor={inputId}>Private</Label>
-        <p className="text-muted-foreground text-xs">Only visible to you.</p>
+        <p className="text-muted-foreground text-xs">
+          {checked ? "Only visible to you." : (sharedDescription ?? "Visible to the workspace.")}
+        </p>
       </div>
     </div>
   )

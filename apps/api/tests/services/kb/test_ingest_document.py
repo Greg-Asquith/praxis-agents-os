@@ -139,6 +139,68 @@ async def test_changed_content_replaces_chunks_and_updates_source_timestamp(
     assert document.source_updated_at > datetime(2000, 1, 1, tzinfo=UTC)
 
 
+async def test_failed_changed_content_ingest_rebuilds_chunks_on_retry(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = await create_kb_document(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        source_type="manual",
+        title="Retryable refresh",
+        content="Original searchable knowledge.",
+    )
+    document_id = document.id
+    workspace_id = kb_actors.workspace.id
+    user_id = kb_actors.user.id
+    await _ingest(db_session, kb_actors, document)
+    await db_session.commit()
+    original_chunk_ids = set(
+        await db_session.scalars(select(KBChunk.id).where(KBChunk.document_id == document_id))
+    )
+
+    document.content_md = "Replacement searchable knowledge."
+    await db_session.commit()
+
+    def fail_chunking(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("chunking failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("services.kb.ingest_document.chunk_markdown", fail_chunking)
+        with pytest.raises(RuntimeError, match="chunking failed"):
+            await ingest_kb_document(
+                db_session,
+                document_id=document_id,
+                workspace_id=workspace_id,
+                initiated_by_user_id=user_id,
+            )
+
+    await db_session.refresh(document)
+    chunks_after_failure = set(
+        await db_session.scalars(select(KBChunk.id).where(KBChunk.document_id == document_id))
+    )
+    assert chunks_after_failure == set()
+    assert document.chunk_count == 0
+    assert document.status == "error"
+
+    await ingest_kb_document(
+        db_session,
+        document_id=document_id,
+        workspace_id=workspace_id,
+        initiated_by_user_id=user_id,
+    )
+
+    await db_session.refresh(document)
+    replacement_chunks = (
+        await db_session.scalars(select(KBChunk).where(KBChunk.document_id == document_id))
+    ).all()
+    assert {chunk.id for chunk in replacement_chunks}.isdisjoint(original_chunk_ids)
+    assert [chunk.content for chunk in replacement_chunks] == ["Replacement searchable knowledge."]
+    assert document.chunk_count == len(replacement_chunks) == 1
+    assert document.status == "ready"
+
+
 async def test_upload_ingests_extracted_markdown(
     db_session: AsyncSession,
     kb_actors: KBActors,

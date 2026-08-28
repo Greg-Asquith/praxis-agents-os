@@ -12,7 +12,7 @@ from core.database import (
     get_async_db_session_factory,
     set_session_tenant_context,
 )
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationAuthError, IntegrationValidationError
 from models.kb import KBDocument
 from models.workspace import WorkspaceMembership
 from services.integrations.plugin import (
@@ -20,7 +20,10 @@ from services.integrations.plugin import (
     KnowledgeSourceDocument,
 )
 from services.kb.integration_sources.domain import AuthorizedIntegrationKnowledgeSource
-from services.kb.integration_sources.utils import load_personal_knowledge_source
+from services.kb.integration_sources.utils import (
+    load_personal_knowledge_source,
+    map_knowledge_source_auth_error,
+)
 
 
 async def fetch_integration_source(document: KBDocument) -> KnowledgeSourceDocument:
@@ -48,12 +51,15 @@ async def fetch_integration_source(document: KBDocument) -> KnowledgeSourceDocum
         )
 
         await fetch_db.commit()
-        source_document = await authorized.definition.fetch(
-            fetch_db,
-            authorized.connection,
-            authorized.resource,
-            external_id,
-        )
+        try:
+            source_document = await authorized.definition.fetch(
+                fetch_db,
+                authorized.connection,
+                authorized.resource,
+                external_id,
+            )
+        except IntegrationAuthError as exc:
+            raise map_knowledge_source_auth_error(exc) from exc
         if source_document.external_id != external_id:
             raise IntegrationValidationError(
                 "The integration returned a different source document",

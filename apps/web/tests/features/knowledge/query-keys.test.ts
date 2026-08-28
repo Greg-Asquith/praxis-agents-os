@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 
 import { knowledgeQueryKeys } from "@/features/knowledge/api/list-documents"
+import { searchIntegrationSourcesQueryOptions } from "@/features/knowledge/api/search-integration-sources"
 import { clearActiveWorkspace, setActiveUserId, setActiveWorkspaceSlug } from "@/lib/workspace"
 
 afterEach(() => {
@@ -34,6 +35,38 @@ describe("knowledge query keys", () => {
       "acme",
       "search",
       "vpn",
+    ])
+    expect(
+      knowledgeQueryKeys.integrationSourceSearch({
+        integrationResourceId: "resource-1",
+        limit: 20,
+        query: "handbook",
+      })
+    ).toEqual([
+      "knowledge",
+      "user-1",
+      "acme",
+      "integration-source-search",
+      { integrationResourceId: "resource-1", limit: 20, query: "handbook" },
+    ])
+  })
+
+  it("keeps integration searches disabled until submission and normalizes their keys", () => {
+    setActiveUserId("user-1")
+    setActiveWorkspaceSlug("acme")
+
+    expect(searchIntegrationSourcesQueryOptions(null).enabled).toBe(false)
+    expect(
+      searchIntegrationSourcesQueryOptions({
+        integrationResourceId: "resource-1",
+        query: "  handbook  ",
+      }).queryKey
+    ).toEqual([
+      "knowledge",
+      "user-1",
+      "acme",
+      "integration-source-search",
+      { integrationResourceId: "resource-1", limit: 20, query: "handbook" },
     ])
   })
 })

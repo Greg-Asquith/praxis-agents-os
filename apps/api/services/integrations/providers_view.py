@@ -24,6 +24,7 @@ def list_providers() -> list[ProviderRead]:
             requires_discovery=manifest.requires_discovery,
             table_scopes_supported=_table_scopes_supported(manifest.provider_key),
             knowledge_source_supported=_knowledge_source_supported(manifest.provider_key),
+            knowledge_source_resource_types=_knowledge_source_resource_types(manifest.provider_key),
             configured=is_provider_configured(manifest),
             configured_auth_modes={
                 auth_mode: is_auth_mode_configured(manifest, auth_mode)
@@ -42,6 +43,13 @@ def _table_scopes_supported(provider_key: str) -> bool:
 def _knowledge_source_supported(provider_key: str) -> bool:
     plugin = PROVIDER_PLUGINS.get(provider_key)
     return plugin is not None and plugin.knowledge_source is not None
+
+
+def _knowledge_source_resource_types(provider_key: str) -> tuple[str, ...]:
+    plugin = PROVIDER_PLUGINS.get(provider_key)
+    if plugin is None or plugin.knowledge_source is None:
+        return ()
+    return tuple(sorted(plugin.knowledge_source.resource_types))
 
 
 def is_provider_configured(manifest: IntegrationProviderManifest) -> bool:

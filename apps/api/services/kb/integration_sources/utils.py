@@ -8,12 +8,30 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.integration import IntegrationAuthError
 from models.integrations import IntegrationConnection, IntegrationResource
 from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
-from services.integrations.plugin import PROVIDER_PLUGINS
+from services.integrations.plugin import (
+    PROVIDER_PLUGINS,
+    KnowledgeSourceDisconnectedError,
+)
 from services.kb.integration_sources.domain import AuthorizedIntegrationKnowledgeSource
 
 UnavailableErrorFactory = Callable[[str | None], Exception]
+
+
+def map_knowledge_source_auth_error(
+    exc: IntegrationAuthError,
+) -> KnowledgeSourceDisconnectedError:
+    """Maps provider grant loss without representing it as Praxis session loss."""
+    return KnowledgeSourceDisconnectedError(
+        "The integration connection must be reauthorized",
+        provider_key=exc.provider_key,
+        connection_id=exc.connection_id,
+        operation=exc.operation,
+        original_error=exc,
+        failure_disposition=exc.failure_disposition,
+    )
 
 
 async def load_personal_knowledge_source(

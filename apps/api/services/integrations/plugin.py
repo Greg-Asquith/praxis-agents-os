@@ -153,9 +153,15 @@ class KnowledgeSourceDocument:
 class KnowledgeSourceAccessLostError(IntegrationError):
     """Raised when a provider definitively denies or cannot find a source."""
 
+    _status_override = 409
+    _title_override = "Knowledge Source Unavailable"
+
 
 class KnowledgeSourceDisconnectedError(IntegrationError):
     """Raised when a source no longer has a usable connection binding."""
+
+    _status_override = 409
+    _title_override = "Knowledge Source Unavailable"
 
 
 ParseKnowledgeSourceFn = Callable[[str | dict[str, Any]], dict[str, Any]]

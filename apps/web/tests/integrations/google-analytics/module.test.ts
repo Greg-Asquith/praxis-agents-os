@@ -44,6 +44,8 @@ describe("Google Analytics integration module", () => {
           requires_discovery: true,
           resource_types: ["google_analytics_property"],
           table_scopes_supported: false,
+          knowledge_source_supported: false,
+          knowledge_source_resource_types: [],
         },
       })
     )

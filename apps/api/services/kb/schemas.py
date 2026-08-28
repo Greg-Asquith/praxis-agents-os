@@ -63,6 +63,8 @@ class KBDocumentRead(BaseModel):
     concept_id: str | None
     source_type: str
     source_updated_at: datetime | None
+    source_sync_status: str | None
+    source_synced_at: datetime | None
     status: str
     processing_error: str | None
     processing_attempts: int = Field(default=0, ge=0)
@@ -85,6 +87,8 @@ class KBDocumentRead(BaseModel):
             concept_id=document.concept_id,
             source_type=document.source_type,
             source_updated_at=document.source_updated_at,
+            source_sync_status=document.source_sync_status,
+            source_synced_at=document.source_synced_at,
             status=document.status,
             processing_error=document.processing_error,
             processing_attempts=document.processing_attempts,
@@ -117,6 +121,8 @@ class KBDocumentListItem(BaseModel):
     id: UUID
     title: str
     source_type: str
+    source_sync_status: str | None
+    source_synced_at: datetime | None
     status: str
     processing_error: str | None
     processing_attempts: int = Field(default=0, ge=0)
@@ -132,6 +138,8 @@ class KBDocumentListItem(BaseModel):
             id=document.id,
             title=document.title,
             source_type=document.source_type,
+            source_sync_status=document.source_sync_status,
+            source_synced_at=document.source_synced_at,
             status=document.status,
             processing_error=document.processing_error,
             processing_attempts=document.processing_attempts,

@@ -2,15 +2,25 @@
 
 """HTTP-boundary tests for knowledge-document management."""
 
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx2
+import pytest
 from httpx2 import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from core.exceptions.integration import IntegrationAuthError
+from integrations.notion import knowledge_source as notion_source_module
+from integrations.notion.client import NotionClient
+from integrations.notion.knowledge_source import KNOWLEDGE_SOURCE
 from models.audit_event import AuditEvent
 from models.workspace import WorkspaceRole
+from services.integrations.plugin import KnowledgeSourcePreview, KnowledgeSourceSearchResult
+from services.kb.schemas import KBDocumentRead
 from tests.factories import (
     build_kb_document,
     build_user,
@@ -114,6 +124,253 @@ async def test_read_only_cannot_create_documents(
     )
     assert response.status_code == 403
     assert response.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_member_can_search_preview_and_import_an_integration_source(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, workspace, headers = await _workspace_session(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+    )
+    resource_id = uuid4()
+    document_id = uuid4()
+    page_id = str(uuid4())
+    now = datetime.now(UTC)
+    captured: dict[str, dict[str, object]] = {}
+
+    async def fake_search(db, **kwargs):
+        captured["search"] = kwargs
+        return (
+            KnowledgeSourceSearchResult(
+                reference={"page_id": page_id},
+                title="Team handbook",
+                url=f"https://www.notion.so/{page_id.replace('-', '')}",
+                source_updated_at=now,
+            ),
+        )
+
+    async def fake_preview(db, **kwargs):
+        captured["preview"] = kwargs
+        return KnowledgeSourcePreview(
+            reference={"page_id": page_id},
+            external_id=page_id,
+            title="Team handbook",
+            url=f"https://www.notion.so/{page_id.replace('-', '')}",
+            source_updated_at=now,
+            markdown_excerpt="# Team handbook",
+        )
+
+    async def fake_import(db, **kwargs):
+        captured["import"] = kwargs
+        return KBDocumentRead(
+            id=document_id,
+            title="Team handbook",
+            concept_id=None,
+            source_type="integration",
+            source_updated_at=None,
+            source_sync_status="pending",
+            source_synced_at=None,
+            status="pending",
+            processing_error=None,
+            processing_attempts=0,
+            summary=None,
+            external_url=f"https://www.notion.so/{page_id.replace('-', '')}",
+            is_private=True,
+            chunk_count=0,
+            content_md=None,
+            meta={"provider_key": "notion"},
+            created_by_user_id=user.id,
+            created_at=now,
+            updated_at=now,
+        )
+
+    monkeypatch.setattr(
+        "routes.kb.search_integration_sources.search_integration_knowledge_sources",
+        fake_search,
+    )
+    monkeypatch.setattr(
+        "routes.kb.preview_integration_source.preview_integration_knowledge_source",
+        fake_preview,
+    )
+    monkeypatch.setattr(
+        "routes.kb.create_document_from_integration.import_integration_document",
+        fake_import,
+    )
+
+    searched = await db_async_client.get(
+        "/api/v1/kb/integration-sources/search",
+        headers=headers,
+        params={
+            "integration_resource_id": str(resource_id),
+            "query": "handbook",
+            "limit": 10,
+        },
+    )
+    assert searched.status_code == 200
+    assert searched.json()[0]["reference"] == {"page_id": page_id}
+    assert captured["search"]["workspace"].id == workspace.id
+    assert captured["search"]["actor"].id == user.id
+
+    previewed = await db_async_client.post(
+        "/api/v1/kb/integration-sources/preview",
+        headers=headers,
+        json={
+            "integration_resource_id": str(resource_id),
+            "source": {"page_id": page_id},
+        },
+    )
+    assert previewed.status_code == 200
+    assert previewed.json()["markdown_excerpt"] == "# Team handbook"
+
+    imported = await db_async_client.post(
+        "/api/v1/kb/documents/from-integration",
+        headers=headers,
+        json={
+            "integration_resource_id": str(resource_id),
+            "source": {"page_id": page_id},
+        },
+    )
+    assert imported.status_code == 202
+    assert imported.json()["source_sync_status"] == "pending"
+    assert captured["import"]["payload"].is_private is True
+
+
+@pytest.mark.parametrize(
+    ("path", "method", "patch_target"),
+    [
+        (
+            "/api/v1/kb/integration-sources/search",
+            "get",
+            "services.kb.integration_sources.search.authorize_integration_knowledge_source",
+        ),
+        (
+            "/api/v1/kb/integration-sources/preview",
+            "post",
+            "services.kb.integration_sources.preview.authorize_integration_knowledge_source",
+        ),
+        (
+            "/api/v1/kb/documents/from-integration",
+            "post",
+            "services.kb.integration_sources.import_document."
+            "reauthorize_integration_knowledge_source",
+        ),
+    ],
+)
+async def test_provider_auth_loss_uses_source_unavailable_contract(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    method: str,
+    patch_target: str,
+) -> None:
+    _user, _workspace, headers = await _workspace_session(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+    )
+    resource_id = uuid4()
+
+    async def auth_failed(*_args, **_kwargs):
+        raise IntegrationAuthError(
+            "Notion authorization expired",
+            provider_key="notion",
+            operation="read_knowledge_source",
+        )
+
+    async def authorize(*_args, **_kwargs):
+        return SimpleNamespace(
+            connection=SimpleNamespace(provider_key="notion"),
+            resource=SimpleNamespace(id=resource_id),
+            definition=SimpleNamespace(
+                parse_source=lambda source: source,
+                preview=auth_failed,
+                search=auth_failed,
+            ),
+        )
+
+    monkeypatch.setattr(patch_target, authorize)
+    if method == "get":
+        response = await db_async_client.get(
+            path,
+            headers=headers,
+            params={"integration_resource_id": str(resource_id)},
+        )
+    else:
+        response = await db_async_client.post(
+            path,
+            headers=headers,
+            json={
+                "integration_resource_id": str(resource_id),
+                "source": {"page_id": str(uuid4())},
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["title"] == "Knowledge Source Unavailable"
+
+
+@pytest.mark.parametrize("provider_status", [403, 404])
+async def test_notion_access_loss_uses_source_unavailable_contract(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_status: int,
+) -> None:
+    _user, _workspace, headers = await _workspace_session(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+    )
+    resource_id = uuid4()
+    page_id = str(uuid4())
+
+    async def authorize(*_args, **_kwargs):
+        return SimpleNamespace(
+            connection=SimpleNamespace(provider_key="notion"),
+            resource=SimpleNamespace(
+                id=resource_id,
+                external_id="notion-workspace",
+                display_name="Example workspace",
+            ),
+            definition=KNOWLEDGE_SOURCE,
+        )
+
+    def provider_response(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(provider_status, json={}, request=request)
+
+    monkeypatch.setattr(
+        "services.kb.integration_sources.preview.authorize_integration_knowledge_source",
+        authorize,
+    )
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(provider_response)
+    ) as provider_client:
+        monkeypatch.setattr(
+            notion_source_module,
+            "notion_client_for_connection",
+            lambda *_args: NotionClient(
+                lambda _force: _notion_test_token(),
+                client=provider_client,
+            ),
+        )
+        response = await db_async_client.post(
+            "/api/v1/kb/integration-sources/preview",
+            headers=headers,
+            json={
+                "integration_resource_id": str(resource_id),
+                "source": f"https://www.notion.so/{page_id.replace('-', '')}",
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json()["title"] == "Knowledge Source Unavailable"
+
+
+async def _notion_test_token() -> str:
+    return "notion-test-token"
 
 
 async def test_cross_workspace_document_mutations_return_not_found(

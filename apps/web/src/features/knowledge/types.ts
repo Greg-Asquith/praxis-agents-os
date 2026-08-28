@@ -3,6 +3,7 @@
 import type { UntrustedNode } from "@/components/tool-ui/untrusted-node"
 
 export type KbProcessingStatus = "pending" | "processing" | "ready" | "error"
+export type KbSourceSyncStatus = "pending" | "ready" | "error" | "unavailable" | "disconnected"
 export type KbSourceType = "upload" | "url" | "manual" | "conversation" | "integration"
 export type KbContent = string | UntrustedNode
 
@@ -11,6 +12,8 @@ export type KbDocument = {
   title: string
   source_type: KbSourceType
   status: KbProcessingStatus
+  source_sync_status: KbSourceSyncStatus | null
+  source_synced_at: string | null
   processing_error: string | null
   processing_attempts: number
   is_private: boolean
@@ -82,6 +85,30 @@ export type KbUrlDocumentCreateRequest = {
 
 export type KbFileDocumentCreateRequest = {
   file_id: string
+  title?: string
+  is_private: boolean
+}
+
+export type KbIntegrationSourceReference = Record<string, unknown>
+
+export type KbIntegrationSourceSearchResult = {
+  reference: KbIntegrationSourceReference
+  title: string
+  url: string
+  source_updated_at: string | null
+}
+
+export type KbIntegrationSourcePreview = KbIntegrationSourceSearchResult & {
+  external_id: string
+  markdown_excerpt: string
+}
+
+export type KbIntegrationSourcePreviewRequest = {
+  integration_resource_id: string
+  source: string | KbIntegrationSourceReference
+}
+
+export type KbIntegrationDocumentCreateRequest = KbIntegrationSourcePreviewRequest & {
   title?: string
   is_private: boolean
 }
