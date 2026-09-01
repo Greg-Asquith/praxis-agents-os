@@ -263,6 +263,14 @@ apps/api/
   details. This boundary supports replacing the provider layer without
   changing the execution path. LiteLLM is the preferred replacement if
   Pydantic AI no longer covers the required providers.
+- **Google transport:** Google models use the Gemini Developer API with an API
+  key by default. When `GOOGLE_VERTEX_AI` is enabled, they use Vertex AI with
+  Application Default Credentials and the configured location. The project
+  resolves from `GOOGLE_VERTEX_PROJECT`, then falls back to `GCP_PROJECT_ID`.
+  The model catalog, native helper availability, and Google embeddings follow
+  the same switch, so transport selection does not change agent or tool
+  contracts. Usage-ledger attribution and public-rate pricing are keyed by the
+  Google provider and model, independent of the selected transport.
 - Infrastructure provider settings live in `core/settings/providers.py`.
   Large language model (LLM) configuration remains separate and includes the
   model catalog and credentials.

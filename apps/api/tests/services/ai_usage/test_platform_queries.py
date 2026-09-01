@@ -68,19 +68,19 @@ async def test_platform_queries_reconcile_across_workspaces_and_are_read_only(
             [
                 _event(
                     workspace_a.id,
-                    datetime(2026, 8, 31, 23, 59, tzinfo=UTC),
+                    datetime(2098, 1, 1, 23, 59, tzinfo=UTC),
                     user_id=shared_user.id,
                     requests=3,
                 ),
                 _event(
                     workspace_b.id,
-                    datetime(2026, 9, 1, 0, 0, tzinfo=UTC),
+                    datetime(2098, 1, 2, 0, 0, tzinfo=UTC),
                     user_id=shared_user.id,
                     requests=2,
                 ),
                 _event(
                     workspace_b.id,
-                    datetime(2026, 9, 1, 1, 0, tzinfo=UTC),
+                    datetime(2098, 1, 2, 1, 0, tzinfo=UTC),
                     provider="azure",
                     model="customer-deployment",
                     input_tokens=2,
@@ -89,7 +89,7 @@ async def test_platform_queries_reconcile_across_workspaces_and_are_read_only(
                 ),
                 _event(
                     workspace_a.id,
-                    datetime(2026, 9, 1, 2, 0, tzinfo=UTC),
+                    datetime(2098, 1, 2, 2, 0, tzinfo=UTC),
                     input_tokens=0,
                     user_id=removed_user.id,
                     requests=0,
@@ -99,21 +99,21 @@ async def test_platform_queries_reconcile_across_workspaces_and_are_read_only(
         await seed_db.commit()
 
     usage_range = {
-        "from_": datetime(2026, 8, 31, tzinfo=UTC),
-        "to": datetime(2026, 9, 2, tzinfo=UTC),
+        "from_": datetime(2098, 1, 1, tzinfo=UTC),
+        "to": datetime(2098, 1, 3, tzinfo=UTC),
     }
     async with get_maintenance_async_db_session_factory()() as query_db:
         await configure_async_db_session(query_db)
         summary = await get_platform_usage_summary(query_db, **usage_range)
 
-        assert summary.totals.estimated_cost_usd == Decimal("5")
+        assert summary.totals.estimated_cost_usd == Decimal("6")
         assert summary.totals.requests == 12
         assert summary.pricing_coverage.priced_tokens == 2_000_000
         assert summary.pricing_coverage.unpriced_tokens == 2
         assert summary.pricing_coverage.priced_requests == 5
         assert summary.pricing_coverage.unpriced_requests == 7
         assert [point.estimated_cost_usd for point in summary.daily] == [
-            Decimal("2"),
+            Decimal("3"),
             Decimal("3"),
         ]
 
