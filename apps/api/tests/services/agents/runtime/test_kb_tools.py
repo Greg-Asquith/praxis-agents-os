@@ -26,7 +26,12 @@ from services.agents.runtime.tools.kb import (
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.embeddings.domain import EmbeddingProviderError
 from services.kb.create_document import create_kb_document
-from services.kb.domain import KB_SOURCE_MANUAL, KB_SOURCE_UPLOAD, KB_SOURCE_URL
+from services.kb.domain import (
+    KB_SOURCE_MANUAL,
+    KB_SOURCE_UPLOAD,
+    KB_SOURCE_URL,
+    KB_SYNC_READY,
+)
 from services.kb.ingest_document import ingest_kb_document
 from services.kb.schemas import KBDocumentRead, KBSearchHit, KBSearchResult
 from tests.factories import build_user, build_workspace
@@ -291,6 +296,7 @@ async def test_real_kb_pipeline_returns_plain_content_and_respects_visibility(
     )
     url_document.source_type = KB_SOURCE_URL
     url_document.external_url = "https://example.com/hostile"
+    url_document.source_sync_status = KB_SYNC_READY
     upload_document.source_type = KB_SOURCE_UPLOAD
     await db_session.flush()
 

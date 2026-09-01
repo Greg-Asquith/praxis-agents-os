@@ -14,6 +14,7 @@ from models.files import FileRevision
 from models.kb import KBDocument
 from services.kb.domain import (
     ANNOTATION_DEFAULTS,
+    KB_REFRESHABLE_SOURCE_TYPES,
     KB_SOURCE_CONVERSATION,
     KB_SOURCE_INTEGRATION,
     KB_SOURCE_MANUAL,
@@ -151,7 +152,9 @@ async def create_kb_document(
         integration_resource_id=integration_resource_id,
         external_id=external_id,
         external_url=external_url,
-        source_sync_status=(KB_SYNC_PENDING if source_type == KB_SOURCE_INTEGRATION else None),
+        source_sync_status=(
+            KB_SYNC_PENDING if source_type in KB_REFRESHABLE_SOURCE_TYPES else None
+        ),
         is_private=is_private,
         created_by_user_id=created_by_user_id,
         annotation_enabled=ANNOTATION_DEFAULTS[source_type] if annotate is None else annotate,

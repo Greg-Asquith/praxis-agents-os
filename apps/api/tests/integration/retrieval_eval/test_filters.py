@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from models.kb import KBChunk
 from services.kb import search_chunks
+from services.kb.domain import KB_SOURCE_URL, KB_SYNC_READY
 from tests.integration.retrieval_eval.conftest import RetrievalCorpus
 from tests.support.embeddings import FakeEmbeddingProvider
 
@@ -15,8 +16,9 @@ async def test_source_and_document_filters_restrict_both_candidate_lists(
     retrieval_corpus: RetrievalCorpus,
 ) -> None:
     vpn = retrieval_corpus.documents["vpn_setup.md"]
-    vpn.source_type = "url"
+    vpn.source_type = KB_SOURCE_URL
     vpn.external_url = "https://docs.example.com/vpn"
+    vpn.source_sync_status = KB_SYNC_READY
     await retrieval_corpus.db.flush()
 
     by_source = await search_chunks(

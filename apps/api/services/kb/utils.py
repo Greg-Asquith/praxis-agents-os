@@ -9,6 +9,8 @@ import ipaddress
 import re
 import socket
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import PurePosixPath
 from urllib.parse import urljoin
 from uuid import UUID
@@ -23,7 +25,13 @@ from models.files import FileRevision
 from models.kb import KBDocument
 from services.files.contract import is_editable
 from services.files.utils import private_ref_from_key
-from services.kb.domain import KB_SOURCE_INTEGRATION, KB_SOURCE_UPLOAD, KB_SOURCE_URL
+from services.kb.domain import (
+    KB_SOURCE_INTEGRATION,
+    KB_SOURCE_UPLOAD,
+    KB_SOURCE_URL,
+    FetchedUrl,
+    KBSourceUnavailableError,
+)
 from services.storage.factory import get_storage_provider
 from utils.digests import sha256_text as compute_markdown_hash
 from utils.document_markdown import convert_document_to_markdown, truncate_markdown
@@ -37,6 +45,13 @@ __all__ = [
 ]
 
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_DEFINITIVE_URL_STATUS_CODES = {
+    401: "access_lost",
+    403: "access_lost",
+    404: "not_found",
+    410: "not_found",
+}
+_MAX_ETAG_CHARS = 256
 _Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 _HTML_MEDIA_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 _HTML_BOILERPLATE_TAGS = [
@@ -223,9 +238,11 @@ def _host_header(url: httpx2.URL) -> str:
 async def fetch_url(
     url: str,
     *,
+    etag: str | None = None,
+    last_modified: str | None = None,
     resolver: _Resolver = _resolve_public_addresses,
     transport: httpx2.AsyncBaseTransport | None = None,
-) -> tuple[bytes, str]:
+) -> FetchedUrl:
     """Fetch a public URL while pinning every connection to a vetted address."""
     current_url = url
     redirects = 0
@@ -246,11 +263,12 @@ async def fetch_url(
                 )
             vetted_addresses = tuple(_require_public_address(address) for address in addresses)
             pinned_url = parsed.copy_with(host=vetted_addresses[0])
-            headers = {
-                "Host": _host_header(parsed),
-                "User-Agent": "Praxis-Agents-KB-Fetch/1.0",
-                "Accept": "*/*",
-            }
+            headers = _fetch_request_headers(
+                parsed,
+                include_validators=redirects == 0,
+                etag=etag,
+                last_modified=last_modified,
+            )
             extensions = {"sni_hostname": parsed.host}
 
             async with client.stream(
@@ -260,41 +278,152 @@ async def fetch_url(
                 extensions=extensions,
                 follow_redirects=False,
             ) as response:
-                if response.status_code in _REDIRECT_STATUSES:
-                    location = response.headers.get("location")
-                    if not location:
-                        raise AppValidationError(
-                            "Knowledge-base URL redirect has no destination",
-                            field="url",
-                        )
-                    if redirects >= settings.KB_URL_MAX_REDIRECTS:
-                        raise AppValidationError(
-                            "Knowledge-base URL exceeded the redirect limit",
-                            field="url",
-                        )
+                redirect_url = _redirect_url(
+                    response,
+                    current_url=current_url,
+                    redirects=redirects,
+                )
+                if redirect_url is not None:
                     redirects += 1
-                    current_url = urljoin(current_url, location)
+                    current_url = redirect_url
                     continue
+                return await _read_fetched_url(
+                    response,
+                    etag=etag,
+                    last_modified=last_modified,
+                )
 
-                try:
-                    response.raise_for_status()
-                except httpx2.HTTPStatusError as exc:
-                    raise AppValidationError(
-                        "Knowledge-base URL returned an unsuccessful response",
-                        field="url",
-                        details={"status_code": response.status_code},
-                    ) from exc
 
-                body = bytearray()
-                async for chunk in response.aiter_bytes():
-                    if len(body) + len(chunk) > settings.KB_URL_MAX_BYTES:
-                        raise AppValidationError(
-                            "Knowledge-base URL response exceeds the size limit",
-                            field="url",
-                        )
-                    body.extend(chunk)
-                content_type = response.headers.get("content-type", "application/octet-stream")
-                return bytes(body), content_type
+def _fetch_request_headers(
+    url: httpx2.URL,
+    *,
+    include_validators: bool,
+    etag: str | None,
+    last_modified: str | None,
+) -> dict[str, str]:
+    headers = {
+        "Host": _host_header(url),
+        "User-Agent": "Praxis-Agents-KB-Fetch/1.0",
+        "Accept": "*/*",
+    }
+    if include_validators:
+        if etag is not None:
+            headers["If-None-Match"] = etag
+        if last_modified is not None:
+            headers["If-Modified-Since"] = last_modified
+    return headers
+
+
+def _redirect_url(
+    response: httpx2.Response,
+    *,
+    current_url: str,
+    redirects: int,
+) -> str | None:
+    if response.status_code not in _REDIRECT_STATUSES:
+        return None
+    location = response.headers.get("location")
+    if not location:
+        raise AppValidationError(
+            "Knowledge-base URL redirect has no destination",
+            field="url",
+        )
+    if redirects >= settings.KB_URL_MAX_REDIRECTS:
+        raise AppValidationError(
+            "Knowledge-base URL exceeded the redirect limit",
+            field="url",
+        )
+    return urljoin(current_url, location)
+
+
+async def _read_fetched_url(
+    response: httpx2.Response,
+    *,
+    etag: str | None,
+    last_modified: str | None,
+) -> FetchedUrl:
+    response_etag = _response_etag(response, fallback=etag)
+    response_last_modified = _response_last_modified(
+        response,
+        fallback=last_modified,
+    )
+    if response.status_code == 304:
+        return FetchedUrl(
+            data=b"",
+            content_type=response.headers.get("content-type", "application/octet-stream"),
+            etag=response_etag,
+            last_modified=response_last_modified,
+            not_modified=True,
+        )
+
+    error_code = _DEFINITIVE_URL_STATUS_CODES.get(response.status_code)
+    if error_code is not None:
+        raise KBSourceUnavailableError(
+            error_code=error_code,
+            status_code=response.status_code,
+        )
+
+    try:
+        response.raise_for_status()
+    except httpx2.HTTPStatusError as exc:
+        raise AppValidationError(
+            "Knowledge-base URL returned an unsuccessful response",
+            field="url",
+            details={"status_code": response.status_code},
+        ) from exc
+
+    body = bytearray()
+    async for chunk in response.aiter_bytes():
+        if len(body) + len(chunk) > settings.KB_URL_MAX_BYTES:
+            raise AppValidationError(
+                "Knowledge-base URL response exceeds the size limit",
+                field="url",
+            )
+        body.extend(chunk)
+    return FetchedUrl(
+        data=bytes(body),
+        content_type=response.headers.get("content-type", "application/octet-stream"),
+        etag=response_etag,
+        last_modified=response_last_modified,
+        not_modified=False,
+    )
+
+
+def _response_etag(response: httpx2.Response, *, fallback: str | None) -> str | None:
+    raw_etag = response.headers.get("etag")
+    if raw_etag is None:
+        return _bounded_etag(fallback) if response.status_code == 304 else None
+    return _bounded_etag(raw_etag)
+
+
+def _bounded_etag(value: str | None) -> str | None:
+    if value is None or len(value) > _MAX_ETAG_CHARS:
+        return None
+    return value
+
+
+def _response_last_modified(
+    response: httpx2.Response,
+    *,
+    fallback: str | None,
+) -> str | None:
+    raw_last_modified = response.headers.get("last-modified")
+    if raw_last_modified is None and response.status_code == 304:
+        return fallback
+    return raw_last_modified
+
+
+def parse_last_modified(value: str | None) -> datetime | None:
+    """Returns a UTC source timestamp from an HTTP Last-Modified value."""
+    if value is None:
+        return None
+    try:
+        parsed = parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(UTC)
 
 
 async def get_revision_markdown(db: AsyncSession, file_revision_id: UUID) -> str:

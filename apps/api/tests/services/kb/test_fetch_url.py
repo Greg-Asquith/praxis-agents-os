@@ -3,13 +3,15 @@
 """SSRF and pinned-connect coverage for knowledge-base URL ingestion."""
 
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 import httpx2
 import pytest
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
-from services.kb.utils import convert_html_to_markdown, fetch_url
+from services.kb.domain import KBSourceUnavailableError
+from services.kb.utils import convert_html_to_markdown, fetch_url, parse_last_modified
 
 Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 
@@ -66,11 +68,15 @@ async def test_fetch_url_pins_initial_and_redirect_connections() -> None:
             )
         return httpx2.Response(
             200,
-            headers={"content-type": "text/html; charset=utf-8"},
+            headers={
+                "content-type": "text/html; charset=utf-8",
+                "etag": '"revision-2"',
+                "last-modified": "Tue, 01 Sep 2026 09:00:00 GMT",
+            },
             content=b"<h1>Safe content</h1>",
         )
 
-    body, content_type = await fetch_url(
+    fetched = await fetch_url(
         "https://source.example/document",
         resolver=resolver_for(
             {
@@ -81,8 +87,11 @@ async def test_fetch_url_pins_initial_and_redirect_connections() -> None:
         transport=httpx2.MockTransport(handler),
     )
 
-    assert body == b"<h1>Safe content</h1>"
-    assert content_type == "text/html; charset=utf-8"
+    assert fetched.data == b"<h1>Safe content</h1>"
+    assert fetched.content_type == "text/html; charset=utf-8"
+    assert fetched.etag == '"revision-2"'
+    assert fetched.last_modified == "Tue, 01 Sep 2026 09:00:00 GMT"
+    assert fetched.not_modified is False
     assert [request.url.host for request in requests] == ["93.184.216.34", "8.8.8.8"]
     assert [request.headers["host"] for request in requests] == [
         "source.example",
@@ -92,6 +101,130 @@ async def test_fetch_url_pins_initial_and_redirect_connections() -> None:
         "source.example",
         "redirect.example",
     ]
+    assert all("if-none-match" not in request.headers for request in requests)
+    assert all("if-modified-since" not in request.headers for request in requests)
+
+
+async def test_fetch_url_sends_validators_only_on_first_hop() -> None:
+    requests: list[httpx2.Request] = []
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        if request.url.host == "93.184.216.34":
+            return httpx2.Response(
+                302,
+                headers={"location": "https://redirect.example/final"},
+            )
+        return httpx2.Response(200, content=b"Updated")
+
+    await fetch_url(
+        "https://source.example/document",
+        etag='"revision-1"',
+        last_modified="Tue, 01 Sep 2026 09:00:00 GMT",
+        resolver=resolver_for(
+            {
+                "source.example": ("93.184.216.34",),
+                "redirect.example": ("8.8.8.8",),
+            }
+        ),
+        transport=httpx2.MockTransport(handler),
+    )
+
+    assert requests[0].headers["if-none-match"] == '"revision-1"'
+    assert requests[0].headers["if-modified-since"] == "Tue, 01 Sep 2026 09:00:00 GMT"
+    assert "if-none-match" not in requests[1].headers
+    assert "if-modified-since" not in requests[1].headers
+
+
+@pytest.mark.parametrize("with_validators", [False, True])
+async def test_fetch_url_accepts_not_modified_response(with_validators: bool) -> None:
+    async def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(304)
+
+    etag = '"revision-1"' if with_validators else None
+    last_modified = "Tue, 01 Sep 2026 09:00:00 GMT" if with_validators else None
+    fetched = await fetch_url(
+        "https://source.example/document",
+        etag=etag,
+        last_modified=last_modified,
+        resolver=resolver_for({"source.example": ("93.184.216.34",)}),
+        transport=httpx2.MockTransport(handler),
+    )
+
+    assert fetched.data == b""
+    assert fetched.not_modified is True
+    assert fetched.etag == etag
+    assert fetched.last_modified == last_modified
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_code"),
+    [(401, "access_lost"), (403, "access_lost"), (404, "not_found"), (410, "not_found")],
+)
+async def test_fetch_url_maps_definitive_source_failures(
+    status_code: int,
+    error_code: str,
+) -> None:
+    async def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(status_code)
+
+    with pytest.raises(KBSourceUnavailableError) as exc_info:
+        await fetch_url(
+            "https://source.example/document",
+            resolver=resolver_for({"source.example": ("93.184.216.34",)}),
+            transport=httpx2.MockTransport(handler),
+        )
+
+    assert exc_info.value.error_code == error_code
+    assert exc_info.value.details == {"status_code": status_code}
+
+
+@pytest.mark.parametrize("status_code", [429, 503])
+async def test_fetch_url_keeps_transient_statuses_generic(status_code: int) -> None:
+    async def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(status_code)
+
+    with pytest.raises(AppValidationError) as exc_info:
+        await fetch_url(
+            "https://source.example/document",
+            resolver=resolver_for({"source.example": ("93.184.216.34",)}),
+            transport=httpx2.MockTransport(handler),
+        )
+
+    assert not isinstance(exc_info.value, KBSourceUnavailableError)
+    assert exc_info.value.details == {"status_code": status_code}
+
+
+async def test_fetch_url_bounds_etag_and_tolerates_invalid_last_modified() -> None:
+    async def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            200,
+            headers={
+                "etag": f'"{"x" * 256}"',
+                "last-modified": "not an HTTP date",
+            },
+            content=b"Safe content",
+        )
+
+    fetched = await fetch_url(
+        "https://source.example/document",
+        resolver=resolver_for({"source.example": ("93.184.216.34",)}),
+        transport=httpx2.MockTransport(handler),
+    )
+
+    assert fetched.etag is None
+    assert fetched.last_modified == "not an HTTP date"
+    assert parse_last_modified(fetched.last_modified) is None
+
+
+def test_parse_last_modified_returns_utc_datetime() -> None:
+    assert parse_last_modified("Tue, 01 Sep 2026 09:00:00 GMT") == datetime(
+        2026,
+        9,
+        1,
+        9,
+        tzinfo=UTC,
+    )
 
 
 async def test_convert_html_to_markdown_accepts_charset_for_extensionless_url() -> None:
@@ -180,13 +313,13 @@ async def test_fetch_url_brackets_ipv6_literal_host_header() -> None:
         requests.append(request)
         return httpx2.Response(200, content=b"safe")
 
-    body, _ = await fetch_url(
+    fetched = await fetch_url(
         "https://[2606:4700:4700::1111]:8443/document",
         resolver=resolver_for({"2606:4700:4700::1111": ("2606:4700:4700::1111",)}),
         transport=httpx2.MockTransport(handler),
     )
 
-    assert body == b"safe"
+    assert fetched.data == b"safe"
     assert requests[0].headers["host"] == "[2606:4700:4700::1111]:8443"
 
 
@@ -213,6 +346,20 @@ async def test_fetch_url_revalidates_redirect_before_connecting() -> None:
         )
 
     assert connected_hosts == ["93.184.216.34"]
+
+
+async def test_fetch_url_enforces_redirect_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "KB_URL_MAX_REDIRECTS", 1)
+
+    async def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(302, headers={"location": "/again"})
+
+    with pytest.raises(AppValidationError, match="redirect limit"):
+        await fetch_url(
+            "https://source.example/document",
+            resolver=resolver_for({"source.example": ("93.184.216.34",)}),
+            transport=httpx2.MockTransport(handler),
+        )
 
 
 async def test_fetch_url_aborts_when_stream_exceeds_size_limit(monkeypatch) -> None:

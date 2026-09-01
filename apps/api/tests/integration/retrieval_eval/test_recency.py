@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pytest
 
 from services.kb import search_chunks
+from services.kb.domain import KB_SOURCE_URL, KB_SYNC_READY
 from tests.integration.retrieval_eval.conftest import (
     RetrievalCorpus,
     _seed_document,
@@ -54,12 +55,14 @@ async def test_fresh_near_duplicate_outranks_stale_eligible_source(
     stale = by_id[stale_id]
     baseline_fresh_score = baseline_pair[0].score
 
-    stale.source_type = "url"
+    stale.source_type = KB_SOURCE_URL
     stale.external_url = "https://docs.example.com/stale-ownership"
     stale.source_updated_at = datetime(2024, 1, 1, tzinfo=UTC)
-    fresh.source_type = "url"
+    stale.source_sync_status = KB_SYNC_READY
+    fresh.source_type = KB_SOURCE_URL
     fresh.external_url = "https://docs.example.com/fresh-ownership"
     fresh.source_updated_at = datetime(2026, 7, 1, tzinfo=UTC)
+    fresh.source_sync_status = KB_SYNC_READY
     await retrieval_corpus.db.flush()
 
     result = await search_chunks(

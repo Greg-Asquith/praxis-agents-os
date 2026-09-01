@@ -7,6 +7,8 @@ from sqlalchemy.exc import IntegrityError
 
 from services.kb.domain import (
     KB_SOURCE_INTEGRATION,
+    KB_SOURCE_MANUAL,
+    KB_SOURCE_URL,
     KB_SYNC_DISCONNECTED,
     KB_SYNC_ERROR,
     KB_SYNC_PENDING,
@@ -23,7 +25,7 @@ from tests.factories import (
 pytestmark = pytest.mark.asyncio
 
 
-async def test_integration_source_binding_checks(db_session, kb_actors) -> None:
+async def test_refreshable_source_binding_checks(db_session, kb_actors) -> None:
     credential = build_external_credential()
     connection = build_integration_connection(
         credential=credential,
@@ -45,8 +47,19 @@ async def test_integration_source_binding_checks(db_session, kb_actors) -> None:
             "external_id": "page-id",
             "source_sync_status": None,
         },
-        {"integration_resource_id": resource.id},
-        {"source_sync_status": KB_SYNC_PENDING},
+        {
+            "source_type": KB_SOURCE_URL,
+            "source_sync_status": None,
+        },
+        {
+            "source_type": KB_SOURCE_URL,
+            "source_sync_status": KB_SYNC_PENDING,
+            "integration_resource_id": resource.id,
+        },
+        {
+            "source_type": KB_SOURCE_MANUAL,
+            "source_sync_status": KB_SYNC_PENDING,
+        },
         {"source_synced_at": datetime.now(UTC)},
     )
 

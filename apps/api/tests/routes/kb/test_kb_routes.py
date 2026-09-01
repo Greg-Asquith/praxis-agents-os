@@ -3,13 +3,14 @@
 """HTTP-boundary tests for knowledge-base read routes."""
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from models.kb import KBDocument
 from models.workspace import WorkspaceRole
 from services.kb.schemas import KBSearchHit, KBSearchResult
 from tests.factories import (
@@ -65,6 +66,40 @@ async def test_search_requires_authentication_and_explicit_workspace(
         json={"query": "vpn"},
     )
     assert missing_workspace.status_code == 422
+
+
+async def test_url_create_and_reprocess_return_pending_sync_state(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+    )
+    created = await db_async_client.post(
+        "/api/v1/kb/documents/from-url",
+        headers=headers,
+        json={
+            "title": "Refreshable guide",
+            "url": "https://example.com/guide",
+        },
+    )
+
+    assert created.status_code == 202, created.text
+    assert created.json()["source_sync_status"] == "pending"
+    document = await db_session.get(KBDocument, UUID(created.json()["id"]))
+    assert document is not None
+    document.status = "error"
+    document.source_sync_status = "error"
+    await db_session.commit()
+
+    refreshed = await db_async_client.post(
+        f"/api/v1/kb/documents/{document.id}/reprocess",
+        headers=headers,
+    )
+
+    assert refreshed.status_code == 202, refreshed.text
+    assert refreshed.json()["source_sync_status"] == "pending"
 
 
 async def test_search_allows_read_only_and_returns_service_contract(
@@ -145,6 +180,7 @@ async def test_get_document_allows_read_only_and_maps_hidden_to_404(
         created_by_user_id=user.id,
         source_type="url",
         status="ready",
+        source_sync_status="ready",
     )
     hidden = build_kb_document(
         workspace=workspace,

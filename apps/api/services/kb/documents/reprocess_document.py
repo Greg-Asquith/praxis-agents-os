@@ -19,7 +19,7 @@ from services.kb.documents.utils import (
     user_provenance,
 )
 from services.kb.domain import (
-    KB_SOURCE_INTEGRATION,
+    KB_REFRESHABLE_SOURCE_TYPES,
     KB_STATUS_PENDING,
     KB_STATUS_PROCESSING,
     KB_SYNC_PENDING,
@@ -63,7 +63,7 @@ async def reprocess_document(
         existing=document,
     )
     document.status = KB_STATUS_PENDING
-    if document.source_type == KB_SOURCE_INTEGRATION:
+    if document.source_type in KB_REFRESHABLE_SOURCE_TYPES:
         document.source_sync_status = KB_SYNC_PENDING
     document.processing_error = None
     document.processing_attempts = 0

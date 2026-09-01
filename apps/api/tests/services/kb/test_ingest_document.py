@@ -2,7 +2,8 @@
 
 """Knowledge-base ingestion lifecycle tests."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
@@ -12,7 +13,11 @@ from core.exceptions.general import AppValidationError, ConflictError
 from models.jobs import Job
 from models.kb import KBChunk, KBDocument
 from services.files.utils import private_ref_from_key
+from services.jobs.domain import JOB_STATUS_RUNNING, JOB_STATUS_SUCCEEDED
+from services.jobs.finalize_job import finalize_job_success
+from services.jobs.handlers.ingest_kb_document import handle_ingest_kb_document
 from services.kb import create_kb_document
+from services.kb.domain import FetchedUrl, KBSourceUnavailableError
 from services.kb.ingest_document import ingest_kb_document
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision
@@ -387,3 +392,295 @@ async def test_failure_status_survives_reraise(
     assert failed.status == "error"
     assert failed.processing_attempts == 1
     assert failed.processing_error == "URL document has no source URL"
+
+
+async def test_url_ingest_stores_validators_and_not_modified_preserves_chunks(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    last_modified = "Tue, 01 Sep 2026 09:00:00 GMT"
+    responses = [
+        FetchedUrl(
+            data=b"# Guide\n\nStable URL knowledge.",
+            content_type="text/markdown",
+            etag='"revision-1"',
+            last_modified=last_modified,
+            not_modified=False,
+        ),
+        FetchedUrl(
+            data=b"",
+            content_type="application/octet-stream",
+            etag='"revision-1"',
+            last_modified=last_modified,
+            not_modified=True,
+        ),
+    ]
+    requests: list[tuple[str | None, str | None]] = []
+
+    async def fetch(
+        _url: str,
+        *,
+        etag: str | None = None,
+        last_modified: str | None = None,
+    ) -> FetchedUrl:
+        requests.append((etag, last_modified))
+        return responses.pop(0)
+
+    async def convert(data: bytes, **_kwargs: object) -> str:
+        return data.decode()
+
+    monkeypatch.setattr("services.kb.ingest_document.fetch_url", fetch)
+    monkeypatch.setattr("services.kb.ingest_document.convert_html_to_markdown", convert)
+    document = await create_kb_document(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        source_type="url",
+        title="Refreshable guide",
+        url="https://example.com/guide",
+    )
+    assert document.source_sync_status == "pending"
+
+    await _ingest(db_session, kb_actors, document)
+
+    first_chunk_ids = tuple(
+        await db_session.scalars(
+            select(KBChunk.id)
+            .where(KBChunk.document_id == document.id)
+            .order_by(KBChunk.chunk_index)
+        )
+    )
+    first_synced_at = document.source_synced_at
+    assert first_chunk_ids
+    assert document.status == "ready"
+    assert document.source_sync_status == "ready"
+    assert document.source_updated_at == datetime(2026, 9, 1, 9, tzinfo=UTC)
+    assert document.meta == {
+        "etag": '"revision-1"',
+        "last_modified": last_modified,
+    }
+
+    def fail_hashing(_markdown: str) -> str:
+        raise AssertionError("A not-modified response must skip hashing")
+
+    monkeypatch.setattr("services.kb.ingest_document.compute_markdown_hash", fail_hashing)
+
+    await _ingest(db_session, kb_actors, document)
+
+    second_chunk_ids = tuple(
+        await db_session.scalars(
+            select(KBChunk.id)
+            .where(KBChunk.document_id == document.id)
+            .order_by(KBChunk.chunk_index)
+        )
+    )
+    await db_session.refresh(document)
+    assert requests == [(None, None), ('"revision-1"', last_modified)]
+    assert second_chunk_ids == first_chunk_ids
+    assert document.source_sync_status == "ready"
+    assert document.source_synced_at is not None
+    assert first_synced_at is not None
+    assert document.source_synced_at >= first_synced_at
+
+
+async def test_url_not_modified_without_stored_content_is_transient(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fetch(_url: str, **_kwargs: object) -> FetchedUrl:
+        return FetchedUrl(
+            data=b"",
+            content_type="application/octet-stream",
+            etag='"stale"',
+            last_modified=None,
+            not_modified=True,
+        )
+
+    monkeypatch.setattr("services.kb.ingest_document.fetch_url", fetch)
+    document = await create_kb_document(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        source_type="url",
+        title="Empty URL source",
+        url="https://example.com/empty",
+        meta={"etag": '"stale"'},
+    )
+
+    with pytest.raises(AppValidationError, match="without stored content"):
+        await _ingest(db_session, kb_actors, document)
+
+    await db_session.refresh(document)
+    assert document.status == "error"
+    assert document.source_sync_status == "error"
+    assert document.source_synced_at is not None
+    assert document.meta == {
+        "etag": '"stale"',
+        "last_error_code": "refresh_failed",
+    }
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_code"),
+    [(429, "rate_limited"), (503, "refresh_failed")],
+)
+async def test_transient_url_failure_retains_last_ready_content(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    error_code: str,
+) -> None:
+    response: FetchedUrl | Exception = FetchedUrl(
+        data=b"# Guide\n\nLast good URL content.",
+        content_type="text/markdown",
+        etag='"revision-1"',
+        last_modified=None,
+        not_modified=False,
+    )
+
+    async def fetch(_url: str, **_kwargs: object) -> FetchedUrl:
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    async def convert(data: bytes, **_kwargs: object) -> str:
+        return data.decode()
+
+    monkeypatch.setattr("services.kb.ingest_document.fetch_url", fetch)
+    monkeypatch.setattr("services.kb.ingest_document.convert_html_to_markdown", convert)
+    document = await create_kb_document(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        source_type="url",
+        title="Transient URL source",
+        url="https://example.com/transient",
+    )
+    await _ingest(db_session, kb_actors, document)
+    original_content = document.content_md
+    original_hash = document.content_hash
+    assert document.source_updated_at is not None
+    original_chunk_ids = set(
+        await db_session.scalars(select(KBChunk.id).where(KBChunk.document_id == document.id))
+    )
+    response = AppValidationError(
+        "Knowledge-base URL returned an unsuccessful response",
+        field="url",
+        details={"status_code": status_code},
+    )
+
+    with pytest.raises(AppValidationError):
+        await _ingest(db_session, kb_actors, document)
+
+    retained_chunk_ids = set(
+        await db_session.scalars(select(KBChunk.id).where(KBChunk.document_id == document.id))
+    )
+    await db_session.refresh(document)
+    assert document.status == "error"
+    assert document.source_sync_status == "error"
+    assert document.content_md == original_content
+    assert document.content_hash == original_hash
+    assert retained_chunk_ids == original_chunk_ids
+    assert document.meta == {
+        "etag": '"revision-1"',
+        "last_error_code": error_code,
+    }
+
+
+async def test_unavailable_url_finishes_job_and_later_refresh_restores_content(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response: FetchedUrl | Exception = KBSourceUnavailableError(
+        error_code="not_found",
+        status_code=404,
+    )
+
+    async def fetch(_url: str, **_kwargs: object) -> FetchedUrl:
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    async def convert(data: bytes, **_kwargs: object) -> str:
+        return data.decode()
+
+    monkeypatch.setattr("services.kb.ingest_document.fetch_url", fetch)
+    monkeypatch.setattr("services.kb.ingest_document.convert_html_to_markdown", convert)
+    document = await create_kb_document(
+        db_session,
+        workspace_id=kb_actors.workspace.id,
+        source_type="url",
+        title="Unavailable URL source",
+        url="https://example.com/missing",
+        meta={"etag": '"revision-1"'},
+    )
+    document.content_md = "# Stale\n\nStale searchable content."
+    document.content_hash = "stale-hash"
+    document.summary = "Stale summary"
+    chunk = KBChunk(
+        document_id=document.id,
+        workspace_id=document.workspace_id,
+        chunk_index=0,
+        content="Stale searchable content.",
+        char_start=0,
+        char_end=25,
+        token_estimate=7,
+        meta={"headings": ["Stale"]},
+    )
+    db_session.add(chunk)
+    document.chunk_count = 1
+    job = await db_session.scalar(
+        select(Job).where(Job.kind == "kb.ingest_document", Job.subject_id == document.id)
+    )
+    assert job is not None
+    owner_id = f"kb-url-unavailable-{uuid4().hex}"
+    job.status = JOB_STATUS_RUNNING
+    job.attempts = 1
+    job.locked_by = owner_id
+    job.locked_at = datetime.now(UTC)
+    job.lock_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+
+    await handle_ingest_kb_document(db_session, job)
+    finalized = await finalize_job_success(
+        db_session,
+        job,
+        owner_instance_id=owner_id,
+    )
+
+    await db_session.refresh(document)
+    assert finalized is True
+    assert job.status == JOB_STATUS_SUCCEEDED
+    assert document.status == "error"
+    assert document.source_sync_status == "unavailable"
+    assert document.processing_error == "This page is no longer available at its URL."
+    assert document.content_md is None
+    assert document.summary is None
+    assert document.content_hash == ""
+    assert document.chunk_count == 0
+    assert document.meta == {
+        "etag": '"revision-1"',
+        "last_error_code": "not_found",
+    }
+    assert (
+        await db_session.scalar(
+            select(func.count(KBChunk.id)).where(KBChunk.document_id == document.id)
+        )
+        == 0
+    )
+
+    response = FetchedUrl(
+        data=b"# Restored\n\nFresh URL knowledge.",
+        content_type="text/markdown",
+        etag='"revision-2"',
+        last_modified=None,
+        not_modified=False,
+    )
+    await _ingest(db_session, kb_actors, document)
+
+    await db_session.refresh(document)
+    assert document.status == "ready"
+    assert document.source_sync_status == "ready"
+    assert document.content_md == "# Restored\n\nFresh URL knowledge."
+    assert document.chunk_count > 0
+    assert document.meta == {"etag": '"revision-2"'}

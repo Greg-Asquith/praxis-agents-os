@@ -109,6 +109,7 @@ async def test_sources_set_provenance_and_enqueue_ingestion(
     assert rows[manual.id].created_by_user_id == kb_actors.user.id
     assert rows[remote.id].source_type == "url"
     assert rows[remote.id].external_url == "https://example.com/guide"
+    assert rows[remote.id].source_sync_status == "pending"
     assert rows[uploaded.id].source_type == "upload"
     assert rows[uploaded.id].file_revision_id == revision.id
     assert rows[uploaded.id].title == file.name
@@ -311,3 +312,44 @@ async def test_delete_removes_chunks_and_reprocess_enqueues_fresh_job(
         )
         == 2
     )
+
+
+async def test_url_reprocess_resets_sync_state(
+    db_session: AsyncSession,
+    kb_actors: KBActors,
+) -> None:
+    membership = await _membership(db_session, kb_actors)
+    remote = await create_document_from_url(
+        db_session,
+        request=_request(),
+        actor=kb_actors.user,
+        workspace=kb_actors.workspace,
+        membership=membership,
+        payload=KBUrlDocumentCreateRequest(
+            title="Refreshable URL",
+            url="https://example.com/refreshable",
+        ),
+    )
+    document = await db_session.get(KBDocument, remote.id)
+    assert document is not None
+    original_job = await db_session.scalar(
+        select(Job).where(Job.kind == "kb.ingest_document", Job.subject_id == remote.id)
+    )
+    assert original_job is not None
+    original_job.status = JOB_STATUS_SUCCEEDED
+    document.status = "error"
+    document.source_sync_status = "error"
+    document.processing_error = "temporary"
+    await db_session.flush()
+
+    refreshed = await reprocess_document(
+        db_session,
+        request=_request(),
+        actor=kb_actors.user,
+        workspace=kb_actors.workspace,
+        membership=membership,
+        document_id=document.id,
+    )
+
+    assert refreshed.status == "pending"
+    assert refreshed.source_sync_status == "pending"

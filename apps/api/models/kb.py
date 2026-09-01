@@ -89,11 +89,16 @@ class KBDocument(BaseModel):
             name="ck_kb_documents_source_sync_status",
         ),
         CheckConstraint(
-            "(source_type = 'integration' AND external_id IS NOT NULL "
+            "(source_type IN ('url', 'integration') "
             "AND source_sync_status IS NOT NULL) OR "
-            "(source_type <> 'integration' AND integration_resource_id IS NULL "
+            "(source_type NOT IN ('url', 'integration') "
             "AND source_sync_status IS NULL AND source_synced_at IS NULL)",
-            name="ck_kb_documents_integration_source",
+            name="ck_kb_documents_refreshable_source",
+        ),
+        CheckConstraint(
+            "(source_type = 'integration' AND external_id IS NOT NULL) OR "
+            "(source_type <> 'integration' AND integration_resource_id IS NULL)",
+            name="ck_kb_documents_integration_binding",
         ),
         CheckConstraint(
             "processing_attempts >= 0",
@@ -109,10 +114,10 @@ class KBDocument(BaseModel):
             postgresql_where=text("source_type = 'integration' AND deleted = false"),
         ),
         Index(
-            "ix_kb_documents_integration_scan",
+            "ix_kb_documents_source_scan",
             "source_synced_at",
             postgresql_where=text(
-                "source_type = 'integration' AND deleted = false "
+                "source_type IN ('url', 'integration') AND deleted = false "
                 "AND source_sync_status IN ('ready', 'error', 'unavailable')"
             ),
         ),
