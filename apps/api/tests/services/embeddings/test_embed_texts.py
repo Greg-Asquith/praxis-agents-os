@@ -16,6 +16,7 @@ from services.embeddings.domain import (
     EmbeddingConfigurationError,
     EmbeddingProvider,
     EmbeddingProviderError,
+    EmbeddingProviderPartialUsageError,
 )
 from services.embeddings.embed_texts import embed_texts
 from services.embeddings.get_embedding_usage import get_embedding_usage
@@ -71,6 +72,27 @@ class MultiRequestProvider(RecordingProvider):
             dimensions=result.dimensions,
             requests=len(texts),
         )
+
+
+class PartialUsageFailingProvider(RecordingProvider):
+    async def embed_texts(self, texts, *, model, dimensions):
+        raise EmbeddingProviderPartialUsageError(
+            "second request failed",
+            input_tokens=4,
+            requests=1,
+        )
+
+
+class ClosingFailingProvider(RecordingProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed = False
+
+    async def embed_texts(self, texts, *, model, dimensions):
+        raise EmbeddingProviderError("provider failed")
+
+    async def aclose(self) -> None:
+        self.closed = True
 
 
 async def _workspace(db: AsyncSession):
@@ -275,3 +297,47 @@ async def test_later_batch_failure_records_completed_batches_only(
     assert recorded[0].requests == 1
     assert recorded[0].input_tokens == 3
     assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 0
+
+
+async def test_partial_provider_failure_records_completed_request_usage(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = await _workspace(db_session)
+    recorded: list[AIUsageEventData] = []
+
+    async def record(event: AIUsageEventData) -> bool:
+        recorded.append(event)
+        return True
+
+    monkeypatch.setattr(embed_texts_module, "record_ai_usage_durable", record)
+    with pytest.raises(EmbeddingProviderPartialUsageError, match="second request failed"):
+        await embed_texts(
+            db_session,
+            ["first", "second"],
+            workspace_id=workspace.id,
+            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
+            provider=PartialUsageFailingProvider(),
+        )
+
+    assert recorded[0].requests == 1
+    assert recorded[0].input_tokens == 4
+
+
+async def test_operation_owned_provider_closes_after_failure(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = await _workspace(db_session)
+    provider = ClosingFailingProvider()
+    monkeypatch.setattr(embed_texts_module, "get_embedding_provider", lambda: provider)
+
+    with pytest.raises(EmbeddingProviderError, match="provider failed"):
+        await embed_texts(
+            db_session,
+            ["text"],
+            workspace_id=workspace.id,
+            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
+        )
+
+    assert provider.closed is True

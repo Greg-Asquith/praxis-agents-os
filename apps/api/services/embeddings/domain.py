@@ -41,6 +41,10 @@ class EmbeddingProvider(ABC):
     ) -> EmbeddingBatch:
         """Embed texts in input order."""
 
+    async def aclose(self) -> None:
+        """Releases resources owned by the provider."""
+        return
+
 
 class EmbeddingConfigurationError(ProblemDetailsError):
     """Raised for an invalid provider, model, dimension, or caller input."""
@@ -64,3 +68,19 @@ class EmbeddingProviderError(ProblemDetailsError):
             title="Embedding Provider Error",
             details=details,
         )
+
+
+class EmbeddingProviderPartialUsageError(EmbeddingProviderError):
+    """Carries known usage from completed requests before a provider failure."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        input_tokens: int,
+        requests: int,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, details=details)
+        self.input_tokens = input_tokens
+        self.requests = requests

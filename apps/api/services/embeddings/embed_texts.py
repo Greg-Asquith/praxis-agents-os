@@ -14,6 +14,7 @@ from services.embeddings.domain import (
     EmbeddingBatch,
     EmbeddingConfigurationError,
     EmbeddingProvider,
+    EmbeddingProviderPartialUsageError,
 )
 from services.embeddings.get_embedding_provider import get_embedding_provider
 from services.embeddings.record_embedding_usage import record_embedding_usage
@@ -89,6 +90,7 @@ async def embed_texts(
             },
         )
 
+    owns_provider = provider is None
     resolved_provider = provider or get_embedding_provider()
     batch_size = min(settings.EMBEDDINGS_MAX_BATCH_TEXTS, info.max_batch_texts)
     vectors: list[list[float]] = []
@@ -96,11 +98,16 @@ async def embed_texts(
     requests = 0
     try:
         for text_batch in chunk_batches(texts, batch_size):
-            result = await resolved_provider.embed_texts(
-                text_batch,
-                model=model,
-                dimensions=dimensions,
-            )
+            try:
+                result = await resolved_provider.embed_texts(
+                    text_batch,
+                    model=model,
+                    dimensions=dimensions,
+                )
+            except EmbeddingProviderPartialUsageError as exc:
+                total_tokens += exc.input_tokens
+                requests += exc.requests
+                raise
             if isinstance(result.total_tokens, bool) or result.total_tokens < 0:
                 raise EmbeddingConfigurationError("Embedding provider returned invalid usage.")
             if (
@@ -116,20 +123,24 @@ async def embed_texts(
             assert_batch_shape(result, len(text_batch))
             vectors.extend(result.vectors)
     finally:
-        await record_ai_usage_durable(
-            AIUsageEventData(
-                workspace_id=workspace_id,
-                provider=resolved_provider.provider,
-                model=model,
-                purpose=purpose,
-                input_tokens=total_tokens,
-                requests=requests,
-                agent_id=agent_id,
-                user_id=user_id,
-                run_id=run_id,
-                conversation_id=conversation_id,
+        try:
+            if owns_provider:
+                await resolved_provider.aclose()
+        finally:
+            await record_ai_usage_durable(
+                AIUsageEventData(
+                    workspace_id=workspace_id,
+                    provider=resolved_provider.provider,
+                    model=model,
+                    purpose=purpose,
+                    input_tokens=total_tokens,
+                    requests=requests,
+                    agent_id=agent_id,
+                    user_id=user_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                )
             )
-        )
 
     combined = EmbeddingBatch(
         vectors=vectors,

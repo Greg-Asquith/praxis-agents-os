@@ -2,6 +2,7 @@
 
 """Google Gemini embedding provider tests with no network access."""
 
+import asyncio
 import importlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -12,7 +13,10 @@ from google.genai import types
 
 from core.settings import settings
 from services.agents.models.domain import ModelConfigurationError
-from services.embeddings.domain import EmbeddingProviderError
+from services.embeddings.domain import (
+    EmbeddingProviderError,
+    EmbeddingProviderPartialUsageError,
+)
 from services.embeddings.get_embedding_provider import get_embedding_provider
 from services.embeddings.providers.google import GoogleEmbeddingsProvider
 
@@ -196,6 +200,79 @@ async def test_google_vertex_provider_preserves_order_dimensions_and_real_usage(
     assert result.requests == 2
 
 
+async def test_google_vertex_provider_runs_requests_concurrently_with_a_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    active_requests = 0
+    peak_requests = 0
+    concurrent_requests_started = asyncio.Event()
+
+    async def embed_content(*, contents: str, **_kwargs: object) -> object:
+        nonlocal active_requests, peak_requests
+        active_requests += 1
+        peak_requests = max(peak_requests, active_requests)
+        if active_requests >= 2:
+            concurrent_requests_started.set()
+        await concurrent_requests_started.wait()
+        await asyncio.sleep(0)
+        active_requests -= 1
+        return SimpleNamespace(
+            embeddings=[
+                SimpleNamespace(
+                    values=[float(contents)],
+                    statistics=SimpleNamespace(token_count=1),
+                )
+            ]
+        )
+
+    vertex_client = SimpleNamespace(
+        aio=SimpleNamespace(
+            models=SimpleNamespace(embed_content=AsyncMock(side_effect=embed_content))
+        )
+    )
+    provider = GoogleEmbeddingsProvider(vertex_client=vertex_client)  # type: ignore[arg-type]
+
+    result = await provider.embed_texts(
+        [str(index) for index in range(10)],
+        model="gemini-embedding-2",
+        dimensions=1024,
+    )
+
+    assert 1 < peak_requests <= 8
+    assert result.vectors == [[float(index)] for index in range(10)]
+    assert result.requests == 10
+
+
+async def test_google_vertex_provider_carries_usage_when_second_request_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    first_response = SimpleNamespace(
+        embeddings=[
+            SimpleNamespace(
+                values=[1.0],
+                statistics=SimpleNamespace(token_count=3),
+            )
+        ]
+    )
+    embed_content = AsyncMock(side_effect=[first_response, ValueError("failed")])
+    vertex_client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(embed_content=embed_content))
+    )
+    provider = GoogleEmbeddingsProvider(vertex_client=vertex_client)  # type: ignore[arg-type]
+
+    with pytest.raises(EmbeddingProviderPartialUsageError) as caught:
+        await provider.embed_texts(
+            ["first", "second"],
+            model="gemini-embedding-2",
+            dimensions=1024,
+        )
+
+    assert caught.value.input_tokens == 3
+    assert caught.value.requests == 1
+
+
 @pytest.mark.parametrize("token_count", [None, 1.5, True])
 async def test_google_vertex_provider_rejects_invalid_usage(
     monkeypatch: pytest.MonkeyPatch,
@@ -230,3 +307,26 @@ def test_google_vertex_provider_requires_project(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(ModelConfigurationError, match="GOOGLE_VERTEX_PROJECT"):
         GoogleEmbeddingsProvider()
+
+
+async def test_google_vertex_provider_closes_only_owned_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = importlib.import_module("services.embeddings.providers.google")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    owned_close = AsyncMock()
+    owned_client = SimpleNamespace(aio=SimpleNamespace(aclose=owned_close))
+    monkeypatch.setattr(module, "build_google_vertex_client", Mock(return_value=owned_client))
+
+    owned_provider = GoogleEmbeddingsProvider()
+    await owned_provider.aclose()
+
+    injected_close = AsyncMock()
+    injected_client = SimpleNamespace(aio=SimpleNamespace(aclose=injected_close))
+    injected_provider = GoogleEmbeddingsProvider(
+        vertex_client=injected_client  # type: ignore[arg-type]
+    )
+    await injected_provider.aclose()
+
+    owned_close.assert_awaited_once_with()
+    injected_close.assert_not_awaited()

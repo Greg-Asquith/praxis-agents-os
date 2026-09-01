@@ -2,6 +2,7 @@
 
 """Google Gemini embedding provider."""
 
+import asyncio
 from collections.abc import Sequence
 from typing import Any
 
@@ -17,9 +18,18 @@ from services.embeddings.domain import (
     EmbeddingBatch,
     EmbeddingProvider,
     EmbeddingProviderError,
+    EmbeddingProviderPartialUsageError,
 )
 
 _GOOGLE_EMBEDDINGS_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+_VERTEX_MAX_CONCURRENT_REQUESTS = 8
+_VERTEX_REQUEST_ERRORS = (
+    errors.APIError,
+    httpx.HTTPError,
+    KeyError,
+    TypeError,
+    ValueError,
+)
 
 
 class GoogleEmbeddingsProvider(EmbeddingProvider):
@@ -36,12 +46,19 @@ class GoogleEmbeddingsProvider(EmbeddingProvider):
     ) -> None:
         if settings.GOOGLE_VERTEX_AI:
             self._vertex_client = vertex_client or build_google_vertex_client()
+            self._owns_vertex_client = vertex_client is None
             self._client = None
             self._api_key = None
         else:
             self._vertex_client = None
+            self._owns_vertex_client = False
             self._client = client or retrying_http_client()
             self._api_key = api_key or provider_api_key(PROVIDER_GOOGLE)
+
+    async def aclose(self) -> None:
+        """Closes the provider-owned Vertex async client."""
+        if self._vertex_client is not None and self._owns_vertex_client:
+            await self._vertex_client.aio.aclose()
 
     async def embed_texts(
         self,
@@ -116,38 +133,46 @@ class GoogleEmbeddingsProvider(EmbeddingProvider):
         if self._vertex_client is None:
             raise RuntimeError("Vertex client is not configured.")
 
-        vectors: list[list[float]] = []
-        total_tokens = 0
+        results: list[tuple[list[float], int] | None] = [None] * len(texts)
         config = types.EmbedContentConfig(output_dimensionality=dimensions)
-        try:
-            for text in texts:
-                response = await self._vertex_client.aio.models.embed_content(
-                    model=model,
-                    contents=text,
-                    config=config,
-                )
-                embeddings = response.embeddings
-                if embeddings is None or len(embeddings) != 1:
-                    raise ValueError("Vertex embedding response has an invalid shape.")
-                embedding = embeddings[0]
-                if embedding.values is None or embedding.statistics is None:
-                    raise ValueError("Vertex embedding response is incomplete.")
-                token_count = embedding.statistics.token_count
-                if (
-                    not isinstance(token_count, int | float)
-                    or isinstance(token_count, bool)
-                    or token_count < 0
-                    or not float(token_count).is_integer()
-                ):
-                    raise TypeError("Vertex embedding usage is not an integer.")
-                vectors.append(list(embedding.values))
-                total_tokens += int(token_count)
-        except (errors.APIError, httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
-            raise EmbeddingProviderError(
-                "Google embedding request failed.",
-                details={"provider": self.provider, "model": model},
-            ) from exc
+        next_index = 0
+        first_error: BaseException | None = None
 
+        async def embed_available_texts() -> None:
+            nonlocal first_error, next_index
+            while first_error is None:
+                index = next_index
+                if index >= len(texts):
+                    return
+                next_index += 1
+                text = texts[index]
+                try:
+                    results[index] = await self._embed_vertex_text(
+                        text,
+                        model=model,
+                        config=config,
+                    )
+                except _VERTEX_REQUEST_ERRORS as exc:
+                    if first_error is None:
+                        first_error = exc
+                    return
+
+        workers = [
+            embed_available_texts() for _ in range(min(len(texts), _VERTEX_MAX_CONCURRENT_REQUESTS))
+        ]
+        await asyncio.gather(*workers)
+
+        completed = [result for result in results if result is not None]
+        total_tokens = sum(token_count for _, token_count in completed)
+        if first_error is not None:
+            raise EmbeddingProviderPartialUsageError(
+                "Google embedding request failed.",
+                input_tokens=total_tokens,
+                requests=len(completed),
+                details={"provider": self.provider, "model": model},
+            ) from first_error
+
+        vectors = [result[0] for result in completed]
         return EmbeddingBatch(
             vectors=vectors,
             total_tokens=total_tokens,
@@ -156,3 +181,34 @@ class GoogleEmbeddingsProvider(EmbeddingProvider):
             dimensions=dimensions,
             requests=len(texts),
         )
+
+    async def _embed_vertex_text(
+        self,
+        text: str,
+        *,
+        model: str,
+        config: types.EmbedContentConfig,
+    ) -> tuple[list[float], int]:
+        if self._vertex_client is None:
+            raise RuntimeError("Vertex client is not configured.")
+
+        response = await self._vertex_client.aio.models.embed_content(
+            model=model,
+            contents=text,
+            config=config,
+        )
+        embeddings = response.embeddings
+        if embeddings is None or len(embeddings) != 1:
+            raise ValueError("Vertex embedding response has an invalid shape.")
+        embedding = embeddings[0]
+        if embedding.values is None or embedding.statistics is None:
+            raise ValueError("Vertex embedding response is incomplete.")
+        token_count = embedding.statistics.token_count
+        if (
+            not isinstance(token_count, int | float)
+            or isinstance(token_count, bool)
+            or token_count < 0
+            or not float(token_count).is_integer()
+        ):
+            raise TypeError("Vertex embedding usage is not an integer.")
+        return list(embedding.values), int(token_count)
