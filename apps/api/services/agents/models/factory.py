@@ -70,6 +70,11 @@ def _google_provider() -> GoogleProvider:
             http_client=retrying_http_client(),
         )
 
+    return GoogleProvider(client=build_google_vertex_client())
+
+
+def build_google_vertex_client() -> Client:
+    """Builds a Vertex AI client with the shared Google request policy."""
     project = settings.GOOGLE_VERTEX_PROJECT or settings.GCP_PROJECT_ID
     if not project:
         raise ModelConfigurationError(
@@ -78,7 +83,7 @@ def _google_provider() -> GoogleProvider:
         )
 
     # Vertex uses google-genai's transport, configured with the shared request policy.
-    client = Client(
+    return Client(
         vertexai=True,
         project=project,
         location=settings.GOOGLE_VERTEX_LOCATION,
@@ -90,7 +95,6 @@ def _google_provider() -> GoogleProvider:
             ),
         ),
     )
-    return GoogleProvider(client=client)
 
 
 def _model_settings_for(spec: ResolvedModel):

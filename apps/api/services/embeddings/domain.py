@@ -23,6 +23,7 @@ class EmbeddingBatch:
     provider: str
     model: str
     dimensions: int
+    requests: int = 1
 
 
 class EmbeddingProvider(ABC):

@@ -60,6 +60,19 @@ class FailingSecondProvider(RecordingProvider):
         return await super().embed_texts(texts, model=model, dimensions=dimensions)
 
 
+class MultiRequestProvider(RecordingProvider):
+    async def embed_texts(self, texts, *, model, dimensions):
+        result = await super().embed_texts(texts, model=model, dimensions=dimensions)
+        return EmbeddingBatch(
+            vectors=result.vectors,
+            total_tokens=result.total_tokens,
+            provider=result.provider,
+            model=result.model,
+            dimensions=result.dimensions,
+            requests=len(texts),
+        )
+
+
 async def _workspace(db: AsyncSession):
     workspace = build_workspace(slug=f"embeddings-{uuid4().hex}")
     db.add(workspace)
@@ -116,6 +129,32 @@ async def test_empty_input_short_circuits_without_provider_or_metering(
     assert result.vectors == []
     assert provider.call_sizes == []
     assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 0
+
+
+async def test_metering_sums_physical_provider_requests(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = await _workspace(db_session)
+    recorded: list[AIUsageEventData] = []
+
+    async def record(event: AIUsageEventData) -> bool:
+        recorded.append(event)
+        return True
+
+    monkeypatch.setattr(embed_texts_module, "record_ai_usage_durable", record)
+    monkeypatch.setattr(settings, "EMBEDDINGS_MAX_BATCH_TEXTS", 2)
+
+    result = await embed_texts(
+        db_session,
+        ["one", "two", "three"],
+        workspace_id=workspace.id,
+        purpose=PURPOSE_EMBEDDING_KB_SEARCH,
+        provider=MultiRequestProvider(),
+    )
+
+    assert result.requests == 3
+    assert recorded[0].requests == 3
 
 
 async def test_invalid_text_names_its_index(

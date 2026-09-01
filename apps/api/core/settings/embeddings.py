@@ -58,6 +58,16 @@ class EmbeddingsSettingsMixin:
             "openai": "OPENAI_API_KEY",
         }.get(self.EMBEDDINGS_PROVIDER)
         if getattr(self, "ENVIRONMENT", None) == "production" and credential_setting:
+            if self.EMBEDDINGS_PROVIDER == "google" and getattr(self, "GOOGLE_VERTEX_AI", False):
+                project = getattr(self, "GOOGLE_VERTEX_PROJECT", None) or getattr(
+                    self, "GCP_PROJECT_ID", None
+                )
+                if not (project or "").strip():
+                    raise ValueError(
+                        "EMBEDDINGS_PROVIDER=google with GOOGLE_VERTEX_AI=true requires "
+                        "GOOGLE_VERTEX_PROJECT or GCP_PROJECT_ID in production"
+                    )
+                return self
             secret = getattr(self, credential_setting, None)
             if secret is None or not secret.get_secret_value().strip():
                 raise ValueError(

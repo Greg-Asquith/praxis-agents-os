@@ -71,3 +71,51 @@ def test_production_google_embeddings_require_api_key(api_key: str | None) -> No
             EMBEDDINGS_MODEL="gemini-embedding-2",
             GOOGLE_API_KEY=api_key,
         )
+
+
+@pytest.mark.parametrize(
+    ("vertex_project", "gcp_project_id"),
+    [
+        ("vertex-project", None),
+        (None, "deployment-project"),
+    ],
+)
+def test_production_google_embeddings_accept_vertex_project_fallback(
+    vertex_project: str | None,
+    gcp_project_id: str | None,
+) -> None:
+    resolved = _production_settings(
+        EMBEDDINGS_PROVIDER="google",
+        EMBEDDINGS_MODEL="gemini-embedding-2",
+        GOOGLE_API_KEY=None,
+        GOOGLE_VERTEX_AI=True,
+        GOOGLE_VERTEX_PROJECT=vertex_project,
+        GCP_PROJECT_ID=gcp_project_id,
+    )
+
+    assert resolved.GOOGLE_VERTEX_AI is True
+
+
+@pytest.mark.parametrize(
+    ("vertex_project", "gcp_project_id"),
+    [
+        (None, None),
+        (" ", " "),
+    ],
+)
+def test_production_google_embeddings_require_vertex_project(
+    vertex_project: str | None,
+    gcp_project_id: str | None,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match="GOOGLE_VERTEX_PROJECT or GCP_PROJECT_ID",
+    ):
+        _production_settings(
+            EMBEDDINGS_PROVIDER="google",
+            EMBEDDINGS_MODEL="gemini-embedding-2",
+            GOOGLE_API_KEY=None,
+            GOOGLE_VERTEX_AI=True,
+            GOOGLE_VERTEX_PROJECT=vertex_project,
+            GCP_PROJECT_ID=gcp_project_id,
+        )

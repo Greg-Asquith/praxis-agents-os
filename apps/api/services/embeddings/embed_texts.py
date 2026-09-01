@@ -56,6 +56,7 @@ async def embed_texts(
             provider=provider_key,
             model=model,
             dimensions=dimensions,
+            requests=0,
         )
 
     for index, text in enumerate(texts):
@@ -102,8 +103,16 @@ async def embed_texts(
             )
             if isinstance(result.total_tokens, bool) or result.total_tokens < 0:
                 raise EmbeddingConfigurationError("Embedding provider returned invalid usage.")
+            if (
+                not isinstance(result.requests, int)
+                or isinstance(result.requests, bool)
+                or result.requests < 1
+            ):
+                raise EmbeddingConfigurationError(
+                    "Embedding provider returned an invalid request count."
+                )
             total_tokens += result.total_tokens
-            requests += 1
+            requests += result.requests
             assert_batch_shape(result, len(text_batch))
             vectors.extend(result.vectors)
     finally:
@@ -128,6 +137,7 @@ async def embed_texts(
         provider=resolved_provider.provider,
         model=model,
         dimensions=dimensions,
+        requests=requests,
     )
     assert_batch_shape(combined, len(texts))
     await record_embedding_usage(
