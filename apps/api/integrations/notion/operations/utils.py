@@ -14,6 +14,8 @@ from core.exceptions.integration import IntegrationValidationError
 from services.agents.runtime.untrusted import UntrustedNode
 
 MAX_RICH_TEXT_CHARS = 2_000
+MAX_EMAIL_CHARS = 200
+MAX_PHONE_NUMBER_CHARS = 200
 MAX_PROPERTIES = 100
 MAX_MULTI_SELECT_VALUES = 100
 MAX_NOTION_PROVIDER_CURSOR_CHARS = 8_192
@@ -169,7 +171,12 @@ def _compact_property(payload: Mapping[str, Any], property_type: str, *, page_id
     if property_type == "checkbox":
         return value if isinstance(value, bool) else None
     if property_type in {"url", "email", "phone_number"}:
-        return _node(str(value)[:MAX_RICH_TEXT_CHARS], page_id) if value is not None else None
+        max_chars = {
+            "url": MAX_RICH_TEXT_CHARS,
+            "email": MAX_EMAIL_CHARS,
+            "phone_number": MAX_PHONE_NUMBER_CHARS,
+        }[property_type]
+        return _node(str(value)[:max_chars], page_id) if value is not None else None
     if property_type in {"select", "status"}:
         return _named_value(value, page_id=page_id)
     if property_type == "formula":
