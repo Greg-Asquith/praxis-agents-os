@@ -33,6 +33,7 @@ def _production_settings(**overrides: Any) -> Settings:
         "AWS_ACCOUNT_ID": "123456789012",
         "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
         "OPENAI_API_KEY": "sk-openai-test",
+        "GOOGLE_VERTEX_AI": False,
         "ARTIFACT_SHARING_ENABLED": False,
     }
     values.update(overrides)

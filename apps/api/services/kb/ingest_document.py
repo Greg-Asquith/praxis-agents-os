@@ -358,6 +358,8 @@ async def _load_markdown(db: AsyncSession, document: KBDocument) -> "_LoadedMark
             etag=_string_meta_value(document, "etag"),
             last_modified=_string_meta_value(document, "last_modified"),
         )
+        if fetched.not_modified and (not document.content_md or document.chunk_count <= 0):
+            fetched = await fetch_url(document.external_url)
         if fetched.not_modified:
             return _LoadedMarkdown(
                 markdown=None,

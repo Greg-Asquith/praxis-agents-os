@@ -1,6 +1,6 @@
-# apps/api/services/kb/integration_sources/ensure_reconcile_job.py
+# apps/api/services/kb/ensure_reconcile_job.py
 
-"""Ensure periodic Knowledge Base integration-source reconciliation."""
+"""Ensure periodic Knowledge Base source reconciliation."""
 
 from datetime import UTC, datetime
 
@@ -10,14 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.jobs import Job
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 
-KB_RECONCILE_INTEGRATION_SOURCES_KIND = "kb.reconcile_integration_sources"
+KB_RECONCILE_SOURCES_KIND = "kb.reconcile_sources"
 
 
-async def ensure_kb_integration_reconcile_job(db: AsyncSession) -> Job:
-    """Returns an in-flight integration-source scan or enqueues one immediately."""
+async def ensure_kb_reconcile_job(db: AsyncSession) -> Job:
+    """Return an in-flight source scan or enqueue one immediately."""
     existing = await db.scalar(
         select(Job).where(
-            Job.kind == KB_RECONCILE_INTEGRATION_SOURCES_KIND,
+            Job.kind == KB_RECONCILE_SOURCES_KIND,
             Job.status.in_(IN_FLIGHT_JOB_STATUSES),
         )
     )
@@ -28,7 +28,7 @@ async def ensure_kb_integration_reconcile_job(db: AsyncSession) -> Job:
 
     return await enqueue_job(
         db,
-        kind=KB_RECONCILE_INTEGRATION_SOURCES_KIND,
+        kind=KB_RECONCILE_SOURCES_KIND,
         content_hash="reconcile-kb-sources:ensure",
         run_after=datetime.now(UTC),
     )

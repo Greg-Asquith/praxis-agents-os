@@ -207,39 +207,72 @@ async def test_search_filters_and_privacy_apply_to_every_candidate_path(
     assert {hit.document_id for hit in filtered.results} == {public.id}
 
 
-async def test_search_excludes_integration_chunks_unless_source_is_ready(
+async def test_search_excludes_refreshable_sources_unless_ready(
     db_session: AsyncSession,
     kb_actors: KBActors,
 ) -> None:
-    ready, _ = await _add_document(
+    ready_url, _ = await _add_document(
+        db_session,
+        actors=kb_actors,
+        title="Ready URL source",
+        content="refreshable visibility phrase",
+    )
+    ready_url.source_type = "url"
+    ready_url.external_url = "https://example.com/ready"
+    ready_url.source_sync_status = "ready"
+    error_url, _ = await _add_document(
+        db_session,
+        actors=kb_actors,
+        title="Errored URL source",
+        content="refreshable visibility phrase",
+    )
+    error_url.source_type = "url"
+    error_url.external_url = "https://example.com/error"
+    error_url.source_sync_status = "error"
+    unavailable_url, _ = await _add_document(
+        db_session,
+        actors=kb_actors,
+        title="Unavailable URL source",
+        content="refreshable visibility phrase",
+    )
+    unavailable_url.source_type = "url"
+    unavailable_url.external_url = "https://example.com/unavailable"
+    unavailable_url.source_sync_status = "unavailable"
+    ready_integration, _ = await _add_document(
         db_session,
         actors=kb_actors,
         title="Ready integration source",
-        content="integration visibility phrase",
+        content="refreshable visibility phrase",
     )
-    ready.source_type = "integration"
-    ready.external_id = "ready-page"
-    ready.source_sync_status = "ready"
-    unavailable, _ = await _add_document(
+    ready_integration.source_type = "integration"
+    ready_integration.external_id = "ready-page"
+    ready_integration.source_sync_status = "ready"
+    manual, _ = await _add_document(
         db_session,
         actors=kb_actors,
-        title="Unavailable integration source",
-        content="integration visibility phrase",
+        title="Manual document",
+        content="refreshable visibility phrase",
     )
-    unavailable.source_type = "integration"
-    unavailable.external_id = "unavailable-page"
-    unavailable.source_sync_status = "unavailable"
+    upload, _ = await _add_document(
+        db_session,
+        actors=kb_actors,
+        title="Uploaded document",
+        content="refreshable visibility phrase",
+    )
+    upload.source_type = "upload"
     await db_session.flush()
 
-    result = await search_chunks(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        user_id=kb_actors.user.id,
-        query="integration visibility phrase",
-        provider=FakeEmbeddingProvider(),
-    )
+    expected_ids = {ready_url.id, ready_integration.id, manual.id, upload.id}
+    for provider in (FakeEmbeddingProvider(), FailingEmbeddingProvider()):
+        result = await search_chunks(
+            db_session,
+            workspace_id=kb_actors.workspace.id,
+            user_id=kb_actors.user.id,
+            query="refreshable visibility phrase",
+            provider=provider,
+        )
 
-    assert {hit.document_id for hit in result.results} == {ready.id}
+        assert {hit.document_id for hit in result.results} == expected_ids
 
 
 @pytest.mark.parametrize(

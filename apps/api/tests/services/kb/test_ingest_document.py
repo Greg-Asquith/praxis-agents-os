@@ -483,21 +483,41 @@ async def test_url_ingest_stores_validators_and_not_modified_preserves_chunks(
     assert document.source_synced_at >= first_synced_at
 
 
-async def test_url_not_modified_without_stored_content_is_transient(
+async def test_url_not_modified_without_stored_content_forces_full_refetch(
     db_session: AsyncSession,
     kb_actors: KBActors,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fetch(_url: str, **_kwargs: object) -> FetchedUrl:
+    requests: list[tuple[str | None, str | None]] = []
+
+    async def fetch(
+        _url: str,
+        *,
+        etag: str | None = None,
+        last_modified: str | None = None,
+    ) -> FetchedUrl:
+        requests.append((etag, last_modified))
+        if len(requests) == 1:
+            return FetchedUrl(
+                data=b"",
+                content_type="application/octet-stream",
+                etag='"stale"',
+                last_modified=None,
+                not_modified=True,
+            )
         return FetchedUrl(
-            data=b"",
-            content_type="application/octet-stream",
-            etag='"stale"',
+            data=b"# Restored\n\nFresh URL content.",
+            content_type="text/markdown",
+            etag='"fresh"',
             last_modified=None,
-            not_modified=True,
+            not_modified=False,
         )
 
+    async def convert(data: bytes, **_kwargs: object) -> str:
+        return data.decode()
+
     monkeypatch.setattr("services.kb.ingest_document.fetch_url", fetch)
+    monkeypatch.setattr("services.kb.ingest_document.convert_html_to_markdown", convert)
     document = await create_kb_document(
         db_session,
         workspace_id=kb_actors.workspace.id,
@@ -507,17 +527,16 @@ async def test_url_not_modified_without_stored_content_is_transient(
         meta={"etag": '"stale"'},
     )
 
-    with pytest.raises(AppValidationError, match="without stored content"):
-        await _ingest(db_session, kb_actors, document)
+    await _ingest(db_session, kb_actors, document)
 
     await db_session.refresh(document)
-    assert document.status == "error"
-    assert document.source_sync_status == "error"
+    assert requests == [('"stale"', None), (None, None)]
+    assert document.status == "ready"
+    assert document.source_sync_status == "ready"
     assert document.source_synced_at is not None
-    assert document.meta == {
-        "etag": '"stale"',
-        "last_error_code": "refresh_failed",
-    }
+    assert document.content_md == "# Restored\n\nFresh URL content."
+    assert document.chunk_count > 0
+    assert document.meta == {"etag": '"fresh"'}
 
 
 @pytest.mark.parametrize(

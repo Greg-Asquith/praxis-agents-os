@@ -22,7 +22,8 @@ from models.jobs import Job
 from services.agent_schedules.runs import RUN_STATUS_COMPLETED
 from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_SUCCEEDED
 from services.jobs.enqueue_job import enqueue_job
-from services.jobs.registry import JOB_HANDLERS, job_handler
+from services.jobs.registry import JOB_HANDLERS, get_job_handler, job_handler
+from services.kb.ensure_reconcile_job import KB_RECONCILE_SOURCES_KIND
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
@@ -60,7 +61,7 @@ def _disable_periodic_enqueuers(monkeypatch: pytest.MonkeyPatch) -> None:
         "workers.job_runner.ensure_memory_sweep_job",
         "workers.job_runner.ensure_integrations_rediscover_job",
         "workers.job_runner.ensure_refresh_webhooks_job",
-        "workers.job_runner.ensure_kb_integration_reconcile_job",
+        "workers.job_runner.ensure_kb_reconcile_job",
     ):
         monkeypatch.setattr(target, noop)
 
@@ -69,6 +70,30 @@ async def _clear_jobs(session_factory: async_sessionmaker[AsyncSession]) -> None
     async with session_factory() as db:
         await db.execute(delete(Job))
         await db.commit()
+
+
+async def test_run_once_ensures_only_the_source_reconciliation_job(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _clear_jobs(db_session_factory)
+    _disable_periodic_enqueuers(monkeypatch)
+    ensure_calls = 0
+
+    async def ensure_source_reconciliation(_db: AsyncSession) -> None:
+        nonlocal ensure_calls
+        ensure_calls += 1
+
+    async def claim_no_job(*, owner_instance_id: str) -> None:
+        assert owner_instance_id == "source-reconcile-worker"
+
+    monkeypatch.setattr(job_runner, "ensure_kb_reconcile_job", ensure_source_reconciliation)
+    monkeypatch.setattr(job_runner, "_claim_one_job", claim_no_job)
+
+    assert await job_runner.run_once(owner_instance_id="source-reconcile-worker") == 0
+    assert ensure_calls == 1
+    assert get_job_handler(KB_RECONCILE_SOURCES_KIND) is not None
+    assert get_job_handler("kb.reconcile_integration_sources") is None
 
 
 async def _create_due_schedule(

@@ -1,4 +1,4 @@
-"""Knowledge Base integration-source reconciliation tests."""
+"""Knowledge Base refreshable-source reconciliation tests."""
 
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -12,27 +12,32 @@ from core.settings import settings
 from models.jobs import Job
 from models.kb import KBDocument
 from services.jobs.enqueue_job import enqueue_job
-from services.jobs.handlers.reconcile_kb_integration_sources import (
-    handle_reconcile_kb_integration_sources,
+from services.jobs.handlers.reconcile_kb_sources import handle_reconcile_kb_sources
+from services.kb.ensure_reconcile_job import (
+    KB_RECONCILE_SOURCES_KIND,
+    ensure_kb_reconcile_job,
 )
-from services.kb.integration_sources.ensure_reconcile_job import (
-    KB_RECONCILE_INTEGRATION_SOURCES_KIND,
-    ensure_kb_integration_reconcile_job,
-)
-from services.kb.integration_sources.reconcile import reconcile_kb_integration_sources
+from services.kb.reconcile_sources import reconcile_kb_sources
 from tests.factories import build_job, build_kb_document, build_workspace
 
 pytestmark = pytest.mark.asyncio
 
 
-def _source_document(*, workspace, synced_at: datetime | None) -> KBDocument:
+def _source_document(
+    *,
+    workspace,
+    source_type: str,
+    synced_at: datetime | None,
+    sync_status: str = "ready",
+) -> KBDocument:
     return build_kb_document(
         workspace=workspace,
-        title=f"Integration source {uuid4().hex}",
-        source_type="integration",
+        title=f"Refreshable source {uuid4().hex}",
+        source_type=source_type,
         status="ready",
-        external_id=uuid4().hex,
-        source_sync_status="ready",
+        external_id=uuid4().hex if source_type == "integration" else None,
+        external_url="https://example.com/page" if source_type == "url" else None,
+        source_sync_status=sync_status,
         source_synced_at=synced_at,
         content_md="# Imported\n\nProvider content.",
     )
@@ -44,20 +49,46 @@ async def test_reconcile_queues_one_global_bounded_batch_without_duplicates(
 ) -> None:
     del db_session_factory
     now = datetime(2026, 8, 27, 12, tzinfo=UTC)
-    monkeypatch.setattr(settings, "KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS", 3_600)
-    monkeypatch.setattr(settings, "KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE", 3)
+    monkeypatch.setattr(settings, "KB_SOURCE_REFRESH_INTERVAL_SECONDS", 3_600)
+    monkeypatch.setattr(settings, "KB_SOURCE_SCAN_BATCH_SIZE", 3)
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
         workspace_a = build_workspace(slug=f"reconcile-a-{uuid4().hex[:8]}")
         workspace_b = build_workspace(slug=f"reconcile-b-{uuid4().hex[:8]}")
         db.add_all([workspace_a, workspace_b])
         await db.flush()
-        never_synced = _source_document(workspace=workspace_b, synced_at=None)
-        oldest = _source_document(workspace=workspace_a, synced_at=now - timedelta(hours=5))
-        second = _source_document(workspace=workspace_b, synced_at=now - timedelta(hours=4))
-        third = _source_document(workspace=workspace_a, synced_at=now - timedelta(hours=3))
-        recent = _source_document(workspace=workspace_b, synced_at=now - timedelta(minutes=30))
-        db.add_all([never_synced, oldest, second, third, recent])
+        never_synced = _source_document(
+            workspace=workspace_b,
+            source_type="url",
+            synced_at=None,
+        )
+        oldest = _source_document(
+            workspace=workspace_a,
+            source_type="integration",
+            synced_at=now - timedelta(hours=5),
+        )
+        second = _source_document(
+            workspace=workspace_b,
+            source_type="url",
+            synced_at=now - timedelta(hours=4),
+        )
+        third = _source_document(
+            workspace=workspace_a,
+            source_type="integration",
+            synced_at=now - timedelta(hours=3),
+        )
+        recent = _source_document(
+            workspace=workspace_b,
+            source_type="url",
+            synced_at=now - timedelta(minutes=30),
+        )
+        pending = _source_document(
+            workspace=workspace_a,
+            source_type="url",
+            synced_at=None,
+            sync_status="pending",
+        )
+        db.add_all([never_synced, oldest, second, third, recent, pending])
         await db.flush()
         existing = await enqueue_job(
             db,
@@ -68,7 +99,7 @@ async def test_reconcile_queues_one_global_bounded_batch_without_duplicates(
             initiated_by_user_id=None,
         )
 
-        assert await reconcile_kb_integration_sources(db, now=now) == 3
+        assert await reconcile_kb_sources(db, now=now) == 3
 
         jobs = (
             await db.scalars(
@@ -90,26 +121,34 @@ async def test_reconcile_advances_past_sources_checked_by_the_previous_batch(
 ) -> None:
     del db_session_factory
     now = datetime(2026, 8, 27, 12, tzinfo=UTC)
-    monkeypatch.setattr(settings, "KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS", 3_600)
-    monkeypatch.setattr(settings, "KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE", 2)
+    monkeypatch.setattr(settings, "KB_SOURCE_REFRESH_INTERVAL_SECONDS", 3_600)
+    monkeypatch.setattr(settings, "KB_SOURCE_SCAN_BATCH_SIZE", 2)
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
         workspace = build_workspace(slug=f"reconcile-progress-{uuid4().hex[:8]}")
         db.add(workspace)
         await db.flush()
-        first = _source_document(workspace=workspace, synced_at=None)
-        second = _source_document(workspace=workspace, synced_at=now - timedelta(hours=5))
-        third = _source_document(workspace=workspace, synced_at=now - timedelta(hours=4))
+        first = _source_document(workspace=workspace, source_type="url", synced_at=None)
+        second = _source_document(
+            workspace=workspace,
+            source_type="integration",
+            synced_at=now - timedelta(hours=5),
+        )
+        third = _source_document(
+            workspace=workspace,
+            source_type="url",
+            synced_at=now - timedelta(hours=4),
+        )
         db.add_all([first, second, third])
         await db.flush()
 
-        assert await reconcile_kb_integration_sources(db, now=now) == 2
+        assert await reconcile_kb_sources(db, now=now) == 2
 
         first.source_synced_at = now
         second.source_synced_at = now
         await db.flush()
 
-        assert await reconcile_kb_integration_sources(db, now=now) == 1
+        assert await reconcile_kb_sources(db, now=now) == 1
         queued_ids = set(
             await db.scalars(select(Job.subject_id).where(Job.kind == "kb.ingest_document"))
         )
@@ -130,7 +169,7 @@ async def test_reconcile_selects_no_content_or_chunks(
         bind = db.get_bind()
         event.listen(bind, "before_cursor_execute", capture_statement)
         try:
-            assert await reconcile_kb_integration_sources(db) == 0
+            assert await reconcile_kb_sources(db) == 0
         finally:
             event.remove(bind, "before_cursor_execute", capture_statement)
 
@@ -144,11 +183,11 @@ async def test_reconcile_handler_reschedules_after_an_empty_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     del db_session_factory
-    monkeypatch.setattr(settings, "KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS", 600)
+    monkeypatch.setattr(settings, "KB_SOURCE_REFRESH_INTERVAL_SECONDS", 600)
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
         running_job = build_job(
-            kind=KB_RECONCILE_INTEGRATION_SOURCES_KIND,
+            kind=KB_RECONCILE_SOURCES_KIND,
             content_hash="reconcile-kb-sources:running",
             status="running",
         )
@@ -156,11 +195,11 @@ async def test_reconcile_handler_reschedules_after_an_empty_scan(
         await db.flush()
         before = datetime.now(UTC)
 
-        await handle_reconcile_kb_integration_sources(db, running_job)
+        await handle_reconcile_kb_sources(db, running_job)
 
         scheduled = await db.scalar(
             select(Job).where(
-                Job.kind == KB_RECONCILE_INTEGRATION_SOURCES_KIND,
+                Job.kind == KB_RECONCILE_SOURCES_KIND,
                 Job.id != running_job.id,
             )
         )
@@ -178,8 +217,8 @@ async def test_ensure_reconcile_job_is_idempotent_and_ownerless(
     del db_session_factory
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
-        first = await ensure_kb_integration_reconcile_job(db)
-        second = await ensure_kb_integration_reconcile_job(db)
+        first = await ensure_kb_reconcile_job(db)
+        second = await ensure_kb_reconcile_job(db)
 
         assert second.id == first.id
         assert first.workspace_id is None

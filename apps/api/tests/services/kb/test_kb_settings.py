@@ -9,8 +9,8 @@ from core.settings import Settings
 def test_search_settings_defaults() -> None:
     resolved = Settings()
 
-    assert resolved.KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS == 21_600
-    assert resolved.KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE == 100
+    assert resolved.KB_SOURCE_REFRESH_INTERVAL_SECONDS == 21_600
+    assert resolved.KB_SOURCE_SCAN_BATCH_SIZE == 100
     assert resolved.KB_SEARCH_TOP_K_DEFAULT == 10
     assert resolved.KB_SEARCH_TOP_K_MAX == 50
     assert resolved.KB_SEARCH_CTE_LIMIT == 50
@@ -35,11 +35,11 @@ def test_search_candidate_limit_must_cover_the_accepted_top_k() -> None:
 @pytest.mark.parametrize(
     ("setting_name", "value"),
     (
-        ("KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS", 86_401),
-        ("KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE", 1_001),
+        ("KB_SOURCE_REFRESH_INTERVAL_SECONDS", 86_401),
+        ("KB_SOURCE_SCAN_BATCH_SIZE", 1_001),
     ),
 )
-def test_integration_source_reconciliation_settings_have_hard_limits(
+def test_source_reconciliation_settings_have_hard_limits(
     setting_name: str,
     value: int,
 ) -> None:
