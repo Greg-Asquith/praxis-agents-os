@@ -2,18 +2,40 @@
 
 """Shared Notion tool binding and credential access."""
 
+import asyncio
+from collections.abc import Mapping
+from typing import Any, Literal
+
 from pydantic_ai import ModelRetry, RunContext
 
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationConnectionError,
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationNotFoundError,
+    IntegrationPermissionError,
+    IntegrationRateLimitError,
+    IntegrationTimeoutError,
+    IntegrationValidationError,
+)
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     IntegrationToolBinding,
     ToolFieldPresentation,
 )
 from services.audit_events import (
+    AuditStatus,
+    IntegrationOperationCounts,
+    IntegrationOperationEffect,
     IntegrationOperationIntent,
     IntegrationOperationIntentGroup,
+    IntegrationOperationOutcome,
+    IntegrationOperationOutcomeGroup,
     IntegrationOperationTarget,
     PendingIntegrationOperationDetail,
+    TerminalIntegrationOperationDetail,
+    terminal_applied_operation_detail,
 )
 from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.context.domain import ResolvedContextEntry
@@ -25,11 +47,16 @@ from services.integrations.credentials import (
     ensure_fresh_credential,
     get_usable_connection_credential,
 )
+from services.integrations.operations import IntegrationAuditOutcome
 
 from ..client import NotionClient
 from ..operations.create_page import CreatePagePreparation
 from ..operations.properties import NotionMutationTarget
-from ..operations.update_page_markdown import UpdatePageMarkdownPreparation
+from ..operations.update_page_markdown import (
+    MULTIPLE_MATCHES_ERROR_MESSAGE,
+    NO_MATCH_ERROR_MESSAGE,
+    UpdatePageMarkdownPreparation,
+)
 from ..operations.update_page_properties import UpdatePagePropertiesPreparation
 from ..operations.utils import serialized_json_bytes
 from ..settings import notion_settings
@@ -186,6 +213,184 @@ def pending_update_properties_detail(
                 ],
             )
         ],
+    )
+
+
+def terminal_all_applied(
+    pending: PendingIntegrationOperationDetail,
+    *,
+    external_ref: str,
+) -> TerminalIntegrationOperationDetail:
+    """Closes every Notion intent with one confirmed provider effect."""
+    return _terminal_all(
+        pending,
+        status="applied",
+        external_ref=external_ref,
+    )
+
+
+def terminal_all_failed(
+    pending: PendingIntegrationOperationDetail,
+    *,
+    error_code: str,
+) -> TerminalIntegrationOperationDetail:
+    """Closes every Notion intent as rejected or not dispatched."""
+    return _terminal_all(pending, status="failed", error_code=error_code)
+
+
+def terminal_all_unverified(
+    pending: PendingIntegrationOperationDetail,
+    *,
+    error_code: str,
+) -> TerminalIntegrationOperationDetail:
+    """Closes every Notion intent as ambiguous after provider dispatch."""
+    return _terminal_all(pending, status="unverified", error_code=error_code)
+
+
+def successful_notion_mutation_outcome(
+    pending: PendingIntegrationOperationDetail,
+    result: Mapping[str, Any],
+    *,
+    external_ref: str,
+    single_item: bool = False,
+) -> IntegrationAuditOutcome[dict[str, Any]]:
+    """Builds a confirmed public result and aligned terminal evidence."""
+    public_result = {**result, "outcome": "applied", "error_code": None}
+    operation_detail = (
+        terminal_applied_operation_detail(pending, external_ref=external_ref)
+        if single_item
+        else terminal_all_applied(pending, external_ref=external_ref)
+    )
+    return IntegrationAuditOutcome(
+        public_result,
+        status=AuditStatus.SUCCESS,
+        external_ref=external_ref,
+        operation_detail=operation_detail,
+    )
+
+
+def failed_notion_mutation_outcome(
+    pending: PendingIntegrationOperationDetail,
+    result: Mapping[str, Any],
+    exc: IntegrationError,
+    *,
+    operation: str,
+) -> IntegrationAuditOutcome[dict[str, Any]]:
+    """Builds a failed or unverified result from a typed provider error."""
+    disposition = exc.failure_disposition or IntegrationFailureDisposition.AMBIGUOUS
+    ambiguous = disposition is IntegrationFailureDisposition.AMBIGUOUS
+    error_code = notion_mutation_error_code(exc, operation=operation)
+    public_result = {
+        **result,
+        "outcome": "unverified" if ambiguous else "failed",
+        "error_code": error_code,
+    }
+    operation_detail = (
+        terminal_all_unverified(pending, error_code=error_code)
+        if ambiguous
+        else terminal_all_failed(pending, error_code=error_code)
+    )
+    return IntegrationAuditOutcome(
+        public_result,
+        status=AuditStatus.UNVERIFIED if ambiguous else AuditStatus.FAILURE,
+        operation_detail=operation_detail,
+        unverified_result=public_result if ambiguous else None,
+    )
+
+
+def attach_notion_cancellation_evidence(
+    exc: asyncio.CancelledError,
+    pending: PendingIntegrationOperationDetail,
+    *,
+    operation: str,
+) -> None:
+    """Attaches exact terminal evidence to a cancelled mutation."""
+    disposition = getattr(
+        exc,
+        "failure_disposition",
+        IntegrationFailureDisposition.NOT_DISPATCHED,
+    )
+    error_code = notion_mutation_error_code(exc, operation=operation)
+    exc.failure_disposition = disposition
+    exc.operation_detail = (
+        terminal_all_unverified(pending, error_code=error_code)
+        if disposition is IntegrationFailureDisposition.AMBIGUOUS
+        else terminal_all_failed(pending, error_code=error_code)
+    )
+
+
+def notion_mutation_error_code(exc: BaseException, *, operation: str) -> str:
+    """Returns a stable public code without exposing a provider message."""
+    if operation == "update_page_markdown" and isinstance(exc, IntegrationValidationError):
+        if exc.user_message == NO_MATCH_ERROR_MESSAGE:
+            return "no_match"
+        if exc.user_message == MULTIPLE_MATCHES_ERROR_MESSAGE:
+            return "multiple_matches"
+        return "validation_error"
+    for error_type, code in (
+        (IntegrationAuthError, "authentication_error"),
+        (IntegrationPermissionError, "permission_denied"),
+        (IntegrationNotFoundError, "not_found"),
+        (IntegrationRateLimitError, "rate_limited"),
+        (IntegrationTimeoutError, "timeout"),
+        (IntegrationValidationError, "validation_error"),
+        (IntegrationConnectionError, "connection_error"),
+    ):
+        if isinstance(exc, error_type):
+            return code
+    if isinstance(exc, asyncio.CancelledError):
+        return "cancelled"
+    return "integration_error"
+
+
+def _terminal_all(
+    pending: PendingIntegrationOperationDetail,
+    *,
+    status: Literal["applied", "failed", "unverified"],
+    external_ref: str | None = None,
+    error_code: str | None = None,
+) -> TerminalIntegrationOperationDetail:
+    if status == "applied":
+        if not external_ref or error_code is not None:
+            raise ValueError("Applied Notion evidence requires only an external reference")
+    elif status in {"failed", "unverified"}:
+        if external_ref is not None or not error_code:
+            raise ValueError("Failed Notion evidence requires only an error code")
+    else:
+        raise ValueError("Notion terminal evidence requires a terminal mutation status")
+
+    item_count = sum(len(group.items) for group in pending.intent_groups)
+    counts = IntegrationOperationCounts(
+        applied=item_count if status == "applied" else 0,
+        skipped=0,
+        failed=item_count if status == "failed" else 0,
+        unverified=item_count if status == "unverified" else 0,
+    )
+    return TerminalIntegrationOperationDetail(
+        target=pending.target,
+        intent_groups=pending.intent_groups,
+        outcome_groups=[
+            IntegrationOperationOutcomeGroup(
+                key=group.key,
+                outcomes=[
+                    IntegrationOperationOutcome(
+                        intent_index=index,
+                        status=status,
+                        effects=[
+                            IntegrationOperationEffect(
+                                status=status,
+                                external_ref=external_ref,
+                                error_code=error_code,
+                            )
+                        ],
+                    )
+                    for index, _item in enumerate(group.items)
+                ],
+            )
+            for group in pending.intent_groups
+        ],
+        intent_counts=counts,
+        effect_counts=counts,
     )
 
 

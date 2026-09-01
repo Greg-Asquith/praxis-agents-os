@@ -21,6 +21,7 @@ from services.integrations.http import (
 NOTION_API_BASE_URL = "https://api.notion.com/v1"
 NOTION_API_VERSION = "2026-03-11"
 AccessTokenFn = Callable[[bool], Awaitable[str]]
+ValidationErrorDetailFn = Callable[[httpx2.Response], str | None]
 
 
 def fixed_access_token(access_token: str) -> AccessTokenFn:
@@ -66,6 +67,7 @@ class NotionClient:
         operation: str,
         policy: IntegrationRequestPolicy,
         json: dict[str, Any],
+        validation_error_detail: ValidationErrorDetailFn | None = None,
     ) -> Any:
         return await self._request(
             "POST",
@@ -73,6 +75,25 @@ class NotionClient:
             operation=operation,
             policy=policy,
             json=json,
+            validation_error_detail=validation_error_detail,
+        )
+
+    async def patch(
+        self,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        json: dict[str, Any],
+        validation_error_detail: ValidationErrorDetailFn | None = None,
+    ) -> Any:
+        return await self._request(
+            "PATCH",
+            path,
+            operation=operation,
+            policy=policy,
+            json=json,
+            validation_error_detail=validation_error_detail,
         )
 
     async def _request(

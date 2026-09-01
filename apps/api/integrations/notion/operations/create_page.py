@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic_ai import ModelRetry
 
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import NotionClient
 from ..references import NotionDataSourceReference, NotionPageReference
@@ -23,7 +24,7 @@ from .properties import (
     validate_property_records_against_schema,
     validate_utf8_text,
 )
-from .utils import validate_mutation_body_size
+from .utils import normalized_page_mutation_response, validate_mutation_body_size
 
 MAX_NOTION_PAGE_TITLE_CHARS = 500
 MAX_NOTION_PAGE_TITLE_BYTES = MAX_NOTION_PAGE_TITLE_CHARS * 4
@@ -128,3 +129,25 @@ def create_page_request_body(prepared: CreatePagePreparation) -> dict[str, Any]:
     if prepared.content_md:
         payload["markdown"] = prepared.content_md
     return payload
+
+
+async def create_page(
+    client: NotionClient,
+    *,
+    prepared: CreatePagePreparation,
+) -> dict[str, str]:
+    """Creates one page with a synchronous, non-retried provider mutation."""
+    payload = await client.post(
+        "pages",
+        operation="create_page",
+        policy=IntegrationRequestPolicy.MUTATION,
+        json=create_page_request_body(prepared),
+        validation_error_detail=lambda _response: "Notion rejected the page creation request.",
+    )
+    result = normalized_page_mutation_response(
+        payload,
+        operation="create_page",
+        forbidden_id=prepared.parent.external_id,
+        require_new_uuid=True,
+    )
+    return {**result, "title": prepared.title}

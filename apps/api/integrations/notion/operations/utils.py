@@ -7,10 +7,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import islice
 from typing import Any, Literal, TypedDict
+from uuid import UUID
 
 from pydantic_core import to_jsonable_python
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import (
+    IntegrationFailureDisposition,
+    IntegrationValidationError,
+)
 from services.agents.runtime.untrusted import UntrustedNode
 
 MAX_RICH_TEXT_CHARS = 2_000
@@ -259,6 +263,63 @@ def validate_mutation_body_size(payload: Mapping[str, Any]) -> None:
         raise ValueError(
             f"Notion mutation request exceeds the {MAX_NOTION_MUTATION_BODY_BYTES}-byte limit"
         )
+
+
+def normalized_page_mutation_response(
+    payload: Any,
+    *,
+    operation: str,
+    expected_id: str | None = None,
+    forbidden_id: str | None = None,
+    require_new_uuid: bool = False,
+) -> dict[str, str]:
+    """Returns safe fields from a verified synchronous page mutation response."""
+    if not isinstance(payload, Mapping) or payload.get("object") != "page":
+        raise _invalid_mutation_response(operation)
+    page_id = payload.get("id")
+    in_trash = payload.get("in_trash")
+    last_edited_time = payload.get("last_edited_time")
+    url = payload.get("url")
+    if (
+        not isinstance(page_id, str)
+        or not page_id.strip()
+        or not isinstance(in_trash, bool)
+        or in_trash
+        or not isinstance(last_edited_time, str)
+        or not last_edited_time
+        or not isinstance(url, str)
+        or not url
+    ):
+        raise _invalid_mutation_response(operation)
+    normalized_id = page_id.strip()
+    if expected_id is not None and normalized_id != expected_id:
+        raise _invalid_mutation_response(operation)
+    if forbidden_id is not None and normalized_id == forbidden_id:
+        raise _invalid_mutation_response(operation)
+    if require_new_uuid:
+        try:
+            UUID(normalized_id)
+        except ValueError as exc:
+            raise _invalid_mutation_response(operation) from exc
+    return {
+        "id": normalized_id,
+        "url": url[:2_000],
+        "last_edited_time": last_edited_time[:100],
+    }
+
+
+def invalid_mutation_response(operation: str) -> IntegrationValidationError:
+    """Builds an ambiguous error for a malformed successful mutation response."""
+    return _invalid_mutation_response(operation)
+
+
+def _invalid_mutation_response(operation: str) -> IntegrationValidationError:
+    return IntegrationValidationError(
+        "Notion returned an invalid mutation response",
+        provider_key="notion",
+        operation=operation,
+        failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
+    )
 
 
 type NotionObjectKind = Literal["page", "data_source", "all"]

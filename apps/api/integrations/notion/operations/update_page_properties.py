@@ -5,10 +5,12 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 from pydantic_ai import ModelRetry
 
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import NotionClient
 from ..references import NotionPageReference
@@ -19,6 +21,7 @@ from .properties import (
     validate_mutation_scope,
     validate_property_records_against_schema,
 )
+from .utils import normalized_page_mutation_response, validate_mutation_body_size
 
 
 @dataclass(frozen=True)
@@ -46,4 +49,36 @@ async def prepare_update_page_properties(
         page=target,
         records=tuple(properties),
         properties=validate_property_records_against_schema(properties, target),
+    )
+
+
+def update_page_properties_request_body(
+    prepared: UpdatePagePropertiesPreparation,
+) -> dict[str, Any]:
+    """Builds the exact provider request body for prepared property updates."""
+    payload = {"properties": prepared.properties}
+    validate_mutation_body_size(payload)
+    return payload
+
+
+async def update_page_properties(
+    client: NotionClient,
+    *,
+    prepared: UpdatePagePropertiesPreparation,
+) -> dict[str, str]:
+    """Updates page properties with a synchronous, non-retried provider mutation."""
+    page_id = prepared.page.external_id
+    payload = await client.patch(
+        f"pages/{quote(page_id, safe='')}",
+        operation="update_page_properties",
+        policy=IntegrationRequestPolicy.MUTATION,
+        json=update_page_properties_request_body(prepared),
+        validation_error_detail=lambda _response: (
+            "Notion rejected one or more page property values."
+        ),
+    )
+    return normalized_page_mutation_response(
+        payload,
+        operation="update_page_properties",
+        expected_id=page_id,
     )
