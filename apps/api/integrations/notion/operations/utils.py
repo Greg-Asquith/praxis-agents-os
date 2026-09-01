@@ -20,6 +20,7 @@ MAX_PROPERTIES = 100
 MAX_MULTI_SELECT_VALUES = 100
 MAX_NOTION_PROVIDER_CURSOR_CHARS = 8_192
 MAX_COMPACT_PROPERTIES_BYTES = 24 * 1024
+MAX_NOTION_MUTATION_BODY_BYTES = 500_000
 
 
 @dataclass(frozen=True)
@@ -250,6 +251,14 @@ def serialized_json_bytes(value: Any) -> int:
     """Returns the compact JSON size used for provider result bounds."""
     jsonable = to_jsonable_python(value)
     return len(json.dumps(jsonable, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def validate_mutation_body_size(payload: Mapping[str, Any]) -> None:
+    """Rejects a Notion mutation request that exceeds the provider payload limit."""
+    if serialized_json_bytes(payload) > MAX_NOTION_MUTATION_BODY_BYTES:
+        raise ValueError(
+            f"Notion mutation request exceeds the {MAX_NOTION_MUTATION_BODY_BYTES}-byte limit"
+        )
 
 
 type NotionObjectKind = Literal["page", "data_source", "all"]

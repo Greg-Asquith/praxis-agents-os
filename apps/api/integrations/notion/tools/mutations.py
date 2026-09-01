@@ -20,9 +20,8 @@ from integrations.notion.operations.properties import (
     normalize_property_value,
     validate_utf8_text,
 )
-from integrations.notion.operations.utils import serialized_json_bytes
+from integrations.notion.operations.utils import validate_mutation_body_size
 
-MAX_NOTION_MUTATION_BODY_BYTES = 500_000
 MAX_NOTION_PROPERTY_RECORDS = 50
 MAX_NOTION_REPLACEMENT_RECORDS = 20
 MAX_NOTION_REPLACEMENT_TEXT_CHARS = 4_000
@@ -98,7 +97,7 @@ def _validate_property_records(
             record.name: encode_property_value(record.type, record.value) for record in records
         }
     }
-    _validate_mutation_body_size(payload)
+    validate_mutation_body_size(payload)
     return records
 
 
@@ -117,15 +116,8 @@ def _validate_replacement_records(
             ]
         }
     }
-    _validate_mutation_body_size(payload)
+    validate_mutation_body_size(payload)
     return records
-
-
-def _validate_mutation_body_size(payload: dict[str, object]) -> None:
-    if serialized_json_bytes(payload) > MAX_NOTION_MUTATION_BODY_BYTES:
-        raise ValueError(
-            f"Mutation records exceed the {MAX_NOTION_MUTATION_BODY_BYTES}-byte request limit"
-        )
 
 
 type NotionPropertyRecords = Annotated[

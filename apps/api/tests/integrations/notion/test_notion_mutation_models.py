@@ -236,7 +236,7 @@ def test_replacement_record_list_enforces_provider_request_byte_limit() -> None:
     }
 
     TypeAdapter(NotionReplacementRecords).validate_python([record] * 15)
-    with pytest.raises(ValidationError, match="500000-byte request limit"):
+    with pytest.raises(ValidationError, match="500000-byte limit"):
         TypeAdapter(NotionReplacementRecords).validate_python([record] * 16)
 
 

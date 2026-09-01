@@ -3,21 +3,50 @@
 """Notion mutation property parsing and provider encoding."""
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
+from urllib.parse import quote
 
+from pydantic_ai import ModelRetry
+
+from core.exceptions.integration import IntegrationValidationError
 from integrations.notion.operations.utils import (
     MAX_EMAIL_CHARS,
     MAX_MULTI_SELECT_VALUES,
     MAX_PHONE_NUMBER_CHARS,
     MAX_RICH_TEXT_CHARS,
+    data_source_title,
+    notion_id,
+    page_title,
 )
+from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.http import IntegrationRequestPolicy
+
+from ..client import NotionClient
+from ..references import NotionDataSourceReference, NotionPageReference
 
 MAX_NOTION_PROPERTY_NAME_CHARS = 255
 MAX_NOTION_PROPERTY_NAME_BYTES = MAX_NOTION_PROPERTY_NAME_CHARS * 4
 MAX_NOTION_PROPERTY_VALUE_BYTES = MAX_RICH_TEXT_CHARS * 4
+READ_ONLY_NOTION_PROPERTY_TYPES = frozenset(
+    {
+        "formula",
+        "rollup",
+        "created_time",
+        "created_by",
+        "last_edited_time",
+        "last_edited_by",
+        "unique_id",
+        "verification",
+        "button",
+        "relation",
+        "people",
+        "files",
+    }
+)
 
 type NotionWritablePropertyType = Literal[
     "title",
@@ -32,6 +61,174 @@ type NotionWritablePropertyType = Literal[
     "status",
     "multi_select",
 ]
+
+
+class NotionPropertyRecordLike(Protocol):
+    """Describes one normalized property record accepted by mutation preparation."""
+
+    name: str
+    type: NotionWritablePropertyType
+    value: str
+
+
+@dataclass(frozen=True)
+class NotionMutationTarget:
+    """Carries live provider state used to validate a Notion mutation."""
+
+    entity_type: Literal["notion_page", "notion_data_source"]
+    external_id: str
+    display_name: str
+    property_types: Mapping[str, str]
+
+
+async def get_page_mutation_target(
+    client: NotionClient,
+    reference: NotionPageReference,
+) -> NotionMutationTarget:
+    """Gets and validates the live page state required before a mutation."""
+    return await _get_mutation_target(
+        client,
+        path=f"pages/{_quoted_id(reference.page_id)}",
+        operation="prepare_page_mutation",
+        entity_type="notion_page",
+        expected_id=reference.page_id,
+    )
+
+
+async def get_data_source_mutation_target(
+    client: NotionClient,
+    reference: NotionDataSourceReference,
+) -> NotionMutationTarget:
+    """Gets and validates the live data-source state required before a mutation."""
+    return await _get_mutation_target(
+        client,
+        path=f"data_sources/{_quoted_id(reference.data_source_id)}",
+        operation="prepare_data_source_mutation",
+        entity_type="notion_data_source",
+        expected_id=reference.data_source_id,
+    )
+
+
+def validate_property_records_against_schema(
+    records: Sequence[NotionPropertyRecordLike],
+    target: NotionMutationTarget,
+    *,
+    reserved_property_name: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Returns provider values after validating records against the live schema."""
+    encoded: dict[str, dict[str, Any]] = {}
+    for record in records:
+        live_type = target.property_types.get(record.name)
+        if live_type is None:
+            raise ModelRetry(
+                f"Notion property {record.name!r} is no longer available. "
+                "Choose a property from the current schema."
+            )
+        if live_type in READ_ONLY_NOTION_PROPERTY_TYPES:
+            raise ModelRetry(f"Notion property {record.name!r} is read-only.")
+        if live_type != record.type:
+            raise ModelRetry(
+                f"Notion property {record.name!r} now has type {live_type!r}, not {record.type!r}."
+            )
+        if reserved_property_name is not None and record.name == reserved_property_name:
+            raise ModelRetry(
+                f"Set the page title with the title argument, not property {record.name!r}."
+            )
+        encoded[record.name] = encode_property_value(record.type, record.value)
+    return encoded
+
+
+def validate_mutation_scope(
+    entry: ResolvedContextEntry,
+    provider_scope_id: str,
+    *,
+    reference_label: str,
+) -> None:
+    """Rejects a mutation reference outside the selected Notion workspace."""
+    if provider_scope_id != entry.external_id:
+        raise ModelRetry(
+            f"The selected Notion {reference_label} is no longer in the active integration "
+            f"context. Choose the {reference_label} again."
+        )
+
+
+def data_source_title_property(target: NotionMutationTarget) -> str:
+    """Returns the single title property declared by a live data source."""
+    title_names = [
+        name for name, property_type in target.property_types.items() if property_type == "title"
+    ]
+    if len(title_names) != 1:
+        raise IntegrationValidationError(
+            "Notion returned a data source without one title property",
+            provider_key="notion",
+            operation="prepare_data_source_mutation",
+        )
+    return title_names[0]
+
+
+async def _get_mutation_target(
+    client: NotionClient,
+    *,
+    path: str,
+    operation: str,
+    entity_type: Literal["notion_page", "notion_data_source"],
+    expected_id: str,
+) -> NotionMutationTarget:
+    payload = await client.get(path, operation=operation, policy=IntegrationRequestPolicy.READ)
+    expected_object = "page" if entity_type == "notion_page" else "data_source"
+    if (
+        not isinstance(payload, Mapping)
+        or payload.get("object") != expected_object
+        or notion_id(payload) != expected_id
+    ):
+        raise IntegrationValidationError(
+            "Notion returned an invalid mutation target",
+            provider_key="notion",
+            operation=operation,
+        )
+    in_trash = payload.get("in_trash")
+    if not isinstance(in_trash, bool):
+        raise IntegrationValidationError(
+            "Notion returned an invalid trash status",
+            provider_key="notion",
+            operation=operation,
+        )
+    if in_trash:
+        raise ModelRetry("The selected Notion resource is in the trash. Choose another resource.")
+    raw_properties = payload.get("properties")
+    if not isinstance(raw_properties, Mapping):
+        raise IntegrationValidationError(
+            "Notion returned an invalid property schema",
+            provider_key="notion",
+            operation=operation,
+        )
+    property_types: dict[str, str] = {}
+    for raw_name, raw_property in raw_properties.items():
+        if not isinstance(raw_name, str) or not raw_name or not isinstance(raw_property, Mapping):
+            raise IntegrationValidationError(
+                "Notion returned an invalid property schema",
+                provider_key="notion",
+                operation=operation,
+            )
+        property_type = raw_property.get("type")
+        if not isinstance(property_type, str) or not property_type:
+            raise IntegrationValidationError(
+                "Notion returned an invalid property schema",
+                provider_key="notion",
+                operation=operation,
+            )
+        property_types[raw_name] = property_type
+    title = page_title(payload) if entity_type == "notion_page" else data_source_title(payload)
+    return NotionMutationTarget(
+        entity_type=entity_type,
+        external_id=expected_id,
+        display_name=(title or "(untitled)")[:500],
+        property_types=property_types,
+    )
+
+
+def _quoted_id(value: str) -> str:
+    return quote(value, safe="")
 
 
 def normalize_property_name(value: str) -> str:
