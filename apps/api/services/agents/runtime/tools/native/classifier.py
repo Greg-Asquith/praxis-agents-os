@@ -2,10 +2,11 @@
 
 """Bounded closed-set classification through configured helper models.
 
-The registered schema and presentation snapshot configured provider keys at
+The registered schema and presentation snapshot configured providers at
 process start. Availability and call-time validation still hide unusable
-providers and steer stale selections with a model-visible retry. Provider-key
-changes require an API and worker restart before advertised choices change.
+providers and steer stale selections with a model-visible retry. Provider
+configuration changes require an API and worker restart before advertised choices
+change.
 """
 
 from dataclasses import replace
@@ -30,6 +31,7 @@ from services.agents.models.resolution import (
     require_configured_provider,
     require_helper_model,
 )
+from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EFFECT_READ,
@@ -84,8 +86,11 @@ class ClassifyOutput(BaseModel):
 
 
 def configured_classifier_providers() -> tuple[str, ...]:
-    """Return configured providers supported by the classifier helper."""
-    return configured_helper_providers(SUPPORTED_CLASSIFIER_PROVIDERS)
+    """Returns configured providers supported by the classifier helper."""
+    return configured_helper_providers(
+        SUPPORTED_CLASSIFIER_PROVIDERS,
+        is_configured=is_provider_configured,
+    )
 
 
 _REGISTERED_CLASSIFIER_PROVIDERS = configured_classifier_providers()

@@ -4,7 +4,7 @@
 
 import asyncio
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -252,7 +252,7 @@ def test_native_run_code_settings_defaults_and_bounds() -> None:
             Settings(**values)
 
 
-def test_configured_native_run_code_providers_require_api_keys(
+def test_configured_native_run_code_providers_support_api_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_native_provider_keys(
@@ -266,6 +266,38 @@ def test_configured_native_run_code_providers_require_api_keys(
         PROVIDER_GOOGLE,
         PROVIDER_OPENAI,
     )
+
+
+@pytest.mark.parametrize(
+    "configured_providers",
+    [
+        classifier_tools.configured_classifier_providers,
+        run_code_tools.configured_native_run_code_providers,
+        web_fetch_tools.configured_native_fetch_providers,
+        web_search_tools.configured_native_search_providers,
+    ],
+)
+@pytest.mark.parametrize(
+    ("vertex_project", "gcp_project_id", "expected_configured"),
+    [
+        ("vertex-project", None, True),
+        (None, "deployment-project", True),
+        (None, None, False),
+    ],
+)
+def test_google_helper_availability_follows_vertex_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_providers: Callable[[], tuple[str, ...]],
+    vertex_project: str | None,
+    gcp_project_id: str | None,
+    expected_configured: bool,
+) -> None:
+    _set_native_provider_keys(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", vertex_project)
+    monkeypatch.setattr(settings, "GCP_PROJECT_ID", gcp_project_id)
+
+    assert (PROVIDER_GOOGLE in configured_providers()) is expected_configured
 
 
 def test_run_code_rejects_provider_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:

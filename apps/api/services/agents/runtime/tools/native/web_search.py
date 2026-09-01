@@ -5,10 +5,10 @@
 Native search executes inside the selected helper model, so Praxis exposes the
 operation as a normal runtime function tool and audits its outer call through
 the shared dispatch path. The registered schema and presentation snapshot the
-configured provider keys at process start, while availability and call-time
+configured providers at process start, while availability and call-time
 validation keep unusable providers hidden and steer stale selections with a
-model-visible retry. Provider-key changes require an API and worker restart
-before the advertised choices change.
+model-visible retry. Provider configuration changes require an API and worker
+restart before the advertised choices change.
 """
 
 from collections.abc import Callable
@@ -37,6 +37,7 @@ from services.agents.models.resolution import (
     require_configured_provider,
     require_helper_model,
 )
+from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EGRESS_PROVIDER_QUERY,
@@ -71,8 +72,11 @@ URLs when the provider makes them available.
 
 
 def configured_native_search_providers() -> tuple[str, ...]:
-    """Return native-search providers with configured API keys in stable order."""
-    return configured_helper_providers(SUPPORTED_NATIVE_SEARCH_PROVIDERS)
+    """Returns configured native-search providers in stable order."""
+    return configured_helper_providers(
+        SUPPORTED_NATIVE_SEARCH_PROVIDERS,
+        is_configured=is_provider_configured,
+    )
 
 
 _REGISTERED_NATIVE_SEARCH_PROVIDERS = configured_native_search_providers()

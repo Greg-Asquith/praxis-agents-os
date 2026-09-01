@@ -13,10 +13,11 @@ from the available providers whenever the settings-owned domain denylist is
 configured. Praxis also checks the requested URL before dispatch and retains
 dispatch's bounded free-text truncation for the helper output.
 
-The registered schema and presentation snapshot configured provider keys at
+The registered schema and presentation snapshot configured providers at
 process start. Availability and call-time validation still hide unusable
-providers and steer stale selections with a model-visible retry. Provider-key
-changes require an API and worker restart before advertised choices change.
+providers and steer stale selections with a model-visible retry. Provider
+configuration changes require an API and worker restart before advertised choices
+change.
 """
 
 from dataclasses import replace
@@ -43,6 +44,7 @@ from services.agents.models.resolution import (
     require_configured_provider,
     require_helper_model,
 )
+from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import truncate_result
 from services.agents.runtime.tools import (
@@ -76,11 +78,14 @@ the page. If the page cannot be fetched, say so plainly.
 
 
 def configured_native_fetch_providers() -> tuple[str, ...]:
-    """Return configured providers that can enforce the active fetch policy."""
+    """Returns configured providers that can enforce the active fetch policy."""
     blocked_domains_configured = bool(configured_web_fetch_blocked_domains())
     return tuple(
         provider
-        for provider in configured_helper_providers(SUPPORTED_NATIVE_FETCH_PROVIDERS)
+        for provider in configured_helper_providers(
+            SUPPORTED_NATIVE_FETCH_PROVIDERS,
+            is_configured=is_provider_configured,
+        )
         if not (provider == PROVIDER_GOOGLE and blocked_domains_configured)
     )
 
