@@ -8,6 +8,7 @@ so these assert the correct Pydantic AI types and explicit credential handling.
 
 import pytest
 from pydantic import SecretStr
+from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
@@ -157,6 +158,9 @@ def test_build_google_model_gemini_api(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("g-test"))
     model = build_model(_spec("google", "gemini-3.5-flash"))
     assert isinstance(model, GoogleModel)
+    assert (
+        model.provider.client._api_client._http_options.httpx_async_client is retrying_http_client()
+    )
 
 
 def test_build_azure_model_uses_deployment(monkeypatch):
@@ -179,6 +183,40 @@ def test_build_google_vertex_requires_project(monkeypatch):
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
     with pytest.raises(ModelConfigurationError):
         build_model(_spec("google", "gemini-3.1-pro"))
+
+
+@pytest.mark.parametrize(
+    ("vertex_project", "gcp_project_id", "expected_project"),
+    [
+        ("vertex-project", "deployment-project", "vertex-project"),
+        (None, "deployment-project", "deployment-project"),
+    ],
+)
+def test_build_google_vertex_uses_project_location_and_request_policy(
+    monkeypatch,
+    vertex_project,
+    gcp_project_id,
+    expected_project,
+):
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", vertex_project)
+    monkeypatch.setattr(settings, "GCP_PROJECT_ID", gcp_project_id)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "europe-west1")
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 7)
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 23.5)
+
+    model = build_model(_spec("google", "gemini-3.1-pro"))
+
+    assert isinstance(model, GoogleModel)
+    client = model.provider.client
+    assert client.vertexai is True
+    assert client._api_client.project == expected_project
+    assert client._api_client.location == "europe-west1"
+    http_options = client._api_client._http_options
+    assert http_options.timeout == DEFAULT_HTTP_TIMEOUT * 1000
+    assert http_options.retry_options is not None
+    assert http_options.retry_options.attempts == 7
+    assert http_options.retry_options.max_delay == 23.5
 
 
 def test_build_unsupported_provider_raises():

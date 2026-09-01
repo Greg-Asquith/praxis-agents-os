@@ -9,7 +9,8 @@ here means the runtime loop stays library-agnostic.
 """
 
 from google.genai import Client
-from pydantic_ai.models import Model
+from google.genai.types import HttpOptions, HttpRetryOptions
+from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT, Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
@@ -76,8 +77,19 @@ def _google_provider() -> GoogleProvider:
             details={"provider": PROVIDER_GOOGLE},
         )
 
-    # Vertex uses google-genai's transport rather than the shared httpx client.
-    client = Client(vertexai=True, project=project, location=settings.GOOGLE_VERTEX_LOCATION)
+    # Vertex uses google-genai's transport, configured with the shared request policy.
+    client = Client(
+        vertexai=True,
+        project=project,
+        location=settings.GOOGLE_VERTEX_LOCATION,
+        http_options=HttpOptions(
+            timeout=DEFAULT_HTTP_TIMEOUT * 1000,
+            retry_options=HttpRetryOptions(
+                attempts=settings.LLM_HTTP_RETRY_MAX_ATTEMPTS,
+                max_delay=settings.LLM_HTTP_RETRY_MAX_WAIT_SECONDS,
+            ),
+        ),
+    )
     return GoogleProvider(client=client)
 
 
