@@ -350,7 +350,9 @@ follows:
   `factory.py` builds pydantic-ai models per provider. Resolve credentials
   only through the `provider_api_key` seam — never rely on implicit env
   pickup. All providers share the retrying HTTP client
-  (`retrying_http_client()`).
+  (`retrying_http_client()`). Vertex model and embedding calls share a
+  process-owned Google client per stable configuration; every API, worker, and
+  eval process closes those clients during shutdown.
 - Native URL fetching uses the governed `fetch_url` helper-tool path for
   Anthropic and Google only. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
   requests, `NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS` is passed to the provider,

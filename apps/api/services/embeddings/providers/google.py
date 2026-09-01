@@ -12,7 +12,7 @@ from google.genai import Client, errors, types
 from core.settings import settings
 from services.agents.models import provider_api_key, retrying_http_client
 from services.agents.models.domain import PROVIDER_GOOGLE
-from services.agents.models.factory import build_google_vertex_client
+from services.agents.models.google_vertex_client import get_google_vertex_client
 from services.embeddings.domain import (
     EMBEDDING_PROVIDER_GOOGLE,
     EmbeddingBatch,
@@ -45,20 +45,13 @@ class GoogleEmbeddingsProvider(EmbeddingProvider):
         vertex_client: Client | None = None,
     ) -> None:
         if settings.GOOGLE_VERTEX_AI:
-            self._vertex_client = vertex_client or build_google_vertex_client()
-            self._owns_vertex_client = vertex_client is None
+            self._vertex_client = vertex_client or get_google_vertex_client()
             self._client = None
             self._api_key = None
         else:
             self._vertex_client = None
-            self._owns_vertex_client = False
             self._client = client or retrying_http_client()
             self._api_key = api_key or provider_api_key(PROVIDER_GOOGLE)
-
-    async def aclose(self) -> None:
-        """Closes the provider-owned Vertex async client."""
-        if self._vertex_client is not None and self._owns_vertex_client:
-            await self._vertex_client.aio.aclose()
 
     async def embed_texts(
         self,

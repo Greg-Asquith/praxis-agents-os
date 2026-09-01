@@ -14,6 +14,7 @@ from core.database import (
 )
 from core.logging import setup_logging
 from core.settings import settings
+from services.agents.models import close_google_vertex_clients
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.runtime_catalogs import assemble_runtime_catalogs
 from services.security import ensure_application_encryption_keys_loaded
@@ -41,7 +42,10 @@ async def main() -> int:
         try:
             await close_code_mode_executor()
         finally:
-            await close_db_connections()
+            try:
+                await close_google_vertex_clients()
+            finally:
+                await close_db_connections()
 
 
 async def _run_forever_mode(shutdown_event: asyncio.Event) -> int:

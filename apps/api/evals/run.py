@@ -33,6 +33,7 @@ from evals.evaluators import (
 )
 from evals.memory_calibration import main as run_memory_calibration
 from models.agent import Agent
+from services.agents.models import close_google_vertex_clients
 from services.agents.runtime.history import HistoryCompaction
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.untrusted import UntrustedContent, serialize_untrusted_content
@@ -226,13 +227,16 @@ def _response_judges(judge_model: str) -> list[LLMJudge]:
 
 
 async def main() -> None:
-    assemble_runtime_catalogs()
-    provider, model = _configured_model()
-    await run_memory_calibration()
-    judge_model = f"{provider}:{model}"
-    dataset = _load_dataset(judge_model)
-    report = await dataset.evaluate(_run_case)
-    report.print()
+    try:
+        assemble_runtime_catalogs()
+        provider, model = _configured_model()
+        await run_memory_calibration()
+        judge_model = f"{provider}:{model}"
+        dataset = _load_dataset(judge_model)
+        report = await dataset.evaluate(_run_case)
+        report.print()
+    finally:
+        await close_google_vertex_clients()
 
 
 if __name__ == "__main__":

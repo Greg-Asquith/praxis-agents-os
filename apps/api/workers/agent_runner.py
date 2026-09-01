@@ -44,6 +44,7 @@ from services.agent_schedules.runs import (
     mark_run_retryable_failure,
     mark_run_terminal_failure_and_disable_schedule,
 )
+from services.agents.models import close_google_vertex_clients
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
 from services.agents.runtime.sinks import NullSink
@@ -256,7 +257,10 @@ async def main(argv: Sequence[str] | None = None) -> int:
         await run_forever(shutdown_event=shutdown_event)
         return 0
     finally:
-        await close_db_connections()
+        try:
+            await close_google_vertex_clients()
+        finally:
+            await close_db_connections()
 
 
 async def _run_once_until_shutdown(

@@ -111,6 +111,7 @@ async def test_drain_mode_with_empty_queues_exits_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = {"agent": 0, "job": 0}
+    vertex_clients_closed = False
 
     async def drain_agent(*, shutdown_event: asyncio.Event) -> int:
         assert not shutdown_event.is_set()
@@ -125,13 +126,19 @@ async def test_drain_mode_with_empty_queues_exits_zero(
     async def close_connections() -> None:
         return None
 
+    async def close_vertex_clients() -> None:
+        nonlocal vertex_clients_closed
+        vertex_clients_closed = True
+
     monkeypatch.setattr(settings, "WORKER_MODE", "drain")
     monkeypatch.setattr(worker_main.agent_runner, "run_drain", drain_agent)
     monkeypatch.setattr(worker_main.job_runner, "run_drain", drain_jobs)
     monkeypatch.setattr(worker_main, "close_db_connections", close_connections)
+    monkeypatch.setattr(worker_main, "close_google_vertex_clients", close_vertex_clients)
 
     assert await asyncio.wait_for(worker_main.main(), timeout=1) == 0
     assert calls == {"agent": 1, "job": 1}
+    assert vertex_clients_closed is True
 
 
 async def test_drain_mode_rechecks_both_queues_after_either_does_work(

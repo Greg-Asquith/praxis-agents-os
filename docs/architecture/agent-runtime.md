@@ -269,8 +269,10 @@ apps/api/
   resolves from `GOOGLE_VERTEX_PROJECT`, then falls back to `GCP_PROJECT_ID`.
   The model catalog, native helper availability, and Google embeddings follow
   the same switch, so transport selection does not change agent or tool
-  contracts. Usage-ledger attribution and public-rate pricing are keyed by the
-  Google provider and model, independent of the selected transport.
+  contracts. Vertex calls share a process-owned Google client per stable
+  configuration, closed during API, worker, and eval shutdown. Usage-ledger
+  attribution and public-rate pricing are keyed by the Google provider and
+  model, independent of the selected transport.
 - Infrastructure provider settings live in `core/settings/providers.py`.
   Large language model (LLM) configuration remains separate and includes the
   model catalog and credentials.

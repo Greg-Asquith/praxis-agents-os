@@ -17,6 +17,7 @@ die() {
 ENV_FILE=$1
 [[ -f "$ENV_FILE" ]] || die "environment file not found: $ENV_FILE"
 set -a
+unset GOOGLE_VERTEX_AI GOOGLE_VERTEX_LOCATION
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 GOOGLE_VERTEX_AI=${GOOGLE_VERTEX_AI:-false}

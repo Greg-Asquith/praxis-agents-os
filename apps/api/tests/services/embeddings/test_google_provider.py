@@ -309,24 +309,17 @@ def test_google_vertex_provider_requires_project(monkeypatch: pytest.MonkeyPatch
         GoogleEmbeddingsProvider()
 
 
-async def test_google_vertex_provider_closes_only_owned_client(
+async def test_google_vertex_provider_leaves_client_for_process_shutdown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = importlib.import_module("services.embeddings.providers.google")
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
-    owned_close = AsyncMock()
-    owned_client = SimpleNamespace(aio=SimpleNamespace(aclose=owned_close))
-    monkeypatch.setattr(module, "build_google_vertex_client", Mock(return_value=owned_client))
+    shared_close = AsyncMock()
+    shared_client = SimpleNamespace(aio=SimpleNamespace(aclose=shared_close))
+    monkeypatch.setattr(module, "get_google_vertex_client", Mock(return_value=shared_client))
 
-    owned_provider = GoogleEmbeddingsProvider()
-    await owned_provider.aclose()
+    provider = GoogleEmbeddingsProvider()
+    await provider.aclose()
 
-    injected_close = AsyncMock()
-    injected_client = SimpleNamespace(aio=SimpleNamespace(aclose=injected_close))
-    injected_provider = GoogleEmbeddingsProvider(
-        vertex_client=injected_client  # type: ignore[arg-type]
-    )
-    await injected_provider.aclose()
-
-    owned_close.assert_awaited_once_with()
-    injected_close.assert_not_awaited()
+    assert provider._vertex_client is shared_client
+    shared_close.assert_not_awaited()

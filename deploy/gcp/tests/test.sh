@@ -168,7 +168,8 @@ done
 
 sed -e '/^GOOGLE_VERTEX_AI=/d' -e '/^GOOGLE_VERTEX_LOCATION=/d' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/legacy.env"
-"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/legacy-render" \
+GOOGLE_VERTEX_AI=true GOOGLE_VERTEX_LOCATION=us-central1 \
+  "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/legacy-render" \
   "$TEST_TMP/legacy.env" abcdef0123456789
 for manifest in \
   "$TEST_TMP/legacy-render/services/praxis-api.yaml" \
@@ -176,6 +177,7 @@ for manifest in \
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
   grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: global'
 done
+grep -Fq 'unset GOOGLE_VERTEX_AI GOOGLE_VERTEX_LOCATION' "$GCP_DIR/bootstrap.sh"
 
 sed 's/^WORKER_MAX_CONCURRENT_RUNS=4$/WORKER_MAX_CONCURRENT_RUNS=6/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/oversized-worker-concurrency.env"

@@ -8,9 +8,7 @@ Gemini Developer API or Vertex AI depending on settings. Keeping construction
 here means the runtime loop stays library-agnostic.
 """
 
-from google.genai import Client
-from google.genai.types import HttpOptions, HttpRetryOptions
-from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT, Model
+from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
@@ -28,6 +26,7 @@ from services.agents.models.domain import (
     ModelConfigurationError,
     ResolvedModel,
 )
+from services.agents.models.google_vertex_client import get_google_vertex_client
 from services.agents.models.utils import provider_api_key, retrying_http_client
 
 
@@ -70,31 +69,7 @@ def _google_provider() -> GoogleProvider:
             http_client=retrying_http_client(),
         )
 
-    return GoogleProvider(client=build_google_vertex_client())
-
-
-def build_google_vertex_client() -> Client:
-    """Builds a Vertex AI client with the shared Google request policy."""
-    project = settings.GOOGLE_VERTEX_PROJECT or settings.GCP_PROJECT_ID
-    if not project:
-        raise ModelConfigurationError(
-            "Vertex AI requires a project (GOOGLE_VERTEX_PROJECT or GCP_PROJECT_ID).",
-            details={"provider": PROVIDER_GOOGLE},
-        )
-
-    # Vertex uses google-genai's transport, configured with the shared request policy.
-    return Client(
-        vertexai=True,
-        project=project,
-        location=settings.GOOGLE_VERTEX_LOCATION,
-        http_options=HttpOptions(
-            timeout=DEFAULT_HTTP_TIMEOUT * 1000,
-            retry_options=HttpRetryOptions(
-                attempts=settings.LLM_HTTP_RETRY_MAX_ATTEMPTS,
-                max_delay=settings.LLM_HTTP_RETRY_MAX_WAIT_SECONDS,
-            ),
-        ),
-    )
+    return GoogleProvider(client=get_google_vertex_client())
 
 
 def _model_settings_for(spec: ResolvedModel):

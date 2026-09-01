@@ -24,6 +24,7 @@ from core.database import (
 from core.logging import setup_logging
 from core.settings import settings
 from models.jobs import Job
+from services.agents.models import close_google_vertex_clients
 from services.integrations.discovery.recover_orphaned import recover_orphaned_discoveries
 from services.integrations.discovery.rediscover_stale import (
     ensure_integrations_rediscover_job,
@@ -368,7 +369,10 @@ async def main(argv: Sequence[str] | None = None) -> int:
         await run_forever(shutdown_event=shutdown_event)
         return 0
     finally:
-        await close_db_connections()
+        try:
+            await close_google_vertex_clients()
+        finally:
+            await close_db_connections()
 
 
 async def _record_job_failure(

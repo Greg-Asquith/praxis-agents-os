@@ -6,6 +6,10 @@ Construction is offline: building a provider/model does not make network calls,
 so these assert the correct Pydantic AI types and explicit credential handling.
 """
 
+import importlib
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
+
 import pytest
 from pydantic import SecretStr
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
@@ -14,12 +18,13 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 
 from core.settings import settings
-from services.agents.models import build_model, provider_api_key
+from services.agents.models import build_model, close_google_vertex_clients, provider_api_key
 from services.agents.models.domain import (
     MissingModelCredentialError,
     ModelConfigurationError,
     ResolvedModel,
 )
+from services.agents.models.google_vertex_client import get_google_vertex_client
 from services.agents.models.utils import retrying_http_client
 
 
@@ -192,7 +197,7 @@ def test_build_google_vertex_requires_project(monkeypatch):
         (None, "deployment-project", "deployment-project"),
     ],
 )
-def test_build_google_vertex_uses_project_location_and_request_policy(
+async def test_build_google_vertex_uses_project_location_and_request_policy(
     monkeypatch,
     vertex_project,
     gcp_project_id,
@@ -205,18 +210,41 @@ def test_build_google_vertex_uses_project_location_and_request_policy(
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 7)
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 23.5)
 
-    model = build_model(_spec("google", "gemini-3.1-pro"))
+    try:
+        model = build_model(_spec("google", "gemini-3.1-pro"))
 
-    assert isinstance(model, GoogleModel)
-    client = model.provider.client
-    assert client.vertexai is True
-    assert client._api_client.project == expected_project
-    assert client._api_client.location == "europe-west1"
-    http_options = client._api_client._http_options
-    assert http_options.timeout == DEFAULT_HTTP_TIMEOUT * 1000
-    assert http_options.retry_options is not None
-    assert http_options.retry_options.attempts == 7
-    assert http_options.retry_options.max_delay == 23.5
+        assert isinstance(model, GoogleModel)
+        client = model.provider.client
+        assert client.vertexai is True
+        assert client._api_client.project == expected_project
+        assert client._api_client.location == "europe-west1"
+        http_options = client._api_client._http_options
+        assert http_options.timeout == DEFAULT_HTTP_TIMEOUT * 1000
+        assert http_options.retry_options is not None
+        assert http_options.retry_options.attempts == 7
+        assert http_options.retry_options.max_delay == 23.5
+    finally:
+        await close_google_vertex_clients()
+
+
+async def test_google_vertex_client_is_process_shared_and_closed(monkeypatch) -> None:
+    vertex_client_module = importlib.import_module("services.agents.models.google_vertex_client")
+    close = AsyncMock()
+    client = SimpleNamespace(aio=SimpleNamespace(aclose=close))
+    construct_client = Mock(return_value=client)
+
+    monkeypatch.setattr(vertex_client_module, "Client", construct_client)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+
+    first = get_google_vertex_client()
+    second = get_google_vertex_client()
+    await close_google_vertex_clients()
+
+    assert first is client
+    assert second is client
+    construct_client.assert_called_once()
+    close.assert_awaited_once_with()
 
 
 def test_build_unsupported_provider_raises():
