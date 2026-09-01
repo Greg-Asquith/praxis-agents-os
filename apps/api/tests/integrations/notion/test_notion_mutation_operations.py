@@ -98,6 +98,7 @@ def page_payload(*, in_trash: bool = False, status_type: str = "status") -> dict
         "in_trash": in_trash,
         "url": "https://www.notion.so/page-1",
         "last_edited_time": "2026-09-01T09:30:00.000Z",
+        "parent": {"type": "data_source_id", "data_source_id": "source-1"},
         "properties": {
             "Name": {"type": "title", "title": [{"plain_text": "Launch plan"}]},
             "Status": {"type": status_type, status_type: None},
@@ -106,7 +107,7 @@ def page_payload(*, in_trash: bool = False, status_type: str = "status") -> dict
     }
 
 
-def data_source_payload(*, in_trash: bool = False) -> dict:
+def data_source_payload(*, in_trash: bool = False, status_type: str = "status") -> dict:
     return {
         "object": "data_source",
         "id": "source-1",
@@ -114,8 +115,25 @@ def data_source_payload(*, in_trash: bool = False) -> dict:
         "title": [{"plain_text": "Projects"}],
         "properties": {
             "Project": {"type": "title", "title": {}},
-            "Status": {"type": "status", "status": {}},
+            "Status": {
+                "type": status_type,
+                status_type: {
+                    "options": [
+                        {"name": "Planned"},
+                        {"name": "Done"},
+                        {"name": "Needs review, legal"},
+                    ],
+                },
+            },
             "Estimate": {"type": "number", "number": {}},
+            "Priority": {
+                "type": "select",
+                "select": {"options": [{"name": "High"}, {"name": "Low"}]},
+            },
+            "Tags": {
+                "type": "multi_select",
+                "multi_select": {"options": [{"name": "API"}, {"name": "Documentation"}]},
+            },
         },
     }
 
@@ -219,6 +237,34 @@ async def test_create_under_page_rejects_additional_properties_before_provider_r
 
 
 @pytest.mark.parametrize(
+    "record",
+    [
+        NotionPropertyRecord(name="Status", type="status", value="Urgent"),
+        NotionPropertyRecord(name="Priority", type="select", value="Urgent"),
+        NotionPropertyRecord(name="Tags", type="multi_select", value="API, Urgent"),
+    ],
+)
+async def test_create_page_rejects_unknown_options_before_pending_evidence(
+    record: NotionPropertyRecord,
+) -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=data_source_payload(), request=request)
+
+    http_client, client = client_for(handler)
+    async with http_client:
+        with pytest.raises(ModelRetry, match="does not contain option 'Urgent'"):
+            await prepare_create_page(
+                client,
+                entry(),
+                parent_page=None,
+                parent_data_source=data_source_reference(),
+                title="Launch",
+                content_md="",
+                properties=[record],
+            )
+
+
+@pytest.mark.parametrize(
     ("parent_page", "parent_data_source"),
     [
         (None, None),
@@ -294,10 +340,11 @@ async def test_create_preparation_returns_model_retry_for_editable_text_bounds(
 
 
 async def test_property_preparation_reloads_schema_and_revalidates_edited_records() -> None:
-    responses = [page_payload(), page_payload(status_type="select")]
+    responses = [data_source_payload(), data_source_payload(status_type="select")]
 
     def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=responses.pop(0), request=request)
+        payload = page_payload() if request.url.path.endswith("/pages/page-1") else responses.pop(0)
+        return httpx2.Response(200, json=payload, request=request)
 
     record = NotionPropertyRecord(name="Status", type="status", value="Planned")
     http_client, client = client_for(handler)
@@ -327,7 +374,10 @@ async def test_property_preparation_reloads_schema_and_revalidates_edited_record
 
 async def test_property_preparation_builds_pending_intent_from_edited_arguments() -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=page_payload(), request=request)
+        payload = (
+            page_payload() if request.url.path.endswith("/pages/page-1") else data_source_payload()
+        )
+        return httpx2.Response(200, json=payload, request=request)
 
     scope_entry = entry()
     http_client, client = client_for(handler)
@@ -342,11 +392,85 @@ async def test_property_preparation_builds_pending_intent_from_edited_arguments(
             client,
             scope_entry,
             page=page_reference(),
-            properties=[NotionPropertyRecord(name="Status", type="status", value="Done")],
+            properties=[
+                NotionPropertyRecord(name="Status", type="status", value="Needs review, legal")
+            ],
         )
 
     fields = pending_update_properties_detail(scope_entry, edited).intent_groups[0].items[0].fields
-    assert fields == {"name": "Status", "type": "status", "value": "Done"}
+    assert fields == {
+        "name": "Status",
+        "type": "status",
+        "value": "Needs review, legal",
+    }
+
+
+async def test_property_preparation_reads_parent_options_and_rejects_unknown_values() -> None:
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        payload = (
+            page_payload() if request.url.path.endswith("/pages/page-1") else data_source_payload()
+        )
+        return httpx2.Response(200, json=payload, request=request)
+
+    http_client, client = client_for(handler)
+    async with http_client:
+        prepared = await prepare_update_page_properties(
+            client,
+            entry(),
+            page=page_reference(),
+            properties=[NotionPropertyRecord(name="Status", type="status", value="Done")],
+        )
+        with pytest.raises(ModelRetry, match="does not contain option 'Urgent'"):
+            await prepare_update_page_properties(
+                client,
+                entry(),
+                page=page_reference(),
+                properties=[
+                    NotionPropertyRecord(name="Tags", type="multi_select", value="API, Urgent")
+                ],
+            )
+
+    assert prepared.properties == {"Status": {"status": {"name": "Done"}}}
+    assert [request.url.path for request in requests] == [
+        "/v1/pages/page-1",
+        "/v1/data_sources/source-1",
+        "/v1/pages/page-1",
+        "/v1/data_sources/source-1",
+    ]
+
+
+async def test_property_preparation_rejects_option_removed_during_approval() -> None:
+    schema_reads = 0
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal schema_reads
+        if request.url.path.endswith("/pages/page-1"):
+            return httpx2.Response(200, json=page_payload(), request=request)
+        payload = data_source_payload()
+        schema_reads += 1
+        if schema_reads == 2:
+            payload["properties"]["Status"]["status"]["options"] = [{"name": "Planned"}]
+        return httpx2.Response(200, json=payload, request=request)
+
+    record = NotionPropertyRecord(name="Status", type="status", value="Done")
+    http_client, client = client_for(handler)
+    async with http_client:
+        await prepare_update_page_properties(
+            client,
+            entry(),
+            page=page_reference(),
+            properties=[record],
+        )
+        with pytest.raises(ModelRetry, match="does not contain option 'Done'"):
+            await prepare_update_page_properties(
+                client,
+                entry(),
+                page=page_reference(),
+                properties=[record],
+            )
 
 
 @pytest.mark.parametrize(
@@ -584,7 +708,12 @@ async def test_update_page_properties_sends_schema_validated_values_once() -> No
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx2.Response(200, json=page_payload(), request=request)
+        payload = (
+            data_source_payload()
+            if request.url.path.endswith("/data_sources/source-1")
+            else page_payload()
+        )
+        return httpx2.Response(200, json=payload, request=request)
 
     http_client, client = client_for(handler)
     async with http_client:
@@ -596,9 +725,9 @@ async def test_update_page_properties_sends_schema_validated_values_once() -> No
         )
         result = await update_page_properties(client, prepared=prepared)
 
-    assert [request.method for request in requests] == ["GET", "PATCH"]
-    assert requests[1].url.path == "/v1/pages/page-1"
-    assert json.loads(requests[1].content) == {
+    assert [request.method for request in requests] == ["GET", "GET", "PATCH"]
+    assert requests[2].url.path == "/v1/pages/page-1"
+    assert json.loads(requests[2].content) == {
         "properties": {"Status": {"status": {"name": "Done"}}}
     }
     assert result["id"] == "page-1"
@@ -721,7 +850,12 @@ async def test_mutation_errors_retain_definitive_or_ambiguous_disposition(
         if request.method == "PATCH":
             patch_calls += 1
             return httpx2.Response(status_code, json={}, request=request)
-        return httpx2.Response(200, json=page_payload(), request=request)
+        payload = (
+            data_source_payload()
+            if request.url.path.endswith("/data_sources/source-1")
+            else page_payload()
+        )
+        return httpx2.Response(200, json=payload, request=request)
 
     http_client, client = client_for(handler)
     async with http_client:

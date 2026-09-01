@@ -53,10 +53,24 @@ def notion_page_reference(entry, payload: Mapping[str, Any]) -> NotionPageRefere
     page_id = str(payload.get("id", "")).strip()
     if not page_id:
         return None
+    return notion_scoped_page_reference(
+        entry,
+        page_id=page_id,
+        label=(untrusted_content_text(payload.get("title")) or "(untitled)")[:500],
+    )
+
+
+def notion_scoped_page_reference(
+    entry,
+    *,
+    page_id: str,
+    label: str,
+) -> NotionPageReference:
+    """Creates a scoped page reference from a validated Notion target."""
     return NotionPageReference(
         workspace_id=entry.external_id,
         page_id=page_id,
-        label=(untrusted_content_text(payload.get("title")) or "(untitled)")[:500],
+        label=label,
         description="Notion page",
         scope_label=entry.display_name,
     )

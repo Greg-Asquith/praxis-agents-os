@@ -6,6 +6,7 @@ import { NotionLogo } from "@/integrations/notion/components/logo"
 import { notionQueryDataSourcePresenter } from "@/integrations/notion/presenters/query-data-source"
 import { notionReadPagePresenter } from "@/integrations/notion/presenters/read-page"
 import { notionSearchPagesPresenter } from "@/integrations/notion/presenters/search-pages"
+import { notionWritePresenter } from "@/integrations/notion/presenters/write"
 
 export default {
   catalogDescription: "Connect a Notion workspace and choose which pages agents can access.",
@@ -16,5 +17,6 @@ export default {
     notionSearchPagesPresenter,
     notionReadPagePresenter,
     notionQueryDataSourcePresenter,
+    notionWritePresenter,
   ],
 } satisfies IntegrationUiModule

@@ -5,13 +5,14 @@
 import asyncio
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import AfterValidator, Field, StringConstraints
 from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationError
 from integrations.notion.references import (
     NotionDataSourceReference,
     NotionPageReference,
+    notion_scoped_page_reference,
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
@@ -29,10 +30,13 @@ from services.integrations.operations import run_audited_integration_operation
 
 from ..client import NotionClient
 from ..operations.create_page import (
+    MAX_NOTION_PAGE_TITLE_BYTES,
+    MAX_NOTION_PAGE_TITLE_CHARS,
     CreatePagePreparation,
     create_page,
     prepare_create_page,
 )
+from ..operations.properties import validate_utf8_text
 from .mutations import NotionPropertyRecords
 from .schemas import NotionCreatePageOutput
 from .utils import (
@@ -49,9 +53,26 @@ from .utils import (
 )
 
 
+def _validate_page_title(value: str) -> str:
+    return validate_utf8_text(
+        value,
+        field_name="Page title",
+        min_chars=1,
+        max_chars=MAX_NOTION_PAGE_TITLE_CHARS,
+        max_bytes=MAX_NOTION_PAGE_TITLE_BYTES,
+    )
+
+
+type NotionPageTitle = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NOTION_PAGE_TITLE_CHARS),
+    AfterValidator(_validate_page_title),
+]
+
+
 async def notion_create_page(
     ctx: RunContext[RuntimeDeps],
-    title: Annotated[str, Field(description="Title for the page to create.")],
+    title: Annotated[NotionPageTitle, Field(description="Title for the page to create.")],
     parent_page: Annotated[
         NotionPageReference | None,
         Field(description="Notion page to create the page under."),
@@ -116,10 +137,10 @@ async def notion_create_page(
                     operation="create_page",
                 )
 
-            reference = _page_reference(
+            reference = notion_scoped_page_reference(
                 entry,
                 page_id=result["id"],
-                title=result["title"],
+                label=result["title"],
             )
             return successful_notion_mutation_outcome(
                 pending,
@@ -162,21 +183,6 @@ def _selected_parent(
     if parent_data_source is None:
         raise RuntimeError("Notion page creation requires one parent")
     return parent_data_source
-
-
-def _page_reference(
-    entry: ResolvedContextEntry,
-    *,
-    page_id: str,
-    title: str,
-) -> NotionPageReference:
-    return NotionPageReference(
-        workspace_id=entry.external_id,
-        page_id=page_id,
-        label=title,
-        description="Notion page",
-        scope_label=entry.display_name,
-    )
 
 
 DEFINITION = RuntimeToolDefinition(

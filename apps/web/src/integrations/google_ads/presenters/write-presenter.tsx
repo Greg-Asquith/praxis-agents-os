@@ -5,7 +5,7 @@ import type { ReactNode } from "react"
 import { mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
-import { fanOutEntries, type FanOutEntry } from "@/components/tool-ui/fan-out"
+import { parseSettledFanOutData, type FanOutEntry } from "@/components/tool-ui/fan-out"
 import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
@@ -170,30 +170,10 @@ function parseWriteFanOut<Args, Result>(
   value: unknown,
   variant: GoogleAdsWriteVariant<Args, Result>
 ): { data: (Result | null)[]; entries: FanOutEntry[] } | null {
-  const parsedEntries = fanOutEntries(value)
-  if (!parsedEntries) {
-    return null
-  }
-  const data: (Result | null)[] = []
-  const entries = parsedEntries.map((entry) => {
-    if (entry.status !== "success") {
-      data.push(null)
-      return entry.errorCode === "unverified_mutation"
-        ? { ...entry, errorMessage: variant.unverifiedDescription }
-        : entry
-    }
-    const result = variant.parseResult(entry.data)
-    data.push(result)
-    return result === null
-      ? {
-          ...entry,
-          errorCode: "malformed_result",
-          errorMessage: variant.malformedDescription,
-          status: "failed",
-        }
-      : entry
+  return parseSettledFanOutData(value, variant.parseResult, {
+    malformed: variant.malformedDescription,
+    unverified: variant.unverifiedDescription,
   })
-  return { data, entries }
 }
 
 function writeFailure<Args, Result>(

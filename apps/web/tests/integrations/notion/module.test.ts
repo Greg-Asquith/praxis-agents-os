@@ -20,6 +20,7 @@ describe("Notion integration module", () => {
       "notion-search-pages",
       "notion-read-page",
       "notion-query-data-source",
+      "notion-writes",
     ])
     expect(notionModule.catalogDescription).toContain("choose which pages")
   })

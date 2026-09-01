@@ -4,7 +4,7 @@
 
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal, Protocol
@@ -92,6 +92,8 @@ class NotionMutationTarget:
     external_id: str
     display_name: str
     property_types: Mapping[str, str]
+    property_options: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    parent_data_source_id: str | None = None
 
 
 async def get_page_mutation_target(
@@ -147,8 +149,36 @@ def validate_property_records_against_schema(
             raise ModelRetry(
                 f"Set the page title with the title argument, not property {record.name!r}."
             )
+        _validate_property_options(record, target)
         encoded[record.name] = encode_property_value(record.type, record.value)
     return encoded
+
+
+def _validate_property_options(
+    record: NotionPropertyRecordLike,
+    target: NotionMutationTarget,
+) -> None:
+    if record.type not in {"select", "status", "multi_select"} or not record.value:
+        return
+    options = target.property_options.get(record.name)
+    if options is None:
+        raise IntegrationValidationError(
+            "Notion returned an incomplete option schema",
+            provider_key="notion",
+            operation="prepare_data_source_mutation",
+        )
+    requested = (
+        {record.value}
+        if record.type in {"select", "status"}
+        else set(_multi_select_values(record.value))
+    )
+    unknown = sorted(requested - options)
+    if unknown:
+        names = ", ".join(repr(name) for name in unknown)
+        raise ModelRetry(
+            f"Notion property {record.name!r} does not contain option {names}. "
+            "Choose an option from the current schema."
+        )
 
 
 def validate_mutation_scope(
@@ -216,6 +246,7 @@ async def _get_mutation_target(
             operation=operation,
         )
     property_types: dict[str, str] = {}
+    property_options: dict[str, frozenset[str]] = {}
     for raw_name, raw_property in raw_properties.items():
         if not isinstance(raw_name, str) or not raw_name or not isinstance(raw_property, Mapping):
             raise IntegrationValidationError(
@@ -231,13 +262,62 @@ async def _get_mutation_target(
                 operation=operation,
             )
         property_types[raw_name] = property_type
+        if entity_type == "notion_data_source" and property_type in {
+            "select",
+            "status",
+            "multi_select",
+        }:
+            property_options[raw_name] = _property_option_names(
+                raw_property,
+                property_type=property_type,
+                operation=operation,
+            )
     title = page_title(payload) if entity_type == "notion_page" else data_source_title(payload)
     return NotionMutationTarget(
         entity_type=entity_type,
         external_id=expected_id,
         display_name=(title or "(untitled)")[:500],
         property_types=property_types,
+        property_options=property_options,
+        parent_data_source_id=(
+            _page_parent_data_source_id(payload) if entity_type == "notion_page" else None
+        ),
     )
+
+
+def _property_option_names(
+    raw_property: Mapping[str, Any],
+    *,
+    property_type: str,
+    operation: str,
+) -> frozenset[str]:
+    configuration = raw_property.get(property_type)
+    raw_options = configuration.get("options") if isinstance(configuration, Mapping) else None
+    if not isinstance(raw_options, Sequence) or isinstance(raw_options, (str, bytes)):
+        raise IntegrationValidationError(
+            "Notion returned an invalid property option schema",
+            provider_key="notion",
+            operation=operation,
+        )
+    names: list[str] = []
+    for option in raw_options:
+        name = option.get("name") if isinstance(option, Mapping) else None
+        if not isinstance(name, str) or not name or name in names:
+            raise IntegrationValidationError(
+                "Notion returned an invalid property option schema",
+                provider_key="notion",
+                operation=operation,
+            )
+        names.append(name)
+    return frozenset(names)
+
+
+def _page_parent_data_source_id(payload: Mapping[str, Any]) -> str | None:
+    parent = payload.get("parent")
+    if not isinstance(parent, Mapping) or parent.get("type") != "data_source_id":
+        return None
+    data_source_id = parent.get("data_source_id")
+    return data_source_id if isinstance(data_source_id, str) and data_source_id else None
 
 
 def _quoted_id(value: str) -> str:

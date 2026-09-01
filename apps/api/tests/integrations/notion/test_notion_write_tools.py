@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import ModelRetry
 
 from core.exceptions.integration import (
@@ -26,7 +27,7 @@ from integrations.notion.references import (
     NotionPageReference,
 )
 from integrations.notion.tools import TOOL_DEFINITIONS
-from integrations.notion.tools.create_page import notion_create_page
+from integrations.notion.tools.create_page import NotionPageTitle, notion_create_page
 from integrations.notion.tools.mutations import (
     NotionPropertyRecord,
     NotionReplacementRecord,
@@ -189,6 +190,16 @@ def test_notion_write_definitions_are_approval_only_and_losslessly_presented() -
         "status",
         "multi_select",
     )
+
+
+def test_create_page_title_contract_normalizes_and_validates_before_approval() -> None:
+    adapter = TypeAdapter(NotionPageTitle)
+
+    assert adapter.validate_python("  Launch notes  ") == "Launch notes"
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        adapter.validate_python("   ")
+    with pytest.raises(ValidationError, match="at most 500 characters"):
+        adapter.validate_python("x" * 501)
 
 
 @pytest.mark.parametrize("properties", [None, []])

@@ -634,7 +634,11 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
         assert len(record_fields) == 1
         field = record_fields[0]
         assert field.editable is True
-        assert field.min_rows == 1
+        if definition.name == "notion_create_page":
+            assert field.secondary is True
+            assert field.min_rows == 0
+        else:
+            assert field.min_rows == 1
         schema = definition.serialized_input_schema()
         assert schema is not None
         if definition.name in {"notion_create_page", "notion_update_page_properties"}:

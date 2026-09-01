@@ -76,7 +76,7 @@ LLM model catalog, AI usage and estimated public-rate costs, files and storage
 markdown extraction), skills, workspace classifiers, knowledge base, agent
 memories, the context hub, schedules, integrations (OAuth, API-key, and
 service-account connections, including bounded Notion page and data-source
-reads),
+reads plus approval-only page creation and content or property updates),
 artifacts (dedicated immutable revisions, approval-gated agent
 tools, agent list/read/update across conversations, workspace management UI,
 append-only edit/restore flows, and

@@ -24,8 +24,8 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
 - Packaged provider UI modules are Gmail, Google Ads, Airtable, BigQuery,
   Google Analytics, and Notion. Notion contributes its logo, catalog
   description, personal-authorization guidance, and separate search, page-read,
-  and data-source-query presenters over the shared fan-out shell and Markdown
-  renderer.
+  data-source-query, and approval-gated write presenters over the shared
+  approval, fan-out, records-editor, and Markdown surfaces.
   Google Analytics contributes its logo, catalog description,
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared

@@ -9,7 +9,7 @@ from pydantic import Field
 from pydantic_ai import RunContext
 
 from core.exceptions.integration import IntegrationError
-from integrations.notion.references import NotionPageReference
+from integrations.notion.references import NotionPageReference, notion_scoped_page_reference
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -87,7 +87,11 @@ async def notion_update_page_content(
             if client is None or prepared is None:
                 raise RuntimeError("Notion content update preparation did not complete")
             pending = pending_update_content_detail(entry, prepared)
-            reference = _prepared_page_reference(entry, prepared)
+            reference = notion_scoped_page_reference(
+                entry,
+                page_id=prepared.page.external_id,
+                label=prepared.page.display_name,
+            )
             fallback = {
                 "reference": reference,
                 "applied_replacements": 0,
@@ -138,19 +142,6 @@ async def notion_update_page_content(
         operation=operation,
     )
     return bounded_notion_output(results)
-
-
-def _prepared_page_reference(
-    entry: ResolvedContextEntry,
-    prepared: UpdatePageMarkdownPreparation,
-) -> NotionPageReference:
-    return NotionPageReference(
-        workspace_id=entry.external_id,
-        page_id=prepared.page.external_id,
-        label=prepared.page.display_name,
-        description="Notion page",
-        scope_label=entry.display_name,
-    )
 
 
 DEFINITION = RuntimeToolDefinition(

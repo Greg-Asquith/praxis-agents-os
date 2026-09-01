@@ -18,6 +18,11 @@ export type ParsedFanOutData<T> = {
   entries: FanOutEntry[]
 }
 
+export type SettledFanOutMessages = {
+  malformed: string
+  unverified: string
+}
+
 export function fanOutEntries(value: unknown): FanOutEntry[] | null {
   if (!isRecord(value) || !Array.isArray(value["results"])) {
     return null
@@ -65,5 +70,38 @@ export function parseFanOutData<T>(
   if (entries.some((entry, index) => entry.status === "success" && data[index] === null)) {
     return null
   }
+  return { data, entries }
+}
+
+export function parseSettledFanOutData<T>(
+  value: unknown,
+  parse: (value: unknown) => T | null,
+  messages: SettledFanOutMessages
+): ParsedFanOutData<T> | null {
+  const parsedEntries = fanOutEntries(value)
+  if (!parsedEntries) {
+    return null
+  }
+
+  const data: (T | null)[] = []
+  const entries = parsedEntries.map((entry) => {
+    if (entry.status !== "success") {
+      data.push(null)
+      return entry.errorCode === "unverified_mutation"
+        ? { ...entry, errorMessage: messages.unverified }
+        : entry
+    }
+
+    const result = parse(entry.data)
+    data.push(result)
+    return result === null
+      ? {
+          ...entry,
+          errorCode: "malformed_result",
+          errorMessage: messages.malformed,
+          status: "failed",
+        }
+      : entry
+  })
   return { data, entries }
 }

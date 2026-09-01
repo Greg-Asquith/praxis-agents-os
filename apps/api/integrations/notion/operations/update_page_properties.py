@@ -13,10 +13,11 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import NotionClient
-from ..references import NotionPageReference
+from ..references import NotionDataSourceReference, NotionPageReference
 from .properties import (
     NotionMutationTarget,
     NotionPropertyRecordLike,
+    get_data_source_mutation_target,
     get_page_mutation_target,
     validate_mutation_scope,
     validate_property_records_against_schema,
@@ -45,10 +46,26 @@ async def prepare_update_page_properties(
     if not properties:
         raise ModelRetry("Add at least one Notion property update.")
     target = await get_page_mutation_target(client, page)
+    schema_target = target
+    if any(record.type in {"select", "status", "multi_select"} for record in properties):
+        if target.parent_data_source_id is None:
+            raise ModelRetry(
+                "The selected Notion page has no data source schema for these option values."
+            )
+        schema_target = await get_data_source_mutation_target(
+            client,
+            NotionDataSourceReference(
+                workspace_id=page.workspace_id,
+                data_source_id=target.parent_data_source_id,
+                label="Parent data source",
+                description="Notion data source",
+                scope_label=page.scope_label,
+            ),
+        )
     return UpdatePagePropertiesPreparation(
         page=target,
         records=tuple(properties),
-        properties=validate_property_records_against_schema(properties, target),
+        properties=validate_property_records_against_schema(properties, schema_target),
     )
 
 
