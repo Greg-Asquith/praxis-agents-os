@@ -120,12 +120,34 @@ agent consults via retrieval.
 
 - **Model.** `apps/api/models/kb.py`: `kb_documents` (canonical `content_md`
   in Postgres, `source_type ∈ {upload, url, manual, conversation,
-integration}`, `is_private`, optional pin to a `file_revision_id`) and
+  integration}`, `is_private`, optional pin to a `file_revision_id`, and an
+  optional provider-neutral `integration_resource_id` source binding) and
   `kb_chunks` (chunk text, LLM-generated `context_line`, `HALFVEC(1024)`
-  embedding with HNSW index, generated `tsv`).
+  embedding with HNSW index, generated `tsv`). Integration documents retain
+  their provider object identity in `external_id` and `external_url` and track
+  source access separately through `source_sync_status` and
+  `source_synced_at`.
 - **Ingestion.** `services/kb/create_document.py` → `ingest_kb_document` job:
   load markdown → hash + duplicate lock → write policy (secret scanning,
   backend-minted provenance) → chunk → annotate → `embed_kb_chunks` job.
+- **Integration sources.** Providers contribute bounded source parsing,
+  search, preview, and canonical Markdown fetch operations through
+  `IntegrationKnowledgeSourceDefinition`. Import proves that the resource and
+  personal connection belong to the actor, creates a private document by
+  default, and queues the ordinary workspace-owned `kb.ingest_document` job.
+  Refresh resolves the creator's personal grant on a dedicated runtime session
+  with workspace and user tenant context. The job session remains
+  workspace-only, and provider I/O completes before ingestion takes a content
+  lock. Manual refresh and the ownerless, bounded
+  `kb.reconcile_integration_sources` scan enqueue the same ingestion job shape,
+  so concurrent refreshes coalesce.
+- **Access loss.** A definitive provider denial, missing source, unusable
+  binding, departed creator, or disconnected personal grant sets the source to
+  `unavailable` or `disconnected`. The same transaction clears canonical
+  Markdown, summaries, hashes, and chunks, so document reads return no cached
+  content. Transient errors retain the last successful content for a later
+  retry. Search excludes every integration source whose
+  `source_sync_status` is not `ready`.
 - **Search.** `services/kb/search_chunks.py`: hybrid RRF over lexical
   (`websearch_to_tsquery`), semantic (pgvector cosine), and recency ranks,
   with lexical-only fallback when embeddings are unavailable. Settings in
@@ -142,6 +164,11 @@ integration}`, `is_private`, optional pin to a `file_revision_id`) and
   the KB through the web UI first creates a workspace File, then pins the KB
   document to that file revision; URL and manual KB documents have no File
   at all. A File is not searchable unless a KB document is created from it.
+- **Retrieval boundary.** Integration providers supply canonical source
+  content to the existing ingestion pipeline. They do not add provider-specific
+  prompt blocks, agent tools, indexes, or retrieval paths. Agents reach
+  imported content only through `search_knowledge` and `read_document` under
+  the ordinary Knowledge Base privacy and untrusted-content rules.
 
 Use the Knowledge Base for reference information that any agent might need to
 find. Use a file when the agent must process a specific document.

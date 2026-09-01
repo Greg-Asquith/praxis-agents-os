@@ -317,21 +317,34 @@ follows:
   within a 768 KiB serialized UTF-8 budget. Provider-authored content stays
   untrusted. A provider-neutral Knowledge Base source contribution and the
   Notion page adapter provide bounded search, preview, and canonical Markdown
-  fetch operations. The provider catalog declares this support without a
-  provider-name branch. The import service creates private documents by
-  default, and ingestion resolves the creator's personal grant on a dedicated
-  runtime session carrying workspace and user context. The workspace-owned job
-  session remains workspace-only, and provider calls run after the dedicated
-  session commits. Import and ingestion revalidate workspace and source access
-  after provider reads before they persist content. Definitive access loss
-  clears canonical content and chunks before completing without retry. An
-  ownerless, bounded maintenance job periodically selects due source bindings
-  and coalesces workspace-owned ingestion jobs with manual refreshes.
+  fetch operations through `IntegrationKnowledgeSourceDefinition`. Loader
+  validation requires declared resource types. `ProviderRead` exposes
+  `knowledge_source_supported` and `knowledge_source_resource_types` without a
+  provider-name branch. Integration documents bind through nullable
+  `integration_resource_id`, retain provider identity in `external_id` and
+  `external_url`, and track access with `source_sync_status` and
+  `source_synced_at`. The import service creates private documents by default,
+  and ingestion resolves the creator's personal grant on a dedicated runtime
+  session carrying workspace and user context. The workspace-owned job session
+  remains workspace-only, and provider calls run after the dedicated session
+  commits. Import and ingestion revalidate workspace and source access after
+  provider reads before they persist content. Definitive access loss clears
+  canonical content and chunks before completing without retry, so document
+  reads return no cached content after definitive loss. Search excludes every
+  integration source that is not `ready`.
+  `GET /kb/integration-sources/search`, `POST /kb/integration-sources/preview`,
+  and `POST /kb/documents/from-integration` are editor-gated provider-neutral
+  management routes. Manual refresh uses
+  `POST /kb/documents/{document_id}/reprocess`. An ownerless, bounded
+  `kb.reconcile_integration_sources` maintenance job selects due source
+  bindings and coalesces ordinary workspace-owned `kb.ingest_document` jobs
+  with manual refreshes. Keep both job shapes unchanged so the in-flight job
+  constraint continues to coalesce them.
   Successful and failed refresh attempts advance the source synchronization
   timestamp so persistently unavailable sources cannot monopolize later scans.
   `KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS` controls the scan interval,
-  and `KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE` bounds each pass. Notion Knowledge
-  Base routes and management UI remain pending. Notion writes remain pending.
+  and `KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE` bounds each pass. Notion writes
+  remain pending.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

@@ -97,9 +97,7 @@ export function IntegrationImportDialog({
             <ProviderMark providerKey={provider.provider_key} />
             Import from {provider.display_name}
           </DialogTitle>
-          <DialogDescription>
-            Choose one source to add to the Knowledge Base.
-          </DialogDescription>
+          <DialogDescription>Choose one source to add to the Knowledge Base.</DialogDescription>
         </DialogHeader>
 
         {workflow.previewSelection ? (

@@ -263,7 +263,7 @@ export function IntegrationImportSourcePicker({
                   onChange={(event) => {
                     setQuery(event.target.value)
                   }}
-                  placeholder="Search page titles"
+                  placeholder="Search"
                   value={query}
                 />
                 <Button disabled={isPending} type="submit" variant="outline">

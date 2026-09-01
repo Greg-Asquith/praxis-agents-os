@@ -177,6 +177,17 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   classifier list and both workspace tool query families so agent settings and
   conversation presentations refresh without a reload. Saved changes apply to
   the next agent run.
+- The Knowledge Base import menu offers an integration provider only when the
+  provider catalog declares `knowledge_source_supported` and the current user
+  has a usable personal connection. The provider-neutral flow selects one
+  available resource, searches pages or accepts a supported page URL, previews
+  the bounded source, and reviews the import before submission. New imports
+  default to **Private**; clearing that option must explain that everyone in
+  the workspace can search the page content. Integration documents show their
+  source synchronization state in list and detail views and use the existing
+  reprocess mutation for **Refresh**. Keep provider marks behind the integration
+  registry and keep Knowledge Base feature code independent of provider
+  packages.
 - Opaque tool targets render through the shared entity field system in
   `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
   use the server-supplied canonical identity for provider-neutral comparison,
