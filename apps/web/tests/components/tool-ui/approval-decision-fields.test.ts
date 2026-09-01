@@ -336,6 +336,39 @@ describe("ApprovalRequestFields", () => {
     expect(html).toContain('aria-live="polite"')
   })
 
+  it("allows approval when a secondary records field is omitted", () => {
+    const field: ApprovalField = {
+      ...approvalField("properties", "Properties", "records"),
+      editable: true,
+      secondary: true,
+      columns: [
+        { key: "name", label: "Property", options: [], placeholder: "", required: true },
+        { key: "value", label: "Value", options: [], placeholder: "", required: false },
+      ],
+    }
+    const html = renderToStaticMarkup(
+      createElement(ToolApprovalDecisionCard, {
+        activityId: "optional-records",
+        args: { title: "Launch notes" },
+        controls: {
+          decision: { decision: "pending", edits: {}, message: "" },
+          disabled: false,
+          error: null,
+          onDecisionChange: () => undefined,
+          onRetry: () => undefined,
+          pendingCount: 1,
+          submitting: false,
+        },
+        fields: [field],
+        label: "Create Notion Page",
+        toolName: "notion_create_page",
+      })
+    )
+
+    expect(html).toMatch(/<button[^>]*>Approve<\/button>/)
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+  })
+
   it("adds, removes, and edits record rows without coercing numeric cells", () => {
     const columns = [
       { key: "text", label: "Keyword", options: [], placeholder: "", required: true },

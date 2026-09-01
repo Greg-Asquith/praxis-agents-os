@@ -223,6 +223,8 @@ follows:
   that are reauthorized immediately before resume.
   Editable `records` fields also enforce their declared minimum row count and
   required columns before resume, even when the operator approves without edits.
+  An omitted secondary records field stays optional; when present, it must meet
+  the same declared constraints.
   A `code_eligible=True` write backed by a provider batch operation must expose
   that operation as one bounded list-shaped call with a faithful editable
   presentation. The complete reviewed row set is the consent boundary; do not
@@ -343,8 +345,12 @@ follows:
   Successful and failed refresh attempts advance the source synchronization
   timestamp so persistently unavailable sources cannot monopolize later scans.
   `KB_INTEGRATION_SOURCE_REFRESH_INTERVAL_SECONDS` controls the scan interval,
-  and `KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE` bounds each pass. Notion writes
-  remain pending.
+  and `KB_INTEGRATION_SOURCE_SCAN_BATCH_SIZE` bounds each pass. Three
+  code-eligible Notion write tools create pages, replace exact text, and update
+  schema-validated scalar properties. They are approval-only, require a
+  writable Active Context resource, reload live target and schema state during
+  preparation, use non-retried mutation requests, and close every intent as
+  applied, failed, or unverified.
 - LLM providers live in `services/agents/models/`. The catalog in
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials

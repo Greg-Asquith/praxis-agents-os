@@ -103,6 +103,9 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "notion_search_pages": ("read", "internal", "auto", False),
         "notion_read_page": ("read", "internal", "auto", False),
         "notion_query_data_source": ("read", "internal", "auto", False),
+        "notion_create_page": ("write", "external", "approval", True),
+        "notion_update_page_content": ("write", "external", "approval", True),
+        "notion_update_page_properties": ("write", "external", "approval", True),
     }
     assert set(definitions) == set(expected)
     denylisted = {

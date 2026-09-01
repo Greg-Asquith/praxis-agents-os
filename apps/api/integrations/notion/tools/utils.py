@@ -22,6 +22,7 @@ from core.exceptions.integration import (
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     IntegrationToolBinding,
+    ToolFieldColumn,
     ToolFieldPresentation,
 )
 from services.audit_events import (
@@ -51,7 +52,7 @@ from services.integrations.operations import IntegrationAuditOutcome
 
 from ..client import NotionClient
 from ..operations.create_page import CreatePagePreparation
-from ..operations.properties import NotionMutationTarget
+from ..operations.properties import NOTION_WRITABLE_PROPERTY_TYPES, NotionMutationTarget
 from ..operations.update_page_markdown import (
     MULTIPLE_MATCHES_ERROR_MESSAGE,
     NO_MATCH_ERROR_MESSAGE,
@@ -71,6 +72,16 @@ NOTION_WRITE_BINDING = IntegrationToolBinding(
     requires_write=True,
 )
 RESULTS_FIELD = (ToolFieldPresentation(key="results", label="Workspaces", format="list"),)
+NOTION_PROPERTY_COLUMNS = (
+    ToolFieldColumn(key="name", label="Property", required=True),
+    ToolFieldColumn(
+        key="type",
+        label="Type",
+        options=NOTION_WRITABLE_PROPERTY_TYPES,
+        required=True,
+    ),
+    ToolFieldColumn(key="value", label="Value"),
+)
 MAX_NOTION_RESULT_BYTES = 768 * 1024
 
 

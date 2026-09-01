@@ -77,6 +77,8 @@ async def validate_and_canonicalize_override_args(
 
     for field in definition.presentation.arg_fields:
         if field.format == "records" and field.editable:
+            if field.secondary and field.key not in effective_args:
+                continue
             _validate_records_override(
                 field_key=field.key,
                 value=effective_args.get(field.key),

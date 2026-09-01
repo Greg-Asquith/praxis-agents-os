@@ -404,10 +404,20 @@ def test_tool_contracts_are_code_eligible_typed_and_provider_gated(monkeypatch) 
         "notion_search_pages",
         "notion_read_page",
         "notion_query_data_source",
+        "notion_create_page",
+        "notion_update_page_content",
+        "notion_update_page_properties",
     }
     assert all(definition.code_eligible for definition in TOOL_DEFINITIONS)
     assert all(definition.output_model is not None for definition in TOOL_DEFINITIONS)
-    assert all(definition.timeout == 60 for definition in TOOL_DEFINITIONS)
+    assert {definition.name: definition.timeout for definition in TOOL_DEFINITIONS} == {
+        "notion_search_pages": 60,
+        "notion_read_page": 60,
+        "notion_query_data_source": 60,
+        "notion_create_page": 90,
+        "notion_update_page_content": 90,
+        "notion_update_page_properties": 90,
+    }
 
     monkeypatch.setattr(notion_settings, "NOTION_OAUTH_CLIENT_ID", "")
     assert all(not is_tool_allowed(definition, workspace=None) for definition in TOOL_DEFINITIONS)

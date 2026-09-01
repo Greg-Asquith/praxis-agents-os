@@ -76,6 +76,13 @@ export function ToolApprovalDecisionCard({
     if (!field.editable || field.format !== "records") {
       return false
     }
+    if (
+      field.secondary &&
+      !Object.hasOwn(controls.decision.edits, field.key) &&
+      (recordArgs === null || !Object.hasOwn(recordArgs, field.key))
+    ) {
+      return false
+    }
     const value = controls.decision.edits[field.key] ?? recordArgs?.[field.key]
     const validity = recordRowsValidity(value, field.columns, field.min_rows)
     return !validity.isRecords || validity.error !== null

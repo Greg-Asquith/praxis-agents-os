@@ -69,6 +69,31 @@ class NotionDataSourceQueryData(_StrictModel):
     incomplete: bool
 
 
+class NotionMutationData(_StrictModel):
+    outcome: Literal["applied", "failed", "unverified"]
+    error_code: str | None = Field(default=None, max_length=128)
+
+
+class NotionCreatePageData(NotionMutationData):
+    reference: NotionPageReference | None = None
+    url: str | None = None
+    title: str = Field(min_length=1, max_length=500)
+    last_edited_time: str | None = Field(default=None, max_length=100)
+
+
+class NotionUpdatePageContentData(NotionMutationData):
+    reference: NotionPageReference
+    applied_replacements: int = Field(ge=0, le=20)
+    page_truncated: bool | None = None
+    last_edited_time: str | None = Field(default=None, max_length=100)
+
+
+class NotionUpdatePagePropertiesData(NotionMutationData):
+    reference: NotionPageReference
+    url: str | None = None
+    last_edited_time: str | None = Field(default=None, max_length=100)
+
+
 class NotionSearchEntry(IntegrationFanOutEntry):
     data: NotionSearchData | None = None
 
@@ -81,6 +106,18 @@ class NotionDataSourceQueryEntry(IntegrationFanOutEntry):
     data: NotionDataSourceQueryData | None = None
 
 
+class NotionCreatePageEntry(IntegrationFanOutEntry):
+    data: NotionCreatePageData | None = None
+
+
+class NotionUpdatePageContentEntry(IntegrationFanOutEntry):
+    data: NotionUpdatePageContentData | None = None
+
+
+class NotionUpdatePagePropertiesEntry(IntegrationFanOutEntry):
+    data: NotionUpdatePagePropertiesData | None = None
+
+
 class NotionSearchOutput(IntegrationFanOutOutput):
     results: list[NotionSearchEntry]
 
@@ -91,3 +128,15 @@ class NotionPageOutput(IntegrationFanOutOutput):
 
 class NotionDataSourceQueryOutput(IntegrationFanOutOutput):
     results: list[NotionDataSourceQueryEntry]
+
+
+class NotionCreatePageOutput(IntegrationFanOutOutput):
+    results: list[NotionCreatePageEntry]
+
+
+class NotionUpdatePageContentOutput(IntegrationFanOutOutput):
+    results: list[NotionUpdatePageContentEntry]
+
+
+class NotionUpdatePagePropertiesOutput(IntegrationFanOutOutput):
+    results: list[NotionUpdatePagePropertiesEntry]

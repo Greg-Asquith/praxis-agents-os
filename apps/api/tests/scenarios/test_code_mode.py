@@ -594,6 +594,33 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
         ),
         "google_ads_remove_negative_keywords": ("EXACT", "PHRASE", "BROAD", "ANY"),
         "google_ads_update_device_bid_modifiers": ("DESKTOP", "MOBILE", "TABLET"),
+        "notion_create_page": (
+            "title",
+            "rich_text",
+            "number",
+            "checkbox",
+            "url",
+            "email",
+            "phone_number",
+            "date",
+            "select",
+            "status",
+            "multi_select",
+        ),
+        "notion_update_page_content": ("no", "yes"),
+        "notion_update_page_properties": (
+            "title",
+            "rich_text",
+            "number",
+            "checkbox",
+            "url",
+            "email",
+            "phone_number",
+            "date",
+            "select",
+            "status",
+            "multi_select",
+        ),
     }
     actual: dict[str, tuple[str, ...]] = {}
     for definition in RUNTIME_TOOL_CATALOG.values():
@@ -610,7 +637,34 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
         assert field.min_rows == 1
         schema = definition.serialized_input_schema()
         assert schema is not None
-        if definition.name == "google_ads_update_device_bid_modifiers":
+        if definition.name in {"notion_create_page", "notion_update_page_properties"}:
+            assert field.key == "properties"
+            assert [(column.key, column.required) for column in field.columns] == [
+                ("name", True),
+                ("type", True),
+                ("value", False),
+            ]
+            properties_ref = schema["properties"]["properties"]["$ref"]
+            properties_schema = schema["$defs"][properties_ref.rsplit("/", 1)[-1]]
+            if definition.name == "notion_update_page_properties":
+                assert properties_schema["minItems"] == 1
+            else:
+                assert "minItems" not in properties_schema
+            assert properties_schema["maxItems"] == 50
+            actual[definition.name] = field.columns[1].options
+        elif definition.name == "notion_update_page_content":
+            assert field.key == "replacements"
+            assert [(column.key, column.required) for column in field.columns] == [
+                ("old_text", True),
+                ("new_text", False),
+                ("replace_all", True),
+            ]
+            replacements_ref = schema["properties"]["replacements"]["$ref"]
+            replacements_schema = schema["$defs"][replacements_ref.rsplit("/", 1)[-1]]
+            assert replacements_schema["minItems"] == 1
+            assert replacements_schema["maxItems"] == 20
+            actual[definition.name] = field.columns[2].options
+        elif definition.name == "google_ads_update_device_bid_modifiers":
             assert field.key == "adjustments"
             assert [(column.key, column.required) for column in field.columns] == [
                 ("device", True),

@@ -126,6 +126,12 @@ type NotionPropertyRecords = Annotated[
     AfterValidator(_validate_property_records),
 ]
 
+type NotionPropertyUpdateRecords = Annotated[
+    list[NotionPropertyRecord],
+    Field(min_length=1, max_length=MAX_NOTION_PROPERTY_RECORDS),
+    AfterValidator(_validate_property_records),
+]
+
 type NotionReplacementRecords = Annotated[
     list[NotionReplacementRecord],
     Field(min_length=1, max_length=MAX_NOTION_REPLACEMENT_RECORDS),

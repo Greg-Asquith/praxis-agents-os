@@ -61,6 +61,19 @@ type NotionWritablePropertyType = Literal[
     "status",
     "multi_select",
 ]
+NOTION_WRITABLE_PROPERTY_TYPES: tuple[NotionWritablePropertyType, ...] = (
+    "title",
+    "rich_text",
+    "number",
+    "checkbox",
+    "url",
+    "email",
+    "phone_number",
+    "date",
+    "select",
+    "status",
+    "multi_select",
+)
 
 
 class NotionPropertyRecordLike(Protocol):
