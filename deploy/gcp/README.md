@@ -93,6 +93,16 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
       minute with `NOT_FOUND` because the deployment creates the
       `praxis-worker` job. These expected failures stop after deployment.
 
+#### Use Vertex AI for Google models
+
+Set `GOOGLE_VERTEX_AI=true` in the environment file, then run bootstrap and
+deploy again. Bootstrap enables the Vertex AI API and grants the API and worker
+service accounts access through its existing approval prompts. Google model
+and embedding usage is billed to `GCP_PROJECT_ID` through Application Default
+Credentials. `GOOGLE_VERTEX_LOCATION` defaults to `global`. The
+`GOOGLE_API_KEY` binding can be removed from `RUNTIME_SECRET_BINDINGS` when no
+other configured feature needs it.
+
 ### 5. Create the first super admin
 
 With `ALLOW_SIGNUP=false`, sign in using the configured Google or Microsoft

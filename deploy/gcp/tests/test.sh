@@ -92,6 +92,17 @@ if grep -q '/readyz' "$TEST_TMP/rendered/services/praxis-api.yaml"; then
   exit 1
 fi
 grep -q 'value: drain' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
+for manifest in \
+  "$TEST_TMP/rendered/services/praxis-api.yaml" \
+  "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
+  grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
+  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: global'
+done
+grep -Fq -- 'apis+=(aiplatform.googleapis.com)' "$GCP_DIR/bootstrap.sh"
+grep -Fq -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh"
+test "$(grep -Fc -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh")" -eq 1
+grep -B3 -F -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh" \
+  | grep -Fq 'for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"'
 grep -A1 'name: WORKER_MAX_CONCURRENT_RUNS' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
   | grep -q 'value: "4"'
 grep -A1 'name: DB_MAINTENANCE_POOL_SIZE' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
@@ -132,6 +143,39 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/invalid-worker-concurrency-rend
 fi
 grep -q 'WORKER_MAX_CONCURRENT_RUNS must be a positive integer' \
   "$TEST_TMP/invalid-worker-concurrency.out"
+
+sed 's/^GOOGLE_VERTEX_AI=false$/GOOGLE_VERTEX_AI=enabled/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/invalid-vertex-flag.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/invalid-vertex-flag-render" \
+  "$TEST_TMP/invalid-vertex-flag.env" abcdef0123456789 \
+  >"$TEST_TMP/invalid-vertex-flag.out" 2>&1; then
+  echo "render unexpectedly accepted an invalid Vertex AI flag" >&2
+  exit 1
+fi
+grep -q 'GOOGLE_VERTEX_AI must be true or false' "$TEST_TMP/invalid-vertex-flag.out"
+
+sed -e 's/^GOOGLE_VERTEX_AI=false$/GOOGLE_VERTEX_AI=true/' \
+  -e 's/^GOOGLE_VERTEX_LOCATION=global$/GOOGLE_VERTEX_LOCATION=europe-west2/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/vertex.env"
+"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/vertex-render" \
+  "$TEST_TMP/vertex.env" abcdef0123456789
+for manifest in \
+  "$TEST_TMP/vertex-render/services/praxis-api.yaml" \
+  "$TEST_TMP/vertex-render/jobs/praxis-worker.yaml"; do
+  grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "true"'
+  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: europe-west2'
+done
+
+sed -e '/^GOOGLE_VERTEX_AI=/d' -e '/^GOOGLE_VERTEX_LOCATION=/d' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/legacy.env"
+"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/legacy-render" \
+  "$TEST_TMP/legacy.env" abcdef0123456789
+for manifest in \
+  "$TEST_TMP/legacy-render/services/praxis-api.yaml" \
+  "$TEST_TMP/legacy-render/jobs/praxis-worker.yaml"; do
+  grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
+  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: global'
+done
 
 sed 's/^WORKER_MAX_CONCURRENT_RUNS=4$/WORKER_MAX_CONCURRENT_RUNS=6/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/oversized-worker-concurrency.env"
