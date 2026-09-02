@@ -23,6 +23,7 @@ import { DocumentStatusBadge } from "@/features/knowledge/components/document-st
 import { ManualDocumentForm } from "@/features/knowledge/components/manual-document-form"
 import { SourceTypeBadge } from "@/features/knowledge/components/source-type-badge"
 import { SourceSyncBadge } from "@/features/knowledge/components/source-sync-badge"
+import { canReprocessDocument, isRefreshableSource } from "@/features/knowledge/status"
 import type { KbDocumentDetail } from "@/features/knowledge/types"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
@@ -56,7 +57,8 @@ export function DocumentDetailHeader({
     }
   }
 
-  const canReprocess = canWrite && document.status !== "pending" && document.status !== "processing"
+  const canReprocess = canWrite && canReprocessDocument(document)
+  const refreshable = isRefreshableSource(document.source_type)
 
   return (
     <div className="flex flex-col gap-4">
@@ -96,7 +98,7 @@ export function DocumentDetailHeader({
                   variant="outline"
                 >
                   <RefreshCwIcon data-icon="inline-start" />
-                  {document.source_type === "integration" ? "Refresh" : "Reprocess"}
+                  {refreshable ? "Refresh" : "Reprocess"}
                 </Button>
               ) : null}
               <Button
@@ -116,7 +118,7 @@ export function DocumentDetailHeader({
           <span className="flex flex-wrap items-center gap-2">
             <SourceTypeBadge sourceType={document.source_type} />
             <DocumentStatusBadge status={document.status} />
-            {document.source_type === "integration" && document.source_sync_status ? (
+            {refreshable && document.source_sync_status ? (
               <SourceSyncBadge status={document.source_sync_status} />
             ) : null}
             {document.is_private ? (
@@ -136,9 +138,9 @@ export function DocumentDetailHeader({
           <dt className="text-foreground inline font-medium">Chunks: </dt>
           <dd className="inline">{document.chunk_count}</dd>
         </div>
-        {document.source_type === "integration" && document.source_synced_at ? (
+        {refreshable && document.source_synced_at ? (
           <div>
-            <dt className="text-foreground inline font-medium">Last synced: </dt>
+            <dt className="text-foreground inline font-medium">Last refreshed: </dt>
             <dd className="inline">{formatDateTime(document.source_synced_at)}</dd>
           </div>
         ) : null}

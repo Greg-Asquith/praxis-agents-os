@@ -1,6 +1,6 @@
 // apps/web/src/features/knowledge/status.ts
 
-import type { KbDocument, KbDocumentDetail, KbProcessingStatus } from "./types"
+import type { KbDocument, KbDocumentDetail, KbProcessingStatus, KbSourceType } from "./types"
 
 export const KB_STATUS_PRESENTATION: Record<
   KbProcessingStatus,
@@ -20,9 +20,13 @@ export function hasActiveProcessing(
   )
 }
 
+export function isRefreshableSource(sourceType: KbSourceType) {
+  return sourceType === "url" || sourceType === "integration"
+}
+
 export function canReprocessDocument(document: Pick<KbDocument, "source_type" | "status">) {
   if (document.status === "pending" || document.status === "processing") {
     return false
   }
-  return document.source_type === "integration" || document.status === "error"
+  return isRefreshableSource(document.source_type) || document.status === "error"
 }

@@ -32,7 +32,7 @@ import { DocumentStatusBadge } from "@/features/knowledge/components/document-st
 import { SourceSyncBadge } from "@/features/knowledge/components/source-sync-badge"
 import { SourceTypeBadge } from "@/features/knowledge/components/source-type-badge"
 import type { KbDocument } from "@/features/knowledge/types"
-import { canReprocessDocument } from "@/features/knowledge/status"
+import { canReprocessDocument, isRefreshableSource } from "@/features/knowledge/status"
 import { getErrorMessage } from "@/lib/api/errors"
 import { relativeDateTime } from "@/lib/format"
 
@@ -124,7 +124,7 @@ export function DocumentsTable({
                 variant="outline"
               >
                 <RefreshCwIcon data-icon="inline-start" />
-                {row.original.source_type === "integration" ? "Refresh" : "Reprocess"}
+                {isRefreshableSource(row.original.source_type) ? "Refresh" : "Reprocess"}
               </Button>
             ) : null,
           meta: { label: "Actions", labelClassName: "sr-only" },
@@ -224,7 +224,7 @@ function StatusCell({ document }: { document: KbDocument }) {
   return (
     <div className="flex max-w-xs flex-col items-start gap-1">
       <DocumentStatusBadge status={document.status} />
-      {document.source_type === "integration" && document.source_sync_status ? (
+      {isRefreshableSource(document.source_type) && document.source_sync_status ? (
         <SourceSyncBadge status={document.source_sync_status} />
       ) : null}
       {document.status === "error" ? (
@@ -267,7 +267,7 @@ function DocumentMobileRow({
         </Link>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
           <DocumentStatusBadge status={document.status} />
-          {document.source_type === "integration" && document.source_sync_status ? (
+          {isRefreshableSource(document.source_type) && document.source_sync_status ? (
             <SourceSyncBadge status={document.source_sync_status} />
           ) : null}
         </div>
@@ -299,7 +299,7 @@ function DocumentMobileRow({
           variant="outline"
         >
           <RefreshCwIcon data-icon="inline-start" />
-          {document.source_type === "integration" ? "Refresh" : "Reprocess"}
+          {isRefreshableSource(document.source_type) ? "Refresh" : "Reprocess"}
         </Button>
       ) : null}
     </div>

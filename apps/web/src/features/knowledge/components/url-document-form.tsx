@@ -59,12 +59,16 @@ export function UrlDocumentForm({ onSaved }: { onSaved: () => void }) {
       <div className="grid gap-2">
         <Label htmlFor="knowledge-url">URL</Label>
         <Input
+          aria-describedby="knowledge-url-help"
           id="knowledge-url"
           name="url"
           placeholder="https://example.com/handbook…"
           type="url"
           autoComplete="url"
         />
+        <p className="text-muted-foreground text-xs" id="knowledge-url-help">
+          The system checks this page for changes about every six hours.
+        </p>
       </div>
       <PrivacyField checked={isPrivate} onCheckedChange={setIsPrivate} />
       <DialogFooter>
