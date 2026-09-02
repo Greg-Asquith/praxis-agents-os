@@ -123,10 +123,10 @@ agent consults via retrieval.
   integration}`, `is_private`, optional pin to a `file_revision_id`, and an
   optional provider-neutral `integration_resource_id` source binding) and
   `kb_chunks` (chunk text, LLM-generated `context_line`, `HALFVEC(1024)`
-  embedding with HNSW index, generated `tsv`). Integration documents retain
-  their provider object identity in `external_id` and `external_url` and track
-  source access separately through `source_sync_status` and
-  `source_synced_at`.
+  embedding with HNSW index, generated `tsv`). URL and integration documents
+  are refreshable sources and share `source_sync_status` and
+  `source_synced_at`. Integration documents additionally retain their provider
+  object identity in `external_id` and `external_url`.
 - **Ingestion.** `services/kb/create_document.py` → `ingest_kb_document` job:
   load markdown → hash + duplicate lock → write policy (secret scanning,
   backend-minted provenance) → chunk → annotate → `embed_kb_chunks` job.
@@ -138,16 +138,21 @@ agent consults via retrieval.
   Refresh resolves the creator's personal grant on a dedicated runtime session
   with workspace and user tenant context. The job session remains
   workspace-only, and provider I/O completes before ingestion takes a content
-  lock. Manual refresh and the ownerless, bounded
-  `kb.reconcile_integration_sources` scan enqueue the same ingestion job shape,
-  so concurrent refreshes coalesce.
-- **Access loss.** A definitive provider denial, missing source, unusable
-  binding, departed creator, or disconnected personal grant sets the source to
-  `unavailable` or `disconnected`. The same transaction clears canonical
-  Markdown, summaries, hashes, and chunks, so document reads return no cached
-  content. Transient errors retain the last successful content for a later
-  retry. Search excludes every integration source whose
-  `source_sync_status` is not `ready`.
+  lock.
+- **Refreshable sources.** URL and integration documents enter the same sync
+  lifecycle and expose the same manual **Refresh** action. The ownerless,
+  bounded `kb.reconcile_sources` job scans both types on one interval and
+  enqueues the ordinary ingestion job, so manual and periodic refreshes
+  coalesce. URL refreshes use the guarded public-address fetch path and send
+  stored `ETag` and `Last-Modified` validators only on the first hop. A
+  `304 Not Modified` response preserves the existing content and chunks.
+- **Access loss.** A definitive URL response (`401`, `403`, `404`, or `410`),
+  provider denial, missing source, unusable binding, departed creator, or
+  disconnected personal grant sets the source to `unavailable` or
+  `disconnected`. The same transaction clears canonical Markdown, summaries,
+  hashes, and chunks, so document reads return no cached content. Transient
+  errors retain the last successful content for a later retry. Search excludes
+  every refreshable source whose `source_sync_status` is not `ready`.
 - **Search.** `services/kb/search_chunks.py`: hybrid RRF over lexical
   (`websearch_to_tsquery`), semantic (pgvector cosine), and recency ranks,
   with lexical-only fallback when embeddings are unavailable. Settings in

@@ -183,11 +183,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   available resource, searches pages or accepts a supported page URL, previews
   the bounded source, and reviews the import before submission. New imports
   default to **Private**; clearing that option must explain that everyone in
-  the workspace can search the page content. Integration documents show their
-  source synchronization state in list and detail views and use the existing
-  reprocess mutation for **Refresh**. Keep provider marks behind the integration
-  registry and keep Knowledge Base feature code independent of provider
-  packages.
+  the workspace can search the page content. URL and integration documents
+  show their source synchronization state and last-refreshed time in list and
+  detail views and use the existing reprocess mutation for **Refresh**. Keep
+  provider marks behind the integration registry and keep Knowledge Base
+  feature code independent of provider packages.
 - Opaque tool targets render through the shared entity field system in
   `src/components/tool-ui/`: hydrate labels from the conversation-scoped API,
   use the server-supplied canonical identity for provider-neutral comparison,
