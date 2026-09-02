@@ -525,6 +525,36 @@ describe("agentStreamReducer", () => {
     expect(state.toolCalls["workflow-1:2"]?.status).toBe("denied")
   })
 
+  it("uses the streamed outcome for top-level failed and denied tools", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.result",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "denied-1",
+          name: "gmail_send_message",
+          result: "The user declined this action.",
+          outcome: "denied",
+          reason: "The budget is too high.",
+        },
+      },
+      {
+        event: "tool.result",
+        data: {
+          ...eventWithSeq(2),
+          tool_call_id: "failed-1",
+          name: "read_file",
+          result: "File unavailable",
+          outcome: "failed",
+        },
+      },
+    ])
+
+    expect(state.toolCalls["denied-1"]?.status).toBe("denied")
+    expect(state.toolCalls["denied-1"]?.decisionReason).toBe("The budget is too high.")
+    expect(state.toolCalls["failed-1"]?.status).toBe("failed")
+  })
+
   it("tracks workflow state and bounded outcome excerpts on the outer call", () => {
     const state = reduceEvents([
       {

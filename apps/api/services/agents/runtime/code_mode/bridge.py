@@ -29,6 +29,7 @@ from pydantic_ai.tool_manager import ToolManager
 from pydantic_ai.toolsets import FunctionToolset
 
 from core.settings import settings
+from services.agent_runs.utils import denial_message_for_model
 from services.agents.runtime.code_mode.approval import (
     CODE_MODE_DECISION_KEY,
     build_code_mode_approval_metadata,
@@ -441,10 +442,31 @@ class CodeModeBridge:
         )
         if decision == "denied":
             message = raw_decision.get("message")
+            reason = raw_decision.get("reason")
+            denial_message = message if isinstance(message, str) else denial_message_for_model(None)
             self._mark_trace(
-                state.nested_call_id, status="denied", result=str(message or "Denied by user")
+                state.nested_call_id,
+                status="denied",
+                result=denial_message,
+                decision_reason=reason if isinstance(reason, str) else None,
             )
-            return {"exc_type": "PermissionError", "message": str(message or "Denied by user")}
+            await self._ctx.deps.sink.emit(
+                ToolResultEvent(
+                    tool_call_id=state.nested_call_id,
+                    parent_tool_call_id=self._outer_tool_call_id,
+                    name=tool_name,
+                    result={
+                        "status": "denied",
+                        "error": denial_message,
+                        **({"reason": reason} if isinstance(reason, str) else {}),
+                    },
+                    outcome="denied",
+                ),
+            )
+            return {
+                "exc_type": "PermissionError",
+                "message": denial_message,
+            }
 
         call_metadata = {
             CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY: self._outer_tool_call_id,
@@ -574,6 +596,7 @@ class CodeModeBridge:
         status: str,
         result: Any,
         presentation_result: Any | None = None,
+        decision_reason: str | None = None,
     ) -> None:
         for entry in reversed(self._trace):
             if entry.get("tool_call_id") == tool_call_id:
@@ -584,6 +607,8 @@ class CodeModeBridge:
                     entry["presentation_result"] = (
                         result if presentation_result is None else presentation_result
                     )
+                if decision_reason is not None:
+                    entry["decision_reason"] = decision_reason
                 return
 
     def _record_effect(self, *, call: ToolCallPart, args_sha256: str) -> None:
@@ -893,6 +918,9 @@ async def _settle_denied_decision_evidence(
         outcome="denied_approval",
         approval_ref=nested_call_id,
         error_code="ToolDenied",
+        denial_reason=(
+            str(raw_decision["reason"]) if isinstance(raw_decision.get("reason"), str) else None
+        ),
     )
     await cleanup_staged_tool_content(
         deps=deps,

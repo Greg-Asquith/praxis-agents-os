@@ -19,7 +19,10 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_RUNNING
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agent_runs.start_with_lease import start_agent_run_with_lease
-from services.agent_runs.utils import load_delegated_child_run_for_approval
+from services.agent_runs.utils import (
+    denial_message_for_model,
+    load_delegated_child_run_for_approval,
+)
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY,
@@ -214,6 +217,7 @@ async def _build_deferred_tool_results(
     approvals = {}
     metadata_by_parent_tool_call_id: dict[str, dict[str, object]] = {}
     for tool_call_id in direct_pending_tool_call_ids:
+        decision = by_id[tool_call_id]
         approvals[tool_call_id] = await _approval_result_for_decision(
             db,
             actor=actor,
@@ -221,8 +225,10 @@ async def _build_deferred_tool_results(
             membership=membership,
             run=run,
             tool_call=direct_calls[tool_call_id],
-            decision=by_id[tool_call_id],
+            decision=decision,
         )
+        if decision.decision == "denied":
+            metadata_by_parent_tool_call_id[tool_call_id] = {"reason": decision.message}
 
     for outer_tool_call_id, (approval_metadata, nested_call) in code_mode_states.items():
         from services.agents.runtime.dispatch import digest_args
@@ -248,7 +254,12 @@ async def _build_deferred_tool_results(
             decision=decision.decision,
             effective_args=effective_args,
             args_sha256=args_sha256,
-            message=decision.message,
+            message=(
+                denial_message_for_model(decision.message)
+                if decision.decision == "denied"
+                else None
+            ),
+            reason=decision.message if decision.decision == "denied" else None,
         )
 
     for parent_tool_call_id, (
@@ -261,7 +272,9 @@ async def _build_deferred_tool_results(
             for approval in child_state.deferred_tool_requests.approvals
         }
         child_approvals = {}
+        child_metadata: dict[str, dict[str, object]] = {}
         for child_tool_call_id in child_state.pending_tool_call_ids:
+            decision = by_id[child_tool_call_id]
             child_approvals[child_tool_call_id] = await _approval_result_for_decision(
                 db,
                 actor=actor,
@@ -269,9 +282,11 @@ async def _build_deferred_tool_results(
                 membership=membership,
                 run=child_run,
                 tool_call=child_calls[child_tool_call_id],
-                decision=by_id[child_tool_call_id],
+                decision=decision,
             )
-        child_results = DeferredToolResults(approvals=child_approvals)
+            if decision.decision == "denied":
+                child_metadata[child_tool_call_id] = {"reason": decision.message}
+        child_results = DeferredToolResults(approvals=child_approvals, metadata=child_metadata)
         approvals[parent_tool_call_id] = ToolApproved()
         metadata_by_parent_tool_call_id[parent_tool_call_id] = {
             **parent_metadata,
@@ -305,4 +320,4 @@ async def _approval_result_for_decision(
             override_args=decision.override_args,
         )
         return ToolApproved(override_args=override_args)
-    return ToolDenied(decision.message or "Denied by user")
+    return ToolDenied(denial_message_for_model(decision.message))

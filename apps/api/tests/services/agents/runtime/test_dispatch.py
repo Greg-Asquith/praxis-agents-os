@@ -1239,9 +1239,10 @@ async def test_denied_approval_records_audit_without_executing_tool(
         assert dispatch_test_tools["write_ok"] == 0
 
         suspended_state = load_suspended_run_state(suspended.run)
-        deferred_tool_results = DeferredToolResults()
-        deferred_tool_results.approvals[suspended_state.pending_tool_call_ids[0]] = ToolDenied(
-            "Denied in test"
+        denied_call_id = suspended_state.pending_tool_call_ids[0]
+        deferred_tool_results = DeferredToolResults(
+            approvals={denied_call_id: ToolDenied("Denied in test")},
+            metadata={denied_call_id: {"reason": "The budget is too high."}},
         )
 
         async with committed_db_session_factory() as db:
@@ -1280,6 +1281,7 @@ async def test_denied_approval_records_audit_without_executing_tool(
         assert event.details["outcome"] == "denied_approval"
         assert event.details["approval_ref"] == suspended_state.pending_tool_call_ids[0]
         assert event.details["error_code"] == "ToolDenied"
+        assert event.details["denial_reason"] == "The budget is too high."
         expected_sha, expected_bytes = digest_args({"value": "do not run"})
         assert event.details["args_sha256"] == expected_sha
         assert event.details["args_bytes"] == expected_bytes

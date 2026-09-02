@@ -6,7 +6,7 @@ import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/ap
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { parseSettledFanOutData, type FanOutEntry } from "@/components/tool-ui/fan-out"
-import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
@@ -106,18 +106,19 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
       )
     }
 
-    if (
-      activity.status === "denied" ||
-      activity.status === "failed" ||
-      activity.status === "unknown"
-    ) {
-      return writeFailure(
+    if (activity.status === "denied") {
+      return writeDenied(
         activity.id,
         args,
-        activity.status === "denied" ? variant.deniedDescription : variant.failedDescription,
+        variant.deniedDescription,
+        activity.decisionReason,
         defaultOpen,
         variant
       )
+    }
+
+    if (activity.status === "failed" || activity.status === "unknown") {
+      return writeFailure(activity.id, args, variant.failedDescription, defaultOpen, variant)
     }
 
     const fanOut = parseWriteFanOut(activity.result, variant)
@@ -188,6 +189,32 @@ function parseWriteFanOut<Args, Result>(
     malformed: variant.malformedDescription,
     unverified: variant.unverifiedDescription,
   })
+}
+
+function writeDenied<Args, Result>(
+  activityId: string,
+  args: Args | null,
+  description: string,
+  reason: string | undefined,
+  defaultOpen: boolean,
+  variant: GoogleAdsWriteVariant<Args, Result>
+) {
+  return (
+    <DeclinedFanOut
+      activityId={activityId}
+      ariaLabel={variant.unconfirmedAriaLabel}
+      contextLabel="Account"
+      defaultOpen={defaultOpen}
+      description={description}
+      {...(variant.details ? { details: variant.details(args) } : {})}
+      displayName="Selected Google Ads account"
+      externalLabel="Customer ID"
+      formatContextValue={formatGoogleAdsAccountId}
+      heading={<GoogleAdsToolHeading>{variant.heading}</GoogleAdsToolHeading>}
+      providerKey="google_ads"
+      reason={reason}
+    />
+  )
 }
 
 function writeFailure<Args, Result>(

@@ -56,6 +56,7 @@ from services.agent_runs.domain import (
 )
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_events import (
+    build_deferred_tool_result_metadata,
     emit_deferred_tool_resume_events,
     emit_live_deferred_tool_event,
     is_deferred_tool_resume_event,
@@ -548,6 +549,57 @@ async def test_live_deferred_tool_events_emit_with_effective_args() -> None:
     ]
     assert sink.events[0].data["args"] == {"value": 10}
     assert sink.events[1].data["result"] == "approved"
+
+
+async def test_live_deferred_denial_emits_its_outcome_and_reason() -> None:
+    tool_call_id = "denied-tool-call"
+    reason = "The budget is too high."
+    denial = f"The user declined this action, so it was not performed. Reason: {reason}"
+    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
+
+    await emit_live_deferred_tool_event(
+        sink,
+        FunctionToolResultEvent(
+            part=ToolReturnPart(
+                tool_name="approved_tool",
+                content=denial,
+                tool_call_id=tool_call_id,
+                outcome="denied",
+            )
+        ),
+        deferred_tool_results=DeferredToolResults(
+            approvals={tool_call_id: ToolDenied(denial)},
+            metadata={tool_call_id: {"reason": reason}},
+        ),
+    )
+
+    assert sink.events[0].data["outcome"] == "denied"
+    assert sink.events[0].data["reason"] == reason
+
+
+async def test_denied_result_metadata_keeps_raw_reason_separate() -> None:
+    tool_call_id = "denied-tool-call"
+    reason = "The budget is too high."
+    denial = f"The user declined this action, so it was not performed. Reason: {reason}"
+    call = ToolCallPart(tool_name="approved_tool", args={"value": 1}, tool_call_id=tool_call_id)
+    result = ToolReturnPart(
+        tool_name="approved_tool",
+        content=denial,
+        tool_call_id=tool_call_id,
+        outcome="denied",
+    )
+
+    metadata = build_deferred_tool_result_metadata(
+        message_history=[ModelResponse(parts=[call])],
+        new_messages=[ModelRequest(parts=[result])],
+        deferred_tool_results=DeferredToolResults(
+            approvals={tool_call_id: ToolDenied(denial)},
+            metadata={tool_call_id: {"reason": reason}},
+        ),
+    )
+
+    assert metadata[tool_call_id]["message"] == denial
+    assert metadata[tool_call_id]["reason"] == reason
 
 
 async def test_deferred_resume_replay_skips_already_emitted_results() -> None:

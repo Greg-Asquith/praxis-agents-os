@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router"
 import { BookOpenIcon, LibraryIcon, LockIcon, type LucideIcon } from "lucide-react"
 
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { ExternalContent } from "@/components/tool-ui/external-content"
 import { isUntrustedNode } from "@/components/tool-ui/untrusted-node"
@@ -206,26 +207,29 @@ function KbFailureRow({ activity }: Pick<KbToolRowProps, "activity">) {
   if (!state) {
     return null
   }
-  const message =
+  const failureMessage =
     typeof activity.result === "string" && activity.result.trim()
       ? activity.result
-      : activity.status === "denied"
-        ? "This knowledge lookup was declined. Nothing was read."
-        : "The knowledge lookup did not finish. No result was confirmed."
+      : "The knowledge lookup did not finish. No result was confirmed."
   return (
     <ToolResultCard
-      ariaLabel={`${state.heading} failed`}
+      ariaLabel={`${state.heading} ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
       heading={<KbToolHeading icon={state.icon}>{state.heading}</KbToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
-      <Alert variant="destructive">
-        <AlertTitle>
-          {activity.status === "denied" ? "Action Declined" : "What Went Wrong"}
-        </AlertTitle>
-        <AlertDescription className="whitespace-pre-wrap">{message}</AlertDescription>
-      </Alert>
+      {activity.status === "denied" ? (
+        <DeclinedResult
+          description="This knowledge lookup was declined. Nothing was read."
+          reason={activity.decisionReason}
+        />
+      ) : (
+        <Alert variant="destructive">
+          <AlertTitle>What Went Wrong</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap">{failureMessage}</AlertDescription>
+        </Alert>
+      )}
     </ToolResultCard>
   )
 }

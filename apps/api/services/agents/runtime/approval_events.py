@@ -97,11 +97,14 @@ async def emit_live_deferred_tool_event(
         return None
 
     part = event.part
+    reason = _denial_reason(part, deferred_tool_results)
     await sink.emit(
         ToolResultEvent(
             tool_call_id=part.tool_call_id,
             name=getattr(part, "tool_name", None),
             result=public_function_tool_result(part),
+            outcome=getattr(part, "outcome", None),
+            **({"reason": reason} if reason is not None else {}),
         ),
     )
     return part.tool_call_id
@@ -342,11 +345,14 @@ async def emit_deferred_tool_resume_events(
                         ),
                     ),
                 )
+            reason = _denial_reason(part, deferred_tool_results)
             await sink.emit(
                 ToolResultEvent(
                     tool_call_id=tool_call_id,
                     name=getattr(part, "tool_name", None),
                     result=to_jsonable_python(getattr(part, "content", None)),
+                    outcome=getattr(part, "outcome", None),
+                    **({"reason": reason} if reason is not None else {}),
                 ),
             )
 
@@ -404,6 +410,11 @@ def build_deferred_tool_result_metadata(
             )
         if isinstance(approval_result, ToolDenied):
             result_metadata["message"] = approval_result.message
+            decision_metadata = deferred_tool_results.metadata.get(tool_call_id)
+            if isinstance(decision_metadata, dict):
+                reason = decision_metadata.get("reason")
+                if isinstance(reason, str):
+                    result_metadata["reason"] = reason
 
         metadata[tool_call_id] = result_metadata
 
@@ -417,6 +428,16 @@ def _tool_calls_by_id(messages: Sequence[ModelMessage]) -> dict[str, Any]:
             if getattr(part, "part_kind", None) == "tool-call":
                 calls[part.tool_call_id] = part
     return calls
+
+
+def _denial_reason(part: Any, deferred_tool_results: DeferredToolResults) -> str | None:
+    if getattr(part, "outcome", None) != "denied":
+        return None
+    metadata = deferred_tool_results.metadata.get(part.tool_call_id)
+    if not isinstance(metadata, dict):
+        return None
+    reason = metadata.get("reason")
+    return reason if isinstance(reason, str) else None
 
 
 def _tool_return_ids(messages: Sequence[ModelMessage]) -> set[str]:

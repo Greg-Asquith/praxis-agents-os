@@ -953,6 +953,18 @@
           ],
           "title": "Name"
         },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        },
         "parent_tool_call_id": {
           "anyOf": [
             {
@@ -965,6 +977,18 @@
           ],
           "default": null,
           "title": "Parent Tool Call Id"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
         },
         "result": {
           "title": "Result"

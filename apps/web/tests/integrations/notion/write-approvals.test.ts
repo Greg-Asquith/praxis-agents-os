@@ -190,9 +190,13 @@ describe("Notion write approval and result fidelity", () => {
         pendingControls()
       )
     ).toContain("Requires Approval")
-    expect(renderPresenter(activity("notion_update_page_content", "denied", args))).toContain(
-      "This Notion change was declined. Nothing was changed."
-    )
+    const denied = activity("notion_update_page_content", "denied", args)
+    denied.decisionReason = "Keep the draft wording."
+    const deniedHtml = renderPresenter(denied)
+    expect(deniedHtml).toContain("This Notion change was declined. Nothing was changed.")
+    expect(deniedHtml).toContain("Declined")
+    expect(deniedHtml).toContain("Keep the draft wording.")
+    expect(deniedHtml).not.toContain("Failed")
     expect(renderPresenter(activity("notion_update_page_content", "failed", args))).toContain(
       "The Notion change did not finish. No change was confirmed."
     )

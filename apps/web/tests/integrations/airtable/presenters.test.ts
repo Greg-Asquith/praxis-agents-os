@@ -232,6 +232,27 @@ describe("Airtable tool presenters", () => {
       )
     )
     expect(html).toContain(expected)
+    if (status === "denied") {
+      expect(html).toContain("Declined")
+      expect(html).not.toContain("Failed")
+    }
+  })
+
+  it("shows the operator reason on a declined record write", () => {
+    const denied: ToolActivity = {
+      id: "airtable-create-denied",
+      kind: "result",
+      name: "airtable_create_record",
+      status: "denied",
+      args: { table: "Projects", fields: { Status: "Complete" } },
+      decisionReason: "Use the approved vendor instead.",
+    }
+    const html = render(airtableCreateRecordPresenter.render(props(denied)))
+
+    expect(html).toContain("Declined")
+    expect(html).toContain("Message to Agent")
+    expect(html).toContain("Use the approved vendor instead.")
+    expect(html).not.toContain("Failed")
   })
 
   it("renders confirmed create and update receipts with their Airtable record ids", () => {

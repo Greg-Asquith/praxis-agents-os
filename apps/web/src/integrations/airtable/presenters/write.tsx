@@ -2,7 +2,7 @@
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
-import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { microLabelClass } from "@/components/ui/stat"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
@@ -85,7 +85,7 @@ function airtableWritePresenter(config: AirtableWriteConfig): ToolRowPresenter {
         )
       }
       if (activity.status === "denied") {
-        return writeFailure(
+        return writeDenied(
           activity,
           config,
           `This record ${config.action} was declined. Nothing was changed.`,
@@ -131,6 +131,29 @@ function airtableWritePresenter(config: AirtableWriteConfig): ToolRowPresenter {
       )
     },
   }
+}
+
+function writeDenied(
+  activity: ToolActivity,
+  config: AirtableWriteConfig,
+  description: string,
+  defaultOpen: boolean
+) {
+  return (
+    <DeclinedFanOut
+      activityId={activity.id}
+      ariaLabel={`Declined Airtable record ${config.action}`}
+      contextLabel="Base"
+      defaultOpen={defaultOpen}
+      description={description}
+      details={airtableRecordDetails(activity.args)}
+      displayName="Selected Airtable base"
+      externalLabel="Base ID"
+      heading={<AirtableToolHeading>{config.completedHeading}</AirtableToolHeading>}
+      providerKey="airtable"
+      reason={activity.decisionReason}
+    />
+  )
 }
 
 function writeFailure(

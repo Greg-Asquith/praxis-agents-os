@@ -112,6 +112,7 @@
     "data": {
       "conversation_id": "11111111-1111-4111-8111-111111111111",
       "name": null,
+      "outcome": "success",
       "parent_tool_call_id": "workflow-call",
       "result": {
         "status": "completed"

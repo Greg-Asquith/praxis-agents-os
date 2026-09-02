@@ -4,6 +4,7 @@ import { useState } from "react"
 import { BrainIcon } from "lucide-react"
 
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
+import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
@@ -322,26 +323,29 @@ function MemoryFailureRow({ activity }: Pick<MemoryToolRowProps, "activity">) {
   if (!state) {
     return null
   }
-  const message =
+  const failureMessage =
     typeof activity.result === "string" && activity.result.trim()
       ? activity.result
-      : activity.status === "denied"
-        ? "This memory action was declined. Nothing was changed."
-        : "The memory action did not finish. No change was confirmed."
+      : "The memory action did not finish. No change was confirmed."
   return (
     <ToolResultCard
-      ariaLabel={`${state.heading} failed`}
+      ariaLabel={`${state.heading} ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
       heading={<MemoryToolHeading>{state.heading}</MemoryToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
-      <Alert variant="destructive">
-        <AlertTitle>
-          {activity.status === "denied" ? "Action Declined" : "What Went Wrong"}
-        </AlertTitle>
-        <AlertDescription className="whitespace-pre-wrap">{message}</AlertDescription>
-      </Alert>
+      {activity.status === "denied" ? (
+        <DeclinedResult
+          description="This memory action was declined. Nothing was changed."
+          reason={activity.decisionReason}
+        />
+      ) : (
+        <Alert variant="destructive">
+          <AlertTitle>What Went Wrong</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap">{failureMessage}</AlertDescription>
+        </Alert>
+      )}
     </ToolResultCard>
   )
 }

@@ -5,6 +5,7 @@ import { AlertCircleIcon, CircleCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import type { FanOutEntry } from "@/components/tool-ui/fan-out"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
 
@@ -22,6 +23,7 @@ export function FanOutShell({
   externalLabel = "Account",
   formatContextValue = identity,
   heading,
+  renderDeclined,
   renderFailed,
 }: {
   children: (entry: FanOutEntry, index: number) => ReactNode
@@ -33,6 +35,7 @@ export function FanOutShell({
   externalLabel?: string
   formatContextValue?: (value: string) => string
   heading?: ReactNode
+  renderDeclined?: (entry: FanOutEntry, index: number) => ReactNode
   renderFailed?: (entry: FanOutEntry, index: number) => ReactNode
 }) {
   const succeeded = entries.filter((entry) => entry.status === "success").length
@@ -72,6 +75,8 @@ export function FanOutShell({
         >
           {entry.status === "success" ? (
             children(entry, index)
+          ) : entry.status === "denied" && renderDeclined ? (
+            renderDeclined(entry, index)
           ) : renderFailed ? (
             renderFailed(entry, index)
           ) : (
@@ -81,6 +86,62 @@ export function FanOutShell({
           )}
         </FanOutCard>
       ))}
+    </div>
+  )
+}
+
+export function DeclinedFanOut({
+  activityId,
+  ariaLabel,
+  contextLabel,
+  defaultOpen,
+  description,
+  details = EMPTY_DETAILS,
+  displayName,
+  externalLabel,
+  formatContextValue = identity,
+  heading,
+  providerKey,
+  reason,
+}: {
+  activityId: string
+  ariaLabel: string
+  contextLabel: string
+  defaultOpen: boolean
+  description: string
+  details?: FanOutDetail[]
+  displayName: string
+  externalLabel: string
+  formatContextValue?: (value: string) => string
+  heading: ReactNode
+  providerKey: string
+  reason?: string | undefined
+}) {
+  return (
+    <div aria-label={ariaLabel} className="w-full min-w-0">
+      <FanOutShell
+        contextLabel={contextLabel}
+        defaultOpen={defaultOpen}
+        details={details}
+        entries={[
+          {
+            data: null,
+            displayName,
+            errorCode: null,
+            errorMessage: description,
+            externalId: displayName,
+            providerKey,
+            renderKey: `${providerKey}:denied:${activityId}`,
+            status: "denied",
+          },
+        ]}
+        externalLabel={externalLabel}
+        formatContextValue={formatContextValue}
+        heading={heading}
+        renderDeclined={() => <DeclinedResult description={description} reason={reason} />}
+      >
+        {() => null}
+      </FanOutShell>
     </div>
   )
 }
@@ -112,6 +173,7 @@ function FanOutCard({
     externalLabel,
     formatContextValue
   )
+  const declined = entry.status === "denied"
 
   return (
     <ToolResultCard
@@ -120,8 +182,10 @@ function FanOutCard({
       details={visibleDetails}
       heading={heading ?? formattedDisplayName}
       trailing={
-        <Badge variant={entry.status === "success" ? "success" : "destructive"}>
-          {entry.status === "success" ? "Done" : "Failed"}
+        <Badge
+          variant={entry.status === "success" ? "success" : declined ? "secondary" : "destructive"}
+        >
+          {entry.status === "success" ? "Done" : declined ? "Declined" : "Failed"}
         </Badge>
       }
     >

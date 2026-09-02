@@ -152,10 +152,20 @@ describe("KbToolRow", () => {
       })
     )
     const malformed = render(activity({ name: "read_document", result: { unexpected: true } }))
+    const denied = render(
+      activity({
+        decisionReason: "Use the public source instead.",
+        name: "read_document",
+        result: undefined,
+        status: "denied",
+      })
+    )
 
     expect(failed).toContain("What Went Wrong")
     expect(failed).toContain("The knowledge base was unavailable.")
     expect(failed).toContain(">Failed<")
+    expect(denied).toContain('aria-label="Read Knowledge Document declined"')
+    expect(denied).toContain("Use the public source instead.")
     expect(malformed).toBe("")
   })
 })

@@ -8,6 +8,7 @@ import {
   type ToolApprovalDecisionControls,
 } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
+import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { resolveToolField, type ResolvedToolField } from "@/components/tool-ui/field-resolution"
 import { fieldLabelClass, readOnlyFieldWellClass } from "@/components/tool-ui/field-styles"
 import { ToolFieldValue } from "@/components/tool-ui/field-value"
@@ -196,9 +197,10 @@ export function DelegationToolRow({
     >
       <div className="grid min-w-0 gap-3">
         {denied ? (
-          <p className="text-muted-foreground text-sm">
-            This delegation was declined, so no work was started.
-          </p>
+          <DeclinedResult
+            description="This delegation was declined, so no work was started."
+            reason={activity.decisionReason}
+          />
         ) : failed ? (
           <p className="text-destructive text-sm">
             {delegate.error ?? "The delegated task did not finish. No result was confirmed."}

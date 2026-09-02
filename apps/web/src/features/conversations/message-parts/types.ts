@@ -43,6 +43,7 @@ export type ToolActivity = {
   name: string
   args?: unknown
   decision?: ToolApprovalDecision
+  decisionReason?: string
   delegate?: DelegationToolActivity
   result?: unknown
   resultExcerpt?: string

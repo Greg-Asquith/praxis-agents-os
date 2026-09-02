@@ -89,6 +89,8 @@ export type StreamEvent =
         tool_call_id: string
         name: string | null
         result: unknown
+        outcome?: string | null
+        reason?: string | null
         parent_tool_call_id?: string
       }
     }

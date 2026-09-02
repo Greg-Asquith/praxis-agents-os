@@ -23,6 +23,11 @@ export function buildLiveToolActivities(
 ): ToolActivity[] {
   const activities = toolCalls.map((toolCall): ToolActivity => {
     const args = normalizeToolArgs(toolCall.args)
+    const decisionReason =
+      toolCall.decisionReason ??
+      (toolCall.status === "denied" && isRecord(toolCall.result)
+        ? (stringValue(toolCall.result["reason"]) ?? undefined)
+        : undefined)
     const activity: ToolActivity = {
       id: toolCall.tool_call_id,
       agentRunId,
@@ -31,6 +36,7 @@ export function buildLiveToolActivities(
       name: toolCall.name,
       args,
       result: toolCall.result,
+      ...(decisionReason === undefined ? {} : { decisionReason }),
       ...(toolCall.name === LOAD_CAPABILITY_TOOL_NAME ? { toolKind: "capability-load" } : {}),
     }
     const delegate = delegationDetailsForToolActivity(toolCall.name, args, toolCall.result)
@@ -152,6 +158,7 @@ function codeModeTraceProjection(activity: ToolActivity): ToolActivity {
     kind: "result",
     name: activity.name,
     status: activity.status,
+    ...(activity.decisionReason === undefined ? {} : { decisionReason: activity.decisionReason }),
     ...(resultExcerpt === null
       ? {}
       : {

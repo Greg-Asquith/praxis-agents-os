@@ -91,6 +91,9 @@ export function projectConversationTimeline({
         continue
       }
       liveResultsByCallIdentity.set(toolActivityIdentity(stream.runId, toolCall.tool_call_id), {
+        ...(toolCall.decisionReason === undefined
+          ? {}
+          : { decisionReason: toolCall.decisionReason }),
         result: toolCall.result,
         status: toolCall.status,
       })

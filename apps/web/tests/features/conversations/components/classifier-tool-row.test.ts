@@ -59,15 +59,24 @@ describe("classifier tool row", () => {
       })
     )
     const failed = render(activity({ status: "failed", result: "The helper timed out." }))
-    const denied = render(activity({ status: "denied", result: undefined }))
+    const denied = render(
+      activity({
+        decisionReason: "Classify only the approved sample.",
+        status: "denied",
+        result: undefined,
+      })
+    )
 
     expect(running).toContain("Classifying 3 items…")
     expect(running).toContain("3 labels: complaint, praise, other")
     expect(running).toContain('aria-busy="true"')
     expect(failed).toContain("Classification failed")
     expect(failed).toContain("The helper timed out.")
-    expect(denied).toContain("Classification declined")
+    expect(denied).toContain(">Declined<")
+    expect(denied).toContain('aria-label="Classification declined"')
     expect(denied).toContain("No items were sent to the helper model.")
+    expect(denied).toContain("Message to Agent")
+    expect(denied).toContain("Classify only the approved sample.")
   })
 
   it("fails closed for malformed args and non-closed output labels", () => {

@@ -641,6 +641,7 @@ async def record_denied_approval_audit_events(
             outcome="denied_approval",
             approval_ref=tool_call_id,
             error_code="ToolDenied",
+            denial_reason=_denial_reason(deferred_tool_results, tool_call_id),
         )
         await cleanup_staged_tool_content(deps=deps, tool_name=tool_name, args=args)
 
@@ -765,6 +766,7 @@ async def record_invocation(
     parent_tool_call_id: str | None = None,
     derived_from_untrusted: bool | None = None,
     taint_sources: list[dict[str, str]] | None = None,
+    denial_reason: str | None = None,
 ) -> None:
     """Assemble and persist one invocation audit event."""
     await record_tool_invocation_audit_event(
@@ -795,7 +797,19 @@ async def record_invocation(
         parent_tool_call_id=parent_tool_call_id,
         derived_from_untrusted=derived_from_untrusted,
         taint_sources=taint_sources,
+        denial_reason=denial_reason,
     )
+
+
+def _denial_reason(
+    deferred_tool_results: DeferredToolResults,
+    tool_call_id: str,
+) -> str | None:
+    metadata = deferred_tool_results.metadata.get(tool_call_id)
+    if not isinstance(metadata, Mapping):
+        return None
+    reason = metadata.get("reason")
+    return reason if isinstance(reason, str) else None
 
 
 def _parent_tool_call_id(metadata: Any) -> str | None:

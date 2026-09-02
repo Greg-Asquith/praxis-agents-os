@@ -2,9 +2,9 @@
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
-import { FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
-import type { ToolRowPresenter } from "@/integrations/contract"
+import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import { GmailLogo } from "@/integrations/gmail/components/logo"
 import { GmailSendMessage, sentMessageArgs } from "@/integrations/gmail/components/sent-message"
 import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
@@ -54,12 +54,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
       )
     }
     if (activity.status === "denied") {
-      return sendFailure(
-        activity.id,
-        activity.args,
-        "This email was declined and was not sent.",
-        defaultOpen
-      )
+      return sendDeclined(activity, "This email was declined and was not sent.", defaultOpen)
     }
     if (activity.status === "failed" || activity.status === "unknown") {
       return sendFailure(
@@ -95,6 +90,24 @@ export const gmailSendPresenter: ToolRowPresenter = {
       </div>
     )
   },
+}
+
+function sendDeclined(activity: ToolActivity, description: string, defaultOpen: boolean) {
+  return (
+    <DeclinedFanOut
+      activityId={activity.id}
+      ariaLabel="Declined Gmail Message"
+      contextLabel="Mailbox"
+      defaultOpen={defaultOpen}
+      description={description}
+      details={gmailSendDetails(activity.args)}
+      displayName="Selected mailbox"
+      externalLabel="Email"
+      heading={<GmailToolHeading>Send Gmail Message</GmailToolHeading>}
+      providerKey="gmail"
+      reason={activity.decisionReason}
+    />
+  )
 }
 
 function sendFailure(activityId: string, args: unknown, description: string, defaultOpen: boolean) {

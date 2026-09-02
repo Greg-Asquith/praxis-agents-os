@@ -4,6 +4,7 @@ import { Component, use, type ErrorInfo, type ReactNode } from "react"
 import { WrenchIcon } from "lucide-react"
 
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
+import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
@@ -57,7 +58,9 @@ export function ToolCallRow({
   const ui = entry?.ui ?? null
   const title = entry?.label ?? activity.name
   const shouldOpen =
-    defaultOpen || approvalDecision !== undefined || (live && activity.status === "failed")
+    defaultOpen ||
+    approvalDecision !== undefined ||
+    (live && (activity.status === "failed" || activity.status === "denied"))
   const customRow = renderCustomToolCallRow({
     activity,
     ...(approvalDecision ? { approvalDecision } : {}),
@@ -73,7 +76,11 @@ export function ToolCallRow({
   const hasArgs = activity.args !== undefined && activity.args !== null
   const hasResult = activity.result !== undefined && activity.result !== null
   const expandable =
-    hasArgs || hasResult || approvalDecision !== undefined || activity.status === "failed"
+    hasArgs ||
+    hasResult ||
+    approvalDecision !== undefined ||
+    activity.status === "failed" ||
+    activity.status === "denied"
 
   const argFields = ui?.arg_fields.length
     ? resolveUiFields(ui.arg_fields, activity.args)
@@ -157,6 +164,14 @@ export function ToolCallRow({
                 }}
               />
             ) : null}
+            <ToolFieldGrid fields={argFields} />
+          </>
+        ) : activity.status === "denied" ? (
+          <>
+            <DeclinedResult
+              description="This action was declined and was not performed."
+              reason={activity.decisionReason}
+            />
             <ToolFieldGrid fields={argFields} />
           </>
         ) : activity.status === "failed" ? (

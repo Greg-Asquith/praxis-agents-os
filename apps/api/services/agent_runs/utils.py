@@ -48,6 +48,13 @@ BLOCKED_ERROR_CODES = frozenset(
 )
 
 
+def denial_message_for_model(reason: str | None) -> str:
+    """Returns an explicit tool-denial message for the model."""
+    if reason:
+        return f"The user declined this action, so it was not performed. Reason: {reason}"
+    return "The user declined this action, so it was not performed. No reason was given."
+
+
 def sanitize_error_message(message: str | None) -> str | None:
     """Collapse whitespace and cap length so error text stays operational, not a dump."""
     if message is None:

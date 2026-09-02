@@ -134,6 +134,8 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
     }
     case "tool.result": {
       const name = requiredNullableNonEmptyString(eventName, "data.name", data["name"])
+      const outcome = optionalNullableString(eventName, data, "outcome")
+      const reason = optionalNullableString(eventName, data, "reason")
       const parentToolCallId = optionalNullableNonEmptyString(
         eventName,
         data,
@@ -150,6 +152,8 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
           ),
           name,
           result: requiredField(eventName, data, "result"),
+          ...(outcome === undefined ? {} : { outcome }),
+          ...(reason === undefined ? {} : { reason }),
           ...(parentToolCallId === undefined ? {} : { parent_tool_call_id: parentToolCallId }),
         },
       }

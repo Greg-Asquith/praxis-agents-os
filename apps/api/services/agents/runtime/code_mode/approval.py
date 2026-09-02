@@ -70,6 +70,7 @@ def build_code_mode_decision_metadata(
     effective_args: Mapping[str, Any],
     args_sha256: str,
     message: str | None,
+    reason: str | None = None,
 ) -> dict[str, Any]:
     """Carry one nested decision through Pydantic AI's tool-context metadata channel."""
     return {
@@ -80,5 +81,6 @@ def build_code_mode_decision_metadata(
             "effective_args": dict(effective_args),
             "args_sha256": args_sha256,
             "message": message,
+            "reason": reason,
         },
     }

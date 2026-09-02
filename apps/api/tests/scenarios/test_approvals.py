@@ -16,6 +16,7 @@ from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_FAILED
+from services.agent_runs.utils import denial_message_for_model
 from services.agents.runtime.approval_state import (
     APPROVAL_STATE_METADATA_KEY,
     load_suspended_run_state,
@@ -205,8 +206,10 @@ async def test_agent_discovers_reads_and_updates_artifact_from_another_conversat
         assert [revision.revision_number for revision in artifact.versions] == [2, 1]
 
 
+@pytest.mark.parametrize("reason", ["The budget is too high.", None])
 async def test_approval_denial_is_audited_and_visible_in_persisted_history(
     db_session_factory: async_sessionmaker[AsyncSession],
+    reason: str | None,
 ) -> None:
     context = await build_scenario_agent(
         db_session_factory,
@@ -221,6 +224,8 @@ async def test_approval_denial_is_audited_and_visible_in_persisted_history(
     )
     suspended = await run_scenario(db_session_factory, context, model=model)
     state = load_suspended_run_state(suspended.run)
+    tool_call_id = state.pending_tool_call_ids[0]
+    model_message = denial_message_for_model(reason)
 
     resumed = await run_scenario(
         db_session_factory,
@@ -230,7 +235,8 @@ async def test_approval_denial_is_audited_and_visible_in_persisted_history(
         expected_status=RUN_STATUS_AWAITING_APPROVAL,
         message_history=state.message_history,
         deferred_tool_results=DeferredToolResults(
-            approvals={state.pending_tool_call_ids[0]: ToolDenied("User declined the action")}
+            approvals={tool_call_id: ToolDenied(model_message)},
+            metadata={tool_call_id: {"reason": reason}},
         ),
     )
 
@@ -240,7 +246,18 @@ async def test_approval_denial_is_audited_and_visible_in_persisted_history(
         "denied_approval",
     }
     persisted = json.dumps([message.parts for message in resumed.messages])
-    assert "User declined the action" in persisted
+    assert model_message in persisted
+    persisted_metadata = [message.metadata_json for message in resumed.messages]
+    if reason is not None:
+        assert any(
+            metadata
+            and metadata.get("approval_results", {}).get(tool_call_id, {}).get("reason") == reason
+            for metadata in persisted_metadata
+        )
+        denied_audit = next(
+            row for row in resumed.audit_rows if row.details["outcome"] == "denied_approval"
+        )
+        assert denied_audit.details["denial_reason"] == reason
     assert resumed.output == "The user denied the write, so I did not perform it."
 
 

@@ -432,6 +432,25 @@ describe("Gmail tool presenters", () => {
     expect(html).toContain("client@example.com")
   })
 
+  it("renders a declined send as a decision with the operator reason", () => {
+    const html = render(
+      gmailSendPresenter.render(
+        props({
+          id: "send-denied",
+          kind: "result",
+          name: "gmail_send_message",
+          status: "denied",
+          args: { to: ["client@example.com"], subject: "Project update" },
+          decisionReason: "Wait until the figures are final.",
+        })
+      )
+    )
+
+    expect(html).toContain("Declined")
+    expect(html).toContain("Wait until the figures are final.")
+    expect(html).not.toContain("Failed")
+  })
+
   it("keeps malformed successful results in custom Gmail UI", () => {
     const html = render(
       gmailSendPresenter.render(

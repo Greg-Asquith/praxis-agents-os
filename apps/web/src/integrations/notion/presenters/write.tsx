@@ -3,7 +3,7 @@
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { FanOutEntry } from "@/components/tool-ui/fan-out"
-import { FanOutShell } from "@/components/tool-ui/fan-out-shell"
+import { DeclinedFanOut, FanOutShell } from "@/components/tool-ui/fan-out-shell"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import { NotionLogo } from "@/integrations/notion/components/logo"
 import { NotionSkeleton } from "@/integrations/notion/components/read-results"
@@ -94,17 +94,19 @@ export const notionWritePresenter: ToolRowPresenter = {
         />
       )
     }
-    if (
-      activity.status === "denied" ||
-      activity.status === "failed" ||
-      activity.status === "unknown"
-    ) {
+    if (activity.status === "denied") {
+      return writeDenied(
+        activity,
+        config,
+        "This Notion change was declined. Nothing was changed.",
+        defaultOpen
+      )
+    }
+    if (activity.status === "failed" || activity.status === "unknown") {
       return writeFailure(
         activity,
         config,
-        activity.status === "denied"
-          ? "This Notion change was declined. Nothing was changed."
-          : "The Notion change did not finish. No change was confirmed.",
+        "The Notion change did not finish. No change was confirmed.",
         defaultOpen
       )
     }
@@ -142,6 +144,28 @@ export const notionWritePresenter: ToolRowPresenter = {
       </div>
     )
   },
+}
+
+function writeDenied(
+  activity: ToolActivity,
+  config: NotionWriteConfig,
+  description: string,
+  defaultOpen: boolean
+) {
+  return (
+    <DeclinedFanOut
+      activityId={activity.id}
+      ariaLabel={`Declined ${config.title}`}
+      contextLabel="Workspace"
+      defaultOpen={defaultOpen}
+      description={description}
+      displayName="Selected Notion workspace"
+      externalLabel="Workspace ID"
+      heading={notionHeading(config.title)}
+      providerKey="notion"
+      reason={activity.decisionReason}
+    />
+  )
 }
 
 function writeFailure(

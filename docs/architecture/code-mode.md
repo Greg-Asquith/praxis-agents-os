@@ -210,8 +210,9 @@ decision authorizes exactly one nested tool-call ID once. Approval of call N
 doesn't apply to call N+1 because the outer call resumed as approved. The
 approval card uses the nested tool's server-declared presentation. It supports
 the existing validated argument-override path. Denial resumes the script and
-injects a typed denial the script can handle; it does not silently abandon the
-workflow.
+raises a catchable `PermissionError` whose framed message states that the action
+did not run and includes the operator's reason when provided. It does not
+silently abandon the workflow.
 
 Because generic approval helpers can only see the outer message-history call,
 the bridge/resume path owns nested pending and denied audit rows and denied

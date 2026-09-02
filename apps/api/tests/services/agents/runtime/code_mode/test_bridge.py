@@ -1611,7 +1611,8 @@ async def test_nested_denial_is_catchable_and_does_not_invoke_handler(
     toolset = FunctionToolset([Tool(handler, name="gated", requires_approval=True)])
     ctx = _ctx(toolset)
     code = (
-        "try:\n    await gated(value=1)\nexcept PermissionError:\n    result = 'alternate'\nresult"
+        "try:\n    await gated(value=1)\n"
+        "except PermissionError as exc:\n    result = str(exc)\nresult"
     )
     with pytest.raises(ApprovalRequired) as pending:
         await execute_code_mode_workflow(
@@ -1627,7 +1628,11 @@ async def test_nested_denial_is_catchable_and_does_not_invoke_handler(
         decision="denied",
         effective_args={"value": 1},
         args_sha256=denied_digest,
-        message="Not now",
+        message=(
+            "The user declined this action, so it was not performed. "
+            "Reason: The budget is too high."
+        ),
+        reason="The budget is too high.",
     )
     result = await execute_code_mode_workflow(
         ctx=ctx,
@@ -1637,7 +1642,17 @@ async def test_nested_denial_is_catchable_and_does_not_invoke_handler(
         executor=executor,
     )
 
-    assert result.return_value == "alternate"
+    assert result.return_value == (
+        "The user declined this action, so it was not performed. Reason: The budget is too high."
+    )
+    [denied_trace] = result.metadata[CODE_MODE_TRACE_METADATA_KEY]["calls"]
+    assert denied_trace["decision_reason"] == "The budget is too high."
+    denied_event = next(
+        event
+        for event in ctx.deps.sink.events
+        if event.event == EVENT_TOOL_RESULT and event.data.get("outcome") == "denied"
+    )
+    assert denied_event.data["result"]["reason"] == "The budget is too high."
     assert handler_calls == 0
 
 

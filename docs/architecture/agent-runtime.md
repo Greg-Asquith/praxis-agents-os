@@ -166,8 +166,10 @@ Resume is a fresh entry: `POST /agent-runs/{id}/resume` with the decision re-ent
 by passing `message_history` and `DeferredToolResults` back to Pydantic AI. Approved
 decisions may include `override_args`; these are mapped to
 `ToolApproved(override_args=...)` so an operator can correct a proposed tool call before
-execution. Denials use `ToolDenied` so the model receives a typed denial
-result. This reuses the existing `RUN_STATUS_AWAITING_APPROVAL` state for scheduled
+execution. Denials use `ToolDenied` with explicit model-facing text that states
+the action did not run and includes the operator's reason when provided. This
+framing remains necessary because provider adapters don't preserve the typed
+`denied` outcome. This reuses the existing `RUN_STATUS_AWAITING_APPROVAL` state for scheduled
 runs and the generic run status for interactive runs.
 
 Only persist JSON-serializable message/state data that we know how to rehydrate.

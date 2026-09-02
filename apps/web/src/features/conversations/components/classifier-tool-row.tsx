@@ -3,6 +3,7 @@
 import { SparklesIcon } from "lucide-react"
 
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -88,26 +89,29 @@ export function ClassifierToolRow({
 }
 
 function ClassifierFailureRow({ activity, label }: { activity: ToolActivity; label: string }) {
-  const message =
+  const failureMessage =
     typeof activity.result === "string" && activity.result.trim()
       ? activity.result
-      : activity.status === "denied"
-        ? "This classification was declined. No items were sent to the helper model."
-        : "The classification did not finish. No labels were confirmed."
+      : "The classification did not finish. No labels were confirmed."
   return (
     <ToolResultCard
-      ariaLabel="Classification failed"
+      ariaLabel={`Classification ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[]}
       heading={<ClassifierHeading label={label} />}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
-      <Alert variant="destructive">
-        <AlertTitle>
-          {activity.status === "denied" ? "Classification declined" : "Classification failed"}
-        </AlertTitle>
-        <AlertDescription>{message}</AlertDescription>
-      </Alert>
+      {activity.status === "denied" ? (
+        <DeclinedResult
+          description="This classification was declined. No items were sent to the helper model."
+          reason={activity.decisionReason}
+        />
+      ) : (
+        <Alert variant="destructive">
+          <AlertTitle>Classification failed</AlertTitle>
+          <AlertDescription>{failureMessage}</AlertDescription>
+        </Alert>
+      )}
     </ToolResultCard>
   )
 }

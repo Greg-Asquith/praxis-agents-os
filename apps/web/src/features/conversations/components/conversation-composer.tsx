@@ -385,7 +385,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
               ? "Start with a focused prompt for the selected agent."
               : "Send a follow-up prompt.")
           }
-          rows={1}
+          rows={2}
           value={prompt}
         />
 

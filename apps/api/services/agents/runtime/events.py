@@ -175,6 +175,7 @@ async def emit_agent_stream_event(
                 tool_call_id=part.tool_call_id,
                 name=part.tool_name,
                 result=public_function_tool_result(part),
+                outcome=getattr(part, "outcome", None),
             ),
         )
 

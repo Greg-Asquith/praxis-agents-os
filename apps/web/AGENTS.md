@@ -123,6 +123,8 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   in-place credential replacement only when the persisted status requests it.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
+- Declined tool rows use the **Declined** badge, never **Failed**, and show the
+  operator's reason when they provided one.
 - Approval presenters may consume server-owned display arguments prefixed with
   `_`; generic fallback fields hide that presentation metadata, and approval
   replay uses the separate executable argument payload.

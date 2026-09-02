@@ -56,6 +56,7 @@ async def record_tool_invocation_audit_event(
     parent_tool_call_id: str | None = None,
     derived_from_untrusted: bool | None = None,
     taint_sources: list[dict[str, str]] | None = None,
+    denial_reason: str | None = None,
 ) -> None:
     """Record one tool invocation in an independent committed transaction."""
     try:
@@ -96,6 +97,7 @@ async def record_tool_invocation_audit_event(
                         "outcome": outcome,
                         "approval_ref": approval_ref,
                         "error_code": error_code,
+                        **({"denial_reason": denial_reason} if denial_reason is not None else {}),
                         "run_id": str(run.id),
                         "agent_id": str(agent.id),
                         "agent_name": agent.name,

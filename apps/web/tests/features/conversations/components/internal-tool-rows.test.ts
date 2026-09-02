@@ -163,6 +163,7 @@ describe("delegation tool rows", () => {
       createElement(DelegationToolRow, {
         activity: {
           ...delegationActivity({ status: "running" }),
+          decisionReason: "Keep this task with the current agent.",
           status: "denied",
         },
         defaultOpen: false,
@@ -187,6 +188,8 @@ describe("delegation tool rows", () => {
     expect(failed).toContain(">Failed<")
     expect(failed).toContain('aria-expanded="true"')
     expect(denied).toContain("This delegation was declined, so no work was started.")
+    expect(denied).toContain("Message to Agent")
+    expect(denied).toContain("Keep this task with the current agent.")
     expect(denied).toContain(">Declined<")
     expect(denied).not.toContain("Delegating to Research Agent…")
     expect(running).toContain("Delegating to Research Agent…")
@@ -332,6 +335,7 @@ describe("artifact tool rows", () => {
     const denied = render(
       createElement(ArtifactToolRow, {
         activity: activity({
+          decisionReason: "Keep the existing version.",
           name: "create_artifact",
           status: "denied",
           result: undefined,
@@ -355,7 +359,10 @@ describe("artifact tool rows", () => {
     expect(running).toContain("Launch map")
     expect(running).toContain('aria-busy="true"')
     expect(denied).toContain("This artifact change was declined. Nothing was saved.")
+    expect(denied).toContain("Message to Agent")
+    expect(denied).toContain("Keep the existing version.")
     expect(denied).toContain(">Declined<")
+    expect(denied).toContain('aria-label="Create Artifact declined"')
     expect(malformed).toBe("")
   })
 
@@ -779,7 +786,7 @@ describe("file tool rows", () => {
     expect(html).not.toContain('data-slot="tool-field-well"')
   })
 
-  it("renders running and failed file states without claiming success", () => {
+  it("renders running, failed, and declined file states without claiming success", () => {
     const running = render(
       createElement(FileToolRow, {
         activity: activity({ name: "read_file", status: "running", result: undefined }),
@@ -796,12 +803,25 @@ describe("file tool rows", () => {
         defaultOpen: false,
       })
     )
+    const denied = render(
+      createElement(FileToolRow, {
+        activity: activity({
+          decisionReason: "Keep the existing file.",
+          name: "write_file",
+          status: "denied",
+          result: undefined,
+        }),
+        defaultOpen: false,
+      })
+    )
 
     expect(running).toContain("Reading file…")
     expect(running).toContain('aria-busy="true"')
     expect(failed).toContain("Storage was unavailable.")
     expect(failed).toContain(">Failed<")
     expect(failed).not.toContain(">Done<")
+    expect(denied).toContain('aria-label="Save File declined"')
+    expect(denied).toContain("Keep the existing file.")
   })
 
   it("keeps the existing file target visible while an edit awaits approval", () => {

@@ -90,8 +90,11 @@ export function ActivityStatusBadge({
   if (status === "awaiting_approval") {
     return <Badge variant="warning">{content}</Badge>
   }
-  if (status === "failed" || status === "denied") {
+  if (status === "failed") {
     return <Badge variant="destructive">{content}</Badge>
+  }
+  if (status === "denied") {
+    return <Badge variant="secondary">{content}</Badge>
   }
   return <Badge variant="secondary">{content}</Badge>
 }
@@ -109,7 +112,7 @@ function statusColor(status: ActivityStatus) {
   if (status === "completed") {
     return "text-success"
   }
-  if (status === "failed" || status === "denied") {
+  if (status === "failed") {
     return "text-destructive"
   }
   return "text-muted-foreground"

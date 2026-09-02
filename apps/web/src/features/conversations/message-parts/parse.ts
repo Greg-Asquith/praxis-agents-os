@@ -45,6 +45,7 @@ const TOOL_RESULT_PART_KINDS = new Set(["tool-return", "builtin-tool-return", "n
 const TOOL_CALL_PART_KINDS = new Set(["tool-call", "builtin-tool-call", "native-tool-call"])
 
 export type LiveToolResult = {
+  decisionReason?: string
   result: unknown
   status: "running" | "completed" | "failed" | "denied"
 }
@@ -128,6 +129,9 @@ export function parseConversationMessages(
           if (result.decision !== undefined) {
             mergedActivity.decision = result.decision
           }
+          if (result.decisionReason !== undefined) {
+            mergedActivity.decisionReason = result.decisionReason
+          }
           return mergedActivity
         }
         // A result that streamed live but is not persisted yet still completes
@@ -135,11 +139,18 @@ export function parseConversationMessages(
         const liveResult = belongsToActiveRun
           ? liveResultsByCallIdentity?.get(toolActivityIdentity(activity.agentRunId, activity.id))
           : undefined
-        if (liveResult?.status === "completed") {
+        if (
+          liveResult?.status === "completed" ||
+          liveResult?.status === "denied" ||
+          liveResult?.status === "failed"
+        ) {
           return {
             ...activityWithPendingWorkflow,
             result: liveResult.result,
-            status: "completed" as const,
+            status: liveResult.status,
+            ...(liveResult.decisionReason === undefined
+              ? {}
+              : { decisionReason: liveResult.decisionReason }),
           }
         }
         if (belongsToActiveRun && runAwaitsApproval) {
@@ -333,6 +344,9 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       if (approvalMetadata?.decision !== undefined) {
         activity.decision = approvalMetadata.decision
       }
+      if (approvalMetadata?.reason !== undefined) {
+        activity.decisionReason = approvalMetadata.reason
+      }
       parsed.toolActivities.push(activity)
       parsed.parts?.push({ kind: "tool", id: partId, activity })
       return
@@ -402,6 +416,7 @@ function codeModeScriptFromMetadata(
     }
     const traceStatus = codeModeTraceStatus(value["status"])
     const excerpt = stringValue(value["excerpt"])
+    const decisionReason = stringValue(value["decision_reason"])
     const hasPresentationResult = Object.hasOwn(value, "presentation_result")
     return [
       {
@@ -409,6 +424,7 @@ function codeModeScriptFromMetadata(
         kind: traceStatus === "awaiting_approval" ? "approval" : "result",
         name,
         status: traceStatus,
+        ...(decisionReason === null ? {} : { decisionReason }),
         ...(hasPresentationResult
           ? {
               result: value["presentation_result"],
@@ -669,7 +685,7 @@ function extractFallbackText(value: unknown): string | null {
 function approvalMetadataForTool(
   metadata: Record<string, unknown> | null,
   toolCallId: string
-): { decision: ToolApprovalDecision; effectiveArgs?: unknown } | null {
+): { decision: ToolApprovalDecision; effectiveArgs?: unknown; reason?: string } | null {
   if (!metadata) {
     return null
   }
@@ -689,11 +705,14 @@ function approvalMetadataForTool(
     return null
   }
 
-  const result: { decision: ToolApprovalDecision; effectiveArgs?: unknown } = {
+  const result: { decision: ToolApprovalDecision; effectiveArgs?: unknown; reason?: string } = {
     decision,
   }
   if ("effective_args" in approvalMetadata) {
     result.effectiveArgs = approvalMetadata["effective_args"]
+  }
+  if (typeof approvalMetadata["reason"] === "string") {
+    result.reason = approvalMetadata["reason"]
   }
   return result
 }

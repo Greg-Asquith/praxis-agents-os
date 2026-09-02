@@ -95,6 +95,8 @@ class ToolResultEvent(StreamEventPayload):
     parent_tool_call_id: str | None = Field(default=None, min_length=1)
     name: str | None = Field(min_length=1)
     result: Any
+    outcome: str | None = None
+    reason: str | None = None
 
 
 class TaintSource(BaseModel):
@@ -267,6 +269,7 @@ def stream_protocol_samples() -> list[dict[str, Any]]:
             name=None,
             result={"status": "completed"},
             parent_tool_call_id="workflow-call",
+            outcome="success",
         ),
         ToolApprovalRequiredEvent(
             tool_call_id="nested-call",

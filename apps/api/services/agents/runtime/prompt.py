@@ -44,6 +44,13 @@ PLANNING_INSTRUCTIONS = """\
 - Only pass an empty list when the plan itself no longer applies.
 """
 
+APPROVAL_INSTRUCTIONS = """\
+## Approvals
+
+- A tool result that says the user declined an action means the action did not happen. Do not call the same tool with the same arguments again.
+- Acknowledge the decision. If the user gave a reason, act on it or ask a clarifying question. If they gave no reason, ask whether they want an alternative.
+"""
+
 FILE_LINK_INSTRUCTIONS = """\
 ## Workspace Links
 
@@ -143,6 +150,7 @@ def runtime_prompt_blocks(
             PLANNING_INSTRUCTIONS,
             budget=settings.AGENT_PROMPT_PLANNING_BUDGET,
         ),
+        PromptBlock("approvals", APPROVAL_INSTRUCTIONS),
         PromptBlock("file_links", FILE_LINK_INSTRUCTIONS),
         PromptBlock(
             "delegation",

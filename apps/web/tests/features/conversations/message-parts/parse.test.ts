@@ -190,6 +190,89 @@ describe("parseConversationMessages", () => {
     ])
   })
 
+  it("keeps the raw approval reason separate from the framed denial", () => {
+    const parsed = parseConversationMessages([
+      message("message-1", "assistant", 1, [
+        {
+          part_kind: "tool-call",
+          tool_call_id: "send-1",
+          tool_name: "gmail_send_message",
+          args: { subject: "Update" },
+        },
+      ]),
+      message(
+        "message-2",
+        "tool",
+        2,
+        [
+          {
+            part_kind: "tool-return",
+            tool_call_id: "send-1",
+            tool_name: "gmail_send_message",
+            outcome: "denied",
+            content:
+              "The user declined this action, so it was not performed. Reason: Too expensive.",
+          },
+        ],
+        {
+          approval_results: {
+            "send-1": {
+              decision: "denied",
+              message:
+                "The user declined this action, so it was not performed. Reason: Too expensive.",
+              reason: "Too expensive.",
+            },
+          },
+        }
+      ),
+    ])
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      decision: "denied",
+      decisionReason: "Too expensive.",
+      status: "denied",
+    })
+  })
+
+  it("merges a live top-level denial before persistence", () => {
+    const parsed = parseConversationMessages(
+      [
+        message(
+          "message-1",
+          "assistant",
+          1,
+          [
+            {
+              part_kind: "tool-call",
+              tool_call_id: "send-1",
+              tool_name: "gmail_send_message",
+              args: { subject: "Update" },
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
+      ],
+      run("run-1", "running"),
+      [],
+      new Map([
+        [
+          toolActivityIdentity("run-1", "send-1"),
+          {
+            decisionReason: "The budget is too high.",
+            result: "The user declined this action.",
+            status: "denied" as const,
+          },
+        ],
+      ])
+    )
+
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      decisionReason: "The budget is too high.",
+      result: "The user declined this action.",
+      status: "denied",
+    })
+  })
+
   it("rebuilds a workflow tree only from persisted nested-trace metadata", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [

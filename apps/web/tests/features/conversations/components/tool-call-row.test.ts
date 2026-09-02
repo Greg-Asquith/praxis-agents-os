@@ -133,6 +133,28 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).not.toContain("What went wrong")
   })
 
+  it("opens live denials and shows the operator reason separately", () => {
+    const html = renderRow(
+      {
+        id: "search-1",
+        kind: "result",
+        name: "web_search",
+        status: "denied",
+        args: { query: "sensitive topic" },
+        result:
+          "The user declined this action, so it was not performed. Reason: Use the approved source.",
+        decisionReason: "Use the approved source.",
+      },
+      true
+    )
+
+    expect(html).toContain('open=""')
+    expect(html).toContain("This action was declined and was not performed.")
+    expect(html).toContain("Message to Agent")
+    expect(html).toContain("Use the approved source.")
+    expect(html).not.toContain("What went wrong")
+  })
+
   it("renders file outcomes as actionable entity rows inside the shared field well", () => {
     const html = renderRow(
       {

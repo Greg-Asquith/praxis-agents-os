@@ -186,6 +186,7 @@ describe("MemoryToolRow", () => {
     )
     const denied = render(
       activity({
+        decisionReason: "Do not retain this detail.",
         name: "update_memory",
         result: undefined,
         status: "denied",
@@ -196,8 +197,10 @@ describe("MemoryToolRow", () => {
     expect(failed).toContain("What Went Wrong")
     expect(failed).toContain("The memory store was unavailable.")
     expect(failed).toContain(">Failed<")
-    expect(denied).toContain("Action Declined")
     expect(denied).toContain("This memory action was declined. Nothing was changed.")
+    expect(denied).toContain("Message to Agent")
+    expect(denied).toContain("Do not retain this detail.")
+    expect(denied).toContain('aria-label="Update Memory declined"')
     expect(malformed).toBe("")
   })
 })

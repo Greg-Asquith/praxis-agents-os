@@ -32,6 +32,7 @@ export type ToolCallState = {
   result: unknown
   status: "running" | "awaiting_approval" | "completed" | "failed" | "denied"
   timelineSequence: number
+  decisionReason?: string
   parentToolCallId?: string
   workflowState?: WorkflowState
   workflowOutputExcerpt?: string | null
@@ -242,9 +243,14 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             args: existing?.args,
             name: streamEvent.data.name ?? existing?.name ?? "tool",
             result: streamEvent.data.result,
-            status: nestedResultStatus(streamEvent.data.result, parentToolCallId),
+            status: resultStatus(
+              streamEvent.data.result,
+              parentToolCallId,
+              streamEvent.data.outcome
+            ),
             timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
+            ...(streamEvent.data.reason == null ? {} : { decisionReason: streamEvent.data.reason }),
             ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
             ...(existing?.workflowState === undefined
               ? {}
@@ -458,10 +464,14 @@ export function selectChildToolCalls(
 const childToolCallCache = new WeakMap<ToolCallState[], Map<string, ToolCallState[]>>()
 const EMPTY_TOOL_CALLS: ToolCallState[] = []
 
-function nestedResultStatus(
+function resultStatus(
   result: unknown,
-  parentToolCallId: string | undefined
+  parentToolCallId: string | undefined,
+  outcome: string | null | undefined
 ): ToolCallState["status"] {
+  if (outcome === "denied" || outcome === "failed") {
+    return outcome
+  }
   if (!parentToolCallId || !isRecord(result)) {
     return "completed"
   }
