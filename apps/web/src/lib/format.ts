@@ -256,3 +256,7 @@ export function formatCurrency(
     return `${currencyCode} ${new Intl.NumberFormat(undefined, fallbackOptions).format(value)}`
   }
 }
+
+export function microsToCurrencyUnits(value: number): number {
+  return value / 1_000_000
+}

@@ -7,6 +7,7 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
+import { microsToCurrencyUnits } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 const PARAMETER_TYPES = new Set([
@@ -538,7 +539,7 @@ function formatParameters(parameters: RecommendationParameters): string {
       continue
     const label = parameterLabel(key)
     const rendered = key.endsWith("_micros")
-      ? `${formatNumber(Number(value) / 1_000_000)} account currency units`
+      ? `${formatNumber(microsToCurrencyUnits(Number(value)))} account currency units`
       : key.includes("roas") || key.includes("multiplier")
         ? `${formatNumber(Number(value))}×`
         : humanizeGoogleAdsToken(String(value))
@@ -571,7 +572,8 @@ function formatImpact(impact: Impact | null): string {
       return []
     const render =
       key === "costMicros"
-        ? (number: number) => `${formatNumber(number / 1_000_000)} account currency units`
+        ? (number: number) =>
+            `${formatNumber(microsToCurrencyUnits(number))} account currency units`
         : formatNumber
     return [`${label}: ${render(base)} → ${render(potential)}`]
   })

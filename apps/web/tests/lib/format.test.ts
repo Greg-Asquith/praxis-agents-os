@@ -8,6 +8,7 @@ import {
   formatGoogleAdsAccountId,
   humanizeKey,
   initials,
+  microsToCurrencyUnits,
   normalize,
   normalizeOptionalText,
   pluralize,
@@ -22,6 +23,11 @@ describe("format helpers", () => {
     expect(formatBytes(1023)).toBe("1023 B")
     expect(formatBytes(1024)).toBe("1.0 KB")
     expect(formatBytes(1024 * 1024)).toBe("1.0 MB")
+  })
+
+  it("converts micros to currency units", () => {
+    expect(microsToCurrencyUnits(1)).toBe(0.000001)
+    expect(microsToCurrencyUnits(12_500_000)).toBe(12.5)
   })
 
   it("formats durations without rolling seconds up to 60", () => {

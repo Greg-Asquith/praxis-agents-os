@@ -1,5 +1,11 @@
 """Operation-specific Google Ads tool-result contracts."""
 
+from .campaign_budgets import (
+    GoogleAdsCampaignBudgetAmount,
+    GoogleAdsCreateCampaignBudgetOutput,
+    GoogleAdsDailyBudgetAmount,
+    GoogleAdsTotalBudgetAmount,
+)
 from .campaign_links import GoogleAdsCampaignLinkOutput
 from .campaign_status import GoogleAdsCampaignStatusOutput
 from .create_negative_keyword_list import GoogleAdsCreateNegativeKeywordListOutput
@@ -34,9 +40,12 @@ __all__ = [
     "GoogleAdsAddCampaignKeywordOutput",
     "GoogleAdsAddNegativeKeywordsOutput",
     "GoogleAdsApplyRecommendationsOutput",
+    "GoogleAdsCampaignBudgetAmount",
     "GoogleAdsCampaignLinkOutput",
     "GoogleAdsCampaignStatusOutput",
+    "GoogleAdsCreateCampaignBudgetOutput",
     "GoogleAdsCreateNegativeKeywordListOutput",
+    "GoogleAdsDailyBudgetAmount",
     "GoogleAdsDeviceAdjustment",
     "GoogleAdsDeviceBidModifierOutput",
     "GoogleAdsDismissRecommendationsOutput",
@@ -49,4 +58,5 @@ __all__ = [
     "GoogleAdsRemoveNegativeKeywordsOutput",
     "GoogleAdsReportFieldSummary",
     "GoogleAdsRunReportOutput",
+    "GoogleAdsTotalBudgetAmount",
 ]

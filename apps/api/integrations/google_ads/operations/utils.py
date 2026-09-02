@@ -7,12 +7,13 @@ from collections.abc import Callable, Mapping, Sequence
 from decimal import Decimal
 from typing import Any
 
+from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
+
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
 _ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.id")
 _RECOMMENDATION_RESOURCE_PATTERN = re.compile(
     r"^customers/(?P<customer_id>\d{1,32})/recommendations/[A-Za-z0-9_.~-]{1,256}$"
 )
-_MAX_ENTITY_ID = (1 << 63) - 1
 _GAQL_LIKE_LITERAL_ESCAPES = {
     "\\": "\\\\",
     "'": "\\'",
@@ -101,7 +102,7 @@ def entity_id_boundary_filter(
         raise ValueError("Google Ads entity id field is invalid")
     if minimum_id is None:
         return None
-    if minimum_id < 0 or minimum_id > _MAX_ENTITY_ID:
+    if minimum_id < 0 or minimum_id > GOOGLE_ADS_INT64_MAX:
         raise ValueError("Google Ads entity minimum id is outside the int64 range")
     operator = ">=" if inclusive else ">"
     return f"{field} {operator} {minimum_id}"

@@ -5,6 +5,9 @@
 import pytest
 
 from core.exceptions.general import AppValidationError
+from integrations.google_ads.tools.create_campaign_budget import (
+    DEFINITION as CREATE_CAMPAIGN_BUDGET_DEFINITION,
+)
 from integrations.google_ads.tools.update_campaign_status import (
     DEFINITION as CAMPAIGN_STATUS_DEFINITION,
 )
@@ -18,7 +21,11 @@ from services.agents.utils import validate_tool_configuration
 
 @pytest.mark.parametrize(
     "definition",
-    [CAMPAIGN_STATUS_DEFINITION, DEVICE_BID_MODIFIER_DEFINITION],
+    [
+        CAMPAIGN_STATUS_DEFINITION,
+        CREATE_CAMPAIGN_BUDGET_DEFINITION,
+        DEVICE_BID_MODIFIER_DEFINITION,
+    ],
 )
 def test_google_ads_spend_policy_is_approval_only(monkeypatch, definition) -> None:
     monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)

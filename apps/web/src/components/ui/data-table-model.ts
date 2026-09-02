@@ -1,7 +1,7 @@
 // apps/web/src/components/ui/data-table-model.ts
 
 import { nodeText } from "@/components/tool-ui/untrusted-node"
-import { formatCurrency, formatDateTime, formatDuration } from "@/lib/format"
+import { formatCurrency, formatDateTime, formatDuration, microsToCurrencyUnits } from "@/lib/format"
 import type { ExportTable } from "@/lib/table-export"
 
 export type DataColumnKind =
@@ -40,7 +40,9 @@ export function formatDataCell(column: DataColumn, value: unknown): string {
       return text
     }
     const amount =
-      column.unit === "micros" || isMicrosColumnKey(column.key) ? numeric / 1_000_000 : numeric
+      column.unit === "micros" || isMicrosColumnKey(column.key)
+        ? microsToCurrencyUnits(numeric)
+        : numeric
     return formatCurrency(amount, column.currencyCode ?? null, {
       fallbackMaximumFractionDigits: 6,
     })

@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
 from integrations.google_ads.references.recommendation import recommendation_customer_id
 from services.integrations.context.results import (
     IntegrationFanOutEntry,
@@ -13,8 +14,6 @@ from services.integrations.context.results import (
 )
 
 from .base import GoogleAdsStrictModel
-
-_MAX_INT64 = (1 << 63) - 1
 
 
 class _RecommendationParameterBase(GoogleAdsStrictModel):
@@ -30,7 +29,7 @@ class _RecommendationParameterBase(GoogleAdsStrictModel):
 
 class GoogleAdsCampaignBudgetParameters(_RecommendationParameterBase):
     parameter_type: Literal["campaignBudget"] = "campaignBudget"
-    new_budget_amount_micros: int = Field(gt=0, le=_MAX_INT64)
+    new_budget_amount_micros: int = Field(gt=0, le=GOOGLE_ADS_INT64_MAX)
 
 
 class GoogleAdsKeywordParameters(_RecommendationParameterBase):
@@ -41,7 +40,7 @@ class GoogleAdsKeywordParameters(_RecommendationParameterBase):
         pattern=r"^customers/\d{1,32}/adGroups/\d{1,32}$",
     )
     match_type: Literal["EXACT", "PHRASE", "BROAD"]
-    cpc_bid_micros: int | None = Field(default=None, gt=0, le=_MAX_INT64)
+    cpc_bid_micros: int | None = Field(default=None, gt=0, le=GOOGLE_ADS_INT64_MAX)
 
     @model_validator(mode="after")
     def validate_ad_group_scope(self) -> "GoogleAdsKeywordParameters":
@@ -54,11 +53,11 @@ class GoogleAdsKeywordParameters(_RecommendationParameterBase):
 
 class GoogleAdsTargetCpaOptInParameters(_RecommendationParameterBase):
     parameter_type: Literal["targetCpaOptIn"] = "targetCpaOptIn"
-    target_cpa_micros: int = Field(gt=0, le=_MAX_INT64)
+    target_cpa_micros: int = Field(gt=0, le=GOOGLE_ADS_INT64_MAX)
     new_campaign_budget_amount_micros: int | None = Field(
         default=None,
         gt=0,
-        le=_MAX_INT64,
+        le=GOOGLE_ADS_INT64_MAX,
     )
 
 
@@ -68,7 +67,7 @@ class GoogleAdsTargetRoasOptInParameters(_RecommendationParameterBase):
     new_campaign_budget_amount_micros: int | None = Field(
         default=None,
         gt=0,
-        le=_MAX_INT64,
+        le=GOOGLE_ADS_INT64_MAX,
     )
 
     @model_validator(mode="after")
@@ -80,12 +79,12 @@ class GoogleAdsTargetRoasOptInParameters(_RecommendationParameterBase):
 
 class GoogleAdsMoveUnusedBudgetParameters(_RecommendationParameterBase):
     parameter_type: Literal["moveUnusedBudget"] = "moveUnusedBudget"
-    budget_micros_to_move: int = Field(gt=0, le=_MAX_INT64)
+    budget_micros_to_move: int = Field(gt=0, le=GOOGLE_ADS_INT64_MAX)
 
 
 class GoogleAdsUseBroadMatchKeywordParameters(_RecommendationParameterBase):
     parameter_type: Literal["useBroadMatchKeyword"] = "useBroadMatchKeyword"
-    new_budget_amount_micros: int = Field(gt=0, le=_MAX_INT64)
+    new_budget_amount_micros: int = Field(gt=0, le=GOOGLE_ADS_INT64_MAX)
 
 
 class GoogleAdsRaiseTargetCpaBidTooLowParameters(_RecommendationParameterBase):
@@ -96,7 +95,7 @@ class GoogleAdsRaiseTargetCpaBidTooLowParameters(_RecommendationParameterBase):
 class GoogleAdsForecastingSetTargetRoasParameters(_RecommendationParameterBase):
     parameter_type: Literal["forecastingSetTargetRoas"] = "forecastingSetTargetRoas"
     target_roas: float | None = Field(default=None, ge=0.01, le=1000.0)
-    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=_MAX_INT64)
+    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=GOOGLE_ADS_INT64_MAX)
 
     @model_validator(mode="after")
     def require_value(self) -> "GoogleAdsForecastingSetTargetRoasParameters":
@@ -117,8 +116,8 @@ class GoogleAdsLowerTargetRoasParameters(_RecommendationParameterBase):
 
 class GoogleAdsForecastingSetTargetCpaParameters(_RecommendationParameterBase):
     parameter_type: Literal["forecastingSetTargetCpa"] = "forecastingSetTargetCpa"
-    target_cpa_micros: int | None = Field(default=None, gt=0, le=_MAX_INT64)
-    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=_MAX_INT64)
+    target_cpa_micros: int | None = Field(default=None, gt=0, le=GOOGLE_ADS_INT64_MAX)
+    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=GOOGLE_ADS_INT64_MAX)
 
     @model_validator(mode="after")
     def require_value(self) -> "GoogleAdsForecastingSetTargetCpaParameters":
@@ -129,8 +128,8 @@ class GoogleAdsForecastingSetTargetCpaParameters(_RecommendationParameterBase):
 
 class GoogleAdsSetTargetCpaParameters(_RecommendationParameterBase):
     parameter_type: Literal["setTargetCpa"] = "setTargetCpa"
-    target_cpa_micros: int | None = Field(default=None, gt=0, le=_MAX_INT64)
-    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=_MAX_INT64)
+    target_cpa_micros: int | None = Field(default=None, gt=0, le=GOOGLE_ADS_INT64_MAX)
+    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=GOOGLE_ADS_INT64_MAX)
 
     @model_validator(mode="after")
     def require_value(self) -> "GoogleAdsSetTargetCpaParameters":
@@ -142,7 +141,7 @@ class GoogleAdsSetTargetCpaParameters(_RecommendationParameterBase):
 class GoogleAdsSetTargetRoasParameters(_RecommendationParameterBase):
     parameter_type: Literal["setTargetRoas"] = "setTargetRoas"
     target_roas: float | None = Field(default=None, ge=0.01, le=1000.0)
-    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=_MAX_INT64)
+    campaign_budget_amount_micros: int | None = Field(default=None, gt=0, le=GOOGLE_ADS_INT64_MAX)
 
     @model_validator(mode="after")
     def require_value(self) -> "GoogleAdsSetTargetRoasParameters":

@@ -2,11 +2,13 @@
 
 from .ad_group import GoogleAdsAdGroupReference
 from .campaign import GoogleAdsCampaignReference
+from .campaign_budget import GoogleAdsCampaignBudgetReference
 from .recommendation import GoogleAdsRecommendationReference
 from .shared_set import GoogleAdsSharedSetReference
 
 __all__ = [
     "GoogleAdsAdGroupReference",
+    "GoogleAdsCampaignBudgetReference",
     "GoogleAdsCampaignReference",
     "GoogleAdsRecommendationReference",
     "GoogleAdsSharedSetReference",

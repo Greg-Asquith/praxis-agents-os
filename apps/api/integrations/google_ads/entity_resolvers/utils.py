@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
 
+from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
 from services.integrations.context.domain import (
     IntegrationBinding,
     ResolvedActiveContext,
@@ -29,7 +30,7 @@ class _ResolverContext(Protocol):
 
 
 MAX_EXACT_REFERENCES = 50
-MAX_GOOGLE_ADS_ENTITY_ID = (1 << 63) - 1
+MAX_GOOGLE_ADS_ENTITY_ID = GOOGLE_ADS_INT64_MAX
 MAX_GOOGLE_ADS_ENTITY_CURSOR_LENGTH = 128
 _FINGERPRINT_HEX_LENGTH = 16
 _CURSOR_PATTERN = re.compile(
