@@ -64,11 +64,12 @@ _OPENAI_PRICES = (
     _price("openai", "text-embedding-3-large", date(2024, 1, 25), "0.13", "0", "0", "0"),
 )
 
-# Standard first-party Claude API rates as of 2026-08-12. Cache writes use
+# Standard first-party Claude API rates as of 2026-09-02. Cache writes use
 # the default five-minute rate; one-hour writes and regional inference are not
 # distinguishable in the usage ledger.
 # https://platform.claude.com/docs/en/about-claude/pricing
 _ANTHROPIC_PRICES = (
+    _price("anthropic", "claude-fable-5-1", date(2026, 9, 1), "10", "0.25", "12.5", "50"),
     _price("anthropic", "claude-fable-5", date(2026, 6, 9), "10", "1", "12.5", "50"),
     _price("anthropic", "claude-opus-4-8", date(2026, 5, 27), "5", "0.5", "6.25", "25"),
     _price("anthropic", "claude-opus-4-7", date(2026, 5, 27), "5", "0.5", "6.25", "25"),
@@ -79,10 +80,12 @@ _ANTHROPIC_PRICES = (
     _price("anthropic", "claude-haiku-4-5", date(2026, 5, 27), "1", "0.1", "1.25", "5"),
 )
 
-# Standard Gemini Developer API rates as of 2026-08-13. Context-cache storage
+# Standard Gemini Developer API rates as of 2026-09-02. Context-cache storage
 # duration and non-standard execution tiers are outside the ledger contract.
 # https://ai.google.dev/gemini-api/docs/pricing
 _GOOGLE_PRICES = (
+    _price("google", "gemini-3.8-flash", date(2026, 9, 2), "0.75", "0.075", "0.75", "3.75"),
+    _price("google", "gemini-3.8-flash", date(2027, 1, 1), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.7-flash", date(2026, 8, 13), "0.75", "0.075", "0.75", "3.75"),
     _price("google", "gemini-3.7-flash", date(2027, 1, 1), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.6-flash", date(2026, 8, 12), "1.5", "0.15", "1.5", "7.5"),

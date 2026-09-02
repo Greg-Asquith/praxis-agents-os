@@ -1,7 +1,9 @@
 """Public model-price registry contracts."""
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+
+import pytest
 
 from services.agents.models.registry import list_models
 from services.ai_usage.pricing import find_image_output_price, find_price
@@ -44,10 +46,14 @@ def test_openai_price_cuts_are_effective_from_july_30() -> None:
     ) == (Decimal("0.2"), Decimal("0.02"), Decimal("0.25"), Decimal("1.2"))
 
 
-def test_gemini_3_7_flash_introductory_pricing_expires_in_2027() -> None:
-    before_release = find_price("google", "gemini-3.7-flash", date(2026, 8, 12))
-    introductory = find_price("google", "gemini-3.7-flash", date(2026, 8, 13))
-    standard = find_price("google", "gemini-3.7-flash", date(2027, 1, 1))
+@pytest.mark.parametrize(
+    ("model", "release_date"),
+    [("gemini-3.8-flash", date(2026, 9, 2)), ("gemini-3.7-flash", date(2026, 8, 13))],
+)
+def test_gemini_flash_introductory_pricing_expires_in_2027(model: str, release_date: date) -> None:
+    before_release = find_price("google", model, release_date - timedelta(days=1))
+    introductory = find_price("google", model, release_date)
+    standard = find_price("google", model, date(2027, 1, 1))
 
     assert before_release is None
     assert introductory is not None
@@ -66,13 +72,30 @@ def test_gemini_3_7_flash_introductory_pricing_expires_in_2027() -> None:
     ) == (Decimal("1.5"), Decimal("0.15"), Decimal("1.5"), Decimal("7.5"))
 
 
+def test_fable_5_1_cache_reads_are_a_quarter_of_fable_5() -> None:
+    before_release = find_price("anthropic", "claude-fable-5-1", date(2026, 8, 31))
+    fable_5_1 = find_price("anthropic", "claude-fable-5-1", date(2026, 9, 1))
+    fable_5 = find_price("anthropic", "claude-fable-5", date(2026, 9, 1))
+
+    assert before_release is None
+    assert fable_5_1 is not None
+    assert fable_5 is not None
+    assert (
+        fable_5_1.input_usd_per_mtok,
+        fable_5_1.cache_read_usd_per_mtok,
+        fable_5_1.cache_write_usd_per_mtok,
+        fable_5_1.output_usd_per_mtok,
+    ) == (Decimal("10"), Decimal("0.25"), Decimal("12.5"), Decimal("50"))
+    assert fable_5.cache_read_usd_per_mtok == Decimal("1")
+
+
 def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
     assert find_price("azure", "customer-deployment", date(2026, 8, 12)) is None
     assert find_price("openai", "gpt-5.6-sol", date(2026, 7, 8)) is None
 
 
 def test_every_live_catalog_model_has_current_pricing() -> None:
-    on_date = date(2026, 8, 13)
+    on_date = date(2026, 9, 2)
     missing = [
         model.qualified_id
         for model in list_models()

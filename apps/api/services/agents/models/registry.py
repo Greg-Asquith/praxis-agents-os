@@ -90,6 +90,16 @@ _CATALOG: tuple[ModelInfo, ...] = (
     # Anthropic (model IDs are aliases — no date suffix)
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
+        model="claude-fable-5-1",
+        display_name="Claude Fable 5.1",
+        context_window=1_000_000,
+        model_type="max",
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_ANTHROPIC,
         model="claude-fable-5",
         display_name="Claude Fable 5",
         context_window=1_000_000,
@@ -158,6 +168,16 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_vision=True,
     ),
     # Google (Gemini Developer API or Vertex AI; selection is a settings concern)
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
+        model="gemini-3.8-flash",
+        display_name="Gemini 3.8 Flash",
+        context_window=1_048_576,
+        model_type="standard",
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
         model="gemini-3.7-flash",
