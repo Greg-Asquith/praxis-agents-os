@@ -31,6 +31,40 @@ class GoogleAdsCampaignBudgetAmountChange:
     requested_amount_micros: int
 
 
+def campaign_budget_amount_failure_ledger(
+    changes: Sequence[GoogleAdsCampaignBudgetAmountChange],
+    *,
+    outcome: str,
+    error_code: str,
+    message: str,
+) -> GoogleAdsMutationLedger:
+    """Account for every amount change when a request has no usable response body."""
+    if outcome not in {"failed", "unverified"}:
+        raise ValueError("Campaign budget amount failures must be failed or unverified")
+    parent_fields: list[dict[str, str]] = []
+    skipped_indices: dict[int, str] = {}
+    skipped_refs: list[tuple[tuple[tuple[str, str], ...], str]] = []
+    submitted: list[tuple[int, dict[str, str]]] = []
+    for change in changes:
+        _validate_change(change)
+        identity = {"budget_id": change.budget_id}
+        parent_index = len(parent_fields)
+        parent_fields.append(identity)
+        if change.previous_amount_micros == change.requested_amount_micros:
+            skipped_indices[parent_index] = "already set"
+            continue
+        submitted.append((parent_index, identity))
+    if len({change.budget_id for change in changes}) != len(changes):
+        raise ValueError("Google Ads campaign budget updates must be unique")
+    return _ledger(
+        parent_fields,
+        skipped_indices=skipped_indices,
+        skipped_refs=skipped_refs,
+        submitted=submitted,
+        outcomes=[(outcome, None, error_code, message) for _ in submitted],
+    )
+
+
 async def update_campaign_budget_amounts(
     client: GoogleAdsClient,
     *,

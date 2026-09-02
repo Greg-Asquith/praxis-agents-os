@@ -26,6 +26,14 @@ def _choice(entry, campaign: Mapping[str, Any]) -> EntityChoice | None:
     if not campaign_id.isdigit() or status == "REMOVED":
         return None
     name = str(campaign.get("name", "")).strip() or "(unnamed campaign)"
+    budget_resource = str(campaign.get("campaignBudget", "")).strip()
+    budget_prefix = f"customers/{entry.external_id}/campaignBudgets/"
+    campaign_budget_id = budget_resource.removeprefix(budget_prefix)
+    if (
+        budget_resource != f"{budget_prefix}{campaign_budget_id}"
+        or not campaign_budget_id.isdigit()
+    ):
+        campaign_budget_id = None
     return EntityChoice.from_reference(
         GoogleAdsCampaignReference(
             customer_id=entry.external_id,
@@ -34,6 +42,7 @@ def _choice(entry, campaign: Mapping[str, Any]) -> EntityChoice | None:
             description=status.title() if status else "Campaign",
             scope_label=entry.display_name,
             status=status or None,
+            campaign_budget_id=campaign_budget_id,
         ),
         icon="google_ads",
     )

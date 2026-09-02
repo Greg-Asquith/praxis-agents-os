@@ -32,6 +32,7 @@ describe("code-mode live and replay parity", () => {
     )
 
     expect(activity).toMatchObject({
+      args: { value: "display change" },
       derivedFromUntrusted: true,
       kind: "approval",
       status: "awaiting_approval",
@@ -132,7 +133,7 @@ function suspendedMessages(): ConversationMessage[] {
 
 function taintedApproval(): ApprovalState {
   return {
-    args: { value: "change" },
+    args: { value: "display change" },
     derived_from_untrusted: true,
     name: "write_setting",
     status: "pending",

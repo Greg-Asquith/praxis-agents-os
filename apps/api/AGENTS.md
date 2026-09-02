@@ -221,6 +221,9 @@ follows:
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorized immediately before resume.
+  A tool may add trusted display-only approval arguments from resolved runtime
+  context; persist them as presentation metadata and keep the original tool
+  arguments as the only replayable execution payload.
   Editable `records` fields also enforce their declared minimum row count and
   required columns before resume, even when the operator approves without edits.
   An omitted secondary records field stays optional; when present, it must meet

@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, ClassVar, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_serializer, model_validator
 
 from services.integrations.entity_references import ScopedEntityReference
 
@@ -47,6 +47,11 @@ class GoogleAdsCampaignBudgetReference(ScopedEntityReference):
         if budget_id is not None:
             normalized["budget_id"] = budget_id
         return normalized
+
+    @field_serializer("amount_micros", "total_amount_micros", when_used="json")
+    def serialize_micros(self, value: int | None) -> str | None:
+        """Keep provider int64 money values exact in JSON clients."""
+        return str(value) if value is not None else None
 
     @property
     def provider_scope_id(self) -> str:

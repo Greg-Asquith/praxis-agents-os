@@ -2,9 +2,10 @@
 
 """Input and result contracts for Google Ads campaign budget actions."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import AfterValidator, Field
+from pydantic_ai import ModelRetry
 
 from integrations.google_ads.references import (
     GoogleAdsCampaignBudgetReference,
@@ -12,29 +13,38 @@ from integrations.google_ads.references import (
 )
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
+from ..utils.money import money_to_micros
 from .base import GoogleAdsStrictModel
 
 
-class GoogleAdsDailyBudgetAmount(GoogleAdsStrictModel):
-    daily_amount: str = Field(
+def _valid_money_amount(value: str) -> str:
+    try:
+        money_to_micros(value)
+    except ModelRetry as exc:
+        raise ValueError(str(exc)) from exc
+    return value
+
+
+GoogleAdsMoneyAmount = Annotated[
+    str,
+    Field(
         min_length=1,
         max_length=32,
         description=(
             "Positive decimal amount in the Google Ads account currency, with up to six "
             "decimal places. Use currency units, not micros."
         ),
-    )
+    ),
+    AfterValidator(_valid_money_amount),
+]
+
+
+class GoogleAdsDailyBudgetAmount(GoogleAdsStrictModel):
+    daily_amount: GoogleAdsMoneyAmount
 
 
 class GoogleAdsTotalBudgetAmount(GoogleAdsStrictModel):
-    total_amount: str = Field(
-        min_length=1,
-        max_length=32,
-        description=(
-            "Positive decimal amount in the Google Ads account currency, with up to six "
-            "decimal places. Use currency units, not micros."
-        ),
-    )
+    total_amount: GoogleAdsMoneyAmount
 
 
 type GoogleAdsCampaignBudgetAmount = GoogleAdsDailyBudgetAmount | GoogleAdsTotalBudgetAmount
@@ -42,21 +52,14 @@ type GoogleAdsCampaignBudgetAmount = GoogleAdsDailyBudgetAmount | GoogleAdsTotal
 
 class GoogleAdsCampaignBudgetAmountUpdate(GoogleAdsStrictModel):
     budget: GoogleAdsCampaignBudgetReference
-    amount: str = Field(
-        min_length=1,
-        max_length=32,
-        description=(
-            "Positive decimal amount in the Google Ads account currency, with up to six "
-            "decimal places. Use currency units, not micros."
-        ),
-    )
+    amount: GoogleAdsMoneyAmount
 
 
 class GoogleAdsCreateCampaignBudgetData(GoogleAdsStrictModel):
     name: str
     period: Literal["DAILY", "CUSTOM_PERIOD"]
     amount: str
-    amount_micros: int
+    amount_micros: str = Field(pattern=r"^\d+$")
     currency_code: str
     delivery_method: Literal["STANDARD", "ACCELERATED"]
     explicitly_shared: bool
@@ -78,8 +81,8 @@ class GoogleAdsCampaignBudgetAmountOutcome(GoogleAdsStrictModel):
     reference: GoogleAdsCampaignBudgetReference
     previous_amount: str
     requested_amount: str
-    previous_amount_micros: int
-    requested_amount_micros: int
+    previous_amount_micros: str = Field(pattern=r"^\d+$")
+    requested_amount_micros: str = Field(pattern=r"^\d+$")
     outcome: Literal["updated", "already_set", "failed", "unverified"]
     campaign_label_count: int = Field(ge=0)
     campaign_labels_truncated: bool

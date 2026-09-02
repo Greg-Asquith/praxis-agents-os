@@ -3,7 +3,7 @@
 """Authorize tool fields and dispatch entity-reference lookups."""
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -39,6 +39,9 @@ from services.conversations.utils import get_conversation_for_actor
 from services.integrations.context import resolve_active_context
 from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
 from services.tools import get_disabled_tools
+
+if TYPE_CHECKING:
+    from services.agents.runtime.context import RuntimeDeps
 
 
 @dataclass(frozen=True)
@@ -246,6 +249,44 @@ async def resolve_authorized_references(
             details={"entity_kind": authorized.entity_kind},
         )
     return [by_identity[identity] for identity in identities]
+
+
+async def resolve_runtime_references(
+    deps: "RuntimeDeps",
+    *,
+    entity_kind: str,
+    field_key: str,
+    values: list[Any],
+) -> list[dict[str, Any]]:
+    """Hydrate trusted approval evidence through a registered entity resolver."""
+    resolver = get_entity_resolver(entity_kind)
+    if resolver is None:
+        raise AppValidationError(
+            "Entity resolver is unavailable",
+            field=field_key,
+            details={"entity_kind": entity_kind},
+        )
+    authorized = AuthorizedEntityField(
+        context=EntityResolverContext(
+            db=deps.db,
+            actor=deps.user,
+            workspace=deps.workspace,
+            membership=deps.membership,
+            conversation=deps.conversation,
+            agent=deps.agent,
+            run=deps.run,
+            active_context=deps.active_context or EMPTY_ACTIVE_CONTEXT,
+        ),
+        resolver=resolver,
+        field_key=field_key,
+        entity_kind=entity_kind,
+        depends_on=(),
+    )
+    return await resolve_authorized_references(
+        authorized,
+        values=values,
+        dependent_args={},
+    )
 
 
 async def authorize_entity_field(

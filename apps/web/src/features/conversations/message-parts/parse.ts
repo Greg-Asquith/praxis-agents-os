@@ -35,6 +35,7 @@ import type {
   AgentRun,
   ConversationMessage,
   PendingDelegatedApproval,
+  PendingToolApproval,
   PendingWorkflowState,
 } from "@/features/conversations/types"
 import { titleCaseToken } from "@/lib/format"
@@ -53,12 +54,16 @@ export function parseConversationMessages(
   activeRun?: Pick<AgentRun, "id" | "status"> | null,
   pendingDelegations: PendingDelegatedApproval[] = [],
   liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>,
-  pendingWorkflow?: PendingWorkflowState | null
+  pendingWorkflow?: PendingWorkflowState | null,
+  pendingApprovals: PendingToolApproval[] = []
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
   const pendingDelegationsByParentCallId = new Map(
     pendingDelegations.map((delegation) => [delegation.parent_tool_call_id, delegation])
+  )
+  const pendingApprovalsByCallId = new Map(
+    pendingApprovals.map((approval) => [approval.tool_call_id, approval])
   )
 
   const runAwaitsApproval = activeRun?.status === "awaiting_approval"
@@ -138,8 +143,10 @@ export function parseConversationMessages(
           }
         }
         if (belongsToActiveRun && runAwaitsApproval) {
+          const pendingApproval = pendingApprovalsByCallId.get(activity.id)
           return {
             ...activityWithPendingWorkflow,
+            ...(pendingApproval ? { args: normalizeToolArgs(pendingApproval.args) } : {}),
             kind: "approval" as const,
             status: "awaiting_approval" as const,
           }

@@ -107,6 +107,11 @@ class SequencedClient:
         return next(self.payloads)
 
 
+class FailingMutationClient:
+    async def post(self, _path, **_kwargs):
+        raise TimeoutError("The mutation response timed out")
+
+
 def entry() -> ResolvedContextEntry:
     return ResolvedContextEntry(
         integration_resource_id=uuid4(),
@@ -187,6 +192,24 @@ def test_campaign_budget_amount_rejects_oversized_decimal_strings(amount_type) -
 
 
 @pytest.mark.parametrize(
+    "value",
+    ["0", "1.0000001", "9223372036854.775808"],
+)
+def test_campaign_budget_amount_models_reject_invalid_provider_values(value: str) -> None:
+    with pytest.raises(ValidationError):
+        GoogleAdsDailyBudgetAmount(daily_amount=value)
+    with pytest.raises(ValidationError):
+        GoogleAdsCampaignBudgetAmountUpdate(
+            budget=GoogleAdsCampaignBudgetReference(
+                customer_id="333",
+                budget_id="55",
+                label="Budget",
+            ),
+            amount=value,
+        )
+
+
+@pytest.mark.parametrize(
     ("amount_type", "field_name"),
     [
         (GoogleAdsDailyBudgetAmount, "daily_amount"),
@@ -203,6 +226,219 @@ def test_campaign_budget_amount_schema_describes_currency_decimal_contract(
     assert "not micros" in description
 
 
+@pytest.mark.parametrize(
+    ("explicitly_shared", "delivery_method", "message"),
+    [
+        (True, "STANDARD", "can't be shared"),
+        (False, "ACCELERATED", "standard delivery"),
+    ],
+)
+def test_create_campaign_budget_validator_rejects_invalid_total_budget_combinations(
+    explicitly_shared: bool,
+    delivery_method: str,
+    message: str,
+) -> None:
+    validator = DEFINITION.args_validator
+    assert validator is not None
+    with pytest.raises(ModelRetry, match=message):
+        validator(
+            SimpleNamespace(),
+            "Budget",
+            GoogleAdsTotalBudgetAmount(total_amount="50"),
+            explicitly_shared,
+            delivery_method,
+        )
+
+
+def test_create_campaign_budget_approval_uses_active_context_currencies() -> None:
+    second = replace(
+        entry(),
+        external_id="444",
+        display_name="European account",
+        permissions_metadata={"login_customer_id": "111", "currency_code": "EUR"},
+    )
+    callback = DEFINITION.approval_display_args
+    assert callback is not None
+
+    display_args = callback(
+        SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry(), second))),
+        {"name": "Autumn launch"},
+    )
+
+    assert display_args == {
+        "name": "Autumn launch",
+        "_account_currencies": [
+            {"label": "Retail account", "currency_code": "GBP"},
+            {"label": "European account", "currency_code": "EUR"},
+        ],
+    }
+
+
+def test_create_campaign_budget_approval_lists_only_writable_compatible_accounts() -> None:
+    read_only = replace(entry(), external_id="444", write_allowed=False)
+    wrong_resource = replace(
+        entry(),
+        external_id="555",
+        resource_type="google_ads_manager",
+    )
+    callback = DEFINITION.approval_display_args
+    assert callback is not None
+
+    display_args = callback(
+        SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry(), read_only, wrong_resource))
+        ),
+        {"name": "Autumn launch"},
+    )
+
+    assert display_args["_account_currencies"] == [
+        {"label": "Retail account", "currency_code": "GBP"}
+    ]
+
+
+async def test_update_campaign_budget_approval_uses_live_resolver_state(monkeypatch) -> None:
+    callback = UPDATE_DEFINITION.approval_display_args
+    assert callback is not None
+
+    resolver = AsyncMock(
+        return_value=[
+            {
+                "entity_kind": "google_ads_campaign_budget",
+                "customer_id": "333",
+                "budget_id": "55",
+                "label": "Live name",
+                "currency_code": "GBP",
+                "amount_micros": "12500000",
+                "reference_count": 3,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.resolve_runtime_references",
+        resolver,
+    )
+    display_args = await callback(
+        SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry(),))),
+        {
+            "updates": [
+                {
+                    "budget": {
+                        "entity_kind": "google_ads_campaign_budget",
+                        "customer_id": "333",
+                        "budget_id": "55",
+                        "label": "Autumn launch",
+                        "amount_micros": "10000000",
+                    },
+                    "amount": "15",
+                }
+            ]
+        },
+    )
+
+    assert display_args["updates"][0]["budget"]["currency_code"] == "GBP"
+    assert display_args["updates"][0]["budget"]["amount_micros"] == "12500000"
+    assert display_args["updates"][0]["budget"]["label"] == "Live name"
+    assert display_args["updates"][0]["budget"]["reference_count"] == 3
+    resolver.assert_awaited_once()
+
+
+async def test_remove_campaign_budget_approval_uses_live_resolver_state(monkeypatch) -> None:
+    callback = REMOVE_DEFINITION.approval_display_args
+    assert callback is not None
+
+    resolver = AsyncMock(
+        return_value=[
+            {
+                "entity_kind": "google_ads_campaign_budget",
+                "customer_id": "333",
+                "budget_id": "55",
+                "label": "Live name",
+                "currency_code": "GBP",
+                "amount_micros": "12500000",
+                "reference_count": 0,
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.resolve_runtime_references",
+        resolver,
+    )
+    display_args = await callback(
+        SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry(),))),
+        {
+            "budgets": [
+                {
+                    "entity_kind": "google_ads_campaign_budget",
+                    "customer_id": "333",
+                    "budget_id": "55",
+                    "label": "Autumn launch",
+                    "reference_count": 0,
+                    "amount_micros": 10_000_000,
+                }
+            ]
+        },
+    )
+
+    assert display_args["budgets"][0]["currency_code"] == "GBP"
+    assert display_args["budgets"][0]["amount_micros"] == "12500000"
+    assert display_args["budgets"][0]["label"] == "Live name"
+    assert display_args["budgets"][0]["reference_count"] == 0
+    resolver.assert_awaited_once()
+
+
+async def test_assign_campaign_budget_approval_uses_live_budget_routes(monkeypatch) -> None:
+    callback = ASSIGN_DEFINITION.approval_display_args
+    assert callback is not None
+    destination = {
+        "entity_kind": "google_ads_campaign_budget",
+        "customer_id": "333",
+        "budget_id": "90",
+        "label": "Destination budget",
+    }
+    campaign_value = {
+        "entity_kind": "google_ads_campaign",
+        "customer_id": "333",
+        "campaign_id": "10",
+        "label": "Live campaign",
+        "campaign_budget_id": "50",
+    }
+    previous = {
+        "entity_kind": "google_ads_campaign_budget",
+        "customer_id": "333",
+        "budget_id": "50",
+        "label": "Previous budget",
+    }
+    resolver = AsyncMock(side_effect=[[campaign_value], [destination], [previous]])
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.resolve_runtime_references",
+        resolver,
+    )
+
+    display_args = await callback(
+        SimpleNamespace(),
+        {
+            "campaigns": [
+                {
+                    "entity_kind": "google_ads_campaign",
+                    "customer_id": "333",
+                    "campaign_id": "10",
+                    "label": "Stale campaign",
+                }
+            ],
+            "destination_budget": {**destination, "label": "Stale destination"},
+        },
+    )
+
+    assert display_args["_budget_routes"] == [
+        {
+            "campaign": campaign_value,
+            "previous_budget": previous,
+            "destination_budget": destination,
+        }
+    ]
+    assert resolver.await_count == 3
+
+
 def test_campaign_budget_amount_results_bound_rows_and_campaign_labels() -> None:
     labels = tuple(f"Campaign {index}: {'x' * 500}" for index in range(50))
     budgets = [
@@ -212,6 +448,7 @@ def test_campaign_budget_amount_results_bound_rows_and_campaign_labels() -> None
                 budget_id=str(index + 1),
                 label=f"Budget {index}",
                 campaign_labels=labels,
+                reference_count=80,
             ),
             "previous_amount": "1",
             "requested_amount": "2",
@@ -243,7 +480,7 @@ def test_campaign_budget_amount_results_bound_rows_and_campaign_labels() -> None
     assert model_result["samples_truncated"] is True
     assert model_result["campaign_labels_truncated"] is True
     sample = model_result["samples"]["updated"][0]
-    assert sample["campaign_label_count"] == 50
+    assert sample["campaign_label_count"] == 80
     assert sample["campaign_labels_truncated"] is True
     assert len(sample["reference"]["campaign_labels"]) == 3
     assert all(len(label) <= 80 for label in sample["reference"]["campaign_labels"])
@@ -638,6 +875,47 @@ async def test_create_campaign_budget_tool_retains_unverified_result(monkeypatch
     assert item.data.reference is None
 
 
+async def test_create_campaign_budget_tool_retains_intent_after_ambiguous_failure(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(selected,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=DEFINITION.name,
+        tool_call_id="create-budget-timeout-call",
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.create_campaign_budget.google_ads_client",
+        AsyncMock(return_value=FailingMutationClient()),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_create_campaign_budget(
+        ctx,
+        "Budget",
+        GoogleAdsDailyBudgetAmount(daily_amount="12.50"),
+        False,
+        "STANDARD",
+    )
+
+    output = GoogleAdsCreateCampaignBudgetOutput.model_validate(result)
+    item = output.results[0]
+    assert item.error_code == "unverified_mutation"
+    assert item.data is not None
+    assert item.data.outcome == "unverified"
+    assert item.data.amount == "12.5"
+    assert item.data.amount_micros == "12500000"
+    assert item.data.error_code == "TimeoutError"
+
+
 async def test_create_campaign_budget_rejects_missing_currency_before_mutation(monkeypatch) -> None:
     selected = entry()
     selected = replace(selected, permissions_metadata={"login_customer_id": "111"})
@@ -905,9 +1183,58 @@ async def test_update_campaign_budget_amounts_retains_unverified_before_after_re
     assert item.data is not None
     budget = item.data.samples.unverified[0]
     assert budget.outcome == "unverified"
-    assert budget.previous_amount_micros == 1_000_000
-    assert budget.requested_amount_micros == 2_000_000
+    assert budget.previous_amount_micros == "1000000"
+    assert budget.requested_amount_micros == "2000000"
     assert budget.reference.amount_micros == 1_000_000
+
+
+async def test_update_campaign_budget_tool_retains_amounts_after_ambiguous_failure(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(selected,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=UPDATE_DEFINITION.name,
+        tool_call_id="update-budget-timeout-call",
+    )
+    reference = GoogleAdsCampaignBudgetReference(customer_id="333", budget_id="55", label="Budget")
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.google_ads_client",
+        AsyncMock(return_value=FailingMutationClient()),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row("55", name="Budget", explicitly_shared=False, reference_count=0)
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_update_campaign_budget_amounts(
+        ctx,
+        [GoogleAdsCampaignBudgetAmountUpdate(budget=reference, amount="2")],
+    )
+
+    output = GoogleAdsUpdateCampaignBudgetAmountsOutput.model_validate(result.return_value)
+    item = output.results[0]
+    assert item.error_code == "unverified_mutation"
+    assert item.data is not None
+    budget = item.data.samples.unverified[0]
+    assert budget.previous_amount == "12.5"
+    assert budget.requested_amount == "2"
+    assert budget.previous_amount_micros == "12500000"
+    assert budget.requested_amount_micros == "2000000"
+    assert budget.error_code == "TimeoutError"
 
 
 def test_update_campaign_budget_definition_is_approval_only_and_bounded() -> None:
@@ -1200,6 +1527,88 @@ async def test_assign_campaign_budget_tool_uses_live_before_after_state_and_audi
     assert fields["requested_budget_id"] == "55"
     assert fields["requested_budget_name"] == "Live destination"
     assert audit_outcomes[0].operation_detail.intent_counts.applied == 1
+
+
+async def test_assign_campaign_budget_tool_retains_route_after_ambiguous_failure(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(selected,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=ASSIGN_DEFINITION.name,
+        tool_call_id="assign-budget-timeout-call",
+    )
+    destination = GoogleAdsCampaignBudgetReference(
+        customer_id="333", budget_id="55", label="Destination"
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=FailingMutationClient()),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaigns_for_budget_assignment",
+        AsyncMock(
+            return_value={
+                "10": {
+                    "id": "10",
+                    "name": "Campaign",
+                    "status": "ENABLED",
+                    "campaignBudget": "customers/333/campaignBudgets/44",
+                    "experimentType": "BASE",
+                    "hasRunningOrScheduledTrials": False,
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55", name="Destination", explicitly_shared=True, reference_count=1
+                ),
+                "44": budget_row(
+                    "44", name="Previous budget", explicitly_shared=False, reference_count=1
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_assign_campaign_budgets(
+        ctx,
+        destination,
+        [campaign("10")],
+    )
+
+    output = GoogleAdsAssignCampaignBudgetsOutput.model_validate(result.return_value)
+    item = output.results[0]
+    assert item.error_code == "unverified_mutation"
+    assert item.data is not None
+    assignment = item.data.samples.unverified[0]
+    assert assignment.campaign.campaign_id == "10"
+    assert assignment.previous_budget.budget_id == "44"
+    assert assignment.requested_budget.budget_id == "55"
+    assert assignment.error_code == "TimeoutError"
+
+
+def test_campaign_budget_reference_serializes_micros_as_exact_json_strings() -> None:
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Budget",
+        amount_micros=9_007_199_254_740_993_000,
+    )
+
+    assert reference.model_dump(mode="json")["amount_micros"] == "9007199254740993000"
 
 
 async def test_assign_campaign_budget_tool_omits_count_for_mixed_unverified_result(

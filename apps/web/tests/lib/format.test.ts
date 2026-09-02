@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest"
 import {
   formatBytes,
   formatCompactDate,
+  formatCurrencyAmount,
   formatDateTime,
   formatDuration,
   formatGoogleAdsAccountId,
+  formatPercentageChange,
   humanizeKey,
   initials,
   microsToCurrencyUnits,
@@ -28,6 +30,14 @@ describe("format helpers", () => {
   it("converts micros to currency units", () => {
     expect(microsToCurrencyUnits(1)).toBe(0.000001)
     expect(microsToCurrencyUnits(12_500_000)).toBe(12.5)
+  })
+
+  it("formats decimal currency amounts and percentage changes", () => {
+    expect(formatCurrencyAmount("12.345678", "GBP")).toMatch(/£12\.345678|GBP\s*12\.345678/)
+    expect(formatCurrencyAmount("1000000000.000001", "GBP")).toBe("GBP 1000000000.000001")
+    expect(formatPercentageChange(10, 15)).toBe("+50%")
+    expect(formatPercentageChange(10, 8)).toBe("-20%")
+    expect(formatPercentageChange(0, 8)).toBe("—")
   })
 
   it("formats durations without rolling seconds up to 60", () => {

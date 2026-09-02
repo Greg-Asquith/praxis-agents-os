@@ -123,6 +123,9 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   in-place credential replacement only when the persisted status requests it.
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
+- Approval presenters may consume server-owned display arguments prefixed with
+  `_`; generic fallback fields hide that presentation metadata, and approval
+  replay uses the separate executable argument payload.
 - Code-mode workflows render as one collapsed outer row whose children recurse
   through the standard `ToolCallRow`; keep live state normalized by parent id,
   rebuild replay only from the persisted nested trace, and auto-expand any

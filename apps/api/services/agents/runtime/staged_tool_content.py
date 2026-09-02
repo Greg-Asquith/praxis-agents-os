@@ -135,8 +135,17 @@ def tool_args_for_display(
     return _safe_write_file_args(mapped_args)
 
 
-def tool_replay_args_for_editing(*, tool_name: str, args: Any) -> dict[str, Any] | None:
-    """Return replay-safe args only when a staged write may be edited."""
+def tool_replay_args_for_editing(
+    *,
+    tool_name: str,
+    args: Any,
+    metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Returns executable args when displayed approval args are not replay-safe."""
+    if isinstance(metadata, Mapping) and isinstance(
+        metadata.get(_DISPLAY_ARGS_METADATA_KEY), Mapping
+    ):
+        return _mapping_args(args)
     if tool_name != WRITE_FILE_TOOL_NAME:
         return None
     mapped_args = _mapping_args(args)

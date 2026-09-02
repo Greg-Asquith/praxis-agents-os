@@ -2,6 +2,7 @@
 
 """Approval-only Google Ads campaign budget assignment tool."""
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -9,6 +10,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext, ToolReturn
 
+from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from integrations.google_ads.operations.mutation_outcomes import (
     GoogleAdsMutationLedger,
     thaw_fields,
@@ -35,7 +37,10 @@ from services.audit_events import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
-from services.integrations.entity_references import ScopedEntityReference
+from services.integrations.entity_references import (
+    ScopedEntityReference,
+    resolve_runtime_references,
+)
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
@@ -44,6 +49,7 @@ from services.integrations.operations import (
 from ..operations.assign_campaign_budgets import (
     GoogleAdsCampaignBudgetAssignment,
     assign_campaign_budgets,
+    campaign_budget_assignment_failure_ledger,
 )
 from .schemas import GoogleAdsAssignCampaignBudgetsOutput
 from .utils import (
@@ -163,12 +169,38 @@ async def google_ads_assign_campaign_budgets(
         async def execute() -> IntegrationAuditOutcome[GoogleAdsMutationLedger]:
             if client is None or pending_detail is None or not verified:
                 raise RuntimeError("Campaign budget assignment preparation did not complete")
-            ledger = await assign_campaign_budgets(
-                client,
-                customer_id=entry.external_id,
-                login_customer_id=login_customer_id(entry),
-                assignments=[item.assignment for item in verified],
-            )
+            try:
+                ledger = await assign_campaign_budgets(
+                    client,
+                    customer_id=entry.external_id,
+                    login_customer_id=login_customer_id(entry),
+                    assignments=[item.assignment for item in verified],
+                )
+            except asyncio.CancelledError as exc:
+                disposition = getattr(
+                    exc,
+                    "failure_disposition",
+                    IntegrationFailureDisposition.NOT_DISPATCHED,
+                )
+                exception_outcome = _exception_outcome(
+                    verified,
+                    pending_detail,
+                    exc,
+                    disposition=disposition,
+                )
+                exc.failure_disposition = disposition
+                exc.operation_detail = exception_outcome.operation_detail
+                raise
+            except Exception as exc:
+                disposition = getattr(exc, "failure_disposition", None)
+                if disposition is None:
+                    disposition = IntegrationFailureDisposition.AMBIGUOUS
+                return _exception_outcome(
+                    verified,
+                    pending_detail,
+                    exc,
+                    disposition=disposition,
+                )
             detail = terminal_operation_detail(pending_detail, ledger)
             status = audit_status(detail)
             return IntegrationAuditOutcome(
@@ -427,8 +459,94 @@ def _split_result(
     }
 
 
+def _exception_outcome(
+    verified: Sequence[_VerifiedAssignment],
+    pending_detail: PendingIntegrationOperationDetail,
+    exc: BaseException,
+    *,
+    disposition: IntegrationFailureDisposition,
+) -> IntegrationAuditOutcome[GoogleAdsMutationLedger]:
+    ambiguous = disposition is IntegrationFailureDisposition.AMBIGUOUS
+    error_code = exc.__class__.__name__[:100]
+    raw_message = exc.user_message if isinstance(exc, IntegrationError) else str(exc)
+    message = " ".join(raw_message.split())[:1000] or "Campaign budget assignment failed"
+    ledger = campaign_budget_assignment_failure_ledger(
+        [item.assignment for item in verified],
+        outcome="unverified" if ambiguous else "failed",
+        error_code=error_code,
+        message=message,
+    )
+    detail = terminal_operation_detail(pending_detail, ledger)
+    status = audit_status(detail)
+    return IntegrationAuditOutcome(
+        ledger,
+        status=status,
+        operation_detail=detail,
+        unverified_result=_split_result(verified, ledger) if ambiguous else None,
+    )
+
+
 def _budget_resource(reference: GoogleAdsCampaignBudgetReference) -> str:
     return f"customers/{reference.customer_id}/campaignBudgets/{reference.budget_id}"
+
+
+async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+    """Hydrate live source-to-destination budget routes shown for approval."""
+    campaigns_value = args.get("campaigns")
+    destination_value = args.get("destination_budget")
+    if not isinstance(campaigns_value, list) or not campaigns_value:
+        raise TypeError("Google Ads campaign budget approval arguments are invalid")
+    if not isinstance(destination_value, Mapping):
+        raise TypeError("Google Ads campaign budget approval arguments are invalid")
+    campaigns, destinations = await asyncio.gather(
+        resolve_runtime_references(
+            deps,
+            entity_kind="google_ads_campaign",
+            field_key="campaigns",
+            values=campaigns_value,
+        ),
+        resolve_runtime_references(
+            deps,
+            entity_kind="google_ads_campaign_budget",
+            field_key="destination_budget",
+            values=[dict(destination_value)],
+        ),
+    )
+    previous_budget_values = []
+    for campaign in campaigns:
+        budget_id = campaign.get("campaign_budget_id")
+        customer_id = campaign.get("customer_id")
+        if not isinstance(budget_id, str) or not isinstance(customer_id, str):
+            raise TypeError("A selected campaign has no live campaign budget")
+        previous_budget_values.append(
+            {
+                "entity_kind": "google_ads_campaign_budget",
+                "customer_id": customer_id,
+                "budget_id": budget_id,
+                "label": "Campaign budget",
+            }
+        )
+    previous_budgets = await resolve_runtime_references(
+        deps,
+        entity_kind="google_ads_campaign_budget",
+        field_key="campaigns",
+        values=previous_budget_values,
+    )
+    destination = destinations[0]
+    routes = [
+        {
+            "campaign": campaign,
+            "previous_budget": previous_budget,
+            "destination_budget": destination,
+        }
+        for campaign, previous_budget in zip(campaigns, previous_budgets, strict=True)
+    ]
+    return {
+        **args,
+        "campaigns": campaigns,
+        "destination_budget": destination,
+        "_budget_routes": routes,
+    }
 
 
 DEFINITION = RuntimeToolDefinition(
@@ -452,6 +570,7 @@ DEFINITION = RuntimeToolDefinition(
     max_public_result_chars=MAX_CAMPAIGN_BUDGET_ASSIGNMENT_PUBLIC_RESULT_CHARS,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
+    approval_display_args=_approval_display_args,
     presentation=ToolPresentation(
         icon="google_ads",
         running_label="Assigning Campaign Budgets",

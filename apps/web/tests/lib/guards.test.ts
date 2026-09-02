@@ -7,6 +7,7 @@ import {
   isOneOf,
   isPositiveInteger,
   normalizeRecord,
+  parsePositiveDecimal,
 } from "@/lib/guards"
 
 describe("normalizeRecord", () => {
@@ -68,5 +69,25 @@ describe("numeric and date guards", () => {
     expect(isNullableString("value")).toBe(true)
     expect(isNullableString(null)).toBe(true)
     expect(isNullableString(undefined)).toBe(false)
+  })
+
+  it("normalizes positive decimal strings", () => {
+    expect(parsePositiveDecimal(" 12.50 ")).toBe("12.50")
+    expect(parsePositiveDecimal("0004.50")).toBe("0004.50")
+    expect(parsePositiveDecimal("9223372036854.775807")).toBe("9223372036854.775807")
+    for (const value of [
+      "0",
+      "-1",
+      "+1",
+      "1.",
+      ".5",
+      "1e2",
+      "1.0000001",
+      "9223372036854.775808",
+      Number.NaN,
+      null,
+    ]) {
+      expect(parsePositiveDecimal(value)).toBeNull()
+    }
   })
 })

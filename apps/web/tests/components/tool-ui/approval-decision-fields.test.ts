@@ -369,6 +369,34 @@ describe("ApprovalRequestFields", () => {
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
   })
 
+  it("blocks approval but permits decline when display enrichment fails", () => {
+    const html = renderToStaticMarkup(
+      createElement(ToolApprovalDecisionCard, {
+        activityId: "display-error",
+        args: {
+          _approval_display_error:
+            "Approval details are unavailable. Ask the agent to prepare this action again.",
+          amount: "12.50",
+        },
+        controls: {
+          decision: { decision: "pending", edits: {}, message: "" },
+          disabled: false,
+          error: null,
+          onDecisionChange: () => undefined,
+          onRetry: () => undefined,
+          pendingCount: 1,
+          submitting: false,
+        },
+        label: "Update Campaign Budget",
+        toolName: "google_ads_update_campaign_budget_amounts",
+      })
+    )
+
+    expect(html).toContain("Decline this request")
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Decline<\/button>/)
+  })
+
   it("adds, removes, and edits record rows without coercing numeric cells", () => {
     const columns = [
       { key: "text", label: "Keyword", options: [], placeholder: "", required: true },

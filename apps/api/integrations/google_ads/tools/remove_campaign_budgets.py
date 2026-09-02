@@ -3,7 +3,7 @@
 """Approval-only Google Ads campaign budget removal tool."""
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -33,6 +33,7 @@ from services.audit_events import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.targeted import run_context_targets
+from services.integrations.entity_references import resolve_runtime_references
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
@@ -220,7 +221,10 @@ def _budget_intent_fields(reference: GoogleAdsCampaignBudgetReference) -> dict[s
         "explicitly_shared": reference.explicitly_shared,
         "reference_count": reference.reference_count,
         "currency_code": reference.currency_code,
-        **campaign_label_audit_evidence(reference.campaign_labels),
+        **campaign_label_audit_evidence(
+            reference.campaign_labels,
+            total_count=reference.reference_count,
+        ),
     }
     if reference.amount_micros is not None:
         fields["amount_micros"] = str(reference.amount_micros)
@@ -301,6 +305,24 @@ def _exception_outcome(
     )
 
 
+async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+    """Hydrate live campaign budget state shown for approval."""
+    selected_budgets = []
+    for budget in args.get("budgets", []):
+        if not isinstance(budget, Mapping):
+            raise TypeError("Google Ads campaign budget approval arguments are invalid")
+        selected_budgets.append(dict(budget))
+    if not selected_budgets:
+        raise RuntimeError("Google Ads campaign budget approval requires at least one budget")
+    budgets = await resolve_runtime_references(
+        deps,
+        entity_kind="google_ads_campaign_budget",
+        field_key="budgets",
+        values=selected_budgets,
+    )
+    return {**args, "budgets": budgets}
+
+
 DEFINITION = RuntimeToolDefinition(
     name="google_ads_remove_campaign_budgets",
     function=google_ads_remove_campaign_budgets,
@@ -322,6 +344,7 @@ DEFINITION = RuntimeToolDefinition(
     max_public_result_chars=MAX_CAMPAIGN_BUDGET_REMOVAL_PUBLIC_RESULT_CHARS,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
+    approval_display_args=_approval_display_args,
     presentation=ToolPresentation(
         icon="google_ads",
         running_label="Removing Campaign Budgets",

@@ -63,6 +63,7 @@ def pending_approval_descriptors(requests: DeferredToolRequests) -> list[dict[st
                     replay_args := tool_replay_args_for_editing(
                         tool_name=approval.tool_name,
                         args=approval.args,
+                        metadata=requests.metadata.get(approval.tool_call_id),
                     )
                 )
                 is not None

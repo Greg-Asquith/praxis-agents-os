@@ -155,7 +155,7 @@ async def test_campaign_budget_resolver_searches_and_hydrates_live_references(
     )
 
     assert [choice.label for choice in page.choices] == ["Launch budget"]
-    assert resolved[0].value["amount_micros"] == 12_500_000
+    assert resolved[0].value["amount_micros"] == "12500000"
     assert query.await_args_list[0].kwargs["search"] == "launch"
     assert query.await_args_list[1].kwargs["budget_ids"] == ["55"]
 

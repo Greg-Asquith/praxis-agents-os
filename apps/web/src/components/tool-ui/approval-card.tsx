@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, type ReactNode } from "react"
 import { CheckIcon, WrenchIcon } from "lucide-react"
 
 import { ApprovalRequestFields } from "@/components/tool-ui/approval-request-fields"
+import { approvalDisplayError } from "@/components/tool-ui/approval-args"
 import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
 import { ApprovalStaticField } from "@/components/tool-ui/approval-static-field"
 import type {
@@ -70,6 +71,7 @@ export function ToolApprovalDecisionCard({
   const [denialMessage, setDenialMessage] = useState("")
   const [invalidEntityFields, setInvalidEntityFields] = useState<Set<string>>(() => new Set())
   const disabled = controls.disabled ?? false
+  const effectiveValidationError = validationError ?? approvalDisplayError(args)
   const isDecided = controls.decision.decision !== "pending"
   const recordArgs = isRecord(args) ? args : null
   const hasInvalidRecordFields = fields.some((field) => {
@@ -105,13 +107,14 @@ export function ToolApprovalDecisionCard({
       footer={
         <ApprovalFooter
           approveLabel={approveLabel}
-          controls={controls}
-          disabled={
+          approveDisabled={
             disabled ||
             invalidEntityFields.size > 0 ||
             hasInvalidRecordFields ||
-            validationError !== null
+            effectiveValidationError !== null
           }
+          controls={controls}
+          disabled={disabled}
           isDeclining={isDeclining}
           label={label}
           onApprove={() => {
@@ -163,9 +166,9 @@ export function ToolApprovalDecisionCard({
             onEntityValidityChange={handleEntityValidityChange}
             toolName={toolName}
           />
-          {validationError ? (
+          {effectiveValidationError ? (
             <p aria-live="polite" className="text-destructive text-xs">
-              {validationError}
+              {effectiveValidationError}
             </p>
           ) : null}
         </>
@@ -262,6 +265,7 @@ export function ToolApprovalCard({
 
 function ApprovalFooter({
   approveLabel,
+  approveDisabled,
   controls,
   disabled,
   isDeclining,
@@ -272,6 +276,7 @@ function ApprovalFooter({
   onDeclineConfirm,
 }: {
   approveLabel: string
+  approveDisabled: boolean
   controls: ToolApprovalDecisionControls
   disabled: boolean
   isDeclining: boolean
@@ -326,7 +331,7 @@ function ApprovalFooter({
             <Button disabled={disabled} onClick={onDecline} size="sm" type="button" variant="ghost">
               Decline
             </Button>
-            <Button disabled={disabled} onClick={onApprove} size="sm" type="button">
+            <Button disabled={approveDisabled} onClick={onApprove} size="sm" type="button">
               {approveLabel}
             </Button>
           </>

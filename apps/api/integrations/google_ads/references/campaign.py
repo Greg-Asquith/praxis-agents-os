@@ -22,6 +22,7 @@ class GoogleAdsCampaignReference(ScopedEntityReference):
         description="Google Ads campaign ID.",
     )
     status: str | None = Field(default=None, max_length=64)
+    campaign_budget_id: str | None = Field(default=None, max_length=32, pattern=r"^\d+$")
     identity_fields: ClassVar[tuple[str, ...]] = (
         *ScopedEntityReference.identity_fields,
         "customer_id",

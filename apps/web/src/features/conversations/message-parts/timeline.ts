@@ -102,7 +102,8 @@ export function projectConversationTimeline({
     transcriptRun,
     pendingDelegations,
     liveResultsByCallIdentity,
-    pendingWorkflow
+    pendingWorkflow,
+    approvals
   )
   const transcriptToolIds = new Set(
     parsedMessages.flatMap((message) =>

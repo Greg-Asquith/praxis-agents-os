@@ -63,6 +63,7 @@ export function DataTable({
   exportFilename = "report.csv",
   header,
   pageSize,
+  renderCell,
   rows,
   showTotals = false,
   truncationNote,
@@ -71,13 +72,14 @@ export function DataTable({
   exportFilename?: string
   header?: ReactNode
   pageSize?: number
+  renderCell?: (column: DataColumn, row: DataRow) => ReactNode | null
   rows: DataRow[]
   showTotals?: boolean
   truncationNote?: string | null
 }) {
   const { copied, copy } = useClipboardCopy()
   const [selectedRow, setSelectedRow] = useState<DataRow | null>(null)
-  const tableColumns = useMemo(() => dataColumnsToDefs(columns), [columns])
+  const tableColumns = useMemo(() => dataColumnsToDefs(columns, renderCell), [columns, renderCell])
   const tableRows = useMemo(
     () => rows.map((values, index) => ({ id: String(index), values })),
     [rows]
@@ -232,12 +234,15 @@ export function DataTable({
   )
 }
 
-export function dataColumnsToDefs(columns: DataColumn[]) {
+export function dataColumnsToDefs(
+  columns: DataColumn[],
+  renderCell?: (column: DataColumn, row: DataRow) => ReactNode | null
+) {
   return columnHelper.columns(
     columns.map((column) =>
       columnHelper.accessor((row) => row.values[column.key], {
         id: column.key,
-        cell: () => <DataCellFromContext column={column} />,
+        cell: () => <DataCellFromContext column={column} renderCell={renderCell} />,
         enableHiding: true,
         enableSorting: true,
         header: ({ header }) => <header.ColumnHeader />,
@@ -280,8 +285,19 @@ function DataTableBodyCell() {
   )
 }
 
-function DataCellFromContext({ column }: { column: DataColumn }) {
+function DataCellFromContext({
+  column,
+  renderCell,
+}: {
+  column: DataColumn
+  renderCell: ((column: DataColumn, row: DataRow) => ReactNode | null) | undefined
+}) {
   const cell = useCellContext()
+  const values = (cell.row.original as DataTableTableRow).values
+  const rendered = renderCell?.(column, values)
+  if (rendered !== null && rendered !== undefined) {
+    return rendered
+  }
   return <DataCell column={column} value={cell.getValue()} />
 }
 

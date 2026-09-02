@@ -89,6 +89,7 @@ async def get_agent_run_approval_state(
                     tool_replay_args_for_editing(
                         tool_name=nested_call.tool_name,
                         args=nested_call.args,
+                        metadata=metadata,
                     )
                 ),
                 parent_tool_call_id=approval.tool_call_id,
@@ -136,6 +137,7 @@ async def get_agent_run_approval_state(
                         tool_replay_args_for_editing(
                             tool_name=approval.tool_name,
                             args=approval.args,
+                            metadata=metadata,
                         )
                     ),
                 )
@@ -170,6 +172,9 @@ async def get_agent_run_approval_state(
                     tool_replay_args_for_editing(
                         tool_name=child_approval.tool_name,
                         args=child_approval.args,
+                        metadata=child_state.deferred_tool_requests.metadata.get(
+                            child_approval.tool_call_id
+                        ),
                     )
                 ),
                 delegation=delegation,

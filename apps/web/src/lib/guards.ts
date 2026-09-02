@@ -47,3 +47,22 @@ export function isDateTimeString(value: unknown): value is string {
 export function isNullableString(value: unknown): value is string | null {
   return typeof value === "string" || value === null
 }
+
+export function parsePositiveDecimal(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null
+  }
+  const normalized = value.trim()
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(normalized)
+  if (!match || (match[2]?.length ?? 0) > 6) {
+    return null
+  }
+  const wholeDigits = match[1]
+  if (!wholeDigits) {
+    return null
+  }
+  const whole = BigInt(wholeDigits)
+  const fraction = BigInt((match[2] ?? "").padEnd(6, "0"))
+  const micros = whole * 1_000_000n + fraction
+  return micros > 0n && micros <= 9_223_372_036_854_775_807n ? normalized : null
+}

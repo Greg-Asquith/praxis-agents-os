@@ -28,6 +28,37 @@ class GoogleAdsCampaignBudgetAssignment:
     requested_budget_id: str
 
 
+def campaign_budget_assignment_failure_ledger(
+    assignments: Sequence[GoogleAdsCampaignBudgetAssignment],
+    *,
+    outcome: str,
+    error_code: str,
+    message: str,
+) -> GoogleAdsMutationLedger:
+    """Account for every assignment when a request has no usable response body."""
+    if outcome not in {"failed", "unverified"}:
+        raise ValueError("Campaign budget assignment failures must be failed or unverified")
+    parent_fields: list[dict[str, str]] = []
+    skipped_indices: dict[int, str] = {}
+    skipped_refs: list[tuple[tuple[tuple[str, str], ...], str]] = []
+    submitted: list[tuple[int, dict[str, str]]] = []
+    for assignment in assignments:
+        identity = {"campaign_id": assignment.campaign_id}
+        parent_index = len(parent_fields)
+        parent_fields.append(identity)
+        if assignment.previous_budget_id == assignment.requested_budget_id:
+            skipped_indices[parent_index] = "already set"
+            continue
+        submitted.append((parent_index, identity))
+    return _ledger(
+        parent_fields,
+        skipped_indices=skipped_indices,
+        skipped_refs=skipped_refs,
+        submitted=submitted,
+        outcomes=[(outcome, None, error_code, message) for _ in submitted],
+    )
+
+
 async def assign_campaign_budgets(
     client: GoogleAdsClient,
     *,

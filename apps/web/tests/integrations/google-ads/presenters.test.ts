@@ -276,8 +276,8 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Approve &amp; Update")
   })
 
-  it("declines to render the approval card for legacy raw campaign ids", () => {
-    expect(
+  it("blocks approval for legacy raw campaign ids", () => {
+    const html = render(
       googleAdsCampaignStatusPresenter.render(
         props(
           {
@@ -291,7 +291,12 @@ describe("Google Ads tool presenters", () => {
           toolUi([])
         )
       )
-    ).toBeNull()
+    )
+
+    expect(html).toContain("can&#x27;t be approved")
+    expect(html).toContain("Decline this request")
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Decline<\/button>/)
   })
 
   it("renders mixed campaign outcomes with per-campaign status and inline errors", () => {
@@ -1864,6 +1869,10 @@ describe("Google Ads tool presenters", () => {
       "google-ads-update-device-bid-modifiers",
       "google-ads-apply-recommendations",
       "google-ads-dismiss-recommendations",
+      "google-ads-create-campaign-budget",
+      "google-ads-update-campaign-budget-amounts",
+      "google-ads-assign-campaign-budgets",
+      "google-ads-remove-campaign-budgets",
     ])
     expect(googleAdsCampaignLinksPresenter.handlesApprovals).toBe(true)
     expect(googleAdsCampaignNegativeKeywordsPresenter.handlesApprovals).toBe(true)

@@ -216,6 +216,27 @@ describe("projectConversationTimeline", () => {
     }
     expect(actual).toMatchObject(expected)
   })
+
+  it("uses display arguments for a persisted approval row", () => {
+    const timeline = projectConversationTimeline(
+      input({
+        approvals: [
+          {
+            args: { value: "display value" },
+            name: "test_tool",
+            tool_call_id: "call-1",
+          },
+        ],
+        messages: [runMessage("message-1", "run-1", [toolCall("call-1")])],
+        transcriptRun: { id: "run-1", status: "awaiting_approval" },
+      })
+    )
+
+    expect(transcriptActivities(timeline)[0]).toMatchObject({
+      args: { value: "display value" },
+      status: "awaiting_approval",
+    })
+  })
 })
 
 function input(overrides: Partial<ConversationTimelineInput> = {}): ConversationTimelineInput {

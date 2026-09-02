@@ -87,6 +87,7 @@ def test_gemini_3_5_flash_lite_catalog_capabilities():
         ("openai", "gpt-5.4-nano", 400_000),
         ("anthropic", "claude-opus-4-7", 1_000_000),
         ("anthropic", "claude-opus-4-6", 1_000_000),
+        ("google", "gemini-3.8-flash", 1_048_576),
         ("google", "gemini-3.7-flash", 1_048_576),
         ("google", "gemini-3.6-flash", 1_048_576),
         ("google", "gemini-3.5-flash", 1_048_576),
@@ -216,13 +217,13 @@ def test_model_catalog_uses_first_visible_model_for_each_provider_type(monkeypat
     providers = {provider.provider: provider for provider in response.providers}
 
     assert providers[PROVIDER_ANTHROPIC].model_type_defaults == {
-        "max": "anthropic:claude-fable-5",
+        "max": "anthropic:claude-fable-5-1",
         "powerful": "anthropic:claude-opus-4-8",
         "standard": "anthropic:claude-sonnet-5",
         "light": "anthropic:claude-haiku-4-5",
     }
     assert providers[PROVIDER_GOOGLE].model_type_defaults == {
-        "standard": "google:gemini-3.7-flash",
+        "standard": "google:gemini-3.8-flash",
         "light": "google:gemini-3.5-flash-lite",
         "powerful": "google:gemini-3.1-pro",
     }

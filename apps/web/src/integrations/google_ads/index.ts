@@ -7,11 +7,15 @@ import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/prese
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
 import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
+import { googleAdsAssignCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/assign-campaign-budgets"
+import { googleAdsCreateCampaignBudgetPresenter } from "@/integrations/google_ads/presenters/create-campaign-budget"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsNegativeKeywordsPresenters } from "@/integrations/google_ads/presenters/negative-keywords"
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
+import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
+import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
@@ -28,5 +32,9 @@ export default {
     googleAdsDeviceBidModifiersPresenter,
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,
+    googleAdsCreateCampaignBudgetPresenter,
+    googleAdsUpdateCampaignBudgetAmountsPresenter,
+    googleAdsAssignCampaignBudgetsPresenter,
+    googleAdsRemoveCampaignBudgetsPresenter,
   ],
 } satisfies IntegrationUiModule

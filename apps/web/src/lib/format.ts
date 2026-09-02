@@ -257,6 +257,24 @@ export function formatCurrency(
   }
 }
 
+export function formatCurrencyAmount(amount: string, currencyCode: string): string {
+  const numeric = Number(amount)
+  if (Number.isFinite(numeric) && Math.abs(numeric) < 1_000_000_000) {
+    return formatCurrency(numeric, currencyCode, { maximumFractionDigits: 6 })
+  }
+  return `${currencyCode} ${amount}`
+}
+
+export function formatPercentageChange(previous: number, next: number): string {
+  if (!Number.isFinite(previous) || !Number.isFinite(next) || previous === 0) {
+    return "—"
+  }
+  const percentage = ((next - previous) / previous) * 100
+  return `${percentage > 0 ? "+" : ""}${new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+  }).format(percentage)}%`
+}
+
 export function microsToCurrencyUnits(value: number): number {
   return value / 1_000_000
 }

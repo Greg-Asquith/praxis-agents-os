@@ -21,6 +21,30 @@ _UNACCOUNTED_CODE = "UNACCOUNTED_OPERATION"
 _UNACCOUNTED_MESSAGE = "Google Ads did not account for the campaign budget creation"
 
 
+def campaign_budget_creation_failure_ledger(
+    *,
+    name: str,
+    period: Literal["DAILY", "CUSTOM_PERIOD"],
+    amount_micros: int,
+    explicitly_shared: bool,
+    delivery_method: Literal["STANDARD", "ACCELERATED"],
+    outcome: str,
+    error_code: str,
+    message: str,
+) -> GoogleAdsMutationLedger:
+    """Account for a create request that has no usable response body."""
+    if outcome not in {"failed", "unverified"}:
+        raise ValueError("Campaign budget creation failures must be failed or unverified")
+    identity = _identity(
+        name=name,
+        period=period,
+        amount_micros=amount_micros,
+        explicitly_shared=explicitly_shared,
+        delivery_method=delivery_method,
+    )
+    return _ledger(identity, outcome=(outcome, None, error_code, message))
+
+
 async def create_campaign_budget(
     client: GoogleAdsClient,
     *,
@@ -34,13 +58,13 @@ async def create_campaign_budget(
 ) -> GoogleAdsMutationLedger:
     normalized_customer_id = normalize_customer_id(customer_id)
     amount_field = "amountMicros" if period == "DAILY" else "totalAmountMicros"
-    identity = {
-        "name": name,
-        "period": period,
-        "amount_micros": str(amount_micros),
-        "delivery_method": delivery_method,
-        "explicitly_shared": str(explicitly_shared).lower(),
-    }
+    identity = _identity(
+        name=name,
+        period=period,
+        amount_micros=amount_micros,
+        explicitly_shared=explicitly_shared,
+        delivery_method=delivery_method,
+    )
     payload = await client.post(
         f"customers/{normalized_customer_id}/campaignBudgets:mutate",
         operation="create_campaign_budget",
@@ -86,6 +110,27 @@ async def create_campaign_budget(
         outcome = ("failed", None, error["error_code"], error["message"])
     else:
         outcome = ("applied", results[0]["resourceName"], None, None)
+    return _ledger(identity, outcome=outcome)
+
+
+def _identity(
+    *,
+    name: str,
+    period: Literal["DAILY", "CUSTOM_PERIOD"],
+    amount_micros: int,
+    explicitly_shared: bool,
+    delivery_method: Literal["STANDARD", "ACCELERATED"],
+) -> dict[str, str]:
+    return {
+        "name": name,
+        "period": period,
+        "amount_micros": str(amount_micros),
+        "delivery_method": delivery_method,
+        "explicitly_shared": str(explicitly_shared).lower(),
+    }
+
+
+def _ledger(identity: Mapping[str, object], *, outcome: Any) -> GoogleAdsMutationLedger:
     return build_mutation_ledger(
         family="campaign_budgets",
         action="create",

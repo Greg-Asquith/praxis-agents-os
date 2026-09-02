@@ -4,7 +4,7 @@
 
 import inspect
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field as dataclass_field
 from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args, get_origin, get_type_hints
 
@@ -234,6 +234,13 @@ class RuntimeToolDefinition:
     always_allowed_when_mounted: bool = False
     integration_binding: IntegrationToolBinding | None = None
     availability_check: Callable[[], bool] | None = None
+    approval_display_args: (
+        Callable[
+            [RuntimeDeps, dict[str, Any]],
+            dict[str, Any] | Awaitable[dict[str, Any]],
+        ]
+        | None
+    ) = None
     presentation: ToolPresentation = ToolPresentation()
     _serialized_input_schema: dict[str, Any] | None = dataclass_field(
         default=None,

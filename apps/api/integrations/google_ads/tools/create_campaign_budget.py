@@ -2,11 +2,13 @@
 
 """Approval-only Google Ads campaign budget creation tool."""
 
+import asyncio
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from integrations.google_ads.operations.mutation_outcomes import GoogleAdsMutationLedger
 from integrations.google_ads.references import GoogleAdsCampaignBudgetReference
 from services.agents.runtime.context import RuntimeDeps
@@ -33,7 +35,10 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 
-from ..operations.create_campaign_budget import create_campaign_budget
+from ..operations.create_campaign_budget import (
+    campaign_budget_creation_failure_ledger,
+    create_campaign_budget,
+)
 from .schemas import GoogleAdsCampaignBudgetAmount, GoogleAdsCreateCampaignBudgetOutput
 from .schemas.campaign_budgets import GoogleAdsDailyBudgetAmount
 from .utils import (
@@ -58,24 +63,12 @@ async def google_ads_create_campaign_budget(
     explicitly_shared: bool,
     delivery_method: Literal["STANDARD", "ACCELERATED"],
 ) -> dict[str, Any]:
-    normalized_name = " ".join(name.split())
-    if not normalized_name:
-        raise ModelRetry("Enter a campaign budget name.")
-    if len(normalized_name.encode("utf-8")) > 255:
-        raise ModelRetry("Campaign budget names must be 255 UTF-8 bytes or fewer.")
-    period: Literal["DAILY", "CUSTOM_PERIOD"] = (
-        "DAILY" if isinstance(amount, GoogleAdsDailyBudgetAmount) else "CUSTOM_PERIOD"
+    normalized_name, period, amount_micros = _validated_create_input(
+        name,
+        amount,
+        explicitly_shared=explicitly_shared,
+        delivery_method=delivery_method,
     )
-    if period == "CUSTOM_PERIOD" and explicitly_shared:
-        raise ModelRetry("Campaign total budgets can't be shared across campaigns.")
-    if period == "CUSTOM_PERIOD" and delivery_method == "ACCELERATED":
-        raise ModelRetry("Campaign total budgets require standard delivery.")
-    amount_text = (
-        amount.daily_amount
-        if isinstance(amount, GoogleAdsDailyBudgetAmount)
-        else amount.total_amount
-    )
-    amount_micros = money_to_micros(amount_text)
 
     async def operation(entry: ResolvedContextEntry) -> Any:
         currency_code = str(entry.permissions_metadata.get("currency_code", "")).strip()
@@ -97,16 +90,56 @@ async def google_ads_create_campaign_budget(
 
         async def execute() -> Any:
             client = await google_ads_client(ctx, entry)
-            ledger = await create_campaign_budget(
-                client,
-                customer_id=entry.external_id,
-                login_customer_id=login_customer_id(entry),
-                name=normalized_name,
-                period=period,
-                amount_micros=amount_micros,
-                explicitly_shared=explicitly_shared,
-                delivery_method=delivery_method,
-            )
+            try:
+                ledger = await create_campaign_budget(
+                    client,
+                    customer_id=entry.external_id,
+                    login_customer_id=login_customer_id(entry),
+                    name=normalized_name,
+                    period=period,
+                    amount_micros=amount_micros,
+                    explicitly_shared=explicitly_shared,
+                    delivery_method=delivery_method,
+                )
+            except asyncio.CancelledError as exc:
+                disposition = getattr(
+                    exc,
+                    "failure_disposition",
+                    IntegrationFailureDisposition.NOT_DISPATCHED,
+                )
+                exception_outcome = _exception_outcome(
+                    entry,
+                    pending_detail,
+                    exc,
+                    name=normalized_name,
+                    period=period,
+                    amount=canonical_amount,
+                    amount_micros=amount_micros,
+                    currency_code=currency_code,
+                    explicitly_shared=explicitly_shared,
+                    delivery_method=delivery_method,
+                    disposition=disposition,
+                )
+                exc.failure_disposition = disposition
+                exc.operation_detail = exception_outcome.operation_detail
+                raise
+            except Exception as exc:
+                disposition = getattr(exc, "failure_disposition", None)
+                if disposition is None:
+                    disposition = IntegrationFailureDisposition.AMBIGUOUS
+                return _exception_outcome(
+                    entry,
+                    pending_detail,
+                    exc,
+                    name=normalized_name,
+                    period=period,
+                    amount=canonical_amount,
+                    amount_micros=amount_micros,
+                    currency_code=currency_code,
+                    explicitly_shared=explicitly_shared,
+                    delivery_method=delivery_method,
+                    disposition=disposition,
+                )
             detail = terminal_operation_detail(pending_detail, ledger)
             status = audit_status(detail)
             return IntegrationAuditOutcome(
@@ -155,6 +188,50 @@ async def google_ads_create_campaign_budget(
     return {"results": serialize_fan_out_results(results)}
 
 
+def _validate_create_args(
+    _ctx: RunContext[RuntimeDeps],
+    name: str,
+    amount: GoogleAdsCampaignBudgetAmount,
+    explicitly_shared: bool,
+    delivery_method: Literal["STANDARD", "ACCELERATED"],
+) -> None:
+    """Reject invalid create combinations before approval is requested."""
+    _validated_create_input(
+        name,
+        amount,
+        explicitly_shared=explicitly_shared,
+        delivery_method=delivery_method,
+    )
+
+
+def _validated_create_input(
+    name: str,
+    amount: GoogleAdsCampaignBudgetAmount,
+    *,
+    explicitly_shared: bool,
+    delivery_method: Literal["STANDARD", "ACCELERATED"],
+) -> tuple[str, Literal["DAILY", "CUSTOM_PERIOD"], int]:
+    normalized_name = " ".join(name.split())
+    if not normalized_name:
+        raise ModelRetry("Enter a campaign budget name.")
+    if len(normalized_name.encode("utf-8")) > 255:
+        raise ModelRetry("Campaign budget names must be 255 UTF-8 bytes or fewer.")
+    period: Literal["DAILY", "CUSTOM_PERIOD"] = (
+        "DAILY" if isinstance(amount, GoogleAdsDailyBudgetAmount) else "CUSTOM_PERIOD"
+    )
+    if period == "CUSTOM_PERIOD" and explicitly_shared:
+        raise ModelRetry("Campaign total budgets can't be shared across campaigns.")
+    if period == "CUSTOM_PERIOD" and delivery_method == "ACCELERATED":
+        raise ModelRetry("Campaign total budgets require standard delivery.")
+    amount_text = (
+        amount.daily_amount
+        if isinstance(amount, GoogleAdsDailyBudgetAmount)
+        else amount.total_amount
+    )
+    amount_micros = money_to_micros(amount_text)
+    return normalized_name, period, amount_micros
+
+
 def _pending_operation_detail(
     entry: ResolvedContextEntry, **fields: Any
 ) -> PendingIntegrationOperationDetail:
@@ -181,7 +258,11 @@ def _result(
 ) -> dict[str, Any]:
     parent = ledger.parents[0]
     effect = parent.effects[0]
-    result = {**fields, "outcome": "created" if effect.outcome == "applied" else effect.outcome}
+    result = {
+        **fields,
+        "amount_micros": str(fields["amount_micros"]),
+        "outcome": "created" if effect.outcome == "applied" else effect.outcome,
+    }
     if effect.outcome == "applied" and effect.external_ref:
         budget_id = effect.external_ref.rsplit("/", 1)[-1]
         result["reference"] = GoogleAdsCampaignBudgetReference(
@@ -206,6 +287,60 @@ def _result(
     return result
 
 
+def _exception_outcome(
+    entry: ResolvedContextEntry,
+    pending_detail: PendingIntegrationOperationDetail,
+    exc: BaseException,
+    *,
+    disposition: IntegrationFailureDisposition,
+    **fields: Any,
+) -> IntegrationAuditOutcome[GoogleAdsMutationLedger]:
+    ambiguous = disposition is IntegrationFailureDisposition.AMBIGUOUS
+    error_code = exc.__class__.__name__[:100]
+    raw_message = exc.user_message if isinstance(exc, IntegrationError) else str(exc)
+    message = " ".join(raw_message.split())[:1000] or "Campaign budget creation failed"
+    ledger = campaign_budget_creation_failure_ledger(
+        name=str(fields["name"]),
+        period=fields["period"],
+        amount_micros=int(fields["amount_micros"]),
+        explicitly_shared=bool(fields["explicitly_shared"]),
+        delivery_method=fields["delivery_method"],
+        outcome="unverified" if ambiguous else "failed",
+        error_code=error_code,
+        message=message,
+    )
+    detail = terminal_operation_detail(pending_detail, ledger)
+    status = audit_status(detail)
+    return IntegrationAuditOutcome(
+        ledger,
+        status=status,
+        operation_detail=detail,
+        unverified_result=_result(entry, ledger, **fields) if ambiguous else None,
+    )
+
+
+def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
+    """Adds trusted account currencies to the approval-only argument projection."""
+    entries = (
+        deps.active_context.compatible_entries(GOOGLE_ADS_WRITE_BINDING)
+        if deps.active_context
+        else ()
+    )
+    accounts = [
+        {
+            "label": entry.display_name,
+            "currency_code": str(entry.permissions_metadata["currency_code"]).strip(),
+        }
+        for entry in entries
+        if entry.write_allowed
+        and isinstance(entry.permissions_metadata.get("currency_code"), str)
+        and str(entry.permissions_metadata["currency_code"]).strip()
+    ]
+    if not accounts:
+        raise RuntimeError("Google Ads campaign budget approval requires account currencies")
+    return {**args, "_account_currencies": accounts}
+
+
 DEFINITION = RuntimeToolDefinition(
     name="google_ads_create_campaign_budget",
     function=google_ads_create_campaign_budget,
@@ -221,10 +356,12 @@ DEFINITION = RuntimeToolDefinition(
     default_policy=TOOL_POLICY_APPROVAL,
     supports_auto=False,
     takes_ctx=True,
+    args_validator=_validate_create_args,
     timeout=60,
     output_model=GoogleAdsCreateCampaignBudgetOutput,
     integration_binding=GOOGLE_ADS_WRITE_BINDING,
     availability_check=google_ads_available,
+    approval_display_args=_approval_display_args,
     presentation=ToolPresentation(
         icon="google_ads",
         running_label="Creating Campaign Budget",

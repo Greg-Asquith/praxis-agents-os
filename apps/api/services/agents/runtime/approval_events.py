@@ -2,7 +2,9 @@
 
 """Approval and deferred-tool stream event helpers."""
 
+import logging
 from collections.abc import Collection, Sequence
+from inspect import isawaitable
 from typing import Any
 
 from pydantic_ai import (
@@ -29,6 +31,7 @@ from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_PENDING_APPROVALS_KEY,
 )
 from services.agents.runtime.code_mode.approval import code_mode_nested_call
+from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.events import (
     public_function_tool_result,
 )
@@ -42,6 +45,12 @@ from services.agents.runtime.stream_protocol import (
     ToolCallEvent,
     ToolResultEvent,
 )
+from services.agents.runtime.tools.registry import resolve_runtime_tool_definition
+
+_APPROVAL_DISPLAY_ERROR = (
+    "Approval details are unavailable. Ask the agent to prepare this action again."
+)
+logger = logging.getLogger(__name__)
 
 
 def is_deferred_tool_resume_event(
@@ -119,6 +128,7 @@ async def emit_approval_required_events(
             replay_args = tool_replay_args_for_editing(
                 tool_name=nested_call.tool_name,
                 args=nested_call.args,
+                metadata=metadata,
             )
             await sink.emit(
                 ToolApprovalRequiredEvent(
@@ -153,6 +163,7 @@ async def emit_approval_required_events(
         replay_args = tool_replay_args_for_editing(
             tool_name=approval.tool_name,
             args=approval.args,
+            metadata=metadata,
         )
         await sink.emit(
             ToolApprovalRequiredEvent(
@@ -219,6 +230,49 @@ def _delegated_pending_approvals(
             )
         )
     return approvals
+
+
+async def add_approval_display_args(
+    deps: RuntimeDeps,
+    deferred_tool_requests: DeferredToolRequests,
+) -> DeferredToolRequests:
+    """Adds trusted display-only arguments to pending tool approvals."""
+    metadata = {
+        call_id: dict(value) for call_id, value in (deferred_tool_requests.metadata or {}).items()
+    }
+    changed = False
+    for approval in deferred_tool_requests.approvals:
+        approval_metadata = metadata.get(approval.tool_call_id, {})
+        nested_call = code_mode_nested_call(approval_metadata)
+        tool_name = nested_call.tool_name if nested_call is not None else approval.tool_name
+        args = nested_call.args_as_dict() if nested_call is not None else approval.args_as_dict()
+        definition = resolve_runtime_tool_definition(
+            tool_name,
+            deps.workspace_tool_definitions,
+        )
+        if definition is None or definition.approval_display_args is None:
+            continue
+        try:
+            projected = definition.approval_display_args(deps, args)
+            display_args = await projected if isawaitable(projected) else projected
+        except Exception:
+            logger.exception(
+                "Approval display argument projection failed",
+                extra={"tool_name": tool_name},
+            )
+            display_args = {**args, "_approval_display_error": _APPROVAL_DISPLAY_ERROR}
+        metadata[approval.tool_call_id] = {
+            **approval_metadata,
+            "display_args": display_args,
+        }
+        changed = True
+    if not changed:
+        return deferred_tool_requests
+    return DeferredToolRequests(
+        calls=list(deferred_tool_requests.calls),
+        approvals=list(deferred_tool_requests.approvals),
+        metadata=metadata,
+    )
 
 
 def _delegated_approval_projection(

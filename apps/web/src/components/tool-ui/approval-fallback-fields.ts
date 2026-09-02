@@ -19,7 +19,7 @@ export function approvalFallbackFields(
 
   const declaredKeys = new Set(declaredFields.map((field) => field.key))
   return Object.entries(normalized).flatMap(([key, raw]): ResolvedToolField[] => {
-    if (declaredKeys.has(key)) {
+    if (declaredKeys.has(key) || key.startsWith("_")) {
       return []
     }
     const scalarValue = scalarToolFieldDisplayValue(raw)

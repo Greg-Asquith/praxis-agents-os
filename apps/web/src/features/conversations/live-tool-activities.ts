@@ -76,12 +76,11 @@ export function buildLiveToolActivities(
     const existingIndex = activityIndexesById.get(approval.tool_call_id)
     if (existingIndex !== undefined) {
       const existing = activities[existingIndex]
-      if (
-        existing &&
-        (approval.derived_from_untrusted === true || approval.taint_sources !== undefined)
-      ) {
+      if (existing?.status === "awaiting_approval") {
+        const args = normalizeToolArgs(approval.args)
         activities[existingIndex] = {
           ...existing,
+          args,
           ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
           ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
         }

@@ -21,6 +21,7 @@ from services.agent_runs.domain import (
     RUN_STATUS_FAILED,
 )
 from services.agents.runtime.approval_events import (
+    add_approval_display_args,
     build_deferred_tool_result_metadata,
     emit_approval_required_events,
     emit_deferred_tool_resume_events,
@@ -113,6 +114,7 @@ async def finalize_suspended_run(
     usage_event: AIUsageEventData | None = None,
 ) -> ExecuteRunResult:
     deferred_tool_requests = terminal_result.output
+    deferred_tool_requests = await add_approval_display_args(deps, deferred_tool_requests)
     await record_policy_approval_request_audit_events(
         deps=deps,
         deferred_tool_requests=deferred_tool_requests,

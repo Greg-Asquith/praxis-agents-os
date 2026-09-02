@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 
-import { mergeApprovalArgs } from "@/components/tool-ui/approval-args"
+import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { parseSettledFanOutData, type FanOutEntry } from "@/components/tool-ui/fan-out"
@@ -53,12 +53,26 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
 
     if (approvalDecision) {
       if (!args) {
-        return null
+        return (
+          <ToolApprovalDecisionCard
+            activityId={activity.id}
+            approveLabel={variant.approval.approveLabel}
+            args={activity.args}
+            controls={approvalDecision}
+            icon={<GoogleAdsLogo className="size-4" />}
+            label={variant.approval.label}
+            prompt="The approval details couldn't be verified, so this action can't be approved."
+            title={variant.heading}
+            toolName={activity.name}
+            validationError="Decline this request, then ask the agent to prepare the action again."
+          />
+        )
       }
       const fields = ui?.arg_fields ?? []
       const currentArgs = mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
       const currentParsedArgs = variant.approval.parseArgs(currentArgs) ?? args
-      const validationError = variant.approval.validateArgs?.(currentArgs) ?? null
+      const validationError =
+        approvalDisplayError(currentArgs) ?? variant.approval.validateArgs?.(currentArgs) ?? null
       return (
         <ToolApprovalDecisionCard
           activityId={activity.id}

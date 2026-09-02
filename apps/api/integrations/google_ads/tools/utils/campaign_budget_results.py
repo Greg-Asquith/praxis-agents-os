@@ -55,15 +55,17 @@ def display_campaign_budget_amount_result(result: Mapping[str, Any]) -> dict[str
 def campaign_label_audit_evidence(
     labels: Sequence[str],
     *,
+    total_count: int | None = None,
     max_labels: int = 5,
     max_label_chars: int = 100,
 ) -> dict[str, Any]:
     """Return a bounded label sample with explicit omission evidence."""
+    label_count = len(labels) if total_count is None else total_count
     sample = [str(label)[:max_label_chars] for label in labels[:max_labels]]
     return {
-        "campaign_label_count": len(labels),
+        "campaign_label_count": label_count,
         "campaign_label_sample": sample,
-        "campaign_labels_truncated": len(sample) < len(labels)
+        "campaign_labels_truncated": len(sample) < label_count
         or any(len(str(label)) > max_label_chars for label in labels[:max_labels]),
     }
 
@@ -119,6 +121,7 @@ def _budget_sample(
         reference = GoogleAdsCampaignBudgetReference.model_validate(reference)
     label_evidence = campaign_label_audit_evidence(
         reference.campaign_labels,
+        total_count=reference.reference_count,
         max_labels=max_labels,
         max_label_chars=max_label_chars,
     )
@@ -129,8 +132,8 @@ def _budget_sample(
         "reference": bounded_reference.model_dump(mode="json"),
         "previous_amount": str(row.get("previous_amount", ""))[:32],
         "requested_amount": str(row.get("requested_amount", ""))[:32],
-        "previous_amount_micros": int(row.get("previous_amount_micros", 0)),
-        "requested_amount_micros": int(row.get("requested_amount_micros", 0)),
+        "previous_amount_micros": str(row.get("previous_amount_micros", "0")),
+        "requested_amount_micros": str(row.get("requested_amount_micros", "0")),
         "outcome": row.get("outcome"),
         "campaign_label_count": label_evidence["campaign_label_count"],
         "campaign_labels_truncated": label_evidence["campaign_labels_truncated"],
