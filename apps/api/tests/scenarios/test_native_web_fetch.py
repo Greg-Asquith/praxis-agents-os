@@ -25,6 +25,7 @@ from tests.support.scenario import (
 def _enable_anthropic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
 
 
@@ -180,6 +181,7 @@ async def test_fetch_url_is_hidden_when_only_an_unsupported_provider_is_configur
 ) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
     context = await build_scenario_agent(db_session_factory, tool_names=["fetch_url"])
     seen_requests = []

@@ -132,7 +132,7 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
     assert classifier["input_schema"]["required"] == ["items", "labels"]
 
 
-async def test_tool_catalog_route_hides_helper_tools_without_provider_keys(
+async def test_tool_catalog_route_hides_helper_tools_without_configured_providers(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -140,6 +140,7 @@ async def test_tool_catalog_route_hides_helper_tools_without_provider_keys(
     _user, _workspace, headers = await _authenticated_workspace(db_session)
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
 
     response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
@@ -150,21 +151,34 @@ async def test_tool_catalog_route_hides_helper_tools_without_provider_keys(
     assert "classify" not in names
 
 
-@pytest.mark.parametrize("provider", ["google", "openai"])
+@pytest.mark.parametrize(
+    ("provider", "google_vertex_ai"),
+    [("google", False), ("google", True), ("openai", False)],
+    ids=["google-developer-api", "google-vertex-ai", "openai"],
+)
 async def test_tool_catalog_route_exposes_generate_image_for_supported_provider(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
+    google_vertex_ai: bool,
 ) -> None:
     _user, _workspace, headers = await _authenticated_workspace(db_session)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", google_vertex_ai)
     monkeypatch.setattr(
         settings,
-        "GOOGLE_API_KEY" if provider == "google" else "OPENAI_API_KEY",
-        SecretStr("provider-test"),
+        "GOOGLE_VERTEX_PROJECT",
+        "vertex-project" if google_vertex_ai else None,
     )
+    monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+    if not google_vertex_ai:
+        monkeypatch.setattr(
+            settings,
+            "GOOGLE_API_KEY" if provider == "google" else "OPENAI_API_KEY",
+            SecretStr("provider-test"),
+        )
 
     response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
 
@@ -193,6 +207,7 @@ async def test_tool_catalog_route_hides_generate_image_without_supported_provide
     _user, _workspace, headers = await _authenticated_workspace(db_session)
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("anthropic-test"))
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
 
     response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)

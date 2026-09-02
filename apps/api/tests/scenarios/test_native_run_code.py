@@ -42,6 +42,7 @@ def run_code_storage(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None
 def _enable_openai(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
 
 

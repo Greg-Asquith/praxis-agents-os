@@ -45,6 +45,7 @@ def image_storage(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def _enable_google(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("google-test"))
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
@@ -208,6 +209,7 @@ async def test_generate_image_is_hidden_without_google_or_openai(
 ) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     context = await build_scenario_agent(db_session_factory, tool_names=["generate_image"])
     seen_requests = []
