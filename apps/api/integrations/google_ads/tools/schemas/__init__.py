@@ -2,9 +2,11 @@
 
 from .campaign_budgets import (
     GoogleAdsCampaignBudgetAmount,
+    GoogleAdsCampaignBudgetAmountUpdate,
     GoogleAdsCreateCampaignBudgetOutput,
     GoogleAdsDailyBudgetAmount,
     GoogleAdsTotalBudgetAmount,
+    GoogleAdsUpdateCampaignBudgetAmountsOutput,
 )
 from .campaign_links import GoogleAdsCampaignLinkOutput
 from .campaign_status import GoogleAdsCampaignStatusOutput
@@ -41,6 +43,7 @@ __all__ = [
     "GoogleAdsAddNegativeKeywordsOutput",
     "GoogleAdsApplyRecommendationsOutput",
     "GoogleAdsCampaignBudgetAmount",
+    "GoogleAdsCampaignBudgetAmountUpdate",
     "GoogleAdsCampaignLinkOutput",
     "GoogleAdsCampaignStatusOutput",
     "GoogleAdsCreateCampaignBudgetOutput",
@@ -59,4 +62,5 @@ __all__ = [
     "GoogleAdsReportFieldSummary",
     "GoogleAdsRunReportOutput",
     "GoogleAdsTotalBudgetAmount",
+    "GoogleAdsUpdateCampaignBudgetAmountsOutput",
 ]

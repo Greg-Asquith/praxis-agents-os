@@ -19,6 +19,12 @@ from integrations.google_ads.entity_resolvers.campaign import (
     resolve_google_ads_campaigns,
     search_google_ads_campaigns,
 )
+from integrations.google_ads.entity_resolvers.campaign_budget import (
+    GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER,
+    _choice as campaign_budget_choice,
+    resolve_google_ads_campaign_budgets,
+    search_google_ads_campaign_budgets,
+)
 from integrations.google_ads.entity_resolvers.recommendation import (
     search_google_ads_recommendations,
 )
@@ -36,6 +42,7 @@ from integrations.google_ads.entity_resolvers.utils import (
 )
 from integrations.google_ads.references import (
     GoogleAdsAdGroupReference,
+    GoogleAdsCampaignBudgetReference,
     GoogleAdsCampaignReference,
     GoogleAdsSharedSetReference,
 )
@@ -72,6 +79,85 @@ def test_campaign_reference_rejects_removed_campaign() -> None:
     )
 
     assert choice is None
+
+
+def test_campaign_budget_choice_carries_live_budget_evidence() -> None:
+    choice = campaign_budget_choice(
+        SimpleNamespace(external_id="111", display_name="Ads account"),
+        {
+            "id": "55",
+            "name": "Launch budget",
+            "status": "ENABLED",
+            "period": "DAILY",
+            "deliveryMethod": "STANDARD",
+            "amountMicros": "12500000",
+            "explicitlyShared": True,
+            "referenceCount": "2",
+            "currencyCode": "GBP",
+            "campaignLabels": ("Brand", "Search"),
+        },
+    )
+
+    assert choice is not None
+    reference = GoogleAdsCampaignBudgetReference.model_validate(choice.value)
+    assert reference.budget_id == "55"
+    assert reference.amount_micros == 12_500_000
+    assert reference.total_amount_micros is None
+    assert reference.delivery_method == "STANDARD"
+    assert reference.explicitly_shared is True
+    assert reference.reference_count == 2
+    assert reference.currency_code == "GBP"
+    assert reference.campaign_labels == ("Brand", "Search")
+    assert choice.description == "2 linked campaigns"
+
+
+def test_campaign_budget_resolver_matches_reference_contract() -> None:
+    assert GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER.entity_kind == (
+        GoogleAdsCampaignBudgetReference.model_fields["entity_kind"].default
+    )
+    assert GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER.reference_type is GoogleAdsCampaignBudgetReference
+
+
+async def test_campaign_budget_resolver_searches_and_hydrates_live_references(
+    monkeypatch,
+) -> None:
+    selected = _writable_google_ads_entry()
+    ctx = SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,)))
+    row = {
+        "id": "55",
+        "name": "Launch budget",
+        "status": "ENABLED",
+        "period": "DAILY",
+        "deliveryMethod": "STANDARD",
+        "amountMicros": "12500000",
+        "explicitlyShared": False,
+        "referenceCount": "0",
+        "currencyCode": "GBP",
+        "campaignLabels": (),
+    }
+    query = AsyncMock(return_value=[row])
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.campaign_budget._query",
+        query,
+    )
+
+    page = await search_google_ads_campaign_budgets(ctx, "launch", {}, 10, None)
+    resolved = await resolve_google_ads_campaign_budgets(
+        ctx,
+        [
+            GoogleAdsCampaignBudgetReference(
+                customer_id=selected.external_id,
+                budget_id="55",
+                label="Old name",
+            )
+        ],
+        {},
+    )
+
+    assert [choice.label for choice in page.choices] == ["Launch budget"]
+    assert resolved[0].value["amount_micros"] == 12_500_000
+    assert query.await_args_list[0].kwargs["search"] == "launch"
+    assert query.await_args_list[1].kwargs["budget_ids"] == ["55"]
 
 
 async def test_recommendation_pages_interleave_every_active_account(monkeypatch) -> None:

@@ -1,15 +1,14 @@
-# apps/api/integrations/google_ads/operations/update_device_bid_modifiers.py
+# apps/api/integrations/google_ads/operations/update_campaign_budget_amounts.py
 
-"""Create or update campaign-level device bid modifiers."""
+"""Update Google Ads campaign budget amounts with exact outcome accounting."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
-from .list_campaign_device_criteria import GoogleAdsCampaignDeviceState
 from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
@@ -17,30 +16,29 @@ from .mutation_outcomes import (
     freeze_fields,
     reconcile_exact_mutation_outcomes,
 )
-from .utils import (
-    grouped_partial_failure_errors,
-    rounded_bid_modifier,
-)
+from .utils import grouped_partial_failure_errors
 
-type GoogleAdsDevice = Literal["DESKTOP", "MOBILE", "TABLET"]
-type GoogleAdsDeviceBidAdjustment = tuple[str, GoogleAdsDevice, float]
-
-_DEVICE_CRITERION_IDS: dict[GoogleAdsDevice, str] = {
-    "DESKTOP": "30000",
-    "MOBILE": "30001",
-    "TABLET": "30002",
-}
+type GoogleAdsCampaignBudgetPeriod = Literal["DAILY", "CUSTOM_PERIOD"]
 
 
-async def update_device_bid_modifiers(
+@dataclass(frozen=True, slots=True)
+class GoogleAdsCampaignBudgetAmountChange:
+    """One live-verified campaign budget amount change."""
+
+    budget_id: str
+    period: GoogleAdsCampaignBudgetPeriod
+    previous_amount_micros: int
+    requested_amount_micros: int
+
+
+async def update_campaign_budget_amounts(
     client: GoogleAdsClient,
     *,
     customer_id: str,
     login_customer_id: str,
-    adjustments: Sequence[GoogleAdsDeviceBidAdjustment],
-    existing_state: Mapping[str, GoogleAdsCampaignDeviceState],
+    changes: Sequence[GoogleAdsCampaignBudgetAmountChange],
 ) -> GoogleAdsMutationLedger:
-    """Updates device bid modifiers with exact create, update, and skip accounting."""
+    """Update only the amount field selected by each budget's live period."""
     normalized_customer_id = normalize_customer_id(customer_id)
     parent_fields: list[dict[str, str]] = []
     skipped_indices: dict[int, str] = {}
@@ -49,57 +47,36 @@ async def update_device_bid_modifiers(
     operations: list[dict[str, Any]] = []
     expected_resource_names: list[str] = []
 
-    for campaign_id, device, bid_modifier in adjustments:
-        if not campaign_id.isdigit():
-            raise ValueError("Google Ads campaign ids must contain only digits")
-        if device not in _DEVICE_CRITERION_IDS:
-            raise ValueError("Google Ads device must be DESKTOP, MOBILE, or TABLET")
-        normalized_modifier = rounded_bid_modifier(bid_modifier)
-        identity = {
-            "campaign_id": campaign_id,
-            "device": device,
-            "bid_modifier": f"{normalized_modifier:.2f}",
-        }
+    if not changes:
+        raise ValueError("Google Ads campaign budget updates cannot be empty")
+    if len(changes) > 100:
+        raise ValueError("Google Ads campaign budget updates accept at most 100 changes")
+    for change in changes:
+        _validate_change(change)
+        identity = {"budget_id": change.budget_id}
         parent_index = len(parent_fields)
         parent_fields.append(identity)
-        current = existing_state.get(campaign_id, {}).get("devices", {}).get(device)
-        criterion_id = (
-            current["criterion_id"] if current is not None else _DEVICE_CRITERION_IDS[device]
-        )
-        resource_name = (
-            f"customers/{normalized_customer_id}/campaignCriteria/{campaign_id}~{criterion_id}"
-        )
-        if (
-            current is not None
-            and rounded_bid_modifier(current["bid_modifier"]) == normalized_modifier
-        ):
+        resource_name = f"customers/{normalized_customer_id}/campaignBudgets/{change.budget_id}"
+        if change.previous_amount_micros == change.requested_amount_micros:
             skipped_indices[parent_index] = "already set"
             skipped_refs.append((freeze_fields(identity), resource_name))
             continue
 
+        amount_field = "amountMicros" if change.period == "DAILY" else "totalAmountMicros"
         submitted.append((parent_index, identity))
         expected_resource_names.append(resource_name)
-        if current is not None:
-            operations.append(
-                {
-                    "update": {
-                        "resourceName": resource_name,
-                        "bidModifier": float(normalized_modifier),
-                    },
-                    "updateMask": "bidModifier",
-                }
-            )
-        else:
-            operations.append(
-                {
-                    "create": {
-                        "campaign": f"customers/{normalized_customer_id}/campaigns/{campaign_id}",
-                        "device": {"type": device},
-                        "bidModifier": float(normalized_modifier),
-                    }
-                }
-            )
+        operations.append(
+            {
+                "update": {
+                    "resourceName": resource_name,
+                    amount_field: str(change.requested_amount_micros),
+                },
+                "updateMask": amount_field,
+            }
+        )
 
+    if len({change.budget_id for change in changes}) != len(changes):
+        raise ValueError("Google Ads campaign budget updates must be unique")
     if not operations:
         return _ledger(
             parent_fields,
@@ -110,8 +87,8 @@ async def update_device_bid_modifiers(
         )
 
     payload = await client.post(
-        f"customers/{normalized_customer_id}/campaignCriteria:mutate",
-        operation="update_device_bid_modifiers",
+        f"customers/{normalized_customer_id}/campaignBudgets:mutate",
+        operation="update_campaign_budget_amounts",
         policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={"operations": operations, "partialFailure": True},
@@ -120,8 +97,8 @@ async def update_device_bid_modifiers(
         payload,
         submitted,
         value_to_error_fields=lambda item: item[1],
-        unattributed_error_fields={"campaign_id": "", "device": "", "bid_modifier": ""},
-        default_message="Device bid adjustment failed",
+        unattributed_error_fields={"budget_id": ""},
+        default_message="Campaign budget amount update failed",
     )
     results = payload.get("results") if isinstance(payload, dict) else None
     outcomes = reconcile_exact_mutation_outcomes(
@@ -139,6 +116,15 @@ async def update_device_bid_modifiers(
     )
 
 
+def _validate_change(change: GoogleAdsCampaignBudgetAmountChange) -> None:
+    if not change.budget_id.isdigit():
+        raise ValueError("Google Ads campaign budget ids must contain only digits")
+    if change.period not in {"DAILY", "CUSTOM_PERIOD"}:
+        raise ValueError("Google Ads campaign budget period is unsupported")
+    if change.previous_amount_micros < 0 or change.requested_amount_micros <= 0:
+        raise ValueError("Google Ads campaign budget amounts are invalid")
+
+
 def _ledger(
     parent_fields: Sequence[Mapping[str, object]],
     *,
@@ -148,7 +134,7 @@ def _ledger(
     outcomes: Any,
 ) -> GoogleAdsMutationLedger:
     ledger = build_mutation_ledger(
-        family="campaign_device_bid_modifiers",
+        family="campaign_budget_amounts",
         action="update",
         parent_fields=parent_fields,
         skipped_indices=skipped_indices,
@@ -157,7 +143,7 @@ def _ledger(
         projection=GoogleAdsMutationProjection(
             applied_key="updated",
             skipped_key="already_set",
-            errors_key="device_errors",
+            errors_key="budget_errors",
         ),
     )
     return replace(ledger, skipped_external_refs=tuple(skipped_refs))

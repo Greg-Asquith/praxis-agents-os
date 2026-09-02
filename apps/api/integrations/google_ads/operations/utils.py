@@ -52,6 +52,15 @@ def rounded_bid_modifier(value: float) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"))
 
 
+def nonnegative_int(value: Any) -> int | None:
+    """Parse a provider integer field and reject missing or negative values."""
+    try:
+        parsed = int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed is not None and parsed >= 0 else None
+
+
 def valid_exact_mutation_results(
     results: Any,
     *,

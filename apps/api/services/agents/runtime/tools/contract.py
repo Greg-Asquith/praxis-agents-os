@@ -6,13 +6,16 @@ import inspect
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field as dataclass_field
-from typing import Annotated, Any, Literal, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
 from pydantic_ai import Tool
 
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.context import RuntimeDeps
+
+if TYPE_CHECKING:
+    from services.agents.runtime.entity_references.domain import ScopedEntityReference
 
 ToolPolicy = Literal["auto", "approval"]
 ToolEffect = Literal["read", "write"]
@@ -412,35 +415,54 @@ def _validate_integration_binding(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError(
             "Integration tools must not take connection/account parameters; context is server-resolved"
         )
+    integration_reference_types(definition)
+
+
+def integration_reference_types(
+    definition: RuntimeToolDefinition,
+) -> frozenset[type["ScopedEntityReference"]]:
+    """Return scoped reference types nested anywhere in a tool's input contract."""
+    from services.agents.runtime.entity_references.domain import ScopedEntityReference
+
+    reference_types: set[type[ScopedEntityReference]] = set()
     type_hints = get_type_hints(definition.function, include_extras=True)
     for parameter in inspect.signature(definition.function).parameters.values():
-        _validate_nested_integration_parameter(type_hints.get(parameter.name, parameter.annotation))
+        _validate_nested_integration_parameter(
+            type_hints.get(parameter.name, parameter.annotation),
+            reference_types=reference_types,
+        )
+    return frozenset(reference_types)
 
 
 def _validate_nested_integration_parameter(
     annotation: Any,
     seen_models: set[type[BaseModel]] | None = None,
+    reference_types: set[type["ScopedEntityReference"]] | None = None,
 ) -> None:
     """Permit scope keys only inside the registered scoped-reference base type."""
     from services.agents.runtime.entity_references.domain import ScopedEntityReference
 
     if seen_models is None:
         seen_models = set()
+    if reference_types is None:
+        reference_types = set()
     origin = get_origin(annotation)
     if origin is Annotated:
         args = get_args(annotation)
         if args:
-            _validate_nested_integration_parameter(args[0], seen_models)
+            _validate_nested_integration_parameter(args[0], seen_models, reference_types)
         return
     if origin is not None:
         for argument in get_args(annotation):
-            _validate_nested_integration_parameter(argument, seen_models)
+            _validate_nested_integration_parameter(argument, seen_models, reference_types)
         return
     if not inspect.isclass(annotation) or not issubclass(annotation, BaseModel):
         return
     if annotation in seen_models:
         return
     seen_models.add(annotation)
+    if issubclass(annotation, ScopedEntityReference):
+        reference_types.add(annotation)
     nested_names = set(annotation.model_fields)
     forbidden = nested_names.intersection(_INTEGRATION_PARAMETER_DENYLIST)
     if forbidden and not issubclass(annotation, ScopedEntityReference):
@@ -448,7 +470,7 @@ def _validate_nested_integration_parameter(
             "Integration scope fields are allowed only inside registered scoped references"
         )
     for field in annotation.model_fields.values():
-        _validate_nested_integration_parameter(field.annotation, seen_models)
+        _validate_nested_integration_parameter(field.annotation, seen_models, reference_types)
 
 
 def _validate_presentation(definition: RuntimeToolDefinition) -> None:

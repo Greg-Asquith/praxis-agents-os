@@ -1,5 +1,6 @@
 """Google Ads campaign budget creation contracts."""
 
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -11,15 +12,32 @@ from pydantic_ai import ModelRetry
 
 from integrations.google_ads.operations.create_campaign_budget import create_campaign_budget
 from integrations.google_ads.operations.list_campaign_budgets import list_campaign_budgets
+from integrations.google_ads.operations.update_campaign_budget_amounts import (
+    GoogleAdsCampaignBudgetAmountChange,
+    update_campaign_budget_amounts,
+)
 from integrations.google_ads.references import GoogleAdsCampaignBudgetReference
 from integrations.google_ads.tools.create_campaign_budget import (
     DEFINITION,
     google_ads_create_campaign_budget,
 )
 from integrations.google_ads.tools.schemas import (
+    GoogleAdsCampaignBudgetAmountUpdate,
     GoogleAdsCreateCampaignBudgetOutput,
     GoogleAdsDailyBudgetAmount,
     GoogleAdsTotalBudgetAmount,
+    GoogleAdsUpdateCampaignBudgetAmountsOutput,
+)
+from integrations.google_ads.tools.update_campaign_budget_amounts import (
+    DEFINITION as UPDATE_DEFINITION,
+    google_ads_update_campaign_budget_amounts,
+)
+from integrations.google_ads.tools.utils.campaign_budget_results import (
+    MAX_CAMPAIGN_BUDGET_AMOUNT_DISPLAY_DATA_CHARS,
+    MAX_CAMPAIGN_BUDGET_AMOUNT_PUBLIC_RESULT_CHARS,
+    MAX_CAMPAIGN_BUDGET_AMOUNT_RESULT_CHARS,
+    bounded_campaign_budget_amount_result,
+    display_campaign_budget_amount_result,
 )
 from integrations.google_ads.tools.utils.money import money_to_micros
 from integrations.google_ads.tools.verifiers.campaign_budget import verify_campaign_budgets
@@ -95,6 +113,70 @@ def test_campaign_budget_amount_rejects_oversized_decimal_strings(amount_type) -
     field_name = "daily_amount" if amount_type is GoogleAdsDailyBudgetAmount else "total_amount"
     with pytest.raises(ValidationError, match="at most 32 characters"):
         amount_type.model_validate({field_name: "1" * 33})
+
+
+@pytest.mark.parametrize(
+    ("amount_type", "field_name"),
+    [
+        (GoogleAdsDailyBudgetAmount, "daily_amount"),
+        (GoogleAdsTotalBudgetAmount, "total_amount"),
+    ],
+)
+def test_campaign_budget_amount_schema_describes_currency_decimal_contract(
+    amount_type, field_name
+) -> None:
+    description = amount_type.model_json_schema()["properties"][field_name]["description"]
+    assert "positive decimal" in description.lower()
+    assert "account currency" in description
+    assert "up to six decimal places" in description
+    assert "not micros" in description
+
+
+def test_campaign_budget_amount_results_bound_rows_and_campaign_labels() -> None:
+    labels = tuple(f"Campaign {index}: {'x' * 500}" for index in range(50))
+    budgets = [
+        {
+            "reference": GoogleAdsCampaignBudgetReference(
+                customer_id="333",
+                budget_id=str(index + 1),
+                label=f"Budget {index}",
+                campaign_labels=labels,
+            ),
+            "previous_amount": "1",
+            "requested_amount": "2",
+            "previous_amount_micros": 1_000_000,
+            "requested_amount_micros": 2_000_000,
+            "outcome": "updated",
+            "external_ref": f"customers/333/campaignBudgets/{index + 1}",
+            "error_code": None,
+            "message": None,
+        }
+        for index in range(100)
+    ]
+
+    model_result = bounded_campaign_budget_amount_result({"budgets": budgets})
+    display_result = display_campaign_budget_amount_result({"budgets": budgets})
+
+    assert len(json.dumps(model_result, ensure_ascii=False)) <= (
+        MAX_CAMPAIGN_BUDGET_AMOUNT_RESULT_CHARS
+    )
+    assert len(json.dumps(display_result, ensure_ascii=False)) <= (
+        MAX_CAMPAIGN_BUDGET_AMOUNT_DISPLAY_DATA_CHARS
+    )
+    assert model_result["counts"] == {
+        "updated": 100,
+        "already_set": 0,
+        "failed": 0,
+        "unverified": 0,
+    }
+    assert model_result["samples_truncated"] is True
+    assert model_result["campaign_labels_truncated"] is True
+    sample = model_result["samples"]["updated"][0]
+    assert sample["campaign_label_count"] == 50
+    assert sample["campaign_labels_truncated"] is True
+    assert len(sample["reference"]["campaign_labels"]) == 3
+    assert all(len(label) <= 80 for label in sample["reference"]["campaign_labels"])
+    assert display_result["samples_truncated"] is True
 
 
 def test_campaign_budget_reference_canonicalizes_resource_name() -> None:
@@ -278,6 +360,114 @@ async def test_create_campaign_budget_keeps_failed_and_unverified_outcomes_disti
     )
     assert rejected.effects[0].outcome == "failed"
     assert rejected.effects[0].error_code == "DUPLICATE_NAME"
+    assert ambiguous.effects[0].outcome == "unverified"
+
+
+async def test_update_campaign_budget_amounts_uses_live_period_masks_and_skips_noop() -> None:
+    client = Client(
+        {
+            "results": [
+                {"resourceName": "customers/333/campaignBudgets/55"},
+                {"resourceName": "customers/333/campaignBudgets/77"},
+            ]
+        }
+    )
+
+    ledger = await update_campaign_budget_amounts(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        changes=[
+            GoogleAdsCampaignBudgetAmountChange("44", "DAILY", 1_000_000, 1_000_000),
+            GoogleAdsCampaignBudgetAmountChange("55", "DAILY", 1_000_000, 2_500_000),
+            GoogleAdsCampaignBudgetAmountChange("77", "CUSTOM_PERIOD", 30_000_000, 45_000_000),
+        ],
+    )
+
+    assert client.path == "customers/333/campaignBudgets:mutate"
+    assert client.kwargs["policy"] is IntegrationRequestPolicy.MUTATION
+    assert client.kwargs["json"] == {
+        "operations": [
+            {
+                "update": {
+                    "resourceName": "customers/333/campaignBudgets/55",
+                    "amountMicros": "2500000",
+                },
+                "updateMask": "amountMicros",
+            },
+            {
+                "update": {
+                    "resourceName": "customers/333/campaignBudgets/77",
+                    "totalAmountMicros": "45000000",
+                },
+                "updateMask": "totalAmountMicros",
+            },
+        ],
+        "partialFailure": True,
+    }
+    assert ledger.result()["already_set"] == [{"budget_id": "44"}]
+    assert ledger.skipped_external_ref(ledger.parents[0]) == ("customers/333/campaignBudgets/44")
+    assert [item["budget_id"] for item in ledger.result()["updated"]] == ["55", "77"]
+
+
+async def test_update_campaign_budget_amounts_avoids_request_when_all_amounts_match() -> None:
+    client = Client({})
+
+    ledger = await update_campaign_budget_amounts(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        changes=[GoogleAdsCampaignBudgetAmountChange("55", "DAILY", 1_000_000, 1_000_000)],
+    )
+
+    assert client.path is None
+    assert ledger.result()["already_set"] == [{"budget_id": "55"}]
+
+
+async def test_update_campaign_budget_amounts_keeps_failed_and_unverified_distinct() -> None:
+    rejected = await update_campaign_budget_amounts(
+        Client(
+            {
+                "results": [
+                    {"resourceName": "customers/333/campaignBudgets/44"},
+                    {},
+                ],
+                "partialFailureError": {
+                    "details": [
+                        {
+                            "errors": [
+                                {
+                                    "message": "Budget is read only",
+                                    "errorCode": {"campaignBudgetError": "CANNOT_MODIFY"},
+                                    "location": {
+                                        "fieldPathElements": [
+                                            {"fieldName": "operations", "index": 1}
+                                        ]
+                                    },
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        ),
+        customer_id="333",
+        login_customer_id="111",
+        changes=[
+            GoogleAdsCampaignBudgetAmountChange("44", "DAILY", 1, 2),
+            GoogleAdsCampaignBudgetAmountChange("55", "DAILY", 1, 2),
+        ],
+    )
+    ambiguous = await update_campaign_budget_amounts(
+        Client({"results": [{"resourceName": "customers/999/campaignBudgets/55"}]}),
+        customer_id="333",
+        login_customer_id="111",
+        changes=[GoogleAdsCampaignBudgetAmountChange("55", "DAILY", 1, 2)],
+    )
+
+    assert rejected.effects[0].outcome == "applied"
+    assert rejected.effects[1].outcome == "failed"
+    assert rejected.effects[1].error_code == "CANNOT_MODIFY"
     assert ambiguous.effects[0].outcome == "unverified"
 
 
@@ -471,3 +661,199 @@ def test_campaign_budget_definition_is_approval_only_and_code_eligible() -> None
     )
     assert delivery_method.editable is True
     assert delivery_method.options == ("STANDARD", "ACCELERATED")
+
+
+async def test_update_campaign_budget_amounts_uses_live_state_for_result_and_audit(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,))),
+        tool_name=UPDATE_DEFINITION.name,
+    )
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Stale name",
+    )
+    provider_client = Client({"results": [{"resourceName": "customers/333/campaignBudgets/55"}]})
+    verifier = AsyncMock(
+        return_value={
+            "55": {
+                "id": "55",
+                "name": "Current name",
+                "status": "ENABLED",
+                "period": "DAILY",
+                "deliveryMethod": "STANDARD",
+                "amountMicros": "12500000",
+                "explicitlyShared": True,
+                "referenceCount": "2",
+                "currencyCode": "GBP",
+                "campaignLabels": ("Brand", "Search"),
+            }
+        }
+    )
+    audit_outcomes = []
+    pending_details = []
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        pending_details.append(await kwargs["prepare_pending_operation"]())
+        outcome = await kwargs["execute"]()
+        audit_outcomes.append(outcome)
+        return outcome.value
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.google_ads_client",
+        AsyncMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.verify_campaign_budgets",
+        verifier,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.run_audited_integration_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_update_campaign_budget_amounts(
+        ctx,
+        [GoogleAdsCampaignBudgetAmountUpdate(budget=reference, amount="15.25")],
+    )
+
+    output = GoogleAdsUpdateCampaignBudgetAmountsOutput.model_validate(result.return_value)
+    data = output.results[0].data
+    assert data is not None, result.return_value["results"][0].get("error_message")
+    assert data.counts.model_dump() == {
+        "updated": 1,
+        "already_set": 0,
+        "failed": 0,
+        "unverified": 0,
+    }
+    budget = data.samples.updated[0]
+    assert budget.outcome == "updated"
+    assert budget.previous_amount == "12.5"
+    assert budget.requested_amount == "15.25"
+    assert budget.reference.label == "Current name"
+    assert budget.reference.amount_micros == 15_250_000
+    assert budget.reference.reference_count == 2
+    assert budget.reference.campaign_labels == ("Brand", "Search")
+    fields = pending_details[0].intent_groups[0].items[0].fields
+    assert fields["previous_amount_micros"] == "12500000"
+    assert fields["requested_amount_micros"] == "15250000"
+    assert fields["campaign_label_count"] == 2
+    assert fields["campaign_label_sample"] == ["Brand", "Search"]
+    assert fields["campaign_labels_truncated"] is False
+    assert audit_outcomes[0].operation_detail.intent_counts.applied == 1
+    verifier.assert_awaited_once()
+
+
+async def test_update_campaign_budget_amounts_rejects_duplicates_before_dispatch(
+    monkeypatch,
+) -> None:
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Budget",
+    )
+    fan_out = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.run_context_targets",
+        fan_out,
+    )
+
+    with pytest.raises(ModelRetry, match="only once"):
+        await google_ads_update_campaign_budget_amounts(
+            SimpleNamespace(),
+            [
+                GoogleAdsCampaignBudgetAmountUpdate(budget=reference, amount="1"),
+                GoogleAdsCampaignBudgetAmountUpdate(budget=reference, amount="2"),
+            ],
+        )
+
+    fan_out.assert_not_awaited()
+
+
+async def test_update_campaign_budget_amounts_retains_unverified_before_after_result(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(selected,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=UPDATE_DEFINITION.name,
+        tool_call_id="update-budget-call",
+    )
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Budget",
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.google_ads_client",
+        AsyncMock(
+            return_value=Client({"results": [{"resourceName": "customers/999/campaignBudgets/55"}]})
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.update_campaign_budget_amounts.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": {
+                    "id": "55",
+                    "name": "Budget",
+                    "status": "ENABLED",
+                    "period": "DAILY",
+                    "deliveryMethod": "STANDARD",
+                    "amountMicros": "1000000",
+                    "explicitlyShared": False,
+                    "referenceCount": "0",
+                    "currencyCode": "GBP",
+                    "campaignLabels": (),
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_update_campaign_budget_amounts(
+        ctx,
+        [GoogleAdsCampaignBudgetAmountUpdate(budget=reference, amount="2")],
+    )
+
+    output = GoogleAdsUpdateCampaignBudgetAmountsOutput.model_validate(result.return_value)
+    item = output.results[0]
+    assert item.status == "error"
+    assert item.error_code == "unverified_mutation"
+    assert item.data is not None
+    budget = item.data.samples.unverified[0]
+    assert budget.outcome == "unverified"
+    assert budget.previous_amount_micros == 1_000_000
+    assert budget.requested_amount_micros == 2_000_000
+    assert budget.reference.amount_micros == 1_000_000
+
+
+def test_update_campaign_budget_definition_is_approval_only_and_bounded() -> None:
+    assert UPDATE_DEFINITION.default_policy == "approval"
+    assert UPDATE_DEFINITION.supports_auto is False
+    assert UPDATE_DEFINITION.code_eligible is True
+    schema = UPDATE_DEFINITION.to_pydantic_tool().function_schema.json_schema
+    updates = schema["properties"]["updates"]
+    assert updates["minItems"] == 1
+    assert updates["maxItems"] == 100
+    update_schema = schema["$defs"]["GoogleAdsCampaignBudgetAmountUpdate"]
+    amount_description = update_schema["properties"]["amount"]["description"]
+    assert "positive decimal" in amount_description.lower()
+    assert "account currency" in amount_description
+    assert "up to six decimal places" in amount_description
+    assert "not micros" in amount_description
+    assert (
+        UPDATE_DEFINITION.max_public_result_chars == MAX_CAMPAIGN_BUDGET_AMOUNT_PUBLIC_RESULT_CHARS
+    )
+    assert UPDATE_DEFINITION.presentation.arg_fields[0].editable is False

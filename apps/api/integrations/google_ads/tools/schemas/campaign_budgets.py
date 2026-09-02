@@ -13,14 +13,40 @@ from .base import GoogleAdsStrictModel
 
 
 class GoogleAdsDailyBudgetAmount(GoogleAdsStrictModel):
-    daily_amount: str = Field(min_length=1, max_length=32)
+    daily_amount: str = Field(
+        min_length=1,
+        max_length=32,
+        description=(
+            "Positive decimal amount in the Google Ads account currency, with up to six "
+            "decimal places. Use currency units, not micros."
+        ),
+    )
 
 
 class GoogleAdsTotalBudgetAmount(GoogleAdsStrictModel):
-    total_amount: str = Field(min_length=1, max_length=32)
+    total_amount: str = Field(
+        min_length=1,
+        max_length=32,
+        description=(
+            "Positive decimal amount in the Google Ads account currency, with up to six "
+            "decimal places. Use currency units, not micros."
+        ),
+    )
 
 
 type GoogleAdsCampaignBudgetAmount = GoogleAdsDailyBudgetAmount | GoogleAdsTotalBudgetAmount
+
+
+class GoogleAdsCampaignBudgetAmountUpdate(GoogleAdsStrictModel):
+    budget: GoogleAdsCampaignBudgetReference
+    amount: str = Field(
+        min_length=1,
+        max_length=32,
+        description=(
+            "Positive decimal amount in the Google Ads account currency, with up to six "
+            "decimal places. Use currency units, not micros."
+        ),
+    )
 
 
 class GoogleAdsCreateCampaignBudgetData(GoogleAdsStrictModel):
@@ -43,3 +69,47 @@ class GoogleAdsCreateCampaignBudgetEntry(IntegrationFanOutEntry):
 
 class GoogleAdsCreateCampaignBudgetOutput(IntegrationFanOutOutput):
     results: list[GoogleAdsCreateCampaignBudgetEntry]
+
+
+class GoogleAdsCampaignBudgetAmountOutcome(GoogleAdsStrictModel):
+    reference: GoogleAdsCampaignBudgetReference
+    previous_amount: str
+    requested_amount: str
+    previous_amount_micros: int
+    requested_amount_micros: int
+    outcome: Literal["updated", "already_set", "failed", "unverified"]
+    campaign_label_count: int = Field(ge=0)
+    campaign_labels_truncated: bool
+    external_ref: str | None = None
+    error_code: str | None = None
+    message: str | None = None
+
+
+class GoogleAdsCampaignBudgetAmountCounts(GoogleAdsStrictModel):
+    updated: int = Field(ge=0)
+    already_set: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    unverified: int = Field(ge=0)
+
+
+class GoogleAdsCampaignBudgetAmountSamples(GoogleAdsStrictModel):
+    updated: list[GoogleAdsCampaignBudgetAmountOutcome]
+    already_set: list[GoogleAdsCampaignBudgetAmountOutcome]
+    failed: list[GoogleAdsCampaignBudgetAmountOutcome]
+    unverified: list[GoogleAdsCampaignBudgetAmountOutcome]
+
+
+class GoogleAdsUpdateCampaignBudgetAmountsData(GoogleAdsStrictModel):
+    counts: GoogleAdsCampaignBudgetAmountCounts
+    samples: GoogleAdsCampaignBudgetAmountSamples
+    samples_truncated: bool
+    campaign_labels_truncated: bool
+    audit_note: str | None = None
+
+
+class GoogleAdsUpdateCampaignBudgetAmountsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsUpdateCampaignBudgetAmountsData | None = None
+
+
+class GoogleAdsUpdateCampaignBudgetAmountsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsUpdateCampaignBudgetAmountsEntry]

@@ -6,9 +6,63 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .utils import valid_exact_mutation_results
+
 type MutationEffectOutcome = Literal["applied", "failed", "unverified"]
 type MutationParentDecision = Literal["submit", "skipped"]
 type FrozenFields = tuple[tuple[str, str], ...]
+type GoogleAdsMutationOutcome = tuple[
+    MutationEffectOutcome,
+    str | None,
+    str | None,
+    str | None,
+]
+
+_UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
+_UNACCOUNTED_RESPONSE_CODE = "UNACCOUNTED_OPERATION"
+
+
+def reconcile_exact_mutation_outcomes(
+    results: Any,
+    *,
+    expected_resource_names: Sequence[str],
+    indexed_errors: Mapping[int, Mapping[str, str]],
+    unattributed_errors: Sequence[Mapping[str, str]],
+) -> list[GoogleAdsMutationOutcome]:
+    """Reconcile one ordered mutate response without treating ambiguity as failure."""
+    if unattributed_errors:
+        diagnostic = unattributed_errors[0]
+        return [
+            (
+                "unverified",
+                None,
+                diagnostic["error_code"],
+                diagnostic["message"],
+            )
+            for _ in expected_resource_names
+        ]
+    if not valid_exact_mutation_results(
+        results,
+        expected_resource_names=expected_resource_names,
+        indexed_errors=indexed_errors,
+    ):
+        return [
+            (
+                "failed" if index in indexed_errors else "unverified",
+                None,
+                indexed_errors.get(index, {}).get("error_code", _UNACCOUNTED_RESPONSE_CODE),
+                indexed_errors.get(index, {}).get("message", _UNACCOUNTED_RESPONSE_MESSAGE),
+            )
+            for index in range(len(expected_resource_names))
+        ]
+    return [
+        (
+            ("failed", None, error["error_code"], error["message"])
+            if (error := indexed_errors.get(index)) is not None
+            else ("applied", item["resourceName"], None, None)
+        )
+        for index, item in enumerate(results)
+    ]
 
 
 def freeze_fields(fields: Mapping[str, object]) -> FrozenFields:

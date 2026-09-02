@@ -11,11 +11,9 @@ from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
     build_mutation_ledger,
+    reconcile_exact_mutation_outcomes,
 )
-from .utils import grouped_partial_failure_errors, valid_exact_mutation_results
-
-_UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
-_UNACCOUNTED_RESPONSE_CODE = "UNACCOUNTED_OPERATION"
+from .utils import grouped_partial_failure_errors
 
 
 async def update_campaign_status(
@@ -61,49 +59,12 @@ async def update_campaign_status(
         (index, {"campaign_id": campaign_id})
         for index, campaign_id in enumerate(normalized_campaign_ids)
     ]
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        return _ledger(
-            normalized_campaign_ids,
-            submitted=submitted,
-            outcomes=[
-                ("unverified", None, diagnostic["error_code"], diagnostic["message"])
-                for _ in normalized_campaign_ids
-            ],
-        )
-    if not valid_exact_mutation_results(
+    outcomes = reconcile_exact_mutation_outcomes(
         results,
         expected_resource_names=expected_resource_names,
         indexed_errors=indexed_errors,
-    ):
-        return _ledger(
-            normalized_campaign_ids,
-            submitted=submitted,
-            outcomes=[
-                (
-                    "failed" if index in indexed_errors else "unverified",
-                    None,
-                    (
-                        indexed_errors[index]["error_code"]
-                        if index in indexed_errors
-                        else _UNACCOUNTED_RESPONSE_CODE
-                    ),
-                    (
-                        indexed_errors[index]["message"]
-                        if index in indexed_errors
-                        else _UNACCOUNTED_RESPONSE_MESSAGE
-                    ),
-                )
-                for index in range(len(normalized_campaign_ids))
-            ],
-        )
-
-    outcomes = []
-    for index, item in enumerate(results):
-        if (error := indexed_errors.get(index)) is not None:
-            outcomes.append(("failed", None, error["error_code"], error["message"]))
-        else:
-            outcomes.append(("applied", item["resourceName"], None, None))
+        unattributed_errors=unattributed_errors,
+    )
     return _ledger(normalized_campaign_ids, submitted=submitted, outcomes=outcomes)
 
 

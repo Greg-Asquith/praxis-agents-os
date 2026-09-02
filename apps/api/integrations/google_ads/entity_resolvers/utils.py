@@ -177,6 +177,7 @@ def _google_ads_choice_entity_id(choice: EntityChoice) -> str | None:
     """Read the provider-specific entity id from one Google Ads public choice."""
     key_by_kind = {
         "google_ads_ad_group": "ad_group_id",
+        "google_ads_campaign_budget": "budget_id",
         "google_ads_campaign": "campaign_id",
         "google_ads_shared_set": "shared_set_id",
     }

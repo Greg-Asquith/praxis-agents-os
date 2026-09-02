@@ -167,6 +167,13 @@ def _validate_plugin(
         for field in definition.presentation.arg_fields
         if field.entity_kind is not None
     }
+    from services.agents.runtime.tools.contract import integration_reference_types
+
+    declared_entity_kinds.update(
+        str(reference_type.model_fields["entity_kind"].default)
+        for definition in plugin.tool_definitions
+        for reference_type in integration_reference_types(definition)
+    )
     undeclared_resolvers = resolver_kinds.difference(declared_entity_kinds)
     if undeclared_resolvers:
         raise RuntimeError(

@@ -83,6 +83,12 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_ads_list_report_fields": ("read", "internal", "auto", False),
         "google_ads_run_report": ("read", "internal", "auto", False),
         "google_ads_update_campaign_status": ("write", "external", "approval", True),
+        "google_ads_update_campaign_budget_amounts": (
+            "write",
+            "external",
+            "approval",
+            True,
+        ),
         "google_ads_update_device_bid_modifiers": (
             "write",
             "external",
@@ -239,6 +245,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_remove_ad_group_negative_keywords",
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_run_report",
+        "google_ads_update_campaign_budget_amounts",
         "google_ads_update_campaign_status",
         "google_ads_update_device_bid_modifiers",
     }
@@ -260,6 +267,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_remove_ad_group_negative_keywords",
         "google_ads_remove_negative_keywords",
         "google_ads_remove_campaign_negative_keywords",
+        "google_ads_update_campaign_budget_amounts",
         "google_ads_update_campaign_status",
         "google_ads_update_device_bid_modifiers",
     ):
