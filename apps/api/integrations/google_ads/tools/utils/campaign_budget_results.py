@@ -2,11 +2,12 @@
 
 """Bounded campaign-budget amount update results."""
 
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from integrations.google_ads.references import GoogleAdsCampaignBudgetReference
+
+from .bounded_outcome_results import bounded_outcome_result
 
 type CampaignBudgetOutcome = Literal["updated", "already_set", "failed", "unverified"]
 
@@ -82,13 +83,6 @@ def _bounded_result(
     outcomes = {
         outcome: [row for row in budgets if row.get("outcome") == outcome] for outcome in _OUTCOMES
     }
-    response: dict[str, Any] = {
-        "counts": {key: len(values) for key, values in outcomes.items()},
-        "samples": {key: [] for key in outcomes},
-        "samples_truncated": True,
-        "campaign_labels_truncated": False,
-        "audit_note": audit_note,
-    }
     normalized = {
         key: [
             _budget_sample(
@@ -100,27 +94,18 @@ def _bounded_result(
         ]
         for key, values in outcomes.items()
     }
-    response["campaign_labels_truncated"] = any(
+    campaign_labels_truncated = any(
         row["campaign_labels_truncated"] for values in normalized.values() for row in values
     )
-    max_rows = max((len(values) for values in normalized.values()), default=0)
-    if max_samples_per_outcome is not None:
-        max_rows = min(max_rows, max_samples_per_outcome)
-    for index in range(max_rows):
-        for key, values in normalized.items():
-            if index >= len(values):
-                continue
-            samples = response["samples"][key]
-            candidate = {
-                **response,
-                "samples": {**response["samples"], key: [*samples, values[index]]},
-            }
-            if _serialized_chars(candidate) <= max_chars:
-                samples.append(values[index])
-    response["samples_truncated"] = any(
-        len(response["samples"][key]) < len(values) for key, values in outcomes.items()
+    return bounded_outcome_result(
+        normalized,
+        max_chars=max_chars,
+        max_samples_per_outcome=max_samples_per_outcome,
+        additional_fields={
+            "campaign_labels_truncated": campaign_labels_truncated,
+            "audit_note": audit_note,
+        },
     )
-    return response
 
 
 def _budget_sample(
@@ -157,14 +142,3 @@ def _budget_sample(
 
 def _optional_text(value: Any, max_chars: int) -> str | None:
     return str(value)[:max_chars] if value is not None else None
-
-
-def _serialized_chars(value: object) -> int:
-    return len(
-        json.dumps(
-            value,
-            sort_keys=True,
-            ensure_ascii=False,
-            default=str,
-        )
-    )

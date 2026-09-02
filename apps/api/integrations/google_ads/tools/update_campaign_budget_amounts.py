@@ -42,7 +42,6 @@ from ..operations.update_campaign_budget_amounts import (
     GoogleAdsCampaignBudgetPeriod,
     update_campaign_budget_amounts,
 )
-from ..operations.utils import nonnegative_int
 from .schemas import (
     GoogleAdsCampaignBudgetAmountUpdate,
     GoogleAdsUpdateCampaignBudgetAmountsOutput,
@@ -65,7 +64,7 @@ from .utils.mutation_evidence import (
     google_ads_account_target,
     terminal_operation_detail,
 )
-from .verifiers import verify_campaign_budgets
+from .verifiers import campaign_budget_reference_from_row, verify_campaign_budgets
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,54 +182,10 @@ def _verified_budget(
     row: Mapping[str, Any],
     requested_amount_micros: int,
 ) -> _VerifiedBudget:
-    period = str(row.get("period", "")).strip()
-    if period not in {"DAILY", "CUSTOM_PERIOD"}:
-        raise ModelRetry(
-            f"Campaign budget {selected.label!r} has an unsupported live budget period."
-        )
-    amount_field = "amountMicros" if period == "DAILY" else "totalAmountMicros"
-    previous_amount_micros = nonnegative_int(row.get(amount_field))
-    if previous_amount_micros is None:
-        raise ModelRetry(f"Campaign budget {selected.label!r} has no valid live amount.")
-    currency_code = str(row.get("currencyCode", "")).strip()
-    if not currency_code:
-        raise ModelRetry(
-            "The selected Google Ads account has no currency information. "
-            "Refresh the connection and retry."
-        )
-    budget_id = str(row.get("id", "")).strip()
-    if budget_id != selected.budget_id:
-        raise ModelRetry("A selected Google Ads campaign budget changed during verification.")
-    reference_count = nonnegative_int(row.get("referenceCount"))
-    if reference_count is None:
-        raise ModelRetry(
-            f"Campaign budget {selected.label!r} has no valid live linked-campaign count."
-        )
-    delivery_method = str(row.get("deliveryMethod", "")).strip()
-    explicitly_shared = row.get("explicitlyShared")
-    if not delivery_method or not isinstance(explicitly_shared, bool):
-        raise ModelRetry(f"Campaign budget {selected.label!r} has incomplete live settings.")
-    labels = row.get("campaignLabels", ())
-    campaign_labels = (
-        tuple(str(label)[:500] for label in labels if str(label).strip())[:50]
-        if isinstance(labels, (list, tuple))
-        else ()
-    )
-    reference = GoogleAdsCampaignBudgetReference(
-        customer_id=entry.external_id,
-        budget_id=budget_id,
-        label=(str(row.get("name", "")).strip() or selected.label)[:500],
-        description="Campaign budget",
-        scope_label=entry.display_name,
-        status=str(row.get("status", "")).strip() or None,
-        period=period,
-        delivery_method=delivery_method,
-        amount_micros=(previous_amount_micros if period == "DAILY" else None),
-        total_amount_micros=(previous_amount_micros if period == "CUSTOM_PERIOD" else None),
-        explicitly_shared=explicitly_shared,
-        reference_count=reference_count,
-        currency_code=currency_code,
-        campaign_labels=campaign_labels,
+    reference = campaign_budget_reference_from_row(entry, selected, row)
+    previous_amount_micros = cast(
+        int,
+        reference.amount_micros if reference.period == "DAILY" else reference.total_amount_micros,
     )
     return _VerifiedBudget(
         reference=reference,

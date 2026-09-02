@@ -2,8 +2,9 @@
 
 """Bounded model-visible negative-keyword mutation results."""
 
-import json
 from typing import Any
+
+from .bounded_outcome_results import bounded_outcome_result
 
 MAX_NEGATIVE_KEYWORD_RESULT_CHARS = 12_000
 MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS = 1_000_000
@@ -51,29 +52,12 @@ def _removal_outcomes(result: dict[str, Any]) -> dict[str, list[dict[str, str]]]
 
 
 def _bounded_result(outcomes: dict[str, list[dict[str, str]]]) -> dict[str, Any]:
-    response: dict[str, Any] = {
-        "counts": {key: len(values) for key, values in outcomes.items()},
-        "samples": {key: [] for key in outcomes},
-        "samples_truncated": True,
-        "audit_note": _AUDIT_NOTE,
-    }
-
-    for index in range(MAX_NEGATIVE_KEYWORD_SAMPLES_PER_OUTCOME):
-        for key, values in outcomes.items():
-            if index >= len(values):
-                continue
-            samples = response["samples"][key]
-            candidate = {
-                **response,
-                "samples": {**response["samples"], key: [*samples, values[index]]},
-            }
-            if _serialized_chars(candidate) <= MAX_NEGATIVE_KEYWORD_RESULT_CHARS:
-                samples.append(values[index])
-
-    response["samples_truncated"] = any(
-        len(response["samples"][key]) < len(values) for key, values in outcomes.items()
+    return bounded_outcome_result(
+        outcomes,
+        max_chars=MAX_NEGATIVE_KEYWORD_RESULT_CHARS,
+        max_samples_per_outcome=MAX_NEGATIVE_KEYWORD_SAMPLES_PER_OUTCOME,
+        additional_fields={"audit_note": _AUDIT_NOTE},
     )
-    return response
 
 
 def _complete_result(outcomes: dict[str, list[dict[str, str]]]) -> dict[str, Any]:
@@ -108,15 +92,3 @@ def _error_sample(error: dict[str, Any]) -> dict[str, str]:
         sample["text"] = str(error.get("text", ""))[:80]
         sample["match_type"] = str(error.get("match_type", ""))[:20]
     return sample
-
-
-def _serialized_chars(value: object) -> int:
-    return len(
-        json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            default=str,
-        )
-    )

@@ -15,6 +15,9 @@ from integrations.google_ads.operations.list_ad_groups import list_ad_groups
 from integrations.google_ads.operations.list_campaign_device_criteria import (
     list_campaign_device_criteria,
 )
+from integrations.google_ads.operations.list_campaign_experiment_arms import (
+    list_active_campaign_experiment_arms,
+)
 from integrations.google_ads.operations.list_campaigns import list_campaigns
 from integrations.google_ads.operations.list_report_fields import list_report_fields
 from integrations.google_ads.operations.list_shared_sets import list_shared_sets
@@ -554,6 +557,37 @@ async def test_list_campaigns_validates_exact_ids_and_escapes_search() -> None:
     assert "campaign.id > 10" in client.last_json["query"]
     assert "LIKE '%Brand\\'s \\\\ sale[%][_][[][]]%'" in client.last_json["query"]
     assert "ORDER BY campaign.id LIMIT 101" in client.last_json["query"]
+
+
+async def test_list_active_campaign_experiment_arms_bounds_selected_control_arms() -> None:
+    client = _OperationClient(
+        {
+            "results": [
+                {
+                    "experimentArm": {
+                        "campaigns": ["customers/3333333333/campaigns/10"],
+                        "control": True,
+                    },
+                    "experiment": {"status": "ENABLED"},
+                }
+            ]
+        }
+    )
+
+    rows = await list_active_campaign_experiment_arms(
+        client,
+        customer_id="333-333-3333",
+        login_customer_id="111",
+        campaign_ids=("20", "10"),
+    )
+
+    assert len(rows) == 1
+    query = client.last_json["query"]
+    assert "experiment_arm.control = TRUE" in query
+    assert "experiment.status IN ('INITIATED', 'ENABLED')" in query
+    assert "'customers/3333333333/campaigns/10'" in query
+    assert "'customers/3333333333/campaigns/20'" in query
+    assert "LIMIT 101" in query
 
 
 async def test_list_campaign_device_criteria_assembles_strategy_and_device_state() -> None:

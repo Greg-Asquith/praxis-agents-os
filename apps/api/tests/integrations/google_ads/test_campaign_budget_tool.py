@@ -10,18 +10,34 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 
+from integrations.google_ads.operations.assign_campaign_budgets import (
+    GoogleAdsCampaignBudgetAssignment,
+    assign_campaign_budgets,
+)
 from integrations.google_ads.operations.create_campaign_budget import create_campaign_budget
 from integrations.google_ads.operations.list_campaign_budgets import list_campaign_budgets
+from integrations.google_ads.operations.mutation_outcomes import (
+    GoogleAdsMutationProjection,
+    build_mutation_ledger,
+)
 from integrations.google_ads.operations.update_campaign_budget_amounts import (
     GoogleAdsCampaignBudgetAmountChange,
     update_campaign_budget_amounts,
 )
-from integrations.google_ads.references import GoogleAdsCampaignBudgetReference
+from integrations.google_ads.references import (
+    GoogleAdsCampaignBudgetReference,
+    GoogleAdsCampaignReference,
+)
+from integrations.google_ads.tools.assign_campaign_budgets import (
+    DEFINITION as ASSIGN_DEFINITION,
+    google_ads_assign_campaign_budgets,
+)
 from integrations.google_ads.tools.create_campaign_budget import (
     DEFINITION,
     google_ads_create_campaign_budget,
 )
 from integrations.google_ads.tools.schemas import (
+    GoogleAdsAssignCampaignBudgetsOutput,
     GoogleAdsCampaignBudgetAmountUpdate,
     GoogleAdsCreateCampaignBudgetOutput,
     GoogleAdsDailyBudgetAmount,
@@ -32,6 +48,13 @@ from integrations.google_ads.tools.update_campaign_budget_amounts import (
     DEFINITION as UPDATE_DEFINITION,
     google_ads_update_campaign_budget_amounts,
 )
+from integrations.google_ads.tools.utils.campaign_budget_assignment_results import (
+    MAX_CAMPAIGN_BUDGET_ASSIGNMENT_DISPLAY_DATA_CHARS,
+    MAX_CAMPAIGN_BUDGET_ASSIGNMENT_PUBLIC_RESULT_CHARS,
+    MAX_CAMPAIGN_BUDGET_ASSIGNMENT_RESULT_CHARS,
+    bounded_campaign_budget_assignment_result,
+    display_campaign_budget_assignment_result,
+)
 from integrations.google_ads.tools.utils.campaign_budget_results import (
     MAX_CAMPAIGN_BUDGET_AMOUNT_DISPLAY_DATA_CHARS,
     MAX_CAMPAIGN_BUDGET_AMOUNT_PUBLIC_RESULT_CHARS,
@@ -40,7 +63,11 @@ from integrations.google_ads.tools.utils.campaign_budget_results import (
     display_campaign_budget_amount_result,
 )
 from integrations.google_ads.tools.utils.money import money_to_micros
+from integrations.google_ads.tools.verifiers.campaign import (
+    verify_campaigns_for_budget_assignment,
+)
 from integrations.google_ads.tools.verifiers.campaign_budget import verify_campaign_budgets
+from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.http import IntegrationRequestPolicy
 
@@ -80,6 +107,37 @@ def entry() -> ResolvedContextEntry:
         write_allowed=True,
         permissions_metadata={"login_customer_id": "111", "currency_code": "GBP"},
     )
+
+
+def campaign(campaign_id: str, *, label: str = "Campaign") -> GoogleAdsCampaignReference:
+    return GoogleAdsCampaignReference(
+        customer_id="333",
+        campaign_id=campaign_id,
+        label=label,
+    )
+
+
+def budget_row(
+    budget_id: str,
+    *,
+    name: str,
+    explicitly_shared: bool,
+    reference_count: int,
+    period: str = "DAILY",
+) -> dict[str, object]:
+    row: dict[str, object] = {
+        "id": budget_id,
+        "name": name,
+        "status": "ENABLED",
+        "period": period,
+        "deliveryMethod": "STANDARD",
+        "explicitlyShared": explicitly_shared,
+        "referenceCount": str(reference_count),
+        "currencyCode": "GBP",
+        "campaignLabels": (),
+    }
+    row["amountMicros" if period == "DAILY" else "totalAmountMicros"] = "12500000"
+    return row
 
 
 @pytest.mark.parametrize(
@@ -857,3 +915,627 @@ def test_update_campaign_budget_definition_is_approval_only_and_bounded() -> Non
         UPDATE_DEFINITION.max_public_result_chars == MAX_CAMPAIGN_BUDGET_AMOUNT_PUBLIC_RESULT_CHARS
     )
     assert UPDATE_DEFINITION.presentation.arg_fields[0].editable is False
+
+
+async def test_assign_campaign_budgets_uses_fixed_mask_and_skips_noop() -> None:
+    client = Client({"results": [{"resourceName": "customers/333/campaigns/20"}]})
+
+    ledger = await assign_campaign_budgets(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        assignments=[
+            GoogleAdsCampaignBudgetAssignment("10", "55", "55"),
+            GoogleAdsCampaignBudgetAssignment("20", "44", "55"),
+        ],
+    )
+
+    assert client.path == "customers/333/campaigns:mutate"
+    assert client.kwargs["policy"] is IntegrationRequestPolicy.MUTATION
+    assert client.kwargs["json"] == {
+        "operations": [
+            {
+                "update": {
+                    "resourceName": "customers/333/campaigns/20",
+                    "campaignBudget": "customers/333/campaignBudgets/55",
+                },
+                "updateMask": "campaignBudget",
+            }
+        ],
+        "partialFailure": True,
+    }
+    assert ledger.result()["already_set"] == [{"campaign_id": "10"}]
+    assert ledger.skipped_external_ref(ledger.parents[0]) == "customers/333/campaigns/10"
+    assert ledger.result()["assigned"] == [
+        {
+            "campaign_id": "20",
+            "resource_name": "customers/333/campaigns/20",
+        }
+    ]
+
+
+def test_campaign_budget_assignment_results_bound_before_after_routes() -> None:
+    destination = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Destination budget",
+    )
+    campaigns = [
+        {
+            "campaign": campaign(str(index + 1), label=f"Campaign {index}"),
+            "previous_budget": GoogleAdsCampaignBudgetReference(
+                customer_id="333",
+                budget_id=str(index + 100),
+                label=f"Previous budget {index}",
+            ),
+            "requested_budget": destination,
+            "outcome": "assigned",
+            "external_ref": f"customers/333/campaigns/{index + 1}",
+            "error_code": None,
+            "message": None,
+        }
+        for index in range(50)
+    ]
+
+    model_result = bounded_campaign_budget_assignment_result(
+        {"destination_budget": destination, "campaigns": campaigns}
+    )
+    display_result = display_campaign_budget_assignment_result(
+        {"destination_budget": destination, "campaigns": campaigns}
+    )
+
+    assert len(json.dumps(model_result, ensure_ascii=False)) <= (
+        MAX_CAMPAIGN_BUDGET_ASSIGNMENT_RESULT_CHARS
+    )
+    assert len(json.dumps(display_result, ensure_ascii=False)) <= (
+        MAX_CAMPAIGN_BUDGET_ASSIGNMENT_DISPLAY_DATA_CHARS
+    )
+    assert model_result["counts"] == {
+        "assigned": 50,
+        "already_set": 0,
+        "failed": 0,
+        "unverified": 0,
+    }
+    assert model_result["samples_truncated"] is True
+    assert display_result["samples_truncated"] is False
+    assert len(display_result["samples"]["assigned"]) == 50
+    first = display_result["samples"]["assigned"][0]
+    assert first["previous_budget"]["budget_id"] == "100"
+    assert first["requested_budget"]["budget_id"] == "55"
+
+
+async def test_assign_campaign_budgets_keeps_failed_and_unverified_distinct() -> None:
+    rejected = await assign_campaign_budgets(
+        Client(
+            {
+                "results": [
+                    {"resourceName": "customers/333/campaigns/10"},
+                    {},
+                ],
+                "partialFailureError": {
+                    "details": [
+                        {
+                            "errors": [
+                                {
+                                    "message": "Campaign cannot use shared budget",
+                                    "errorCode": {
+                                        "campaignError": "CAMPAIGN_CANNOT_USE_SHARED_BUDGET"
+                                    },
+                                    "location": {
+                                        "fieldPathElements": [
+                                            {"fieldName": "operations", "index": 1}
+                                        ]
+                                    },
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        ),
+        customer_id="333",
+        login_customer_id="111",
+        assignments=[
+            GoogleAdsCampaignBudgetAssignment("10", "44", "55"),
+            GoogleAdsCampaignBudgetAssignment("20", "44", "55"),
+        ],
+    )
+    ambiguous = await assign_campaign_budgets(
+        Client({"results": [{"resourceName": "customers/999/campaigns/10"}]}),
+        customer_id="333",
+        login_customer_id="111",
+        assignments=[GoogleAdsCampaignBudgetAssignment("10", "44", "55")],
+    )
+
+    assert rejected.effects[0].outcome == "applied"
+    assert rejected.effects[1].outcome == "failed"
+    assert rejected.effects[1].error_code == "CAMPAIGN_CANNOT_USE_SHARED_BUDGET"
+    assert ambiguous.effects[0].outcome == "unverified"
+
+
+async def test_budget_assignment_verifier_marks_base_campaign_with_active_trial() -> None:
+    client = SequencedClient(
+        [
+            {
+                "results": [
+                    {
+                        "campaign": {
+                            "id": "10",
+                            "name": "Base campaign",
+                            "status": "ENABLED",
+                            "campaignBudget": "customers/333/campaignBudgets/44",
+                            "experimentType": "BASE",
+                        }
+                    }
+                ]
+            },
+            {
+                "results": [
+                    {
+                        "experimentArm": {
+                            "campaigns": ["customers/333/campaigns/10"],
+                            "control": True,
+                        },
+                        "experiment": {"status": "INITIATED"},
+                    }
+                ]
+            },
+        ]
+    )
+
+    rows = await verify_campaigns_for_budget_assignment(
+        client,
+        entry=entry(),
+        campaign_ids=["10"],
+    )
+
+    assert rows["10"]["hasRunningOrScheduledTrials"] is True
+    assert len(client.calls) == 2
+
+
+async def test_assign_campaign_budget_tool_uses_live_before_after_state_and_audit(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,))),
+        tool_name=ASSIGN_DEFINITION.name,
+    )
+    destination = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Stale destination",
+    )
+    selected_campaign = campaign("10", label="Stale campaign")
+    provider_client = Client({"results": [{"resourceName": "customers/333/campaigns/10"}]})
+    pending_details = []
+    audit_outcomes = []
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        pending_details.append(await kwargs["prepare_pending_operation"]())
+        outcome = await kwargs["execute"]()
+        audit_outcomes.append(outcome)
+        return outcome.value
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaigns_for_budget_assignment",
+        AsyncMock(
+            return_value={
+                "10": {
+                    "id": "10",
+                    "name": "Live campaign",
+                    "status": "ENABLED",
+                    "campaignBudget": "customers/333/campaignBudgets/44",
+                    "experimentType": "BASE",
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55",
+                    name="Live destination",
+                    explicitly_shared=True,
+                    reference_count=2,
+                ),
+                "44": budget_row(
+                    "44",
+                    name="Previous budget",
+                    explicitly_shared=False,
+                    reference_count=1,
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.run_audited_integration_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_assign_campaign_budgets(
+        ctx,
+        destination,
+        [selected_campaign],
+    )
+
+    output = GoogleAdsAssignCampaignBudgetsOutput.model_validate(result.return_value)
+    data = output.results[0].data
+    assert data is not None, result.return_value["results"][0].get("error_message")
+    assert data.destination_budget.label == "Live destination"
+    assert data.destination_budget.reference_count == 3
+    assert data.counts.model_dump() == {
+        "assigned": 1,
+        "already_set": 0,
+        "failed": 0,
+        "unverified": 0,
+    }
+    assignment = data.samples.assigned[0]
+    assert assignment.campaign.label == "Live campaign"
+    assert assignment.previous_budget.label == "Previous budget"
+    assert assignment.requested_budget.label == "Live destination"
+    assert assignment.outcome == "assigned"
+    fields = pending_details[0].intent_groups[0].items[0].fields
+    assert fields["previous_budget_id"] == "44"
+    assert fields["previous_budget_name"] == "Previous budget"
+    assert fields["requested_budget_id"] == "55"
+    assert fields["requested_budget_name"] == "Live destination"
+    assert audit_outcomes[0].operation_detail.intent_counts.applied == 1
+
+
+async def test_assign_campaign_budget_tool_omits_count_for_mixed_unverified_result(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(selected,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=ASSIGN_DEFINITION.name,
+        tool_call_id="assign-budgets-call",
+    )
+    destination = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Destination",
+    )
+    ledger = build_mutation_ledger(
+        family="campaign_budget_assignments",
+        action="assign",
+        parent_fields=[{"campaign_id": "10"}, {"campaign_id": "20"}],
+        skipped_indices={},
+        submitted=[(0, {"campaign_id": "10"}), (1, {"campaign_id": "20"})],
+        outcomes=[
+            ("applied", "customers/333/campaigns/10", None, None),
+            (
+                "unverified",
+                None,
+                "UNACCOUNTED_OPERATION",
+                "Google Ads did not account for this submitted operation",
+            ),
+        ],
+        projection=GoogleAdsMutationProjection(
+            applied_key="assigned",
+            skipped_key="already_set",
+            errors_key="campaign_errors",
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=Client({})),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaigns_for_budget_assignment",
+        AsyncMock(
+            return_value={
+                campaign_id: {
+                    "id": campaign_id,
+                    "name": f"Campaign {campaign_id}",
+                    "status": "ENABLED",
+                    "campaignBudget": "customers/333/campaignBudgets/44",
+                    "experimentType": "BASE",
+                }
+                for campaign_id in ("10", "20")
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55",
+                    name="Destination",
+                    explicitly_shared=True,
+                    reference_count=2,
+                ),
+                "44": budget_row(
+                    "44",
+                    name="Previous",
+                    explicitly_shared=False,
+                    reference_count=2,
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.assign_campaign_budgets",
+        AsyncMock(return_value=ledger),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_assign_campaign_budgets(
+        ctx,
+        destination,
+        [campaign("10"), campaign("20")],
+    )
+
+    output = GoogleAdsAssignCampaignBudgetsOutput.model_validate(result.return_value)
+    item = output.results[0]
+    assert item.status == "error"
+    assert item.error_code == "unverified_mutation"
+    assert item.data is not None
+    assert item.data.counts.model_dump() == {
+        "assigned": 1,
+        "already_set": 0,
+        "failed": 0,
+        "unverified": 1,
+    }
+    assert item.data.destination_budget.reference_count is None
+
+
+async def test_edited_assignment_approval_reauthorizes_resolves_and_verifies_live_state(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    original_destination = GoogleAdsCampaignBudgetReference(
+        customer_id="333", budget_id="55", label="Original destination"
+    )
+    edited_destination = GoogleAdsCampaignBudgetReference(
+        customer_id="333", budget_id="66", label="Edited destination"
+    )
+    original_campaign = campaign("10", label="Original campaign")
+    edited_campaign = campaign("20", label="Edited campaign")
+    canonical_destination = edited_destination.model_copy(update={"label": "Live destination"})
+    canonical_campaign = edited_campaign.model_copy(update={"label": "Live campaign"})
+    authorize = AsyncMock(return_value=SimpleNamespace())
+    resolve = AsyncMock(
+        side_effect=[
+            [canonical_destination.model_dump(mode="json")],
+            [canonical_campaign.model_dump(mode="json")],
+        ]
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: ASSIGN_DEFINITION,
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.authorize_entity_field",
+        authorize,
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.resolve_authorized_references",
+        resolve,
+    )
+
+    approved_args = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=SimpleNamespace(
+            tool_name=ASSIGN_DEFINITION.name,
+            args={
+                "destination_budget": original_destination.model_dump(mode="json"),
+                "campaigns": [original_campaign.model_dump(mode="json")],
+            },
+        ),
+        override_args={
+            "destination_budget": edited_destination.model_dump(mode="json"),
+            "campaigns": [edited_campaign.model_dump(mode="json")],
+        },
+    )
+    assert approved_args is not None
+    approved_destination = GoogleAdsCampaignBudgetReference.model_validate(
+        approved_args["destination_budget"]
+    )
+    approved_campaigns = [
+        GoogleAdsCampaignReference.model_validate(value) for value in approved_args["campaigns"]
+    ]
+    verify_campaigns = AsyncMock(
+        return_value={
+            "20": {
+                "id": "20",
+                "name": "Verified campaign",
+                "status": "ENABLED",
+                "campaignBudget": "customers/333/campaignBudgets/44",
+                "experimentType": "BASE",
+                "hasRunningOrScheduledTrials": False,
+            }
+        }
+    )
+    verify_budgets = AsyncMock(
+        return_value={
+            "66": budget_row(
+                "66", name="Verified destination", explicitly_shared=True, reference_count=1
+            ),
+            "44": budget_row("44", name="Previous", explicitly_shared=False, reference_count=1),
+        }
+    )
+    provider_client = Client({"results": [{"resourceName": "customers/333/campaigns/20"}]})
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        await kwargs["prepare_pending_operation"]()
+        return (await kwargs["execute"]()).value
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaigns_for_budget_assignment",
+        verify_campaigns,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaign_budgets",
+        verify_budgets,
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.run_audited_integration_operation",
+        passthrough_audit,
+    )
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,))),
+        tool_name=ASSIGN_DEFINITION.name,
+    )
+
+    result = await google_ads_assign_campaign_budgets(
+        ctx,
+        approved_destination,
+        approved_campaigns,
+    )
+
+    assert result.return_value["results"][0]["status"] == "success"
+    assert authorize.await_count == 2
+    assert resolve.await_count == 2
+    verify_campaigns.assert_awaited_once()
+    assert verify_campaigns.await_args.kwargs["campaign_ids"] == ["20"]
+    verify_budgets.assert_awaited_once()
+    assert verify_budgets.await_args.kwargs["budget_ids"] == ("66", "44")
+    assert provider_client.kwargs["json"]["operations"][0]["update"] == {
+        "resourceName": "customers/333/campaigns/20",
+        "campaignBudget": "customers/333/campaignBudgets/66",
+    }
+
+
+@pytest.mark.parametrize(
+    (
+        "explicitly_shared",
+        "reference_count",
+        "experiment_type",
+        "has_active_trials",
+        "previous_period",
+        "destination_period",
+        "message",
+    ),
+    [
+        (False, 1, "DRAFT", False, "DAILY", "DAILY", "cannot change budgets"),
+        (False, 1, "EXPERIMENT", False, "DAILY", "DAILY", "cannot change budgets"),
+        (False, 1, "BASE", True, "DAILY", "DAILY", "running or scheduled trial"),
+        (False, 1, "BASE", False, "CUSTOM_PERIOD", "DAILY", "same period"),
+        (False, 1, "BASE", False, "DAILY", "DAILY", "more than one campaign"),
+    ],
+    ids=("draft", "experiment", "base-active-trial", "period-mismatch", "non-shared"),
+)
+async def test_assign_campaign_budget_tool_rejects_live_provider_constraints(
+    monkeypatch,
+    explicitly_shared,
+    reference_count,
+    experiment_type,
+    has_active_trials,
+    previous_period,
+    destination_period,
+    message,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,))),
+        tool_name=ASSIGN_DEFINITION.name,
+    )
+    destination = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Destination",
+    )
+    provider_client = Client({})
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        await kwargs["prepare_pending_operation"]()
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaigns_for_budget_assignment",
+        AsyncMock(
+            return_value={
+                "10": {
+                    "id": "10",
+                    "name": "Campaign",
+                    "status": "ENABLED",
+                    "campaignBudget": "customers/333/campaignBudgets/44",
+                    "experimentType": experiment_type,
+                    "hasRunningOrScheduledTrials": has_active_trials,
+                }
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55",
+                    name="Destination",
+                    explicitly_shared=explicitly_shared,
+                    reference_count=reference_count,
+                    period=destination_period,
+                ),
+                "44": budget_row(
+                    "44",
+                    name="Previous",
+                    explicitly_shared=False,
+                    reference_count=1,
+                    period=previous_period,
+                ),
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.assign_campaign_budgets.run_audited_integration_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_assign_campaign_budgets(
+        ctx,
+        destination,
+        [campaign("10")],
+    )
+
+    assert result.return_value["results"][0]["status"] == "error"
+    assert message in result.return_value["results"][0]["error_message"]
+    assert provider_client.path is None
+
+
+def test_assign_campaign_budget_definition_is_approval_only_editable_and_bounded() -> None:
+    assert ASSIGN_DEFINITION.default_policy == "approval"
+    assert ASSIGN_DEFINITION.supports_auto is False
+    assert ASSIGN_DEFINITION.code_eligible is True
+    assert "recommend" in ASSIGN_DEFINITION.description
+    assert (
+        ASSIGN_DEFINITION.max_public_result_chars
+        == MAX_CAMPAIGN_BUDGET_ASSIGNMENT_PUBLIC_RESULT_CHARS
+    )
+    fields = {field.key: field for field in ASSIGN_DEFINITION.presentation.arg_fields}
+    assert fields["destination_budget"].format == "entity"
+    assert fields["destination_budget"].editable is True
+    assert fields["campaigns"].format == "entity_list"
+    assert fields["campaigns"].editable is True
+    schema = ASSIGN_DEFINITION.to_pydantic_tool().function_schema.json_schema
+    assert schema["properties"]["campaigns"]["minItems"] == 1
+    assert schema["properties"]["campaigns"]["maxItems"] == 50

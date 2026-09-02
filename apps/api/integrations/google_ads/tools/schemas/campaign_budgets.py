@@ -6,7 +6,10 @@ from typing import Literal
 
 from pydantic import Field
 
-from integrations.google_ads.references import GoogleAdsCampaignBudgetReference
+from integrations.google_ads.references import (
+    GoogleAdsCampaignBudgetReference,
+    GoogleAdsCampaignReference,
+)
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
 from .base import GoogleAdsStrictModel
@@ -113,3 +116,43 @@ class GoogleAdsUpdateCampaignBudgetAmountsEntry(IntegrationFanOutEntry):
 
 class GoogleAdsUpdateCampaignBudgetAmountsOutput(IntegrationFanOutOutput):
     results: list[GoogleAdsUpdateCampaignBudgetAmountsEntry]
+
+
+class GoogleAdsCampaignBudgetAssignmentOutcome(GoogleAdsStrictModel):
+    campaign: GoogleAdsCampaignReference
+    previous_budget: GoogleAdsCampaignBudgetReference
+    requested_budget: GoogleAdsCampaignBudgetReference
+    outcome: Literal["assigned", "already_set", "failed", "unverified"]
+    external_ref: str | None = None
+    error_code: str | None = None
+    message: str | None = None
+
+
+class GoogleAdsCampaignBudgetAssignmentCounts(GoogleAdsStrictModel):
+    assigned: int = Field(ge=0)
+    already_set: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    unverified: int = Field(ge=0)
+
+
+class GoogleAdsCampaignBudgetAssignmentSamples(GoogleAdsStrictModel):
+    assigned: list[GoogleAdsCampaignBudgetAssignmentOutcome]
+    already_set: list[GoogleAdsCampaignBudgetAssignmentOutcome]
+    failed: list[GoogleAdsCampaignBudgetAssignmentOutcome]
+    unverified: list[GoogleAdsCampaignBudgetAssignmentOutcome]
+
+
+class GoogleAdsAssignCampaignBudgetsData(GoogleAdsStrictModel):
+    destination_budget: GoogleAdsCampaignBudgetReference
+    counts: GoogleAdsCampaignBudgetAssignmentCounts
+    samples: GoogleAdsCampaignBudgetAssignmentSamples
+    samples_truncated: bool
+    audit_note: str | None = None
+
+
+class GoogleAdsAssignCampaignBudgetsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsAssignCampaignBudgetsData | None = None
+
+
+class GoogleAdsAssignCampaignBudgetsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsAssignCampaignBudgetsEntry]

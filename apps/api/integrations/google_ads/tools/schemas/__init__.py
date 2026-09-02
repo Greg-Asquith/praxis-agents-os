@@ -1,6 +1,7 @@
 """Operation-specific Google Ads tool-result contracts."""
 
 from .campaign_budgets import (
+    GoogleAdsAssignCampaignBudgetsOutput,
     GoogleAdsCampaignBudgetAmount,
     GoogleAdsCampaignBudgetAmountUpdate,
     GoogleAdsCreateCampaignBudgetOutput,
@@ -42,6 +43,7 @@ __all__ = [
     "GoogleAdsAddCampaignKeywordOutput",
     "GoogleAdsAddNegativeKeywordsOutput",
     "GoogleAdsApplyRecommendationsOutput",
+    "GoogleAdsAssignCampaignBudgetsOutput",
     "GoogleAdsCampaignBudgetAmount",
     "GoogleAdsCampaignBudgetAmountUpdate",
     "GoogleAdsCampaignLinkOutput",

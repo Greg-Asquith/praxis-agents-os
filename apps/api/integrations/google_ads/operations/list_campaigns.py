@@ -48,7 +48,8 @@ async def list_campaigns(
         filters.append(boundary_filter)
     where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
     query = (
-        "SELECT campaign.id, campaign.name, campaign.status FROM campaign"  # noqa: S608 -- digit-only ids and escaped search
+        "SELECT campaign.id, campaign.name, campaign.status, "  # noqa: S608 -- digit-only ids and escaped search
+        "campaign.campaign_budget, campaign.experiment_type FROM campaign"
         f"{where_clause} "
         f"ORDER BY campaign.id LIMIT {limit}"
     )
