@@ -6,6 +6,7 @@ from .campaign_budgets import (
     GoogleAdsCampaignBudgetAmountUpdate,
     GoogleAdsCreateCampaignBudgetOutput,
     GoogleAdsDailyBudgetAmount,
+    GoogleAdsRemoveCampaignBudgetsOutput,
     GoogleAdsTotalBudgetAmount,
     GoogleAdsUpdateCampaignBudgetAmountsOutput,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "GoogleAdsListReportFieldsOutput",
     "GoogleAdsRecommendationApplyParameters",
     "GoogleAdsRemoveAdGroupKeywordOutput",
+    "GoogleAdsRemoveCampaignBudgetsOutput",
     "GoogleAdsRemoveCampaignKeywordOutput",
     "GoogleAdsRemoveNegativeKeywordsOutput",
     "GoogleAdsReportFieldSummary",

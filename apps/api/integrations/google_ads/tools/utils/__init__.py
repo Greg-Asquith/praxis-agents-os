@@ -15,6 +15,13 @@ from .campaign_budget_assignment_results import (
     bounded_campaign_budget_assignment_result,
     display_campaign_budget_assignment_result,
 )
+from .campaign_budget_removal_results import (
+    MAX_CAMPAIGN_BUDGET_REMOVAL_DISPLAY_DATA_CHARS,
+    MAX_CAMPAIGN_BUDGET_REMOVAL_PUBLIC_RESULT_CHARS,
+    MAX_CAMPAIGN_BUDGET_REMOVAL_RESULT_CHARS,
+    bounded_campaign_budget_removal_result,
+    display_campaign_budget_removal_result,
+)
 from .campaign_budget_results import (
     MAX_CAMPAIGN_BUDGET_AMOUNT_DISPLAY_DATA_CHARS,
     MAX_CAMPAIGN_BUDGET_AMOUNT_PUBLIC_RESULT_CHARS,
@@ -49,6 +56,9 @@ __all__ = [
     "MAX_CAMPAIGN_BUDGET_ASSIGNMENT_DISPLAY_DATA_CHARS",
     "MAX_CAMPAIGN_BUDGET_ASSIGNMENT_PUBLIC_RESULT_CHARS",
     "MAX_CAMPAIGN_BUDGET_ASSIGNMENT_RESULT_CHARS",
+    "MAX_CAMPAIGN_BUDGET_REMOVAL_DISPLAY_DATA_CHARS",
+    "MAX_CAMPAIGN_BUDGET_REMOVAL_PUBLIC_RESULT_CHARS",
+    "MAX_CAMPAIGN_BUDGET_REMOVAL_RESULT_CHARS",
     "MAX_CAMPAIGN_NEGATIVE_PUBLIC_RESULT_CHARS",
     "MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS",
     "MAX_NEGATIVE_KEYWORD_RESULT_CHARS",
@@ -56,6 +66,7 @@ __all__ = [
     "active_google_ads_entries",
     "bounded_campaign_budget_amount_result",
     "bounded_campaign_budget_assignment_result",
+    "bounded_campaign_budget_removal_result",
     "bounded_negative_keyword_removal_result",
     "bounded_negative_keyword_result",
     "campaign_label_audit_evidence",
@@ -63,6 +74,7 @@ __all__ = [
     "complete_negative_keyword_result",
     "display_campaign_budget_amount_result",
     "display_campaign_budget_assignment_result",
+    "display_campaign_budget_removal_result",
     "fan_out_tool_return",
     "google_ads_available",
     "google_ads_client",

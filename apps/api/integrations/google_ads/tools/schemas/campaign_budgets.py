@@ -156,3 +156,40 @@ class GoogleAdsAssignCampaignBudgetsEntry(IntegrationFanOutEntry):
 
 class GoogleAdsAssignCampaignBudgetsOutput(IntegrationFanOutOutput):
     results: list[GoogleAdsAssignCampaignBudgetsEntry]
+
+
+class GoogleAdsCampaignBudgetRemovalOutcome(GoogleAdsStrictModel):
+    reference: GoogleAdsCampaignBudgetReference
+    previous_status: str
+    resulting_status: str | None = None
+    outcome: Literal["removed", "failed", "unverified"]
+    external_ref: str | None = None
+    error_code: str | None = None
+    message: str | None = None
+
+
+class GoogleAdsCampaignBudgetRemovalCounts(GoogleAdsStrictModel):
+    removed: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    unverified: int = Field(ge=0)
+
+
+class GoogleAdsCampaignBudgetRemovalSamples(GoogleAdsStrictModel):
+    removed: list[GoogleAdsCampaignBudgetRemovalOutcome]
+    failed: list[GoogleAdsCampaignBudgetRemovalOutcome]
+    unverified: list[GoogleAdsCampaignBudgetRemovalOutcome]
+
+
+class GoogleAdsRemoveCampaignBudgetsData(GoogleAdsStrictModel):
+    counts: GoogleAdsCampaignBudgetRemovalCounts
+    samples: GoogleAdsCampaignBudgetRemovalSamples
+    samples_truncated: bool
+    audit_note: str | None = None
+
+
+class GoogleAdsRemoveCampaignBudgetsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsRemoveCampaignBudgetsData | None = None
+
+
+class GoogleAdsRemoveCampaignBudgetsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsRemoveCampaignBudgetsEntry]

@@ -66,6 +66,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_ads_create_campaign_budget": ("write", "external", "approval", True),
         "google_ads_dismiss_recommendations": ("write", "external", "approval", True),
         "google_ads_link_negative_keyword_list": ("write", "external", "approval", True),
+        "google_ads_remove_campaign_budgets": ("write", "external", "approval", True),
         "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
         "google_ads_remove_campaign_negative_keywords": (
             "write",
@@ -245,6 +246,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_list_report_fields",
         "google_ads_remove_negative_keywords",
         "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_campaign_budgets",
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_run_report",
         "google_ads_update_campaign_budget_amounts",
@@ -268,6 +270,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_create_negative_keyword_list",
         "google_ads_link_negative_keyword_list",
         "google_ads_remove_ad_group_negative_keywords",
+        "google_ads_remove_campaign_budgets",
         "google_ads_remove_negative_keywords",
         "google_ads_remove_campaign_negative_keywords",
         "google_ads_update_campaign_budget_amounts",

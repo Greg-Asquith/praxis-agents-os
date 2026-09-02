@@ -284,9 +284,11 @@ follows:
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
   writes for recommendations, negative keywords, campaign status, device bid
-  adjustments, and campaign-budget creation, amount updates, and assignment.
-  Budget writes re-read provider state after approval and retain exact outcome
-  evidence through the shared mutation ledger.
+  adjustments, and campaign-budget creation, amount updates, assignment, and
+  unused-budget removal. Budget writes re-read provider state after approval
+  and retain exact outcome evidence through the shared mutation ledger. Budget
+  removal fails before mutation when any selected budget has a live campaign
+  reference.
   BigQuery contributes service-account dataset discovery, a job-synchronized
   table-schema cache for enabled datasets (connection jobs fan out into
   independently retryable dataset jobs), two cache-backed schema tools, and a

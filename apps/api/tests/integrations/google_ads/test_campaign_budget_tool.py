@@ -1,4 +1,4 @@
-"""Google Ads campaign budget creation contracts."""
+"""Google Ads campaign budget action contracts."""
 
 import json
 from dataclasses import replace
@@ -20,6 +20,7 @@ from integrations.google_ads.operations.mutation_outcomes import (
     GoogleAdsMutationProjection,
     build_mutation_ledger,
 )
+from integrations.google_ads.operations.remove_campaign_budgets import remove_campaign_budgets
 from integrations.google_ads.operations.update_campaign_budget_amounts import (
     GoogleAdsCampaignBudgetAmountChange,
     update_campaign_budget_amounts,
@@ -36,11 +37,16 @@ from integrations.google_ads.tools.create_campaign_budget import (
     DEFINITION,
     google_ads_create_campaign_budget,
 )
+from integrations.google_ads.tools.remove_campaign_budgets import (
+    DEFINITION as REMOVE_DEFINITION,
+    google_ads_remove_campaign_budgets,
+)
 from integrations.google_ads.tools.schemas import (
     GoogleAdsAssignCampaignBudgetsOutput,
     GoogleAdsCampaignBudgetAmountUpdate,
     GoogleAdsCreateCampaignBudgetOutput,
     GoogleAdsDailyBudgetAmount,
+    GoogleAdsRemoveCampaignBudgetsOutput,
     GoogleAdsTotalBudgetAmount,
     GoogleAdsUpdateCampaignBudgetAmountsOutput,
 )
@@ -54,6 +60,13 @@ from integrations.google_ads.tools.utils.campaign_budget_assignment_results impo
     MAX_CAMPAIGN_BUDGET_ASSIGNMENT_RESULT_CHARS,
     bounded_campaign_budget_assignment_result,
     display_campaign_budget_assignment_result,
+)
+from integrations.google_ads.tools.utils.campaign_budget_removal_results import (
+    MAX_CAMPAIGN_BUDGET_REMOVAL_DISPLAY_DATA_CHARS,
+    MAX_CAMPAIGN_BUDGET_REMOVAL_PUBLIC_RESULT_CHARS,
+    MAX_CAMPAIGN_BUDGET_REMOVAL_RESULT_CHARS,
+    bounded_campaign_budget_removal_result,
+    display_campaign_budget_removal_result,
 )
 from integrations.google_ads.tools.utils.campaign_budget_results import (
     MAX_CAMPAIGN_BUDGET_AMOUNT_DISPLAY_DATA_CHARS,
@@ -1539,3 +1552,418 @@ def test_assign_campaign_budget_definition_is_approval_only_editable_and_bounded
     schema = ASSIGN_DEFINITION.to_pydantic_tool().function_schema.json_schema
     assert schema["properties"]["campaigns"]["minItems"] == 1
     assert schema["properties"]["campaigns"]["maxItems"] == 50
+
+
+async def test_remove_campaign_budgets_uses_pinned_remove_payload() -> None:
+    client = Client(
+        {
+            "results": [
+                {"resourceName": "customers/333/campaignBudgets/44"},
+                {"resourceName": "customers/333/campaignBudgets/55"},
+            ]
+        }
+    )
+
+    ledger = await remove_campaign_budgets(
+        client,
+        customer_id="333",
+        login_customer_id="111",
+        budget_ids=["44", "55"],
+    )
+
+    assert client.path == "customers/333/campaignBudgets:mutate"
+    assert client.kwargs["policy"] is IntegrationRequestPolicy.MUTATION
+    assert client.kwargs["json"] == {
+        "operations": [
+            {"remove": "customers/333/campaignBudgets/44"},
+            {"remove": "customers/333/campaignBudgets/55"},
+        ],
+        "partialFailure": True,
+    }
+    assert [item["budget_id"] for item in ledger.result()["removed"]] == ["44", "55"]
+
+
+async def test_remove_campaign_budgets_keeps_failed_and_unverified_distinct() -> None:
+    rejected = await remove_campaign_budgets(
+        Client(
+            {
+                "results": [
+                    {"resourceName": "customers/333/campaignBudgets/44"},
+                    {},
+                ],
+                "partialFailureError": {
+                    "details": [
+                        {
+                            "errors": [
+                                {
+                                    "message": "Budget is in use",
+                                    "errorCode": {"campaignBudgetError": "CAMPAIGN_BUDGET_IN_USE"},
+                                    "location": {
+                                        "fieldPathElements": [
+                                            {"fieldName": "operations", "index": 1}
+                                        ]
+                                    },
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        ),
+        customer_id="333",
+        login_customer_id="111",
+        budget_ids=["44", "55"],
+    )
+    ambiguous = await remove_campaign_budgets(
+        Client({"results": [{"resourceName": "customers/999/campaignBudgets/44"}]}),
+        customer_id="333",
+        login_customer_id="111",
+        budget_ids=["44"],
+    )
+
+    assert rejected.effects[0].outcome == "applied"
+    assert rejected.effects[1].outcome == "failed"
+    assert rejected.effects[1].error_code == "CAMPAIGN_BUDGET_IN_USE"
+    assert ambiguous.effects[0].outcome == "unverified"
+
+
+def test_campaign_budget_removal_results_are_bounded() -> None:
+    budgets = [
+        {
+            "reference": GoogleAdsCampaignBudgetReference(
+                customer_id="333",
+                budget_id=str(index + 1),
+                label=f"Budget {index}: {'x' * 480}",
+                status="ENABLED",
+                reference_count=0,
+            ),
+            "previous_status": "ENABLED",
+            "resulting_status": "REMOVED",
+            "outcome": "removed",
+            "external_ref": f"customers/333/campaignBudgets/{index + 1}",
+            "error_code": None,
+            "message": None,
+        }
+        for index in range(50)
+    ]
+
+    model_result = bounded_campaign_budget_removal_result({"budgets": budgets})
+    display_result = display_campaign_budget_removal_result({"budgets": budgets})
+
+    assert len(json.dumps(model_result, ensure_ascii=False)) <= (
+        MAX_CAMPAIGN_BUDGET_REMOVAL_RESULT_CHARS
+    )
+    assert len(json.dumps(display_result, ensure_ascii=False)) <= (
+        MAX_CAMPAIGN_BUDGET_REMOVAL_DISPLAY_DATA_CHARS
+    )
+    assert model_result["counts"] == {"removed": 50, "failed": 0, "unverified": 0}
+    assert model_result["samples_truncated"] is True
+    assert display_result["samples_truncated"] is False
+
+
+async def test_remove_campaign_budget_tool_uses_live_unused_state_and_audit(monkeypatch) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,))),
+        tool_name=REMOVE_DEFINITION.name,
+    )
+    stale_reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Stale budget",
+    )
+    provider_client = Client({"results": [{"resourceName": "customers/333/campaignBudgets/55"}]})
+    pending_details = []
+    audit_outcomes = []
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        pending_details.append(await kwargs["prepare_pending_operation"]())
+        outcome = await kwargs["execute"]()
+        audit_outcomes.append(outcome)
+        return outcome.value
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55",
+                    name="Live unused budget",
+                    explicitly_shared=True,
+                    reference_count=0,
+                )
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.run_audited_integration_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_remove_campaign_budgets(ctx, [stale_reference])
+
+    output = GoogleAdsRemoveCampaignBudgetsOutput.model_validate(result.return_value)
+    data = output.results[0].data
+    assert data is not None, result.return_value["results"][0].get("error_message")
+    assert data.counts.model_dump() == {"removed": 1, "failed": 0, "unverified": 0}
+    removed = data.samples.removed[0]
+    assert removed.reference.label == "Live unused budget"
+    assert removed.reference.reference_count == 0
+    assert removed.previous_status == "ENABLED"
+    assert removed.resulting_status == "REMOVED"
+    fields = pending_details[0].intent_groups[0].items[0].fields
+    assert fields["budget_name"] == "Live unused budget"
+    assert fields["reference_count"] == 0
+    assert audit_outcomes[0].operation_detail.intent_counts.applied == 1
+
+
+async def test_remove_campaign_budget_tool_rejects_live_linked_budget(monkeypatch) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(selected,))),
+        tool_name=REMOVE_DEFINITION.name,
+    )
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Selected budget",
+    )
+    provider_client = Client({})
+
+    async def passthrough_audit(_ctx, _entry, **kwargs):
+        await kwargs["prepare_pending_operation"]()
+        return await kwargs["execute"]()
+
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55",
+                    name="Linked budget",
+                    explicitly_shared=True,
+                    reference_count=2,
+                )
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.run_audited_integration_operation",
+        passthrough_audit,
+    )
+
+    result = await google_ads_remove_campaign_budgets(ctx, [reference])
+
+    assert result.return_value["results"][0]["status"] == "error"
+    assert "linked to campaigns" in result.return_value["results"][0]["error_message"]
+    assert provider_client.path is None
+
+
+async def test_remove_campaign_budget_tool_retains_unverified_prior_state(monkeypatch) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(selected,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=REMOVE_DEFINITION.name,
+        tool_call_id="remove-budget-call",
+    )
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Selected budget",
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.google_ads_client",
+        AsyncMock(
+            return_value=Client({"results": [{"resourceName": "customers/999/campaignBudgets/55"}]})
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55",
+                    name="Live unused budget",
+                    explicitly_shared=False,
+                    reference_count=0,
+                )
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_remove_campaign_budgets(ctx, [reference])
+
+    output = GoogleAdsRemoveCampaignBudgetsOutput.model_validate(result.return_value)
+    item = output.results[0]
+    assert item.status == "error"
+    assert item.error_code == "unverified_mutation"
+    assert item.data is not None
+    budget = item.data.samples.unverified[0]
+    assert budget.reference.label == "Live unused budget"
+    assert budget.reference.reference_count == 0
+    assert budget.previous_status == "ENABLED"
+    assert budget.resulting_status is None
+
+
+async def test_remove_campaign_budget_tool_accounts_for_ambiguous_transport_failure(
+    monkeypatch,
+) -> None:
+    selected = entry()
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(selected,)),
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4()),
+            run=SimpleNamespace(id=uuid4()),
+        ),
+        tool_name=REMOVE_DEFINITION.name,
+        tool_call_id="remove-budget-timeout-call",
+    )
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Selected budget",
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.google_ads_client",
+        AsyncMock(return_value=Client({})),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.verify_campaign_budgets",
+        AsyncMock(
+            return_value={
+                "55": budget_row(
+                    "55",
+                    name="Live unused budget",
+                    explicitly_shared=False,
+                    reference_count=0,
+                )
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.remove_campaign_budgets",
+        AsyncMock(side_effect=TimeoutError("The mutation response timed out")),
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+
+    result = await google_ads_remove_campaign_budgets(ctx, [reference])
+
+    output = GoogleAdsRemoveCampaignBudgetsOutput.model_validate(result.return_value)
+    item = output.results[0]
+    assert item.status == "error"
+    assert item.error_code == "unverified_mutation"
+    assert item.data is not None
+    budget = item.data.samples.unverified[0]
+    assert budget.error_code == "TimeoutError"
+    assert budget.message == "The mutation response timed out"
+    assert budget.previous_status == "ENABLED"
+    assert budget.resulting_status is None
+
+
+async def test_remove_campaign_budget_tool_rejects_duplicates_before_dispatch(
+    monkeypatch,
+) -> None:
+    reference = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Budget",
+    )
+    fan_out = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_campaign_budgets.run_context_targets",
+        fan_out,
+    )
+
+    with pytest.raises(ModelRetry, match="only once"):
+        await google_ads_remove_campaign_budgets(
+            SimpleNamespace(),
+            [reference, reference],
+        )
+
+    fan_out.assert_not_awaited()
+
+
+async def test_edited_removal_approval_reauthorizes_and_resolves_budget_references(
+    monkeypatch,
+) -> None:
+    original = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="55",
+        label="Original budget",
+    )
+    edited = GoogleAdsCampaignBudgetReference(
+        customer_id="333",
+        budget_id="66",
+        label="Edited budget",
+    )
+    canonical = edited.model_copy(update={"label": "Live budget"})
+    authorize = AsyncMock(return_value=SimpleNamespace())
+    resolve = AsyncMock(return_value=[canonical.model_dump(mode="json")])
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: REMOVE_DEFINITION,
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.authorize_entity_field",
+        authorize,
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.resolve_authorized_references",
+        resolve,
+    )
+
+    approved_args = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=SimpleNamespace(
+            tool_name=REMOVE_DEFINITION.name,
+            args={"budgets": [original.model_dump(mode="json")]},
+        ),
+        override_args={"budgets": [edited.model_dump(mode="json")]},
+    )
+
+    assert approved_args == {"budgets": [canonical.model_dump(mode="json")]}
+    authorize.assert_awaited_once()
+    resolve.assert_awaited_once()
+    assert resolve.await_args.kwargs["values"] == [edited.model_dump(mode="json")]
+
+
+def test_remove_campaign_budget_definition_is_destructive_approval_only_and_bounded() -> None:
+    assert REMOVE_DEFINITION.default_policy == "approval"
+    assert REMOVE_DEFINITION.supports_auto is False
+    assert REMOVE_DEFINITION.code_eligible is True
+    assert "does not recommend" in REMOVE_DEFINITION.description
+    assert "cannot be undone" in REMOVE_DEFINITION.presentation.approval_prompt
+    assert (
+        REMOVE_DEFINITION.max_public_result_chars == MAX_CAMPAIGN_BUDGET_REMOVAL_PUBLIC_RESULT_CHARS
+    )
+    fields = {field.key: field for field in REMOVE_DEFINITION.presentation.arg_fields}
+    assert fields["budgets"].format == "entity_list"
+    assert fields["budgets"].editable is True
+    schema = REMOVE_DEFINITION.to_pydantic_tool().function_schema.json_schema
+    assert schema["properties"]["budgets"]["minItems"] == 1
+    assert schema["properties"]["budgets"]["maxItems"] == 50
