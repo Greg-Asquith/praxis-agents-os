@@ -24,6 +24,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.read_audit import read_operation_detail
 
 from ..operations.query_search_analytics import query_search_analytics
 from .schemas import (
@@ -36,7 +37,6 @@ from .schemas.search_analytics import (
     GoogleSearchConsoleDimension,
     GoogleSearchConsoleSearchType,
 )
-from .utils.audit import read_operation_detail
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_BINDING, RESULTS_FIELD
 from .utils.client import google_search_console_available, google_search_console_client
 from .utils.validation import validated_search_analytics_request
@@ -103,6 +103,7 @@ async def google_search_console_query_search_analytics(
                 operation_detail=read_operation_detail(
                     entry,
                     operation="query_search_analytics",
+                    target_entity_type="google_search_console_site",
                     entity_type="google_search_console_search_analytics",
                     fields={
                         "start_date": request.start_date,

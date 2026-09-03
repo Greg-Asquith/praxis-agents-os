@@ -23,6 +23,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.read_audit import read_operation_detail
 
 from ..operations.run_realtime_report import run_realtime_report
 from .schemas import (
@@ -39,7 +40,6 @@ from .utils import (
     google_analytics_available,
     google_analytics_client,
 )
-from .utils.audit import read_operation_detail
 from .utils.validation import (
     validate_field_selection,
     validate_filter_kinds,
@@ -122,6 +122,8 @@ async def google_analytics_run_realtime_report(
                 operation_detail=read_operation_detail(
                     entry,
                     operation="run_realtime_report",
+                    target_entity_type="google_analytics_property",
+                    entity_type="google_analytics_report",
                     fields={
                         "metric_count": len(request.metrics),
                         "dimension_count": len(request.dimensions),

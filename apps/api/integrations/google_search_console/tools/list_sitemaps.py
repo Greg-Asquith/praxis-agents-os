@@ -20,10 +20,10 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.read_audit import read_operation_detail
 
 from ..operations.list_sitemaps import list_sitemaps
 from .schemas import GoogleSearchConsoleListSitemapsOutput
-from .utils.audit import read_operation_detail
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_BINDING, RESULTS_FIELD
 from .utils.client import google_search_console_available, google_search_console_client
 
@@ -40,6 +40,7 @@ async def google_search_console_list_sitemaps(
                 operation_detail=read_operation_detail(
                     entry,
                     operation="list_sitemaps",
+                    target_entity_type="google_search_console_site",
                     entity_type="google_search_console_sitemap",
                     fields={"sitemap_count": int(result["sitemap_count"])},
                 ),

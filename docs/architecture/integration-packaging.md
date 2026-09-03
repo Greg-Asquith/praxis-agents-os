@@ -594,9 +594,12 @@ then URL-encodes the identifier in request paths. One `sites.list`
 request discovers verified domain and URL-prefix properties. Permission levels
 make owner resources writable while full-user and restricted-user resources
 remain read-only. The lazy frontend module supplies the provider mark and setup
-guidance. Two code-eligible read tools return bounded, typed Search Analytics
-rows and submitted sitemap status for each selected site. Query and page values
-and sitemap paths carry untrusted-content provenance, and the lazy presenters
+guidance. Three code-eligible read tools return bounded, typed Search Analytics
+rows, submitted sitemap status, and indexed-status inspections for requested
+URLs. URL Inspection routes each URL to the most specific selected URL-prefix
+property, falling back to a matching domain property, and caps each call at ten
+URLs. Query and page values, sitemap paths, canonicals, referring URLs, and
+provider error text carry untrusted-content provenance. The lazy presenters
 compose the shared fan-out and table kits.
 
 Notion demonstrates a user-owned public OAuth integration whose provider

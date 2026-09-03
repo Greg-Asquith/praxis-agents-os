@@ -2,6 +2,7 @@
 
 import { GoogleSearchConsoleConnectHelp } from "@/integrations/google_search_console/components/connect-help"
 import { GoogleSearchConsoleLogo } from "@/integrations/google_search_console/components/logo"
+import { inspectionPresenter } from "@/integrations/google_search_console/presenters/inspection"
 import { searchAnalyticsPresenter } from "@/integrations/google_search_console/presenters/search-analytics"
 import { sitemapsPresenter } from "@/integrations/google_search_console/presenters/sitemaps"
 import type { IntegrationUiModule } from "@/integrations/contract"
@@ -12,5 +13,5 @@ export default {
   ConnectHelp: GoogleSearchConsoleConnectHelp,
   icons: { google_search_console: GoogleSearchConsoleLogo },
   providerKey: "google_search_console",
-  toolRowPresenters: [searchAnalyticsPresenter, sitemapsPresenter],
+  toolRowPresenters: [searchAnalyticsPresenter, sitemapsPresenter, inspectionPresenter],
 } satisfies IntegrationUiModule

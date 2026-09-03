@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest"
 
 import { parseSearchAnalyticsData } from "@/integrations/google_search_console/lib/search-analytics-model"
+import { parseInspectionData } from "@/integrations/google_search_console/lib/inspection-model"
 import { parseSitemapsData } from "@/integrations/google_search_console/lib/sitemaps-model"
 import { searchAnalyticsDetails } from "@/integrations/google_search_console/lib/tool-details"
 
@@ -35,11 +36,35 @@ describe("Google Search Console presenter models", () => {
     })
   })
 
+  it("parses bounded URL inspection results", () => {
+    const parsed = parseInspectionData({ inspections: [inspectionData()] })
+
+    expect(parsed?.[0]).toMatchObject({
+      coverageState: "Submitted and indexed",
+      errorCode: null,
+      richResults: [{ type: "Product snippets", issueCount: 2 }],
+      verdict: "PASS",
+    })
+    expect(parsed?.[0]?.referringUrls[0]).toEqual(
+      node("https://example.com/referrer", "search_console_inspection")
+    )
+  })
+
   it("rejects malformed provider data", () => {
     expect(
       parseSearchAnalyticsData({ ...searchData(), rows: [{ keys: {}, clicks: "12" }] })
     ).toBeNull()
     expect(parseSitemapsData({ ...sitemapData(), sitemaps: [{ path: "plain" }] })).toBeNull()
+    expect(
+      parseInspectionData({
+        inspections: [{ ...inspectionData(), referring_urls: ["plain"] }],
+      })
+    ).toBeNull()
+    expect(
+      parseInspectionData({
+        inspections: [{ ...inspectionData(), last_crawl_time: "not-a-timestamp" }],
+      })
+    ).toBeNull()
   })
 
   it("summarizes query arguments in operator language", () => {
@@ -117,6 +142,29 @@ function sitemapData() {
       },
     ],
     sitemap_count: 1,
+  }
+}
+
+function inspectionData() {
+  return {
+    url: "https://example.com/page",
+    verdict: "PASS",
+    coverage_state: "Submitted and indexed",
+    robots_txt_state: "ALLOWED",
+    indexing_state: "INDEXING_ALLOWED",
+    page_fetch_state: "SUCCESSFUL",
+    crawled_as: "MOBILE",
+    last_crawl_time: "2026-08-30T12:30:00Z",
+    google_canonical: node("https://example.com/page", "search_console_inspection"),
+    user_canonical: null,
+    sitemap: [node("https://example.com/sitemap.xml", "search_console_inspection")],
+    referring_urls: [node("https://example.com/referrer", "search_console_inspection")],
+    mobile_usability_verdict: "PASS",
+    rich_results_verdict: "FAIL",
+    rich_results: [{ type: "Product snippets", issue_count: 2 }],
+    inspection_result_link: "https://search.google.com/search-console/inspect?x=1",
+    error_code: null,
+    message: null,
   }
 }
 

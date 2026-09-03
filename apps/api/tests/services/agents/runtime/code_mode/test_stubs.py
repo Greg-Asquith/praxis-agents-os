@@ -243,11 +243,12 @@ def test_google_analytics_realtime_and_compatibility_stubs_are_typed() -> None:
     assert "-> GoogleAnalyticsCheckReportFieldsOutput" in compatibility
 
 
-def test_search_console_slice_a_stubs_declare_typed_inputs_and_rows() -> None:
+def test_search_console_stubs_declare_typed_inputs_and_rows() -> None:
     definitions = {item.name: item for item in GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS}
 
     query = render_tool_stub(definitions["google_search_console_query_search_analytics"])
     sitemaps = render_tool_stub(definitions["google_search_console_list_sitemaps"])
+    inspection = render_tool_stub(definitions["google_search_console_inspect_url"])
 
     assert "class GoogleSearchConsoleFilter(TypedDict):" in query
     assert "class GoogleSearchConsoleSearchAnalyticsRow(TypedDict):" in query
@@ -258,6 +259,11 @@ def test_search_console_slice_a_stubs_declare_typed_inputs_and_rows() -> None:
     assert "submitted_url_count: int" in sitemaps
     assert "async def google_search_console_list_sitemaps(" in sitemaps
     assert "-> GoogleSearchConsoleListSitemapsOutput" in sitemaps
+    assert "class GoogleSearchConsoleInspection(TypedDict):" in inspection
+    assert "referring_urls: NotRequired[list[UntrustedNode]]" in inspection
+    assert "async def google_search_console_inspect_url(" in inspection
+    assert "urls: list[str]" in inspection
+    assert "-> GoogleSearchConsoleInspectUrlOutput" in inspection
 
 
 def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids() -> None:

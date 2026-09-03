@@ -324,9 +324,14 @@ follows:
   path in the external ID, and maps
   Search Console permission levels to read-only or writable resources. The
   provider package contributes code-eligible reads for bounded Search Analytics
-  rows and up to 200 submitted sitemaps per selected site. Query and page values
-  and sitemap paths retain untrusted-content provenance, while audit evidence
-  contains parameters and counts rather than provider content.
+  rows, up to 200 submitted sitemaps per selected site, and indexed-status
+  inspection for up to ten requested URLs. Inspection routes each URL to the
+  longest matching selected URL-prefix property before falling back to a
+  matching domain property, then executes sequentially per site against the
+  provider's 2,000-inspection daily property quota. Query and page values,
+  sitemap paths, canonicals, referring URLs, and provider error text retain
+  untrusted-content provenance, while audit evidence contains parameters and
+  counts rather than provider content.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
   resource. Its authorization picker controls page access. Three code-eligible

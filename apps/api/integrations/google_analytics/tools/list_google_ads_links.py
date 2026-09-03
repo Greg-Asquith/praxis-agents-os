@@ -20,6 +20,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.read_audit import read_operation_detail
 
 from ..operations.list_google_ads_links import list_google_ads_links
 from .schemas import GoogleAnalyticsListGoogleAdsLinksOutput
@@ -29,7 +30,6 @@ from .utils import (
     google_analytics_available,
     google_analytics_client,
 )
-from .utils.audit import read_operation_detail
 
 
 async def google_analytics_list_google_ads_links(
@@ -44,6 +44,7 @@ async def google_analytics_list_google_ads_links(
                 operation_detail=read_operation_detail(
                     entry,
                     operation="list_google_ads_links",
+                    target_entity_type="google_analytics_property",
                     entity_type="google_analytics_google_ads_link",
                     fields={"link_count": int(result["link_count"])},
                 ),

@@ -13,7 +13,7 @@ from services.agents.runtime.tools.contract import VALID_TOOL_ICONS
 from services.integrations.loader import _validate_plugin
 
 
-def test_manifest_declares_workspace_site_provider_with_slice_a_tools() -> None:
+def test_manifest_declares_workspace_site_provider_tools_without_internal_url_resolver() -> None:
     manifest = PROVIDER.manifest
 
     assert manifest.provider_key == "google_search_console"
@@ -26,11 +26,13 @@ def test_manifest_declares_workspace_site_provider_with_slice_a_tools() -> None:
     assert manifest.capability_flags == frozenset({"read", "write"})
     assert manifest.event_delivery == "none"
     assert {definition.name for definition in PROVIDER.tool_definitions} == {
+        "google_search_console_inspect_url",
         "google_search_console_list_sitemaps",
         "google_search_console_query_search_analytics",
     }
     assert PROVIDER.oauth_config().protocol.identity_source == "google_userinfo"
     assert "google_search_console" in VALID_TOOL_ICONS
+    assert PROVIDER.entity_resolvers == ()
     _validate_plugin(PROVIDER, expected_key="google_search_console")
 
 

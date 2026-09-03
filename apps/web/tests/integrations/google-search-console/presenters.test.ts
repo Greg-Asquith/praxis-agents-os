@@ -7,12 +7,13 @@ import { beforeAll, describe, expect, it } from "vitest"
 
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { toolPresentationsQueryOptions } from "@/features/tools/api/list-tool-presentations"
+import { inspectionPresenter } from "@/integrations/google_search_console/presenters/inspection"
 import { searchAnalyticsPresenter } from "@/integrations/google_search_console/presenters/search-analytics"
 import { sitemapsPresenter } from "@/integrations/google_search_console/presenters/sitemaps"
 import type { ToolActivity } from "@/integrations/contract"
 import { loadIntegrationUiModules } from "@/integrations/registry"
 
-describe("Google Search Console Slice A presenters", () => {
+describe("Google Search Console presenters", () => {
   beforeAll(async () => {
     await loadIntegrationUiModules(["google_search_console"])
   })
@@ -143,6 +144,74 @@ describe("Google Search Console Slice A presenters", () => {
     ).toBeNull()
   })
 
+  it("renders URL inspection details, disclosures, links, loading, and URL errors", () => {
+    const populated = render(
+      inspectionPresenter.render(
+        props({
+          id: "inspection-1",
+          kind: "result",
+          name: "google_search_console_inspect_url",
+          status: "completed",
+          result: { results: [entry({ inspections: [inspectionData()] })] },
+        })
+      )
+    )
+    const failedUrl = render(
+      inspectionPresenter.render(
+        props({
+          id: "inspection-error",
+          kind: "result",
+          name: "google_search_console_inspect_url",
+          status: "completed",
+          result: { results: [entry({ inspections: [inspectionError()] })] },
+        })
+      )
+    )
+    const empty = render(
+      inspectionPresenter.render(
+        props({
+          id: "inspection-empty",
+          kind: "result",
+          name: "google_search_console_inspect_url",
+          status: "completed",
+          result: { results: [entry({ inspections: [] })] },
+        })
+      )
+    )
+    const loading = render(
+      inspectionPresenter.render(
+        props({
+          id: "inspection-running",
+          kind: "call",
+          name: "google_search_console_inspect_url",
+          status: "running",
+        })
+      )
+    )
+
+    expect(populated).toContain("Inspect Search Console URLs")
+    expect(populated).toContain("Submitted and indexed")
+    expect(populated).toContain("Google canonical")
+    expect(populated).toContain("Sitemaps")
+    expect(populated).toContain("Referring URLs")
+    expect(populated).toContain("Product snippets: 2 issues")
+    expect(populated).toContain("Open in Search Console")
+    expect(failedUrl).toContain("Google could not inspect this URL")
+    expect(empty).toContain("No URL inspections were returned")
+    expect(loading).toContain("Inspecting Search Console URLs")
+    expect(
+      inspectionPresenter.render(
+        props({
+          id: "inspection-bad",
+          kind: "result",
+          name: "google_search_console_inspect_url",
+          status: "completed",
+          result: { results: [entry({ inspections: [{ url: 123 }] })] },
+        })
+      )
+    ).toBeNull()
+  })
+
   it("falls through to the declarative row when a presenter rejects malformed data", () => {
     const html = renderToolRow({
       id: "search-default",
@@ -154,6 +223,25 @@ describe("Google Search Console Slice A presenters", () => {
 
     expect(html).toContain("Ran google_search_console_query_search_analytics")
     expect(html).not.toContain('aria-label="Search Analytics results"')
+  })
+
+  it("falls through to the declarative row for a malformed crawl timestamp", () => {
+    const html = renderToolRow({
+      id: "inspection-invalid-date",
+      kind: "result",
+      name: "google_search_console_inspect_url",
+      status: "completed",
+      result: {
+        results: [
+          entry({
+            inspections: [{ ...inspectionData(), last_crawl_time: "not-a-timestamp" }],
+          }),
+        ],
+      },
+    })
+
+    expect(html).toContain("Ran google_search_console_inspect_url")
+    expect(html).not.toContain('aria-label="Search Console URL inspection results"')
   })
 })
 
@@ -198,6 +286,38 @@ function sitemapData() {
       },
     ],
     sitemap_count: 1,
+  }
+}
+
+function inspectionData() {
+  return {
+    url: "https://example.com/page",
+    verdict: "PASS",
+    coverage_state: "Submitted and indexed",
+    robots_txt_state: "ALLOWED",
+    indexing_state: "INDEXING_ALLOWED",
+    page_fetch_state: "SUCCESSFUL",
+    crawled_as: "MOBILE",
+    last_crawl_time: "2026-08-30T12:30:00Z",
+    google_canonical: node("https://example.com/page", "search_console_inspection"),
+    user_canonical: node("https://example.com/page", "search_console_inspection"),
+    sitemap: [node("https://example.com/sitemap.xml", "search_console_inspection")],
+    referring_urls: [node("https://example.com/referrer", "search_console_inspection")],
+    mobile_usability_verdict: "PASS",
+    rich_results_verdict: "FAIL",
+    rich_results: [{ type: "Product snippets", issue_count: 2 }],
+    inspection_result_link: "https://search.google.com/search-console/inspect?x=1",
+    error_code: null,
+    message: null,
+  }
+}
+
+function inspectionError() {
+  return {
+    ...inspectionData(),
+    verdict: "",
+    error_code: "IntegrationNotFoundError",
+    message: node("Google could not inspect this URL", "search_console_inspection_error"),
   }
 }
 
