@@ -104,10 +104,19 @@ test "$(grep -Fc -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh")" -eq
 grep -B3 -F -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh" \
   | grep -Fq 'for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"'
 grep -A1 'name: WORKER_MAX_CONCURRENT_RUNS' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
-  | grep -q 'value: "4"'
+  | grep -q 'value: "2"'
 grep -A1 'name: DB_MAINTENANCE_POOL_SIZE' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
-  | grep -q 'value: "3"'
+  | grep -q 'value: "1"'
 grep -A1 'name: DB_MAINTENANCE_POOL_MAX_OVERFLOW' "$TEST_TMP/rendered/jobs/praxis-worker.yaml" \
+  | grep -q 'value: "2"'
+# The API validates worker concurrency against the same pool sizes, so it
+# must receive every pool value the worker receives.
+for env_name in DB_POOL_SIZE DB_POOL_MAX_OVERFLOW DB_MAINTENANCE_POOL_SIZE \
+  DB_MAINTENANCE_POOL_MAX_OVERFLOW AI_USAGE_DB_POOL_SIZE AGENT_RUN_MAX_CONCURRENT_TURNS \
+  WORKER_MAX_CONCURRENT_RUNS; do
+  grep -q "name: ${env_name}$" "$TEST_TMP/rendered/services/praxis-api.yaml"
+done
+grep -A1 'name: AGENT_RUN_MAX_CONCURRENT_TURNS' "$TEST_TMP/rendered/services/praxis-api.yaml" \
   | grep -q 'value: "3"'
 grep -q 'maxRetries: 0' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 if grep -R -q --exclude='test.sh' 'PUBLIC_ASSET_PREFIX\|/assets$' "$GCP_DIR"; then
@@ -133,7 +142,7 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/undersized-web-render" \
 fi
 grep -q 'WEB_MEMORY must be at least 512Mi' "$TEST_TMP/undersized-web.out"
 
-sed 's/^WORKER_MAX_CONCURRENT_RUNS=4$/WORKER_MAX_CONCURRENT_RUNS=0/' \
+sed 's/^WORKER_MAX_CONCURRENT_RUNS=2$/WORKER_MAX_CONCURRENT_RUNS=0/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/invalid-worker-concurrency.env"
 if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/invalid-worker-concurrency-render" \
   "$TEST_TMP/invalid-worker-concurrency.env" abcdef0123456789 \
@@ -179,7 +188,7 @@ for manifest in \
 done
 grep -Fq 'unset GOOGLE_VERTEX_AI GOOGLE_VERTEX_LOCATION' "$GCP_DIR/bootstrap.sh"
 
-sed 's/^WORKER_MAX_CONCURRENT_RUNS=4$/WORKER_MAX_CONCURRENT_RUNS=6/' \
+sed 's/^WORKER_MAX_CONCURRENT_RUNS=2$/WORKER_MAX_CONCURRENT_RUNS=3/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/oversized-worker-concurrency.env"
 if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/oversized-worker-concurrency-render" \
   "$TEST_TMP/oversized-worker-concurrency.env" abcdef0123456789 \
@@ -187,8 +196,19 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/oversized-worker-concurrency-re
   echo "render unexpectedly accepted worker concurrency without pool headroom" >&2
   exit 1
 fi
-grep -q 'WORKER_MAX_CONCURRENT_RUNS must not exceed the smaller runtime or maintenance database pool capacity minus one (5)' \
+grep -q 'WORKER_MAX_CONCURRENT_RUNS must not exceed the smaller runtime or maintenance database pool capacity minus one (2)' \
   "$TEST_TMP/oversized-worker-concurrency.out"
+
+sed 's/^AGENT_RUN_MAX_CONCURRENT_TURNS=3$/AGENT_RUN_MAX_CONCURRENT_TURNS=4/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/oversized-turns.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/oversized-turns-render" \
+  "$TEST_TMP/oversized-turns.env" abcdef0123456789 \
+  >"$TEST_TMP/oversized-turns.out" 2>&1; then
+  echo "render unexpectedly accepted turn concurrency without pool headroom" >&2
+  exit 1
+fi
+grep -q 'AGENT_RUN_MAX_CONCURRENT_TURNS must not exceed the runtime database pool capacity minus four (3)' \
+  "$TEST_TMP/oversized-turns.out"
 
 sed -e 's/^DEPLOYMENT_ENVIRONMENT=staging$/DEPLOYMENT_ENVIRONMENT=production/' \
   -e 's/^LOG_RETENTION_DAYS=90$/LOG_RETENTION_DAYS=400/' \

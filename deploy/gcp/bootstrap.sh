@@ -610,9 +610,13 @@ plan gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
   --member="serviceAccount:${WORKER_SERVICE_ACCOUNT}" \
   --role="projects/${GCP_PROJECT_ID}/roles/praxisWorkerJobInvoker" \
   --condition=None --quiet
-plan gcloud iam service-accounts add-iam-policy-binding "$API_SERVICE_ACCOUNT" \
-  --project="$GCP_PROJECT_ID" --member="serviceAccount:${API_SERVICE_ACCOUNT}" \
-  --role=roles/iam.serviceAccountTokenCreator --quiet
+# Signed URLs sign through IAM signBlob with the caller's own identity; the
+# worker signs too because scheduled agent runs read files and artifacts.
+for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do
+  plan gcloud iam service-accounts add-iam-policy-binding "$service_account" \
+    --project="$GCP_PROJECT_ID" --member="serviceAccount:${service_account}" \
+    --role=roles/iam.serviceAccountTokenCreator --quiet
+done
 
 for secret_id in "${secret_ids[@]}"; do
   for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do

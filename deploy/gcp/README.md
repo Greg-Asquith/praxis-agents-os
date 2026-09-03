@@ -14,14 +14,20 @@ For each shell session, set the variables that later commands use:
 ```bash
 ENV_FILE=.local/praxis-staging.env
 PROJECT=praxis-example-staging   # = GCP_PROJECT_ID in the env file
-REGION=europe-west2              # = GCP_REGION
+REGION=europe-west4              # = GCP_REGION
 ```
 
 ## Prepare each operator machine
 
-- [ ] Install Docker, `gcloud`, and Python 3.12+.
+- [ ] Install Docker, `gcloud`, and Python 3.12+. Docker must be running
+      before `make gcp-deploy`.
 - [ ] `gcloud auth login` as a human operator. Never download a
       service-account JSON key; never use the default Compute Engine SA.
+- [ ] From the repository root, run `make gcp-check` so the scripts and
+      manifests validate on this machine before you touch the project.
+- [ ] Images build for `linux/amd64`. On an Apple silicon machine the first
+      build runs under emulation and is slow, so run the first
+      `make gcp-deploy` well before the customer session.
 - [ ] The helper syntax is verified against Google Cloud SDK 578.0.0. For a
       later SDK, check each command with `gcloud help COMMAND` before running
       it. Replace `COMMAND` with the `gcloud` command name.
@@ -32,11 +38,32 @@ REGION=europe-west2              # = GCP_REGION
 
 - [ ] Create the GCP project and link billing (console or `gcloud` — outside
       bootstrap by design). One project per customer production deployment.
+- [ ] Choose a region that supports Cloud Run domain mappings, such as
+      `europe-west4`; the example file lists the supported regions. Other
+      regions need a load balancer instead, which costs more.
 - [ ] `cp deploy/gcp/.env.example $ENV_FILE` and fill **every** value. The
       example file documents each variable, including the model/provider
       settings and public URLs the manifests are rendered from.
 - [ ] Keep `ALLOW_SIGNUP=false` for a closed environment and set
       `SUPER_ADMIN_EMAILS` to the email address of the first operator.
+- [ ] For a customer production environment, set
+      `DEPLOYMENT_ENVIRONMENT=production`, `LOG_RETENTION_DAYS=400`,
+      `CLOUD_SQL_DELETION_PROTECTION=true`, and
+      `CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE=true`. Bootstrap rejects production
+      without them.
+- [ ] Keep the example database pool values with `db-f1-micro`. They size the
+      API and worker to fit its 22 application connections; the deploy script
+      rejects concurrency values that outgrow the pools. Raise the tier before
+      raising any pool size.
+- [ ] Keep the example `TRUSTED_PROXY_CIDRS`. It trusts the Cloud Run and
+      Google front-end ranges that supply the caller's address. With the wrong
+      value every request records the same proxy address, so the login rate
+      limit locks out every user together.
+- [ ] For each integration in `INTEGRATIONS_ENABLED_PROVIDERS`, add its
+      OAuth client ID, client secret, and any developer token to
+      `RUNTIME_SECRET_BINDINGS` (the example file shows the Google Ads set).
+      Integrations read these values only from the environment, and the
+      manifests pass through no other integration settings.
 - [ ] For OAuth-only access, set `EMAIL_AUTH_ENABLED=false`, enable at least
       one login provider, and fill its client ID and `/oauth/callback` redirect
       URI. Add its client secret to `RUNTIME_SECRET_BINDINGS`; for example,
@@ -67,8 +94,13 @@ printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versio
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-google-api-key --data-file=- --project=$PROJECT --quiet; unset KEY; echo
 printf 'API key: ' && read -rs KEY && printf '%s' "$KEY" | gcloud secrets versions add praxis-google-oauth-client-secret --data-file=- --project=$PROJECT --quiet; unset KEY; echo
 # seed only the secrets bound in RUNTIME_SECRET_BINDINGS, including each
-# enabled login provider's OAuth client-secret binding
+# enabled login provider's OAuth client-secret binding and every integration
+# binding (client IDs, client secrets, and developer tokens)
 ```
+
+      Bootstrap creates every bound secret and grants the API and worker
+      access, but it leaves them empty. The API fails to start when a bound
+      secret has no version, so seed all of them before step 4.
 
 - [ ] The two application key rings live under hashed secret ids the
       application derives from their logical names (`helpers.py secret-id`
@@ -88,7 +120,9 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
 
 - [ ] Optional local preview:
       `deploy/gcp/deploy.sh --render-only /tmp/praxis-render $ENV_FILE`
-- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE`
+- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes both images,
+      runs the migration job, then creates the services and the worker job.
+      A failed migration stops the script before any service is created.
 - [ ] Until this first deployment completes, the Scheduler trigger fails every
       minute with `NOT_FOUND` because the deployment creates the
       `praxis-worker` job. These expected failures stop after deployment.
@@ -110,27 +144,34 @@ provider and the exact verified email in `SUPER_ADMIN_EMAILS`. That OAuth login
 creates the first user and personal workspace; every other unknown OAuth user
 remains rejected. No password or temporary public-signup window is required.
 
+Complete this step after step 6, because the sign-in flow needs the custom
+domains: session cookies don't flow between the `run.app` service URLs.
+
 ### 6. Configure public access, domains, and external platforms
 
-The scripts stop after creating private Cloud Run services. Complete these
-public access steps manually:
+The manifests disable the Cloud Run invoker IAM check, so both services accept
+public requests as soon as they deploy. If your organization enforces the
+`constraints/run.managed.requireInvokerIam` policy, the deployment fails;
+remove the `run.googleapis.com/invoker-iam-disabled` annotation from both
+service templates and grant `roles/run.invoker` to `allUsers` instead.
 
-- [ ] Allow unauthenticated invocation of both services:
-
-```bash
-gcloud run services add-iam-policy-binding praxis-api --member=allUsers --role=roles/run.invoker --project=$PROJECT --region=$REGION --quiet
-gcloud run services add-iam-policy-binding praxis-web --member=allUsers --role=roles/run.invoker --project=$PROJECT --region=$REGION --quiet
-```
-
-- [ ] Map the custom domains from the env file (`APP_BASE_URL`,
-      `FRONTEND_URL`) and create the DNS records each mapping prints:
+Map the custom domains from the env file (`APP_BASE_URL`, `FRONTEND_URL`)
+with Cloud Run domain mappings. They exist only in the regions listed in the
+example env file, and Google labels them a preview feature; a global external
+Application Load Balancer is the paid alternative when a deployment outgrows
+them. Each mapping prints the DNS records to create:
 
 ```bash
 gcloud beta run domain-mappings create --service=praxis-api --domain=api.DOMAIN --project=$PROJECT --region=$REGION
 gcloud beta run domain-mappings create --service=praxis-web --domain=app.DOMAIN --project=$PROJECT --region=$REGION
 ```
 
-Replace `DOMAIN` with your deployment's domain, such as `example.com`.
+Replace `DOMAIN` with your deployment's domain, such as `example.com`. Create
+the printed DNS records right away: certificate issuance starts when the
+names resolve and takes from 15 minutes to 24 hours, so do this step first on
+deployment day. Watch progress with
+`gcloud beta run domain-mappings describe --domain=api.DOMAIN --project=$PROJECT --region=$REGION --format='yaml(status.conditions)'`
+until every condition reports `True`.
 
 - [ ] Register the login OAuth redirect URI (`https://app.DOMAIN/oauth/callback`)
       and integration redirect URI (`INTEGRATIONS_OAUTH_REDIRECT_URI`) in each
@@ -147,6 +188,14 @@ machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
 - [ ] Worker drains cleanly:
       `gcloud run jobs execute praxis-worker --wait --project=$PROJECT --region=$REGION --quiet`
 - [ ] Scheduler executions run each minute and exit 0.
+- [ ] Client addresses are recorded correctly: sign in with a wrong
+      password once, then open **Security events** as the super admin. The
+      event must show your public address, not a `169.254.x.x` or
+      `130.211.x.x` proxy address. If it shows a proxy address, fix
+      `TRUSTED_PROXY_CIDRS` and deploy again before sharing the environment.
+- [ ] Sign in through `https://app.DOMAIN`, start a conversation, upload a
+      file, and approve one tool call. Each of these exercises the API,
+      Cloud SQL, the workspace bucket, and signed URLs end to end.
 - [ ] Public-assets bucket: a representative object is anonymously readable
       while listing and anonymous writes fail. (The bucket holds only
       application-owned avatars/icons under `users/` and `workspaces/`;
