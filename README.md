@@ -76,7 +76,8 @@ The core platform is wired end to end (API, worker, and UI):
   Search Console over OAuth; Airtable with API keys; and BigQuery, Google Ads,
   and Google Analytics with service-account connections.
   Search Console connections discover verified properties for active context;
-  they don't contribute agent tools yet. Google Analytics agents can discover
+  agents can query bounded, typed organic-search performance and list submitted
+  sitemap status for each selected property. Google Analytics agents can discover
   exact standard and custom report fields, check which fields can be added to a
   compatible standard report, and run bounded, typed standard and realtime GA4
   reports. They can also verify which Google Ads accounts are linked to each

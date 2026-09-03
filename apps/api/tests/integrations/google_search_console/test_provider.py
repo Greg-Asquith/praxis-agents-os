@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_search_console/test_provider.py
+
 """Google Search Console provider manifest contracts."""
 
 from integrations.google_search_console import PROVIDER
@@ -11,7 +13,7 @@ from services.agents.runtime.tools.contract import VALID_TOOL_ICONS
 from services.integrations.loader import _validate_plugin
 
 
-def test_manifest_declares_workspace_site_provider_without_tools() -> None:
+def test_manifest_declares_workspace_site_provider_with_slice_a_tools() -> None:
     manifest = PROVIDER.manifest
 
     assert manifest.provider_key == "google_search_console"
@@ -23,7 +25,10 @@ def test_manifest_declares_workspace_site_provider_without_tools() -> None:
     assert manifest.requires_discovery is True
     assert manifest.capability_flags == frozenset({"read", "write"})
     assert manifest.event_delivery == "none"
-    assert PROVIDER.tool_definitions == ()
+    assert {definition.name for definition in PROVIDER.tool_definitions} == {
+        "google_search_console_list_sitemaps",
+        "google_search_console_query_search_analytics",
+    }
     assert PROVIDER.oauth_config().protocol.identity_source == "google_userinfo"
     assert "google_search_console" in VALID_TOOL_ICONS
     _validate_plugin(PROVIDER, expected_key="google_search_console")

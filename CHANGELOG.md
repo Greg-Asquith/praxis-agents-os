@@ -37,7 +37,8 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Gmail, Google Ads, Google Analytics, and Google Search Console integration
   packages with OAuth; Airtable with API-key connections; and BigQuery, Google
   Ads, and Google Analytics with service-account connections; resource discovery;
-  context groups; approval-aware writes; and guarded rich results.
+  context groups; bounded Search Console performance and sitemap reads;
+  approval-aware writes; and guarded rich results.
 - A typed, versioned tool catalog with workspace grants, one audited
   dispatch choke point, runtime policy enforcement, and per-call audit data.
 - Audit and security event viewers, opt-in self-hosted observability, and

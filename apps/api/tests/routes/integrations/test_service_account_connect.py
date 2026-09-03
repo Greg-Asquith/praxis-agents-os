@@ -90,7 +90,10 @@ async def test_google_search_console_rejects_service_account_connection(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Service-account provider is not enabled"
+    assert response.json()["detail"] == (
+        "Service-account provider is not enabled | "
+        "provider=google_search_console | operation=connect_service_account"
+    )
     assert "hidden" not in response.text
 
 

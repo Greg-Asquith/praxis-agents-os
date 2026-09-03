@@ -113,6 +113,8 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_analytics_list_report_fields": ("read", "internal", "auto", False),
         "google_analytics_run_realtime_report": ("read", "internal", "auto", False),
         "google_analytics_run_report": ("read", "internal", "auto", False),
+        "google_search_console_list_sitemaps": ("read", "internal", "auto", False),
+        "google_search_console_query_search_analytics": ("read", "internal", "auto", False),
         "notion_search_pages": ("read", "internal", "auto", False),
         "notion_read_page": ("read", "internal", "auto", False),
         "notion_query_data_source": ("read", "internal", "auto", False),
@@ -168,6 +170,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         if definition.name in {
             "google_analytics_run_realtime_report",
             "google_analytics_run_report",
+            "google_search_console_query_search_analytics",
         }:
             allowed_dynamic_markers.extend(
                 (
@@ -176,6 +179,8 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
                     ".properties.minimums.items",
                 )
             )
+        if definition.name == "google_search_console_query_search_analytics":
+            allowed_dynamic_markers.append(".properties.keys")
         if definition.name == "notion_query_data_source":
             allowed_dynamic_markers.append(".NotionRecordData.properties.properties")
         for path in _dynamic_object_paths(definition.output_model.model_json_schema()):

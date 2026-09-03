@@ -1,5 +1,7 @@
 // apps/web/src/lib/chart-export.ts
 
+import { filenameStem } from "@/lib/format"
+
 const SVG_PRESENTATION_PROPERTIES = [
   "color",
   "display",
@@ -161,7 +163,7 @@ export async function downloadChartPng(
     const downloadUrl = URL.createObjectURL(png)
     try {
       const anchor = document.createElement("a")
-      anchor.download = chartPngFilename(details.title)
+      anchor.download = `${filenameStem(details.title, "chart")}.png`
       anchor.href = downloadUrl
       anchor.click()
     } finally {
@@ -282,16 +284,6 @@ function opaqueColor(value: string): string | null {
   return normalized && normalized !== "transparent" && normalized !== "rgba(0, 0, 0, 0)"
     ? value
     : null
-}
-
-export function chartPngFilename(title: string): string {
-  const stem = title
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80)
-  return `${stem || "chart"}.png`
 }
 
 function loadImage(source: string): Promise<HTMLImageElement> {

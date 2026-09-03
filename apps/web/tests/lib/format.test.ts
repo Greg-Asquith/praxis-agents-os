@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  filenameStem,
   formatBytes,
   formatCompactDate,
   formatCurrencyAmount,
@@ -21,6 +22,11 @@ import {
 } from "@/lib/format"
 
 describe("format helpers", () => {
+  it("creates portable filename stems", () => {
+    expect(filenameStem(" Revenue by Region — Q3 ", "chart")).toBe("revenue-by-region-q3")
+    expect(filenameStem("!!!", "chart")).toBe("chart")
+  })
+
   it("formats byte boundaries", () => {
     expect(formatBytes(1023)).toBe("1023 B")
     expect(formatBytes(1024)).toBe("1.0 KB")

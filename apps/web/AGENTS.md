@@ -31,7 +31,8 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
   Google Search Console contributes its logo, catalog description, and
-  connection guidance. It has no tool presenters until its read tools land.
+  connection guidance, plus guarded Search Analytics and sitemap presenters
+  over the shared fan-out and table kits.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

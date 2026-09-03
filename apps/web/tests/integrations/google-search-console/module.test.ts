@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/google-search-console/module.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
@@ -10,13 +12,13 @@ import {
 } from "@/integrations/registry"
 
 describe("Google Search Console integration module", () => {
-  it("loads lazily through the registry with its icon and no presenters", async () => {
+  it("loads lazily through the registry with its icon and presenters", async () => {
     await loadIntegrationUiModules(["google_search_console"])
 
     expect(integrationIcon("google_search_console")).toBe(
       googleSearchConsoleModule.icons.google_search_console
     )
-    expect(integrationToolRowPresenters("google_search_console")).toEqual([])
+    expect(integrationToolRowPresenters("google_search_console")).toHaveLength(2)
     expect(googleSearchConsoleModule.catalogDescription).toContain("search performance")
   })
 

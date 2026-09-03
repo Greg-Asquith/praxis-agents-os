@@ -320,9 +320,13 @@ follows:
   Google Search Console contributes workspace OAuth through its own isolated
   Google Cloud client. It requests the full `webmasters` scope so later sitemap
   actions use the same connection. Discovery
-  preserves each verified property's exact site URL as its external ID and maps
+  canonicalizes each verified property's scheme and host while retaining its
+  path in the external ID, and maps
   Search Console permission levels to read-only or writable resources. The
-  provider package has no agent tools until its read-tool plan lands.
+  provider package contributes code-eligible reads for bounded Search Analytics
+  rows and up to 200 submitted sitemaps per selected site. Query and page values
+  and sitemap paths retain untrusted-content provenance, while audit evidence
+  contains parameters and counts rather than provider content.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
   resource. Its authorization picker controls page access. Three code-eligible

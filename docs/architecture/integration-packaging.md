@@ -589,12 +589,15 @@ metadata.
 
 Google Search Console uses workspace-owned OAuth with an isolated Google Cloud
 OAuth client and the full `webmasters` scope. Its bearer-only REST client
-preserves Search Console site URLs byte-exact
-at the resource boundary and URL-encodes them in request paths. One `sites.list`
+canonicalizes the site URL scheme and host while retaining the provider path,
+then URL-encodes the identifier in request paths. One `sites.list`
 request discovers verified domain and URL-prefix properties. Permission levels
 make owner resources writable while full-user and restricted-user resources
 remain read-only. The lazy frontend module supplies the provider mark and setup
-guidance; the provider contributes no tools in this foundation slice.
+guidance. Two code-eligible read tools return bounded, typed Search Analytics
+rows and submitted sitemap status for each selected site. Query and page values
+and sitemap paths carry untrusted-content provenance, and the lazy presenters
+compose the shared fan-out and table kits.
 
 Notion demonstrates a user-owned public OAuth integration whose provider
 protocol differs from Google's. It omits scopes and PKCE, uses HTTP Basic
