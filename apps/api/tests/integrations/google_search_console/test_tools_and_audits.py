@@ -55,7 +55,7 @@ async def test_search_analytics_fans_out_with_counts_only_audit(monkeypatch) -> 
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.query_search_analytics.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.query_search_analytics.query_search_analytics",
@@ -105,7 +105,7 @@ async def test_sitemaps_fans_out_with_count_only_audit(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.list_sitemaps.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.list_sitemaps.list_sitemaps",
@@ -154,7 +154,7 @@ async def test_inspection_targets_each_site_sequentially_and_audits_counts_only(
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.inspect_url.google_search_console_client",
-        lambda _ctx, entry: _async_value(f"client:{entry.external_id}"),
+        AsyncMock(side_effect=lambda _ctx, entry: f"client:{entry.external_id}"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.inspect_url.inspect_url",
@@ -218,7 +218,7 @@ async def test_inspection_marks_a_site_failed_when_every_url_has_a_provider_erro
     entry = _entry("https://example.com/")
     monkeypatch.setattr(
         "integrations.google_search_console.tools.inspect_url.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.inspect_url.inspect_url",
@@ -240,7 +240,3 @@ async def test_inspection_marks_a_site_failed_when_every_url_has_a_provider_erro
     assert result["results"][0]["error_message"] == (
         "Google Search Console could not inspect any requested URLs for this site."
     )
-
-
-async def _async_value(value):
-    return value

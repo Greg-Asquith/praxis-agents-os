@@ -9,6 +9,7 @@ from services.integrations.plugin import DiscoveredIntegrationResource
 from .client import GoogleSearchConsoleClient, normalize_site_url
 
 WEBMASTERS_SCOPE = "https://www.googleapis.com/auth/webmasters"
+INDEXING_SCOPE = "https://www.googleapis.com/auth/indexing"
 _WRITE_PERMISSION_LEVELS = frozenset({"siteOwner"})
 
 

@@ -35,7 +35,7 @@ from services.integrations.read_audit import read_operation_detail
 from ..operations.inspect_url import inspect_url
 from .schemas import GoogleSearchConsoleInspectUrlOutput
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_BINDING, RESULTS_FIELD
-from .utils.client import google_search_console_available, google_search_console_client
+from .utils.client import google_search_console_client
 from .utils.routing import url_references_for_entries
 
 
@@ -152,7 +152,6 @@ DEFINITION = RuntimeToolDefinition(
     timeout=60,
     output_model=GoogleSearchConsoleInspectUrlOutput,
     integration_binding=GOOGLE_SEARCH_CONSOLE_BINDING,
-    availability_check=google_search_console_available,
     presentation=ToolPresentation(
         icon="google_search_console",
         running_label="Inspecting Search Console URLs",

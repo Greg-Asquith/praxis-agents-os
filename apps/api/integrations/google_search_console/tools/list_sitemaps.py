@@ -25,7 +25,7 @@ from services.integrations.read_audit import read_operation_detail
 from ..operations.list_sitemaps import list_sitemaps
 from .schemas import GoogleSearchConsoleListSitemapsOutput
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_BINDING, RESULTS_FIELD
-from .utils.client import google_search_console_available, google_search_console_client
+from .utils.client import google_search_console_client
 
 
 async def google_search_console_list_sitemaps(
@@ -79,7 +79,6 @@ DEFINITION = RuntimeToolDefinition(
     timeout=60,
     output_model=GoogleSearchConsoleListSitemapsOutput,
     integration_binding=GOOGLE_SEARCH_CONSOLE_BINDING,
-    availability_check=google_search_console_available,
     presentation=ToolPresentation(
         icon="google_search_console",
         running_label="Listing Search Console Sitemaps",

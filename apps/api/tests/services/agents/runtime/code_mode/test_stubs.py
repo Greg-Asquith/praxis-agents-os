@@ -250,6 +250,7 @@ def test_search_console_stubs_declare_typed_inputs_and_rows() -> None:
     sitemaps = render_tool_stub(definitions["google_search_console_list_sitemaps"])
     inspection = render_tool_stub(definitions["google_search_console_inspect_url"])
     submission = render_tool_stub(definitions["google_search_console_submit_sitemap"])
+    indexing = render_tool_stub(definitions["google_search_console_request_indexing"])
 
     assert "class GoogleSearchConsoleFilter(TypedDict):" in query
     assert "class GoogleSearchConsoleSearchAnalyticsRow(TypedDict):" in query
@@ -267,6 +268,11 @@ def test_search_console_stubs_declare_typed_inputs_and_rows() -> None:
     assert "-> GoogleSearchConsoleInspectUrlOutput" in inspection
     assert "sitemap_urls: list[str]" in submission
     assert "-> GoogleSearchConsoleSubmitSitemapsOutput" in submission
+    assert "class GoogleSearchConsoleIndexingNotification(TypedDict):" in indexing
+    assert "notification_type: Literal['URL_UPDATED', 'URL_DELETED']" in indexing
+    assert "page_type: Literal['job_posting', 'broadcast_event']" in indexing
+    assert "async def google_search_console_request_indexing(" in indexing
+    assert "-> GoogleSearchConsoleRequestIndexingOutput" in indexing
 
 
 def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids() -> None:

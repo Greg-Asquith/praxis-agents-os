@@ -117,6 +117,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_search_console_inspect_url": ("read", "internal", "auto", False),
         "google_search_console_query_search_analytics": ("read", "internal", "auto", False),
         "google_search_console_submit_sitemap": ("write", "external", "approval", True),
+        "google_search_console_request_indexing": ("write", "external", "approval", True),
         "notion_search_pages": ("read", "internal", "auto", False),
         "notion_read_page": ("read", "internal", "auto", False),
         "notion_query_data_source": ("read", "internal", "auto", False),
@@ -125,6 +126,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "notion_update_page_properties": ("write", "external", "approval", True),
     }
     assert set(definitions) == set(expected)
+    assert definitions["google_search_console_request_indexing"].supports_auto is False
     denylisted = {
         "account_id",
         "base_id",

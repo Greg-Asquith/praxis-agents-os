@@ -338,6 +338,13 @@ follows:
   complete pending intent immediately before mutation, and reads each sitemap
   back for terminal status evidence. An ambiguous submission remains
   unverified and is not replayed automatically.
+  `GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED` adds the `indexing` OAuth scope
+  and exposes an approval-only Indexing API tool. The tool accepts up to 20
+  declared job posting or livestream video pages, routes them with the same
+  longest-property rule, and requires Search Console Owner permission before
+  approval. It sends one non-retried mutation per URL and reads notification
+  metadata for terminal evidence. It never supports automatic execution, and
+  ambiguous notifications remain unverified.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
   resource. Its authorization picker controls page access. Three code-eligible

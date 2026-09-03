@@ -29,3 +29,28 @@ def sitemap_submission_results(
         "model_result": {"sitemaps": model_rows, **counts},
         "display_result": {"sitemaps": [dict(item) for item in outcomes], **counts},
     }
+
+
+def indexing_notification_results(
+    outcomes: Sequence[Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Returns separate model and transcript projections for indexing outcomes."""
+    counts = {
+        "notified_count": sum(item["outcome"] == "notified" for item in outcomes),
+        "failed_count": sum(item["outcome"] == "failed" for item in outcomes),
+    }
+    model_rows = [
+        {
+            "url": item["url"],
+            "notification_type": item["notification_type"],
+            "page_type": item["page_type"],
+            "outcome": item["outcome"],
+            "notify_time": item.get("notify_time"),
+            "error_code": item.get("error_code"),
+        }
+        for item in outcomes
+    ]
+    return {
+        "model_result": {"notifications": model_rows, **counts},
+        "display_result": {"notifications": [dict(item) for item in outcomes], **counts},
+    }

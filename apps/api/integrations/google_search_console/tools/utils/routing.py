@@ -41,6 +41,20 @@ def sitemap_references_for_entries(
     )
 
 
+def indexing_references_for_entries(
+    entries: Sequence[ResolvedContextEntry],
+    urls: Sequence[str],
+) -> list[GoogleSearchConsoleUrlReference]:
+    """Return one ordered writable-preferred reference per Indexing API URL."""
+    return _url_references_for_entries(
+        entries,
+        urls,
+        action="notify",
+        max_urls=20,
+        prefer_writable=True,
+    )
+
+
 def _url_references_for_entries(
     entries: Sequence[ResolvedContextEntry],
     urls: Sequence[str],

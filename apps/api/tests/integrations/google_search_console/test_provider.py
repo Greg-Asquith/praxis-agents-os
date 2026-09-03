@@ -2,8 +2,8 @@
 
 """Google Search Console provider manifest contracts."""
 
-from integrations.google_search_console import PROVIDER
-from integrations.google_search_console.discover_resources import WEBMASTERS_SCOPE
+from integrations.google_search_console import PROVIDER, _oauth_scopes
+from integrations.google_search_console.discover_resources import INDEXING_SCOPE, WEBMASTERS_SCOPE
 from integrations.google_search_console.tools.utils.bindings import (
     GOOGLE_SEARCH_CONSOLE_BINDING,
     GOOGLE_SEARCH_CONSOLE_WRITE_BINDING,
@@ -30,11 +30,26 @@ def test_manifest_declares_workspace_site_provider_tools_without_internal_url_re
         "google_search_console_list_sitemaps",
         "google_search_console_query_search_analytics",
         "google_search_console_submit_sitemap",
+        "google_search_console_request_indexing",
     }
     assert PROVIDER.oauth_config().protocol.identity_source == "google_userinfo"
     assert "google_search_console" in VALID_TOOL_ICONS
     assert PROVIDER.entity_resolvers == ()
     _validate_plugin(PROVIDER, expected_key="google_search_console")
+
+
+def test_indexing_scope_is_requested_only_when_the_operator_setting_is_on(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "integrations.google_search_console.settings.google_search_console_settings.GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED",
+        False,
+    )
+    assert _oauth_scopes() == ("openid", "email", WEBMASTERS_SCOPE)
+
+    monkeypatch.setattr(
+        "integrations.google_search_console.settings.google_search_console_settings.GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED",
+        True,
+    )
+    assert _oauth_scopes() == ("openid", "email", WEBMASTERS_SCOPE, INDEXING_SCOPE)
 
 
 def test_tool_foundation_declares_read_and_write_site_bindings() -> None:

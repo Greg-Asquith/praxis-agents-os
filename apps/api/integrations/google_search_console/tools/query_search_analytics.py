@@ -38,7 +38,7 @@ from .schemas.search_analytics import (
     GoogleSearchConsoleSearchType,
 )
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_BINDING, RESULTS_FIELD
-from .utils.client import google_search_console_available, google_search_console_client
+from .utils.client import google_search_console_client
 from .utils.validation import validated_search_analytics_request
 
 _DEFAULT_DIMENSIONS: list[GoogleSearchConsoleDimension] = []
@@ -152,7 +152,6 @@ DEFINITION = RuntimeToolDefinition(
     timeout=60,
     output_model=GoogleSearchConsoleSearchAnalyticsOutput,
     integration_binding=GOOGLE_SEARCH_CONSOLE_BINDING,
-    availability_check=google_search_console_available,
     presentation=ToolPresentation(
         icon="google_search_console",
         running_label="Querying Search Analytics",

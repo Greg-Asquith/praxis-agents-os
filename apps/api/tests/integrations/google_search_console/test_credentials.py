@@ -30,4 +30,3 @@ async def test_oauth_client_refreshes_through_the_shared_credential_seam(monkeyp
     assert await client._access_token(False) == "fresh-token"
     assert await client._access_token(True) == "fresh-token"
     assert forces == [False, True]
-    assert client_module.google_search_console_available() is True

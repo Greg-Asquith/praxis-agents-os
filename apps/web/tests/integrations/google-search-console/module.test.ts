@@ -18,7 +18,7 @@ describe("Google Search Console integration module", () => {
     expect(integrationIcon("google_search_console")).toBe(
       googleSearchConsoleModule.icons.google_search_console
     )
-    expect(integrationToolRowPresenters("google_search_console")).toHaveLength(4)
+    expect(integrationToolRowPresenters("google_search_console")).toHaveLength(5)
     expect(googleSearchConsoleModule.catalogDescription).toContain("search performance")
   })
 
@@ -47,6 +47,7 @@ describe("Google Search Console integration module", () => {
     expect(html).toContain("Owner permission")
     expect(html).toContain("sitemap submissions")
     expect(html).toContain("Google Search Console API")
+    expect(html).toContain("Indexing API")
     expect(html).not.toContain("service account")
   })
 })

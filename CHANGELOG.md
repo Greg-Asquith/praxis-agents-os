@@ -39,7 +39,8 @@ minor release. Patch releases contain backward-compatible fixes only.
   Ads, and Google Analytics with service-account connections; resource discovery;
   context groups; bounded Search Console performance, sitemap, and URL inspection reads;
   approval-gated sitemap resubmission with read-after-write status; approval-aware writes;
-  and guarded rich results.
+  operator-enabled, owner-only Indexing API notifications for eligible job posting and
+  livestream video pages; and guarded rich results.
 - A typed, versioned tool catalog with workspace grants, one audited
   dispatch choke point, runtime policy enforcement, and per-call audit data.
 - Audit and security event viewers, opt-in self-hosted observability, and

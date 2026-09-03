@@ -608,6 +608,13 @@ dispatch. A read after each write records the submitted sitemap's processing
 state as terminal evidence; ambiguous transport outcomes remain unverified.
 Its provider-local presenter composes the shared approval, fan-out, and table
 surfaces and explains that Google decides whether and when to crawl the URLs.
+An operator setting adds the `indexing` OAuth scope and exposes a second write
+tool for Indexing API notifications. The tool accepts only declared job posting
+or livestream video page types, verifies Search Console Owner permission before
+approval, and sends no more than 20 sequential notifications. It never supports
+automatic execution. Each confirmed publish is followed by a metadata read,
+while ambiguous transport outcomes remain unverified. The presenter states
+Google's eligibility restriction and doesn't promise a crawl or indexing result.
 
 Notion demonstrates a user-owned public OAuth integration whose provider
 protocol differs from Google's. It omits scopes and PKCE, uses HTTP Basic

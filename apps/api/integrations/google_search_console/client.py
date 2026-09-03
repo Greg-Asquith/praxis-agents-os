@@ -12,6 +12,7 @@ from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationError,
     IntegrationFailureDisposition,
+    IntegrationPermissionError,
     IntegrationValidationError,
 )
 from services.integrations.http import (
@@ -22,6 +23,7 @@ from services.integrations.http import (
 
 GOOGLE_WEBMASTERS_BASE_URL = "https://www.googleapis.com/webmasters/v3"
 GOOGLE_SEARCH_CONSOLE_BASE_URL = "https://searchconsole.googleapis.com/v1"
+GOOGLE_INDEXING_BASE_URL = "https://indexing.googleapis.com/v3"
 AccessTokenFn = Callable[[bool], Awaitable[str]]
 
 
@@ -111,6 +113,44 @@ class GoogleSearchConsoleClient:
             allow_empty=allow_empty,
         )
 
+    async def indexing_get(
+        self,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        params: dict[str, Any] | None = None,
+        allow_empty: bool = False,
+    ) -> Any:
+        return await self._request(
+            "GET",
+            GOOGLE_INDEXING_BASE_URL,
+            path,
+            operation=operation,
+            policy=policy,
+            params=params,
+            allow_empty=allow_empty,
+        )
+
+    async def indexing_post(
+        self,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        json: dict[str, Any],
+        allow_empty: bool = False,
+    ) -> Any:
+        return await self._request(
+            "POST",
+            GOOGLE_INDEXING_BASE_URL,
+            path,
+            operation=operation,
+            policy=policy,
+            json=json,
+            allow_empty=allow_empty,
+        )
+
     async def _request(
         self,
         method: str,
@@ -173,6 +213,29 @@ class GoogleSearchConsoleClient:
         **kwargs: Any,
     ) -> httpx2.Response:
         try:
+            if self._client is None and base_url == GOOGLE_INDEXING_BASE_URL:
+
+                async def reject_indexing_permission(response: httpx2.Response) -> None:
+                    await response.aread()
+                    _raise_indexing_permission_error(response, operation=operation)
+
+                async with httpx2.AsyncClient(
+                    event_hooks={"response": [reject_indexing_permission]}
+                ) as client:
+                    return await request_with_retries(
+                        method,
+                        f"{base_url}/{path.lstrip('/')}",
+                        operation=operation,
+                        provider_key="google_search_console",
+                        policy=policy,
+                        client=client,
+                        headers={"Authorization": f"Bearer {token}"},
+                        validation_error_detail=lambda response: _google_api_error_detail(
+                            response,
+                            operation=operation,
+                        ),
+                        **kwargs,
+                    )
             return await request_with_retries(
                 method,
                 f"{base_url}/{path.lstrip('/')}",
@@ -218,6 +281,33 @@ def _google_api_error_detail(response: httpx2.Response, *, operation: str) -> st
     if not messages:
         return fallback
     return f"Google Search Console rejected {operation}: {' '.join(messages)}"[:1000]
+
+
+def _raise_indexing_permission_error(response: httpx2.Response, *, operation: str) -> None:
+    if response.status_code != 403:
+        return
+    raise IntegrationPermissionError(
+        _google_indexing_permission_detail(response, operation=operation),
+        provider_key="google_search_console",
+        operation=operation,
+        failure_disposition=IntegrationFailureDisposition.REJECTED,
+    )
+
+
+def _google_indexing_permission_detail(response: httpx2.Response, *, operation: str) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    error = payload.get("error") if isinstance(payload, dict) else None
+    details = error.get("details") if isinstance(error, dict) else None
+    if isinstance(details, list):
+        for detail in details:
+            reason = detail.get("reason") if isinstance(detail, dict) else None
+            normalized = _bounded_provider_message(reason)
+            if normalized:
+                return f"Google Search Console rejected {operation}: {normalized}"[:1_000]
+    return _google_api_error_detail(response, operation=operation)
 
 
 def _bounded_provider_message(value: Any) -> str | None:

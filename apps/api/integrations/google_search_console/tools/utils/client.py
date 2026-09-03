@@ -5,6 +5,7 @@
 from pydantic_ai import ModelRetry, RunContext
 
 from integrations.google_search_console.client import GoogleSearchConsoleClient
+from integrations.google_search_console.settings import google_search_console_settings
 from services.agents.runtime.context import RuntimeDeps
 from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.context.domain import ResolvedContextEntry
@@ -57,5 +58,5 @@ async def google_search_console_client_for_principal(
     return GoogleSearchConsoleClient(access_token)
 
 
-def google_search_console_available() -> bool:
-    return True
+def google_search_console_indexing_available() -> bool:
+    return google_search_console_settings.GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED

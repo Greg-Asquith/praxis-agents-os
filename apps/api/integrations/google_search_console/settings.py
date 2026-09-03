@@ -11,6 +11,7 @@ class GoogleSearchConsoleSettings(BaseSettings):
 
     GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_SECRET: SecretStr = SecretStr("")
+    GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

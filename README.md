@@ -79,11 +79,15 @@ The core platform is wired end to end (API, worker, and UI):
   agents can query bounded, typed organic-search performance, list submitted
   sitemap status, resubmit sitemaps with approval and read-after-write evidence,
   and inspect the indexed status of requested URLs against the most specific
-  selected property. Google Analytics agents can discover
-  exact standard and custom report fields, check which fields can be added to a
-  compatible standard report, and run bounded, typed standard and realtime GA4
-  reports. They can also verify which Google Ads accounts are linked to each
-  selected Analytics property before comparing cross-channel results.
+  selected property. When an operator enables the Indexing API, agents can send
+  approval-only notifications for eligible job posting and livestream video
+  pages from properties where the connected account is an Owner. Google still
+  decides when and whether to crawl or index each page. Google Analytics agents
+  can discover exact standard and custom report fields, check which fields can
+  be added to a compatible standard report, and run bounded, typed standard and
+  realtime GA4 reports. They can also verify which Google Ads accounts are
+  linked to each selected Analytics property before comparing cross-channel
+  results.
   Discovered resources can be combined in the context hub and selected for
   conversations and schedules.
 - Artifacts: dedicated immutable revisions, approval-gated agent creation and

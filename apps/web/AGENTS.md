@@ -40,6 +40,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   resubmission when live status is available, validates edited URLs against the
   selected writable sites, and states that Google controls whether and when it
   crawls the listed URLs.
+  Indexing API notifications use the same provider-local write presenter with
+  an editable records field for the URL, notification type, and eligible page
+  type. The approval copy states Google's job posting and livestream video
+  restriction, and outcome rows distinguish quota, permission, scope, and
+  unverified results without promising a crawl or indexing result.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

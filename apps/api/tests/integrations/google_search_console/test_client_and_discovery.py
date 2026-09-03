@@ -3,9 +3,14 @@
 import httpx2
 import pytest
 
-from core.exceptions.integration import IntegrationAuthError, IntegrationValidationError
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationPermissionError,
+    IntegrationValidationError,
+)
 from integrations.google_search_console.client import (
     GoogleSearchConsoleClient,
+    _raise_indexing_permission_error,
     normalize_site_url,
     site_path,
 )
@@ -34,6 +39,71 @@ async def test_client_sends_only_bearer_authorization() -> None:
     assert seen_headers[0]["Authorization"] == "Bearer access-token"
     assert "developer-token" not in seen_headers[0]
     assert "login-customer-id" not in seen_headers[0]
+
+
+async def test_indexing_client_uses_the_indexing_api_base_and_query_encoding() -> None:
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(
+            200,
+            json={
+                "url": "https://example.com/jobs/one",
+                "latestUpdate": {
+                    "type": "URL_UPDATED",
+                    "notifyTime": "2026-09-03T12:00:00Z",
+                },
+            },
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        await GoogleSearchConsoleClient(static_token, client=http_client).indexing_get(
+            "urlNotifications/metadata",
+            operation="get_url_notification_metadata",
+            policy=IntegrationRequestPolicy.READ,
+            params={"url": "https://example.com/jobs/one"},
+        )
+
+    assert seen[0].url.host == "indexing.googleapis.com"
+    assert seen[0].url.path == "/v3/urlNotifications/metadata"
+    assert seen[0].url.params["url"] == "https://example.com/jobs/one"
+
+
+@pytest.mark.parametrize("reason", ["ACCESS_TOKEN_SCOPE_INSUFFICIENT", "SERVICE_DISABLED"])
+def test_indexing_permission_errors_retain_bounded_google_reasons(reason: str) -> None:
+    request = httpx2.Request("POST", "https://indexing.googleapis.com/v3/urlNotifications:publish")
+    response = httpx2.Response(
+        403,
+        json={"error": {"details": [{"reason": reason}]}},
+        request=request,
+    )
+
+    with pytest.raises(IntegrationPermissionError) as exc_info:
+        _raise_indexing_permission_error(response, operation="publish_url_notification")
+
+    assert reason in exc_info.value.user_message
+
+
+def test_indexing_permission_error_retains_google_ownership_denial() -> None:
+    request = httpx2.Request("POST", "https://indexing.googleapis.com/v3/urlNotifications:publish")
+    response = httpx2.Response(
+        403,
+        json={
+            "error": {
+                "code": 403,
+                "message": "Permission denied. Failed to verify the URL ownership.",
+                "status": "PERMISSION_DENIED",
+            }
+        },
+        request=request,
+    )
+
+    with pytest.raises(IntegrationPermissionError) as exc_info:
+        _raise_indexing_permission_error(response, operation="publish_url_notification")
+
+    assert "Failed to verify the URL ownership" in exc_info.value.user_message
 
 
 async def test_sites_transport_serves_the_single_discovery_response() -> None:

@@ -7,6 +7,7 @@ from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from .inspect_url import DEFINITION as INSPECT_URL
 from .list_sitemaps import DEFINITION as LIST_SITEMAPS
 from .query_search_analytics import DEFINITION as QUERY_SEARCH_ANALYTICS
+from .request_indexing import DEFINITION as REQUEST_INDEXING
 from .submit_sitemap import DEFINITION as SUBMIT_SITEMAP
 
 TOOL_DEFINITIONS: tuple[RuntimeToolDefinition, ...] = (
@@ -14,6 +15,7 @@ TOOL_DEFINITIONS: tuple[RuntimeToolDefinition, ...] = (
     LIST_SITEMAPS,
     INSPECT_URL,
     SUBMIT_SITEMAP,
+    REQUEST_INDEXING,
 )
 
 __all__ = ["TOOL_DEFINITIONS"]

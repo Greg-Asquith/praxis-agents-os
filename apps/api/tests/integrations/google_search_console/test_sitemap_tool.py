@@ -90,7 +90,7 @@ async def test_submit_sitemaps_records_pending_and_terminal_readback(monkeypatch
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.get_sitemap",
@@ -169,7 +169,7 @@ async def test_submit_timeout_retains_unverified_result_and_evidence(monkeypatch
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.get_sitemap",
@@ -210,7 +210,7 @@ async def test_failed_status_read_keeps_submission_confirmed(monkeypatch) -> Non
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.get_sitemap",
@@ -248,7 +248,7 @@ async def test_rejected_submission_uses_the_public_rejected_error_code(monkeypat
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.get_sitemap",
@@ -274,7 +274,7 @@ async def test_approval_display_marks_add_and_resubmit(monkeypatch) -> None:
     deps = _ctx(entry).deps
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.google_search_console_client_for_principal",
-        lambda *_args, **_kwargs: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.get_sitemap",
@@ -311,7 +311,7 @@ async def test_approval_display_lists_every_selected_writable_site(monkeypatch) 
     alternate = _entry("https://other.example/")
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.google_search_console_client_for_principal",
-        lambda *_args, **_kwargs: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.get_sitemap",
@@ -353,7 +353,7 @@ async def test_unexpected_mid_batch_failure_closes_every_pending_intent(monkeypa
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.google_search_console_client",
-        lambda _ctx, _entry: _async_value("client"),
+        AsyncMock(return_value="client"),
     )
     monkeypatch.setattr(
         "integrations.google_search_console.tools.submit_sitemap.get_sitemap",
@@ -416,7 +416,3 @@ async def test_approval_display_rejects_a_restricted_site_before_approval() -> N
             _ctx(_entry(write_allowed=False)).deps,
             {"sitemap_urls": ["https://example.com/sitemap.xml"]},
         )
-
-
-async def _async_value(value):
-    return value

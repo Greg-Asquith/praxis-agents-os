@@ -594,6 +594,12 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
         ),
         "google_ads_remove_negative_keywords": ("EXACT", "PHRASE", "BROAD", "ANY"),
         "google_ads_update_device_bid_modifiers": ("DESKTOP", "MOBILE", "TABLET"),
+        "google_search_console_request_indexing": (
+            "URL_UPDATED",
+            "URL_DELETED",
+            "job_posting",
+            "broadcast_event",
+        ),
         "notion_create_page": (
             "title",
             "rich_text",
@@ -678,6 +684,20 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
             assert adjustments_schema["minItems"] == 1
             assert adjustments_schema["maxItems"] == 3
             actual[definition.name] = field.columns[0].options
+        elif definition.name == "google_search_console_request_indexing":
+            assert field.key == "notifications"
+            assert [(column.key, column.required) for column in field.columns] == [
+                ("url", True),
+                ("notification_type", True),
+                ("page_type", True),
+            ]
+            notifications_schema = schema["properties"]["notifications"]
+            assert notifications_schema["minItems"] == 1
+            assert notifications_schema["maxItems"] == 20
+            actual[definition.name] = (
+                *field.columns[1].options,
+                *field.columns[2].options,
+            )
         else:
             assert field.key == "keywords"
             assert [(column.key, column.required) for column in field.columns] == [

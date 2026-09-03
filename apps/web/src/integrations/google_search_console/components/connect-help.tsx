@@ -23,10 +23,11 @@ export function GoogleSearchConsoleConnectHelp({ provider }: { provider: Integra
       <div className="flex gap-3">
         <CloudCogIcon aria-hidden="true" className="text-muted-foreground mt-0.5 size-4 shrink-0" />
         <div className="grid gap-1">
-          <h2 className="text-sm font-medium">Enable the Search Console API</h2>
+          <h2 className="text-sm font-medium">Enable the Search Console APIs</h2>
           <p className="text-muted-foreground text-sm">
             Enable the Google Search Console API in the Cloud project that owns the OAuth client
-            used for {provider.display_name}.
+            used for {provider.display_name}. If your operator has enabled Indexing API actions,
+            enable the Indexing API in the same project.
           </p>
         </div>
       </div>

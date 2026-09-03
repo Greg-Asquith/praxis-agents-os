@@ -9,13 +9,20 @@ from services.integrations.plugin import (
     OAuthProtocol,
 )
 
-from .discover_resources import WEBMASTERS_SCOPE, discover_resources
+from .discover_resources import INDEXING_SCOPE, WEBMASTERS_SCOPE, discover_resources
 from .settings import google_search_console_settings
 from .tools import TOOL_DEFINITIONS
 
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+
+def _oauth_scopes() -> tuple[str, ...]:
+    scopes = ("openid", "email", WEBMASTERS_SCOPE)
+    if google_search_console_settings.GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED:
+        return (*scopes, INDEXING_SCOPE)
+    return scopes
 
 
 def oauth_config() -> OAuthClientConfig:
@@ -36,7 +43,7 @@ PROVIDER = IntegrationProviderPlugin(
         display_name="Google Search Console",
         auth_modes=("oauth",),
         owner_scope="workspace",
-        oauth_scopes=("openid", "email", WEBMASTERS_SCOPE),
+        oauth_scopes=_oauth_scopes(),
         resource_types=("google_search_console_site",),
         requires_discovery=True,
         connect_help=(

@@ -4,6 +4,7 @@
 
 import asyncio
 from collections.abc import Mapping, Sequence
+from functools import partial
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -39,7 +40,6 @@ from .schemas import GoogleSearchConsoleSubmitSitemapsOutput
 from .utils import fan_out_tool_return, sitemap_submission_results
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import (
-    google_search_console_available,
     google_search_console_client,
     google_search_console_client_for_principal,
 )
@@ -70,101 +70,112 @@ async def google_search_console_submit_sitemap(
     )
     references = sitemap_references_for_entries(entries, sitemap_urls)
 
-    async def operation(
-        entry: ResolvedContextEntry,
-        scoped_references: Sequence[GoogleSearchConsoleUrlReference],
-    ) -> Any:
-        client: GoogleSearchConsoleClient | None = None
-        prepared: list[dict[str, Any]] = []
-        pending: PendingIntegrationOperationDetail | None = None
-
-        async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
-            nonlocal client, pending, prepared
-            client = await google_search_console_client(ctx, entry)
-            prepared = await _prepare_sitemaps(client, entry, scoped_references)
-            pending = sitemap_pending_detail(entry, prepared)
-            return pending
-
-        async def execute() -> IntegrationAuditOutcome[dict[str, dict[str, Any]]]:
-            if client is None or pending is None or not prepared:
-                raise RuntimeError("Sitemap submission preparation did not complete")
-            outcomes: list[dict[str, Any]] = []
-            for item in prepared:
-                try:
-                    await submit_sitemap(
-                        client,
-                        site_url=entry.external_id,
-                        sitemap_url=item["sitemap_url"],
-                    )
-                except asyncio.CancelledError as exc:
-                    _attach_cancellation_evidence(exc, pending, prepared, outcomes, item)
-                    raise
-                except IntegrationError as exc:
-                    outcomes.append(_failed_outcome(item, exc))
-                    continue
-                except Exception as exc:
-                    _attach_interruption_evidence(
-                        exc,
-                        pending,
-                        prepared,
-                        outcomes,
-                        item,
-                        default_disposition=IntegrationFailureDisposition.AMBIGUOUS,
-                    )
-                    raise
-
-                try:
-                    status = await get_sitemap(
-                        client,
-                        site_url=entry.external_id,
-                        sitemap_url=item["sitemap_url"],
-                    )
-                except asyncio.CancelledError as exc:
-                    outcomes.append(_submitted_outcome(item, None))
-                    _attach_cancellation_evidence(exc, pending, prepared, outcomes, None)
-                    raise
-                except IntegrationError:
-                    status = None
-                except Exception as exc:
-                    outcomes.append(_submitted_outcome(item, None))
-                    _attach_interruption_evidence(
-                        exc,
-                        pending,
-                        prepared,
-                        outcomes,
-                        None,
-                        default_disposition=IntegrationFailureDisposition.REJECTED,
-                    )
-                    raise
-                outcomes.append(_submitted_outcome(item, status))
-
-            terminal = sitemap_terminal_detail(pending, outcomes)
-            status = audit_status(terminal)
-            result = sitemap_submission_results(outcomes)
-            return IntegrationAuditOutcome(
-                result,
-                status=status,
-                external_ref=",".join(item["sitemap_url"] for item in prepared),
-                operation_detail=terminal,
-                unverified_result=result if status is AuditStatus.UNVERIFIED else None,
-            )
-
-        return await run_audited_integration_operation(
-            ctx,
-            entry,
-            tool_name="google_search_console_submit_sitemap",
-            operation="submit_sitemap",
-            execute=execute,
-            prepare_pending_operation=prepare_pending_operation,
-        )
-
     results = await run_context_targets(
         ctx,
         binding=GOOGLE_SEARCH_CONSOLE_WRITE_BINDING,
         references=references,
-        operation=operation,
+        operation=partial(_submit_sitemaps_for_entry, ctx),
     )
     return fan_out_tool_return(results)
+
+
+async def _submit_sitemaps_for_entry(
+    ctx: RunContext[RuntimeDeps],
+    entry: ResolvedContextEntry,
+    scoped_references: Sequence[GoogleSearchConsoleUrlReference],
+) -> Any:
+    client: GoogleSearchConsoleClient | None = None
+    prepared: list[dict[str, Any]] = []
+    pending: PendingIntegrationOperationDetail | None = None
+
+    async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
+        nonlocal client, pending, prepared
+        client = await google_search_console_client(ctx, entry)
+        prepared = await _prepare_sitemaps(client, entry, scoped_references)
+        pending = sitemap_pending_detail(entry, prepared)
+        return pending
+
+    async def execute() -> IntegrationAuditOutcome[dict[str, dict[str, Any]]]:
+        if client is None or pending is None or not prepared:
+            raise RuntimeError("Sitemap submission preparation did not complete")
+        return await _execute_submission(client, entry, pending, prepared)
+
+    return await run_audited_integration_operation(
+        ctx,
+        entry,
+        tool_name="google_search_console_submit_sitemap",
+        operation="submit_sitemap",
+        execute=execute,
+        prepare_pending_operation=prepare_pending_operation,
+    )
+
+
+async def _execute_submission(
+    client: GoogleSearchConsoleClient,
+    entry: ResolvedContextEntry,
+    pending: PendingIntegrationOperationDetail,
+    prepared: Sequence[Mapping[str, Any]],
+) -> IntegrationAuditOutcome[dict[str, dict[str, Any]]]:
+    outcomes: list[dict[str, Any]] = []
+    for item in prepared:
+        try:
+            await submit_sitemap(
+                client,
+                site_url=entry.external_id,
+                sitemap_url=item["sitemap_url"],
+            )
+        except asyncio.CancelledError as exc:
+            _attach_cancellation_evidence(exc, pending, prepared, outcomes, item)
+            raise
+        except IntegrationError as exc:
+            outcomes.append(_failed_outcome(item, exc))
+            continue
+        except Exception as exc:
+            _attach_interruption_evidence(
+                exc,
+                pending,
+                prepared,
+                outcomes,
+                item,
+                default_disposition=IntegrationFailureDisposition.AMBIGUOUS,
+            )
+            raise
+
+        try:
+            status = await get_sitemap(
+                client,
+                site_url=entry.external_id,
+                sitemap_url=item["sitemap_url"],
+            )
+        except asyncio.CancelledError as exc:
+            outcomes.append(_submitted_outcome(item, None))
+            _attach_cancellation_evidence(exc, pending, prepared, outcomes, None)
+            raise
+        except IntegrationError:
+            status = None
+        except Exception as exc:
+            outcomes.append(_submitted_outcome(item, None))
+            _attach_interruption_evidence(
+                exc,
+                pending,
+                prepared,
+                outcomes,
+                None,
+                default_disposition=IntegrationFailureDisposition.REJECTED,
+            )
+            raise
+        outcomes.append(_submitted_outcome(item, status))
+
+    terminal = sitemap_terminal_detail(pending, outcomes)
+    status = audit_status(terminal)
+    result = sitemap_submission_results(outcomes)
+    return IntegrationAuditOutcome(
+        result,
+        status=status,
+        external_ref=",".join(str(item["sitemap_url"]) for item in prepared),
+        operation_detail=terminal,
+        unverified_result=result if status is AuditStatus.UNVERIFIED else None,
+    )
 
 
 async def _prepare_sitemaps(
@@ -368,7 +379,6 @@ DEFINITION = RuntimeToolDefinition(
     max_result_chars=MAX_SITEMAP_RESULT_CHARS,
     max_public_result_chars=MAX_SITEMAP_PUBLIC_RESULT_CHARS,
     integration_binding=GOOGLE_SEARCH_CONSOLE_WRITE_BINDING,
-    availability_check=google_search_console_available,
     approval_display_args=_approval_display_args,
     presentation=ToolPresentation(
         icon="google_search_console",

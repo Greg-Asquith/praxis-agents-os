@@ -4,9 +4,15 @@ import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import {
+  isValidHttpUrl,
+  matchesWritableSite,
+  parseWritableSiteUrls,
+} from "@/integrations/google_search_console/lib/write-args"
+import {
   createGoogleSearchConsoleWritePresenter,
   defineGoogleSearchConsoleWriteVariant,
 } from "@/integrations/google_search_console/presenters/write-presenter"
+import { titleCaseToken } from "@/lib/format"
 import { isDateTimeString, isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
 const OUTCOMES = ["submitted", "failed", "unverified"] as const
@@ -120,10 +126,10 @@ function renderApprovalSummary(args: SubmissionArgs) {
 function renderSubmissionOutcome(result: SubmissionResult) {
   const rows = result.rows.map<DataRow>((row) => ({
     action: row.previouslySubmitted ? "Resubmit" : "Add",
-    details: row.message ?? humanizeErrorCode(row.errorCode) ?? "—",
+    details: row.message ?? (row.errorCode ? titleCaseToken(row.errorCode, row.errorCode) : "—"),
     errors: row.errors,
     lastSubmitted: row.lastSubmitted,
-    outcome: outcomeLabel(row.outcome),
+    outcome: titleCaseToken(row.outcome, row.outcome),
     processing: row.statusRead ? (row.isPending ? "Pending" : "Processed") : "Status unavailable",
     sitemap: row.sitemapUrl,
     warnings: row.warnings,
@@ -164,7 +170,7 @@ function submissionArgs(value: unknown): SubmissionArgs | null {
   if (!sitemapUrls) return null
   const hints = submissionHints(value["_sitemap_submission_status"])
   if (value["_sitemap_submission_status"] !== undefined && hints === null) return null
-  const writableSites = submissionWritableSites(value["_sitemap_writable_sites"])
+  const writableSites = parseWritableSiteUrls(value["_sitemap_writable_sites"])
   if (writableSites === null) return null
   return { hints: hints ?? [], sitemapUrls, writableSites }
 }
@@ -176,7 +182,7 @@ function normalizedUrls(value: unknown[]): string[] | null {
   for (const item of value) {
     if (typeof item !== "string") return null
     const url = item.trim()
-    if (!validHttpUrl(url) || seen.has(url)) return null
+    if (!isValidHttpUrl(url) || seen.has(url)) return null
     seen.add(url)
     urls.push(url)
   }
@@ -205,16 +211,14 @@ function submissionHints(value: unknown): SubmissionHint[] | null {
   return hints
 }
 
-function submissionWritableSites(value: unknown): string[] | null {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 20) return null
-  const sites = value.filter((site): site is string => typeof site === "string" && site.length > 0)
-  return sites.length === value.length && new Set(sites).size === sites.length ? sites : null
-}
-
 function validateSubmissionArgs(value: unknown): string | null {
   const args = submissionArgs(value)
   if (!args) return "Enter between one and 20 unique HTTP or HTTPS sitemap URLs."
-  if (args.sitemapUrls.some((url) => !args.writableSites.some((site) => matchesSite(url, site)))) {
+  if (
+    args.sitemapUrls.some(
+      (url) => !args.writableSites.some((site) => matchesWritableSite(url, site))
+    )
+  ) {
     return "Each sitemap URL must belong to one of the selected writable Search Console sites."
   }
   return null
@@ -245,22 +249,28 @@ function submissionResult(value: unknown): SubmissionResult | null {
 }
 
 function submissionRow(value: unknown): SubmissionRow | null {
+  if (!isRecord(value)) return null
+  const errorCode = value["error_code"] ?? null
+  const errors = value["errors"] ?? null
+  const isPending = value["is_pending"] ?? null
+  const lastSubmittedValue = value["last_submitted"] ?? null
+  const message = value["message"] ?? null
+  const warnings = value["warnings"] ?? null
   if (
-    !isRecord(value) ||
     typeof value["sitemap_url"] !== "string" ||
     !OUTCOMES.some((outcome) => value["outcome"] === outcome) ||
     typeof value["previously_submitted"] !== "boolean" ||
     typeof value["status_read"] !== "boolean" ||
-    !isNullableString(value["last_submitted"] ?? null) ||
-    !nullableErrorCode(value["error_code"] ?? null) ||
-    !isNullableString(value["message"] ?? null) ||
-    !nullableBoolean(value["is_pending"]) ||
-    !nullableNonNegativeInteger(value["warnings"]) ||
-    !nullableNonNegativeInteger(value["errors"])
+    !isNullableString(lastSubmittedValue) ||
+    (errorCode !== null && !ERROR_CODES.some((candidate) => errorCode === candidate)) ||
+    !isNullableString(message) ||
+    (isPending !== null && typeof isPending !== "boolean") ||
+    (warnings !== null && !isNonNegativeInteger(warnings)) ||
+    (errors !== null && !isNonNegativeInteger(errors))
   ) {
     return null
   }
-  const lastSubmitted = typeof value["last_submitted"] === "string" ? value["last_submitted"] : null
+  const lastSubmitted = typeof lastSubmittedValue === "string" ? lastSubmittedValue : null
   if (lastSubmitted !== null && !isDateTimeString(lastSubmitted)) return null
   if (
     value["status_read"] &&
@@ -271,62 +281,15 @@ function submissionRow(value: unknown): SubmissionRow | null {
     return null
   }
   return {
-    errorCode: typeof value["error_code"] === "string" ? value["error_code"] : null,
-    errors: typeof value["errors"] === "number" ? value["errors"] : null,
-    isPending: typeof value["is_pending"] === "boolean" ? value["is_pending"] : null,
+    errorCode: typeof errorCode === "string" ? errorCode : null,
+    errors: typeof errors === "number" ? errors : null,
+    isPending: typeof isPending === "boolean" ? isPending : null,
     lastSubmitted,
-    message: typeof value["message"] === "string" ? value["message"] : null,
+    message: typeof message === "string" ? message : null,
     outcome: value["outcome"] as SitemapOutcome,
     previouslySubmitted: value["previously_submitted"],
     sitemapUrl: value["sitemap_url"],
     statusRead: value["status_read"],
-    warnings: typeof value["warnings"] === "number" ? value["warnings"] : null,
+    warnings: typeof warnings === "number" ? warnings : null,
   }
-}
-
-function nullableErrorCode(value: unknown): boolean {
-  return value === null || ERROR_CODES.some((errorCode) => value === errorCode)
-}
-
-function validHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value)
-    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password
-  } catch {
-    return false
-  }
-}
-
-function matchesSite(value: string, site: string): boolean {
-  const url = new URL(value)
-  if (site.startsWith("sc-domain:")) {
-    const domain = site.slice("sc-domain:".length).toLowerCase()
-    return (
-      url.hostname.toLowerCase() === domain || url.hostname.toLowerCase().endsWith(`.${domain}`)
-    )
-  }
-  try {
-    const prefix = new URL(site)
-    return url.origin === prefix.origin && url.pathname.startsWith(prefix.pathname)
-  } catch {
-    return false
-  }
-}
-
-function nullableBoolean(value: unknown): boolean {
-  return value === null || value === undefined || typeof value === "boolean"
-}
-
-function nullableNonNegativeInteger(value: unknown): boolean {
-  return value === null || value === undefined || isNonNegativeInteger(value)
-}
-
-function outcomeLabel(value: SitemapOutcome): string {
-  return value === "submitted" ? "Submitted" : value === "unverified" ? "Unverified" : "Failed"
-}
-
-function humanizeErrorCode(value: string | null): string | null {
-  return value
-    ? value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
-    : null
 }
