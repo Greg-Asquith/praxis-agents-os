@@ -9,6 +9,7 @@ from .search_analytics import (
     GoogleSearchConsoleSearchAnalyticsInput,
     GoogleSearchConsoleSearchAnalyticsOutput,
 )
+from .sitemap_submission import GoogleSearchConsoleSubmitSitemapsOutput
 from .sitemaps import GoogleSearchConsoleListSitemapsOutput
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "GoogleSearchConsoleSearchAnalyticsInput",
     "GoogleSearchConsoleSearchAnalyticsOutput",
     "GoogleSearchConsoleStrictModel",
+    "GoogleSearchConsoleSubmitSitemapsOutput",
 ]

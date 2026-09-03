@@ -600,7 +600,14 @@ URLs. URL Inspection routes each URL to the most specific selected URL-prefix
 property, falling back to a matching domain property, and caps each call at ten
 URLs. Query and page values, sitemap paths, canonicals, referring URLs, and
 provider error text carry untrusted-content provenance. The lazy presenters
-compose the shared fan-out and table kits.
+compose the shared fan-out and table kits. One code-eligible write tool submits
+or resubmits up to 20 sitemap URLs against the selected writable properties.
+It defaults to approval, supports scheduled automatic execution, declares each
+provider request as a non-retried mutation, and records pending intent before
+dispatch. A read after each write records the submitted sitemap's processing
+state as terminal evidence; ambiguous transport outcomes remain unverified.
+Its provider-local presenter composes the shared approval, fan-out, and table
+surfaces and explains that Google decides whether and when to crawl the URLs.
 
 Notion demonstrates a user-owned public OAuth integration whose provider
 protocol differs from Google's. It omits scopes and PKCE, uses HTTP Basic

@@ -331,7 +331,13 @@ follows:
   provider's 2,000-inspection daily property quota. Query and page values,
   sitemap paths, canonicals, referring URLs, and provider error text retain
   untrusted-content provenance, while audit evidence contains parameters and
-  counts rather than provider content.
+  counts rather than provider content. Its code-eligible sitemap write routes
+  up to 20 URLs to selected writable properties, defaults to approval while
+  supporting scheduled automatic execution, and uses one non-retried mutation
+  per sitemap. The tool reads existing state during preparation, records the
+  complete pending intent immediately before mutation, and reads each sitemap
+  back for terminal status evidence. An ambiguous submission remains
+  unverified and is not replayed automatically.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
   resource. Its authorization picker controls page access. Three code-eligible

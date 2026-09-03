@@ -29,6 +29,7 @@ def test_manifest_declares_workspace_site_provider_tools_without_internal_url_re
         "google_search_console_inspect_url",
         "google_search_console_list_sitemaps",
         "google_search_console_query_search_analytics",
+        "google_search_console_submit_sitemap",
     }
     assert PROVIDER.oauth_config().protocol.identity_source == "google_userinfo"
     assert "google_search_console" in VALID_TOOL_ICONS

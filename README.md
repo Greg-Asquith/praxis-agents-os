@@ -77,8 +77,9 @@ The core platform is wired end to end (API, worker, and UI):
   and Google Analytics with service-account connections.
   Search Console connections discover verified properties for active context;
   agents can query bounded, typed organic-search performance, list submitted
-  sitemap status, and inspect the indexed status of requested URLs against the
-  most specific selected property. Google Analytics agents can discover
+  sitemap status, resubmit sitemaps with approval and read-after-write evidence,
+  and inspect the indexed status of requested URLs against the most specific
+  selected property. Google Analytics agents can discover
   exact standard and custom report fields, check which fields can be added to a
   compatible standard report, and run bounded, typed standard and realtime GA4
   reports. They can also verify which Google Ads accounts are linked to each

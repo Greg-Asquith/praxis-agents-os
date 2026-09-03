@@ -38,7 +38,8 @@ minor release. Patch releases contain backward-compatible fixes only.
   packages with OAuth; Airtable with API-key connections; and BigQuery, Google
   Ads, and Google Analytics with service-account connections; resource discovery;
   context groups; bounded Search Console performance, sitemap, and URL inspection reads;
-  approval-aware writes; and guarded rich results.
+  approval-gated sitemap resubmission with read-after-write status; approval-aware writes;
+  and guarded rich results.
 - A typed, versioned tool catalog with workspace grants, one audited
   dispatch choke point, runtime policy enforcement, and per-call audit data.
 - Audit and security event viewers, opt-in self-hosted observability, and

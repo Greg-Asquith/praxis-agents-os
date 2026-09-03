@@ -10,7 +10,10 @@ from pydantic_ai.messages import ModelRequest, ToolReturnPart
 
 from core.exceptions.integration import IntegrationPermissionError, IntegrationValidationError
 from integrations.google_search_console.operations.inspect_url import inspect_url
-from integrations.google_search_console.tools.utils.routing import url_references_for_entries
+from integrations.google_search_console.tools.utils.routing import (
+    sitemap_references_for_entries,
+    url_references_for_entries,
+)
 from services.agents.runtime.untrusted import (
     UNTRUSTED_CONTENT_START,
     UntrustedNode,
@@ -31,7 +34,7 @@ HOSTILE_REFERRER = (
 )
 
 
-def _entry(site_url: str) -> ResolvedContextEntry:
+def _entry(site_url: str, *, write_allowed: bool = False) -> ResolvedContextEntry:
     return ResolvedContextEntry(
         integration_resource_id=uuid4(),
         provider_key="google_search_console",
@@ -41,7 +44,7 @@ def _entry(site_url: str) -> ResolvedContextEntry:
         connection_id=uuid4(),
         connection_label="Search Console",
         connection_status="active",
-        write_allowed=False,
+        write_allowed=write_allowed,
     )
 
 
@@ -77,6 +80,29 @@ def test_url_routing_prefers_longest_prefix_then_domain_and_preserves_order() ->
         "https://blog.example.com/post",
         "HTTPS://EXAMPLE.COM/docs/start",
     ]
+
+
+def test_sitemap_routing_prefers_a_writable_match_over_a_more_specific_restricted_match() -> None:
+    writable = _entry("https://example.com/", write_allowed=True)
+    restricted = _entry("https://example.com/docs/")
+
+    [reference] = sitemap_references_for_entries(
+        (restricted, writable),
+        ["https://example.com/docs/sitemap.xml"],
+    )
+
+    assert reference.site_url == writable.external_id
+
+
+def test_sitemap_routing_retains_a_restricted_only_match_for_authorization_denial() -> None:
+    restricted = _entry("https://example.com/docs/")
+
+    [reference] = sitemap_references_for_entries(
+        (restricted,),
+        ["https://example.com/docs/sitemap.xml"],
+    )
+
+    assert reference.site_url == restricted.external_id
 
 
 @pytest.mark.parametrize(

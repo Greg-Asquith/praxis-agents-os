@@ -5,13 +5,19 @@ import { GoogleSearchConsoleLogo } from "@/integrations/google_search_console/co
 import { inspectionPresenter } from "@/integrations/google_search_console/presenters/inspection"
 import { searchAnalyticsPresenter } from "@/integrations/google_search_console/presenters/search-analytics"
 import { sitemapsPresenter } from "@/integrations/google_search_console/presenters/sitemaps"
+import { submitSitemapPresenter } from "@/integrations/google_search_console/presenters/submit-sitemap"
 import type { IntegrationUiModule } from "@/integrations/contract"
 
 export default {
   catalogDescription:
-    "Let agents read search performance and index status from Google Search Console properties.",
+    "Let agents read search performance and index status, and submit sitemaps.",
   ConnectHelp: GoogleSearchConsoleConnectHelp,
   icons: { google_search_console: GoogleSearchConsoleLogo },
   providerKey: "google_search_console",
-  toolRowPresenters: [searchAnalyticsPresenter, sitemapsPresenter, inspectionPresenter],
+  toolRowPresenters: [
+    searchAnalyticsPresenter,
+    sitemapsPresenter,
+    inspectionPresenter,
+    submitSitemapPresenter,
+  ],
 } satisfies IntegrationUiModule

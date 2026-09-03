@@ -86,7 +86,8 @@ export function parseSettledFanOutData<T>(
   const data: (T | null)[] = []
   const entries = parsedEntries.map((entry) => {
     if (entry.status !== "success") {
-      data.push(null)
+      const result = entry.errorCode === "unverified_mutation" ? parse(entry.data) : null
+      data.push(result)
       return entry.errorCode === "unverified_mutation"
         ? { ...entry, errorMessage: messages.unverified }
         : entry

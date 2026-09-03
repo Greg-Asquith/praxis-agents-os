@@ -34,7 +34,12 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   connection guidance, plus guarded Search Analytics, sitemap, and URL
   Inspection presenters over the shared fan-out and table kits. Inspection
   results use one compact card per requested URL with status, canonical,
-  referring-URL, rich-result, and Search Console report details.
+  referring-URL, rich-result, and Search Console report details. Sitemap
+  submissions use the provider-local write presenter over the shared approval
+  and fan-out surfaces. The approval view distinguishes a new sitemap from a
+  resubmission when live status is available, validates edited URLs against the
+  selected writable sites, and states that Google controls whether and when it
+  crawls the listed URLs.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

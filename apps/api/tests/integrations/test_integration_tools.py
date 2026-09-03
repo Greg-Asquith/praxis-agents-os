@@ -116,6 +116,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_search_console_list_sitemaps": ("read", "internal", "auto", False),
         "google_search_console_inspect_url": ("read", "internal", "auto", False),
         "google_search_console_query_search_analytics": ("read", "internal", "auto", False),
+        "google_search_console_submit_sitemap": ("write", "external", "approval", True),
         "notion_search_pages": ("read", "internal", "auto", False),
         "notion_read_page": ("read", "internal", "auto", False),
         "notion_query_data_source": ("read", "internal", "auto", False),

@@ -18,7 +18,7 @@ describe("Google Search Console integration module", () => {
     expect(integrationIcon("google_search_console")).toBe(
       googleSearchConsoleModule.icons.google_search_console
     )
-    expect(integrationToolRowPresenters("google_search_console")).toHaveLength(3)
+    expect(integrationToolRowPresenters("google_search_console")).toHaveLength(4)
     expect(googleSearchConsoleModule.catalogDescription).toContain("search performance")
   })
 

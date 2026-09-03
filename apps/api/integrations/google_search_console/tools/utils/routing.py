@@ -19,10 +19,40 @@ def url_references_for_entries(
     urls: Sequence[str],
 ) -> list[GoogleSearchConsoleUrlReference]:
     """Return one ordered scoped reference per valid, uniquely requested URL."""
+    return _url_references_for_entries(
+        entries,
+        urls,
+        action="inspect",
+        max_urls=10,
+    )
+
+
+def sitemap_references_for_entries(
+    entries: Sequence[ResolvedContextEntry],
+    urls: Sequence[str],
+) -> list[GoogleSearchConsoleUrlReference]:
+    """Return one ordered writable-preferred reference per requested sitemap URL."""
+    return _url_references_for_entries(
+        entries,
+        urls,
+        action="submit",
+        max_urls=20,
+        prefer_writable=True,
+    )
+
+
+def _url_references_for_entries(
+    entries: Sequence[ResolvedContextEntry],
+    urls: Sequence[str],
+    *,
+    action: str,
+    max_urls: int,
+    prefer_writable: bool = False,
+) -> list[GoogleSearchConsoleUrlReference]:
     if not urls:
-        raise ModelRetry("Provide at least one URL to inspect.")
-    if len(urls) > 10:
-        raise ModelRetry("Inspect no more than 10 URLs at a time.")
+        raise ModelRetry(f"Provide at least one URL to {action}.")
+    if len(urls) > max_urls:
+        raise ModelRetry(f"{action.capitalize()} no more than {max_urls} URLs at a time.")
     normalized_urls: list[tuple[str, SplitResult]] = []
     seen: set[str] = set()
     for value in urls:
@@ -41,7 +71,7 @@ def url_references_for_entries(
 
     references: list[GoogleSearchConsoleUrlReference] = []
     for url, parsed in normalized_urls:
-        entry = _matching_entry(entries, parsed)
+        entry = _matching_entry(entries, parsed, prefer_writable=prefer_writable)
         if entry is None:
             raise ModelRetry(
                 f"The URL {url!r} does not match a selected Search Console property. "
@@ -62,6 +92,8 @@ def url_references_for_entries(
 def _matching_entry(
     entries: Sequence[ResolvedContextEntry],
     url: SplitResult,
+    *,
+    prefer_writable: bool,
 ) -> ResolvedContextEntry | None:
     prefix_matches: list[tuple[int, ResolvedContextEntry]] = []
     domain_matches: list[ResolvedContextEntry] = []
@@ -81,6 +113,12 @@ def _matching_entry(
             and url.path.startswith(site.path)
         ):
             prefix_matches.append((len(site_url), entry))
+    has_writable_match = any(entry.write_allowed for _, entry in prefix_matches) or any(
+        entry.write_allowed for entry in domain_matches
+    )
+    if prefer_writable and has_writable_match:
+        prefix_matches = [item for item in prefix_matches if item[1].write_allowed]
+        domain_matches = [entry for entry in domain_matches if entry.write_allowed]
     if prefix_matches:
         return max(prefix_matches, key=lambda item: item[0])[1]
     return domain_matches[0] if domain_matches else None
