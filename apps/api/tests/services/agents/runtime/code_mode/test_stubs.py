@@ -15,6 +15,9 @@ from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DE
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
 )
+from integrations.google_search_console.tools import (
+    TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
+)
 from services.agents.runtime.code_mode.stubs import (
     CodeModeCatalog,
     UnsupportedCodeModeSchemaError,
@@ -268,6 +271,7 @@ def test_every_first_party_eligible_schema_renders() -> None:
             *GMAIL_TOOL_DEFINITIONS,
             *GOOGLE_ADS_TOOL_DEFINITIONS,
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+            *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
         )
         if definition.code_eligible
     }

@@ -126,6 +126,80 @@ async def test_google_analytics_is_configured_and_requires_workspace_manager(
     assert query["scope"] == ["openid email https://www.googleapis.com/auth/analytics.readonly"]
 
 
+async def test_google_search_console_is_configured_and_requires_workspace_manager(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    providers = await db_async_client.get(
+        "/api/v1/integrations/providers",
+        headers=integration_identity["headers"],
+    )
+    assert providers.status_code == 200
+    search_console = next(
+        item for item in providers.json() if item["provider_key"] == "google_search_console"
+    )
+    assert search_console["configured"] is True
+    assert search_console["configured_auth_modes"] == {
+        "oauth": True,
+    }
+
+    _member, _workspace, _membership, member_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+        workspace=integration_identity["workspace"],
+    )
+    denied = await db_async_client.post(
+        "/api/v1/integrations/connections/oauth/start",
+        headers=member_headers,
+        json={
+            "provider_key": "google_search_console",
+            "owner_scope": "workspace",
+            "label": "Client search",
+        },
+    )
+    assert denied.status_code == 403
+
+    _admin, _workspace, _membership, admin_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.ADMIN,
+        workspace=integration_identity["workspace"],
+    )
+    started = await db_async_client.post(
+        "/api/v1/integrations/connections/oauth/start",
+        headers=admin_headers,
+        json={
+            "provider_key": "google_search_console",
+            "owner_scope": "workspace",
+            "label": "Client search",
+        },
+    )
+    assert started.status_code == 200, started.text
+    query = parse_qs(urlparse(started.json()["authorization_url"]).query)
+    assert query["client_id"] == ["google-search-console-integration-client"]
+    assert query["scope"] == ["openid email https://www.googleapis.com/auth/webmasters"]
+
+    from integrations.google_search_console.settings import google_search_console_settings
+
+    monkeypatch.setattr(
+        google_search_console_settings,
+        "GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_ID",
+        "",
+    )
+    providers = await db_async_client.get(
+        "/api/v1/integrations/providers",
+        headers=integration_identity["headers"],
+    )
+    search_console = next(
+        item for item in providers.json() if item["provider_key"] == "google_search_console"
+    )
+    assert search_console["configured"] is False
+    assert search_console["configured_auth_modes"] == {
+        "oauth": False,
+    }
+
+
 async def test_non_owner_member_cannot_mutate_user_connection(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

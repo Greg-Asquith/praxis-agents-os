@@ -72,10 +72,12 @@ The core platform is wired end to end (API, worker, and UI):
   revisions, background markdown extraction, agent file tools, skill
   management with document pipelines, and pgvector-backed document retrieval
   with hybrid keyword and semantic search, agent tools, and an operator UI.
-- Integrations and context: Gmail, Google Ads, and Google Analytics over OAuth;
-  Airtable with API keys; and BigQuery, Google Ads, and Google Analytics with
-  service-account connections. Google Analytics agents can discover exact
-  standard and custom report fields, check which fields can be added to a
+- Integrations and context: Gmail, Google Ads, Google Analytics, and Google
+  Search Console over OAuth; Airtable with API keys; and BigQuery, Google Ads,
+  and Google Analytics with service-account connections.
+  Search Console connections discover verified properties for active context;
+  they don't contribute agent tools yet. Google Analytics agents can discover
+  exact standard and custom report fields, check which fields can be added to a
   compatible standard report, and run bounded, typed standard and realtime GA4
   reports. They can also verify which Google Ads accounts are linked to each
   selected Analytics property before comparing cross-channel results.

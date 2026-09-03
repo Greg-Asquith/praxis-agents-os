@@ -545,8 +545,9 @@ or any `features/` code. Reviewers hold the line here.
 ## 9. Provider set
 
 The shipped providers are Gmail, Google Ads, Airtable, BigQuery, Google
-Analytics, and Notion. Each follows the section 8 checklist. There is no sample provider in product
-code: contract and loader tests use a suite-local test provider registered
+Analytics, Google Search Console, and Notion. Each follows the section 8
+checklist. There is no sample provider in product code: contract and loader
+tests use a suite-local test provider registered
 through the loader in test code — fixtures under the test tree — with provider
 HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
 Manual quality assurance uses real development credentials. Airtable's API key
@@ -585,6 +586,15 @@ They also expose each property's bounded Admin API Google Ads link list without
 creator email addresses so an agent can verify the provider-native bridge before
 comparing reports. Standard reports also surface access-restriction and sampling
 metadata.
+
+Google Search Console uses workspace-owned OAuth with an isolated Google Cloud
+OAuth client and the full `webmasters` scope. Its bearer-only REST client
+preserves Search Console site URLs byte-exact
+at the resource boundary and URL-encodes them in request paths. One `sites.list`
+request discovers verified domain and URL-prefix properties. Permission levels
+make owner resources writable while full-user and restricted-user resources
+remain read-only. The lazy frontend module supplies the provider mark and setup
+guidance; the provider contributes no tools in this foundation slice.
 
 Notion demonstrates a user-owned public OAuth integration whose provider
 protocol differs from Google's. It omits scopes and PKCE, uses HTTP Basic

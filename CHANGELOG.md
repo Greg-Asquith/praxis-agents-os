@@ -34,9 +34,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Immutable artifacts with approval-gated agent tools, workspace management,
   append-only edit and restore flows, sandboxed previews, and version-pinned
   anonymous share links.
-- Gmail, Google Ads, Airtable, Google BigQuery, and Google Analytics
-  integration packages with OAuth, API-key, and service-account connections;
-  resource discovery;
+- Gmail, Google Ads, Google Analytics, and Google Search Console integration
+  packages with OAuth; Airtable with API-key connections; and BigQuery, Google
+  Ads, and Google Analytics with service-account connections; resource discovery;
   context groups; approval-aware writes; and guarded rich results.
 - A typed, versioned tool catalog with workspace grants, one audited
   dispatch choke point, runtime policy enforcement, and per-call audit data.

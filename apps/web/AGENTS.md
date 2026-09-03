@@ -22,14 +22,16 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   (TanStack Query operations, one per file) when the provider calls the API.
   Follow this layout for new providers.
 - Packaged provider UI modules are Gmail, Google Ads, Airtable, BigQuery,
-  Google Analytics, and Notion. Notion contributes its logo, catalog
-  description, personal-authorization guidance, and separate search, page-read,
+  Google Analytics, Google Search Console, and Notion. Notion contributes its
+  logo, catalog description, personal-authorization guidance, and separate search, page-read,
   data-source-query, and approval-gated write presenters over the shared
   approval, fan-out, records-editor, and Markdown surfaces.
   Google Analytics contributes its logo, catalog description,
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
+  Google Search Console contributes its logo, catalog description, and
+  connection guidance. It has no tool presenters until its read tools land.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

@@ -282,8 +282,8 @@ follows:
   `__init__.py` only composes exported resolver definitions so provider
   manifests stay concise as their catalogs grow.
 - Packaged integrations are Gmail, Google Ads, Airtable, BigQuery, Google
-  Analytics, and Notion. OAuth packages declare their wire behavior and
-  identity source through `OAuthProtocol`; the shared flow keeps state
+  Analytics, Google Search Console, and Notion. OAuth packages declare their
+  wire behavior and identity source through `OAuthProtocol`; the shared flow keeps state
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
   writes for recommendations, negative keywords, campaign status, device bid
@@ -317,6 +317,12 @@ follows:
   metadata, and discovery must not add per-property enrichment calls. Its OAuth
   settings stay in the provider package
   and use a Google Cloud client isolated from every other Google service.
+  Google Search Console contributes workspace OAuth through its own isolated
+  Google Cloud client. It requests the full `webmasters` scope so later sitemap
+  actions use the same connection. Discovery
+  preserves each verified property's exact site URL as its external ID and maps
+  Search Console permission levels to read-only or writable resources. The
+  provider package has no agent tools until its read-tool plan lands.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
   resource. Its authorization picker controls page access. Three code-eligible

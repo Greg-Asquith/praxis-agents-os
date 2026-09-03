@@ -21,6 +21,9 @@ from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DE
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
 )
+from integrations.google_search_console.tools import (
+    TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
+)
 from integrations.notion.tools import TOOL_DEFINITIONS as NOTION_TOOL_DEFINITIONS
 from models.agent import Agent
 from models.agent_run import AgentRun
@@ -51,6 +54,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *AIRTABLE_TOOL_DEFINITIONS,
             *BIGQUERY_TOOL_DEFINITIONS,
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+            *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
             *NOTION_TOOL_DEFINITIONS,
         )
     }
@@ -150,6 +154,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *AIRTABLE_TOOL_DEFINITIONS,
         *BIGQUERY_TOOL_DEFINITIONS,
         *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+        *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
         *NOTION_TOOL_DEFINITIONS,
     )
 
