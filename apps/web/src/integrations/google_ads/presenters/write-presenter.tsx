@@ -70,9 +70,15 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
       }
       const fields = ui?.arg_fields ?? []
       const currentArgs = mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
-      const currentParsedArgs = variant.approval.parseArgs(currentArgs) ?? args
+      const currentParsedArgs = variant.approval.parseArgs(currentArgs)
+      const displayError = approvalDisplayError(currentArgs)
+      const argsError = variant.approval.validateArgs?.(currentArgs) ?? null
       const validationError =
-        approvalDisplayError(currentArgs) ?? variant.approval.validateArgs?.(currentArgs) ?? null
+        displayError ??
+        argsError ??
+        (currentParsedArgs === null
+          ? "The edited approval details are invalid. Correct them or decline this request."
+          : null)
       return (
         <ToolApprovalDecisionCard
           activityId={activity.id}
@@ -83,12 +89,12 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
           fields={fields}
           icon={<GoogleAdsLogo className="size-4" />}
           label={variant.approval.label}
-          prompt={approvalCopy(variant.approval.prompt, currentParsedArgs)}
-          title={approvalCopy(variant.approval.title, currentParsedArgs)}
+          prompt={approvalCopy(variant.approval.prompt, currentParsedArgs ?? args)}
+          title={approvalCopy(variant.approval.title, currentParsedArgs ?? args)}
           toolName={activity.name}
           validationError={validationError}
         >
-          {validationError ? null : variant.approval.renderSummary?.(currentArgs, args)}
+          {displayError || argsError ? null : variant.approval.renderSummary?.(currentArgs, args)}
         </ToolApprovalDecisionCard>
       )
     }

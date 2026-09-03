@@ -6,6 +6,7 @@ import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/pres
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
+import { googleAdsAddPositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/add-positive-keywords"
 import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
 import { googleAdsAssignCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/assign-campaign-budgets"
 import { googleAdsCreateCampaignBudgetPresenter } from "@/integrations/google_ads/presenters/create-campaign-budget"
@@ -32,6 +33,7 @@ export default {
     googleAdsDeviceBidModifiersPresenter,
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,
+    googleAdsAddPositiveKeywordsPresenter,
     googleAdsCreateCampaignBudgetPresenter,
     googleAdsUpdateCampaignBudgetAmountsPresenter,
     googleAdsAssignCampaignBudgetsPresenter,

@@ -580,6 +580,7 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
         "google_ads_add_ad_group_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
         "google_ads_add_campaign_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
         "google_ads_add_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
+        "google_ads_add_keywords": ("EXACT", "PHRASE", "BROAD"),
         "google_ads_remove_ad_group_negative_keywords": (
             "EXACT",
             "PHRASE",
@@ -680,10 +681,13 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
             actual[definition.name] = field.columns[0].options
         else:
             assert field.key == "keywords"
-            assert [(column.key, column.required) for column in field.columns] == [
+            expected_columns = [
                 ("text", True),
                 ("match_type", True),
             ]
+            if definition.name == "google_ads_add_keywords":
+                expected_columns.append(("cpc_bid", False))
+            assert [(column.key, column.required) for column in field.columns] == expected_columns
             keywords_schema = schema["properties"]["keywords"]
             assert keywords_schema["minItems"] == 1
             assert keywords_schema["maxItems"] == 500

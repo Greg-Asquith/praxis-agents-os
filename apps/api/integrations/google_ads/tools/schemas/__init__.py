@@ -21,6 +21,11 @@ from .negative_keywords import (
     GoogleAdsAddNegativeKeywordsOutput,
     GoogleAdsRemoveNegativeKeywordsOutput,
 )
+from .positive_keywords import (
+    GoogleAdsAddPositiveKeywordsOutput,
+    GoogleAdsCpcBid,
+    GoogleAdsPositiveKeywordEntry,
+)
 from .recommendations import (
     GoogleAdsApplyRecommendationsOutput,
     GoogleAdsDismissRecommendationsOutput,
@@ -43,12 +48,14 @@ __all__ = [
     "GoogleAdsAddAdGroupKeywordOutput",
     "GoogleAdsAddCampaignKeywordOutput",
     "GoogleAdsAddNegativeKeywordsOutput",
+    "GoogleAdsAddPositiveKeywordsOutput",
     "GoogleAdsApplyRecommendationsOutput",
     "GoogleAdsAssignCampaignBudgetsOutput",
     "GoogleAdsCampaignBudgetAmount",
     "GoogleAdsCampaignBudgetAmountUpdate",
     "GoogleAdsCampaignLinkOutput",
     "GoogleAdsCampaignStatusOutput",
+    "GoogleAdsCpcBid",
     "GoogleAdsCreateCampaignBudgetOutput",
     "GoogleAdsCreateNegativeKeywordListOutput",
     "GoogleAdsDailyBudgetAmount",
@@ -58,6 +65,7 @@ __all__ = [
     "GoogleAdsGetReportFieldOutput",
     "GoogleAdsJsonValue",
     "GoogleAdsListReportFieldsOutput",
+    "GoogleAdsPositiveKeywordEntry",
     "GoogleAdsRecommendationApplyParameters",
     "GoogleAdsRemoveAdGroupKeywordOutput",
     "GoogleAdsRemoveCampaignBudgetsOutput",

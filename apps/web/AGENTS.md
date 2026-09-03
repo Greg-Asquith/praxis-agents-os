@@ -30,6 +30,8 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
+  Google Ads positive-keyword creation groups approval context by campaign and
+  shows one guarded, exportable outcome row per ad-group and keyword pair.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

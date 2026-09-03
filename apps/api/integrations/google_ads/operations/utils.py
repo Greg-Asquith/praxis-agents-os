@@ -10,7 +10,7 @@ from typing import Any
 from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
 
 _LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
-_ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.id")
+_ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.(?:id|[a-z][a-z0-9_]*_id)")
 _RECOMMENDATION_RESOURCE_PATTERN = re.compile(
     r"^customers/(?P<customer_id>\d{1,32})/recommendations/[A-Za-z0-9_.~-]{1,256}$"
 )
@@ -94,6 +94,19 @@ def escape_gaql_like_literal(value: str, *, max_length: int = 200) -> str:
     for character in value:
         encoded = _GAQL_LIKE_LITERAL_ESCAPES.get(character, character)
         if escaped_length + len(encoded) > max_length:
+            break
+        escaped.append(encoded)
+        escaped_length += len(encoded)
+    return "".join(escaped)
+
+
+def escape_gaql_string_literal(value: str, *, max_length: int = 80) -> str:
+    """Escapes one bounded value for a quoted Google Ads Query Language string."""
+    escaped: list[str] = []
+    escaped_length = 0
+    for character in value:
+        encoded = {"\\": "\\\\", "'": "\\'"}.get(character, character)
+        if escaped_length + len(encoded) > max_length * 2:
             break
         escaped.append(encoded)
         escaped_length += len(encoded)

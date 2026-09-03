@@ -1869,6 +1869,7 @@ describe("Google Ads tool presenters", () => {
       "google-ads-update-device-bid-modifiers",
       "google-ads-apply-recommendations",
       "google-ads-dismiss-recommendations",
+      "google-ads-add-positive-keywords",
       "google-ads-create-campaign-budget",
       "google-ads-update-campaign-budget-amounts",
       "google-ads-assign-campaign-budgets",

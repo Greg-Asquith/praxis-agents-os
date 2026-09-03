@@ -286,9 +286,10 @@ follows:
   identity source through `OAuthProtocol`; the shared flow keeps state
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
-  writes for recommendations, negative keywords, campaign status, device bid
-  adjustments, and campaign-budget creation, amount updates, assignment, and
-  unused-budget removal. Budget writes re-read provider state after approval
+  writes for recommendations, negative keywords, positive-keyword creation,
+  campaign status, device bid adjustments, and campaign-budget creation,
+  amount updates, assignment, and unused-budget removal. Keyword and budget
+  writes re-read provider state after approval
   and retain exact outcome evidence through the shared mutation ledger. Budget
   removal fails before mutation when any selected budget has a live campaign
   reference.
