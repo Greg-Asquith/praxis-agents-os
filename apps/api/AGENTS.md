@@ -285,6 +285,11 @@ follows:
   Analytics, and Notion. OAuth packages declare their wire behavior and
   identity source through `OAuthProtocol`; the shared flow keeps state
   validation and bounded non-secret connection metadata provider-neutral.
+  The engine-owned `services/integrations/microsoft_graph/` seam provides
+  global-cloud Entra authority validation, delegated identity, stable error
+  mapping, pacing, bounded pagination and downloads, and the Outlook
+  immutable-ID request rule. It must not import provider packages. The Outlook
+  Mail, Outlook Calendar, and SharePoint packages remain pending.
   Google Ads contributes bounded report and field discovery plus approval-only
   writes for recommendations, negative keywords, campaign status, device bid
   adjustments, and campaign-budget creation, amount updates, assignment, and

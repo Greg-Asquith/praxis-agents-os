@@ -32,7 +32,11 @@ async def resolve_external_principal(
 
     try:
         if token_payload is not None and protocol.extract_identity is not None:
-            return protocol.extract_identity(token_payload)
+            try:
+                return protocol.extract_identity(token_payload)
+            except IntegrationAuthError as exc:
+                if exc.error_code != "identity_token_unavailable":
+                    raise
         if protocol.fetch_identity is None:
             raise IntegrationValidationError(
                 "External identity lookup is not configured for this provider",

@@ -50,7 +50,8 @@ async def record_refresh_failure(
 ) -> None:
     """Persist typed provider failures in the refresh-owned transaction."""
     credential.refresh_failure_count = (credential.refresh_failure_count or 0) + 1
-    credential.last_refresh_error_code = type(exc).__name__[:64]
+    error_code = exc.error_code or type(exc).__name__
+    credential.last_refresh_error_code = error_code[:64]
     if (
         needs_reauth
         and connection is not None
@@ -60,7 +61,7 @@ async def record_refresh_failure(
             db,
             connection,
             CONNECTION_STATUS_NEEDS_REAUTH,
-            reason="credential_refresh_failed",
+            reason=exc.error_code or "credential_refresh_failed",
         )
     await db.flush()
     await record_integration_audit(

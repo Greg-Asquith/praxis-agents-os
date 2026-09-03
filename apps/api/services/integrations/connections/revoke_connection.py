@@ -44,16 +44,17 @@ async def revoke_connection(
     if credential is not None and credential.auth_mode == "oauth":
         try:
             protocol = resolve_provider_oauth_config(credential.provider_key).protocol
-            token = (
-                credential.access_token
-                if protocol.revoke_token == "access"
-                else credential.refresh_token or credential.access_token
-            )
-            if token:
-                await revoke_authorization_token(
-                    provider_key=credential.provider_key,
-                    token=token,
+            if protocol.revoke_token != "none":
+                token = (
+                    credential.access_token
+                    if protocol.revoke_token == "access"
+                    else credential.refresh_token or credential.access_token
                 )
+                if token:
+                    await revoke_authorization_token(
+                        provider_key=credential.provider_key,
+                        token=token,
+                    )
         except Exception:
             logger.warning(
                 "Remote integration token revocation failed for provider %s",

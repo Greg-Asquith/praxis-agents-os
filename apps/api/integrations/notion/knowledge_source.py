@@ -23,8 +23,7 @@ from core.settings import settings
 from models.integrations import IntegrationConnection, IntegrationResource
 from services.agents.runtime.untrusted import untrusted_content_text
 from services.integrations.connections.utils import refresh_oauth_credential
-from services.integrations.credentials import ensure_fresh_credential
-from services.integrations.domain import CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
+from services.integrations.credentials import build_personal_oauth_access_token_resolver
 from services.integrations.plugin import (
     IntegrationKnowledgeSourceDefinition,
     KnowledgeSourceAccessLostError,
@@ -184,43 +183,17 @@ def notion_client_for_connection(
     connection: IntegrationConnection,
 ) -> NotionClient:
     """Creates a paced Notion client from a visible personal connection."""
-    if (
-        connection.provider_key != "notion"
-        or connection.deleted
-        or connection.owner_user_id is None
-        or connection.owner_workspace_id is not None
-        or connection.status in CONNECTION_STATUSES_WITHOUT_USABLE_CREDENTIALS
-    ):
-        raise _credential_error(connection)
-    if db.in_transaction():
-        raise RuntimeError(
+    access_token = build_personal_oauth_access_token_resolver(
+        db,
+        connection,
+        expected_provider_key="notion",
+        refresh_token=refresh_oauth_credential,
+        credential_error=lambda: _credential_error(connection),
+        open_transaction_error=(
             "Notion Knowledge Base source callers must close database transactions "
             "before provider I/O"
-        )
-
-    async def access_token(force: bool) -> str:
-        try:
-            fresh = await ensure_fresh_credential(
-                db,
-                credential_id=connection.credential_id,
-                refresh_token=refresh_oauth_credential,
-                force=force,
-                expected_provider_key=connection.provider_key,
-                expected_owner=(connection.owner_user_id, connection.owner_workspace_id),
-            )
-        except IntegrationNotFoundError as exc:
-            raise _credential_error(connection) from exc
-        if (
-            fresh.provider_key != connection.provider_key
-            or fresh.owner_user_id != connection.owner_user_id
-            or fresh.owner_workspace_id != connection.owner_workspace_id
-        ):
-            raise _credential_error(connection)
-        token = fresh.access_token
-        if not token:
-            raise _credential_error(connection)
-        return token
-
+        ),
+    )
     return NotionClient(access_token, pacing_key=str(connection.id))
 
 

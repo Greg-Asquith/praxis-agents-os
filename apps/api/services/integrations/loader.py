@@ -90,6 +90,16 @@ def _validate_plugin(
             )
         if "oauth" in manifest.auth_modes:
             protocol = oauth_config.protocol
+            revoke_url = oauth_config.revoke_url.strip()
+            if protocol.revoke_token == "none" and revoke_url:
+                raise RuntimeError(
+                    f"OAuth integration provider '{expected_key}' must not declare a "
+                    "revocation URL when remote revocation is disabled"
+                )
+            if protocol.revoke_token != "none" and not revoke_url:
+                raise RuntimeError(
+                    f"OAuth integration provider '{expected_key}' must declare a revocation URL"
+                )
             if protocol.scope_parameter and not manifest.oauth_scopes:
                 raise RuntimeError(
                     f"OAuth integration provider '{expected_key}' must declare scopes "

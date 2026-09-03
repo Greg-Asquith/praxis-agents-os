@@ -8,6 +8,7 @@ from traceback import format_exception
 from urllib.parse import parse_qs, urlencode, urlparse
 from uuid import uuid4
 
+import httpx2
 import pytest
 from pydantic import SecretStr
 
@@ -474,6 +475,78 @@ async def test_oauth_protocol_rejects_malformed_json(
             code="gmail-code",
             code_verifier="gmail-verifier",
         )
+
+
+async def test_oauth_token_error_uses_provider_classifier(
+    isolated_google_oauth_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.integrations import http as http_module
+
+    config = GMAIL_PROVIDER.oauth_config()
+    classified_config = replace(
+        config,
+        protocol=replace(
+            config.protocol,
+            classify_token_error=lambda payload: (
+                "reauthorization_required" if payload.get("error") == "invalid_grant" else None
+            ),
+        ),
+    )
+    PROVIDER_PLUGINS["gmail"] = replace(
+        GMAIL_PROVIDER,
+        oauth_config=lambda: classified_config,
+    )
+
+    async_client_type = httpx2.AsyncClient
+
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            400,
+            headers={"Content-Type": "application/json"},
+            json={"error": "invalid_grant", "error_description": "provider detail"},
+        )
+
+    monkeypatch.setattr(
+        http_module.httpx2,
+        "AsyncClient",
+        lambda: async_client_type(transport=httpx2.MockTransport(handler)),
+    )
+    with pytest.raises(IntegrationAuthError) as exc_info:
+        await refresh_authorization_token(
+            provider_key="gmail",
+            refresh_token="refresh-token",  # noqa: S106
+        )
+
+    assert exc_info.value.error_code == "reauthorization_required"
+    assert exc_info.value.failure_disposition == "rejected"
+    assert exc_info.value.user_message == "OAuth token response was rejected"
+    assert "provider detail" not in str(exc_info.value)
+
+
+async def test_oauth_unclassified_token_error_keeps_existing_contract(
+    isolated_google_oauth_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = import_module("services.integrations.oauth.exchange_authorization_code")
+
+    class Response:
+        def json(self) -> dict[str, str]:
+            return {"error": "unknown_error"}
+
+    async def request_with_retries(*_args, **_kwargs) -> Response:
+        return Response()
+
+    monkeypatch.setattr(module, "request_with_retries", request_with_retries)
+    with pytest.raises(IntegrationAuthError) as exc_info:
+        await exchange_authorization_code(
+            provider_key="gmail",
+            code="gmail-code",
+            code_verifier="gmail-verifier",
+        )
+
+    assert exc_info.value.error_code is None
+    assert exc_info.value.user_message == "OAuth token response was rejected"
 
 
 async def test_revocation_sends_token_in_form_body(

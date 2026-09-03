@@ -329,6 +329,41 @@ def test_loader_accepts_supported_oauth_protocols() -> None:
     assert notion_config.protocol.identity_source == "provider"
 
 
+def test_loader_validates_remote_revocation_configuration() -> None:
+    without_remote_revocation = _oauth_plugin(
+        protocol=OAuthProtocol(revoke_token="none"),  # noqa: S106 - protocol enum
+    )
+    assert without_remote_revocation.oauth_config is not None
+    without_remote_revocation_config = without_remote_revocation.oauth_config()
+    without_remote_revocation = replace(
+        without_remote_revocation,
+        oauth_config=lambda: replace(
+            without_remote_revocation_config,
+            revoke_url="",
+        ),
+    )
+    assert _validate_plugin(without_remote_revocation, expected_key="example") is not None
+
+    missing_url = _oauth_plugin()
+    assert missing_url.oauth_config is not None
+    missing_url_config = missing_url.oauth_config()
+    missing_url = replace(
+        missing_url,
+        oauth_config=lambda: replace(
+            missing_url_config,
+            revoke_url="",
+        ),
+    )
+    with pytest.raises(RuntimeError, match="must declare a revocation URL"):
+        _validate_plugin(missing_url, expected_key="example")
+
+    unexpected_url = _oauth_plugin(
+        protocol=OAuthProtocol(revoke_token="none"),  # noqa: S106 - protocol enum
+    )
+    with pytest.raises(RuntimeError, match="must not declare a revocation URL"):
+        _validate_plugin(unexpected_url, expected_key="example")
+
+
 def test_loader_applies_oauth_protocol_rules_only_to_oauth_manifests() -> None:
     plugin = replace(
         _oauth_plugin(oauth_scopes=(), protocol=OAuthProtocol(identity_source="provider")),

@@ -84,7 +84,9 @@ class OAuthProtocol:
     extract_identity: Callable[[dict[str, Any]], ExternalPrincipal] | None = None
     fetch_identity: Callable[[str], Awaitable[ExternalPrincipal]] | None = None
     request_headers: tuple[tuple[str, str], ...] = ()
-    revoke_token: Literal["refresh_or_access", "access"] = "refresh_or_access"
+    revoke_token: Literal["refresh_or_access", "access", "none"] = "refresh_or_access"
+    scope_resource_prefix: str = ""
+    classify_token_error: Callable[[dict[str, Any]], str | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -95,7 +97,7 @@ class OAuthClientConfig:
     client_secret: SecretStr
     authorization_url: str
     token_url: str
-    revoke_url: str
+    revoke_url: str = ""
     protocol: OAuthProtocol = field(default_factory=OAuthProtocol)
 
 

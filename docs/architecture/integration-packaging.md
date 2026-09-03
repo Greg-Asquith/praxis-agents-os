@@ -181,7 +181,9 @@ class OAuthProtocol:
     extract_identity: Callable[[dict[str, Any]], ExternalPrincipal] | None
     fetch_identity: Callable[[str], Awaitable[ExternalPrincipal]] | None
     request_headers: tuple[tuple[str, str], ...]
-    revoke_token: Literal["refresh_or_access", "access"]
+    revoke_token: Literal["refresh_or_access", "access", "none"]
+    scope_resource_prefix: str
+    classify_token_error: Callable[[dict[str, Any]], str | None] | None
 
 
 @dataclass(frozen=True)
@@ -203,6 +205,13 @@ authentication and encoding, identity source, request headers, and revocation
 token choice. Its defaults preserve the Google provider wire contract. A
 provider can supply identity extraction from the token response and must also
 supply access-token identity fetching when it owns identity resolution.
+Providers whose authorization server has no revocation endpoint declare
+`revoke_token="none"` and leave `OAuthClientConfig.revoke_url` blank. Every
+other OAuth provider must declare a revocation URL. A resource-prefixed scope
+response uses `scope_resource_prefix`; the callback strips the prefix and
+matches scopes without case sensitivity while preserving manifest spelling.
+`classify_token_error` can map a provider error body to a stable recovery code
+without exposing provider-controlled error text.
 
 `ExternalPrincipal.connection_metadata` carries only bounded, non-secret
 strings needed to identify a connection. The callback accepts at most 16
@@ -312,6 +321,14 @@ loader.py` (dynamically, by configured key).
 4. Enforcement: a dedicated test (`tests/integrations/test_import_laws.py`)
    walks the AST of both trees and asserts 1–3. It runs in the default
    suite so violations fail CI, not review.
+
+Engine-owned vendor seams live under `services/integrations/` only when more
+than one provider package needs the same transport behavior. The Microsoft
+Graph seam owns global-cloud Entra authority validation, delegated identity,
+typed Graph errors, per-connection pacing, immutable Outlook IDs, bounded
+pagination and downloads, and connection credential resolution. It imports no
+provider package. Outlook and SharePoint packages remain responsible for their
+manifests, settings, discovery, operations, and tools.
 
 ### 4.7 Integration operation runtime
 
@@ -535,7 +552,12 @@ Adding a provider touches:
 11. Declare `identity_source` on the OAuth protocol. Provider-owned identity
     also declares the token-response extractor when available and the required
     access-token fetch function.
-12. Extend test-only provider enumeration fixtures; these are coverage seams,
+12. Declare remote token revocation explicitly. Use `revoke_token="none"` only
+    when the authorization server has no revocation endpoint, and provide
+    recovery guidance for removing the grant outside Praxis.
+13. When granted scopes carry a resource prefix or use provider-specific case,
+    declare `scope_resource_prefix` and cover normalized callback storage.
+14. Extend test-only provider enumeration fixtures; these are coverage seams,
     not runtime registration.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,
@@ -552,6 +574,11 @@ HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
 Manual quality assurance uses real development credentials. Airtable's API key
 provides a convenient connection test. The engine's generic manifest-driven OAuth flow is the only token
 path; revisit only if a real provider cannot use it.
+
+The engine includes a Microsoft Graph seam for the pending Outlook Mail,
+Outlook Calendar, and SharePoint provider packages. The seam does not make
+those integrations available by itself; their manifests, discovery, and web
+modules remain pending.
 
 BigQuery demonstrates the checklist end to end. Its package under
 `integrations/bigquery/` contributes a workspace-owned service-account
