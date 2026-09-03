@@ -36,6 +36,7 @@ GOOGLE_ADS_SCOPE = "https://www.googleapis.com/auth/adwords"
 async def discover_resources(
     credential_value: str,
     principal_label: str | None = None,
+    _pacing_key: str = "",
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     """Resolve either OAuth or service-account material into one client seam."""
     if credential_value.lstrip().startswith("{"):

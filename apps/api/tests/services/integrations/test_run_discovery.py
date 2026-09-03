@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_run_discovery.py
+
 """Discovery reconciliation behavior."""
 
 from dataclasses import replace
@@ -16,7 +18,11 @@ from models.integrations import IntegrationDiscoveryRun, IntegrationResource
 from models.jobs import Job
 from services.integrations.discovery import run_discovery
 from services.integrations.enqueue_metadata_sync import enqueue_metadata_sync
-from services.integrations.plugin import PROVIDER_PLUGINS, DiscoveredIntegrationResource
+from services.integrations.plugin import (
+    PROVIDER_PLUGINS,
+    DiscoveredIntegrationResource,
+    IntegrationDiscoveryResult,
+)
 from services.jobs.registry import JOB_HANDLERS, job_handler
 
 
@@ -43,6 +49,7 @@ async def test_run_discovery_is_idempotent_and_persists_permissions(
     assert rows[0].writable is True
     assert rows[0].permissions_metadata == {"role": "editor"}
     assert connection.status == "needs_resource_selection"
+    assert discovery_connection["provider"]["pacing_keys"] == [str(connection.id)]
 
     second = await run_discovery(db_session, connection_id=connection.id)
     await db_session.refresh(rows[0])
@@ -50,6 +57,98 @@ async def test_run_discovery_is_idempotent_and_persists_permissions(
     assert second.resources_unchanged == 1
     assert rows[0].id == row_id
     assert rows[0].first_seen_at == first_seen_at
+    assert discovery_connection["provider"]["pacing_keys"] == [
+        str(connection.id),
+        str(connection.id),
+    ]
+
+
+async def test_partial_discovery_reconciles_resources_and_keeps_degraded_reason(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+) -> None:
+    connection = discovery_connection["connection"]
+    provider = discovery_connection["provider"]
+    original = PROVIDER_PLUGINS[connection.provider_key]
+
+    async def discover_resources(
+        _credential: str,
+        _label: str | None,
+        _pacing_key: str,
+    ):
+        return IntegrationDiscoveryResult(
+            resources=provider["resources"],
+            degraded_reason="provider_resource_limit_reached",
+        )
+
+    PROVIDER_PLUGINS[connection.provider_key] = replace(
+        original,
+        discover_resources=discover_resources,
+    )
+    try:
+        run = await run_discovery(db_session, connection_id=connection.id)
+    finally:
+        PROVIDER_PLUGINS[connection.provider_key] = original
+
+    resource_count = await db_session.scalar(
+        select(func.count())
+        .select_from(IntegrationResource)
+        .where(IntegrationResource.connection_id == connection.id)
+    )
+    assert run.status == "succeeded"
+    assert resource_count == 1
+    assert connection.status == "degraded"
+    assert connection.status_reason == "provider_resource_limit_reached"
+
+
+async def test_partial_discovery_preserves_resources_from_failed_parents(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+) -> None:
+    connection = discovery_connection["connection"]
+    provider = discovery_connection["provider"]
+    original = PROVIDER_PLUGINS[connection.provider_key]
+    parent_id = "site-1"
+    provider["resources"] = [
+        DiscoveredIntegrationResource(
+            resource_type="test_resource",
+            external_id="resource-1",
+            display_name="Site library",
+            parent_external_id=parent_id,
+        )
+    ]
+    await run_discovery(db_session, connection_id=connection.id)
+
+    async def discover_resources(
+        _credential: str,
+        _label: str | None,
+        _pacing_key: str,
+    ):
+        return IntegrationDiscoveryResult(
+            resources=(),
+            degraded_reason="provider_site_discovery_partial",
+            preserved_parent_external_ids=frozenset({parent_id}),
+        )
+
+    PROVIDER_PLUGINS[connection.provider_key] = replace(
+        original,
+        discover_resources=discover_resources,
+    )
+    try:
+        run = await run_discovery(db_session, connection_id=connection.id)
+    finally:
+        PROVIDER_PLUGINS[connection.provider_key] = original
+
+    resource = await db_session.scalar(
+        select(IntegrationResource).where(
+            IntegrationResource.connection_id == connection.id,
+            IntegrationResource.external_id == "resource-1",
+        )
+    )
+    assert run.resources_removed == 0
+    assert resource is not None
+    assert resource.availability == "available"
+    assert connection.status == "degraded"
 
 
 async def test_successful_discovery_enqueues_one_provider_metadata_sync(
@@ -266,7 +365,11 @@ async def test_oauth_discovery_forces_refresh_after_provider_auth_rejection(
             None,
         )
 
-    async def discover_resources(access_token: str, _principal_label: str | None = None):
+    async def discover_resources(
+        access_token: str,
+        _principal_label: str | None = None,
+        _pacing_key: str = "",
+    ):
         if access_token == "stale-access":
             raise IntegrationAuthError(
                 "OAuth rejected",

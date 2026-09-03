@@ -36,6 +36,7 @@ def discovery_provider(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ob
     original_plugins = dict(PROVIDER_PLUGINS)
     state: dict[str, object] = {
         "calls": 0,
+        "pacing_keys": [],
         "block": False,
         "error": None,
         "resources": [
@@ -49,9 +50,14 @@ def discovery_provider(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, ob
         ],
     }
 
-    async def discover_resources(credential: str, _principal_label: str | None = None):
+    async def discover_resources(
+        credential: str,
+        _principal_label: str | None = None,
+        pacing_key: str = "",
+    ):
         assert credential == "test-secret"
         state["calls"] = int(state["calls"]) + 1
+        state["pacing_keys"].append(pacing_key)
         if state["block"]:
             await asyncio.Event().wait()
         error = state["error"]

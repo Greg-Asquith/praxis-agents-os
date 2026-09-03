@@ -97,7 +97,40 @@ for manifest in \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
   grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: global'
+  grep -A1 'name: MICROSOFT_GRAPH_TENANT' "$manifest" | grep -q 'value: organizations'
+  grep -A1 'name: MICROSOFT_GRAPH_REQUESTS_PER_SECOND' "$manifest" | grep -q 'value: "4.0"'
+  grep -A1 'name: OUTLOOK_MAIL_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: disabled'
+  grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: organizations'
+  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: disabled'
+  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" | grep -q 'value: organizations'
+  grep -A1 'name: SHAREPOINT_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: disabled'
+  grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: organizations'
+  grep -A1 'name: SHAREPOINT_DISCOVERY_MAX_SITES' "$manifest" | grep -q 'value: "50"'
 done
+
+sed \
+  -e 's/^MICROSOFT_GRAPH_REQUESTS_PER_SECOND=4.0$/MICROSOFT_GRAPH_REQUESTS_PER_SECOND=8.0/' \
+  -e 's/^OUTLOOK_MAIL_OAUTH_TENANT=$/OUTLOOK_MAIL_OAUTH_TENANT=mail.example.com/' \
+  -e 's/^OUTLOOK_CALENDAR_OAUTH_TENANT=$/OUTLOOK_CALENDAR_OAUTH_TENANT=calendar.example.com/' \
+  -e 's/^SHAREPOINT_OAUTH_TENANT=$/SHAREPOINT_OAUTH_TENANT=sharepoint.example.com/' \
+  -e 's/^SHAREPOINT_DISCOVERY_MAX_SITES=50$/SHAREPOINT_DISCOVERY_MAX_SITES=75/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/microsoft-overrides.env"
+"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/microsoft-overrides-render" \
+  "$TEST_TMP/microsoft-overrides.env" abcdef0123456789
+for manifest in \
+  "$TEST_TMP/microsoft-overrides-render/services/praxis-api.yaml" \
+  "$TEST_TMP/microsoft-overrides-render/jobs/praxis-worker.yaml"; do
+  grep -A1 'name: MICROSOFT_GRAPH_REQUESTS_PER_SECOND' "$manifest" | grep -q 'value: "8.0"'
+  grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: mail.example.com'
+  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" \
+    | grep -q 'value: calendar.example.com'
+  grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: sharepoint.example.com'
+  grep -A1 'name: SHAREPOINT_DISCOVERY_MAX_SITES' "$manifest" | grep -q 'value: "75"'
+done
+
+grep -Fq 'OUTLOOK_MAIL_OAUTH_CLIENT_SECRET' "$GCP_DIR/README.md"
+grep -Fq 'OUTLOOK_CALENDAR_OAUTH_CLIENT_SECRET' "$GCP_DIR/README.md"
+grep -Fq 'SHAREPOINT_OAUTH_CLIENT_SECRET' "$GCP_DIR/README.md"
 grep -Fq -- 'apis+=(aiplatform.googleapis.com)' "$GCP_DIR/bootstrap.sh"
 grep -Fq -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh"
 test "$(grep -Fc -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh")" -eq 1

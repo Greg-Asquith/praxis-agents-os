@@ -18,10 +18,20 @@ type IntegrationOAuthCallbackLoaderDependencies = {
   redirect?: typeof fullDocumentRedirect
 }
 
+type IntegrationOAuthCallbackLoaderResult = {
+  error?: string
+  info?: string
+}
+
 export async function loadIntegrationOAuthCallback(
   search: OAuthCallbackSearch,
   deps: IntegrationOAuthCallbackLoaderDependencies = {}
-) {
+): Promise<IntegrationOAuthCallbackLoaderResult> {
+  if (!search.code && search.admin_consent?.toLowerCase() === "true") {
+    return {
+      info: "Your administrator approved Praxis Agents for your organization. You can connect your account now.",
+    }
+  }
   if (!search.state) {
     return { error: "This connection link is missing its OAuth state." }
   }

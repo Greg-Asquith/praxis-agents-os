@@ -510,6 +510,7 @@ async def test_graph_paces_each_retry_attempt(monkeypatch: pytest.MonkeyPatch) -
     from services.integrations.microsoft_graph import client as client_module
 
     events: list[str] = []
+    request_ids: list[str] = []
     attempts = 0
 
     @asynccontextmanager
@@ -521,10 +522,11 @@ async def test_graph_paces_each_retry_attempt(monkeypatch: pytest.MonkeyPatch) -
     async def sleep(_seconds: float) -> None:
         return None
 
-    def handler(_request: httpx2.Request) -> httpx2.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         attempts += 1
         events.append("dispatch")
+        request_ids.append(request.headers["client-request-id"])
         if attempts == 1:
             return httpx2.Response(503)
         return httpx2.Response(
@@ -546,6 +548,7 @@ async def test_graph_paces_each_retry_attempt(monkeypatch: pytest.MonkeyPatch) -
             policy=IntegrationRequestPolicy.READ,
         )
     assert events == ["pace", "dispatch", "release", "pace", "dispatch", "release"]
+    assert len(set(request_ids)) == 2
 
 
 async def test_graph_download_has_no_authorization_and_enforces_bound() -> None:

@@ -22,7 +22,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   (TanStack Query operations, one per file) when the provider calls the API.
   Follow this layout for new providers.
 - Packaged provider UI modules are Gmail, Google Ads, Airtable, BigQuery,
-  Google Analytics, and Notion. Notion contributes its logo, catalog
+  Google Analytics, Notion, Outlook Mail, Outlook Calendar, and SharePoint.
+  The three Microsoft modules contribute isolated logos, catalog descriptions,
+  and shared administrator setup and removal guidance; their tool presenters
+  land with the provider tool slices. Notion contributes its logo, catalog
   description, personal-authorization guidance, and separate search, page-read,
   data-source-query, and approval-gated write presenters over the shared
   approval, fan-out, records-editor, and Markdown surfaces.

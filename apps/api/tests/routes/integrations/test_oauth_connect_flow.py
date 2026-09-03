@@ -60,7 +60,11 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
 ) -> None:
     discovery_calls = 0
 
-    async def discover_resources(_credential: str, _principal_label: str | None = None):
+    async def discover_resources(
+        _credential: str,
+        _principal_label: str | None = None,
+        _pacing_key: str = "",
+    ):
         nonlocal discovery_calls
         discovery_calls += 1
         return ()

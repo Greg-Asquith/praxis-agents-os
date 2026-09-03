@@ -6,8 +6,8 @@ import asyncio
 import ipaddress
 import logging
 import socket
-from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -279,7 +279,7 @@ class MicrosoftGraphClient:
                 provider_key=self._provider_key,
                 operation=operation,
             ),
-            attempt_context=self._pacing_context,
+            attempt_context=lambda: self._request_attempt(request_headers),
             headers=request_headers,
             **kwargs,
         )
@@ -299,7 +299,6 @@ class MicrosoftGraphClient:
     ) -> bytes:
         download_headers = {
             "Accept": "*/*",
-            "client-request-id": str(uuid4()),
             "Host": self._host_header(url, original_host),
             "User-Agent": self._user_agent(),
         }
@@ -323,7 +322,7 @@ class MicrosoftGraphClient:
             policy=IntegrationRequestPolicy.READ,
             consume=consume,
             client=client,
-            attempt_context=self._pacing_context,
+            attempt_context=lambda: self._request_attempt(download_headers),
             include_original_error=False,
             headers=download_headers,
             extensions={"sni_hostname": original_host},
@@ -331,8 +330,14 @@ class MicrosoftGraphClient:
             timeout=settings.INTEGRATIONS_HTTP_TIMEOUT_SECONDS,
         )
 
-    def _pacing_context(self) -> AbstractAsyncContextManager[None]:
-        return paced_request(self._pacing_key or "")
+    @asynccontextmanager
+    async def _request_attempt(
+        self,
+        headers: httpx2.Headers | dict[str, str],
+    ) -> AsyncIterator[None]:
+        headers["client-request-id"] = str(uuid4())
+        async with paced_request(self._pacing_key or ""):
+            yield
 
     def _request_headers(
         self,
@@ -341,7 +346,6 @@ class MicrosoftGraphClient:
     ) -> httpx2.Headers:
         values = httpx2.Headers(headers)
         values["Accept"] = "application/json"
-        values["client-request-id"] = str(uuid4())
         values["User-Agent"] = self._user_agent()
         if self._uses_immutable_ids(path):
             prefer = values.get("Prefer")

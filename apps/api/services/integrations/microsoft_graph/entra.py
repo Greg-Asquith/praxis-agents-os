@@ -6,8 +6,10 @@ import re
 from functools import partial
 from uuid import UUID
 
+from pydantic import SecretStr
+
 from core.settings import settings
-from services.integrations.plugin import OAuthProtocol
+from services.integrations.plugin import OAuthClientConfig, OAuthProtocol
 
 from .errors import classify_entra_token_error
 
@@ -72,4 +74,33 @@ def entra_oauth_protocol(
         fetch_identity=fetch_graph_identity,
         revoke_token="none",  # noqa: S106 - protocol enum
         classify_token_error=classify_entra_token_error,
+    )
+
+
+def entra_oauth_config(
+    *,
+    client_id: str,
+    client_secret: SecretStr,
+    tenant_override: str,
+) -> OAuthClientConfig:
+    """Build one package-owned client configuration on the shared Entra protocol."""
+    configured_tenant = tenant_override or settings.MICROSOFT_GRAPH_TENANT
+    if not configured_tenant and not client_id.strip():
+        tenant = "organizations"
+    else:
+        tenant = validate_entra_tenant(configured_tenant)
+    try:
+        expected_tenant_id = str(UUID(tenant))
+    except ValueError:
+        expected_tenant_id = None
+    return OAuthClientConfig(
+        client_id=client_id,
+        client_secret=client_secret,
+        authorization_url=authorization_url(tenant),
+        token_url=token_url(tenant),
+        revoke_url="",
+        protocol=entra_oauth_protocol(
+            client_id=client_id,
+            expected_tenant_id=expected_tenant_id,
+        ),
     )

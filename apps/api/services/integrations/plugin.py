@@ -52,8 +52,18 @@ class DiscoveredIntegrationResource:
     permissions_metadata: dict[str, object] | None = None
 
 
+@dataclass(frozen=True)
+class IntegrationDiscoveryResult:
+    """Resources plus an optional stable reason for partial discovery."""
+
+    resources: Sequence[DiscoveredIntegrationResource]
+    degraded_reason: str | None = None
+    preserved_parent_external_ids: frozenset[str] = frozenset()
+
+
 DiscoverResourcesFn = Callable[
-    [str, str | None], Awaitable[Sequence[DiscoveredIntegrationResource]]
+    [str, str | None, str],
+    Awaitable[Sequence[DiscoveredIntegrationResource] | IntegrationDiscoveryResult],
 ]
 
 

@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Never
 
 import httpx2
 
@@ -309,14 +309,27 @@ async def _run_with_retries[T](
 
         if not can_retry or attempt + 1 >= settings.INTEGRATIONS_HTTP_RETRY_MAX_ATTEMPTS:
             break
-        retry_after = _retry_after_seconds(response) if response is not None else None
-        delay = (
-            min(retry_after, settings.INTEGRATIONS_HTTP_RETRY_AFTER_CAP_SECONDS)
-            if retry_after is not None
-            else settings.INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR * (2**attempt)
-        )
-        await asyncio.sleep(delay)
+        await asyncio.sleep(_retry_delay(response, attempt))
 
+    return _raise_final_request_error(
+        last_status=last_status,
+        last_error=last_error,
+        operation=operation,
+        provider_key=provider_key,
+        policy=policy,
+        include_original_error=include_original_error,
+    )
+
+
+def _raise_final_request_error(
+    *,
+    last_status: int | None,
+    last_error: Exception | None,
+    operation: str,
+    provider_key: str,
+    policy: IntegrationRequestPolicy,
+    include_original_error: bool,
+) -> Never:
     context = {
         "provider_key": provider_key,
         "operation": operation,
@@ -332,6 +345,13 @@ async def _run_with_retries[T](
     if isinstance(last_error, (TimeoutError, httpx2.TimeoutException)):
         raise IntegrationTimeoutError("Integration request timed out", **context)
     raise IntegrationConnectionError("Integration provider request failed", **context)
+
+
+def _retry_delay(response: httpx2.Response | None, attempt: int) -> float:
+    retry_after = _retry_after_seconds(response) if response is not None else None
+    if retry_after is not None:
+        return min(retry_after, settings.INTEGRATIONS_HTTP_RETRY_AFTER_CAP_SECONDS)
+    return settings.INTEGRATIONS_HTTP_RETRY_BACKOFF_FACTOR * (2**attempt)
 
 
 def _raise_response_error(

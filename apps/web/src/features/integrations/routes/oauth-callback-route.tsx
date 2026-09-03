@@ -9,7 +9,7 @@ const routeApi = getRouteApi("/app/integrations/oauth/callback")
 
 export function IntegrationOAuthCallbackRoute() {
   const navigate = useNavigate()
-  const { error } = routeApi.useLoaderData()
+  const { error, info } = routeApi.useLoaderData()
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-4 py-10">
@@ -25,7 +25,22 @@ export function IntegrationOAuthCallbackRoute() {
             }}
             variant="outline"
           >
-            Back to Integrations
+            Back to integrations
+          </Button>
+        </>
+      ) : null}
+      {info ? (
+        <>
+          <Alert>
+            <AlertTitle>Approval complete</AlertTitle>
+            <AlertDescription>{info}</AlertDescription>
+          </Alert>
+          <Button
+            onClick={() => {
+              void navigate({ to: "/integrations", replace: true })
+            }}
+          >
+            Back to integrations
           </Button>
         </>
       ) : null}

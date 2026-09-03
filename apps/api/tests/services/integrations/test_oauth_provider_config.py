@@ -12,7 +12,11 @@ import httpx2
 import pytest
 from pydantic import SecretStr
 
-from core.exceptions.integration import IntegrationAuthError, IntegrationConnectionError
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationConnectionError,
+    IntegrationValidationError,
+)
 from core.settings import settings
 from integrations.gmail import PROVIDER as GMAIL_PROVIDER
 from integrations.gmail.settings import gmail_settings
@@ -547,6 +551,43 @@ async def test_oauth_unclassified_token_error_keeps_existing_contract(
 
     assert exc_info.value.error_code is None
     assert exc_info.value.user_message == "OAuth token response was rejected"
+
+
+async def test_unclassified_oauth_http_error_keeps_generic_http_mapping(
+    isolated_google_oauth_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from services.integrations import http as http_module
+
+    config = GMAIL_PROVIDER.oauth_config()
+    PROVIDER_PLUGINS["gmail"] = replace(
+        GMAIL_PROVIDER,
+        oauth_config=lambda: replace(
+            config,
+            protocol=replace(config.protocol, classify_token_error=lambda _payload: None),
+        ),
+    )
+    async_client_type = httpx2.AsyncClient
+
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            400,
+            headers={"Content-Type": "application/json"},
+            json={"error": "unknown_error"},
+        )
+
+    monkeypatch.setattr(
+        http_module.httpx2,
+        "AsyncClient",
+        lambda: async_client_type(transport=httpx2.MockTransport(handler)),
+    )
+
+    with pytest.raises(IntegrationValidationError):
+        await exchange_authorization_code(
+            provider_key="gmail",
+            code="gmail-code",
+            code_verifier="gmail-verifier",
+        )
 
 
 async def test_revocation_sends_token_in_form_body(

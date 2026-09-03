@@ -161,11 +161,16 @@ def _token_response_error(
         payload = response.json()
     except ValueError:
         return None
-    return _token_payload_error(
-        payload,
+    classifier = oauth_config.protocol.classify_token_error
+    if not isinstance(payload, dict) or not payload.get("error") or classifier is None:
+        return None
+    error_code = classifier(payload)
+    if error_code is None:
+        return None
+    return _oauth_token_error(
         provider_key=provider_key,
         operation=operation,
-        oauth_config=oauth_config,
+        error_code=error_code,
     )
 
 
@@ -183,6 +188,19 @@ def _token_payload_error(
         if isinstance(payload, dict) and oauth_config.protocol.classify_token_error is not None
         else None
     )
+    return _oauth_token_error(
+        provider_key=provider_key,
+        operation=operation,
+        error_code=error_code,
+    )
+
+
+def _oauth_token_error(
+    *,
+    provider_key: str,
+    operation: str,
+    error_code: str | None,
+) -> IntegrationAuthError:
     return IntegrationAuthError(
         "OAuth token response was rejected",
         provider_key=provider_key,
