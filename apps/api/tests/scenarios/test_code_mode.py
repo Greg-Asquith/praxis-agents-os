@@ -595,6 +595,7 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
         ),
         "google_ads_remove_negative_keywords": ("EXACT", "PHRASE", "BROAD", "ANY"),
         "google_ads_update_device_bid_modifiers": ("DESKTOP", "MOBILE", "TABLET"),
+        "google_ads_update_keyword_status": ("ENABLED", "PAUSED"),
         "notion_create_page": (
             "title",
             "rich_text",
@@ -678,6 +679,15 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
             adjustments_schema = schema["properties"]["adjustments"]
             assert adjustments_schema["minItems"] == 1
             assert adjustments_schema["maxItems"] == 3
+            actual[definition.name] = field.columns[0].options
+        elif definition.name == "google_ads_update_keyword_status":
+            assert field.key == "statuses"
+            assert [(column.key, column.required) for column in field.columns] == [
+                ("status", True),
+            ]
+            statuses_schema = schema["properties"]["statuses"]
+            assert statuses_schema["minItems"] == 1
+            assert statuses_schema["maxItems"] == 500
             actual[definition.name] = field.columns[0].options
         else:
             assert field.key == "keywords"

@@ -23,10 +23,10 @@ from integrations.google_ads.operations.mutation_outcomes import (
     GoogleAdsMutationLedger,
     thaw_fields,
 )
-from integrations.google_ads.operations.utils import nonnegative_int
 from integrations.google_ads.references import (
     GoogleAdsAdGroupReference,
     GoogleAdsKeywordReference,
+    positive_keyword_reference_from_row,
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
@@ -412,40 +412,25 @@ def _existing_references(
     references: dict[tuple[str, str, str], GoogleAdsKeywordReference] = {}
     for row in rows:
         ad_group = row.get("adGroup")
-        criterion = row.get("adGroupCriterion")
-        campaign = row.get("campaign")
-        if not all(isinstance(value, Mapping) for value in (ad_group, criterion, campaign)):
-            continue
-        keyword = criterion.get("keyword")
-        if not isinstance(keyword, Mapping):
+        if not isinstance(ad_group, Mapping):
             continue
         ad_group_id = str(ad_group.get("id", ""))
         selected = ad_groups.get(ad_group_id)
-        text = str(keyword.get("text", ""))
-        match_type = str(keyword.get("matchType", ""))
-        criterion_id = str(criterion.get("criterionId", ""))
-        status = str(criterion.get("status", ""))
+        reference = (
+            positive_keyword_reference_from_row(selected.customer_id, row)
+            if selected is not None
+            else None
+        )
         if (
-            selected is None
-            or not criterion_id.isdigit()
-            or match_type not in {"EXACT", "PHRASE", "BROAD"}
-            or status not in {"ENABLED", "PAUSED"}
+            reference is None
+            or reference.campaign_id != selected.campaign_id
+            or reference.ad_group_id != selected.ad_group_id
         ):
             continue
-        reference = GoogleAdsKeywordReference(
-            customer_id=selected.customer_id,
-            campaign_id=selected.campaign_id,
-            ad_group_id=selected.ad_group_id,
-            criterion_id=criterion_id,
-            text=text,
-            match_type=match_type,
-            status=status,
-            cpc_bid_micros=nonnegative_int(criterion.get("cpcBidMicros")),
-            label=text,
-            description=f"{match_type.title()} · {status.title()}",
-            scope_label=f"{selected.scope_label or ''} · {selected.label}".strip(" ·"),
+        references.setdefault(
+            (ad_group_id, reference.text.casefold(), reference.match_type),
+            reference,
         )
-        references.setdefault((ad_group_id, text.casefold(), match_type), reference)
     return references
 
 

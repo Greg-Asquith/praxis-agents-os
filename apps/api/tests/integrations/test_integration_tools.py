@@ -98,6 +98,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             "approval",
             True,
         ),
+        "google_ads_update_keyword_status": ("write", "external", "approval", True),
         "airtable_list_records": ("read", "internal", "auto", False),
         "airtable_get_record": ("read", "internal", "auto", False),
         "airtable_create_record": ("write", "external", "approval", True),
@@ -254,6 +255,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_update_campaign_budget_amounts",
         "google_ads_update_campaign_status",
         "google_ads_update_device_bid_modifiers",
+        "google_ads_update_keyword_status",
     }
     for name in (
         "google_ads_get_report_field",
@@ -279,6 +281,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_update_campaign_budget_amounts",
         "google_ads_update_campaign_status",
         "google_ads_update_device_bid_modifiers",
+        "google_ads_update_keyword_status",
     ):
         spend = definitions[name]
         assert spend.effect == "write"

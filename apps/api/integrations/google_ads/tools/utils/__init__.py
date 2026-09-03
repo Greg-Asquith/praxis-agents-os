@@ -50,6 +50,11 @@ from .positive_keyword_results import (
     bounded_positive_keyword_result,
     display_positive_keyword_result,
 )
+from .positive_keyword_status_results import (
+    MAX_POSITIVE_KEYWORD_STATUS_PUBLIC_RESULT_CHARS,
+    bounded_positive_keyword_status_result,
+    display_positive_keyword_status_result,
+)
 from .routing import login_customer_id
 
 __all__ = [
@@ -68,6 +73,7 @@ __all__ = [
     "MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS",
     "MAX_NEGATIVE_KEYWORD_RESULT_CHARS",
     "MAX_POSITIVE_KEYWORD_PUBLIC_RESULT_CHARS",
+    "MAX_POSITIVE_KEYWORD_STATUS_PUBLIC_RESULT_CHARS",
     "RESULTS_FIELD",
     "active_google_ads_entries",
     "bounded_campaign_budget_amount_result",
@@ -76,6 +82,7 @@ __all__ = [
     "bounded_negative_keyword_removal_result",
     "bounded_negative_keyword_result",
     "bounded_positive_keyword_result",
+    "bounded_positive_keyword_status_result",
     "campaign_label_audit_evidence",
     "complete_negative_keyword_removal_result",
     "complete_negative_keyword_result",
@@ -83,6 +90,7 @@ __all__ = [
     "display_campaign_budget_assignment_result",
     "display_campaign_budget_removal_result",
     "display_positive_keyword_result",
+    "display_positive_keyword_status_result",
     "fan_out_tool_return",
     "google_ads_available",
     "google_ads_client",

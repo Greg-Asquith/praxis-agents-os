@@ -13,6 +13,9 @@ from integrations.google_ads.tools.add_negative_keywords import (
 from integrations.google_ads.tools.remove_negative_keywords import (
     DEFINITION as GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
 )
+from integrations.google_ads.tools.update_positive_keyword_status import (
+    DEFINITION as GOOGLE_ADS_UPDATE_KEYWORD_STATUS_DEFINITION,
+)
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.runtime.tools.contract import (
     RECORDS_FIELD_MAX_ROWS,
@@ -261,12 +264,73 @@ async def test_google_ads_keyword_override_reauthorizes_list_and_preserves_edite
     resolve.assert_awaited_once()
 
 
+async def test_positive_keyword_status_resume_preserves_edited_positional_rows(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: GOOGLE_ADS_UPDATE_KEYWORD_STATUS_DEFINITION,
+    )
+    keywords = [
+        {
+            "version": 1,
+            "entity_kind": "google_ads_keyword",
+            "customer_id": "333",
+            "campaign_id": "10",
+            "ad_group_id": ad_group_id,
+            "criterion_id": "90",
+            "text": "running shoes",
+            "match_type": "EXACT",
+            "status": status,
+            "cpc_bid_micros": None,
+            "label": "running shoes",
+            "description": "Exact",
+            "scope_label": scope_label,
+        }
+        for ad_group_id, status, scope_label in (
+            ("20", "PAUSED", "Search · Shoes"),
+            ("30", "ENABLED", "Search · Boots"),
+        )
+    ]
+    canonical = [{**value, "label": f"Canonical {index}"} for index, value in enumerate(keywords)]
+    authorize = AsyncMock(return_value=SimpleNamespace())
+    resolve = AsyncMock(return_value=canonical)
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.authorize_entity_field",
+        authorize,
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.entity_references.service.resolve_authorized_references",
+        resolve,
+    )
+
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=_call(
+            "google_ads_update_keyword_status",
+            {"keywords": keywords, "statuses": [{"status": "PAUSED"}, {"status": "ENABLED"}]},
+        ),
+        override_args={
+            "keywords": keywords,
+            "statuses": [{"status": "ENABLED"}, {"status": "PAUSED"}],
+        },
+    )
+
+    assert result == {
+        "keywords": canonical,
+        "statuses": [{"status": "ENABLED"}, {"status": "PAUSED"}],
+    }
+    resolve.assert_awaited_once()
+
+
 @pytest.mark.parametrize(
     ("rows", "error"),
     [
         (
             [{"text": "new", "match_type": "EXACT", "undeclared": "value"}],
-            "exactly the declared columns",
+            "no undeclared columns",
         ),
         ([{"text": "new", "match_type": "BROAD"}], "allowed options"),
         ([{"text": ["nested"], "match_type": "EXACT"}], "text or numbers"),
@@ -301,6 +365,7 @@ async def test_records_override_rejects_invalid_rows(monkeypatch, rows, error: s
     ("rows", "error"),
     [
         ([], "at least 1 row"),
+        ([{"match_type": "EXACT"}], "required columns"),
         ([{"text": "   ", "match_type": "EXACT"}], "must not be blank"),
     ],
 )
@@ -346,6 +411,26 @@ async def test_records_approval_enforces_completeness_without_an_override(monkey
             ),
             override_args=None,
         )
+
+
+async def test_records_approval_allows_an_omitted_optional_column(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: _records_definition(min_rows=1, required_text=True),
+    )
+    rows = [{"text": "keyword"}]
+
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=_call("records_write", {"rows": rows}),
+        override_args=None,
+    )
+
+    assert result is None
 
 
 @pytest.mark.parametrize("text", ["", "   ", 0, -2, 1.5])

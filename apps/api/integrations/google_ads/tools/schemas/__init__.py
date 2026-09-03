@@ -25,6 +25,7 @@ from .positive_keywords import (
     GoogleAdsAddPositiveKeywordsOutput,
     GoogleAdsCpcBid,
     GoogleAdsPositiveKeywordEntry,
+    GoogleAdsUpdatePositiveKeywordStatusOutput,
 )
 from .recommendations import (
     GoogleAdsApplyRecommendationsOutput,
@@ -75,4 +76,5 @@ __all__ = [
     "GoogleAdsRunReportOutput",
     "GoogleAdsTotalBudgetAmount",
     "GoogleAdsUpdateCampaignBudgetAmountsOutput",
+    "GoogleAdsUpdatePositiveKeywordStatusOutput",
 ]

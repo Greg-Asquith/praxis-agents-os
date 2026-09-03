@@ -1872,6 +1872,7 @@ describe("Google Ads tool presenters", () => {
       "google-ads-add-positive-keywords",
       "google-ads-create-campaign-budget",
       "google-ads-update-campaign-budget-amounts",
+      "google-ads-update-positive-keyword-status",
       "google-ads-assign-campaign-budgets",
       "google-ads-remove-campaign-budgets",
     ])

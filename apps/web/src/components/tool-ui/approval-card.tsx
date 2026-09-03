@@ -17,6 +17,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
@@ -260,6 +261,30 @@ export function ToolApprovalCard({
         {footer}
       </div>
     </section>
+  )
+}
+
+export function ToolApprovalLoadingCard() {
+  return (
+    <div aria-busy="true">
+      <ToolApprovalCard
+        decision="pending"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Skeleton className="h-8 w-16 rounded-md" />
+            <Skeleton className="h-8 w-28 rounded-md" />
+          </div>
+        }
+        prompt="Loading the action details and safety checks…"
+        title="Preparing approval"
+      >
+        <div className="grid gap-2">
+          <Skeleton className="h-14 w-full rounded-md" />
+          <Skeleton className="h-14 w-full rounded-md" />
+        </div>
+        <span className="sr-only">Loading approval request</span>
+      </ToolApprovalCard>
+    </div>
   )
 }
 

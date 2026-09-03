@@ -28,6 +28,7 @@ async def list_positive_keywords(
     keyword_match_types: Sequence[str] = (),
     search: str | None = None,
     minimum_id: int | None = None,
+    minimum_ad_group_id: int | None = None,
     minimum_id_inclusive: bool = False,
     limit: int,
 ) -> list[Mapping[str, Any]]:
@@ -75,11 +76,30 @@ async def list_positive_keywords(
         filters.append(
             f"ad_group_criterion.keyword.text LIKE '%{escape_gaql_like_literal(search.strip())}%'"
         )
-    if boundary_filter := entity_id_boundary_filter(
-        "ad_group_criterion.criterion_id",
-        minimum_id=minimum_id,
-        inclusive=minimum_id_inclusive,
-    ):
+    if minimum_ad_group_id is None:
+        boundary_filter = entity_id_boundary_filter(
+            "ad_group_criterion.criterion_id",
+            minimum_id=minimum_id,
+            inclusive=minimum_id_inclusive,
+        )
+    else:
+        if minimum_id is None:
+            raise ValueError("Google Ads keyword cursor requires a criterion id")
+        criterion_after = entity_id_boundary_filter(
+            "ad_group_criterion.criterion_id",
+            minimum_id=minimum_id,
+            inclusive=False,
+        )
+        ad_group_after = entity_id_boundary_filter(
+            "ad_group.id",
+            minimum_id=minimum_ad_group_id,
+            inclusive=minimum_id_inclusive,
+        )
+        boundary_filter = (
+            f"({criterion_after} OR (ad_group_criterion.criterion_id = {minimum_id} "
+            f"AND {ad_group_after}))"
+        )
+    if boundary_filter:
         filters.append(boundary_filter)
     query = (
         "SELECT campaign.id, campaign.name, ad_group.id, ad_group.name, "  # noqa: S608 -- digit-only ids and escaped search
@@ -88,7 +108,7 @@ async def list_positive_keywords(
         "ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, "
         "ad_group_criterion.cpc_bid_micros FROM ad_group_criterion "
         f"WHERE {' AND '.join(filters)} "
-        f"ORDER BY ad_group_criterion.criterion_id LIMIT {limit}"
+        f"ORDER BY ad_group_criterion.criterion_id, ad_group.id LIMIT {limit}"
     )
     payload = await client.post(
         f"customers/{normalized_customer_id}/googleAds:searchStream",

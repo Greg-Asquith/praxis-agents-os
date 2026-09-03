@@ -3,18 +3,22 @@
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import {
+  GOOGLE_ADS_ID_PATTERN,
+  parsePositiveKeywordInput,
+  POSITIVE_KEYWORD_MATCH_TYPES,
+  type PositiveKeywordInput,
+  type PositiveKeywordMatchType,
+} from "@/integrations/google_ads/lib/positive-keywords"
+import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { formatCurrencyAmount, titleCaseToken } from "@/lib/format"
-import { isNonNegativeInteger, isRecord, parsePositiveDecimal } from "@/lib/guards"
+import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
-const MATCH_TYPES = ["EXACT", "PHRASE", "BROAD"] as const
 const OUTCOMES = ["added", "skipped_existing", "failed", "unverified"] as const
-const DIGITS_PATTERN = /^\d+$/
 const CURRENCY_PATTERN = /^[A-Z]{3}$/
 
-type MatchType = (typeof MATCH_TYPES)[number]
 type KeywordOutcome = (typeof OUTCOMES)[number]
 
 type AdGroupReference = {
@@ -25,16 +29,10 @@ type AdGroupReference = {
   label: string
 }
 
-type KeywordInput = {
-  cpcBid: string | null
-  matchType: MatchType
-  text: string
-}
-
 type AddKeywordArgs = {
   accounts: Map<string, { currencyCode: string; label: string }>
   adGroups: AdGroupReference[]
-  keywords: KeywordInput[]
+  keywords: PositiveKeywordInput[]
 }
 
 type AddKeywordResultRow = {
@@ -45,7 +43,7 @@ type AddKeywordResultRow = {
   cpcBid: string | null
   errorCode: string | null
   externalRef: string | null
-  matchType: MatchType
+  matchType: PositiveKeywordMatchType
   message: string | null
   outcome: KeywordOutcome
   previousState: "absent" | "existing"
@@ -249,10 +247,10 @@ function addKeywordArgs(value: unknown): AddKeywordArgs | null {
     identities.add(identity)
     adGroups.push(parsed)
   }
-  const keywords: KeywordInput[] = []
+  const keywords: PositiveKeywordInput[] = []
   const keywordKeys = new Set<string>()
   for (const item of value["keywords"]) {
-    const parsed = parseKeywordInput(item)
+    const parsed = parsePositiveKeywordInput(item)
     if (!parsed) return null
     const identity = `${parsed.text.toLowerCase()}:${parsed.matchType}`
     if (keywordKeys.has(identity)) return null
@@ -266,7 +264,7 @@ function addKeywordArgs(value: unknown): AddKeywordArgs | null {
       if (
         isRecord(item) &&
         typeof item["customer_id"] === "string" &&
-        DIGITS_PATTERN.test(item["customer_id"]) &&
+        GOOGLE_ADS_ID_PATTERN.test(item["customer_id"]) &&
         typeof item["label"] === "string" &&
         typeof item["currency_code"] === "string" &&
         CURRENCY_PATTERN.test(item["currency_code"])
@@ -290,11 +288,11 @@ function parseAdGroup(value: unknown): AdGroupReference | null {
     !isRecord(value) ||
     (value["entity_kind"] != null && value["entity_kind"] !== "google_ads_ad_group") ||
     typeof value["customer_id"] !== "string" ||
-    !DIGITS_PATTERN.test(value["customer_id"]) ||
+    !GOOGLE_ADS_ID_PATTERN.test(value["customer_id"]) ||
     typeof value["campaign_id"] !== "string" ||
-    !DIGITS_PATTERN.test(value["campaign_id"]) ||
+    !GOOGLE_ADS_ID_PATTERN.test(value["campaign_id"]) ||
     typeof value["ad_group_id"] !== "string" ||
-    !DIGITS_PATTERN.test(value["ad_group_id"]) ||
+    !GOOGLE_ADS_ID_PATTERN.test(value["ad_group_id"]) ||
     typeof value["label"] !== "string"
   )
     return null
@@ -307,30 +305,6 @@ function parseAdGroup(value: unknown): AdGroupReference | null {
         : "Campaign",
     customerId: value["customer_id"],
     label: value["label"].trim() || value["ad_group_id"],
-  }
-}
-
-function parseKeywordInput(value: unknown): KeywordInput | null {
-  const text =
-    isRecord(value) && typeof value["text"] === "string"
-      ? value["text"].trim().replace(/\s+/g, " ")
-      : ""
-  const cpcBid = isRecord(value) ? value["cpc_bid"] : null
-  if (
-    !isRecord(value) ||
-    text.length < 1 ||
-    text.length > 80 ||
-    !isMatchType(value["match_type"]) ||
-    (cpcBid != null &&
-      (typeof cpcBid !== "string" ||
-        (cpcBid.trim().length > 0 && parsePositiveDecimal(cpcBid) === null)))
-  )
-    return null
-  if (text.split(" ").length > 10) return null
-  return {
-    cpcBid: typeof cpcBid === "string" && cpcBid.trim() ? cpcBid.trim() : null,
-    matchType: value["match_type"],
-    text,
   }
 }
 
@@ -375,20 +349,21 @@ function parseResultRow(value: unknown, outcome: KeywordOutcome): AddKeywordResu
     !isRecord(value) ||
     value["outcome"] !== outcome ||
     typeof value["text"] !== "string" ||
-    !isMatchType(value["match_type"]) ||
+    typeof value["match_type"] !== "string" ||
+    !POSITIVE_KEYWORD_MATCH_TYPES.has(value["match_type"] as PositiveKeywordMatchType) ||
     (value["previous_state"] !== "absent" && value["previous_state"] !== "existing") ||
-    !isOptionalNullableString(value["cpc_bid"]) ||
-    !isOptionalNullableString(value["external_ref"]) ||
-    !isOptionalNullableString(value["error_code"]) ||
-    !isOptionalNullableString(value["message"])
+    (value["cpc_bid"] !== undefined && !isNullableString(value["cpc_bid"])) ||
+    (value["external_ref"] !== undefined && !isNullableString(value["external_ref"])) ||
+    (value["error_code"] !== undefined && !isNullableString(value["error_code"])) ||
+    (value["message"] !== undefined && !isNullableString(value["message"]))
   )
     return null
   if (
     typeof value["campaign_id"] !== "string" ||
-    !DIGITS_PATTERN.test(value["campaign_id"]) ||
+    !GOOGLE_ADS_ID_PATTERN.test(value["campaign_id"]) ||
     typeof value["campaign_name"] !== "string" ||
     typeof value["ad_group_id"] !== "string" ||
-    !DIGITS_PATTERN.test(value["ad_group_id"]) ||
+    !GOOGLE_ADS_ID_PATTERN.test(value["ad_group_id"]) ||
     typeof value["ad_group_name"] !== "string"
   )
     return null
@@ -400,18 +375,10 @@ function parseResultRow(value: unknown, outcome: KeywordOutcome): AddKeywordResu
     cpcBid: value["cpc_bid"] ?? null,
     errorCode: value["error_code"] ?? null,
     externalRef: value["external_ref"] ?? null,
-    matchType: value["match_type"],
+    matchType: value["match_type"] as PositiveKeywordMatchType,
     message: value["message"] ?? null,
     outcome,
     previousState: value["previous_state"],
     text: value["text"],
   }
-}
-
-function isOptionalNullableString(value: unknown): value is string | null | undefined {
-  return value === undefined || value === null || typeof value === "string"
-}
-
-function isMatchType(value: unknown): value is MatchType {
-  return typeof value === "string" && MATCH_TYPES.includes(value as MatchType)
 }

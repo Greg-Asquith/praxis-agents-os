@@ -17,6 +17,7 @@ import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/r
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
 import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
+import { googleAdsUpdatePositiveKeywordStatusPresenter } from "@/integrations/google_ads/presenters/update-positive-keyword-status"
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
@@ -36,6 +37,7 @@ export default {
     googleAdsAddPositiveKeywordsPresenter,
     googleAdsCreateCampaignBudgetPresenter,
     googleAdsUpdateCampaignBudgetAmountsPresenter,
+    googleAdsUpdatePositiveKeywordStatusPresenter,
     googleAdsAssignCampaignBudgetsPresenter,
     googleAdsRemoveCampaignBudgetsPresenter,
   ],

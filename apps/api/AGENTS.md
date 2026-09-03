@@ -286,7 +286,8 @@ follows:
   identity source through `OAuthProtocol`; the shared flow keeps state
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
-  writes for recommendations, negative keywords, positive-keyword creation,
+  writes for recommendations, negative keywords, positive-keyword creation and
+  status changes,
   campaign status, device bid adjustments, and campaign-budget creation,
   amount updates, assignment, and unused-budget removal. Keyword and budget
   writes re-read provider state after approval

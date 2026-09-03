@@ -2,7 +2,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { ToolApprovalCard } from "@/components/tool-ui/approval-card"
+import { ToolApprovalCard, ToolApprovalLoadingCard } from "@/components/tool-ui/approval-card"
 
 describe("ToolApprovalCard", () => {
   it("renders an undecided request as an always-open approval surface", () => {
@@ -38,5 +38,14 @@ describe("ToolApprovalCard", () => {
     expect(html).toContain("Approved")
     expect(html).toContain("Waiting for your decision on 1 more request.")
     expect(html).not.toContain("Requires Approval")
+  })
+
+  it("uses the approval-card structure while recovery details load", () => {
+    const html = renderToStaticMarkup(createElement(ToolApprovalLoadingCard))
+
+    expect(html).toContain("Preparing approval")
+    expect(html).toContain("Requires Approval")
+    expect(html).toContain('aria-busy="true"')
+    expect(html).toContain("Loading approval request")
   })
 })

@@ -94,10 +94,10 @@ async def validate_and_canonicalize_override_args(
             continue
         values = value if field.format == "entity_list" and isinstance(value, list) else [value]
         if field.format == "entity_list" and (
-            not isinstance(value, list) or not value or len(value) > 50
+            not isinstance(value, list) or not value or len(value) > 500
         ):
             raise AppValidationError(
-                "Entity list selections must contain between 1 and 50 targets",
+                "Entity list selections must contain between 1 and 500 targets",
                 field=field.key,
             )
         if field.format == "entity" and not isinstance(value, Mapping):
@@ -158,9 +158,13 @@ def _validate_records_override(
     }
     required_columns = {column.key for column in columns if column.required}
     for row_index, row in enumerate(value):
-        if not isinstance(row, Mapping) or set(row) != declared_keys:
+        if (
+            not isinstance(row, Mapping)
+            or not set(row).issubset(declared_keys)
+            or not required_columns.issubset(row)
+        ):
             raise AppValidationError(
-                "Every record row must contain exactly the declared columns",
+                "Every record row must contain required columns and no undeclared columns",
                 field=field_key,
                 details={"row": row_index},
             )

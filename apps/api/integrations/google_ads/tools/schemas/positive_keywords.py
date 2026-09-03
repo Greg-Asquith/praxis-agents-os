@@ -125,3 +125,42 @@ class GoogleAdsAddPositiveKeywordsEntry(IntegrationFanOutEntry):
 
 class GoogleAdsAddPositiveKeywordsOutput(IntegrationFanOutOutput):
     results: list[GoogleAdsAddPositiveKeywordsEntry]
+
+
+class GoogleAdsPositiveKeywordStatusOutcome(GoogleAdsStrictModel):
+    keyword: GoogleAdsKeywordReference
+    previous_status: Literal["ENABLED", "PAUSED"]
+    requested_status: Literal["ENABLED", "PAUSED"]
+    outcome: Literal["updated", "already_set", "failed", "unverified"]
+    external_ref: str | None = None
+    error_code: str | None = None
+    message: str | None = None
+
+
+class GoogleAdsPositiveKeywordStatusCounts(GoogleAdsStrictModel):
+    updated: int = Field(ge=0)
+    already_set: int = Field(ge=0)
+    failed: int = Field(ge=0)
+    unverified: int = Field(ge=0)
+
+
+class GoogleAdsPositiveKeywordStatusSamples(GoogleAdsStrictModel):
+    updated: list[GoogleAdsPositiveKeywordStatusOutcome]
+    already_set: list[GoogleAdsPositiveKeywordStatusOutcome]
+    failed: list[GoogleAdsPositiveKeywordStatusOutcome]
+    unverified: list[GoogleAdsPositiveKeywordStatusOutcome]
+
+
+class GoogleAdsUpdatePositiveKeywordStatusData(GoogleAdsStrictModel):
+    counts: GoogleAdsPositiveKeywordStatusCounts
+    samples: GoogleAdsPositiveKeywordStatusSamples
+    samples_truncated: bool
+    audit_note: str | None = None
+
+
+class GoogleAdsUpdatePositiveKeywordStatusEntry(IntegrationFanOutEntry):
+    data: GoogleAdsUpdatePositiveKeywordStatusData | None = None
+
+
+class GoogleAdsUpdatePositiveKeywordStatusOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsUpdatePositiveKeywordStatusEntry]
