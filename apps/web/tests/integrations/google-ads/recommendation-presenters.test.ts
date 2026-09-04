@@ -229,7 +229,7 @@ describe("Google Ads recommendation presenters", () => {
     expect(html).toContain("New Budget Amount: 2.5 account currency units")
     expect(html).toContain("Clicks: 100 → 125")
     expect(html).toContain("Cost: 50 account currency units → 60 account currency units")
-    expect(html).toContain("estimates from Google Ads, not Praxis scores")
+    expect(html).toContain("estimates from Google Ads.")
     expect(html).toContain("Google Ads rejected this keyword.")
     expect(html).toContain("Policy Finding")
     expect(html).toContain("Download Report CSV")

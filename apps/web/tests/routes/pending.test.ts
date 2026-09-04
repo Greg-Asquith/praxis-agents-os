@@ -10,7 +10,7 @@ describe("PendingRoute", () => {
 
     expect(html).toContain('role="status"')
     expect(html).toContain("Starting up")
-    expect(html).toContain("Praxis is getting ready")
+    expect(html).toContain("The system is getting ready")
     expect(html).toContain("continues automatically")
     expect(html).toContain("min-h-dvh")
   })

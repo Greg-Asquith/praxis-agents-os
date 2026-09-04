@@ -28,8 +28,8 @@ export function NotionConnectHelp({ provider }: { provider: IntegrationProvider 
         <div className="grid gap-1">
           <h2 className="text-sm font-medium">Connect your own account</h2>
           <p className="text-muted-foreground text-sm">
-            Other users authorise separately with their own Notion account, so each
-            connection follows that person's Notion access.
+            Other users authorise separately with their own Notion account, so each connection
+            follows that person's Notion access.
           </p>
         </div>
       </div>

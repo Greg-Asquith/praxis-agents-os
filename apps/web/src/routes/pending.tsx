@@ -57,7 +57,7 @@ function StartupOrbit() {
       <div className="border-border absolute inset-0 rounded-full border" />
       <div className="border-border absolute inset-4 rotate-12 rounded-full border" />
 
-      <div className="absolute inset-0 animate-spin animation-duration-[5s] motion-reduce:animate-none">
+      <div className="animation-duration-[5s] absolute inset-0 animate-spin motion-reduce:animate-none">
         <span className="bg-agent-2 absolute top-1/2 left-0 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full" />
         <span className="bg-agent-6 absolute top-0 left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full" />
         <span className="bg-agent-8 absolute right-[7%] bottom-[14%] size-2 -translate-y-1/2 rounded-full" />
