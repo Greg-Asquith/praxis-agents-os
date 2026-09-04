@@ -62,6 +62,11 @@ def _records_definition(
                             label="Match Type",
                             options=("EXACT", "PHRASE"),
                             required=required_match_type,
+                            default_value="EXACT",
+                        ),
+                        ToolFieldColumn(key="tags", label="Tags", format="list"),
+                        ToolFieldColumn(
+                            key="attributes", label="Attributes", format="keyvalue", max_entries=3
                         ),
                     ),
                 ),
@@ -333,7 +338,21 @@ async def test_positive_keyword_status_resume_preserves_edited_positional_rows(m
             "no undeclared columns",
         ),
         ([{"text": "new", "match_type": "BROAD"}], "allowed options"),
-        ([{"text": ["nested"], "match_type": "EXACT"}], "text or numbers"),
+        ([{"text": ["nested"], "match_type": "EXACT"}], "declared format"),
+        (
+            [{"text": "new", "match_type": "EXACT", "tags": ["valid", 2]}],
+            "declared format",
+        ),
+        (
+            [
+                {
+                    "text": "new",
+                    "match_type": "EXACT",
+                    "attributes": {"nested": {"value": "invalid"}},
+                }
+            ],
+            "declared format",
+        ),
         (
             [{"text": "row", "match_type": "EXACT"}] * (RECORDS_FIELD_MAX_ROWS + 1),
             "cannot contain more than",
@@ -359,6 +378,33 @@ async def test_records_override_rejects_invalid_rows(monkeypatch, rows, error: s
             ),
             override_args={"rows": rows},
         )
+
+
+async def test_records_override_accepts_list_and_keyvalue_cells(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: _records_definition(),
+    )
+    rows = [
+        {
+            "text": "new",
+            "match_type": "EXACT",
+            "tags": ["brand", "priority"],
+            "attributes": {"enabled": True, "score": 2.5, "note": "reviewed"},
+        }
+    ]
+
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=_call("records_write", {"rows": [{"text": "old", "match_type": "EXACT"}]}),
+        override_args={"rows": rows},
+    )
+
+    assert result == {"rows": rows}
 
 
 @pytest.mark.parametrize(
@@ -431,6 +477,33 @@ async def test_records_approval_allows_an_omitted_optional_column(monkeypatch) -
     )
 
     assert result is None
+
+
+async def test_records_approval_enforces_declared_keyvalue_entry_limit(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: _records_definition(min_rows=1, required_text=True),
+    )
+    with pytest.raises(AppValidationError, match="more than 3 entries"):
+        await validate_and_canonicalize_override_args(
+            AsyncMock(),
+            actor=SimpleNamespace(),
+            workspace=SimpleNamespace(),
+            membership=SimpleNamespace(),
+            run=SimpleNamespace(conversation_id=uuid4()),
+            tool_call=_call(
+                "records_write",
+                {
+                    "rows": [
+                        {
+                            "text": "keyword",
+                            "attributes": {"a": "1", "b": "2", "c": "3", "d": "4"},
+                        }
+                    ]
+                },
+            ),
+            override_args=None,
+        )
 
 
 @pytest.mark.parametrize("text", ["", "   ", 0, -2, 1.5])

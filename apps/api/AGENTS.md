@@ -290,8 +290,12 @@ follows:
   status changes,
   campaign status, device bid adjustments, and campaign-budget creation,
   amount updates, assignment, and unused-budget removal. Keyword and budget
-  writes re-read provider state after approval
-  and retain exact outcome evidence through the shared mutation ledger. Budget
+  writes re-read provider state after approval and retain exact outcome evidence
+  through the shared mutation ledger. Positive-keyword creation accepts only
+  Search-standard and Display-standard targets, and it checks optional CPC bids
+  against the live campaign strategy and Display custom-bid dimension. URL
+  custom-parameter names use ASCII letters and numbers, are unique ignoring
+  case, and use Google Ads' UTF-8 byte limits. Budget
   removal fails before mutation when any selected budget has a live campaign
   reference.
   BigQuery contributes service-account dataset discovery, a job-synchronized

@@ -48,7 +48,9 @@ async def list_ad_groups(
         filters.append(boundary_filter)
     where_clause = f" WHERE {' AND '.join(filters)}" if filters else ""
     query = (
-        "SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id, campaign.name "  # noqa: S608 -- digit-only ids and escaped search
+        "SELECT ad_group.id, ad_group.name, ad_group.status, ad_group.type, "  # noqa: S608 -- digit-only ids and escaped search
+        "ad_group.display_custom_bid_dimension, campaign.id, campaign.name, "
+        "campaign.advertising_channel_type, campaign.bidding_strategy_type "
         f"FROM ad_group{where_clause} "
         f"ORDER BY ad_group.id LIMIT {limit}"
     )

@@ -432,7 +432,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_add_ad_group_negative_keywords": "external_write",
         "google_ads_add_campaign_negative_keywords": "external_write",
         "google_ads_add_negative_keywords": "external_write",
-        "google_ads_add_keywords": "external_write",
+        "google_ads_create_keywords": "external_write",
         "google_ads_apply_recommendations": "external_write",
         "google_ads_assign_campaign_budgets": "external_write",
         "google_ads_create_campaign_budget": "external_write",
@@ -509,7 +509,7 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
-        "google_ads_add_keywords",
+        "google_ads_create_keywords",
         "google_ads_apply_recommendations",
         "google_ads_assign_campaign_budgets",
         "google_ads_create_campaign_budget",
@@ -947,6 +947,33 @@ def test_validate_definition_accepts_editable_records_columns() -> None:
             None,
             "column required must be a boolean",
         ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(
+                    ToolFieldColumn(
+                        key="status",
+                        label="Status",
+                        options=("ENABLED",),
+                        default_value="PAUSED",
+                    ),
+                ),
+            ),
+            None,
+            "defaults must use an allowed option",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(ToolFieldColumn(key="text", label="Text", max_entries=8),),
+            ),
+            None,
+            "max_entries requires a positive keyvalue limit",
+        ),
     ],
 )
 def test_validate_definition_rejects_invalid_records_presentation(
@@ -995,6 +1022,7 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
                         key="match_type",
                         label="Match Type",
                         options=("EXACT", "PHRASE"),
+                        default_value="EXACT",
                     ),
                 ),
             ),
@@ -1011,16 +1039,24 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
         {
             "key": "text",
             "label": "Keyword",
+            "format": "text",
             "options": [],
             "placeholder": "",
             "required": True,
+            "secondary": False,
+            "default_value": None,
+            "max_entries": None,
         },
         {
             "key": "match_type",
             "label": "Match Type",
+            "format": "text",
             "options": ["EXACT", "PHRASE"],
             "placeholder": "",
             "required": False,
+            "secondary": False,
+            "default_value": "EXACT",
+            "max_entries": None,
         },
     ]
 

@@ -30,8 +30,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
-  Google Ads positive-keyword creation groups approval context by campaign and
-  shows one guarded, exportable outcome row per ad-group and keyword pair. Its
+  Google Ads positive-keyword creation groups approval context by campaign,
+  keeps optional CPC and URL fields behind each row's progressive disclosure,
+  applies provider byte and dependency checks before approval, and shows
+  requested settings separately from an observed duplicate. It shows one
+  guarded, exportable outcome row per ad-group and keyword pair. Its
   status action shows explicit before-and-after state and one exportable row per
   selected criterion.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;

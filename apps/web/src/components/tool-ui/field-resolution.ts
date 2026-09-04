@@ -27,11 +27,15 @@ export type ToolFieldDefinition = {
 }
 
 export type ToolFieldColumn = {
+  default_value?: number | string | null
+  format?: "text" | "number" | "list" | "keyvalue"
   key: string
   label: string
+  max_entries?: number | null
   options: string[]
   placeholder: string
   required: boolean
+  secondary?: boolean
 }
 
 export type ResolvedToolField = {
@@ -224,24 +228,43 @@ function toolFieldRecordRows(
   const columnKeys = new Set(columns.map((column) => column.key))
   const rows: ResolvedRecordRow[] = []
   for (const row of value) {
-    if (
-      !isPlainRecord(row) ||
-      Object.keys(row).length !== columnKeys.size ||
-      Object.keys(row).some((key) => !columnKeys.has(key))
-    ) {
+    if (!isPlainRecord(row) || Object.keys(row).some((key) => !columnKeys.has(key))) {
       return null
     }
     const cells: ResolvedRecordCell[] = []
     for (const column of columns) {
-      const item = row[column.key]
-      if (typeof item !== "string" && !(typeof item === "number" && Number.isFinite(item))) {
-        return null
-      }
-      cells.push({ key: column.key, label: column.label, value: String(item) })
+      if (column.required && !Object.hasOwn(row, column.key)) return null
+      const resolved = resolveRecordCell(row[column.key], column)
+      if (resolved === null) return null
+      cells.push({ key: column.key, label: column.label, value: resolved })
     }
     rows.push({ cells })
   }
   return rows
+}
+
+function resolveRecordCell(value: unknown, column: ToolFieldColumn): string | null {
+  if (value === undefined || value === null || value === "") return column.required ? null : "—"
+  if (column.format === "list") {
+    if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null
+    return value.length === 0 ? "—" : value.join(", ")
+  }
+  if (column.format === "keyvalue") {
+    if (
+      !isPlainRecord(value) ||
+      Object.values(value).some(
+        (item) =>
+          typeof item !== "string" &&
+          typeof item !== "boolean" &&
+          !(typeof item === "number" && Number.isFinite(item))
+      )
+    )
+      return null
+    const entries = toolFieldKeyValueEntries(value)
+    if (entries === null) return null
+    return entries.length === 0 ? "—" : `${String(entries.length)} fields`
+  }
+  return scalarToolFieldDisplayValue(value) ?? (column.required ? null : "—")
 }
 
 function keyValueDisplayValue(value: unknown): string {

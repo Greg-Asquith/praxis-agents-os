@@ -106,7 +106,12 @@ async def list_positive_keywords(
         "ad_group.status, ad_group_criterion.resource_name, "
         "ad_group_criterion.criterion_id, ad_group_criterion.status, "
         "ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, "
-        "ad_group_criterion.cpc_bid_micros FROM ad_group_criterion "
+        "ad_group_criterion.bid_modifier, ad_group_criterion.cpc_bid_micros, "
+        "ad_group_criterion.cpm_bid_micros, ad_group_criterion.cpv_bid_micros, "
+        "ad_group_criterion.percent_cpc_bid_micros, ad_group_criterion.final_urls, "
+        "ad_group_criterion.final_mobile_urls, ad_group_criterion.final_url_suffix, "
+        "ad_group_criterion.tracking_url_template, ad_group_criterion.url_custom_parameters "
+        "FROM ad_group_criterion "
         f"WHERE {' AND '.join(filters)} "
         f"ORDER BY ad_group_criterion.criterion_id, ad_group.id LIMIT {limit}"
     )

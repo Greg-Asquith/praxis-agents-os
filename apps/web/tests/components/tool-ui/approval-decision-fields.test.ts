@@ -8,12 +8,16 @@ import {
   type ApprovalField,
 } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
+import { resolveToolField } from "@/components/tool-ui/field-resolution"
+import { nextKeyValueFieldName } from "@/components/tool-ui/keyvalue-field-values"
 import {
   addRecordRow,
+  configuredRecordCellCount,
   keyedRecordRows,
   normalizeRecordNumericInput,
   recordRowsValidity,
   removeRecordRow,
+  toggleRecordRowExpansion,
   updateRecordCell,
 } from "@/components/tool-ui/records-field-values"
 
@@ -405,15 +409,12 @@ describe("ApprovalRequestFields", () => {
     const original = [{ text: "jobs", score: 2 }]
 
     const added = addRecordRow(original, columns)
-    expect(added).toEqual([
-      { text: "jobs", score: 2 },
-      { text: "", score: "" },
-    ])
+    expect(added).toEqual([{ text: "jobs", score: 2 }, { text: "" }])
     expect(updateRecordCell(added, 0, "score", 3.5)).toEqual([
       { text: "jobs", score: 3.5 },
-      { text: "", score: "" },
+      { text: "" },
     ])
-    expect(removeRecordRow(added, 0)).toEqual([{ text: "", score: "" }])
+    expect(removeRecordRow(added, 0)).toEqual([{ text: "" }])
     expect(original).toEqual([{ text: "jobs", score: 2 }])
   })
 
@@ -465,6 +466,180 @@ describe("ApprovalRequestFields", () => {
 
     expect(keyedRecordRows(original, keys).map((row) => row.key)).toEqual(keys)
     expect(keyedRecordRows(updated, keys).map((row) => row.key)).toEqual(keys)
+  })
+
+  it("preserves typed list and key-value cells in secondary record columns", () => {
+    const columns = [
+      {
+        key: "text",
+        label: "Keyword",
+        options: [],
+        placeholder: "",
+        required: true,
+        format: "text" as const,
+        secondary: false,
+      },
+      {
+        key: "final_urls",
+        label: "Final URLs",
+        options: [],
+        placeholder: "",
+        required: false,
+        format: "list" as const,
+        secondary: true,
+      },
+      {
+        key: "url_custom_parameters",
+        label: "URL Custom Parameters",
+        options: [],
+        placeholder: "",
+        required: false,
+        format: "keyvalue" as const,
+        secondary: true,
+      },
+    ]
+    const row = {
+      text: "trail shoes",
+      final_urls: ["https://example.com/trail"],
+      url_custom_parameters: { audience: "trail" },
+    }
+
+    expect(recordRowsValidity([row], columns, 1)).toEqual({ isRecords: true, error: null })
+    expect(addRecordRow([], columns)).toEqual([
+      { text: "", final_urls: [], url_custom_parameters: {} },
+    ])
+    expect(
+      configuredRecordCellCount(
+        row,
+        columns.filter((column) => column.secondary)
+      )
+    ).toBe(2)
+  })
+
+  it("renders omitted optional record cells without accepting malformed rows", () => {
+    const columns = [
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+      { key: "status", label: "Status", options: ["ENABLED"], placeholder: "", required: false },
+      {
+        key: "final_urls",
+        label: "Final URLs",
+        options: [],
+        placeholder: "",
+        required: false,
+        format: "list" as const,
+      },
+      {
+        key: "parameters",
+        label: "Parameters",
+        options: [],
+        placeholder: "",
+        required: false,
+        format: "keyvalue" as const,
+      },
+    ]
+    const field = { columns, format: "records" as const, key: "keywords", label: "Keywords" }
+    const compact = resolveToolField(field, [{ text: "shoes" }])
+    const projected = resolveToolField(field, [
+      { text: "shoes", status: "", final_urls: [], parameters: {} },
+    ])
+
+    expect(compact?.records?.[0]?.cells.map((cell) => cell.value)).toEqual(["shoes", "—", "—", "—"])
+    expect(projected?.records?.[0]?.cells.map((cell) => cell.value)).toEqual([
+      "shoes",
+      "—",
+      "—",
+      "—",
+    ])
+    expect(resolveToolField(field, [{ status: "ENABLED" }])).toBeNull()
+    expect(resolveToolField(field, [{ text: "shoes", unknown: "x" }])).toBeNull()
+    expect(resolveToolField(field, [{ text: "shoes", final_urls: [1] }])).toBeNull()
+    expect(resolveToolField(field, [{ text: "shoes", parameters: { nested: {} } }])).toBeNull()
+  })
+
+  it("applies declared row defaults and key-value entry limits", () => {
+    const columns = [
+      { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+      {
+        default_value: "ENABLED",
+        key: "status",
+        label: "Status",
+        options: ["ENABLED", "PAUSED"],
+        placeholder: "",
+        required: false,
+      },
+      {
+        format: "keyvalue" as const,
+        key: "parameters",
+        label: "Parameters",
+        max_entries: 1,
+        options: [],
+        placeholder: "",
+        required: false,
+      },
+    ]
+    expect(addRecordRow([], columns)).toEqual([{ parameters: {}, status: "ENABLED", text: "" }])
+    expect(
+      recordRowsValidity([{ text: "shoes", parameters: { one: "1", two: "2" } }], columns, 1)
+    ).toEqual({
+      error: "Parameters can contain at most 1 entries in row 1.",
+      isRecords: true,
+    })
+    expect(nextKeyValueFieldName({ constructor: "x" }, [])).toBe("field2")
+    expect(nextKeyValueFieldName({ field2: "x" }, ["field1"])).toBe("field3")
+  })
+
+  it("discloses configured secondary fields and toggles row expansion", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "advanced-records",
+        args: {
+          rows: [
+            {
+              text: "trail shoes",
+              final_urls: ["https://example.com/trail"],
+              cpc_bid: "2.50",
+            },
+          ],
+        },
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [
+          {
+            ...approvalField("rows", "Keywords", "records"),
+            editable: true,
+            columns: [
+              { key: "text", label: "Keyword", options: [], placeholder: "", required: true },
+              {
+                key: "cpc_bid",
+                label: "CPC Bid",
+                options: [],
+                placeholder: "",
+                required: false,
+                secondary: true,
+              },
+              {
+                key: "final_urls",
+                label: "Final URLs",
+                options: [],
+                placeholder: "",
+                required: false,
+                format: "list",
+                secondary: true,
+              },
+            ],
+          },
+        ],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toContain("2 configured")
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain("Show more fields in row 1. 2 configured.")
+    const expanded = toggleRecordRowExpansion(new Set<string>(), "row-1")
+    expect(expanded.has("row-1")).toBe(true)
+    expect(toggleRecordRowExpansion(expanded, "row-1").has("row-1")).toBe(false)
   })
 
   it("renders locked record rows through the read-only table", () => {

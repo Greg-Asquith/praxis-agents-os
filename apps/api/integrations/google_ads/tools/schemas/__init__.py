@@ -22,8 +22,8 @@ from .negative_keywords import (
     GoogleAdsRemoveNegativeKeywordsOutput,
 )
 from .positive_keywords import (
-    GoogleAdsAddPositiveKeywordsOutput,
     GoogleAdsCpcBid,
+    GoogleAdsCreatePositiveKeywordsOutput,
     GoogleAdsPositiveKeywordEntry,
     GoogleAdsUpdatePositiveKeywordStatusOutput,
 )
@@ -49,7 +49,6 @@ __all__ = [
     "GoogleAdsAddAdGroupKeywordOutput",
     "GoogleAdsAddCampaignKeywordOutput",
     "GoogleAdsAddNegativeKeywordsOutput",
-    "GoogleAdsAddPositiveKeywordsOutput",
     "GoogleAdsApplyRecommendationsOutput",
     "GoogleAdsAssignCampaignBudgetsOutput",
     "GoogleAdsCampaignBudgetAmount",
@@ -59,6 +58,7 @@ __all__ = [
     "GoogleAdsCpcBid",
     "GoogleAdsCreateCampaignBudgetOutput",
     "GoogleAdsCreateNegativeKeywordListOutput",
+    "GoogleAdsCreatePositiveKeywordsOutput",
     "GoogleAdsDailyBudgetAmount",
     "GoogleAdsDeviceAdjustment",
     "GoogleAdsDeviceBidModifierOutput",

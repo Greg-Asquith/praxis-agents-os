@@ -3,6 +3,7 @@
 import { PlusIcon, XIcon } from "lucide-react"
 
 import type { EditedKeyValue, EditedScalar } from "@/components/tool-ui/edited-values"
+import { nextKeyValueFieldName } from "@/components/tool-ui/keyvalue-field-values"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -18,12 +19,14 @@ export function KeyValueFieldInput({
   disabled,
   id,
   lockedEntries,
+  maxEntries,
   onChange,
   value,
 }: {
   disabled: boolean
   id: string
   lockedEntries: string[]
+  maxEntries?: number
   onChange: (value: EditedKeyValue) => void
   value: EditedKeyValue
 }) {
@@ -33,7 +36,8 @@ export function KeyValueFieldInput({
     const normalized = nextKey.trim()
     if (
       !normalized ||
-      (normalized !== previousKey && (normalized in value || lockedEntries.includes(normalized)))
+      (normalized !== previousKey &&
+        (Object.hasOwn(value, normalized) || lockedEntries.includes(normalized)))
     ) {
       return
     }
@@ -49,12 +53,7 @@ export function KeyValueFieldInput({
   }
 
   function addRow() {
-    let index = entries.length + 1
-    let key = `Field ${String(index)}`
-    while (key in value || lockedEntries.includes(key)) {
-      index += 1
-      key = `Field ${String(index)}`
-    }
+    const key = nextKeyValueFieldName(value, lockedEntries)
     onChange({ ...value, [key]: "" })
   }
 
@@ -113,7 +112,13 @@ export function KeyValueFieldInput({
         ))}
       </div>
       <div className="border-border border-t px-2.5 py-1.5">
-        <Button disabled={disabled} onClick={addRow} size="sm" type="button" variant="ghost">
+        <Button
+          disabled={disabled || (maxEntries !== undefined && entries.length >= maxEntries)}
+          onClick={addRow}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
           <PlusIcon />
           Add Field
         </Button>

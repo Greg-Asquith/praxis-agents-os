@@ -1,7 +1,8 @@
-# apps/api/integrations/google_ads/operations/add_positive_keywords.py
+# apps/api/integrations/google_ads/operations/create_positive_keywords.py
 
 """Create positive Google Ads ad-group keyword criteria."""
 
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -10,6 +11,8 @@ from typing import Any, Literal
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
+from ..constants import GOOGLE_ADS_INT64_MAX
+from .url_custom_parameters import validate_url_custom_parameter_items
 from .list_positive_keywords import list_positive_keyword_pairs
 from .mutation_outcomes import (
     GoogleAdsMutationLedger,
@@ -38,6 +41,12 @@ class GoogleAdsPositiveKeywordCreate:
     text: str
     match_type: KeywordMatchType
     cpc_bid_micros: int | None = None
+    status: Literal["ENABLED", "PAUSED"] = "ENABLED"
+    final_urls: tuple[str, ...] = ()
+    final_mobile_urls: tuple[str, ...] = ()
+    final_url_suffix: str | None = None
+    tracking_url_template: str | None = None
+    url_custom_parameters: tuple[tuple[str, str], ...] = ()
 
 
 def positive_keyword_creation_failure_ledger(
@@ -57,7 +66,7 @@ def positive_keyword_creation_failure_ledger(
     skipped_refs: list[tuple[tuple[tuple[str, str], ...], str]] = []
     submitted = []
     for index, (item, identity) in enumerate(zip(creates, parents, strict=True)):
-        key = (item.ad_group_id, _provider_text_key(item.text), item.match_type)
+        key = positive_keyword_pair_key(item.ad_group_id, item.text, item.match_type)
         if resource_name := existing.get(key):
             skipped_indices[index] = "already exists"
             skipped_refs.append((freeze_fields(identity), resource_name))
@@ -72,7 +81,7 @@ def positive_keyword_creation_failure_ledger(
     )
 
 
-async def add_positive_keywords(
+async def create_positive_keywords(
     client: GoogleAdsClient,
     *,
     customer_id: str,
@@ -92,26 +101,12 @@ async def add_positive_keywords(
         )
     existing = _existing_pairs(existing_rows, customer_id=normalized_customer_id)
     parent_fields = [_identity(item) for item in creates]
-    skipped_indices: dict[int, str] = {}
-    skipped_refs: list[tuple[tuple[tuple[str, str], ...], str]] = []
-    submitted: list[tuple[int, dict[str, str]]] = []
-    operations: list[dict[str, Any]] = []
-    for index, (item, identity) in enumerate(zip(creates, parent_fields, strict=True)):
-        key = (item.ad_group_id, _provider_text_key(item.text), item.match_type)
-        if resource_name := existing.get(key):
-            skipped_indices[index] = "already exists"
-            skipped_refs.append((freeze_fields(identity), resource_name))
-            continue
-        submitted.append((index, identity))
-        create: dict[str, Any] = {
-            "adGroup": f"customers/{normalized_customer_id}/adGroups/{item.ad_group_id}",
-            "status": "ENABLED",
-            "negative": False,
-            "keyword": {"text": item.text, "matchType": item.match_type},
-        }
-        if item.cpc_bid_micros is not None:
-            create["cpcBidMicros"] = str(item.cpc_bid_micros)
-        operations.append({"create": create})
+    skipped_indices, skipped_refs, submitted, operations = _partition_creates(
+        creates,
+        parent_fields,
+        existing,
+        customer_id=normalized_customer_id,
+    )
 
     if not operations:
         return _ledger(
@@ -123,7 +118,7 @@ async def add_positive_keywords(
         )
     payload = await client.post(
         f"customers/{normalized_customer_id}/adGroupCriteria:mutate",
-        operation="add_positive_keywords",
+        operation="create_positive_keywords",
         policy=IntegrationRequestPolicy.MUTATION,
         login_customer_id=login_customer_id,
         json={"operations": operations, "partialFailure": True},
@@ -150,6 +145,67 @@ async def add_positive_keywords(
         submitted=submitted,
         outcomes=outcomes,
     )
+
+
+def _partition_creates(
+    creates: Sequence[GoogleAdsPositiveKeywordCreate],
+    parent_fields: Sequence[dict[str, str]],
+    existing: Mapping[tuple[str, str, str], str],
+    *,
+    customer_id: str,
+) -> tuple[
+    dict[int, str],
+    list[tuple[tuple[tuple[str, str], ...], str]],
+    list[tuple[int, dict[str, str]]],
+    list[dict[str, Any]],
+]:
+    skipped_indices: dict[int, str] = {}
+    skipped_refs: list[tuple[tuple[tuple[str, str], ...], str]] = []
+    submitted: list[tuple[int, dict[str, str]]] = []
+    operations: list[dict[str, Any]] = []
+    for index, (item, identity) in enumerate(zip(creates, parent_fields, strict=True)):
+        resource_name = existing.get(
+            positive_keyword_pair_key(item.ad_group_id, item.text, item.match_type)
+        )
+        if resource_name:
+            skipped_indices[index] = "already exists"
+            skipped_refs.append((freeze_fields(identity), resource_name))
+        else:
+            submitted.append((index, identity))
+            operations.append({"create": _create_payload(item, customer_id=customer_id)})
+    return skipped_indices, skipped_refs, submitted, operations
+
+
+def _create_payload(item: GoogleAdsPositiveKeywordCreate, *, customer_id: str) -> dict[str, Any]:
+    create: dict[str, Any] = {
+        "adGroup": f"customers/{customer_id}/adGroups/{item.ad_group_id}",
+        "status": item.status,
+        "negative": False,
+        "keyword": {"text": item.text, "matchType": item.match_type},
+    }
+    if item.cpc_bid_micros is not None:
+        create["cpcBidMicros"] = str(item.cpc_bid_micros)
+    for field, value in (
+        ("finalUrls", item.final_urls),
+        ("finalMobileUrls", item.final_mobile_urls),
+    ):
+        if value:
+            create[field] = list(value)
+    create.update(
+        {
+            field: value
+            for field, value in (
+                ("finalUrlSuffix", item.final_url_suffix),
+                ("trackingUrlTemplate", item.tracking_url_template),
+            )
+            if value is not None
+        }
+    )
+    if item.url_custom_parameters:
+        create["urlCustomParameters"] = [
+            {"key": key, "value": value} for key, value in item.url_custom_parameters
+        ]
+    return create
 
 
 def _existing_pairs(
@@ -180,7 +236,7 @@ def _existing_pairs(
             and resource_match.group("ad_group") == ad_group_id
         ):
             existing.setdefault(
-                (ad_group_id, _provider_text_key(text), str(match_type)), resource_name
+                positive_keyword_pair_key(ad_group_id, text, str(match_type)), resource_name
             )
     return existing
 
@@ -235,17 +291,50 @@ def _creation_outcomes(
 def _validate_creates(creates: Sequence[GoogleAdsPositiveKeywordCreate]) -> None:
     if not creates or len(creates) > MAX_POSITIVE_KEYWORD_OPERATIONS:
         raise ValueError("Google Ads positive keyword creates must contain 1-2,500 rows")
-    identities = []
+    identities: list[tuple[str, str, str]] = []
     for item in creates:
-        if not item.ad_group_id.isdigit() or item.match_type not in {"EXACT", "PHRASE", "BROAD"}:
-            raise ValueError("Google Ads positive keyword create is invalid")
-        if not item.text or len(item.text) > 80 or len(item.text.split()) > 10:
-            raise ValueError("Google Ads positive keyword text is invalid")
-        if item.cpc_bid_micros is not None and item.cpc_bid_micros <= 0:
-            raise ValueError("Google Ads positive keyword CPC bid must be positive")
-        identities.append((item.ad_group_id, _provider_text_key(item.text), item.match_type))
+        _validate_create_identity(item)
+        _validate_create_bids(item)
+        _validate_create_urls(item)
+        validate_url_custom_parameter_items(item.url_custom_parameters)
+        identities.append(positive_keyword_pair_key(item.ad_group_id, item.text, item.match_type))
     if len(set(identities)) != len(identities):
         raise ValueError("Google Ads positive keyword creates must be unique")
+
+
+def _validate_create_identity(item: GoogleAdsPositiveKeywordCreate) -> None:
+    if (
+        not item.ad_group_id.isdigit()
+        or item.match_type not in {"EXACT", "PHRASE", "BROAD"}
+        or item.status not in {"ENABLED", "PAUSED"}
+    ):
+        raise ValueError("Google Ads positive keyword create is invalid")
+    if not item.text or len(item.text) > 80 or len(item.text.split()) > 10:
+        raise ValueError("Google Ads positive keyword text is invalid")
+
+
+def _validate_create_bids(item: GoogleAdsPositiveKeywordCreate) -> None:
+    if item.cpc_bid_micros is not None and not (0 < item.cpc_bid_micros <= GOOGLE_ADS_INT64_MAX):
+        raise ValueError("Google Ads positive keyword CPC bid must be positive")
+
+
+def _validate_create_urls(item: GoogleAdsPositiveKeywordCreate) -> None:
+    if len(item.final_urls) > 10 or len(item.final_mobile_urls) > 10:
+        raise ValueError("Google Ads positive keyword URL lists are too long")
+    if any(
+        len(url) > 2048 or re.fullmatch(r"https?://\S+", url, flags=re.IGNORECASE) is None
+        for url in (*item.final_urls, *item.final_mobile_urls)
+    ):
+        raise ValueError("Google Ads positive keyword final URL is invalid")
+    if any(
+        value is not None and len(value) > 2048
+        for value in (item.final_url_suffix, item.tracking_url_template)
+    ):
+        raise ValueError("Google Ads positive keyword URL setting is too long")
+    if item.tracking_url_template is not None and not item.final_urls:
+        raise ValueError(
+            "Google Ads positive keyword tracking templates require at least one final URL"
+        )
 
 
 def _identity(item: GoogleAdsPositiveKeywordCreate) -> dict[str, str]:
@@ -254,13 +343,37 @@ def _identity(item: GoogleAdsPositiveKeywordCreate) -> dict[str, str]:
         "text": item.text,
         "match_type": item.match_type,
     }
-    if item.cpc_bid_micros is not None:
-        fields["cpc_bid_micros"] = str(item.cpc_bid_micros)
+    fields["status"] = item.status
+    fields.update(_optional_identity_fields(item))
     return fields
 
 
-def _provider_text_key(value: str) -> str:
-    return " ".join(value.split()).casefold()
+def _optional_identity_fields(item: GoogleAdsPositiveKeywordCreate) -> dict[str, str]:
+    fields = {
+        key: str(value)
+        for key, value in (
+            ("cpc_bid_micros", item.cpc_bid_micros),
+            ("final_url_suffix", item.final_url_suffix),
+            ("tracking_url_template", item.tracking_url_template),
+        )
+        if value is not None
+    }
+    for key, value in (
+        ("final_urls", item.final_urls),
+        ("final_mobile_urls", item.final_mobile_urls),
+    ):
+        if value:
+            fields[key] = json.dumps(value, separators=(",", ":"))
+    if item.url_custom_parameters:
+        fields["url_custom_parameters"] = json.dumps(
+            dict(item.url_custom_parameters), separators=(",", ":"), sort_keys=True
+        )
+    return fields
+
+
+def positive_keyword_pair_key(ad_group_id: str, text: str, match_type: str) -> tuple[str, str, str]:
+    """Returns the provider-equivalent identity for an ad-group keyword pair."""
+    return ad_group_id, " ".join(text.split()).casefold(), match_type
 
 
 def _ledger(
@@ -273,7 +386,7 @@ def _ledger(
 ) -> GoogleAdsMutationLedger:
     ledger = build_mutation_ledger(
         family="ad_group_positive_keywords",
-        action="add",
+        action="create",
         parent_fields=parent_fields,
         skipped_indices=skipped_indices,
         submitted=submitted,
