@@ -94,7 +94,7 @@ export function ArtifactShareDialog({
               </div>
             </div>
             <p className="text-muted-foreground text-xs">
-              Copy this link now. For security, Praxis will not show the full link again.
+              Copy this link now. For security, the system will not show the full link again.
             </p>
           </div>
         ) : (

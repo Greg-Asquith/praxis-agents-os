@@ -42,7 +42,7 @@ const DIALOG_COPY: Record<AddMode, { title: string; description: string }> = {
   },
   url: {
     title: "Add to Knowledge Base from a URL",
-    description: "Praxis will fetch the public page and prepare its readable content.",
+    description: "The system will fetch the public page and prepare its readable content.",
   },
   upload: {
     title: "Upload to Knowledge Base",

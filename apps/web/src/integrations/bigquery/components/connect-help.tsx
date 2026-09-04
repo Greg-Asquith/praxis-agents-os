@@ -16,7 +16,7 @@ export function BigQueryConnectHelp({ provider }: { provider: IntegrationProvide
           <h2 className="text-sm font-medium">Give agents read-only access</h2>
           <p className="text-muted-foreground text-sm">
             Grant BigQuery Job User on the service account&apos;s project, BigQuery Metadata Viewer
-            on each project Praxis should discover, and BigQuery Data Viewer only on datasets agents
+            on each project the system should discover, and BigQuery Data Viewer only on datasets agents
             should read.
           </p>
         </div>

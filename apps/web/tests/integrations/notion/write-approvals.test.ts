@@ -353,7 +353,7 @@ describe("Notion write approval and result fidelity", () => {
   ])("fails closed for malformed applied results from %s", (name, data) => {
     const html = renderPresenter(resultActivity(name, fanOut(data), { page }))
 
-    expect(html).toContain("Praxis could not confirm the Notion change.")
+    expect(html).toContain("The system could not confirm the Notion change.")
     expect(html).toContain("Failed")
     expect(html).not.toContain("Change confirmed")
   })

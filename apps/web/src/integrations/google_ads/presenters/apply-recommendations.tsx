@@ -198,7 +198,7 @@ function applyRecommendationOutcomeTable(result: ApplyRecommendationResult) {
             />
           </StatGroup>
           <p className="text-muted-foreground px-3 text-xs">
-            Forecast values are estimates from Google Ads, not Praxis scores.
+            Forecast values are estimates from Google Ads.
           </p>
         </div>
       }

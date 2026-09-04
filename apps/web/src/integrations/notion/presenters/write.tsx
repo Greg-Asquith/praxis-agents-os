@@ -114,14 +114,14 @@ export const notionWritePresenter: ToolRowPresenter = {
     const fanOut = parseNotionWriteFanOut(
       activity.result,
       config.kind,
-      "Praxis could not confirm the Notion change.",
-      "Praxis couldn't verify whether Notion applied this change. Check the page in Notion before taking further action."
+      "The system could not confirm the Notion change.",
+      "The system couldn't verify whether Notion applied this change. Check the page in Notion before taking further action."
     )
     if (!fanOut) {
       return writeFailure(
         activity,
         config,
-        "Praxis could not confirm the Notion change.",
+        "The system could not confirm the Notion change.",
         defaultOpen
       )
     }

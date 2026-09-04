@@ -158,7 +158,7 @@ export function formatStreamError(error: StreamError | null): string | null {
   if (error?.code === MODEL_PROVIDER_NOT_CONFIGURED) {
     return (
       `${error.message} Add the provider's API key to .local/targets/local.secrets.env ` +
-      "(Docker stack) or apps/api/.env (make dev), then restart Praxis."
+      "(Docker stack) or apps/api/.env (make dev), then restart the system."
     )
   }
   return error?.message ?? null
