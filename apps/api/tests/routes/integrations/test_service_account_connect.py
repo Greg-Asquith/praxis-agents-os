@@ -15,7 +15,10 @@ from models.workspace import WorkspaceRole
 from tests.routes.integrations.conftest import create_identity
 
 
-@pytest.mark.parametrize("provider_key", ["google_ads", "google_analytics", "bigquery"])
+@pytest.mark.parametrize(
+    "provider_key",
+    ["google_ads", "google_analytics", "bigquery"],
+)
 async def test_service_account_is_persisted_by_reference_only(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -63,6 +66,35 @@ async def test_service_account_is_persisted_by_reference_only(
     )
     assert private_key not in serialized_audits
     assert private_key not in caplog.text
+
+
+async def test_google_search_console_rejects_service_account_connection(
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    response = await db_async_client.post(
+        "/api/v1/integrations/connections/service-account",
+        headers=integration_identity["headers"],
+        json={
+            "provider_key": "google_search_console",
+            "label": "Client Search",
+            "service_account_json": json.dumps(
+                {
+                    "type": "service_account",
+                    "client_email": "agent@example.iam.gserviceaccount.com",
+                    "private_key": "hidden",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                }
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Service-account provider is not enabled | "
+        "provider=google_search_console | operation=connect_service_account"
+    )
+    assert "hidden" not in response.text
 
 
 async def test_service_account_rejects_missing_client_email(

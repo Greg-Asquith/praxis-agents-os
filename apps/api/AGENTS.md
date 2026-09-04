@@ -282,8 +282,8 @@ follows:
   `__init__.py` only composes exported resolver definitions so provider
   manifests stay concise as their catalogs grow.
 - Packaged integrations are Gmail, Google Ads, Airtable, BigQuery, Google
-  Analytics, and Notion. OAuth packages declare their wire behavior and
-  identity source through `OAuthProtocol`; the shared flow keeps state
+  Analytics, Google Search Console, and Notion. OAuth packages declare their
+  wire behavior and identity source through `OAuthProtocol`; the shared flow keeps state
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
   writes for recommendations, negative keywords, campaign status, device bid
@@ -317,6 +317,34 @@ follows:
   metadata, and discovery must not add per-property enrichment calls. Its OAuth
   settings stay in the provider package
   and use a Google Cloud client isolated from every other Google service.
+  Google Search Console contributes workspace OAuth through its own isolated
+  Google Cloud client. It requests the full `webmasters` scope so later sitemap
+  actions use the same connection. Discovery
+  canonicalizes each verified property's scheme and host while retaining its
+  path in the external ID, and maps
+  Search Console permission levels to read-only or writable resources. The
+  provider package contributes code-eligible reads for bounded Search Analytics
+  rows, up to 200 submitted sitemaps per selected site, and indexed-status
+  inspection for up to ten requested URLs. Inspection routes each URL to the
+  longest matching selected URL-prefix property before falling back to a
+  matching domain property, then executes sequentially per site against the
+  provider's 2,000-inspection daily property quota. Query and page values,
+  sitemap paths, canonicals, referring URLs, and provider error text retain
+  untrusted-content provenance, while audit evidence contains parameters and
+  counts rather than provider content. Its code-eligible sitemap write routes
+  up to 20 URLs to selected writable properties, defaults to approval while
+  supporting scheduled automatic execution, and uses one non-retried mutation
+  per sitemap. The tool reads existing state during preparation, records the
+  complete pending intent immediately before mutation, and reads each sitemap
+  back for terminal status evidence. An ambiguous submission remains
+  unverified and is not replayed automatically.
+  `GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED` adds the `indexing` OAuth scope
+  and exposes an approval-only Indexing API tool. The tool accepts up to 20
+  declared job posting or livestream video pages, routes them with the same
+  longest-property rule, and requires Search Console Owner permission before
+  approval. It sends one non-retried mutation per URL and reads notification
+  metadata for terminal evidence. It never supports automatic execution, and
+  ambiguous notifications remain unverified.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
   resource. Its authorization picker controls page access. Three code-eligible

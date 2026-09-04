@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/code_mode/test_stubs.py
+
 """Contract tests for code-mode catalog and schema-to-stub rendering."""
 
 from __future__ import annotations
@@ -14,6 +16,9 @@ from integrations.google_ads.client import GOOGLE_ADS_API_VERSION
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+)
+from integrations.google_search_console.tools import (
+    TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
 )
 from services.agents.runtime.code_mode.stubs import (
     CodeModeCatalog,
@@ -238,6 +243,38 @@ def test_google_analytics_realtime_and_compatibility_stubs_are_typed() -> None:
     assert "-> GoogleAnalyticsCheckReportFieldsOutput" in compatibility
 
 
+def test_search_console_stubs_declare_typed_inputs_and_rows() -> None:
+    definitions = {item.name: item for item in GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS}
+
+    query = render_tool_stub(definitions["google_search_console_query_search_analytics"])
+    sitemaps = render_tool_stub(definitions["google_search_console_list_sitemaps"])
+    inspection = render_tool_stub(definitions["google_search_console_inspect_url"])
+    submission = render_tool_stub(definitions["google_search_console_submit_sitemap"])
+    indexing = render_tool_stub(definitions["google_search_console_request_indexing"])
+
+    assert "class GoogleSearchConsoleFilter(TypedDict):" in query
+    assert "class GoogleSearchConsoleSearchAnalyticsRow(TypedDict):" in query
+    assert "keys: dict[str, GoogleSearchConsoleDimensionValue]" in query
+    assert "async def google_search_console_query_search_analytics(" in query
+    assert "-> GoogleSearchConsoleSearchAnalyticsOutput" in query
+    assert "class GoogleSearchConsoleSitemap(TypedDict):" in sitemaps
+    assert "submitted_url_count: int" in sitemaps
+    assert "async def google_search_console_list_sitemaps(" in sitemaps
+    assert "-> GoogleSearchConsoleListSitemapsOutput" in sitemaps
+    assert "class GoogleSearchConsoleInspection(TypedDict):" in inspection
+    assert "referring_urls: NotRequired[list[UntrustedNode]]" in inspection
+    assert "async def google_search_console_inspect_url(" in inspection
+    assert "urls: list[str]" in inspection
+    assert "-> GoogleSearchConsoleInspectUrlOutput" in inspection
+    assert "sitemap_urls: list[str]" in submission
+    assert "-> GoogleSearchConsoleSubmitSitemapsOutput" in submission
+    assert "class GoogleSearchConsoleIndexingNotification(TypedDict):" in indexing
+    assert "notification_type: Literal['URL_UPDATED', 'URL_DELETED']" in indexing
+    assert "page_type: Literal['job_posting', 'broadcast_event']" in indexing
+    assert "async def google_search_console_request_indexing(" in indexing
+    assert "-> GoogleSearchConsoleRequestIndexingOutput" in indexing
+
+
 def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids() -> None:
     definitions = (
         *GOOGLE_ADS_TOOL_DEFINITIONS,
@@ -268,6 +305,7 @@ def test_every_first_party_eligible_schema_renders() -> None:
             *GMAIL_TOOL_DEFINITIONS,
             *GOOGLE_ADS_TOOL_DEFINITIONS,
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+            *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
         )
         if definition.code_eligible
     }

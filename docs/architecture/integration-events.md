@@ -214,12 +214,13 @@ product decision.
 
 ## 7. Provider posture
 
-| Provider         | Manifest `event_delivery` | Verification and lifecycle                                                                                        | First implementation posture                                  |
-| ---------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Gmail            | `pubsub_push`             | Google Pub/Sub OIDC push; `users.watch`; watches renew before their roughly seven-day expiry                      | First reactive-email provider after the receipt spine         |
-| Airtable         | `webhook`                 | Per-webhook MAC secret; webhook-id + notification-timestamp dedup; durable payload cursor; refresh expiring state | First full receipt slice _(implemented)_                      |
-| Google Ads       | `none`                    | Google Ads has no push surface                                                                                    | Poll-only; do not create a webhook placeholder                |
-| Google Analytics | `none`                    | Reporting data has no provider push surface                                                                       | Poll-only reporting data; do not create a webhook placeholder |
+| Provider              | Manifest `event_delivery` | Verification and lifecycle                                                                                        | First implementation posture                                  |
+| --------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Gmail                 | `pubsub_push`             | Google Pub/Sub OIDC push; `users.watch`; watches renew before their roughly seven-day expiry                      | First reactive-email provider after the receipt spine         |
+| Airtable              | `webhook`                 | Per-webhook MAC secret; webhook-id + notification-timestamp dedup; durable payload cursor; refresh expiring state | First full receipt slice _(implemented)_                      |
+| Google Ads            | `none`                    | Google Ads has no push surface                                                                                    | Poll-only; do not create a webhook placeholder                |
+| Google Analytics      | `none`                    | Reporting data has no provider push surface                                                                       | Poll-only reporting data; do not create a webhook placeholder |
+| Google Search Console | `none`                    | Performance and index data have no provider push surface                                                          | Poll-only; do not create a webhook placeholder                |
 
 Gmail watch renewal and Airtable webhook refresh use registered job kinds, not
 API-process timers. Gmail renewal runs daily `[default — confirm at review]`,

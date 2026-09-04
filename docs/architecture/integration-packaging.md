@@ -545,8 +545,9 @@ or any `features/` code. Reviewers hold the line here.
 ## 9. Provider set
 
 The shipped providers are Gmail, Google Ads, Airtable, BigQuery, Google
-Analytics, and Notion. Each follows the section 8 checklist. There is no sample provider in product
-code: contract and loader tests use a suite-local test provider registered
+Analytics, Google Search Console, and Notion. Each follows the section 8
+checklist. There is no sample provider in product code: contract and loader
+tests use a suite-local test provider registered
 through the loader in test code — fixtures under the test tree — with provider
 HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
 Manual quality assurance uses real development credentials. Airtable's API key
@@ -585,6 +586,35 @@ They also expose each property's bounded Admin API Google Ads link list without
 creator email addresses so an agent can verify the provider-native bridge before
 comparing reports. Standard reports also surface access-restriction and sampling
 metadata.
+
+Google Search Console uses workspace-owned OAuth with an isolated Google Cloud
+OAuth client and the full `webmasters` scope. Its bearer-only REST client
+canonicalizes the site URL scheme and host while retaining the provider path,
+then URL-encodes the identifier in request paths. One `sites.list`
+request discovers verified domain and URL-prefix properties. Permission levels
+make owner resources writable while full-user and restricted-user resources
+remain read-only. The lazy frontend module supplies the provider mark and setup
+guidance. Three code-eligible read tools return bounded, typed Search Analytics
+rows, submitted sitemap status, and indexed-status inspections for requested
+URLs. URL Inspection routes each URL to the most specific selected URL-prefix
+property, falling back to a matching domain property, and caps each call at ten
+URLs. Query and page values, sitemap paths, canonicals, referring URLs, and
+provider error text carry untrusted-content provenance. The lazy presenters
+compose the shared fan-out and table kits. One code-eligible write tool submits
+or resubmits up to 20 sitemap URLs against the selected writable properties.
+It defaults to approval, supports scheduled automatic execution, declares each
+provider request as a non-retried mutation, and records pending intent before
+dispatch. A read after each write records the submitted sitemap's processing
+state as terminal evidence; ambiguous transport outcomes remain unverified.
+Its provider-local presenter composes the shared approval, fan-out, and table
+surfaces and explains that Google decides whether and when to crawl the URLs.
+An operator setting adds the `indexing` OAuth scope and exposes a second write
+tool for Indexing API notifications. The tool accepts only declared job posting
+or livestream video page types, verifies Search Console Owner permission before
+approval, and sends no more than 20 sequential notifications. It never supports
+automatic execution. Each confirmed publish is followed by a metadata read,
+while ambiguous transport outcomes remain unverified. The presenter states
+Google's eligibility restriction and doesn't promise a crawl or indexing result.
 
 Notion demonstrates a user-owned public OAuth integration whose provider
 protocol differs from Google's. It omits scopes and PKCE, uses HTTP Basic

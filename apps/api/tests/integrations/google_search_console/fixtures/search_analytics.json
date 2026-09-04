@@ -1,0 +1,12 @@
+{
+  "rows": [
+    {
+      "keys": ["organic growth", "https://example.com/landing", "gbr"],
+      "clicks": 12.0,
+      "impressions": 240.0,
+      "ctr": 0.05,
+      "position": 3.25
+    }
+  ],
+  "responseAggregationType": "byPage"
+}
