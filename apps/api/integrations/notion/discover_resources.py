@@ -13,6 +13,7 @@ from .identity import parse_user_identity
 async def discover_resources(
     access_token: str,
     principal_label: str | None = None,
+    _pacing_key: str = "",
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     payload = await NotionClient(fixed_access_token(access_token)).get(
         "users/me",

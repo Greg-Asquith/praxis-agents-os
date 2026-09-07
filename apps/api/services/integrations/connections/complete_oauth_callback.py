@@ -5,6 +5,7 @@
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from urllib.parse import unquote
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -41,10 +42,12 @@ from services.integrations.oauth import (
     exchange_authorization_code,
     resolve_external_principal,
 )
+from services.integrations.oauth.resolve_provider_config import resolve_provider_oauth_config
 from services.integrations.oauth.utils import (
     decrypt_code_verifier,
     verify_integration_oauth_state,
 )
+from services.integrations.plugin import OAuthProtocol
 from services.integrations.utils import record_integration_audit
 from services.security import SecurityEventType, safe_record_security_event_committed
 from utils.json_safe import is_sensitive_key
@@ -184,7 +187,11 @@ async def complete_oauth_callback(
         )
         raise wrapped from exc
 
-    granted = _filtered_scopes(token_payload.get("scope"), manifest.oauth_scopes)
+    granted = _filtered_scopes(
+        token_payload.get("scope"),
+        manifest.oauth_scopes,
+        resolve_provider_oauth_config(connection.provider_key).protocol,
+    )
     credential = await store_oauth_credential(
         db,
         provider_key=connection.provider_key,
@@ -388,11 +395,22 @@ async def _record_invalid_state(*, ip_address: str, endpoint: str, jti: str | No
     )
 
 
-def _filtered_scopes(raw: object, requested: tuple[str, ...]) -> list[str]:
+def _filtered_scopes(
+    raw: object,
+    requested: tuple[str, ...],
+    protocol: OAuthProtocol,
+) -> list[str]:
     if not isinstance(raw, str):
         return []
-    granted = set(raw.split())
-    return [scope for scope in requested if scope in granted]
+    prefix = protocol.scope_resource_prefix.casefold()
+    granted: set[str] = set()
+    for value in raw.split(protocol.scope_separator):
+        normalized = unquote(value).strip()
+        if prefix and normalized.casefold().startswith(prefix):
+            normalized = normalized[len(protocol.scope_resource_prefix) :]
+        if normalized:
+            granted.add(normalized.casefold() if prefix else normalized)
+    return [scope for scope in requested if (scope.casefold() if prefix else scope) in granted]
 
 
 def _state_matches_connection(

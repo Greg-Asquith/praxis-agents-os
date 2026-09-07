@@ -15,6 +15,9 @@ const MODULE_LOADERS: Record<string, IntegrationUiModuleLoader> = {
   google_analytics: () => import("@/integrations/google_analytics"),
   google_search_console: () => import("@/integrations/google_search_console"),
   notion: () => import("@/integrations/notion"),
+  outlook_calendar: () => import("@/integrations/outlook_calendar"),
+  outlook_mail: () => import("@/integrations/outlook_mail"),
+  sharepoint: () => import("@/integrations/sharepoint"),
 }
 const loadedModules = new Map<string, IntegrationUiModule>()
 const loadingModules = new Map<string, Promise<IntegrationUiModule | null>>()

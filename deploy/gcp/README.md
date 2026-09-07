@@ -68,6 +68,13 @@ REGION=europe-west4              # = GCP_REGION
       one login provider, and fill its client ID and `/oauth/callback` redirect
       URI. Add its client secret to `RUNTIME_SECRET_BINDINGS`; for example,
       `GOOGLE_OAUTH_CLIENT_SECRET=praxis-google-oauth-client-secret`.
+- [ ] For each enabled Microsoft Graph integration, fill its client ID and set
+      `MICROSOFT_GRAPH_TENANT`. Add the matching client secret to
+      `RUNTIME_SECRET_BINDINGS`, using these bindings as needed:
+      `OUTLOOK_MAIL_OAUTH_CLIENT_SECRET=praxis-outlook-mail-oauth-client-secret`,
+      `OUTLOOK_CALENDAR_OAUTH_CLIENT_SECRET=praxis-outlook-calendar-oauth-client-secret`,
+      and
+      `SHAREPOINT_OAUTH_CLIENT_SECRET=praxis-sharepoint-oauth-client-secret`.
 
 ### 2. Bootstrap
 
@@ -263,6 +270,22 @@ until every condition reports `True`.
       and integration redirect URI (`INTEGRATIONS_OAUTH_REDIRECT_URI`) in each
       enabled provider's console. For Notion, register the integration redirect
       URI in the public integration settings on `api.notion.com`.
+
+      For Outlook Mail, Outlook Calendar, or SharePoint, register the selected
+      Microsoft Entra applications with the repository helper:
+
+```bash
+deploy/entra/register-apps.sh \
+  --redirect-uri https://api.DOMAIN/integrations/oauth/callback \
+  --outlook-mail \
+  --outlook-calendar \
+  --sharepoint
+```
+
+      Use the exact `INTEGRATIONS_OAUTH_REDIRECT_URI` value for
+      `--redirect-uri`. See
+      [Register Microsoft Entra applications](../../docs/guides/microsoft-entra-app-registration.md)
+      for multi-tenant registration and the manual alternative.
 
 There is no CI deploy workflow; deploys run from an authenticated operator
 machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.

@@ -282,9 +282,22 @@ follows:
   `__init__.py` only composes exported resolver definitions so provider
   manifests stay concise as their catalogs grow.
 - Packaged integrations are Gmail, Google Ads, Airtable, BigQuery, Google
-  Analytics, Google Search Console, and Notion. OAuth packages declare their
-  wire behavior and identity source through `OAuthProtocol`; the shared flow keeps state
+  Analytics, Notion, Outlook Mail, Outlook Calendar, and SharePoint. OAuth
+  packages declare their wire behavior and
+  identity source through `OAuthProtocol`; the shared flow keeps state
   validation and bounded non-secret connection metadata provider-neutral.
+  The engine-owned `services/integrations/microsoft_graph/` seam provides
+  global-cloud Entra authority validation, delegated identity, stable error
+  mapping, pacing, bounded pagination and downloads, and the Outlook
+  immutable-ID request rule. Discovery receives an opaque connection pacing
+  key. Partial results must identify failed resource parents so reconciliation
+  preserves their existing resources while the connection remains degraded.
+  Authentication failures must propagate to credential refresh and connection
+  recovery. The seam must not import provider packages. The Outlook
+  Mail, Outlook Calendar, and SharePoint packages each own isolated OAuth
+  settings and discovery. They expose `outlook_mailbox`, `outlook_calendar`,
+  and `sharepoint_drive` resources, respectively. Their tools land in later
+  provider slices.
   Google Ads contributes bounded report and field discovery plus approval-only
   writes for recommendations, negative keywords, positive-keyword creation and
   mutable-field updates, and permanent removal,

@@ -46,7 +46,11 @@ def discoverable_route_provider() -> Iterator[None]:
 
     job_handler(kind=kind)(metadata_handler)
 
-    async def discover_resources(_credential: str, _principal_label: str | None = None):
+    async def discover_resources(
+        _credential: str,
+        _principal_label: str | None = None,
+        _pacing_key: str = "",
+    ):
         return ()
 
     plugin = IntegrationProviderPlugin(

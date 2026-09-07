@@ -12,7 +12,11 @@ from .client import AirtableClient
 _WRITABLE_PERMISSION_LEVELS = frozenset({"create", "edit"})
 
 
-async def discover_resources(access_token: str, _principal_label: str | None = None):
+async def discover_resources(
+    access_token: str,
+    _principal_label: str | None = None,
+    _pacing_key: str = "",
+):
     async def resolve_token() -> str:
         return access_token
 

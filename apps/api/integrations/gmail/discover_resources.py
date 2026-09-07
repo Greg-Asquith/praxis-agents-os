@@ -10,7 +10,11 @@ from .client import GmailClient
 GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 
 
-async def discover_resources(access_token: str, _principal_label: str | None = None):
+async def discover_resources(
+    access_token: str,
+    _principal_label: str | None = None,
+    _pacing_key: str = "",
+):
     async def resolve_token(_force: bool) -> str:
         return access_token
 

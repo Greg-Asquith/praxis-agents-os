@@ -127,6 +127,52 @@ async def test_revocation_protocol_can_require_the_access_token(
     assert revoked_tokens == ["access-value"]
 
 
+async def test_revocation_protocol_can_disable_the_remote_call(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = await _oauth_connection(db_session, integration_identity)
+    connection_id = connection.id
+    module = import_module("services.integrations.connections.revoke_connection")
+    gmail_plugin = PROVIDER_PLUGINS["gmail"]
+    assert gmail_plugin.oauth_config is not None
+    gmail_config = gmail_plugin.oauth_config()
+    local_only_config = replace(
+        gmail_config,
+        revoke_url="",
+        protocol=replace(gmail_config.protocol, revoke_token="none"),  # noqa: S106
+    )
+    monkeypatch.setitem(
+        PROVIDER_PLUGINS,
+        "gmail",
+        replace(gmail_plugin, oauth_config=lambda: local_only_config),
+    )
+    remote_calls = 0
+
+    async def revoke_authorization_token(**_kwargs: object) -> None:
+        nonlocal remote_calls
+        remote_calls += 1
+
+    monkeypatch.setattr(module, "revoke_authorization_token", revoke_authorization_token)
+    response = await db_async_client.post(
+        f"/api/v1/integrations/connections/{connection_id}/revoke",
+        headers=integration_identity["headers"],
+    )
+
+    assert response.status_code == 200, response.text
+    assert remote_calls == 0
+    db_session.expire_all()
+    persisted = await db_session.get(IntegrationConnection, connection_id)
+    assert persisted is not None
+    credential = await db_session.get(ExternalCredential, persisted.credential_id)
+    assert credential is not None
+    assert credential.access_token_encrypted is None
+    assert credential.refresh_token_encrypted is None
+    assert credential.revoked_at is not None
+
+
 async def test_revocation_crypto_shreds_when_provider_config_is_unavailable(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

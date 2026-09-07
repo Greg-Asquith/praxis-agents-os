@@ -2,6 +2,7 @@
 
 """Discover and reconcile provider resources for one connection."""
 
+import re
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -31,6 +32,7 @@ from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.credentials import ensure_fresh_credential
 from services.integrations.domain import (
     CONNECTION_STATUS_AUTH_PENDING,
+    CONNECTION_STATUS_DEGRADED,
     CONNECTION_STATUS_DISCOVERY_PENDING,
     CONNECTION_STATUS_NEEDS_CREDENTIAL,
     CONNECTION_STATUS_NEEDS_REAUTH,
@@ -38,12 +40,17 @@ from services.integrations.domain import (
 )
 from services.integrations.enqueue_metadata_sync import enqueue_metadata_sync
 from services.integrations.manifest import PROVIDER_MANIFESTS
-from services.integrations.plugin import PROVIDER_PLUGINS, DiscoveredIntegrationResource
+from services.integrations.plugin import (
+    PROVIDER_PLUGINS,
+    DiscoveredIntegrationResource,
+    IntegrationDiscoveryResult,
+)
 from services.integrations.utils import record_integration_audit
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
+_DEGRADED_REASON_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 async def run_discovery(
@@ -120,32 +127,21 @@ async def run_discovery(
     )
 
     try:
-        credential_value, granted_scopes, principal_label = await _resolve_credential_value(
-            db, connection
+        (
+            resources,
+            granted_scopes,
+            degraded_reason,
+            preserved_parent_external_ids,
+        ) = await _discover_with_credential(
+            db,
+            connection=connection,
         )
-        try:
-            resources = await _fetch_resources(
-                provider_key=connection.provider_key,
-                credential_value=credential_value,
-                principal_label=principal_label,
-            )
-        except IntegrationAuthError:
-            credential = await db.get(ExternalCredential, connection.credential_id)
-            if credential is None or credential.auth_mode != "oauth":
-                raise
-            credential_value, granted_scopes, principal_label = await _resolve_credential_value(
-                db, connection, force=True
-            )
-            resources = await _fetch_resources(
-                provider_key=connection.provider_key,
-                credential_value=credential_value,
-                principal_label=principal_label,
-            )
         resources = _apply_granted_scope_permissions(resources, granted_scopes=granted_scopes)
         counters = await _reconcile_resources(
             db,
             connection=connection,
             resources=resources,
+            preserved_parent_external_ids=preserved_parent_external_ids,
             now=now,
         )
         discovery_run.status = "succeeded"
@@ -154,7 +150,11 @@ async def run_discovery(
         discovery_run.resources_added = counters["added"]
         discovery_run.resources_removed = counters["removed"]
         discovery_run.resources_unchanged = counters["unchanged"]
-        await recompute_connection_status(db, connection)
+        await _apply_discovery_status(
+            db,
+            connection=connection,
+            degraded_reason=degraded_reason,
+        )
         await record_integration_audit(
             db,
             workspace_id=connection.owner_workspace_id,
@@ -200,6 +200,59 @@ async def run_discovery(
         )
         await _persist_failure(db, discovery_run, exc)
         raise
+
+
+async def _apply_discovery_status(
+    db: AsyncSession,
+    *,
+    connection: IntegrationConnection,
+    degraded_reason: str | None,
+) -> None:
+    if degraded_reason is None:
+        await recompute_connection_status(db, connection)
+        return
+    await transition_connection_status(
+        db,
+        connection,
+        CONNECTION_STATUS_DEGRADED,
+        reason=degraded_reason,
+    )
+
+
+async def _discover_with_credential(
+    db: AsyncSession,
+    *,
+    connection: IntegrationConnection,
+) -> tuple[
+    tuple[DiscoveredIntegrationResource, ...],
+    frozenset[str],
+    str | None,
+    frozenset[str],
+]:
+    credential_value, granted_scopes, principal_label = await _resolve_credential_value(
+        db, connection
+    )
+    try:
+        resources, degraded_reason, preserved_parent_external_ids = await _fetch_resources(
+            provider_key=connection.provider_key,
+            credential_value=credential_value,
+            principal_label=principal_label,
+            pacing_key=str(connection.id),
+        )
+    except IntegrationAuthError:
+        credential = await db.get(ExternalCredential, connection.credential_id)
+        if credential is None or credential.auth_mode != "oauth":
+            raise
+        credential_value, granted_scopes, principal_label = await _resolve_credential_value(
+            db, connection, force=True
+        )
+        resources, degraded_reason, preserved_parent_external_ids = await _fetch_resources(
+            provider_key=connection.provider_key,
+            credential_value=credential_value,
+            principal_label=principal_label,
+            pacing_key=str(connection.id),
+        )
+    return resources, granted_scopes, degraded_reason, preserved_parent_external_ids
 
 
 async def _resolve_credential_value(
@@ -255,7 +308,12 @@ async def _fetch_resources(
     provider_key: str,
     credential_value: str,
     principal_label: str | None,
-) -> tuple[DiscoveredIntegrationResource, ...]:
+    pacing_key: str,
+) -> tuple[
+    tuple[DiscoveredIntegrationResource, ...],
+    str | None,
+    frozenset[str],
+]:
     plugin = PROVIDER_PLUGINS.get(provider_key)
     if plugin is None or plugin.discover_resources is None:
         raise IntegrationValidationError(
@@ -263,7 +321,21 @@ async def _fetch_resources(
             provider_key=provider_key,
             operation="discover_resources",
         )
-    resources = tuple(await plugin.discover_resources(credential_value, principal_label))
+    result = await plugin.discover_resources(credential_value, principal_label, pacing_key)
+    degraded_reason = None
+    preserved_parent_external_ids = frozenset()
+    if isinstance(result, IntegrationDiscoveryResult):
+        resources = tuple(result.resources)
+        degraded_reason = result.degraded_reason
+        preserved_parent_external_ids = result.preserved_parent_external_ids
+        if degraded_reason is not None and not _DEGRADED_REASON_PATTERN.fullmatch(degraded_reason):
+            raise IntegrationValidationError(
+                "Provider returned an invalid discovery recovery reason",
+                provider_key=provider_key,
+                operation="discover_resources",
+            )
+    else:
+        resources = tuple(result)
     manifest = plugin.manifest
     keys: set[tuple[str, str]] = set()
     for resource in resources:
@@ -281,7 +353,13 @@ async def _fetch_resources(
                 operation="discover_resources",
             )
         keys.add(key)
-    return resources
+    if any(not value.strip() for value in preserved_parent_external_ids):
+        raise IntegrationValidationError(
+            "Provider returned an invalid preserved resource parent",
+            provider_key=provider_key,
+            operation="discover_resources",
+        )
+    return resources, degraded_reason, preserved_parent_external_ids
 
 
 def _apply_granted_scope_permissions(
@@ -309,6 +387,7 @@ async def _reconcile_resources(
     *,
     connection: IntegrationConnection,
     resources: tuple[DiscoveredIntegrationResource, ...],
+    preserved_parent_external_ids: frozenset[str],
     now: datetime,
 ) -> dict[str, int]:
     existing = list(
@@ -359,7 +438,12 @@ async def _reconcile_resources(
 
     removed = 0
     for key, row in by_key.items():
-        if key in seen or row.deleted or row.availability == "removed":
+        if (
+            key in seen
+            or row.deleted
+            or row.availability == "removed"
+            or row.parent_external_id in preserved_parent_external_ids
+        ):
             continue
         row.availability = "removed"
         row.removed_at = now

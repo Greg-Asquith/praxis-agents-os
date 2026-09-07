@@ -6,6 +6,9 @@ Webhook MAC secrets use the same reference service, with names shaped as
 ``integrations/{provider_key}/{connection_id}/webhook/{webhook_id}``.
 """
 
+from services.integrations.credentials.build_personal_oauth_access_token_resolver import (
+    build_personal_oauth_access_token_resolver,
+)
 from services.integrations.credentials.ensure_fresh_credential import (
     ensure_fresh_credential,
 )
@@ -27,6 +30,7 @@ from services.integrations.credentials.store_secret_reference_credential import 
 
 __all__ = [
     "GoogleServiceAccountTokenProvider",
+    "build_personal_oauth_access_token_resolver",
     "ensure_fresh_credential",
     "find_duplicate_principals",
     "get_usable_connection_credential",

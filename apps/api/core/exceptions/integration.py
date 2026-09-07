@@ -43,6 +43,7 @@ class IntegrationError(Exception):
         operation: str | None = None,
         original_error: Exception | None = None,
         failure_disposition: IntegrationFailureDisposition | None = None,
+        error_code: str | None = None,
     ):
         """
         Initialize integration error with context.
@@ -53,12 +54,14 @@ class IntegrationError(Exception):
             connection_id: Connection UUID
             operation: Operation being performed (e.g., 'list_files', 'upload_file')
             original_error: Original exception that caused this error
+            error_code: Stable machine-readable recovery or failure reason
         """
         self.provider_key = provider_key
         self.connection_id = connection_id
         self.operation = operation
         self.original_error = original_error
         self.failure_disposition = failure_disposition
+        self.error_code = error_code
         self.user_message = message
 
         # Build detailed message

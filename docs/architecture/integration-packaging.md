@@ -163,6 +163,12 @@ are a package boundary, not a subdirectory convention. Tests mirror it at
 
 ```python
 @dataclass(frozen=True)
+class IntegrationDiscoveryResult:
+    resources: Sequence[DiscoveredIntegrationResource]
+    degraded_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class ExternalPrincipal:
     external_id: str
     label: str | None
@@ -181,7 +187,9 @@ class OAuthProtocol:
     extract_identity: Callable[[dict[str, Any]], ExternalPrincipal] | None
     fetch_identity: Callable[[str], Awaitable[ExternalPrincipal]] | None
     request_headers: tuple[tuple[str, str], ...]
-    revoke_token: Literal["refresh_or_access", "access"]
+    revoke_token: Literal["refresh_or_access", "access", "none"]
+    scope_resource_prefix: str
+    classify_token_error: Callable[[dict[str, Any]], str | None] | None
 
 
 @dataclass(frozen=True)
@@ -203,6 +211,23 @@ authentication and encoding, identity source, request headers, and revocation
 token choice. Its defaults preserve the Google provider wire contract. A
 provider can supply identity extraction from the token response and must also
 supply access-token identity fetching when it owns identity resolution.
+Providers whose authorization server has no revocation endpoint declare
+`revoke_token="none"` and leave `OAuthClientConfig.revoke_url` blank. Every
+other OAuth provider must declare a revocation URL. A resource-prefixed scope
+response uses `scope_resource_prefix`; the callback strips the prefix and
+matches scopes without case sensitivity while preserving manifest spelling.
+`classify_token_error` can map a provider error body to a stable recovery code
+without exposing provider-controlled error text.
+
+A discovery function normally returns its resource sequence directly. If a
+provider can return useful resources after a bounded partial failure, it returns
+`IntegrationDiscoveryResult` with a stable snake-case reason. The shared
+discovery runner reconciles those resources and marks the connection degraded.
+The result can name parent external IDs whose existing child resources the
+runner must preserve because their provider lookup failed. Authentication
+failures remain fatal so the runner can refresh or reject the credential.
+Discovery receives the connection ID as an opaque pacing key; providers pass it
+to shared clients that implement per-connection pacing.
 
 `ExternalPrincipal.connection_metadata` carries only bounded, non-secret
 strings needed to identify a connection. The callback accepts at most 16
@@ -312,6 +337,14 @@ loader.py` (dynamically, by configured key).
 4. Enforcement: a dedicated test (`tests/integrations/test_import_laws.py`)
    walks the AST of both trees and asserts 1–3. It runs in the default
    suite so violations fail CI, not review.
+
+Engine-owned vendor seams live under `services/integrations/` only when more
+than one provider package needs the same transport behavior. The Microsoft
+Graph seam owns global-cloud Entra authority validation, delegated identity,
+typed Graph errors, per-connection pacing, immutable Outlook IDs, bounded
+pagination and downloads, and connection credential resolution. It imports no
+provider package. Outlook and SharePoint packages remain responsible for their
+manifests, settings, discovery, operations, and tools.
 
 ### 4.7 Integration operation runtime
 
@@ -535,7 +568,17 @@ Adding a provider touches:
 11. Declare `identity_source` on the OAuth protocol. Provider-owned identity
     also declares the token-response extractor when available and the required
     access-token fetch function.
-12. Extend test-only provider enumeration fixtures; these are coverage seams,
+12. Declare remote token revocation explicitly. Use `revoke_token="none"` only
+    when the authorization server has no revocation endpoint, and provide
+    recovery guidance for removing the grant outside Praxis.
+13. When granted scopes carry a resource prefix or use provider-specific case,
+    declare `scope_resource_prefix` and cover normalized callback storage.
+14. If token failures have documented recovery classes, declare
+    `classify_token_error` and test both classified and unclassified failures.
+15. If two or more packages share one vendor transport, put the vendor seam in
+    `services/integrations/`; keep manifests, settings, discovery, operations,
+    and tools in each provider package.
+16. Extend test-only provider enumeration fixtures; these are coverage seams,
     not runtime registration.
 
 It must NOT touch: the registry/dispatch internals, the manifest module,
@@ -545,14 +588,20 @@ or any `features/` code. Reviewers hold the line here.
 ## 9. Provider set
 
 The shipped providers are Gmail, Google Ads, Airtable, BigQuery, Google
-Analytics, Google Search Console, and Notion. Each follows the section 8
-checklist. There is no sample provider in product code: contract and loader
-tests use a suite-local test provider registered
+Analytics, Notion, Outlook Mail, Outlook Calendar, and SharePoint. Each follows
+the section 8 checklist. There is no sample provider in product
+code: contract and loader tests use a suite-local test provider registered
 through the loader in test code — fixtures under the test tree — with provider
 HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
 Manual quality assurance uses real development credentials. Airtable's API key
 provides a convenient connection test. The engine's generic manifest-driven OAuth flow is the only token
 path; revisit only if a real provider cannot use it.
+
+Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft
+Graph seam. Each provider has an isolated Entra application, settings,
+manifest, discovery implementation, and lazy web module. These foundation
+packages expose connections and resources; provider tools ship in their
+service-specific follow-up slices.
 
 BigQuery demonstrates the checklist end to end. Its package under
 `integrations/bigquery/` contributes a workspace-owned service-account

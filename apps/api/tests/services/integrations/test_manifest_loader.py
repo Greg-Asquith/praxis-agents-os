@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_manifest_loader.py
+
 """Manifest invariants and settings-driven provider loading."""
 
 from dataclasses import replace
@@ -10,6 +12,9 @@ from core.settings import settings
 from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_analytics.settings import google_analytics_settings
+from integrations.outlook_calendar.settings import outlook_calendar_settings
+from integrations.outlook_mail.settings import outlook_mail_settings
+from integrations.sharepoint.settings import sharepoint_settings
 from integrations.google_search_console.settings import google_search_console_settings
 from services.agents.runtime.entity_references.registry import ENTITY_RESOLVERS
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
@@ -51,6 +56,9 @@ def clear_loaded_provider_state():
                 "google_analytics_",
                 "google_search_console_",
                 "notion_",
+                "outlook_calendar_",
+                "outlook_mail_",
+                "sharepoint_",
             )
         )
     }
@@ -69,6 +77,9 @@ def clear_loaded_provider_state():
                 "google_analytics_",
                 "google_search_console_",
                 "notion_",
+                "outlook_calendar_",
+                "outlook_mail_",
+                "sharepoint_",
             )
         ):
             RUNTIME_TOOL_CATALOG.pop(name)
@@ -91,6 +102,9 @@ def clear_loaded_provider_state():
                 "google_analytics_",
                 "google_search_console_",
                 "notion_",
+                "outlook_calendar_",
+                "outlook_mail_",
+                "sharepoint_",
             )
         ):
             RUNTIME_TOOL_CATALOG.pop(name)
@@ -209,6 +223,10 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
             "gmail",
             "google_ads",
             "google_analytics",
+            "notion",
+            "outlook_calendar",
+            "outlook_mail",
+            "sharepoint",
             "google_search_console",
             "notion",
         ],
@@ -220,6 +238,10 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
         "gmail",
         "google_ads",
         "google_analytics",
+        "notion",
+        "outlook_calendar",
+        "outlook_mail",
+        "sharepoint",
         "google_search_console",
         "notion",
     ]
@@ -229,6 +251,9 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
     assert not hasattr(settings, "GMAIL_OAUTH_CLIENT_ID")
     assert not hasattr(settings, "GOOGLE_ADS_OAUTH_CLIENT_ID")
     assert not hasattr(settings, "GOOGLE_ANALYTICS_OAUTH_CLIENT_ID")
+    assert not hasattr(settings, "OUTLOOK_MAIL_OAUTH_CLIENT_ID")
+    assert not hasattr(settings, "OUTLOOK_CALENDAR_OAUTH_CLIENT_ID")
+    assert not hasattr(settings, "SHAREPOINT_OAUTH_CLIENT_ID")
     assert not hasattr(settings, "GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_ID")
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
@@ -319,6 +344,62 @@ def test_provider_packages_own_distinct_oauth_credentials(monkeypatch) -> None:
     assert search_console_config.client_secret.get_secret_value() == "search-console-secret"
 
 
+def test_loader_accepts_all_microsoft_providers_with_isolated_clients(monkeypatch) -> None:
+    configurations = (
+        (outlook_mail_settings, "OUTLOOK_MAIL", "mail-client"),
+        (outlook_calendar_settings, "OUTLOOK_CALENDAR", "calendar-client"),
+        (sharepoint_settings, "SHAREPOINT", "sharepoint-client"),
+    )
+    for provider_settings, prefix, client_id in configurations:
+        monkeypatch.setattr(provider_settings, f"{prefix}_OAUTH_CLIENT_ID", client_id)
+        monkeypatch.setattr(
+            provider_settings,
+            f"{prefix}_OAUTH_CLIENT_SECRET",
+            SecretStr(f"{client_id}-secret"),
+        )
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "organizations")
+    monkeypatch.setattr(
+        settings,
+        "INTEGRATIONS_ENABLED_PROVIDERS",
+        ["outlook_mail", "outlook_calendar", "sharepoint"],
+    )
+
+    load_enabled_providers()
+
+    assert set(PROVIDER_PLUGINS) == {"outlook_mail", "outlook_calendar", "sharepoint"}
+
+
+@pytest.mark.parametrize("provider_key", ["outlook_mail", "outlook_calendar", "sharepoint"])
+def test_loader_accepts_each_microsoft_provider_alone(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_key: str,
+) -> None:
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "organizations")
+    monkeypatch.setattr(settings, "INTEGRATIONS_ENABLED_PROVIDERS", [provider_key])
+
+    load_enabled_providers()
+
+    assert set(PROVIDER_PLUGINS) == {provider_key}
+
+
+def test_loader_rejects_microsoft_providers_sharing_a_client(monkeypatch) -> None:
+    monkeypatch.setattr(outlook_mail_settings, "OUTLOOK_MAIL_OAUTH_CLIENT_ID", "shared-client")
+    monkeypatch.setattr(
+        outlook_calendar_settings,
+        "OUTLOOK_CALENDAR_OAUTH_CLIENT_ID",
+        "shared-client",
+    )
+    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "organizations")
+    monkeypatch.setattr(
+        settings,
+        "INTEGRATIONS_ENABLED_PROVIDERS",
+        ["outlook_mail", "outlook_calendar"],
+    )
+
+    with pytest.raises(RuntimeError, match="isolated client IDs"):
+        load_enabled_providers()
+
+
 def test_loader_fails_fast_for_unknown_provider(monkeypatch) -> None:
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
@@ -364,6 +445,41 @@ def test_loader_accepts_supported_oauth_protocols() -> None:
     assert google_config.protocol.identity_source == "google_userinfo"
     assert notion_config is not None
     assert notion_config.protocol.identity_source == "provider"
+
+
+def test_loader_validates_remote_revocation_configuration() -> None:
+    without_remote_revocation = _oauth_plugin(
+        protocol=OAuthProtocol(revoke_token="none"),  # noqa: S106 - protocol enum
+    )
+    assert without_remote_revocation.oauth_config is not None
+    without_remote_revocation_config = without_remote_revocation.oauth_config()
+    without_remote_revocation = replace(
+        without_remote_revocation,
+        oauth_config=lambda: replace(
+            without_remote_revocation_config,
+            revoke_url="",
+        ),
+    )
+    assert _validate_plugin(without_remote_revocation, expected_key="example") is not None
+
+    missing_url = _oauth_plugin()
+    assert missing_url.oauth_config is not None
+    missing_url_config = missing_url.oauth_config()
+    missing_url = replace(
+        missing_url,
+        oauth_config=lambda: replace(
+            missing_url_config,
+            revoke_url="",
+        ),
+    )
+    with pytest.raises(RuntimeError, match="must declare a revocation URL"):
+        _validate_plugin(missing_url, expected_key="example")
+
+    unexpected_url = _oauth_plugin(
+        protocol=OAuthProtocol(revoke_token="none"),  # noqa: S106 - protocol enum
+    )
+    with pytest.raises(RuntimeError, match="must not declare a revocation URL"):
+        _validate_plugin(unexpected_url, expected_key="example")
 
 
 def test_loader_applies_oauth_protocol_rules_only_to_oauth_manifests() -> None:

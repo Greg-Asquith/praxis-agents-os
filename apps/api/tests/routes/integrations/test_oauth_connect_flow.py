@@ -20,9 +20,36 @@ from models.jobs import Job
 from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.oauth import ExternalPrincipal
 from services.integrations.oauth.utils import code_challenge
-from services.integrations.plugin import PROVIDER_PLUGINS
+from services.integrations.plugin import PROVIDER_PLUGINS, OAuthProtocol
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/mail.send openid",
+        "https%3A%2F%2Fgraph.microsoft.com%2FMail.ReadWrite "
+        "https%3A%2F%2Fgraph.microsoft.com%2Fmail.send openid",
+    ],
+)
+async def test_callback_normalizes_resource_prefixed_scopes(raw: str) -> None:
+    module = import_module("services.integrations.connections.complete_oauth_callback")
+    protocol = OAuthProtocol(scope_resource_prefix="https://graph.microsoft.com/")
+    assert module._filtered_scopes(
+        raw,
+        ("Mail.ReadWrite", "Mail.Send", "openid"),
+        protocol,
+    ) == ["Mail.ReadWrite", "Mail.Send", "openid"]
+
+
+async def test_callback_keeps_exact_scope_matching_without_a_resource_prefix() -> None:
+    module = import_module("services.integrations.connections.complete_oauth_callback")
+    assert module._filtered_scopes(
+        "scope.read scope.write",
+        ("Scope.Read", "scope.write"),
+        OAuthProtocol(),
+    ) == ["scope.write"]
 
 
 async def test_start_and_callback_are_pkce_bound_and_single_use(
@@ -33,7 +60,11 @@ async def test_start_and_callback_are_pkce_bound_and_single_use(
 ) -> None:
     discovery_calls = 0
 
-    async def discover_resources(_credential: str, _principal_label: str | None = None):
+    async def discover_resources(
+        _credential: str,
+        _principal_label: str | None = None,
+        _pacing_key: str = "",
+    ):
         nonlocal discovery_calls
         discovery_calls += 1
         return ()

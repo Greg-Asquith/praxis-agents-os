@@ -1,9 +1,12 @@
 """Credential encryption, deduplication, refresh failure, and crypto-shred tests."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import httpx2
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import func, select, update
 
 from core.database import set_session_tenant_context
@@ -13,11 +16,13 @@ from core.exceptions.integration import (
     IntegrationRateLimitError,
     IntegrationValidationError,
 )
+from integrations.gmail import PROVIDER as GMAIL_PROVIDER
 from models.audit_event import AuditEvent
 from models.integrations import ExternalCredential, IntegrationConnection
 from models.notification import Notification
 from models.user import User
 from models.workspace import Workspace
+from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.credentials import (
     ensure_fresh_credential,
     find_duplicate_principals,
@@ -26,6 +31,8 @@ from services.integrations.credentials import (
     store_oauth_credential,
     store_secret_reference_credential,
 )
+from services.integrations.microsoft_graph import classify_entra_token_error
+from services.integrations.plugin import PROVIDER_PLUGINS, OAuthClientConfig, OAuthProtocol
 from services.secrets.domain import SecretReference
 from tests.factories import build_user, build_workspace
 
@@ -62,6 +69,7 @@ async def _stored(
     principal="principal-1",
     expires_in=3600,
     owner_workspace_id=None,
+    provider_key="test_provider",
 ):
     if owner_workspace_id is None:
         workspace = build_workspace(slug=f"credential-owner-{uuid4()}")
@@ -71,7 +79,7 @@ async def _stored(
     await set_session_tenant_context(db_session, workspace_id=owner_workspace_id)
     return await store_oauth_credential(
         db_session,
-        provider_key="test_provider",
+        provider_key=provider_key,
         token_payload={
             "access_token": "access-secret",
             "refresh_token": "refresh-secret",
@@ -212,6 +220,99 @@ async def test_terminal_refresh_rejection_requires_reauthentication(db_session) 
     await db_session.refresh(connection)
     assert credential.refresh_failure_count == 1
     assert connection.status == "needs_reauth"
+
+
+async def test_classified_refresh_failure_persists_recovery_reason(db_session) -> None:
+    credential = await _stored(db_session, expires_in=1)
+    credential.token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    connection = await _connection(db_session, credential)
+
+    async def invalid_grant(_credential):
+        raise IntegrationAuthError(
+            "Provider rejected the refresh grant",
+            provider_key="test_provider",
+            operation="refresh_credential",
+            error_code="reauthorization_required",
+        )
+
+    with pytest.raises(IntegrationAuthError):
+        await ensure_fresh_credential(
+            db_session,
+            credential_id=credential.id,
+            refresh_token=invalid_grant,
+        )
+    await db_session.refresh(credential)
+    await db_session.refresh(connection)
+    assert credential.last_refresh_error_code == "reauthorization_required"
+    assert connection.status == "needs_reauth"
+    assert connection.status_reason == "reauthorization_required"
+
+
+@pytest.mark.parametrize(
+    ("entra_code", "expected_reason"),
+    [
+        (700082, "reauthorization_required"),
+        (7000215, "client_credential_invalid"),
+    ],
+)
+async def test_entra_400_refresh_failure_persists_classified_reason(
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    entra_code: int,
+    expected_reason: str,
+) -> None:
+    from services.integrations import http as http_module
+
+    config = OAuthClientConfig(
+        client_id="client-id",
+        client_secret=SecretStr("client-secret"),
+        authorization_url="https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize",
+        token_url="https://login.microsoftonline.com/tenant/oauth2/v2.0/token",  # noqa: S106
+        revoke_url="",
+        protocol=OAuthProtocol(classify_token_error=classify_entra_token_error),
+    )
+    monkeypatch.setitem(
+        PROVIDER_PLUGINS,
+        "gmail",
+        replace(GMAIL_PROVIDER, oauth_config=lambda: config),
+    )
+    async_client_type = httpx2.AsyncClient
+
+    def handler(_request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
+            400,
+            headers={"Content-Type": "application/json"},
+            json={
+                "error": "invalid_grant",
+                "error_description": f"AADSTS{entra_code}: token request rejected",
+                "error_codes": [entra_code],
+            },
+        )
+
+    monkeypatch.setattr(
+        http_module.httpx2,
+        "AsyncClient",
+        lambda: async_client_type(transport=httpx2.MockTransport(handler)),
+    )
+    credential = await _stored(db_session, expires_in=1, provider_key="gmail")
+    credential.token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    connection = await _connection(db_session, credential)
+
+    with pytest.raises(IntegrationAuthError) as exc_info:
+        await ensure_fresh_credential(
+            db_session,
+            credential_id=credential.id,
+            refresh_token=refresh_oauth_credential,
+        )
+    await db_session.refresh(credential)
+    await db_session.refresh(connection)
+    assert exc_info.value.error_code == expected_reason
+    assert credential.last_refresh_error_code == expected_reason
+    assert connection.status == "needs_reauth"
+    assert connection.status_reason == expected_reason
+    if expected_reason == "client_credential_invalid":
+        assert "OAuth client credential is invalid or expired" in caplog.text
 
 
 async def test_unexpected_refresh_failure_does_not_mark_reauthentication(db_session) -> None:

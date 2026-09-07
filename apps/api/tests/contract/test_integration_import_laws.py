@@ -42,6 +42,17 @@ def test_core_only_imports_provider_packages_through_loader() -> None:
     assert offenders == []
 
 
+def test_microsoft_graph_engine_seam_does_not_import_provider_packages() -> None:
+    seam = API_ROOT / "services" / "integrations" / "microsoft_graph"
+    offenders = [
+        (str(path.relative_to(API_ROOT)), value)
+        for path in seam.rglob("*.py")
+        for value in _imports(path)
+        if value == "integrations" or value.startswith("integrations.")
+    ]
+    assert offenders == []
+
+
 def test_provider_packages_do_not_import_each_other() -> None:
     offenders = []
     for path in (API_ROOT / "integrations").rglob("*.py"):

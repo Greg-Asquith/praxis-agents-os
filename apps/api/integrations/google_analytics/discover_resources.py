@@ -19,6 +19,7 @@ ANALYTICS_READONLY_SCOPE = "https://www.googleapis.com/auth/analytics.readonly"
 async def discover_resources(
     credential_value: str,
     _principal_label: str | None = None,
+    _pacing_key: str = "",
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     if credential_value.lstrip().startswith("{"):
         credentials = parse_google_service_account_json(

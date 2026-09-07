@@ -1,3 +1,5 @@
+// apps/web/tests/features/auth/oauth-secondary-callback-loaders.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -99,6 +101,15 @@ describe("secondary OAuth callback loaders", () => {
   it("returns an integration error without exchanging a callback missing state", async () => {
     await expect(loadIntegrationOAuthCallback({ code: "code" }, integrationDeps)).resolves.toEqual({
       error: "This connection link is missing its OAuth state.",
+    })
+    expect(completeIntegrationOAuth).not.toHaveBeenCalled()
+  })
+
+  it("returns an informational outcome after Microsoft administrator consent", async () => {
+    await expect(
+      loadIntegrationOAuthCallback({ admin_consent: "TrUe" }, integrationDeps)
+    ).resolves.toEqual({
+      info: "Your administrator approved Praxis Agents for your organization. You can connect your account now.",
     })
     expect(completeIntegrationOAuth).not.toHaveBeenCalled()
   })

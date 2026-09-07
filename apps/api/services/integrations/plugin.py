@@ -52,8 +52,18 @@ class DiscoveredIntegrationResource:
     permissions_metadata: dict[str, object] | None = None
 
 
+@dataclass(frozen=True)
+class IntegrationDiscoveryResult:
+    """Resources plus an optional stable reason for partial discovery."""
+
+    resources: Sequence[DiscoveredIntegrationResource]
+    degraded_reason: str | None = None
+    preserved_parent_external_ids: frozenset[str] = frozenset()
+
+
 DiscoverResourcesFn = Callable[
-    [str, str | None], Awaitable[Sequence[DiscoveredIntegrationResource]]
+    [str, str | None, str],
+    Awaitable[Sequence[DiscoveredIntegrationResource] | IntegrationDiscoveryResult],
 ]
 
 
@@ -84,7 +94,9 @@ class OAuthProtocol:
     extract_identity: Callable[[dict[str, Any]], ExternalPrincipal] | None = None
     fetch_identity: Callable[[str], Awaitable[ExternalPrincipal]] | None = None
     request_headers: tuple[tuple[str, str], ...] = ()
-    revoke_token: Literal["refresh_or_access", "access"] = "refresh_or_access"
+    revoke_token: Literal["refresh_or_access", "access", "none"] = "refresh_or_access"
+    scope_resource_prefix: str = ""
+    classify_token_error: Callable[[dict[str, Any]], str | None] | None = None
 
 
 @dataclass(frozen=True)
@@ -95,7 +107,7 @@ class OAuthClientConfig:
     client_secret: SecretStr
     authorization_url: str
     token_url: str
-    revoke_url: str
+    revoke_url: str = ""
     protocol: OAuthProtocol = field(default_factory=OAuthProtocol)
 
 

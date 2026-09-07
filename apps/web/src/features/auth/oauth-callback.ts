@@ -19,6 +19,7 @@ export type OAuthCallbackInput = {
 }
 
 export type OAuthCallbackSearch = {
+  admin_consent?: string
   code?: string
   error?: string
   state?: string
@@ -26,6 +27,9 @@ export type OAuthCallbackSearch = {
 
 export function validateOAuthCallbackSearch(search: Record<string, unknown>): OAuthCallbackSearch {
   return {
+    ...(typeof search["admin_consent"] === "string"
+      ? { admin_consent: search["admin_consent"] }
+      : {}),
     ...(typeof search["code"] === "string" ? { code: search["code"] } : {}),
     ...(typeof search["error"] === "string" ? { error: search["error"] } : {}),
     ...(typeof search["state"] === "string" ? { state: search["state"] } : {}),

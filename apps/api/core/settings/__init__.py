@@ -30,6 +30,7 @@ from core.settings.integrations import IntegrationsSettingsMixin
 from core.settings.jobs import JobsSettingsMixin
 from core.settings.kb import KBSettingsMixin
 from core.settings.memory import MemorySettingsMixin
+from core.settings.microsoft_graph import MicrosoftGraphSettingsMixin
 from core.settings.models import LLMSettingsMixin
 from core.settings.observability import ObservabilitySettingsMixin
 from core.settings.providers import ProviderSettingsMixin
@@ -66,6 +67,7 @@ class Settings(
     JobsSettingsMixin,
     KBSettingsMixin,
     MemorySettingsMixin,
+    MicrosoftGraphSettingsMixin,
     LLMSettingsMixin,
     ObservabilitySettingsMixin,
     ProviderSettingsMixin,

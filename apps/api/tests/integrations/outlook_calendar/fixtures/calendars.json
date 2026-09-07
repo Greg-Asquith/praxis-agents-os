@@ -1,0 +1,1 @@
+{"value":[{"id":"calendar-default","name":"Calendar","isDefaultCalendar":true,"canEdit":true,"canViewPrivateItems":true,"owner":{"address":"person@example.com"}},{"id":"calendar-shared","name":"Team calendar","isDefaultCalendar":false,"canEdit":false,"canViewPrivateItems":false,"owner":{"address":"team@example.com"}}]}

@@ -33,6 +33,7 @@ class BigQueryDiscoveryClient(Protocol):
 async def discover_resources(
     credential_value: str,
     _principal_label: str | None = None,
+    _pacing_key: str = "",
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     credentials = parse_google_service_account_json(
         credential_value,

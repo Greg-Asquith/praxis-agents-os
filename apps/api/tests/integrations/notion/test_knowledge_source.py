@@ -343,7 +343,12 @@ async def test_connection_client_uses_isolated_refresh_and_connection_pacing(
         calls.append((credential_id, force, expected_provider_key, expected_owner))
         return credential
 
-    monkeypatch.setattr(source_module, "ensure_fresh_credential", fresh_credential)
+    from services.integrations.credentials import (
+        build_personal_oauth_access_token_resolver as resolver,
+    )
+
+    resolver_module = __import__(resolver.__module__, fromlist=["ensure_fresh_credential"])
+    monkeypatch.setattr(resolver_module, "ensure_fresh_credential", fresh_credential)
 
     client = notion_client_for_connection(database, connection)
 
@@ -373,7 +378,12 @@ async def test_connection_client_rejects_mismatched_credential_owner(
             access_token="fresh-token",  # noqa: S106 - inert test token
         )
 
-    monkeypatch.setattr(source_module, "ensure_fresh_credential", fresh_credential)
+    from services.integrations.credentials import (
+        build_personal_oauth_access_token_resolver as resolver,
+    )
+
+    resolver_module = __import__(resolver.__module__, fromlist=["ensure_fresh_credential"])
+    monkeypatch.setattr(resolver_module, "ensure_fresh_credential", fresh_credential)
 
     client = notion_client_for_connection(
         SimpleNamespace(in_transaction=lambda: False),

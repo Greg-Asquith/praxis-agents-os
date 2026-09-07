@@ -5,7 +5,13 @@
 from base64 import b64encode
 from typing import Any
 
-from core.exceptions.integration import IntegrationAuthError
+import httpx2
+
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationError,
+    IntegrationFailureDisposition,
+)
 from core.settings import settings
 from services.integrations.http import IntegrationRequestPolicy, request_with_retries
 from services.integrations.oauth.resolve_provider_config import resolve_provider_oauth_config
@@ -29,6 +35,12 @@ async def exchange_authorization_code(
         operation="oauth_token_exchange",
         provider_key=provider_key,
         policy=IntegrationRequestPolicy.MUTATION,
+        response_error_mapper=lambda response: _token_response_error(
+            response,
+            provider_key=provider_key,
+            operation="oauth_token_exchange",
+            oauth_config=oauth_config,
+        ),
         **_request_kwargs(oauth_config, body),
     )
     return _parse_token_payload(
@@ -39,6 +51,7 @@ async def exchange_authorization_code(
         ),
         provider_key,
         "oauth_token_exchange",
+        oauth_config,
     )
 
 
@@ -53,6 +66,12 @@ async def refresh_authorization_token(*, provider_key: str, refresh_token: str) 
         operation="oauth_token_refresh",
         provider_key=provider_key,
         policy=IntegrationRequestPolicy.MUTATION,
+        response_error_mapper=lambda response: _token_response_error(
+            response,
+            provider_key=provider_key,
+            operation="oauth_token_refresh",
+            oauth_config=oauth_config,
+        ),
         **_request_kwargs(oauth_config, body),
     )
     return _parse_token_payload(
@@ -63,6 +82,7 @@ async def refresh_authorization_token(*, provider_key: str, refresh_token: str) 
         ),
         provider_key,
         "oauth_token_refresh",
+        oauth_config,
     )
 
 
@@ -107,13 +127,20 @@ def _add_post_client_credentials(
         body["client_secret"] = oauth_config.client_secret.get_secret_value()
 
 
-def _parse_token_payload(payload: Any, provider_key: str, operation: str) -> dict[str, Any]:
-    if not isinstance(payload, dict) or payload.get("error"):
-        raise IntegrationAuthError(
-            "OAuth token response was rejected",
-            provider_key=provider_key,
-            operation=operation,
-        )
+def _parse_token_payload(
+    payload: Any,
+    provider_key: str,
+    operation: str,
+    oauth_config: OAuthClientConfig,
+) -> dict[str, Any]:
+    rejection = _token_payload_error(
+        payload,
+        provider_key=provider_key,
+        operation=operation,
+        oauth_config=oauth_config,
+    )
+    if rejection is not None:
+        raise rejection
     if not isinstance(payload.get("access_token"), str) or not payload["access_token"]:
         raise IntegrationAuthError(
             "OAuth token response did not include an access token",
@@ -121,3 +148,63 @@ def _parse_token_payload(payload: Any, provider_key: str, operation: str) -> dic
             operation=operation,
         )
     return payload
+
+
+def _token_response_error(
+    response: httpx2.Response,
+    *,
+    provider_key: str,
+    operation: str,
+    oauth_config: OAuthClientConfig,
+) -> IntegrationError | None:
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    classifier = oauth_config.protocol.classify_token_error
+    if not isinstance(payload, dict) or not payload.get("error") or classifier is None:
+        return None
+    error_code = classifier(payload)
+    if error_code is None:
+        return None
+    return _oauth_token_error(
+        provider_key=provider_key,
+        operation=operation,
+        error_code=error_code,
+    )
+
+
+def _token_payload_error(
+    payload: Any,
+    *,
+    provider_key: str,
+    operation: str,
+    oauth_config: OAuthClientConfig,
+) -> IntegrationAuthError | None:
+    if isinstance(payload, dict) and not payload.get("error"):
+        return None
+    error_code = (
+        oauth_config.protocol.classify_token_error(payload)
+        if isinstance(payload, dict) and oauth_config.protocol.classify_token_error is not None
+        else None
+    )
+    return _oauth_token_error(
+        provider_key=provider_key,
+        operation=operation,
+        error_code=error_code,
+    )
+
+
+def _oauth_token_error(
+    *,
+    provider_key: str,
+    operation: str,
+    error_code: str | None,
+) -> IntegrationAuthError:
+    return IntegrationAuthError(
+        "OAuth token response was rejected",
+        provider_key=provider_key,
+        operation=operation,
+        error_code=error_code,
+        failure_disposition=IntegrationFailureDisposition.REJECTED,
+    )
