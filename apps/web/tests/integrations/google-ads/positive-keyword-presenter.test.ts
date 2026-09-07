@@ -82,6 +82,20 @@ describe("Google Ads positive keyword input", () => {
 })
 
 describe("Google Ads positive keyword presenter", () => {
+  it("shows selected ad-group labels as failure chips", () => {
+    const html = render(
+      googleAdsCreatePositiveKeywordsPresenter.render(
+        props(
+          activity("failed", {
+            ad_groups: [adGroup("20", "Shoes", "Search")],
+            keywords: [{ text: "running shoes", match_type: "EXACT" }],
+          })
+        )
+      )
+    )
+    expect(html).toMatch(/data-slot="badge"[^>]*>Shoes/)
+  })
+
   it("groups the approval by campaign and shows trusted account currency", () => {
     const html = render(
       googleAdsCreatePositiveKeywordsPresenter.render(
@@ -355,7 +369,7 @@ describe("Google Ads positive keyword presenter", () => {
     expect(html).toContain("running shoes")
     expect(html).toContain("walking shoes")
     expect(html).toContain("hiking shoes")
-    expect(html).toContain("Already exists")
+    expect(html).toContain("Already existed")
     expect(html).toContain("Existing keyword")
     expect(html).toContain("Requested Status")
     expect(html).toContain("Existing Status")

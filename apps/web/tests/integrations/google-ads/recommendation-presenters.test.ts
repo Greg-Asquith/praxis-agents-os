@@ -10,6 +10,28 @@ import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ad
 import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
 
 describe("Google Ads recommendation presenters", () => {
+  it.each([
+    [googleAdsApplyRecommendationsPresenter, "google_ads_apply_recommendations"],
+    [googleAdsDismissRecommendationsPresenter, "google_ads_dismiss_recommendations"],
+  ] as const)("shows recommendation labels as failure chips for %s", (presenter, name) => {
+    const html = render(
+      presenter.render(
+        props({
+          id: "failed",
+          kind: "call",
+          status: "failed",
+          name,
+          args: {
+            recommendations: [
+              recommendationReference("1", "Raise campaign budget", "CAMPAIGN_BUDGET"),
+            ],
+          },
+        })
+      )
+    )
+    expect(html).toMatch(/data-slot="badge"[^>]*>Raise campaign budget/)
+  })
+
   it("reviews edited apply selections and typed parameters through the shared approval controls", () => {
     const controls = approvalControls()
     controls.decision.edits = {

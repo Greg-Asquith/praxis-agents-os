@@ -41,11 +41,14 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   lives in `field-values.ts`; callers own normalization, defaults, and clears.
   Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
   separate modules. Device bid modifiers, campaign list links, budget amount
-  updates, budget assignments, and budget removals share `GoogleAdsOutcomeTable`
-  and `GoogleAdsFailureTargets`. The table owns outcome labels, stat order and
-  tones, conditional detail and error columns, and sample notices. Tool columns
-  and result validation stay with each tool. Adoption by other writes, shared
-  approval components, and lifecycle-copy adoption remain pending.
+  updates, budget assignments, budget removals, recommendations, list/campaign/
+  ad-group negative keywords, and positive-keyword creation, update, and removal
+  share `GoogleAdsOutcomeTable` and `GoogleAdsFailureTargets`. The table owns
+  outcome labels, stat order and tones, conditional detail and error columns,
+  and sample notices. Tool columns and result validation stay with each tool. Legacy negative-keyword aggregates
+  retain counts without reconstructing keyword identities. Keyword update results
+  separate Before, Requested, and verified After values. Adoption by other writes,
+  shared approval components, and lifecycle-copy adoption remain pending.
   Google Ads positive-keyword creation groups approval context by campaign,
   keeps optional bid and URL fields behind each row's progressive disclosure,
   applies provider byte and dependency checks before approval, and shows

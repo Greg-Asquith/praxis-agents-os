@@ -1,13 +1,19 @@
 // apps/web/src/integrations/google_ads/presenters/update-positive-keywords.tsx
 
 import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+
+import {
   parseGoogleAdsMoney,
   parseGoogleAdsUrlList,
   parseGoogleAdsCustomParameters,
   GOOGLE_ADS_ID_PATTERN,
 } from "@/integrations/google_ads/lib/field-values"
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import type { DataColumn } from "@/components/ui/data-table"
 import {
   formatPositiveKeywordValue,
   mutableStateFromReference,
@@ -24,7 +30,7 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { titleCaseToken } from "@/lib/format"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 
 import {
   parsePositiveKeywordReference,
@@ -59,8 +65,7 @@ const COLUMNS: DataColumn[] = [
   { key: "fields", kind: "text", label: "Changed Fields", width: 220 },
   { key: "before", kind: "text", label: "Before", width: 320 },
   { key: "requested", kind: "text", label: "Requested", width: 320 },
-  { key: "outcome", kind: "status", label: "Outcome" },
-  { key: "details", kind: "text", label: "Details", width: 280 },
+  { key: "after", kind: "text", label: "After", width: 320 },
 ]
 
 export const googleAdsUpdatePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
@@ -98,6 +103,12 @@ export const googleAdsUpdatePositiveKeywordsPresenter = createGoogleAdsWritePres
         "The system couldn't verify this account's keyword outcomes. Check Google Ads before taking further action.",
       parseResult: updateKeywordResult,
       progressLabel: "Updating Google Ads keywords…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets
+          description={description}
+          targets={args?.keywords.map((item) => item.label) ?? []}
+        />
+      ),
       renderOutcome,
       resultAriaLabel: "Google Ads positive keyword update results",
       resultFailure:
@@ -111,45 +122,34 @@ export const googleAdsUpdatePositiveKeywordsPresenter = createGoogleAdsWritePres
 })
 
 function renderOutcome(result: UpdateKeywordResult) {
-  const rows = result.rows.map<DataRow>((row) => ({
+  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
     requested: summarizeFields(row.requested, row.requestedFields, result.currencyCode),
+    after:
+      row.outcome === "updated" || row.outcome === "already_set"
+        ? summarizeFields(
+            mutableStateFromReference(row.reference),
+            row.requestedFields,
+            result.currencyCode
+          )
+        : "Unverified",
     before: summarizeFields(row.before, row.requestedFields, result.currencyCode),
-    details:
-      [row.message, row.errorCode ? titleCaseToken(row.errorCode, row.errorCode) : null]
-        .filter((value): value is string => Boolean(value))
-        .join(" · ") || "—",
+    details: row.message ?? "",
     fields: row.requestedFields.map(fieldLabel).join(", "),
     keyword: row.reference.text,
-    matchType: titleCaseToken(row.reference.matchType, row.reference.matchType),
-    outcome:
-      row.outcome === "already_set" ? "Already set" : titleCaseToken(row.outcome, row.outcome),
+    matchType: googleAdsTokenLabel(row.reference.matchType, row.reference.matchType),
+    outcome: row.outcome,
+    errorCode: row.errorCode,
     scope: row.reference.scopeLabel,
   }))
   return (
-    <DataTable
+    <GoogleAdsOutcomeTable
       columns={COLUMNS}
       exportFilename="google-ads-keyword-updates.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Updated"
-            tone={result.counts.updated > 0 ? "success" : undefined}
-            value={result.counts.updated}
-          />
-          <Stat label="Already set" value={result.counts.already_set} />
-          <Stat
-            label="Failed"
-            tone={result.counts.failed > 0 ? "danger" : undefined}
-            value={result.counts.failed}
-          />
-          <Stat
-            label="Unverified"
-            tone={result.counts.unverified > 0 ? "warning" : undefined}
-            value={result.counts.unverified}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
+      outcomes={OUTCOMES.map((outcome) => ({
+        kind: outcomeKind(outcome),
+        label: outcomeLabel(outcome),
+        count: result.counts[outcome],
+      }))}
       rows={rows}
     />
   )
@@ -482,7 +482,7 @@ function summarizeFields(
 }
 
 function fieldLabel(field: PatchField): string {
-  return POSITIVE_KEYWORD_PATCH_FIELDS_BY_KEY.get(field)?.label ?? titleCaseToken(field, field)
+  return POSITIVE_KEYWORD_PATCH_FIELDS_BY_KEY.get(field)?.label ?? googleAdsTokenLabel(field, field)
 }
 
 function valuesEqual(

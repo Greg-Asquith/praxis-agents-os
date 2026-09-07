@@ -77,7 +77,7 @@ export function listNegativeKeywordResult(
 export function campaignNegativeKeywordArgs(
   value: unknown,
   allowAny: boolean
-): { campaignCount: number; keywordCount: number } | null {
+): { campaignCount: number; keywordCount: number; selectionLabels: string[] } | null {
   if (
     !isRecord(value) ||
     !Array.isArray(value["campaign_ids"]) ||
@@ -92,6 +92,12 @@ export function campaignNegativeKeywordArgs(
     return null
   }
   return {
+    selectionLabels: value["campaign_ids"].map((campaign) => {
+      const reference = campaign as Record<string, unknown>
+      return typeof reference["label"] === "string" && reference["label"].trim()
+        ? reference["label"]
+        : String(reference["campaign_id"])
+    }),
     campaignCount: value["campaign_ids"].length,
     keywordCount: value["keywords"].length,
   }

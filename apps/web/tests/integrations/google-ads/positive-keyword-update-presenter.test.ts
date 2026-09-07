@@ -8,6 +8,37 @@ import { replacePositiveKeywordPatch } from "@/integrations/google_ads/lib/posit
 import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
 
 describe("Google Ads positive keyword update presenter", () => {
+  it("shows selected keyword labels as failure chips", () => {
+    const html = render(
+      googleAdsUpdatePositiveKeywordsPresenter.render(
+        props(
+          activity("failed", {
+            keywords: [keyword("PAUSED")],
+            patches: [{ status: "ENABLED" }],
+            _account_currencies: [
+              { customer_id: "1234567890", currency_code: "GBP", label: "Shop" },
+            ],
+          })
+        )
+      )
+    )
+    expect(html).toMatch(/data-slot="badge"[^>]*>running shoes/)
+  })
+
+  it("separates confirmed state from requested state without arrows", () => {
+    const before = state("PAUSED", "1.25", ["https://example.com/old"])
+    const requested = state("ENABLED", null, [])
+    const html = renderResult({ updated: [resultRow("updated", before, requested)] })
+    expect(html).toContain(">Before<")
+    expect(html).toContain(">After<")
+    expect(html).toContain(">Requested<")
+    expect(html).not.toContain("→")
+    const failed = renderResult({ failed: [resultRow("failed", before, requested)] })
+    expect(
+      (failed.match(/<td[\s\S]*?<\/td>/g) ?? []).map((cell) => cell.replace(/<[^>]*>/g, ""))
+    ).toContain("Unverified")
+  })
+
   it.each(["utm_source=my-campaign", "MiXeD_{lpurl}", "ENABLED", "PAUSED"])(
     "preserves the literal suffix %s in approval comparisons and exported result cells",
     (suffix) => {

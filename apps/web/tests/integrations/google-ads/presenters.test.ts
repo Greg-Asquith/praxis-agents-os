@@ -1196,7 +1196,9 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("401")
     expect(html).toContain("73")
     expect(html).toContain("26")
-    expect(html).toContain("Showing representative rows")
+    expect(html).toContain(
+      "Showing a representative sample. Complete evidence is in the Audit Log."
+    )
   })
 
   it("updates the approval summary from edited keyword rows", () => {
@@ -1300,7 +1302,7 @@ describe("Google Ads tool presenters", () => {
       )
     )
     expect(settled).toContain("Removed")
-    expect(settled).toContain("Success")
+    expect(settled).toContain("Removed")
     expect(settled).toContain("bg-success/10")
     expect(settled).toContain("Not found")
     expect(settled).toContain("free")
@@ -1308,7 +1310,7 @@ describe("Google Ads tool presenters", () => {
     expect(settled).toContain("cheap")
     expect(settled).toContain("Removal failed.")
     expect(settled).toContain("Invalid Input")
-    expect(settled).toContain("Error Code")
+    expect(settled).toContain("Error code")
   })
 
   it("derives the custom approval summary across incomplete keyword row states", () => {
@@ -1698,12 +1700,12 @@ describe("Google Ads tool presenters", () => {
     expect(campaignHtml).toContain("Added")
     expect(campaignHtml).toContain("External Reference")
     expect(campaignHtml).not.toContain(">Details</span></th>")
-    expect(campaignHtml).not.toContain("Error Code")
+    expect(campaignHtml).not.toContain("Error code")
     expect(adGroupHtml).toContain("jobs near me")
     expect(adGroupHtml).toContain("Exact")
     expect(adGroupHtml).toContain("Added")
     expect(adGroupHtml).not.toContain(">Details</span></th>")
-    expect(adGroupHtml).not.toContain("Error Code")
+    expect(adGroupHtml).not.toContain("Error code")
   })
 
   it.each([
@@ -1905,6 +1907,16 @@ describe("Google Ads tool presenters", () => {
         id: `${testCase.name}-lifecycle`,
         kind: "result" as const,
         name: testCase.name,
+      }
+      if (
+        [
+          googleAdsListNegativeKeywordsPresenter,
+          googleAdsCampaignNegativeKeywordsPresenter,
+          googleAdsAdGroupNegativeKeywordsPresenter,
+        ].includes(testCase.presenter)
+      ) {
+        const failed = render(testCase.presenter.render(props({ ...activity, status: "failed" })))
+        expect(failed).toMatch(/data-slot="badge"[^>]*>[^<]*(Brand Protection|Summer Sale)/)
       }
       expect(testCase.presenter.handlesApprovals).toBe(true)
       expect(testCase.presenter.matches({ ...activity, status: "awaiting_approval" })).toBe(true)

@@ -96,6 +96,10 @@ function result() {
 }
 
 describe("positive keyword removal presenter", () => {
+  it("shows selected keyword labels as failure chips", () => {
+    expect(render("failed")).toMatch(/data-slot="badge"[^>]*>running shoes/)
+  })
+
   it("shows destructive approval with both ad groups and account context", () => {
     const html = render("awaiting_approval")
     expect(html).toContain("cannot be undone")

@@ -16,7 +16,7 @@ import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 export type GoogleAdsOutcomeRow = DataRow & {
   outcome: Parameters<typeof outcomeKind>[0]
   details?: string
-  errorCode?: string | null
+  errorCode?: string | string[] | null
 }
 
 const ORDER: OutcomeKind[] = ["applied", "skipped", "failed", "unverified"]
@@ -48,7 +48,10 @@ export function GoogleAdsOutcomeTable({
     ...row,
     outcome: outcomeLabel(row.outcome),
     outcomeKind: outcomeKind(row.outcome),
-    errorCode: row.errorCode ? googleAdsTokenLabel(row.errorCode) : "",
+    errorCode: (Array.isArray(row.errorCode) ? row.errorCode : [row.errorCode])
+      .filter((code): code is string => Boolean(code))
+      .map((code) => googleAdsTokenLabel(code))
+      .join(" · "),
   }))
   return (
     <DataTable
@@ -87,6 +90,10 @@ export function GoogleAdsOutcomeTable({
           >
             {String(row["outcome"])}
           </Badge>
+        ) : column.key === "errorCode" ? (
+          typeof row["errorCode"] === "string" && row["errorCode"] ? (
+            <Badge variant="outline">{row["errorCode"]}</Badge>
+          ) : null
         ) : (
           (renderCell?.(column, row) ?? null)
         )

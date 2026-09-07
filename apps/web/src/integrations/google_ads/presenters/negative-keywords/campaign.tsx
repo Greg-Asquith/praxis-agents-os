@@ -55,6 +55,7 @@ export const googleAdsCampaignNegativeKeywordsPresenter = createNegativeKeywordP
   renderOutcome: (result: CampaignNegativeKeywordResult, removing) => (
     <CampaignNegativeKeywordOutcome action={removing ? "remove" : "add"} result={result} />
   ),
+  failureTargets: (args) => args.selectionLabels,
   summarize: campaignNegativeKeywordSummary,
   toolNames: {
     add: "google_ads_add_campaign_negative_keywords",

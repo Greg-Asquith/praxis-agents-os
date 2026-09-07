@@ -1,6 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/recommendations.ts
 
-import { isRecord } from "@/lib/guards"
+import { isRecord, isNullableString, isOneOf } from "@/lib/guards"
 
 export function parseRecommendationReference(value: unknown): {
   customerId: string
@@ -26,5 +26,33 @@ export function parseRecommendationReference(value: unknown): {
     label: value["label"],
     recommendationType: value["recommendation_type"],
     resourceName: value["resource_name"],
+  }
+}
+
+export function parseRecommendationOutcome<Token extends string>(
+  value: unknown,
+  outcomes: readonly Token[]
+) {
+  if (
+    !isRecord(value) ||
+    typeof value["recommendation_resource_name"] !== "string" ||
+    typeof value["recommendation_type"] !== "string" ||
+    typeof value["recommendation_label"] !== "string" ||
+    !Array.isArray(value["affected_campaigns"]) ||
+    !value["affected_campaigns"].every((item) => typeof item === "string") ||
+    !isOneOf(new Set(outcomes), value["outcome"])
+  )
+    return null
+  const message = value["message"] ?? null
+  const errorCode = value["error_code"] ?? null
+  if (!isNullableString(message) || !isNullableString(errorCode)) return null
+  return {
+    affectedCampaigns: value["affected_campaigns"],
+    errorCode,
+    label: value["recommendation_label"],
+    message,
+    outcome: value["outcome"],
+    recommendationType: value["recommendation_type"],
+    resourceName: value["recommendation_resource_name"],
   }
 }

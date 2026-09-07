@@ -1,6 +1,14 @@
 // apps/web/src/integrations/google_ads/presenters/create-positive-keywords.tsx
 
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+
+import type { DataColumn } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   parsePositiveKeywordInput,
@@ -17,7 +25,7 @@ import {
   parseAdGroupReference,
   type AdGroupReference,
 } from "@/integrations/google_ads/lib/ad-groups"
-import { formatCurrencyAmount, titleCaseToken } from "@/lib/format"
+import { formatCurrencyAmount } from "@/lib/format"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
 const OUTCOMES = ["added", "skipped_existing", "failed", "unverified"] as const
@@ -65,8 +73,6 @@ const RESULT_COLUMNS: DataColumn[] = [
   { key: "requestedUrls", kind: "text", label: "Requested URLs", width: 260 },
   { key: "existingUrls", kind: "text", label: "Existing URLs", width: 260 },
   { key: "previousState", kind: "text", label: "Previous State" },
-  { key: "outcome", kind: "status", label: "Outcome" },
-  { key: "details", kind: "text", label: "Details", width: 280 },
 ]
 
 export const googleAdsCreatePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
@@ -105,6 +111,12 @@ export const googleAdsCreatePositiveKeywordsPresenter = createGoogleAdsWritePres
         "The system couldn't verify this account's keyword outcomes. Check Google Ads before taking further action.",
       parseResult: createKeywordResult,
       progressLabel: "Adding Google Ads keywords…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets
+          description={description}
+          targets={args?.adGroups.map((item) => item.label) ?? []}
+        />
+      ),
       renderOutcome: renderOutcome,
       resultAriaLabel: "Google Ads positive keyword results",
       resultFailure:
@@ -184,62 +196,41 @@ function renderApprovalSummary(args: CreateKeywordArgs) {
 }
 
 function renderOutcome(result: CreateKeywordResult) {
-  const rows = result.rows.map<DataRow>((row) => {
+  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => {
     const details = [
       row.message,
       row.observedTruncated ? "Some live URL settings are omitted from this row." : null,
     ]
-    if (row.errorCode) details.push(titleCaseToken(row.errorCode, row.errorCode))
     return {
       adGroup: row.adGroupName,
       campaign: row.campaignName,
       requestedBids: bidSummary(row.requested, result.currencyCode),
       existingBids: row.observed ? bidSummary(row.observed, result.currencyCode) : "—",
-      details: details.filter((value): value is string => Boolean(value)).join(" · ") || "—",
+      details: details.filter((value): value is string => Boolean(value)).join(" · "),
       keyword: row.requested.text,
-      matchType: titleCaseToken(row.requested.matchType, row.requested.matchType),
-      outcome:
-        row.outcome === "skipped_existing"
-          ? "Already exists"
-          : titleCaseToken(row.outcome, row.outcome),
+      matchType: googleAdsTokenLabel(row.requested.matchType, row.requested.matchType),
+      outcome: row.outcome,
+      errorCode: row.errorCode,
       previousState: row.previousState === "existing" ? "Existing keyword" : "Not present",
-      requestedStatus: titleCaseToken(row.requested.status, row.requested.status),
-      existingStatus: row.observed ? titleCaseToken(row.observed.status, row.observed.status) : "—",
+      requestedStatus: googleAdsTokenLabel(row.requested.status, row.requested.status),
+      existingStatus: row.observed
+        ? googleAdsTokenLabel(row.observed.status, row.observed.status)
+        : "—",
       requestedUrls: urlSummary(row.requested),
       existingUrls: row.observed ? urlSummary(row.observed) : "—",
     }
   })
   return (
-    <DataTable
+    <GoogleAdsOutcomeTable
       columns={RESULT_COLUMNS}
       exportFilename="google-ads-keyword-additions.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Added"
-            tone={result.counts.added > 0 ? "success" : undefined}
-            value={result.counts.added}
-          />
-          <Stat label="Already exists" value={result.counts.skipped_existing} />
-          <Stat
-            label="Failed"
-            tone={result.counts.failed > 0 ? "danger" : undefined}
-            value={result.counts.failed}
-          />
-          <Stat
-            label="Unverified"
-            tone={result.counts.unverified > 0 ? "warning" : undefined}
-            value={result.counts.unverified}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
+      outcomes={OUTCOMES.map((outcome) => ({
+        kind: outcomeKind(outcome),
+        label: outcomeLabel(outcome),
+        count: result.counts[outcome],
+      }))}
       rows={rows}
-      truncationNote={
-        result.samplesTruncated
-          ? "The table contains a representative sample. Complete evidence is available in the Audit Log."
-          : null
-      }
+      truncated={result.samplesTruncated}
     />
   )
 }

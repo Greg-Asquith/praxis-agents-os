@@ -1,5 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/list.tsx
 
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+
 import {
   NegativeKeywordApprovalSummary,
   NegativeKeywordOutcome,
@@ -47,6 +49,9 @@ export const googleAdsListNegativeKeywordsPresenter = createGoogleAdsWritePresen
         "The system couldn't verify this account's negative keyword outcomes. Check the Google Ads platform before taking further action.",
       parseResult: (value): NegativeKeywordResult | null => listNegativeKeywordResult(value, false),
       progressLabel: "Adding Google Ads negative keywords…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets description={description} targets={args ? [args.listName] : []} />
+      ),
       renderOutcome: (result) => <NegativeKeywordOutcome result={result} />,
       resultAriaLabel: "Google Ads negative keyword results",
       resultFailure:
@@ -85,6 +90,9 @@ export const googleAdsListNegativeKeywordsPresenter = createGoogleAdsWritePresen
       parseResult: (value): NegativeKeywordRemovalResult | null =>
         listNegativeKeywordResult(value, true),
       progressLabel: "Removing Google Ads negative keywords…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets description={description} targets={args ? [args.listName] : []} />
+      ),
       renderOutcome: (result) => <NegativeKeywordRemovalOutcome result={result} />,
       resultAriaLabel: "Google Ads negative keyword results",
       resultFailure:

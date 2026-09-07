@@ -1,5 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/presenter.tsx
 
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+
 import type { ReactNode } from "react"
 
 import {
@@ -28,6 +30,7 @@ type NegativeKeywordPresenterConfig<Args, Summary, Result> = {
   parseResult: (value: unknown, removing: boolean) => Result | null
   renderApprovalSummary: (summary: Summary) => ReactNode
   renderOutcome: (result: Result, removing: boolean) => ReactNode
+  failureTargets: (args: Args) => string[]
   summarize: (value: unknown, fallback: Args) => Summary
   toolNames: { add: string; remove: string }
 }
@@ -65,6 +68,12 @@ export function createNegativeKeywordPresenter<Args, Summary, Result>(
         malformedDescription,
         parseResult: (value) => config.parseResult(value, false),
         progressLabel: config.copy.progressLabel.add,
+        renderFailure: (args, description) => (
+          <GoogleAdsFailureTargets
+            description={description}
+            targets={args ? config.failureTargets(args) : []}
+          />
+        ),
         renderOutcome: (result) => config.renderOutcome(result, false),
         resultAriaLabel: config.copy.resultAriaLabel,
         resultFailure,
@@ -89,6 +98,12 @@ export function createNegativeKeywordPresenter<Args, Summary, Result>(
         malformedDescription,
         parseResult: (value) => config.parseResult(value, true),
         progressLabel: config.copy.progressLabel.remove,
+        renderFailure: (args, description) => (
+          <GoogleAdsFailureTargets
+            description={description}
+            targets={args ? config.failureTargets(args) : []}
+          />
+        ),
         renderOutcome: (result) => config.renderOutcome(result, true),
         resultAriaLabel: config.copy.resultAriaLabel,
         resultFailure,

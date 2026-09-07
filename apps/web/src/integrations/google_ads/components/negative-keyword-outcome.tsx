@@ -1,7 +1,11 @@
 // apps/web/src/integrations/google_ads/components/negative-keyword-outcome.tsx
 
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import type { DataColumn, DataRow } from "@/components/ui/data-table"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 
 export type NegativeKeyword = {
   matchType: MatchType
@@ -97,15 +101,7 @@ export type AdGroupNegativeKeywordResult = {
 const COLUMNS: DataColumn[] = [
   { key: "text", kind: "text", label: "Keyword" },
   { key: "matchType", kind: "badge", label: "Match Type" },
-  { key: "outcome", kind: "status", label: "Outcome" },
 ]
-const DIAGNOSTIC_COLUMNS: DataColumn[] = [
-  ...COLUMNS,
-  { key: "message", kind: "text", label: "Details" },
-  { key: "errorCode", kind: "badge", label: "Error Code" },
-]
-const TRUNCATION_NOTE =
-  "Showing representative rows. Full applied-change details are available in the audit trail."
 const NO_SELECTION_LABELS: string[] = []
 
 export function NegativeKeywordApprovalSummary({
@@ -209,76 +205,23 @@ export function CampaignNegativeKeywordOutcome({
   action: "add" | "remove"
   result: CampaignNegativeKeywordResult
 }) {
-  const appliedLabel = action === "add" ? "Added" : "Removed"
-  const skippedLabel = action === "add" ? "Already existed" : "Not found"
-  const hasExactEvidence = result.campaigns.every((campaign) => campaign.keywordOutcomes !== null)
-  const exactOutcomes = result.campaigns.flatMap((campaign) => campaign.keywordOutcomes ?? [])
-  const rows: DataRow[] = hasExactEvidence
-    ? result.campaigns.flatMap((campaign) =>
-        (campaign.keywordOutcomes ?? []).map((outcome) => ({
-          campaign: campaign.campaignName || campaign.campaignId,
-          campaignId: campaign.campaignId,
-          details: outcomeDetail(outcome, campaign.errors),
-          errorCode: outcome.errorCode ?? "",
-          externalRef: outcome.externalRef ?? "",
-          keyword: outcome.text,
-          matchType: outcome.matchType,
-          outcome: outcomeLabel(outcome.outcome),
-        }))
-      )
-    : result.campaigns.map((campaign) => ({
-        applied: campaign.counts.applied,
-        campaign: campaign.campaignName || campaign.campaignId,
-        campaignId: campaign.campaignId,
-        details: campaign.errors.map((error) => error.message).join(" · "),
-        failed: campaign.counts.failed,
-        skipped: campaign.counts.skipped,
-      }))
-  const columns: DataColumn[] = hasExactEvidence
-    ? exactOutcomeColumns("campaign", {
-        includeDiagnostics: result.totals.failed > 0,
-        includeExternalReferences: exactOutcomes.some((outcome) => outcome.externalRef),
-      })
-    : [
+  return (
+    <ScopedNegativeKeywordOutcome
+      action={action}
+      totals={result.totals}
+      targets={result.campaigns.map((target) => ({
+        ...target,
+        identity: {
+          campaign: target.campaignName || target.campaignId,
+          campaignId: target.campaignId,
+        },
+      }))}
+      columns={[
         { key: "campaign", kind: "text", label: "Campaign" },
         { key: "campaignId", kind: "text", label: "Campaign ID" },
-        { key: "applied", kind: "text", label: appliedLabel },
-        { key: "skipped", kind: "text", label: skippedLabel },
-        { key: "failed", kind: "text", label: "Failed" },
-        ...(result.totals.failed > 0
-          ? ([{ key: "details", kind: "text", label: "Details" }] satisfies DataColumn[])
-          : []),
-      ]
-  return (
-    <DataTable
-      columns={columns}
+      ]}
+      truncated={result.campaignsTruncated}
       exportFilename={`${action === "add" ? "added" : "removed"}-campaign-negative-keywords.csv`}
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label={appliedLabel}
-            tone={result.totals.applied > 0 ? "success" : undefined}
-            value={result.totals.applied}
-          />
-          <Stat
-            label={skippedLabel}
-            tone={result.totals.skipped > 0 ? "warning" : undefined}
-            value={result.totals.skipped}
-          />
-          <Stat
-            label="Failed"
-            tone={result.totals.failed > 0 ? "danger" : undefined}
-            value={result.totals.failed}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
-      rows={rows}
-      truncationNote={
-        result.campaignsTruncated || result.campaigns.some((campaign) => campaign.errorsTruncated)
-          ? TRUNCATION_NOTE
-          : null
-      }
     />
   )
 }
@@ -290,79 +233,116 @@ export function AdGroupNegativeKeywordOutcome({
   action: "add" | "remove"
   result: AdGroupNegativeKeywordResult
 }) {
-  const appliedLabel = action === "add" ? "Added" : "Removed"
-  const skippedLabel = action === "add" ? "Already existed" : "Not found"
-  const hasExactEvidence = result.adGroups.every((adGroup) => adGroup.keywordOutcomes !== null)
-  const exactOutcomes = result.adGroups.flatMap((adGroup) => adGroup.keywordOutcomes ?? [])
-  const rows: DataRow[] = hasExactEvidence
-    ? result.adGroups.flatMap((adGroup) =>
-        (adGroup.keywordOutcomes ?? []).map((outcome) => ({
-          adGroup: adGroup.adGroupName || adGroup.adGroupId,
-          adGroupId: adGroup.adGroupId,
-          campaign: adGroup.campaignName,
-          details: outcomeDetail(outcome, adGroup.errors),
-          errorCode: outcome.errorCode ?? "",
-          externalRef: outcome.externalRef ?? "",
+  return (
+    <ScopedNegativeKeywordOutcome
+      action={action}
+      totals={result.totals}
+      targets={result.adGroups.map((target) => ({
+        ...target,
+        identity: {
+          adGroup: target.adGroupName || target.adGroupId,
+          adGroupId: target.adGroupId,
+          campaign: target.campaignName,
+        },
+      }))}
+      columns={[
+        { key: "adGroup", kind: "text", label: "Ad Group" },
+        { key: "adGroupId", kind: "text", label: "Ad Group ID" },
+        { key: "campaign", kind: "text", label: "Campaign" },
+      ]}
+      truncated={result.adGroupsTruncated}
+      exportFilename={`${action === "add" ? "added" : "removed"}-ad-group-negative-keywords.csv`}
+    />
+  )
+}
+
+function ScopedNegativeKeywordOutcome({
+  action,
+  targets,
+  totals,
+  columns,
+  truncated,
+  exportFilename,
+}: {
+  action: "add" | "remove"
+  targets: (Pick<
+    CampaignNegativeKeywordRow,
+    "counts" | "errors" | "errorsTruncated" | "keywordOutcomes"
+  > & { identity: DataRow })[]
+  totals: CampaignNegativeKeywordResult["totals"]
+  columns: DataColumn[]
+  truncated: boolean
+  exportFilename: string
+}) {
+  const applied = action === "add" ? "added" : "removed"
+  const skipped = action === "add" ? "skipped_existing" : "not_found"
+  const hasExactEvidence = targets.every((target) => target.keywordOutcomes !== null)
+  const rows = targets.flatMap<GoogleAdsOutcomeRow>((target) =>
+    hasExactEvidence
+      ? (target.keywordOutcomes ?? []).map((outcome) => ({
+          ...target.identity,
           keyword: outcome.text,
           matchType: outcome.matchType,
-          outcome: outcomeLabel(outcome.outcome),
+          outcome: outcome.outcome,
+          details: outcomeDetail(outcome, target.errors),
+          errorCode: outcome.errorCode ?? "",
+          externalRef: outcome.externalRef ?? "",
         }))
-      )
-    : result.adGroups.map((adGroup) => ({
-        adGroup: adGroup.adGroupName || adGroup.adGroupId,
-        adGroupId: adGroup.adGroupId,
-        applied: adGroup.counts.applied,
-        campaign: adGroup.campaignName,
-        details: adGroup.errors.map((error) => error.message).join(" · "),
-        failed: adGroup.counts.failed,
-        skipped: adGroup.counts.skipped,
-      }))
-  const columns: DataColumn[] = hasExactEvidence
-    ? exactOutcomeColumns("ad_group", {
-        includeDiagnostics: result.totals.failed > 0,
-        includeExternalReferences: exactOutcomes.some((outcome) => outcome.externalRef),
-      })
-    : [
-        { key: "adGroup", kind: "text", label: "Ad Group" },
-        { key: "campaign", kind: "text", label: "Campaign" },
-        { key: "adGroupId", kind: "text", label: "Ad Group ID" },
-        { key: "applied", kind: "text", label: appliedLabel },
-        { key: "skipped", kind: "text", label: skippedLabel },
-        { key: "failed", kind: "text", label: "Failed" },
-        ...(result.totals.failed > 0
-          ? ([{ key: "details", kind: "text", label: "Details" }] satisfies DataColumn[])
-          : []),
-      ]
+      : (
+          [
+            [applied, target.counts.applied],
+            [skipped, target.counts.skipped],
+            ["failed", target.counts.failed],
+          ] as const
+        )
+          .filter(([, count]) => count > 0)
+          .map(([outcome, count]) => ({
+            ...target.identity,
+            outcome,
+            applied: outcome === applied ? count : 0,
+            skipped: outcome === skipped ? count : 0,
+            failed: outcome === "failed" ? count : 0,
+            details:
+              outcome === "failed" ? target.errors.map((error) => error.message).join(" · ") : "",
+            errorCode:
+              outcome === "failed"
+                ? [...new Set(target.errors.map((error) => error.errorCode))]
+                : "",
+          }))
+  )
+  const leadingColumns: DataColumn[] = [
+    ...columns,
+    ...(hasExactEvidence
+      ? ([
+          { key: "keyword", kind: "text", label: "Keyword" },
+          { key: "matchType", kind: "badge", label: "Match Type" },
+          ...(rows.some((row) => row["externalRef"])
+            ? [
+                {
+                  key: "externalRef",
+                  kind: "text",
+                  label: "External Reference",
+                } satisfies DataColumn,
+              ]
+            : []),
+        ] satisfies DataColumn[])
+      : ([
+          { key: "applied", kind: "text", label: outcomeLabel(applied) },
+          { key: "skipped", kind: "text", label: outcomeLabel(skipped) },
+          { key: "failed", kind: "text", label: "Failed" },
+        ] satisfies DataColumn[])),
+  ]
   return (
-    <DataTable
-      columns={columns}
-      exportFilename={`${action === "add" ? "added" : "removed"}-ad-group-negative-keywords.csv`}
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label={appliedLabel}
-            tone={result.totals.applied > 0 ? "success" : undefined}
-            value={result.totals.applied}
-          />
-          <Stat
-            label={skippedLabel}
-            tone={result.totals.skipped > 0 ? "warning" : undefined}
-            value={result.totals.skipped}
-          />
-          <Stat
-            label="Failed"
-            tone={result.totals.failed > 0 ? "danger" : undefined}
-            value={result.totals.failed}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
+    <GoogleAdsOutcomeTable
+      columns={leadingColumns}
       rows={rows}
-      truncationNote={
-        result.adGroupsTruncated || result.adGroups.some((adGroup) => adGroup.errorsTruncated)
-          ? TRUNCATION_NOTE
-          : null
-      }
+      exportFilename={exportFilename}
+      outcomes={[
+        { kind: "applied", label: outcomeLabel(applied), count: totals.applied },
+        { kind: "skipped", label: outcomeLabel(skipped), count: totals.skipped },
+        { kind: "failed", label: outcomeLabel("failed"), count: totals.failed },
+      ]}
+      truncated={truncated || targets.some((target) => target.errorsTruncated)}
     />
   )
 }
@@ -372,107 +352,56 @@ export function NegativeKeywordRemovalOutcome({
 }: {
   result: NegativeKeywordRemovalResult
 }) {
-  const rows: DataRow[] = [
-    ...result.removedKeywords.map((keyword) => ({
-      matchType: keyword.matchType,
-      outcome: "Success",
-      text: keyword.text,
-    })),
-    ...result.notFound.map((keyword) => ({
-      matchType: keyword.matchType,
-      outcome: "Not found",
-      text: keyword.text,
-    })),
+  const rows: GoogleAdsOutcomeRow[] = [
+    ...result.removedKeywords.map((keyword) => ({ ...keyword, outcome: "removed" as const })),
+    ...result.notFound.map((keyword) => ({ ...keyword, outcome: "not_found" as const })),
     ...errorRows(result.errors),
   ]
   return (
-    <div className="grid min-w-0 gap-3">
-      <DataTable
-        columns={result.errors.length > 0 ? DIAGNOSTIC_COLUMNS : COLUMNS}
-        exportFilename="removed-negative-keywords.csv"
-        header={
-          <StatGroup className="px-3 pt-2">
-            <Stat
-              label="Removed"
-              tone={result.removedCount > 0 ? "success" : undefined}
-              value={result.removedCount}
-            />
-            <Stat
-              label="Not found"
-              tone={result.notFoundCount > 0 ? "warning" : undefined}
-              value={result.notFoundCount}
-            />
-            <Stat
-              label="Failed"
-              tone={result.failedCount > 0 ? "danger" : undefined}
-              value={result.failedCount}
-            />
-          </StatGroup>
-        }
-        pageSize={25}
-        rows={rows}
-        truncationNote={result.samplesTruncated ? TRUNCATION_NOTE : null}
-      />
-    </div>
+    <GoogleAdsOutcomeTable
+      columns={COLUMNS}
+      rows={rows}
+      exportFilename="removed-negative-keywords.csv"
+      outcomes={[
+        { kind: "applied", label: outcomeLabel("removed"), count: result.removedCount },
+        { kind: "skipped", label: outcomeLabel("not_found"), count: result.notFoundCount },
+        { kind: "failed", label: outcomeLabel("failed"), count: result.failedCount },
+      ]}
+      truncated={result.samplesTruncated}
+    />
   )
 }
 
 export function NegativeKeywordOutcome({ result }: { result: NegativeKeywordResult }) {
-  const rows = outcomeRows(result)
-  return (
-    <div className="grid min-w-0 gap-3">
-      <DataTable
-        columns={result.errors.length > 0 ? DIAGNOSTIC_COLUMNS : COLUMNS}
-        exportFilename="negative-keywords.csv"
-        header={
-          <StatGroup className="px-3 pt-2">
-            <Stat
-              label="Added"
-              tone={result.addedCount > 0 ? "success" : undefined}
-              value={result.addedCount}
-            />
-            <Stat
-              label="Already existed"
-              tone={result.skippedCount > 0 ? "warning" : undefined}
-              value={result.skippedCount}
-            />
-            <Stat
-              label="Failed"
-              tone={result.failedCount > 0 ? "danger" : undefined}
-              value={result.failedCount}
-            />
-          </StatGroup>
-        }
-        pageSize={25}
-        rows={rows}
-        truncationNote={result.samplesTruncated ? TRUNCATION_NOTE : null}
-      />
-    </div>
-  )
-}
-
-function outcomeRows(result: NegativeKeywordResult): DataRow[] {
-  return [
-    ...result.addedKeywords.map((keyword) => ({
-      matchType: keyword.matchType,
-      outcome: "Added",
-      text: keyword.text,
-    })),
+  const rows: GoogleAdsOutcomeRow[] = [
+    ...result.addedKeywords.map((keyword) => ({ ...keyword, outcome: "added" as const })),
     ...result.skippedExisting.map((keyword) => ({
-      matchType: keyword.matchType,
-      outcome: "Already existed",
-      text: keyword.text,
+      ...keyword,
+      outcome: "skipped_existing" as const,
     })),
     ...errorRows(result.errors),
   ]
+  return (
+    <GoogleAdsOutcomeTable
+      columns={COLUMNS}
+      rows={rows}
+      exportFilename="negative-keywords.csv"
+      outcomes={[
+        { kind: "applied", label: outcomeLabel("added"), count: result.addedCount },
+        { kind: "skipped", label: outcomeLabel("skipped_existing"), count: result.skippedCount },
+        { kind: "failed", label: outcomeLabel("failed"), count: result.failedCount },
+      ]}
+      truncated={result.samplesTruncated}
+    />
+  )
 }
 
-function errorRows(errors: NegativeKeywordError[]): DataRow[] {
+function errorRows(errors: NegativeKeywordError[]): GoogleAdsOutcomeRow[] {
   return errors.map((error) => ({
     errorCode: error.errorCode,
     matchType: error.scope === "keyword" ? error.matchType : "—",
-    message: error.message,
-    outcome: "Failed",
+    details: error.message,
+    outcome: "failed",
     text: error.scope === "keyword" ? error.text : "Account-level error",
   }))
 }
@@ -483,51 +412,6 @@ function matchTypeCounts(keywords: NegativeKeyword[]): Record<MatchType, number>
     counts[keyword.matchType] += 1
   }
   return counts
-}
-
-function exactOutcomeColumns(
-  target: "ad_group" | "campaign",
-  options: { includeDiagnostics: boolean; includeExternalReferences: boolean }
-): DataColumn[] {
-  return [
-    ...(target === "ad_group"
-      ? ([
-          { key: "adGroup", kind: "text", label: "Ad Group" },
-          { key: "adGroupId", kind: "text", label: "Ad Group ID" },
-          { key: "campaign", kind: "text", label: "Campaign" },
-        ] satisfies DataColumn[])
-      : ([
-          { key: "campaign", kind: "text", label: "Campaign" },
-          { key: "campaignId", kind: "text", label: "Campaign ID" },
-        ] satisfies DataColumn[])),
-    { key: "keyword", kind: "text", label: "Keyword" },
-    { key: "matchType", kind: "badge", label: "Match Type" },
-    { key: "outcome", kind: "status", label: "Outcome" },
-    ...(options.includeDiagnostics
-      ? ([
-          { key: "details", kind: "text", label: "Details" },
-          { key: "errorCode", kind: "text", label: "Error Code" },
-        ] satisfies DataColumn[])
-      : []),
-    ...(options.includeExternalReferences
-      ? ([{ key: "externalRef", kind: "text", label: "External Reference" }] satisfies DataColumn[])
-      : []),
-  ]
-}
-
-function outcomeLabel(outcome: TargetNegativeKeywordOutcome["outcome"]): string {
-  switch (outcome) {
-    case "added":
-      return "Added"
-    case "removed":
-      return "Removed"
-    case "skipped_existing":
-      return "Already existed"
-    case "not_found":
-      return "Not found"
-    case "failed":
-      return "Failed"
-  }
 }
 
 function outcomeDetail(

@@ -1,16 +1,24 @@
 // apps/web/src/integrations/google_ads/presenters/apply-recommendations.tsx
 
-import { countByKind, outcomeDetails, outcomeTone } from "@/integrations/google_ads/lib/outcomes"
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
-import { humanizeGoogleAdsToken } from "@/integrations/google_ads/lib/device-bid-modifiers"
+import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import type { DataColumn } from "@/components/ui/data-table"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { microsToCurrencyUnits } from "@/lib/format"
-import { parseRecommendationReference } from "@/integrations/google_ads/lib/recommendations"
-import { isRecord, isNullableString, isNullableFiniteNumber, isPositiveInteger } from "@/lib/guards"
+import {
+  parseRecommendationReference,
+  parseRecommendationOutcome,
+} from "@/integrations/google_ads/lib/recommendations"
+import { isRecord, isNullableFiniteNumber, isPositiveInteger } from "@/lib/guards"
 
 const NUMBER_FORMAT = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 
@@ -81,8 +89,6 @@ const COLUMNS: DataColumn[] = [
   { key: "resourceName", kind: "id", label: "Resource Name" },
   { key: "parameters", kind: "text", label: "Requested Parameters" },
   { key: "impact", kind: "text", label: "Google Estimate" },
-  { key: "outcome", kind: "status", label: "Outcome" },
-  { key: "details", kind: "text", label: "Details" },
 ]
 
 export const googleAdsApplyRecommendationsPresenter = createGoogleAdsWritePresenter({
@@ -110,7 +116,12 @@ export const googleAdsApplyRecommendationsPresenter = createGoogleAdsWritePresen
         "The system couldn't verify this account's recommendation outcomes. Check Google Ads before taking further action.",
       parseResult: applyRecommendationResult,
       progressLabel: "Applying Google Ads recommendations…",
-      renderFailure: (args, description) => recommendationFailure(args, description),
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets
+          description={description}
+          targets={args?.recommendations.map((item) => item.label) ?? []}
+        />
+      ),
       renderOutcome: applyRecommendationOutcomeTable,
       resultAriaLabel: "Google Ads recommendation apply results",
       resultFailure:
@@ -150,7 +161,7 @@ function applyRecommendationApprovalSummary(args: ApplyRecommendationArgs) {
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{recommendation.label}</p>
                 <p className="text-muted-foreground text-xs">
-                  {humanizeGoogleAdsToken(recommendation.recommendationType)}
+                  {googleAdsTokenLabel(recommendation.recommendationType)}
                 </p>
               </div>
               <p className="text-muted-foreground min-w-0 text-xs sm:text-right">
@@ -166,63 +177,30 @@ function applyRecommendationApprovalSummary(args: ApplyRecommendationArgs) {
 
 function applyRecommendationOutcomeTable(result: ApplyRecommendationResult) {
   const counts = countByKind(result.recommendations)
-  const rows: DataRow[] = result.recommendations.map((recommendation) => ({
+  const rows: GoogleAdsOutcomeRow[] = result.recommendations.map((recommendation) => ({
     campaigns: recommendation.affectedCampaigns.join(", ") || "No campaign identified",
-    details: outcomeDetails(recommendation.message, recommendation.errorCode, null) || "—",
+    details: recommendation.message ?? "",
+    errorCode: recommendation.errorCode,
     impact: formatImpact(recommendation.impact),
-    outcome: humanizeGoogleAdsToken(recommendation.outcome),
+    outcome: recommendation.outcome,
     parameters: recommendation.parameters
       ? formatParameters(recommendation.parameters)
       : "Google's proposed values",
     recommendation: recommendation.label,
     resourceName: recommendation.resourceName,
-    type: humanizeGoogleAdsToken(recommendation.recommendationType),
+    type: googleAdsTokenLabel(recommendation.recommendationType),
   }))
   return (
-    <DataTable
-      columns={COLUMNS}
-      exportFilename="google-ads-applied-recommendations.csv"
-      header={
-        <div className="grid gap-2">
-          <StatGroup className="px-3 pt-2">
-            {counts
-              .filter(({ kind }) => kind !== "skipped")
-              .map(({ kind, label, count }) => (
-                <Stat
-                  key={kind}
-                  label={label}
-                  tone={count > 0 ? outcomeTone(kind) : undefined}
-                  value={count}
-                />
-              ))}
-          </StatGroup>
-          <p className="text-muted-foreground px-3 text-xs">
-            Forecast values are estimates from Google Ads.
-          </p>
-        </div>
-      }
-      pageSize={25}
-      rows={rows}
-    />
-  )
-}
-
-function recommendationFailure(args: ApplyRecommendationArgs | null, description: string) {
-  return (
     <div className="grid gap-2">
-      <p className="text-destructive text-sm">{description}</p>
-      {args ? (
-        <div className="flex flex-wrap gap-1">
-          {args.recommendations.map((recommendation) => (
-            <span
-              className="bg-muted rounded px-1.5 py-1 text-xs"
-              key={recommendation.resourceName}
-            >
-              {recommendation.label}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <GoogleAdsOutcomeTable
+        columns={COLUMNS}
+        rows={rows}
+        outcomes={counts.filter(({ kind }) => kind !== "skipped")}
+        exportFilename="google-ads-applied-recommendations.csv"
+      />
+      <p className="text-muted-foreground px-3 text-xs">
+        Forecast values are estimates from Google Ads.
+      </p>
     </div>
   )
 }
@@ -404,58 +382,24 @@ function validOptionalPair(
 }
 
 function applyRecommendationResult(value: unknown): ApplyRecommendationResult | null {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value["recommendations"]) ||
-    value["recommendations"].length === 0
-  ) {
-    return null
-  }
-  const recommendations = value["recommendations"].map(parseOutcome)
-  const resourceNames = recommendations.map((item) => item?.resourceName)
-  return recommendations.some((item) => item === null) ||
-    new Set(resourceNames).size !== resourceNames.length
-    ? null
-    : {
-        recommendations: recommendations.filter(
-          (item): item is ApplyRecommendationOutcome => item !== null
-        ),
-      }
+  const recommendations = parseOutcomeList(
+    value,
+    "recommendations",
+    parseApplyOutcome,
+    (row) => row.resourceName
+  )
+  return recommendations?.length ? { recommendations } : null
 }
 
-function parseOutcome(value: unknown): ApplyRecommendationOutcome | null {
-  if (
-    !isRecord(value) ||
-    typeof value["recommendation_resource_name"] !== "string" ||
-    typeof value["recommendation_type"] !== "string" ||
-    typeof value["recommendation_label"] !== "string" ||
-    !Array.isArray(value["affected_campaigns"]) ||
-    !value["affected_campaigns"].every((item) => typeof item === "string") ||
-    (value["outcome"] !== "applied" &&
-      value["outcome"] !== "failed" &&
-      value["outcome"] !== "unverified")
-  ) {
-    return null
-  }
+function parseApplyOutcome(value: unknown): ApplyRecommendationOutcome | null {
+  const common = parseRecommendationOutcome(value, ["applied", "failed", "unverified"] as const)
+  if (!common || !isRecord(value)) return null
   const parameters =
     value["requested_parameters"] === null ? null : parseParameters(value["requested_parameters"])
   const impact = value["impact"] === null ? null : parseImpact(value["impact"])
-  const message = value["message"] ?? null
-  const errorCode = value["error_code"] ?? null
   if (parameters === null && value["requested_parameters"] !== null) return null
   if (impact === null && value["impact"] !== null) return null
-  if (!isNullableString(message) || !isNullableString(errorCode)) return null
-  return {
-    affectedCampaigns: value["affected_campaigns"],
-    errorCode,
-    impact,
-    label: value["recommendation_label"],
-    message,
-    outcome: value["outcome"],
-    parameters,
-    recommendationType: value["recommendation_type"],
-    resourceName: value["recommendation_resource_name"],
-  }
+  return { ...common, parameters, impact }
 }
 
 function parseImpact(value: unknown): Impact | null {
@@ -502,22 +446,15 @@ function formatParameters(parameters: RecommendationParameters): string {
   for (const [key, value] of Object.entries(parameters)) {
     if (key === "recommendation_resource_name" || key === "parameter_type" || value === null)
       continue
-    const label = parameterLabel(key)
+    const label = googleAdsTokenLabel(key.replace(/_micros$/, ""))
     const rendered = key.endsWith("_micros")
       ? `${NUMBER_FORMAT.format(microsToCurrencyUnits(Number(value)))} account currency units`
       : key.includes("roas") || key.includes("multiplier")
         ? `${NUMBER_FORMAT.format(Number(value))}×`
-        : humanizeGoogleAdsToken(String(value))
+        : googleAdsTokenLabel(String(value))
     parts.push(`${label}: ${rendered}`)
   }
-  return parts.join(" · ") || humanizeGoogleAdsToken(String(parameters["parameter_type"]))
-}
-
-function parameterLabel(key: string): string {
-  return humanizeGoogleAdsToken(key.replace(/_micros$/, ""))
-    .replaceAll("Cpa", "CPA")
-    .replaceAll("Cpc", "CPC")
-    .replaceAll("Roas", "ROAS")
+  return parts.join(" · ") || googleAdsTokenLabel(String(parameters["parameter_type"]))
 }
 
 function formatImpact(impact: Impact | null): string {

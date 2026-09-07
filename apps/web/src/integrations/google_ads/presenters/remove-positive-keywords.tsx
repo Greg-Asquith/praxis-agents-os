@@ -1,12 +1,18 @@
 // apps/web/src/integrations/google_ads/presenters/remove-positive-keywords.tsx
 
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+
+import type { DataColumn } from "@/components/ui/data-table"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { titleCaseToken } from "@/lib/format"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
   parsePositiveKeywordReference,
   type PositiveKeywordReference,
@@ -42,8 +48,6 @@ const COLUMNS: DataColumn[] = [
   { key: "previousStatus", kind: "status", label: "Before" },
   { key: "requested", kind: "status", label: "Requested" },
   { key: "resultingStatus", kind: "status", label: "After" },
-  { key: "outcome", kind: "status", label: "Outcome" },
-  { key: "details", kind: "text", label: "Details" },
 ]
 
 export const googleAdsRemovePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
@@ -69,6 +73,12 @@ export const googleAdsRemovePositiveKeywordsPresenter = createGoogleAdsWritePres
         "The system couldn't verify this account's keyword removal outcomes. Check Google Ads before taking further action.",
       parseResult: removalResult,
       progressLabel: "Removing Google Ads keywords…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets
+          description={description}
+          targets={args?.keywords.map((item) => item.label) ?? []}
+        />
+      ),
       renderOutcome: renderRemovalOutcomeTable,
       resultAriaLabel: "Google Ads keyword removal results",
       resultFailure:
@@ -105,7 +115,7 @@ function renderRemovalApprovalSummary(args: RemovalArgs) {
               </p>
             </div>
             <p className="text-sm font-semibold tabular-nums">
-              {titleCaseToken(keyword.status, keyword.status)}
+              {googleAdsTokenLabel(keyword.status, keyword.status)}
             </p>
           </div>
         ))}
@@ -115,50 +125,30 @@ function renderRemovalApprovalSummary(args: RemovalArgs) {
 }
 
 function renderRemovalOutcomeTable(result: RemovalResult) {
-  const rows = result.rows.map<DataRow>((row) => {
-    const details = [row.message]
-    if (row.errorCode) {
-      details.push(titleCaseToken(row.errorCode, row.errorCode))
-    }
-    return {
-      keyword: row.reference.text,
-      scope: row.reference.scopeLabel,
-      account: row.reference.customerId,
-      matchType: titleCaseToken(row.reference.matchType, row.reference.matchType),
-      requested: "Removed",
-      details: details.filter((value): value is string => Boolean(value)).join(" · ") || "—",
-      outcome: titleCaseToken(row.outcome, row.outcome),
-      previousStatus: titleCaseToken(row.previousStatus, row.previousStatus),
-      resultingStatus:
-        row.resultingStatus === null
-          ? "Unverified"
-          : titleCaseToken(row.resultingStatus, row.resultingStatus),
-    }
-  })
+  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
+    keyword: row.reference.text,
+    scope: row.reference.scopeLabel,
+    account: row.reference.customerId,
+    matchType: googleAdsTokenLabel(row.reference.matchType, row.reference.matchType),
+    requested: "Removed",
+    details: row.message ?? "",
+    outcome: row.outcome,
+    errorCode: row.errorCode,
+    previousStatus: googleAdsTokenLabel(row.previousStatus, row.previousStatus),
+    resultingStatus:
+      row.resultingStatus === null
+        ? "Unverified"
+        : googleAdsTokenLabel(row.resultingStatus, row.resultingStatus),
+  }))
   return (
-    <DataTable
+    <GoogleAdsOutcomeTable
       columns={COLUMNS}
       exportFilename="removed-positive-keywords.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Removed"
-            tone={result.counts.removed > 0 ? "success" : undefined}
-            value={result.counts.removed}
-          />
-          <Stat
-            label="Failed"
-            tone={result.counts.failed > 0 ? "danger" : undefined}
-            value={result.counts.failed}
-          />
-          <Stat
-            label="Unverified"
-            tone={result.counts.unverified > 0 ? "warning" : undefined}
-            value={result.counts.unverified}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
+      outcomes={OUTCOMES.map((outcome) => ({
+        kind: outcomeKind(outcome),
+        label: outcomeLabel(outcome),
+        count: result.counts[outcome],
+      }))}
       rows={rows}
     />
   )

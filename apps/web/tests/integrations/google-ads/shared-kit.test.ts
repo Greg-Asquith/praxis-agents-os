@@ -30,6 +30,30 @@ function table(values = rows, truncated = false): ReactElement<ComponentProps<ty
 }
 
 describe("Google Ads shared outcome kit", () => {
+  it("keeps each aggregate error code readable in exports", () => {
+    const rendered = table([
+      { campaign: "Brand", outcome: "failed", errorCode: ["TARGET_CPA", "TARGET_ROAS"] },
+    ])
+    expect(renderToStaticMarkup(rendered)).toContain("Target CPA · Target ROAS")
+    expect(dataTableExport(rendered.props.columns, rendered.props.rows).rows).toEqual([
+      ["Brand", "Failed", "Target CPA · Target ROAS"],
+    ])
+  })
+
+  it.each([
+    ["already_dismissed", "Already dismissed"],
+    ["skipped_existing", "Already existed"],
+    ["not_found", "Not found"],
+  ] as const)("renders %s as a neutral skipped outcome", (outcome, label) => {
+    const rendered = table([{ campaign: "Brand", outcome }])
+    expect(renderToStaticMarkup(rendered)).toMatch(
+      new RegExp(`data-variant="secondary"[^>]*>${label}`)
+    )
+    expect(dataTableExport(rendered.props.columns, rendered.props.rows).rows).toEqual([
+      ["Brand", label],
+    ])
+  })
+
   it("orders stats by outcome kind and reserves warning for unverified writes", () => {
     const html = renderToStaticMarkup(table())
     const stats =
