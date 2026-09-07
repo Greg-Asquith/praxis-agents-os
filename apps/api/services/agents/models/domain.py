@@ -36,6 +36,7 @@ DEFAULT_MAX_STEPS = 20
 
 ModelType = Literal["light", "standard", "powerful", "max"]
 ProviderTransport = Literal["direct", "google-cloud"]
+PartnerTransport = Literal["chat-completions", "mistral-publisher"]
 
 
 class ModelConfigurationError(ProblemDetailsError):
@@ -83,6 +84,9 @@ class ModelInfo:
     default_settings: Mapping[str, Any] = field(default_factory=dict)
     deprecated: bool = False
     vertex_model: str | None = None
+    partner_transport: PartnerTransport | None = None
+    vertex_default_location: str | None = None
+    vertex_supported_locations: tuple[str, ...] = ()
 
     @property
     def qualified_id(self) -> str:
@@ -113,6 +117,9 @@ class ResolvedModel:
     settings: Mapping[str, Any]
     max_steps: int
     azure_deployment: str | None = None
+    partner_transport: PartnerTransport | None = None
+    vertex_project: str | None = None
+    vertex_location: str | None = None
 
     @property
     def qualified_id(self) -> str:

@@ -18,6 +18,7 @@ from services.agents.models.domain import (
     DEFAULT_MAX_STEPS,
     PROVIDER_AZURE,
     PROVIDER_OPENAI,
+    VERTEX_PARTNER_PROVIDERS,
     ModelConfigurationError,
     ModelContextBudget,
     ModelInfo,
@@ -25,7 +26,15 @@ from services.agents.models.domain import (
     has_vertex_model_id,
 )
 from services.agents.models.registry import find_model, get_model
-from services.agents.models.utils import has_provider_api_key, provider_transport
+from services.agents.models.utils import (
+    has_provider_api_key,
+    partner_location,
+    provider_transport,
+    vertex_project,
+)
+from services.agents.models.validate_partner_configuration import (
+    validate_partner_configuration,
+)
 
 
 def _require_active(provider: str, model: str) -> ModelInfo:
@@ -59,7 +68,9 @@ def resolve_catalog_model(
     max_steps: int = DEFAULT_MAX_STEPS,
 ) -> ResolvedModel:
     """Resolves an active catalog entry to its provider-facing model ID."""
+    validate_partner_configuration()
     info = _require_active(provider, model)
+    partner = provider in VERTEX_PARTNER_PROVIDERS
     merged: dict[str, Any] = {
         **info.default_settings,
         **(settings_overrides or {}),
@@ -71,6 +82,9 @@ def resolve_catalog_model(
         transport_model=_transport_model(info),
         settings=merged,
         max_steps=max_steps,
+        partner_transport=info.partner_transport if partner else None,
+        vertex_project=vertex_project() if partner else None,
+        vertex_location=partner_location(info) if partner else None,
     )
 
 

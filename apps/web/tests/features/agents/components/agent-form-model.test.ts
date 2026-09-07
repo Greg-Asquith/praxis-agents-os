@@ -502,3 +502,19 @@ describe("simple model selection", () => {
     )
   })
 })
+
+it("labels Google Cloud transport in provider options", () => {
+  const transported: ModelCatalogResponse = {
+    ...modelCatalog,
+    providers: modelCatalog.providers.map((provider) => ({
+      ...provider,
+      transport: "google-cloud",
+    })),
+  }
+  expect(buildProviderOptions(transported)).toEqual(
+    buildProviderOptions(modelCatalog).map((option) => ({
+      ...option,
+      label: `${option.label} via Google Cloud`,
+    }))
+  )
+})

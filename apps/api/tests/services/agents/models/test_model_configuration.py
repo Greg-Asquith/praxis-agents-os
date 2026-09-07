@@ -28,7 +28,7 @@ def test_vertex_transport_settings_have_safe_defaults() -> None:
     assert resolved.ANTHROPIC_VERTEX_AI is False
     assert resolved.ANTHROPIC_VERTEX_LOCATION == "global"
     assert resolved.VERTEX_PARTNER_MODELS_ENABLED is False
-    assert resolved.VERTEX_PARTNER_LOCATION == "us-central1"
+    assert resolved.VERTEX_PARTNER_MODEL_LOCATIONS == {}
 
 
 @pytest.mark.parametrize(

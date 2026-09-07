@@ -140,11 +140,39 @@ def _build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("input", type=Path)
     render_parser.add_argument("output", type=Path)
     render_parser.add_argument("allowlist", help="space-separated ${VAR} references")
+    subparsers.add_parser("partner-locations")
     return parser
+
+
+def partner_locations_yaml() -> str:
+    """Validate override JSON and encode it as a YAML string scalar."""
+    if "VERTEX_PARTNER_LOCATION" in os.environ:
+        raise ValueError(
+            "VERTEX_PARTNER_LOCATION was removed. Remove it for model defaults "
+            "or migrate to VERTEX_PARTNER_MODEL_LOCATIONS."
+        )
+    try:
+        locations = json.loads(os.environ.get("VERTEX_PARTNER_MODEL_LOCATIONS", "{}"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("VERTEX_PARTNER_MODEL_LOCATIONS must contain valid JSON") from exc
+    if not isinstance(locations, dict) or any(
+        not isinstance(key, str) or not key.strip()
+        or not isinstance(value, str) or not value.strip()
+        for key, value in locations.items()
+    ):
+        raise ValueError("VERTEX_PARTNER_MODEL_LOCATIONS must be a JSON object of strings")
+    return json.dumps(json.dumps(locations, separators=(",", ":")))
 
 
 def main() -> None:
     args = _build_parser().parse_args()
+    if args.command == "partner-locations":
+        try:
+            print(partner_locations_yaml())
+        except ValueError as exc:
+            raise SystemExit(f"error: {exc}") from exc
+        return
+
     if args.command == "secret-id":
         # This is a one-way SHA-256 resource identifier, not secret material.
         print(cloud_secret_id(args.logical_name))  # lgtm[py/clear-text-logging-sensitive-data]

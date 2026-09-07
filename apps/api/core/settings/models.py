@@ -160,7 +160,11 @@ class LLMSettingsMixin:
         default=None, description="GCP project for Vertex AI. Falls back to GCP_PROJECT_ID."
     )
     GOOGLE_VERTEX_LOCATION: str = Field(
-        default="global", description="Vertex AI location, e.g. 'global' or 'us-central1'."
+        default="auto",
+        description=(
+            "Vertex AI location. Auto uses catalog defaults for Gemini and global for "
+            "embeddings. Explicit locations must be supported by the selected model."
+        ),
     )
     ANTHROPIC_VERTEX_AI: bool = Field(
         default=False,
@@ -183,13 +187,34 @@ class LLMSettingsMixin:
             "The project uses GOOGLE_VERTEX_PROJECT, then GCP_PROJECT_ID."
         ),
     )
-    VERTEX_PARTNER_LOCATION: str = Field(
-        default="us-central1",
-        description=(
-            "Vertex AI location for partner models using Application Default Credentials. "
-            "The project uses GOOGLE_VERTEX_PROJECT, then GCP_PROJECT_ID."
-        ),
+    VERTEX_PARTNER_MODEL_LOCATIONS: dict[str, str] = Field(
+        default_factory=dict,
+        description="Vertex partner location overrides keyed by provider-qualified catalog alias.",
     )
+    VERTEX_PARTNER_LOCATION: str | None = Field(default=None, exclude=True, repr=False)
+
+    @field_validator("VERTEX_PARTNER_LOCATION", mode="before")
+    @classmethod
+    def reject_legacy_partner_location(cls, value):
+        if value is not None:
+            raise ValueError(
+                "VERTEX_PARTNER_LOCATION was removed. Remove it to use model defaults, "
+                "or migrate to VERTEX_PARTNER_MODEL_LOCATIONS JSON keyed by catalog alias."
+            )
+        return value
+
+    @field_validator("VERTEX_PARTNER_MODEL_LOCATIONS", mode="before")
+    @classmethod
+    def validate_partner_location_shape(cls, value):
+        if not isinstance(value, dict) or any(
+            not isinstance(key, str)
+            or not isinstance(location, str)
+            or not key.strip()
+            or not location.strip()
+            for key, location in value.items()
+        ):
+            raise ValueError("VERTEX_PARTNER_MODEL_LOCATIONS must be a JSON object of strings.")
+        return value
 
     # Azure OpenAI (deployment-based; uses the agent's azure_deployment at resolution).
     AZURE_OPENAI_API_KEY: SecretStr | None = Field(

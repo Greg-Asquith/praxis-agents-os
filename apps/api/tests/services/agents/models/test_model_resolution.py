@@ -98,7 +98,7 @@ def test_google_vertex_resolution_uses_catalog_transport_model(
 
     resolved = resolve_agent_model(_agent("google", "gemini-3.1-pro"))
 
-    assert resolved.transport_model == "gemini-3.1-pro"
+    assert resolved.transport_model == "gemini-3.1-pro-preview"
 
 
 @pytest.mark.parametrize(
@@ -147,19 +147,18 @@ def test_vertex_resolution_fails_closed_without_transport_model(
     }
 
 
+@pytest.mark.parametrize(
+    ("alias", "transport_id"),
+    [
+        ("llama-4-maverick", "meta/llama-4-maverick-17b-128e-instruct-maas"),
+        ("llama-4-scout", "meta/llama-4-scout-17b-16e-instruct-maas"),
+    ],
+)
 def test_partner_resolution_carries_catalog_transport_model(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, alias: str, transport_id: str
 ) -> None:
-    info = ModelInfo(
-        provider="meta",
-        model="llama-probe",
-        display_name="Llama probe",
-        context_window=128_000,
-        model_type="standard",
-        vertex_model="meta/llama-probe",
-    )
-    monkeypatch.setattr(resolution, "_require_active", lambda _provider, _model: info)
-
-    resolved = resolution.resolve_agent_model(_agent("meta", "llama-probe"))
-
-    assert resolved.transport_model == "meta/llama-probe"
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    resolved = resolution.resolve_agent_model(_agent("meta", alias))
+    assert resolved.model == alias
+    assert resolved.transport_model == transport_id

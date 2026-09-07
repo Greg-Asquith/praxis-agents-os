@@ -1,6 +1,9 @@
 // apps/web/src/features/agents/components/agent-form-model.ts
 
-import { modelDisplayName } from "@/features/agents/components/agent-model-label"
+import {
+  modelDisplayName,
+  providerDisplayName,
+} from "@/features/agents/components/agent-model-label"
 import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type {
   Agent,
@@ -200,7 +203,7 @@ export function buildModelOptions(
 export function buildProviderOptions(catalog: ModelCatalogResponse): ProviderOption[] {
   return catalog.providers
     .filter((provider) => provider.configured && provider.model_count > 0)
-    .map((provider) => ({ label: provider.display_name, value: provider.provider }))
+    .map((provider) => ({ label: providerDisplayName(provider), value: provider.provider }))
 }
 
 export function buildModelTypeOptions(

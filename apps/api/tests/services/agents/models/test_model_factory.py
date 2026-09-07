@@ -85,7 +85,7 @@ def test_build_anthropic_model(anthropic_transport):
     assert model.model_name == "claude-sonnet-4-6"
     assert model.provider.client._client is http_client
     assert isinstance(model.provider.client, AsyncAnthropicVertex if vertex else AsyncAnthropic)
-    assert model.provider.client.max_retries == 2
+    assert model.provider.client.max_retries == 0
     if not vertex:
         assert model.provider.client.api_key == "key"
         assert str(model.provider.client.base_url) == "https://api.anthropic.com"
@@ -297,7 +297,7 @@ async def test_anthropic_vertex_uses_project_location_and_transport_id(
             assert str(client.base_url) == f"https://{host}/v1/"
             assert client._client is http_client
             assert client.timeout == DEFAULT_HTTP_TIMEOUT
-            assert client.max_retries == 2
+            assert client.max_retries == 0
             assert get_anthropic_vertex_client() is client
         finally:
             await close_vertex_clients()
@@ -387,18 +387,18 @@ async def test_build_google_vertex_uses_project_location_and_request_policy(
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", vertex_project)
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", gcp_project_id)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "europe-west1")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "europe-west3")
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 7)
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 23.5)
 
     try:
-        model = build_model(_spec("google", "gemini-3.1-pro"))
+        model = build_model(_spec("google", "gemini-3.5-flash"))
 
         assert isinstance(model, GoogleModel)
         client = model.provider.client
         assert client.vertexai is True
         assert client._api_client.project == expected_project
-        assert client._api_client.location == "europe-west1"
+        assert client._api_client.location == "europe-west3"
         http_options = client._api_client._http_options
         assert http_options.timeout == DEFAULT_HTTP_TIMEOUT * 1000
         assert http_options.retry_options is not None
@@ -431,3 +431,68 @@ async def test_google_vertex_client_is_process_shared_and_closed(monkeypatch) ->
 def test_build_unsupported_provider_raises():
     with pytest.raises(ModelConfigurationError):
         build_model(_spec("cohere", "command-r"))
+
+
+@pytest.mark.parametrize(
+    "model,location",
+    [
+        ("gemini-3.8-flash", "eu"),
+        ("gemini-3.7-flash", "eu"),
+        ("gemini-3.6-flash", "eu"),
+        ("gemini-3.5-flash", "eu"),
+        ("gemini-3.5-flash-lite", "eu"),
+        ("gemini-3.1-flash-lite", "eu"),
+        ("gemini-3.1-pro", "global"),
+    ],
+)
+async def test_google_vertex_automatic_model_location(monkeypatch, model, location):
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
+    try:
+        client = build_model(_spec("google", model)).provider.client
+        assert client._api_client.location == location
+        expected_host = (
+            "https://aiplatform.eu.rep.googleapis.com/"
+            if location == "eu"
+            else "https://aiplatform.googleapis.com/"
+        )
+        assert client._api_client._http_options.base_url == expected_host
+        assert settings.GOOGLE_VERTEX_LOCATION == "auto"
+    finally:
+        await close_vertex_clients()
+
+
+async def test_google_vertex_clients_share_only_matching_locations(monkeypatch):
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
+    try:
+        flash = get_google_vertex_client("gemini-3.8-flash")
+        pro = get_google_vertex_client("gemini-3.1-pro")
+        assert flash is get_google_vertex_client("gemini-3.5-flash-lite")
+        assert flash is not pro
+        assert get_google_vertex_client() is pro
+        monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "us")
+        override = get_google_vertex_client("gemini-3.8-flash")
+        assert override is not flash
+        assert override._api_client.location == "us"
+        assert override._api_client._http_options.base_url == (
+            "https://aiplatform.us.rep.googleapis.com/"
+        )
+    finally:
+        await close_vertex_clients()
+
+
+@pytest.mark.parametrize(
+    "model,location",
+    [("gemini-3.1-pro", "eu"), ("gemini-3.8-flash", "europe-west4")],
+)
+def test_google_vertex_rejects_unsupported_location(monkeypatch, model, location):
+    vertex_client_module = importlib.import_module("services.agents.models.vertex_clients")
+    constructor = Mock()
+    monkeypatch.setattr(vertex_client_module, "Client", constructor)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", location)
+    with pytest.raises(ModelConfigurationError, match="Unsupported Vertex AI location"):
+        get_google_vertex_client(model)
+    constructor.assert_not_called()

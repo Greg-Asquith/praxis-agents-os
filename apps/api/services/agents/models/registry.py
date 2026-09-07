@@ -11,6 +11,8 @@ The SPA will read this catalog through an API route in a later step.
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
+    PROVIDER_META,
+    PROVIDER_MISTRAL,
     PROVIDER_OPENAI,
     PROVIDER_XAI,
     ModelConfigurationError,
@@ -18,7 +20,18 @@ from services.agents.models.domain import (
 )
 
 _CATALOG: tuple[ModelInfo, ...] = (
-    # OpenAI (GPT-5.x family; reasoning + vision across the line)
+    # OpenAI (reasoning + vision)
+    # https://developers.openai.com/api/docs/models/gpt-6-astra
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
+        model="gpt-6-astra",
+        display_name="GPT-6 Astra",
+        context_window=1_050_000,
+        model_type="max",
+        chars_per_token=4.0,
+        supports_thinking=True,
+        supports_vision=True,
+    ),
     ModelInfo(
         provider=PROVIDER_OPENAI,
         model="gpt-5.6-sol",
@@ -184,7 +197,8 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_vision=True,
     ),
-    # Google (Gemini Developer API or Vertex AI; selection is a settings concern)
+    # Google: Vertex regions checked against model cards on 2026-09-07.
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations
     ModelInfo(
         provider=PROVIDER_GOOGLE,
         model="gemini-3.8-flash",
@@ -195,6 +209,8 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
         vertex_model="gemini-3.8-flash",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -206,6 +222,8 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
         vertex_model="gemini-3.7-flash",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -217,6 +235,8 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
         vertex_model="gemini-3.6-flash",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -228,6 +248,18 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
         vertex_model="gemini-3.5-flash",
+        vertex_default_location="eu",
+        vertex_supported_locations=(
+            "global",
+            "us",
+            "eu",
+            "northamerica-northeast1",
+            "europe-west2",
+            "europe-west3",
+            "asia-northeast1",
+            "asia-south1",
+            "asia-southeast1",
+        ),
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -239,6 +271,8 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
         vertex_model="gemini-3.5-flash-lite",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -249,7 +283,9 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
-        vertex_model="gemini-3.1-pro",
+        vertex_model="gemini-3.1-pro-preview",
+        vertex_default_location="global",
+        vertex_supported_locations=("global",),
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -260,6 +296,51 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_vision=True,
         vertex_model="gemini-3.1-flash-lite",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
+    ),
+    # Model Garden Llama 4 cards; streaming, tools, JSON, and vision probed 2026-09-07.
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/llama/llama4-maverick
+    ModelInfo(
+        provider=PROVIDER_META,
+        model="llama-4-maverick",
+        display_name="Llama 4 Maverick",
+        default_settings={"max_tokens": 8192},
+        context_window=524_288,
+        model_type="standard",
+        supports_vision=True,
+        vertex_model="meta/llama-4-maverick-17b-128e-instruct-maas",
+        partner_transport="chat-completions",
+        vertex_default_location="us-east5",
+        vertex_supported_locations=("us-east5",),
+    ),
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/llama/llama4-scout
+    ModelInfo(
+        provider=PROVIDER_META,
+        model="llama-4-scout",
+        display_name="Llama 4 Scout",
+        default_settings={"max_tokens": 8192},
+        context_window=1_310_720,
+        model_type="light",
+        supports_vision=True,
+        vertex_model="meta/llama-4-scout-17b-16e-instruct-maas",
+        partner_transport="chat-completions",
+        vertex_default_location="us-east5",
+        vertex_supported_locations=("us-east5",),
+    ),
+    # Publisher API, regions, and context: Google's Mistral model guide.
+    # https://docs.cloud.google.com/vertex-ai/generative-ai/docs/partner-models/mistral
+    ModelInfo(
+        provider=PROVIDER_MISTRAL,
+        model="mistral-small-2503",
+        display_name="Mistral Small 3.1",
+        context_window=128_000,
+        model_type="light",
+        supports_vision=True,
+        vertex_model="mistralai/mistral-small-2503@001",
+        partner_transport="mistral-publisher",
+        vertex_default_location="europe-west4",
+        vertex_supported_locations=("us-central1", "europe-west4"),
     ),
     # Model Garden Grok 4.20 cards; streaming, tools, JSON, and vision probed 2026-09-05.
     # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/grok/grok-4-20
@@ -274,6 +355,9 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_vision=True,
         supports_structured_output=True,
         vertex_model="xai/grok-4.20-reasoning",
+        partner_transport="chat-completions",
+        vertex_default_location="global",
+        vertex_supported_locations=("global",),
     ),
     ModelInfo(
         provider=PROVIDER_XAI,
@@ -286,6 +370,9 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_vision=True,
         supports_structured_output=True,
         vertex_model="xai/grok-4.20-non-reasoning",
+        partner_transport="chat-completions",
+        vertex_default_location="global",
+        vertex_supported_locations=("global",),
     ),
 )
 

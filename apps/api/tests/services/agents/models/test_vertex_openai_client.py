@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 from threading import get_ident
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -28,7 +29,6 @@ from tests.factories import build_workspace
 async def partner_settings(monkeypatch):
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
-    monkeypatch.setattr(settings, "VERTEX_PARTNER_LOCATION", "us-central1")
     yield
     await close_vertex_clients()
 
@@ -40,6 +40,9 @@ def spec(provider="meta"):
         transport_model=f"{provider}/partner-chat",
         settings={"temperature": 0.2},
         max_steps=20,
+        vertex_project="vertex-project",
+        vertex_location="us-central1",
+        partner_transport="chat-completions",
     )
 
 
@@ -109,7 +112,7 @@ def test_partner_base_url(location, host):
     )
 
 
-@pytest.mark.parametrize("provider", ["meta", "mistral", "xai"])
+@pytest.mark.parametrize("provider", ["meta", "xai"])
 async def test_factory_uses_shared_chat_client(partner_settings, provider):
     model = build_model(spec(provider))
     assert isinstance(model, OpenAIChatModel)
@@ -139,7 +142,7 @@ def test_factory_rejects_missing_project(partner_settings, monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", None)
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
     with pytest.raises(ModelConfigurationError, match="requires a project"):
-        build_model(spec())
+        build_model(replace(spec(), vertex_project=None))
 
 
 async def test_chat_request_records_partner_usage(partner_settings, monkeypatch, db_session):

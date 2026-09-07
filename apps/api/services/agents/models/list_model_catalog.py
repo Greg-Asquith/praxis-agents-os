@@ -22,6 +22,7 @@ from services.agents.models.schemas import (
     ModelCatalogResponse,
 )
 from services.agents.models.utils import is_provider_configured, provider_transport
+from services.agents.models.validate_partner_configuration import validate_partner_configuration
 
 _PROVIDER_DISPLAY_NAMES = {
     PROVIDER_OPENAI: "OpenAI",
@@ -46,6 +47,7 @@ _PROVIDER_ORDER = (
 
 def list_model_catalog() -> ModelCatalogResponse:
     """Return non-deprecated catalog models whose provider is configured."""
+    validate_partner_configuration()
     configured_providers = {
         provider for provider in _PROVIDER_ORDER if is_provider_configured(provider)
     }

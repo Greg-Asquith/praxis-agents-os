@@ -111,12 +111,25 @@ _XAI_PRICES = (
     _price("xai", "grok-4-20-non-reasoning", date(2026, 9, 5), "1.25", "1.25", "1.25", "2.50"),
 )
 
+# Vertex public rates checked 2026-09-07; cache rates fall back to input pricing.
+# https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing
+_MISTRAL_PRICES = (
+    _price("mistral", "mistral-small-2503", date(2026, 9, 7), "0.10", "0.10", "0.10", "0.30"),
+)
+
+_META_PRICES = (
+    _price("meta", "llama-4-maverick", date(2026, 9, 7), "0.35", "0.35", "0.35", "1.15"),
+    _price("meta", "llama-4-scout", date(2026, 9, 7), "0.25", "0.25", "0.25", "0.70"),
+)
+
 MODEL_PRICES: tuple[ModelPrice, ...] = (
     *_OPENAI_PRICES,
     *_ANTHROPIC_PRICES,
     *_GOOGLE_PRICES,
     *_OLLAMA_PRICES,
     *_XAI_PRICES,
+    *_META_PRICES,
+    *_MISTRAL_PRICES,
 )
 
 # Image-output estimates as of 2026-08-12. Text and source-image input costs are

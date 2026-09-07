@@ -4,6 +4,7 @@
 
 from threading import Lock
 
+from services.agents.models.validate_partner_configuration import validate_partner_configuration
 from services.agents.runtime.entity_references.internal import (
     register_internal_entity_resolvers,
 )
@@ -18,6 +19,7 @@ def assemble_runtime_catalogs() -> None:
     """Assembles the job, entity resolver, and runtime tool catalogs once."""
     global _catalogs_assembled, _catalogs_assembly_failure
 
+    validate_partner_configuration()
     with _catalogs_assembly_lock:
         if _catalogs_assembled:
             return

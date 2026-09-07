@@ -85,6 +85,7 @@ def test_gemini_3_5_flash_lite_catalog_capabilities():
 @pytest.mark.parametrize(
     ("provider", "model", "context_window"),
     [
+        ("openai", "gpt-6-astra", 1_050_000),
         ("openai", "gpt-5.5", 1_050_000),
         ("openai", "gpt-5.4", 1_050_000),
         ("openai", "gpt-5.4-mini", 400_000),
@@ -158,7 +159,7 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
     assert providers[PROVIDER_OPENAI].transport == "direct"
     assert providers[PROVIDER_OPENAI].model_count == len(response.models)
     assert providers[PROVIDER_OPENAI].model_type_defaults == {
-        "max": "openai:gpt-5.6-sol",
+        "max": "openai:gpt-6-astra",
         "powerful": "openai:gpt-5.6-terra",
         "standard": "openai:gpt-5.6-luna",
         "light": "openai:gpt-5.4-nano",
@@ -271,29 +272,22 @@ def test_model_catalog_reports_configured_azure_without_catalog_models(monkeypat
     assert providers[PROVIDER_AZURE].model_type_defaults == {}
 
 
-@pytest.mark.parametrize("provider", [PROVIDER_META, PROVIDER_MISTRAL])
-def test_model_catalog_reports_configured_partner_provider_without_catalog_models(
-    monkeypatch,
-    provider,
-):
+def test_model_catalog_exposes_verified_mistral_model(monkeypatch):
     _clear_model_provider_settings(monkeypatch)
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
-
     response = list_model_catalog()
-
-    providers = {entry.provider: entry for entry in response.providers}
-    assert providers[provider].configured is True
-    assert providers[provider].transport == "google-cloud"
-    assert providers[provider].model_count == 0
-    assert providers[provider].model_type_defaults == {}
+    provider = next(row for row in response.providers if row.provider == PROVIDER_MISTRAL)
+    assert provider.configured is True
+    assert provider.transport == "google-cloud"
+    assert provider.model_count == 1
+    assert provider.model_type_defaults == {"light": "mistral:mistral-small-2503"}
 
 
 def test_model_catalog_exposes_probed_grok_variants(monkeypatch):
     _clear_model_provider_settings(monkeypatch)
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
-    monkeypatch.setattr(settings, "VERTEX_PARTNER_LOCATION", "global")
     response = list_model_catalog()
     provider = next(entry for entry in response.providers if entry.provider == PROVIDER_XAI)
     assert provider.transport == "google-cloud"
@@ -302,7 +296,7 @@ def test_model_catalog_exposes_probed_grok_variants(monkeypatch):
         "standard": "xai:grok-4-20-non-reasoning",
     }
     assert provider.model_count == 2
-    assert {model.model for model in response.models} == {
+    assert {model.model for model in response.models if model.provider == PROVIDER_XAI} == {
         "grok-4-20-reasoning",
         "grok-4-20-non-reasoning",
     }
@@ -450,3 +444,27 @@ def _clear_model_provider_settings(monkeypatch):
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
     monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", None)
     monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", None)
+
+
+def test_model_catalog_exposes_probed_llama_models(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    response = list_model_catalog()
+    provider = next(entry for entry in response.providers if entry.provider == PROVIDER_META)
+    assert provider.transport == "google-cloud"
+    assert provider.model_count == 2
+    assert provider.model_type_defaults == {
+        "standard": "meta:llama-4-maverick",
+        "light": "meta:llama-4-scout",
+    }
+    models = {entry.model: entry for entry in response.models if entry.provider == PROVIDER_META}
+    assert models["llama-4-maverick"].context_window == 524_288
+    assert models["llama-4-scout"].context_window == 1_310_720
+    for model in models.values():
+        assert model.supports_tools
+        assert model.supports_structured_output
+        assert model.supports_vision
+        assert not model.supports_thinking
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", False)
+    assert not any(model.provider == PROVIDER_META for model in list_model_catalog().models)

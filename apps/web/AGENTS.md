@@ -236,6 +236,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   and the explicit `WEB_PUBLIC_ASSET_ORIGINS` allowlist so direct cloud-storage
   uploads work without widening `connect-src` to wildcard origins.
 
+Agent provider labels read the catalog transport and append "via Google Cloud"
+for `google-cloud`. Keep transport labels derived from the catalog; the
+classifier provider set is unchanged.
+
 ## Checks
 
 `pnpm check` is the full gate and what CI runs: typecheck (`tsc -b`), eslint

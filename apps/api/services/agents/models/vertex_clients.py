@@ -15,7 +15,9 @@ from services.agents.models.domain import (
     PROVIDER_GOOGLE,
     ModelConfigurationError,
 )
+from services.agents.models.registry import get_model
 from services.agents.models.utils import retrying_http_client, vertex_project
+from services.agents.models.vertex_mistral_client import close_vertex_mistral_clients
 from services.agents.models.vertex_openai_client import close_vertex_openai_client
 
 _clients: dict[tuple[str, str, int, float], Client] = {}
@@ -23,7 +25,7 @@ _anthropic_clients: dict[tuple[str, str, int, float], AsyncAnthropicVertex] = {}
 _clients_lock = Lock()
 
 
-def get_google_vertex_client() -> Client:
+def get_google_vertex_client(model: str | None = None) -> Client:
     """Returns the process-owned Vertex client for the active configuration."""
     project = vertex_project()
     if not project:
@@ -32,9 +34,20 @@ def get_google_vertex_client() -> Client:
             details={"provider": PROVIDER_GOOGLE},
         )
 
+    info = get_model(PROVIDER_GOOGLE, model) if model is not None else None
+    location = settings.GOOGLE_VERTEX_LOCATION
+    if location == "auto":
+        # Embeddings are outside the model catalog and retain their global default.
+        location = info.vertex_default_location if info is not None else "global"
+    if not location or (info is not None and location not in info.vertex_supported_locations):
+        raise ModelConfigurationError(
+            f"Unsupported Vertex AI location '{location}' for Google model '{model}'.",
+            details={"provider": PROVIDER_GOOGLE, "model": model, "location": location},
+        )
+
     client_key = (
         project,
-        settings.GOOGLE_VERTEX_LOCATION,
+        location,
         settings.LLM_HTTP_RETRY_MAX_ATTEMPTS,
         settings.LLM_HTTP_RETRY_MAX_WAIT_SECONDS,
     )
@@ -45,7 +58,7 @@ def get_google_vertex_client() -> Client:
             client = Client(
                 vertexai=True,
                 project=project,
-                location=settings.GOOGLE_VERTEX_LOCATION,
+                location=location,
                 http_options=HttpOptions(
                     timeout=DEFAULT_HTTP_TIMEOUT * 1000,
                     retry_options=HttpRetryOptions(
@@ -79,6 +92,7 @@ def get_anthropic_vertex_client() -> AsyncAnthropicVertex:
             client = AsyncAnthropicVertex(
                 project_id=project,
                 region=settings.ANTHROPIC_VERTEX_LOCATION,
+                max_retries=0,
                 http_client=retrying_http_client(),
                 timeout=DEFAULT_HTTP_TIMEOUT,
             )
@@ -97,7 +111,7 @@ async def close_vertex_clients() -> None:
     first_error: Exception | None = None
     close_operations = [client.aio.aclose for client in clients]
     close_operations.extend(client.close for client in anthropic_clients)
-    close_operations.append(close_vertex_openai_client)
+    close_operations.extend((close_vertex_openai_client, close_vertex_mistral_clients))
     for close in close_operations:
         try:
             await close()

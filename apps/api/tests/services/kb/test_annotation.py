@@ -2,6 +2,7 @@
 
 """Contextual-annotation safety and degradation tests."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.kb import KBChunk
+from services.agents.models import registry
 from services.agents.models.domain import ModelConfigurationError
 from services.kb.annotation import _resolve_annotation_model, annotate_chunks
 from tests.factories import build_kb_chunk, build_kb_document
@@ -38,6 +40,10 @@ async def test_annotation_model_resolution_fails_closed_for_missing_vertex_id(
     monkeypatch.setattr(settings, "KB_ANNOTATION_PROVIDER", "anthropic")
     monkeypatch.setattr(settings, "KB_ANNOTATION_MODEL", "claude-sonnet-4-6")
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
+    info = registry.get_model("anthropic", "claude-sonnet-4-6")
+    monkeypatch.setitem(
+        registry._INDEX, (info.provider, info.model), replace(info, vertex_model=None)
+    )
 
     with pytest.raises(ModelConfigurationError, match="has no Vertex AI model ID"):
         _resolve_annotation_model()

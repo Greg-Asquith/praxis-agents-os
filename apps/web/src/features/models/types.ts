@@ -5,6 +5,7 @@ export type ModelType = "light" | "standard" | "powerful" | "max"
 type ModelCatalogProvider = {
   provider: string
   display_name: string
+  transport?: "direct" | "google-cloud"
   configured: boolean
   model_count: number
   model_type_defaults: Partial<Record<ModelType, string>>

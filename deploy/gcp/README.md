@@ -130,15 +130,75 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
       minute with `NOT_FOUND` because the deployment creates the
       `praxis-worker` job. These expected failures stop after deployment.
 
-#### Use Vertex AI for Google models
+#### Use Vertex AI for model requests
 
 Set `GOOGLE_VERTEX_AI=true` in the environment file, then run bootstrap and
 deploy again. Bootstrap enables the Vertex AI API and grants the API and worker
 service accounts access through its existing approval prompts. Google model
 and embedding usage is billed to `GCP_PROJECT_ID` through Application Default
-Credentials. `GOOGLE_VERTEX_LOCATION` defaults to `global`. The
+Credentials. `GOOGLE_VERTEX_LOCATION` defaults to `auto`: the catalog selects
+`eu` for Gemini Flash and Flash-Lite, and `global` for Gemini 3.1 Pro.
+Embeddings retain their `global` default. Existing environment files with an
+explicit `global` value keep that routing; set `auto` to adopt model defaults.
+An explicit location must be supported by every Gemini model you use. The
 `GOOGLE_API_KEY` binding can be removed from `RUNTIME_SECRET_BINDINGS` when no
 other configured feature needs it.
+
+Google's model cards document the following availability (checked 2026-09-07):
+
+| Gemini model | Supported Vertex locations | Automatic default |
+|---|---|---|
+| [3.8 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash) | `global`, `us`, `eu` | `eu` |
+| [3.7 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-7-flash) | `global`, `us`, `eu` | `eu` |
+| [3.6 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-6-flash) | `global`, `us`, `eu` | `eu` |
+| [3.5 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash) | `global`, `us`, `eu`, plus Canada, London, Frankfurt, Tokyo, Mumbai, and Singapore endpoints | `eu` |
+| [3.5 Flash-Lite](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash-lite) | `global`, `us`, `eu` | `eu` |
+| [3.1 Flash-Lite](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite) | `global`, `us`, `eu` | `eu` |
+| [3.1 Pro](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro) | `global` only | `global` |
+
+The EU endpoint uses `aiplatform.eu.rep.googleapis.com`. Google's
+[multi-region endpoint documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations#multi-region_endpoints)
+describes EU machine-learning processing boundaries. The `global` endpoint
+provides no control over processing region. Gemini 3.5 Flash's in-country
+endpoints have consumption restrictions; `eu` supports Standard PayGo.
+Gemini 3.1 Pro uses the documented Vertex ID `gemini-3.1-pro-preview` behind
+the application's `gemini-3.1-pro` alias. These defaults apply to Vertex AI;
+the direct Gemini Developer API does not use this location setting.
+
+Set `ANTHROPIC_VERTEX_AI=true` to route Claude through Vertex with
+`ANTHROPIC_VERTEX_LOCATION` (default `global`). Set
+`VERTEX_PARTNER_MODELS_ENABLED=true` for cataloged partner chat models.
+Model defaults select `us-east5` for Meta Llama 4, `global` for Grok 4.20, and
+`europe-west4` for Mistral Small. The operator selects the model; the application
+selects its supported transport and region. Meta and Grok use Chat Completions;
+Mistral Small uses the publisher API.
+
+Defaults prefer European endpoints where Google supports them.
+[Mistral Small 3.1 region availability](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/mistral/mistral-small-3-1)
+lists `europe-west4` and `us-central1`, with European processing described as
+multi-region. The managed APIs for
+[Llama 4 Scout](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/llama/llama4-scout)
+and [Llama 4 Maverick](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/llama/llama4-maverick)
+list only `us-east5`.
+[Grok 4.20 region availability](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/grok/grok-4-20)
+lists only `global` for both variants; that setting does not select a European
+region.
+
+Remove `VERTEX_PARTNER_LOCATION` from existing environment files. The removed
+setting causes a migration error. Keep `VERTEX_PARTNER_MODEL_LOCATIONS='{}'`
+to use model defaults. To select another supported model location, use a
+provider-qualified catalog alias in the optional JSON object:
+
+```bash
+VERTEX_PARTNER_MODEL_LOCATIONS='{"mistral:mistral-small-2503":"us-central1"}'
+```
+
+The deploy scripts validate JSON shape and encode the same value into the API
+and worker manifests. Application startup validates aliases and supported
+regions against the model catalog. Requests never switch regions after an error.
+Bootstrap enables the Vertex API and grants its role when any Vertex switch is
+true. Claude's direct API key is unnecessary on Vertex. Enable selected models
+manually before verifying inference.
 
 #### Enable serverless partner models
 

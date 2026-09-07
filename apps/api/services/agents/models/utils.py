@@ -14,18 +14,20 @@ from functools import lru_cache
 # httpx AsyncClient type at runtime and reject httpx2 clients.
 import httpx
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
-from pydantic_ai.retries import AsyncTenacityTransport, RetryConfig, wait_retry_after
-from tenacity import stop_after_attempt, wait_exponential
+from pydantic_ai.retries import wait_retry_after
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from core.settings import settings
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_AZURE,
     PROVIDER_GOOGLE,
+    PROVIDER_MISTRAL,
     PROVIDER_OPENAI,
     VERTEX_PARTNER_PROVIDERS,
     MissingModelCredentialError,
     ModelConfigurationError,
+    ModelInfo,
     ProviderTransport,
 )
 
@@ -38,10 +40,40 @@ _PROVIDER_KEY_SETTING = {
 }
 
 
-def _raise_for_retryable_status(response: httpx.Response) -> None:
-    """Raise only for transient statuses that should be retried."""
-    if response.status_code in _RETRYABLE_HTTP_STATUSES:
-        response.raise_for_status()
+class _ProviderRetryTransport(httpx.AsyncBaseTransport):
+    """Returns final HTTP responses intact so SDKs preserve provider errors."""
+
+    def __init__(self, wrapped: httpx.AsyncBaseTransport | None = None) -> None:
+        self.wrapped = wrapped or httpx.AsyncHTTPTransport()
+        self.attempts = settings.LLM_HTTP_RETRY_MAX_ATTEMPTS
+        self.wait = wait_retry_after(
+            fallback_strategy=wait_exponential(
+                multiplier=1, max=settings.LLM_HTTP_RETRY_MAX_WAIT_SECONDS
+            ),
+            max_wait=settings.LLM_HTTP_RETRY_TOTAL_WAIT_CAP_SECONDS,
+        )
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(self.attempts),
+            wait=self.wait,
+            retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+            reraise=True,
+        ):
+            with attempt:
+                response = await self.wrapped.handle_async_request(request)
+                response.request = request
+                if (
+                    response.status_code in _RETRYABLE_HTTP_STATUSES
+                    and attempt.retry_state.attempt_number < self.attempts
+                ):
+                    await response.aclose()
+                    response.raise_for_status()
+                return response
+        raise RuntimeError("Provider retry policy made no attempts.")  # pragma: no cover
+
+    async def aclose(self) -> None:
+        await self.wrapped.aclose()
 
 
 def _build_retrying_http_client(
@@ -49,21 +81,7 @@ def _build_retrying_http_client(
     *,
     auth: httpx.Auth | None = None,
 ) -> httpx.AsyncClient:
-    transport = AsyncTenacityTransport(
-        config=RetryConfig(
-            stop=stop_after_attempt(settings.LLM_HTTP_RETRY_MAX_ATTEMPTS),
-            wait=wait_retry_after(
-                fallback_strategy=wait_exponential(
-                    multiplier=1,
-                    max=settings.LLM_HTTP_RETRY_MAX_WAIT_SECONDS,
-                ),
-                max_wait=settings.LLM_HTTP_RETRY_TOTAL_WAIT_CAP_SECONDS,
-            ),
-            reraise=True,
-        ),
-        wrapped=wrapped,
-        validate_response=_raise_for_retryable_status,
-    )
+    transport = _ProviderRetryTransport(wrapped)
     return httpx.AsyncClient(
         auth=auth,
         transport=transport,
@@ -136,3 +154,23 @@ def is_provider_configured(provider: str) -> bool:
             (settings.AZURE_OPENAI_ENDPOINT or "").strip()
         )
     return has_provider_api_key(provider)
+
+
+def partner_location(info: ModelInfo) -> str:
+    """Return a supported override or the model's default location."""
+    location = settings.VERTEX_PARTNER_MODEL_LOCATIONS.get(
+        info.qualified_id, info.vertex_default_location
+    )
+    if (
+        info.partner_transport
+        != ("mistral-publisher" if info.provider == PROVIDER_MISTRAL else "chat-completions")
+        or not info.vertex_default_location
+        or info.vertex_default_location not in info.vertex_supported_locations
+        or not location
+        or location not in info.vertex_supported_locations
+    ):
+        raise ModelConfigurationError(
+            f"Model '{info.qualified_id}' has missing or unsupported Vertex routing metadata.",
+            details={"model": info.qualified_id, "setting": "VERTEX_PARTNER_MODEL_LOCATIONS"},
+        )
+    return location

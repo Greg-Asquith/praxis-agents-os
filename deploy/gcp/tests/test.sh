@@ -96,7 +96,7 @@ for manifest in \
   "$TEST_TMP/rendered/services/praxis-api.yaml" \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
-  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: global'
+  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: auto'
 done
 grep -Fq -- 'apis+=(aiplatform.googleapis.com)' "$GCP_DIR/bootstrap.sh"
 grep -Fq -- '--role=roles/aiplatform.user' "$GCP_DIR/bootstrap.sh"
@@ -164,7 +164,7 @@ fi
 grep -q 'GOOGLE_VERTEX_AI must be true or false' "$TEST_TMP/invalid-vertex-flag.out"
 
 sed -e 's/^GOOGLE_VERTEX_AI=false$/GOOGLE_VERTEX_AI=true/' \
-  -e 's/^GOOGLE_VERTEX_LOCATION=global$/GOOGLE_VERTEX_LOCATION=europe-west2/' \
+  -e 's/^GOOGLE_VERTEX_LOCATION=auto$/GOOGLE_VERTEX_LOCATION=europe-west2/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/vertex.env"
 "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/vertex-render" \
   "$TEST_TMP/vertex.env" abcdef0123456789
@@ -184,7 +184,7 @@ for manifest in \
   "$TEST_TMP/legacy-render/services/praxis-api.yaml" \
   "$TEST_TMP/legacy-render/jobs/praxis-worker.yaml"; do
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
-  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: global'
+  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: auto'
 done
 grep -Fq 'unset GOOGLE_VERTEX_AI GOOGLE_VERTEX_LOCATION' "$GCP_DIR/bootstrap.sh"
 
@@ -222,8 +222,101 @@ fi
 grep -q 'production requires CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE=true' \
   "$TEST_TMP/unsafe-production.out"
 
+for flag in ANTHROPIC_VERTEX_AI VERTEX_PARTNER_MODELS_ENABLED; do
+  sed "s/^${flag}=false$/${flag}=true/" "$GCP_DIR/.env.example" > "$TEST_TMP/partner.env"
+  "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/partner-render" \
+    "$TEST_TMP/partner.env" abcdef0123456789
+  for manifest in "$TEST_TMP/partner-render/services/praxis-api.yaml" \
+    "$TEST_TMP/partner-render/jobs/praxis-worker.yaml"; do
+    grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
+    grep -A1 "name: $flag" "$manifest" | grep -q 'value: "true"'
+    grep -A1 'name: ANTHROPIC_VERTEX_LOCATION' "$manifest" | grep -q 'value: "global"'
+    grep -A1 'name: VERTEX_PARTNER_MODEL_LOCATIONS' "$manifest" | grep -q 'value: "{}"'
+  done
+  sed "s/^${flag}=false$/${flag}=invalid/" "$GCP_DIR/.env.example" > "$TEST_TMP/invalid-partner.env"
+  for script in deploy bootstrap; do
+    if (
+      if [[ "$script" == deploy ]]; then
+        "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/invalid-partner-render" \
+          "$TEST_TMP/invalid-partner.env"
+      else
+        "$GCP_DIR/bootstrap.sh" "$TEST_TMP/invalid-partner.env"
+      fi
+    ) >"$TEST_TMP/invalid-partner.out" 2>&1; then
+      echo "$script unexpectedly accepted an invalid $flag" >&2
+      exit 1
+    fi
+    grep -q "$flag must be true or false" "$TEST_TMP/invalid-partner.out"
+  done
+done
+
+python3 - "$GCP_DIR/bootstrap.sh" <<'PYTEST'
+import itertools
+import pathlib
+import re
+import subprocess
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+blocks = re.findall(r'if \[\[ "\$GOOGLE_VERTEX_AI".*?\nfi', source, re.S)
+assert len(blocks) == 2
+for google, anthropic, partner in itertools.product(("false", "true"), repeat=3):
+    setup = (
+        f"GOOGLE_VERTEX_AI={google}\nANTHROPIC_VERTEX_AI={anthropic}\n"
+        f"VERTEX_PARTNER_MODELS_ENABLED={partner}\n"
+        "apis=()\nAPI_SERVICE_ACCOUNT=api\nWORKER_SERVICE_ACCOUNT=worker\n"
+        "GCP_PROJECT_ID=test-project\nplan() { echo \"$*\"; }\n"
+    )
+    result = subprocess.run(
+        ["bash", "-c", setup + "\n".join(blocks) + '\nprintf "%s" "${apis[*]}"'],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    enabled = "true" in (google, anthropic, partner)
+    assert ("aiplatform.googleapis.com" in result) == enabled
+    assert result.count("--role=roles/aiplatform.user") == (2 if enabled else 0)
+PYTEST
+
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck "$GCP_DIR/bootstrap.sh" "$GCP_DIR/deploy.sh" "$SCRIPT_DIR/test.sh"
 else
   echo "shellcheck not installed; run the documented manual command before deployment"
 fi
+
+# Override JSON must survive both runtime manifests as the same string value.
+cp "$GCP_DIR/.env.example" "$TEST_TMP/model-locations.env"
+cat >> "$TEST_TMP/model-locations.env" <<'ENV'
+VERTEX_PARTNER_MODEL_LOCATIONS='{"mistral:mistral-small-2503":"europe-west4"}'
+ENV
+"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/model-locations-render" \
+  "$TEST_TMP/model-locations.env" abcdef0123456789
+python3 - "$TEST_TMP/model-locations-render" <<'PY'
+import json
+import pathlib
+import sys
+root = pathlib.Path(sys.argv[1])
+for name in ("services/praxis-api.yaml", "jobs/praxis-worker.yaml"):
+    text = (root / name).read_text()
+    scalar = text.split("name: VERTEX_PARTNER_MODEL_LOCATIONS\n", 1)[1].splitlines()[0].strip().removeprefix("value: ")
+    assert json.loads(json.loads(scalar)) == {"mistral:mistral-small-2503": "europe-west4"}
+    assert "name: VERTEX_PARTNER_LOCATION\n" not in text
+PY
+for invalid in 'VERTEX_PARTNER_MODEL_LOCATIONS=broken' \
+  "VERTEX_PARTNER_MODEL_LOCATIONS='[]'" \
+  "VERTEX_PARTNER_MODEL_LOCATIONS='{\"mistral:mistral-small-2503\":2}'" \
+  'VERTEX_PARTNER_LOCATION=us-central1'; do
+  cp "$GCP_DIR/.env.example" "$TEST_TMP/invalid-location.env"
+  printf '\n%s\n' "$invalid" >> "$TEST_TMP/invalid-location.env"
+  for script in deploy bootstrap; do
+    if (
+      if [[ "$script" == deploy ]]; then
+        "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/invalid-location-render" "$TEST_TMP/invalid-location.env"
+      else
+        "$GCP_DIR/bootstrap.sh" "$TEST_TMP/invalid-location.env"
+      fi
+    ) > "$TEST_TMP/invalid-location.out" 2>&1; then
+      echo "$script unexpectedly accepted invalid model locations" >&2
+      exit 1
+    fi
+    grep -q 'VERTEX_PARTNER_' "$TEST_TMP/invalid-location.out"
+  done
+done

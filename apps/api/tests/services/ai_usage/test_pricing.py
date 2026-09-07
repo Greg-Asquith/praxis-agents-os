@@ -95,7 +95,7 @@ def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
 
 
 def test_every_live_catalog_model_has_current_pricing() -> None:
-    on_date = date(2026, 9, 5)
+    on_date = date(2026, 9, 7)
     missing = [
         model.qualified_id
         for model in list_models()
@@ -155,3 +155,19 @@ def test_gemini_flash_image_uses_standard_1k_output_price() -> None:
 
     assert price is not None
     assert price.usd_per_image == Decimal("0.067")
+
+
+@pytest.mark.parametrize(
+    ("model", "input_rate", "output_rate"),
+    [("llama-4-maverick", "0.35", "1.15"), ("llama-4-scout", "0.25", "0.70")],
+)
+def test_meta_vertex_pricing_uses_catalog_alias_and_input_cache_fallback(
+    model, input_rate, output_rate
+):
+    price = find_price("meta", model, date(2026, 9, 7))
+    assert price is not None
+    assert price.input_usd_per_mtok == Decimal(input_rate)
+    assert price.cache_read_usd_per_mtok == price.input_usd_per_mtok
+    assert price.cache_write_usd_per_mtok == price.input_usd_per_mtok
+    assert price.output_usd_per_mtok == Decimal(output_rate)
+    assert find_price("meta", model, date(2026, 9, 6)) is None

@@ -40,7 +40,7 @@ export function formatAgentModelType(agent: AgentModelSelection, catalog: ModelC
   const model = catalog.models.find((item) => item.id === qualifiedId)
   const providerName = model?.provider ?? agent.model_provider
   const provider = catalog.providers.find((item) => item.provider === providerName)
-  const providerLabel = provider?.display_name ?? providerName
+  const providerLabel = provider ? providerDisplayName(provider) : providerName
 
   if (!model) {
     return providerLabel ? `${providerLabel} · Custom` : "Custom"
@@ -56,9 +56,15 @@ export function modelDisplayName(catalog: ModelCatalogResponse, qualifiedId: str
   }
 
   const provider = catalog.providers.find((item) => item.provider === model.provider)
-  return `${provider?.display_name ?? model.provider} · ${model.display_name}`
+  return `${provider ? providerDisplayName(provider) : model.provider} · ${model.display_name}`
 }
 
 function modelTypeLabel(modelType: ModelCatalogResponse["models"][number]["model_type"]) {
   return `${modelType.charAt(0).toUpperCase()}${modelType.slice(1)}`
+}
+
+export function providerDisplayName(provider: ModelCatalogResponse["providers"][number]) {
+  return provider.transport === "google-cloud"
+    ? `${provider.display_name} via Google Cloud`
+    : provider.display_name
 }
