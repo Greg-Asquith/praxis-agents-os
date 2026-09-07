@@ -1,20 +1,23 @@
 // apps/web/src/integrations/google_ads/presenters/assign-campaign-budgets.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   budgetPeriodLabel,
-  linkedCampaignLabel,
   parseCampaignBudgetReference,
-  parseCampaignReference,
   type CampaignBudgetReference,
-  type CampaignReference,
 } from "@/integrations/google_ads/lib/campaign-budgets"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { titleCaseToken } from "@/lib/format"
+
+import {
+  parseCampaignReference,
+  type CampaignReference,
+} from "@/integrations/google_ads/lib/campaigns"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
 const OUTCOMES = ["assigned", "already_set", "failed", "unverified"] as const
@@ -130,7 +133,10 @@ function renderAssignmentApprovalSummary(args: AssignmentArgs) {
       </div>
       <p className="text-muted-foreground text-xs">
         {budgetPeriodLabel(args.destination.period)} ·{" "}
-        {linkedCampaignLabel(args.destination.referenceCount)} use this budget before the change
+        {args.destination.referenceCount === null
+          ? "Unavailable"
+          : approvalCountLine(args.destination.referenceCount, "campaign")}{" "}
+        use this budget before the change
       </p>
     </section>
   )
@@ -161,7 +167,9 @@ function renderAssignmentOutcomeTable(result: AssignmentResult) {
           <p className="truncate text-sm font-medium">{result.destination.label}</p>
           <p className="text-muted-foreground text-xs">
             {budgetPeriodLabel(result.destination.period)} ·{" "}
-            {linkedCampaignLabel(result.destination.referenceCount)}
+            {result.destination.referenceCount === null
+              ? "Unavailable"
+              : approvalCountLine(result.destination.referenceCount, "campaign")}
           </p>
         </div>
       </section>

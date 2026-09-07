@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/dismiss-recommendations.tsx
 
+import { countByKind, outcomeDetails, outcomeTone } from "@/integrations/google_ads/lib/outcomes"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import { humanizeGoogleAdsToken } from "@/integrations/google_ads/lib/device-bid-modifiers"
@@ -7,7 +8,8 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { isRecord } from "@/lib/guards"
+import { parseRecommendationReference } from "@/integrations/google_ads/lib/recommendations"
+import { isRecord, isNullableString } from "@/lib/guards"
 
 type RecommendationReference = {
   label: string
@@ -109,10 +111,10 @@ function dismissRecommendationApprovalSummary(args: DismissRecommendationArgs) {
 }
 
 function dismissRecommendationOutcomeTable(result: DismissRecommendationResult) {
-  const counts = countOutcomes(result.recommendations)
+  const counts = countByKind(result.recommendations)
   const rows: DataRow[] = result.recommendations.map((recommendation) => ({
     campaigns: recommendation.affectedCampaigns.join(", ") || "No campaign identified",
-    details: outcomeDetails(recommendation),
+    details: outcomeDetails(recommendation.message, recommendation.errorCode, null) || "—",
     outcome:
       recommendation.outcome === "already_dismissed"
         ? "Already dismissed"
@@ -127,26 +129,16 @@ function dismissRecommendationOutcomeTable(result: DismissRecommendationResult) 
       exportFilename="google-ads-dismissed-recommendations.csv"
       header={
         <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Dismissed"
-            tone={counts.dismissed > 0 ? "success" : undefined}
-            value={counts.dismissed}
-          />
-          <Stat
-            label="Already dismissed"
-            tone={counts.alreadyDismissed > 0 ? "warning" : undefined}
-            value={counts.alreadyDismissed}
-          />
-          <Stat
-            label="Failed"
-            tone={counts.failed > 0 ? "danger" : undefined}
-            value={counts.failed}
-          />
-          <Stat
-            label="Unverified"
-            tone={counts.unverified > 0 ? "warning" : undefined}
-            value={counts.unverified}
-          />
+          {counts.map(({ kind, label, count }) => (
+            <Stat
+              key={kind}
+              label={
+                kind === "applied" ? "Dismissed" : kind === "skipped" ? "Already dismissed" : label
+              }
+              tone={count > 0 ? (kind === "skipped" ? "warning" : outcomeTone(kind)) : undefined}
+              value={count}
+            />
+          ))}
         </StatGroup>
       }
       pageSize={25}
@@ -186,25 +178,9 @@ function dismissRecommendationArgs(value: unknown): DismissRecommendationArgs | 
   }
   const recommendations: RecommendationReference[] = []
   for (const item of value["recommendations"]) {
-    if (
-      !isRecord(item) ||
-      item["entity_kind"] !== "google_ads_recommendation" ||
-      typeof item["customer_id"] !== "string" ||
-      typeof item["resource_name"] !== "string" ||
-      typeof item["recommendation_type"] !== "string" ||
-      typeof item["label"] !== "string" ||
-      !item["customer_id"].trim() ||
-      !item["resource_name"].trim() ||
-      !item["recommendation_type"].trim() ||
-      !item["label"].trim()
-    ) {
-      return null
-    }
-    recommendations.push({
-      label: item["label"],
-      recommendationType: item["recommendation_type"],
-      resourceName: item["resource_name"],
-    })
+    const reference = parseRecommendationReference(item)
+    if (!reference) return null
+    recommendations.push(reference)
   }
   return new Set(recommendations.map((item) => item.resourceName)).size === recommendations.length
     ? { recommendations }
@@ -252,9 +228,9 @@ function parseOutcome(value: unknown): DismissRecommendationOutcome | null {
   ) {
     return null
   }
-  const message = optionalString(value["message"])
-  const errorCode = optionalString(value["error_code"])
-  if (message === undefined || errorCode === undefined) return null
+  const message = value["message"] ?? null
+  const errorCode = value["error_code"] ?? null
+  if (!isNullableString(message) || !isNullableString(errorCode)) return null
   return {
     affectedCampaigns: value["affected_campaigns"],
     errorCode,
@@ -264,29 +240,4 @@ function parseOutcome(value: unknown): DismissRecommendationOutcome | null {
     recommendationType: value["recommendation_type"],
     resourceName: value["recommendation_resource_name"],
   }
-}
-
-function countOutcomes(recommendations: DismissRecommendationOutcome[]) {
-  return {
-    alreadyDismissed: recommendations.filter((item) => item.outcome === "already_dismissed").length,
-    dismissed: recommendations.filter((item) => item.outcome === "dismissed").length,
-    failed: recommendations.filter((item) => item.outcome === "failed").length,
-    unverified: recommendations.filter((item) => item.outcome === "unverified").length,
-  }
-}
-
-function outcomeDetails(outcome: DismissRecommendationOutcome): string {
-  return (
-    [outcome.message, outcome.errorCode ? humanizeGoogleAdsToken(outcome.errorCode) : null]
-      .filter((item): item is string => Boolean(item))
-      .join(" · ") || "—"
-  )
-}
-
-function optionalString(value: unknown): string | null | undefined {
-  return value === null || value === undefined
-    ? null
-    : typeof value === "string"
-      ? value
-      : undefined
 }

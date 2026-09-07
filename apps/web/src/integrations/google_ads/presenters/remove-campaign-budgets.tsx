@@ -1,12 +1,12 @@
 // apps/web/src/integrations/google_ads/presenters/remove-campaing-budgets.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   budgetPeriodLabel,
-  campaignBudgetIdentity,
   formatCampaignBudgetAmount,
-  linkedCampaignLabel,
+  campaignBudgetIdentity,
   parseCampaignBudgetReference,
   type CampaignBudgetWithCurrency,
 } from "@/integrations/google_ads/lib/campaign-budgets"
@@ -15,6 +15,7 @@ import {
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { titleCaseToken } from "@/lib/format"
+
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
 const OUTCOMES = ["removed", "failed", "unverified"] as const
@@ -104,7 +105,10 @@ function renderRemovalApprovalSummary(args: RemovalArgs) {
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{budget.label}</p>
               <p className="text-muted-foreground text-xs">
-                {budgetPeriodLabel(budget.period)} · {linkedCampaignLabel(budget.referenceCount)}
+                {budgetPeriodLabel(budget.period)} ·{" "}
+                {budget.referenceCount === null
+                  ? "Unavailable"
+                  : approvalCountLine(budget.referenceCount, "campaign")}
               </p>
             </div>
             <p className="text-sm font-semibold tabular-nums">
@@ -128,7 +132,10 @@ function renderRemovalOutcomeTable(result: RemovalResult) {
       budget: row.reference.label,
       budgetId: row.reference.budgetId,
       details: details.filter((value): value is string => Boolean(value)).join(" · ") || "—",
-      linkedCampaigns: linkedCampaignLabel(row.reference.referenceCount),
+      linkedCampaigns:
+        row.reference.referenceCount === null
+          ? "Unavailable"
+          : approvalCountLine(row.reference.referenceCount, "campaign"),
       outcome: titleCaseToken(row.outcome, row.outcome),
       period: budgetPeriodLabel(row.reference.period),
       previousStatus: titleCaseToken(row.previousStatus, row.previousStatus),

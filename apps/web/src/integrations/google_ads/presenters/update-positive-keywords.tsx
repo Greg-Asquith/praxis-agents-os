@@ -1,12 +1,13 @@
 // apps/web/src/integrations/google_ads/presenters/update-positive-keywords.tsx
 
+import {
+  parseGoogleAdsMoney,
+  parseGoogleAdsUrlList,
+  parseGoogleAdsCustomParameters,
+  GOOGLE_ADS_ID_PATTERN,
+} from "@/integrations/google_ads/lib/field-values"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
-import {
-  GOOGLE_ADS_ID_PATTERN,
-  parsePositiveKeywordReference,
-  type PositiveKeywordReference,
-} from "@/integrations/google_ads/lib/positive-keywords"
 import {
   formatPositiveKeywordValue,
   mutableStateFromReference,
@@ -24,6 +25,11 @@ import {
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { titleCaseToken } from "@/lib/format"
+
+import {
+  parsePositiveKeywordReference,
+  type PositiveKeywordReference,
+} from "@/integrations/google_ads/lib/positive-keywords"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
 const OUTCOMES = ["updated", "already_set", "failed", "unverified"] as const
@@ -303,13 +309,17 @@ function parseStructuredPatchValue(
 ): MutableKeywordState[PatchField] | typeof INVALID {
   switch (family) {
     case "money":
-      return nullableMoney(value)
+      return value === null || value === "" ? null : (parseGoogleAdsMoney(value) ?? INVALID)
     case "urlList":
-      return urlList(value)
+      return parseGoogleAdsUrlList(value) ?? INVALID
     case "parameters":
-      return customParameters(value)
+      return isRecord(value) ? (parseGoogleAdsCustomParameters(value) ?? INVALID) : INVALID
     case "text":
-      return nullableBoundedText(value)
+      return value === null || value === ""
+        ? null
+        : typeof value === "string" && value.length <= 2048
+          ? value
+          : INVALID
     case undefined:
       return INVALID
   }
@@ -441,12 +451,13 @@ function parseStateValue(
   value: unknown
 ): MutableKeywordState[PatchField] | typeof INVALID {
   if (field === "url_custom_parameters") return stateCustomParameters(value)
-  if (field === "cpc_bid") return nullableProviderMoney(value)
+  if (field === "cpc_bid")
+    return value === null ? null : (parseGoogleAdsMoney(value, 0n) ?? INVALID)
   return parsePatchValue(field, value)
 }
 
 function stateCustomParameters(value: unknown): Record<string, string> | typeof INVALID {
-  if (isRecord(value)) return customParameters(value)
+  if (isRecord(value)) return parseGoogleAdsCustomParameters(value) ?? INVALID
   if (!Array.isArray(value) || value.length > 8) return INVALID
   const parameters: Record<string, string> = {}
   for (const item of value) {
@@ -455,54 +466,7 @@ function stateCustomParameters(value: unknown): Record<string, string> | typeof 
     }
     parameters[item["key"]] = item["value"]
   }
-  return customParameters(parameters)
-}
-
-function nullableMoney(value: unknown): string | null | typeof INVALID {
-  if (value === null || value === "") return null
-  if (typeof value !== "string" || !/^\d+(?:\.\d{1,6})?$/.test(value)) return INVALID
-  const [whole = "0", fraction = ""] = value.split(".")
-  const micros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"))
-  return micros > 0n && micros <= 9_223_372_036_854_775_807n ? value : INVALID
-}
-
-function nullableProviderMoney(value: unknown): string | null | typeof INVALID {
-  if (value === null) return null
-  if (typeof value !== "string" || !/^\d+(?:\.\d{1,6})?$/.test(value)) return INVALID
-  const [whole = "0", fraction = ""] = value.split(".")
-  const micros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"))
-  return micros <= 9_223_372_036_854_775_807n ? value : INVALID
-}
-
-function urlList(value: unknown): string[] | typeof INVALID {
-  if (!Array.isArray(value) || value.length > 10) return INVALID
-  return value.every(
-    (url) => typeof url === "string" && url.length <= 2048 && /^https?:\/\/\S+$/i.test(url)
-  )
-    ? value
-    : INVALID
-}
-
-function nullableBoundedText(value: unknown): string | null | typeof INVALID {
-  if (value === null || value === "") return null
-  return typeof value === "string" && value.length <= 2048 ? value : INVALID
-}
-
-function customParameters(value: unknown): Record<string, string> | typeof INVALID {
-  if (!isRecord(value) || Object.keys(value).length > 8) return INVALID
-  const normalized = new Set<string>()
-  for (const [key, item] of Object.entries(value)) {
-    const folded = key.toLowerCase()
-    if (
-      typeof item !== "string" ||
-      !/^[A-Za-z0-9]{1,16}$/.test(key) ||
-      new TextEncoder().encode(item).length > 200 ||
-      normalized.has(folded)
-    )
-      return INVALID
-    normalized.add(folded)
-  }
-  return value as Record<string, string>
+  return parseGoogleAdsCustomParameters(parameters) ?? INVALID
 }
 
 function summarizeFields(

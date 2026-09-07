@@ -33,6 +33,15 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
+  Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
+  types and parsers belong to their domain modules: `campaign-budgets.ts`,
+  `campaigns.ts`, `ad-groups.ts`, `positive-keywords.ts`, `negative-keywords.ts`,
+  and `recommendations.ts`. Account-currency metadata belongs to `accounts.ts`.
+  Import directly from those modules. Shared scalar and URL-field validation
+  lives in `field-values.ts`; callers own normalization, defaults, and clears.
+  Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
+  separate modules. Shared visual components and lifecycle-copy adoption
+  across write presenters remain pending.
   Google Ads positive-keyword creation groups approval context by campaign,
   keeps optional bid and URL fields behind each row's progressive disclosure,
   applies provider byte and dependency checks before approval, and shows

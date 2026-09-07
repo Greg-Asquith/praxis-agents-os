@@ -3,7 +3,6 @@
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import {
-  GOOGLE_ADS_ID_PATTERN,
   parsePositiveKeywordInput,
   positiveKeywordInputValidationError,
   type PositiveKeywordInput,
@@ -12,6 +11,12 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
+import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import {
+  parseAdGroupReference,
+  type AdGroupReference,
+} from "@/integrations/google_ads/lib/ad-groups"
 import { formatCurrencyAmount, titleCaseToken } from "@/lib/format"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
@@ -19,14 +24,6 @@ const OUTCOMES = ["added", "skipped_existing", "failed", "unverified"] as const
 const CURRENCY_PATTERN = /^[A-Z]{3}$/
 
 type KeywordOutcome = (typeof OUTCOMES)[number]
-
-type AdGroupReference = {
-  adGroupId: string
-  campaignId: string
-  campaignLabel: string | null
-  customerId: string
-  label: string
-}
 
 type CreateKeywordArgs = {
   accounts: Map<string, { currencyCode: string; label: string }>
@@ -254,7 +251,7 @@ function createKeywordArgs(value: unknown): CreateKeywordArgs | null {
   const adGroups = parseAdGroups(value["ad_groups"])
   const keywords = parseKeywords(value["keywords"])
   if (!adGroups || !keywords || adGroups.length * keywords.length > 2500) return null
-  const accounts = parseAccounts(value["_account_currencies"])
+  const accounts = parseAccountCurrencies(value["_account_currencies"])
   if (!allBidCurrenciesAvailable(adGroups, keywords, accounts)) return null
   return { accounts, adGroups, keywords }
 }
@@ -269,7 +266,7 @@ function parseAdGroups(values: unknown[]): AdGroupReference[] | null {
   const adGroups: AdGroupReference[] = []
   const identities = new Set<string>()
   for (const item of values) {
-    const parsed = parseAdGroup(item)
+    const parsed = parseAdGroupReference(item)
     if (!parsed) return null
     const identity = `${parsed.customerId}:${parsed.adGroupId}`
     if (identities.has(identity)) return null
@@ -289,28 +286,6 @@ function parseKeywords(values: unknown[]): PositiveKeywordInput[] | null {
   return keywords
 }
 
-function parseAccounts(value: unknown): Map<string, { currencyCode: string; label: string }> {
-  const accounts = new Map<string, { currencyCode: string; label: string }>()
-  if (!Array.isArray(value)) return accounts
-  for (const item of value) {
-    const parsed = parseAccount(item)
-    if (parsed) accounts.set(parsed.customerId, parsed.account)
-  }
-  return accounts
-}
-
-function parseAccount(
-  value: unknown
-): { account: { currencyCode: string; label: string }; customerId: string } | null {
-  if (!isRecord(value)) return null
-  const customerId = googleAdsId(value["customer_id"])
-  const label = value["label"]
-  const currencyCode = value["currency_code"]
-  if (!customerId || typeof label !== "string" || typeof currencyCode !== "string") return null
-  if (!CURRENCY_PATTERN.test(currencyCode)) return null
-  return { account: { currencyCode, label }, customerId }
-}
-
 function allBidCurrenciesAvailable(
   adGroups: AdGroupReference[],
   keywords: PositiveKeywordInput[],
@@ -327,34 +302,6 @@ function createKeywordArgsValidationError(value: unknown): string | null {
     if (error) return error
   }
   return null
-}
-
-function parseAdGroup(value: unknown): AdGroupReference | null {
-  if (!isRecord(value)) return null
-  if (!isExpectedEntityKind(value["entity_kind"], "google_ads_ad_group")) return null
-  const customerId = googleAdsId(value["customer_id"])
-  const campaignId = googleAdsId(value["campaign_id"])
-  const adGroupId = googleAdsId(value["ad_group_id"])
-  if (!customerId || !campaignId) return null
-  if (!adGroupId || typeof value["label"] !== "string") return null
-  return {
-    adGroupId,
-    campaignId,
-    campaignLabel:
-      typeof value["scope_label"] === "string" && value["scope_label"].trim()
-        ? value["scope_label"]
-        : null,
-    customerId,
-    label: value["label"].trim() || adGroupId,
-  }
-}
-
-function isExpectedEntityKind(value: unknown, expected: string): boolean {
-  return value == null || value === expected
-}
-
-function googleAdsId(value: unknown): string | null {
-  return typeof value === "string" && GOOGLE_ADS_ID_PATTERN.test(value) ? value : null
 }
 
 function createKeywordResult(value: unknown): CreateKeywordResult | null {

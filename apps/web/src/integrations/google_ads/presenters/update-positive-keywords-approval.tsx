@@ -18,8 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type {
-  PositiveKeywordReference,
   PositiveKeywordStatus,
+  PositiveKeywordReference,
 } from "@/integrations/google_ads/lib/positive-keywords"
 import {
   formatPositiveKeywordValue,
@@ -33,6 +33,7 @@ import {
   type PositiveKeywordUpdateArgs,
 } from "@/integrations/google_ads/lib/positive-keyword-update"
 import { titleCaseToken } from "@/lib/format"
+
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
 

@@ -1,37 +1,22 @@
 // apps/web/src/integrations/google_ads/lib/positive-keywords.ts
 
+import {
+  googleAdsId,
+  parseGoogleAdsMoney,
+  parseGoogleAdsUrlList,
+  parseGoogleAdsCustomParameters,
+} from "@/integrations/google_ads/lib/field-values"
 import { isRecord } from "@/lib/guards"
 
 type PositiveKeywordMatchType = "EXACT" | "PHRASE" | "BROAD"
 export type PositiveKeywordStatus = "ENABLED" | "PAUSED"
 
-export const GOOGLE_ADS_ID_PATTERN = /^\d+$/
 const POSITIVE_KEYWORD_MATCH_TYPES: ReadonlySet<PositiveKeywordMatchType> = new Set([
   "EXACT",
   "PHRASE",
   "BROAD",
 ])
 const POSITIVE_KEYWORD_STATUSES: ReadonlySet<PositiveKeywordStatus> = new Set(["ENABLED", "PAUSED"])
-
-export type PositiveKeywordReference = {
-  adGroupId: string
-  campaignId: string
-  criterionId: string
-  customerId: string
-  identity: string
-  label: string
-  matchType: PositiveKeywordMatchType
-  scopeLabel: string
-  status: PositiveKeywordStatus
-  text: string
-  bidModifier: number | null
-  cpcBid: string | null
-  finalMobileUrls: string[]
-  finalUrls: string[]
-  finalUrlSuffix: string | null
-  trackingUrlTemplate: string | null
-  urlCustomParameters: Record<string, string>
-}
 
 export type PositiveKeywordInput = {
   bidModifier: number | null
@@ -61,8 +46,8 @@ export function parsePositiveKeywordInput(value: unknown): PositiveKeywordInput 
   if (cpcBid === undefined) return null
   const bidModifier = optionalBidModifier(value["bid_modifier"])
   if (bidModifier === undefined) return null
-  const urlCustomParameters = customParameters(value["url_custom_parameters"])
-  if (urlCustomParameters === null) return null
+  const urlCustomParameters = parseGoogleAdsCustomParameters(value["url_custom_parameters"] ?? {})
+  if (urlCustomParameters === undefined) return null
   return { ...core, ...urls, bidModifier, cpcBid, urlCustomParameters }
 }
 
@@ -91,8 +76,13 @@ function positiveKeywordCore(value: Record<string, unknown>): PositiveKeywordCor
 function positiveKeywordUrls(value: Record<string, unknown>): PositiveKeywordUrls | null {
   const finalUrls = urlList(value["final_urls"])
   const finalMobileUrls = urlList(value["final_mobile_urls"])
-  const finalUrlSuffix = optionalBoundedString(value["final_url_suffix"], 2048)
-  const trackingUrlTemplate = optionalBoundedString(value["tracking_url_template"], 2048)
+  const [finalUrlSuffix, trackingUrlTemplate] = [
+    value["final_url_suffix"],
+    value["tracking_url_template"],
+  ].map((text) => {
+    if (text == null || (typeof text === "string" && !text.trim())) return null
+    return typeof text === "string" && text.length <= 2048 ? text : undefined
+  })
   if (
     finalUrls === null ||
     finalMobileUrls === null ||
@@ -106,7 +96,7 @@ function positiveKeywordUrls(value: Record<string, unknown>): PositiveKeywordUrl
 
 export function positiveKeywordInputValidationError(value: unknown): string | null {
   if (!isRecord(value)) return "Each keyword row must contain valid fields."
-  if (customParameters(value["url_custom_parameters"]) === null) {
+  if (parseGoogleAdsCustomParameters(value["url_custom_parameters"] ?? {}) === undefined) {
     return (
       "URL custom parameters accept at most eight entries. Names must use 1-16 ASCII letters " +
       "or numbers and be unique ignoring case. Values can use at most 200 UTF-8 bytes."
@@ -119,22 +109,21 @@ export function positiveKeywordInputValidationError(value: unknown): string | nu
     return "Bid adjustments must be a number from 0.1 through 10."
   }
   const finalUrls = urlList(value["final_urls"])
-  const trackingTemplate = optionalBoundedString(value["tracking_url_template"], 2048)
-  if (trackingTemplate && finalUrls?.length === 0) {
+  const trackingTemplate = value["tracking_url_template"]
+  if (
+    typeof trackingTemplate === "string" &&
+    trackingTemplate.trim() &&
+    trackingTemplate.length <= 2048 &&
+    finalUrls?.length === 0
+  ) {
     return "Add at least one final URL when using a tracking URL template."
   }
   return parsePositiveKeywordInput(value) ? null : "Review the invalid keyword fields."
 }
 
-const GOOGLE_ADS_INT64_MAX = 9223372036854775807n
-
 function optionalMoneyBid(value: unknown): string | null | undefined {
   if (value == null || (typeof value === "string" && !value.trim())) return null
-  if (typeof value !== "string" || !/^\d+(?:\.\d{1,6})?$/.test(value.trim())) return undefined
-  const candidate = value.trim()
-  const [whole = "0", fraction = ""] = candidate.split(".")
-  const micros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"))
-  return micros > 0n && micros <= GOOGLE_ADS_INT64_MAX ? candidate : undefined
+  return parseGoogleAdsMoney(typeof value === "string" ? value.trim() : value)
 }
 
 function optionalBidModifier(value: unknown): number | null | undefined {
@@ -145,70 +134,22 @@ function optionalBidModifier(value: unknown): number | null | undefined {
 
 function urlList(value: unknown): string[] | null {
   if (value == null) return []
-  if (!Array.isArray(value) || value.length > 10) return null
-  const urls = value
-    .filter((item): item is string => typeof item === "string")
-    .map((url) => url.trim())
-  if (
-    urls.length !== value.length ||
-    urls.some((url) => url.length > 2048 || !/^https?:\/\/\S+$/i.test(url))
-  )
-    return null
-  return urls
-}
-
-function optionalBoundedString(value: unknown, maximum: number): string | null | undefined {
-  if (value == null || (typeof value === "string" && !value.trim())) return null
-  return typeof value === "string" && value.length <= maximum ? value : undefined
-}
-
-function validCustomParameter(key: string, value: string): boolean {
+  if (!Array.isArray(value)) return null
   return (
-    /^[A-Za-z0-9]+$/.test(key) &&
-    new TextEncoder().encode(key).length <= 16 &&
-    new TextEncoder().encode(value).length <= 200
+    parseGoogleAdsUrlList(
+      value.map((url: unknown) => (typeof url === "string" ? url.trim() : url))
+    ) ?? null
   )
 }
 
-function customParameterEntries(value: unknown): [string, string][] | null {
-  if (value == null) return []
-  if (Array.isArray(value)) return customParameterArrayEntries(value)
-  if (!isRecord(value) || Object.keys(value).length > 8) return null
-  const entries = Object.entries(value)
-  return entries.every(
-    (entry): entry is [string, string] =>
-      typeof entry[1] === "string" && validCustomParameter(entry[0], entry[1])
-  )
-    ? entries
-    : null
-}
-
-function customParameterArrayEntries(value: unknown[]): [string, string][] | null {
-  if (value.length > 8) return null
-  const entries: [string, string][] = []
-  for (const item of value) {
-    if (!isRecord(item)) return null
-    const key = item["key"]
-    const parameterValue = item["value"]
-    if (typeof key !== "string" || typeof parameterValue !== "string") return null
-    if (!validCustomParameter(key, parameterValue)) return null
-    entries.push([key, parameterValue])
-  }
-  return entries
-}
-
-function customParameters(value: unknown): Record<string, string> | null {
-  const entries = customParameterEntries(value)
-  if (entries === null) return null
-  const normalizedKeys = new Set<string>()
-  const parameters: Record<string, string> = {}
-  for (const [key, item] of entries) {
-    const normalized = key.toLowerCase()
-    if (normalizedKeys.has(normalized)) return null
-    normalizedKeys.add(normalized)
-    parameters[key] = item
-  }
-  return parameters
+export type PositiveKeywordReference = PositiveKeywordInput & {
+  adGroupId: string
+  campaignId: string
+  criterionId: string
+  customerId: string
+  identity: string
+  label: string
+  scopeLabel: string
 }
 
 export function parsePositiveKeywordReference(value: unknown): PositiveKeywordReference | null {
@@ -226,8 +167,14 @@ export function parsePositiveKeywordReference(value: unknown): PositiveKeywordRe
     ...identity,
     ...configuration,
     ...bids,
-    label: keywordReferenceLabel(value["label"], configuration.text),
-    scopeLabel: keywordReferenceScopeLabel(value["scope_label"]),
+    label:
+      typeof value["label"] === "string" && value["label"].trim()
+        ? value["label"]
+        : configuration.text,
+    scopeLabel:
+      typeof value["scope_label"] === "string" && value["scope_label"].trim()
+        ? value["scope_label"]
+        : "Campaign and ad group unavailable",
   }
 }
 
@@ -246,14 +193,6 @@ function positiveKeywordReferenceBids(
         ? rawBidModifier
         : undefined
   return cpcBid === undefined || bidModifier === undefined ? null : { bidModifier, cpcBid }
-}
-
-function keywordReferenceLabel(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value : fallback
-}
-
-function keywordReferenceScopeLabel(value: unknown): string {
-  return typeof value === "string" && value.trim() ? value : "Campaign and ad group unavailable"
 }
 
 function positiveKeywordReferenceIdentity(
@@ -278,15 +217,11 @@ function positiveKeywordReferenceIdentity(
   }
 }
 
-function googleAdsId(value: unknown): string | null {
-  return typeof value === "string" && GOOGLE_ADS_ID_PATTERN.test(value) ? value : null
-}
-
 function microsDecimal(value: unknown): string | null | undefined {
   if (value == null) return null
   if (typeof value !== "string" || !/^\d+$/.test(value)) return undefined
   const micros = BigInt(value)
-  if (micros > GOOGLE_ADS_INT64_MAX) return undefined
+  if (micros > 9223372036854775807n) return undefined
   const whole = micros / 1_000_000n
   const fraction = String(micros % 1_000_000n)
     .padStart(6, "0")

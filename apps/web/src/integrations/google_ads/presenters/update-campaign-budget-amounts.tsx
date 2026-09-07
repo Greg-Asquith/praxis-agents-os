@@ -1,15 +1,15 @@
 // apps/web/src/integrations/google_ads/presenters/update-campaign-budget-amounts.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { ArrowRightIcon } from "lucide-react"
 
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   budgetPeriodLabel,
-  campaignBudgetIdentity,
   formatCampaignBudgetAmount,
   formatDailyEstimate,
-  linkedCampaignLabel,
+  campaignBudgetIdentity,
   parseCampaignBudgetReference,
   type CampaignBudgetWithCurrency,
 } from "@/integrations/google_ads/lib/campaign-budgets"
@@ -17,6 +17,7 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
+
 import { formatCurrencyAmount, formatPercentageChange, titleCaseToken } from "@/lib/format"
 import { isNullableString, isRecord, parsePositiveDecimal } from "@/lib/guards"
 
@@ -107,7 +108,9 @@ function renderUpdateBudgetApprovalSummary(args: UpdateBudgetArgs) {
             <p className="truncate text-sm font-medium">{update.budget.label}</p>
             <p className="text-muted-foreground mt-0.5 text-xs">
               {budgetPeriodLabel(update.budget.period)} ·{" "}
-              {linkedCampaignLabel(update.budget.referenceCount)}
+              {update.budget.referenceCount === null
+                ? "Unavailable"
+                : approvalCountLine(update.budget.referenceCount, "campaign")}
             </p>
           </div>
           <div
@@ -149,7 +152,10 @@ function renderUpdateBudgetOutcome(result: UpdateBudgetResult) {
       budget: row.reference.label,
       change: formatPercentageChange(Number(row.previousAmount), Number(row.requestedAmount)),
       details: details.filter((value): value is string => Boolean(value)).join(" · ") || "—",
-      linkedCampaigns: linkedCampaignLabel(row.reference.referenceCount ?? row.campaignLabelCount),
+      linkedCampaigns: approvalCountLine(
+        row.reference.referenceCount ?? row.campaignLabelCount,
+        "campaign"
+      ),
       outcome:
         row.outcome === "already_set" ? "Already set" : titleCaseToken(row.outcome, row.outcome),
       period: budgetPeriodLabel(row.reference.period),

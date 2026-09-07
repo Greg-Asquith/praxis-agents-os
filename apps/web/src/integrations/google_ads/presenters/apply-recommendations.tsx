@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/apply-recommendations.tsx
 
+import { countByKind, outcomeDetails, outcomeTone } from "@/integrations/google_ads/lib/outcomes"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Stat, StatGroup } from "@/components/ui/stat"
 import { humanizeGoogleAdsToken } from "@/integrations/google_ads/lib/device-bid-modifiers"
@@ -8,7 +9,10 @@ import {
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { microsToCurrencyUnits } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
+import { parseRecommendationReference } from "@/integrations/google_ads/lib/recommendations"
+import { isRecord, isNullableString, isNullableFiniteNumber, isPositiveInteger } from "@/lib/guards"
+
+const NUMBER_FORMAT = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 
 const PARAMETER_TYPES = new Set([
   "campaignBudget",
@@ -161,10 +165,10 @@ function applyRecommendationApprovalSummary(args: ApplyRecommendationArgs) {
 }
 
 function applyRecommendationOutcomeTable(result: ApplyRecommendationResult) {
-  const counts = countOutcomes(result.recommendations)
+  const counts = countByKind(result.recommendations)
   const rows: DataRow[] = result.recommendations.map((recommendation) => ({
     campaigns: recommendation.affectedCampaigns.join(", ") || "No campaign identified",
-    details: outcomeDetails(recommendation),
+    details: outcomeDetails(recommendation.message, recommendation.errorCode, null) || "—",
     impact: formatImpact(recommendation.impact),
     outcome: humanizeGoogleAdsToken(recommendation.outcome),
     parameters: recommendation.parameters
@@ -181,21 +185,16 @@ function applyRecommendationOutcomeTable(result: ApplyRecommendationResult) {
       header={
         <div className="grid gap-2">
           <StatGroup className="px-3 pt-2">
-            <Stat
-              label="Applied"
-              tone={counts.applied > 0 ? "success" : undefined}
-              value={counts.applied}
-            />
-            <Stat
-              label="Failed"
-              tone={counts.failed > 0 ? "danger" : undefined}
-              value={counts.failed}
-            />
-            <Stat
-              label="Unverified"
-              tone={counts.unverified > 0 ? "warning" : undefined}
-              value={counts.unverified}
-            />
+            {counts
+              .filter(({ kind }) => kind !== "skipped")
+              .map(({ kind, label, count }) => (
+                <Stat
+                  key={kind}
+                  label={label}
+                  tone={count > 0 ? outcomeTone(kind) : undefined}
+                  value={count}
+                />
+              ))}
           </StatGroup>
           <p className="text-muted-foreground px-3 text-xs">
             Forecast values are estimates from Google Ads.
@@ -277,26 +276,9 @@ function parseReferences(value: unknown[]): RecommendationReference[] | null {
   }
   const references: RecommendationReference[] = []
   for (const item of value) {
-    if (
-      !isRecord(item) ||
-      item["entity_kind"] !== "google_ads_recommendation" ||
-      typeof item["customer_id"] !== "string" ||
-      typeof item["resource_name"] !== "string" ||
-      typeof item["recommendation_type"] !== "string" ||
-      typeof item["label"] !== "string" ||
-      !item["customer_id"].trim() ||
-      !item["resource_name"].trim() ||
-      !item["recommendation_type"].trim() ||
-      !item["label"].trim()
-    ) {
-      return null
-    }
-    references.push({
-      customerId: item["customer_id"],
-      label: item["label"],
-      recommendationType: item["recommendation_type"],
-      resourceName: item["resource_name"],
-    })
+    const reference = parseRecommendationReference(item)
+    if (!reference) return null
+    references.push(reference)
   }
   return references
 }
@@ -314,39 +296,39 @@ function parseParameters(value: unknown): RecommendationParameters | null {
   switch (value["parameter_type"]) {
     case "campaignBudget":
       return validParameter(value, common, ["new_budget_amount_micros"], {
-        new_budget_amount_micros: positiveInteger,
+        new_budget_amount_micros: isPositiveInteger,
       })
     case "keyword":
       return validParameter(value, common, ["ad_group", "match_type"], {
-        ad_group: nonEmptyString,
-        cpc_bid_micros: optionalPositiveInteger,
+        ad_group: (item) => typeof item === "string" && item.trim().length > 0,
+        cpc_bid_micros: isPositiveInteger,
         match_type: (item) => item === "EXACT" || item === "PHRASE" || item === "BROAD",
       })
     case "targetCpaOptIn":
       return validParameter(value, common, ["target_cpa_micros"], {
-        new_campaign_budget_amount_micros: optionalPositiveInteger,
-        target_cpa_micros: positiveInteger,
+        new_campaign_budget_amount_micros: isPositiveInteger,
+        target_cpa_micros: isPositiveInteger,
       })
     case "targetRoasOptIn":
       return validOptionalPair(
         value,
         common,
         "target_roas",
-        roas,
+        (item) => typeof item === "number" && item >= 0.01 && item <= 1_000,
         "new_campaign_budget_amount_micros",
-        positiveInteger
+        isPositiveInteger
       )
     case "moveUnusedBudget":
       return validParameter(value, common, ["budget_micros_to_move"], {
-        budget_micros_to_move: positiveInteger,
+        budget_micros_to_move: isPositiveInteger,
       })
     case "useBroadMatchKeyword":
       return validParameter(value, common, ["new_budget_amount_micros"], {
-        new_budget_amount_micros: positiveInteger,
+        new_budget_amount_micros: isPositiveInteger,
       })
     case "raiseTargetCpaBidTooLow":
       return validParameter(value, common, ["target_multiplier"], {
-        target_multiplier: (item) => finiteNumber(item) && item > 1,
+        target_multiplier: (item) => typeof item === "number" && Number.isFinite(item) && item > 1,
       })
     case "forecastingSetTargetRoas":
     case "setTargetRoas":
@@ -354,17 +336,19 @@ function parseParameters(value: unknown): RecommendationParameters | null {
         value,
         common,
         "target_roas",
-        roas,
+        (item) => typeof item === "number" && item >= 0.01 && item <= 1_000,
         "campaign_budget_amount_micros",
-        positiveInteger
+        isPositiveInteger
       )
     case "raiseTargetCpa":
       return validParameter(value, common, ["target_cpa_multiplier"], {
-        target_cpa_multiplier: positiveNumber,
+        target_cpa_multiplier: (item) =>
+          typeof item === "number" && Number.isFinite(item) && item > 0,
       })
     case "lowerTargetRoas":
       return validParameter(value, common, ["target_roas_multiplier"], {
-        target_roas_multiplier: positiveNumber,
+        target_roas_multiplier: (item) =>
+          typeof item === "number" && Number.isFinite(item) && item > 0,
       })
     case "forecastingSetTargetCpa":
     case "setTargetCpa":
@@ -372,9 +356,9 @@ function parseParameters(value: unknown): RecommendationParameters | null {
         value,
         common,
         "target_cpa_micros",
-        positiveInteger,
+        isPositiveInteger,
         "campaign_budget_amount_micros",
-        positiveInteger
+        isPositiveInteger
       )
   }
   return null
@@ -419,30 +403,6 @@ function validOptionalPair(
   })
 }
 
-function nonEmptyString(value: unknown): boolean {
-  return typeof value === "string" && value.trim().length > 0
-}
-
-function finiteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value)
-}
-
-function positiveNumber(value: unknown): boolean {
-  return finiteNumber(value) && value > 0
-}
-
-function positiveInteger(value: unknown): boolean {
-  return positiveNumber(value) && Number.isInteger(value)
-}
-
-function optionalPositiveInteger(value: unknown): boolean {
-  return value === null || positiveInteger(value)
-}
-
-function roas(value: unknown): boolean {
-  return finiteNumber(value) && value >= 0.01 && value <= 1_000
-}
-
 function applyRecommendationResult(value: unknown): ApplyRecommendationResult | null {
   if (
     !isRecord(value) ||
@@ -480,11 +440,11 @@ function parseOutcome(value: unknown): ApplyRecommendationOutcome | null {
   const parameters =
     value["requested_parameters"] === null ? null : parseParameters(value["requested_parameters"])
   const impact = value["impact"] === null ? null : parseImpact(value["impact"])
-  const message = optionalString(value["message"])
-  const errorCode = optionalString(value["error_code"])
+  const message = value["message"] ?? null
+  const errorCode = value["error_code"] ?? null
   if (parameters === null && value["requested_parameters"] !== null) return null
   if (impact === null && value["impact"] !== null) return null
-  if (message === undefined || errorCode === undefined) return null
+  if (!isNullableString(message) || !isNullableString(errorCode)) return null
   return {
     affectedCampaigns: value["affected_campaigns"],
     errorCode,
@@ -520,7 +480,12 @@ function parseMetrics(value: unknown): Metrics | null {
     "conversions_value",
     "video_views",
   ] as const
-  const parsed = Object.fromEntries(keys.map((key) => [key, optionalNumber(value[key])]))
+  const parsed = Object.fromEntries(
+    keys.map((key) => {
+      const metric = value[key] ?? null
+      return [key, isNullableFiniteNumber(metric) ? metric : undefined]
+    })
+  )
   if (Object.values(parsed).some((item) => item === undefined)) return null
   return {
     clicks: parsed["clicks"] ?? null,
@@ -539,9 +504,9 @@ function formatParameters(parameters: RecommendationParameters): string {
       continue
     const label = parameterLabel(key)
     const rendered = key.endsWith("_micros")
-      ? `${formatNumber(microsToCurrencyUnits(Number(value)))} account currency units`
+      ? `${NUMBER_FORMAT.format(microsToCurrencyUnits(Number(value)))} account currency units`
       : key.includes("roas") || key.includes("multiplier")
-        ? `${formatNumber(Number(value))}×`
+        ? `${NUMBER_FORMAT.format(Number(value))}×`
         : humanizeGoogleAdsToken(String(value))
     parts.push(`${label}: ${rendered}`)
   }
@@ -573,45 +538,9 @@ function formatImpact(impact: Impact | null): string {
     const render =
       key === "costMicros"
         ? (number: number) =>
-            `${formatNumber(microsToCurrencyUnits(number))} account currency units`
-        : formatNumber
+            `${NUMBER_FORMAT.format(microsToCurrencyUnits(number))} account currency units`
+        : (number: number) => NUMBER_FORMAT.format(number)
     return [`${label}: ${render(base)} → ${render(potential)}`]
   })
   return parts.join(" · ") || "No estimate provided"
-}
-
-function countOutcomes(recommendations: ApplyRecommendationOutcome[]) {
-  return {
-    applied: recommendations.filter((item) => item.outcome === "applied").length,
-    failed: recommendations.filter((item) => item.outcome === "failed").length,
-    unverified: recommendations.filter((item) => item.outcome === "unverified").length,
-  }
-}
-
-function outcomeDetails(outcome: ApplyRecommendationOutcome): string {
-  return (
-    [outcome.message, outcome.errorCode ? humanizeGoogleAdsToken(outcome.errorCode) : null]
-      .filter((item): item is string => Boolean(item))
-      .join(" · ") || "—"
-  )
-}
-
-function optionalString(value: unknown): string | null | undefined {
-  return value === null || value === undefined
-    ? null
-    : typeof value === "string"
-      ? value
-      : undefined
-}
-
-function optionalNumber(value: unknown): number | null | undefined {
-  return value === null || value === undefined
-    ? null
-    : typeof value === "number" && Number.isFinite(value)
-      ? value
-      : undefined
-}
-
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)
 }

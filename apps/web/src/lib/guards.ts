@@ -66,3 +66,7 @@ export function parsePositiveDecimal(value: unknown): string | null {
   const micros = whole * 1_000_000n + fraction
   return micros > 0n && micros <= 9_223_372_036_854_775_807n ? normalized : null
 }
+
+export function isNullableFiniteNumber(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value))
+}

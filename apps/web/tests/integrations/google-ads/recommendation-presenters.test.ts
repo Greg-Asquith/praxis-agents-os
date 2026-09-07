@@ -165,6 +165,49 @@ describe("Google Ads recommendation presenters", () => {
     expect(html).not.toContain("Choose valid recommendations")
   })
 
+  it.each([
+    { parameter_type: "campaignBudget", new_budget_amount_micros: 0 },
+    { parameter_type: "campaignBudget", new_budget_amount_micros: 1.5 },
+    { parameter_type: "campaignBudget", new_budget_amount_micros: Infinity },
+    { parameter_type: "keyword", ad_group: "  ", match_type: "EXACT" },
+    {
+      parameter_type: "keyword",
+      ad_group: "customers/1/adGroups/2",
+      match_type: "EXACT",
+      cpc_bid_micros: -1,
+    },
+    { parameter_type: "raiseTargetCpaBidTooLow", target_multiplier: 1 },
+    { parameter_type: "raiseTargetCpaBidTooLow", target_multiplier: Infinity },
+    { parameter_type: "raiseTargetCpa", target_cpa_multiplier: 0 },
+    { parameter_type: "raiseTargetCpa", target_cpa_multiplier: NaN },
+    { parameter_type: "lowerTargetRoas", target_roas_multiplier: Infinity },
+    { parameter_type: "setTargetRoas", target_roas: 0.009 },
+    { parameter_type: "setTargetRoas", target_roas: 1001 },
+    { parameter_type: "setTargetRoas", target_roas: "3" },
+  ])("blocks invalid scalar values in $parameter_type", (parameter) => {
+    const html = render(
+      googleAdsApplyRecommendationsPresenter.render(
+        props(
+          {
+            args: {
+              parameters: [{ ...parameter, recommendation_resource_name: recommendationName("1") }],
+              recommendations: [
+                recommendationReference("1", "Selected recommendation", "CAMPAIGN_BUDGET"),
+              ],
+            },
+            id: "apply-invalid-scalar",
+            kind: "approval",
+            name: "google_ads_apply_recommendations",
+            status: "awaiting_approval",
+          },
+          approvalControls(),
+          toolUi(applyFields())
+        )
+      )
+    )
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Apply<\/button>/)
+  })
+
   it("renders every apply outcome with campaigns, parameters, and Google impact estimates", () => {
     const html = render(
       googleAdsApplyRecommendationsPresenter.render(

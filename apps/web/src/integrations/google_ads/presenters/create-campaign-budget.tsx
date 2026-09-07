@@ -3,17 +3,16 @@
 import { Badge } from "@/components/ui/badge"
 import {
   budgetPeriodLabel,
-  deliveryMethodLabel,
   formatDailyEstimate,
   parseCampaignBudgetReference,
-  sharingLabel,
   type CampaignBudgetReference,
 } from "@/integrations/google_ads/lib/campaign-budgets"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { formatCurrencyAmount } from "@/lib/format"
+
+import { formatCurrencyAmount, titleCaseToken } from "@/lib/format"
 import { isNullableString, isRecord, parsePositiveDecimal } from "@/lib/guards"
 
 type CreateBudgetArgs = {
@@ -102,8 +101,9 @@ function renderCreateBudgetApprovalSummary(args: CreateBudgetArgs) {
         ))}
       </div>
       <p className="text-muted-foreground text-xs">
-        {budgetPeriodLabel(args.period)} · {deliveryMethodLabel(args.deliveryMethod)} ·{" "}
-        {sharingLabel(args.explicitlyShared)}
+        {budgetPeriodLabel(args.period)} ·{" "}
+        {titleCaseToken(args.deliveryMethod, "Delivery unavailable")} ·{" "}
+        {args.explicitlyShared ? "Shared" : "Not shared"}
       </p>
     </section>
   )
@@ -120,8 +120,9 @@ function renderCreateBudgetOutcome(result: CreateBudgetResult) {
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{result.name}</p>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            {budgetPeriodLabel(result.period)} · {deliveryMethodLabel(result.deliveryMethod)} ·{" "}
-            {sharingLabel(result.explicitlyShared)}
+            {budgetPeriodLabel(result.period)} ·{" "}
+            {titleCaseToken(result.deliveryMethod, "Delivery unavailable")} ·{" "}
+            {result.explicitlyShared ? "Shared" : "Not shared"}
           </p>
         </div>
         <Badge

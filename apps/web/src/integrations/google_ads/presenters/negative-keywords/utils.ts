@@ -9,6 +9,7 @@ import type {
   NegativeKeywordResult,
   TargetNegativeKeywordOutcome,
 } from "@/integrations/google_ads/components/negative-keyword-outcome"
+import { parseKeywordRow } from "@/integrations/google_ads/lib/negative-keywords"
 import { isRecord } from "@/lib/guards"
 
 export function listNegativeKeywordArgs(
@@ -25,7 +26,7 @@ export function listNegativeKeywordArgs(
       : "Selected negative keyword list"
   const keywords: NegativeKeyword[] = []
   for (const item of value["keywords"]) {
-    const keyword = parseKeyword(item, allowAny)
+    const keyword = parseKeywordRow(item, allowAny)
     if (!keyword) {
       return null
     }
@@ -52,7 +53,7 @@ export function listNegativeKeywordApprovalSummary(
     return { keywords: fallback.keywords, listName, total: fallback.keywords.length }
   }
   const keywords = rows.flatMap((row) => {
-    const keyword = parseKeyword(row, allowAny)
+    const keyword = parseKeywordRow(row, allowAny)
     return keyword ? [keyword] : []
   })
   return { keywords, listName, total: rows.length }
@@ -86,7 +87,7 @@ export function campaignNegativeKeywordArgs(
     !value["campaign_ids"].every(
       (campaign) => isRecord(campaign) && typeof campaign["campaign_id"] === "string"
     ) ||
-    !value["keywords"].every((keyword) => parseKeyword(keyword, allowAny) !== null)
+    !value["keywords"].every((keyword) => parseKeywordRow(keyword, allowAny) !== null)
   ) {
     return null
   }
@@ -147,7 +148,7 @@ export function campaignNegativeKeywordResult(
     }
     const errors = []
     for (const error of item["campaign_errors"]) {
-      const keyword = parseKeyword(error, true)
+      const keyword = parseKeywordRow(error, true)
       if (
         !keyword ||
         !isRecord(error) ||
@@ -200,7 +201,7 @@ export function adGroupNegativeKeywordArgs(
     value["ad_group_ids"].length === 0 ||
     !Array.isArray(value["keywords"]) ||
     value["keywords"].length === 0 ||
-    !value["keywords"].every((keyword) => parseKeyword(keyword, allowAny) !== null)
+    !value["keywords"].every((keyword) => parseKeywordRow(keyword, allowAny) !== null)
   ) {
     return null
   }
@@ -280,7 +281,7 @@ export function adGroupNegativeKeywordResult(
     }
     const errors = []
     for (const error of item["ad_group_errors"]) {
-      const keyword = parseKeyword(error, true)
+      const keyword = parseKeywordRow(error, true)
       if (
         !keyword ||
         !isRecord(error) ||
@@ -330,7 +331,7 @@ function addResult(value: unknown): NegativeKeywordResult | null {
   }
   const addedKeywords: NegativeKeyword[] = []
   for (const item of value.samples.added) {
-    const keyword = parseKeyword(item)
+    const keyword = parseKeywordRow(item)
     if (!keyword || !isRecord(item) || typeof item["resource_name"] !== "string") {
       return null
     }
@@ -358,7 +359,7 @@ function removalResult(value: unknown): NegativeKeywordRemovalResult | null {
   }
   const removedKeywords: NegativeKeyword[] = []
   for (const item of value.samples.removed) {
-    const keyword = parseKeyword(item)
+    const keyword = parseKeywordRow(item)
     if (!keyword || !isRecord(item) || typeof item["resource_name"] !== "string") {
       return null
     }
@@ -409,7 +410,7 @@ function isResultEnvelope<
 function parseKeywords(values: unknown[], allowAny = false): NegativeKeyword[] | null {
   const keywords: NegativeKeyword[] = []
   for (const value of values) {
-    const keyword = parseKeyword(value, allowAny)
+    const keyword = parseKeywordRow(value, allowAny)
     if (!keyword) {
       return null
     }
@@ -436,7 +437,7 @@ function parseErrors(values: unknown[]): NegativeKeywordError[] | null {
       errors.push({ ...details, scope: "account" })
       continue
     }
-    const keyword = parseKeyword(item)
+    const keyword = parseKeywordRow(item)
     if (!keyword) {
       return null
     }
@@ -449,26 +450,12 @@ function isOutcomeCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
 }
 
-function parseKeyword(value: unknown, allowAny = false): NegativeKeyword | null {
-  if (
-    !isRecord(value) ||
-    typeof value["text"] !== "string" ||
-    (value["match_type"] !== "EXACT" &&
-      value["match_type"] !== "PHRASE" &&
-      value["match_type"] !== "BROAD" &&
-      (!allowAny || value["match_type"] !== "ANY"))
-  ) {
-    return null
-  }
-  return { matchType: value["match_type"], text: value["text"] }
-}
-
 function parseTargetKeywordOutcomes(value: unknown): TargetNegativeKeywordOutcome[] | null {
   if (value === undefined) return null
   if (!Array.isArray(value)) return null
   const outcomes: TargetNegativeKeywordOutcome[] = []
   for (const item of value) {
-    const keyword = parseKeyword(item, true)
+    const keyword = parseKeywordRow(item, true)
     if (
       !keyword ||
       !isRecord(item) ||

@@ -7,7 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete, text
+from sqlalchemy import delete, inspect, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -190,7 +190,7 @@ def _plan_nodes(node: dict[str, Any]):
         yield from _plan_nodes(child)
 
 
-async def test_platform_time_range_query_uses_global_occurred_index(
+async def test_platform_time_range_query_uses_an_indexed_time_range(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     del committed_db_session_factory
@@ -223,6 +223,15 @@ async def test_platform_time_range_query_uses_global_occurred_index(
 
     try:
         async with get_maintenance_async_db_session_factory()() as query_db:
+            connection = await query_db.connection()
+            schema_indexes = await connection.run_sync(
+                lambda sync_connection: inspect(sync_connection).get_indexes("ai_usage_events")
+            )
+            assert any(
+                index["name"] == "ix_ai_usage_events_occurred_at"
+                and index["column_names"] == ["occurred_at"]
+                for index in schema_indexes
+            )
             await query_db.execute(text("ANALYZE ai_usage_events"))
             explain = await query_db.execute(
                 text(
@@ -257,7 +266,17 @@ async def test_platform_time_range_query_uses_global_occurred_index(
                     sort_keys=True,
                 )
             )
-            assert "ix_ai_usage_events_occurred_at" in indexes
+            # PostgreSQL may prefer a skip scan on the workspace/time index.
+            assert any(
+                node.get("Index Name")
+                in {
+                    "ix_ai_usage_events_occurred_at",
+                    "ix_ai_usage_events_workspace_occurred",
+                }
+                and "occurred_at >=" in node.get("Index Cond", "")
+                and "occurred_at <" in node.get("Index Cond", "")
+                for node in _plan_nodes(document["Plan"])
+            ), document["Plan"]
     finally:
         async with get_maintenance_async_db_session_factory()() as cleanup_db:
             await cleanup_db.execute(
