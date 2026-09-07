@@ -36,6 +36,7 @@ from services.audit_events import (
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import (
     ScopedEntityReference,
@@ -58,7 +59,6 @@ from .utils import (
     RESULTS_FIELD,
     bounded_campaign_budget_assignment_result,
     display_campaign_budget_assignment_result,
-    fan_out_tool_return,
     google_ads_available,
     google_ads_client,
     login_customer_id,
@@ -229,7 +229,7 @@ async def google_ads_assign_campaign_budgets(
         references=[destination_budget, *campaigns],
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def _validate_selection(

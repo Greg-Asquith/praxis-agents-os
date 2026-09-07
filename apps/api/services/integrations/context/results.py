@@ -2,12 +2,13 @@
 
 """Published result envelope for integration context execution."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai import ToolReturn
 
 from services.integrations.context.domain import ResolvedContextEntry
 
@@ -71,3 +72,23 @@ def serialize_fan_out_results(
         }
         for item in items
     ]
+
+
+def split_fan_out_tool_return(
+    items: Sequence[IntegrationContextResult],
+) -> ToolReturn[dict[str, Any]]:
+    """Keeps complete display rows in the transcript while bounding model results."""
+    model_entries: list[dict[str, Any]] = []
+    display_entries: list[dict[str, Any]] = []
+    for item, serialized in zip(items, serialize_fan_out_results(items), strict=True):
+        model_entry = dict(serialized)
+        display_entry = dict(model_entry)
+        if isinstance(item.data, Mapping):
+            model_entry["data"] = item.data.get("model_result")
+            display_entry["data"] = item.data.get("display_result")
+        model_entries.append(model_entry)
+        display_entries.append(display_entry)
+    return ToolReturn(
+        return_value={"results": model_entries},
+        metadata={"public_result": {"results": display_entries}},
+    )

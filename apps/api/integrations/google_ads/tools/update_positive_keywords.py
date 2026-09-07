@@ -54,6 +54,7 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import (
     IntegrationContextResult,
     serialize_fan_out_results,
+    split_fan_out_tool_return,
 )
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.operations import (
@@ -69,7 +70,6 @@ from .utils import (
     RESULTS_FIELD,
     bounded_positive_keyword_update_result,
     display_positive_keyword_update_result,
-    fan_out_tool_return,
     google_ads_available,
     google_ads_client,
     login_customer_id,
@@ -205,7 +205,7 @@ async def google_ads_update_keywords(
         references=keywords,
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def _preflight_call(

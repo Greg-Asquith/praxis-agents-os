@@ -28,6 +28,7 @@ from services.agents.runtime.tools.contract import (
 )
 from services.audit_events import AuditStatus, PendingIntegrationOperationDetail
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.operations import (
     IntegrationAuditOutcome,
@@ -37,7 +38,7 @@ from services.integrations.operations import (
 from ..operations.get_sitemap import get_sitemap
 from ..operations.submit_sitemap import submit_sitemap
 from .schemas import GoogleSearchConsoleSubmitSitemapsOutput
-from .utils import fan_out_tool_return, sitemap_submission_results
+from .utils import sitemap_submission_results
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import (
     google_search_console_client,
@@ -76,7 +77,7 @@ async def google_search_console_submit_sitemap(
         references=references,
         operation=partial(_submit_sitemaps_for_entry, ctx),
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 async def _submit_sitemaps_for_entry(

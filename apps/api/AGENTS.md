@@ -241,7 +241,10 @@ follows:
   and failure-isolation loop, `run_audited_integration_operation` derives
   external-write durability from the registered `RuntimeToolDefinition`, and
   `serialize_fan_out_results` owns the safe provider-key/scope outer envelope
-  and never publishes internal resource or connection UUIDs. Providers
+  and never publishes internal resource or connection UUIDs.
+  `split_fan_out_tool_return` in `context/results.py` owns the model/transcript
+  projection using the fixed `model_result` and `display_result` keys. Tools
+  import it directly when they retain a richer transcript result. Providers
   return one `IntegrationAuditOutcome`, supply bounded pending detail for
   external writes, and subclass the shared result models only to narrow data.
   Every fixed integration tool declares an operation-specific output model;

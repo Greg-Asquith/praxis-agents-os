@@ -35,7 +35,6 @@ from .campaign_negative_keywords import (
     run_campaign_negative_keyword_tool,
 )
 from .client import google_ads_available, google_ads_client, google_ads_client_for_principal
-from .fan_out import fan_out_tool_return
 from .negative_keyword_results import (
     MAX_NEGATIVE_KEYWORD_PUBLIC_RESULT_CHARS,
     MAX_NEGATIVE_KEYWORD_RESULT_CHARS,
@@ -91,7 +90,6 @@ __all__ = [
     "display_campaign_budget_removal_result",
     "display_positive_keyword_result",
     "display_positive_keyword_update_result",
-    "fan_out_tool_return",
     "google_ads_available",
     "google_ads_client",
     "google_ads_client_for_principal",

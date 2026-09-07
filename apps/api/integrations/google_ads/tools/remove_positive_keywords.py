@@ -37,6 +37,7 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import (
     IntegrationContextResult,
     serialize_fan_out_results,
+    split_fan_out_tool_return,
 )
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import resolve_runtime_references
@@ -53,7 +54,6 @@ from .schemas.positive_keyword_removals import GoogleAdsRemovePositiveKeywordsOu
 from .utils import (
     GOOGLE_ADS_WRITE_BINDING,
     RESULTS_FIELD,
-    fan_out_tool_return,
     google_ads_available,
     google_ads_client,
     login_customer_id,
@@ -165,7 +165,7 @@ async def google_ads_remove_keywords(
         references=keywords,
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def _validate_selection(keywords: Sequence[GoogleAdsKeywordReference]) -> None:

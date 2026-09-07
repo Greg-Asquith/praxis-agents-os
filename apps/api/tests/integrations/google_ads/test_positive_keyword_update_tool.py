@@ -908,9 +908,11 @@ async def test_whole_call_budget_rejects_two_large_accounts_before_any_provider_
 async def test_accepted_multi_account_results_pass_real_runtime_serialization(
     diagnostic, outcome
 ) -> None:
-    from integrations.google_ads.tools.utils.fan_out import fan_out_tool_return
     from services.agents.runtime.dispatch import prepare_public_result
-    from services.integrations.context.results import IntegrationContextResult
+    from services.integrations.context.results import (
+        IntegrationContextResult,
+        split_fan_out_tool_return,
+    )
 
     entries = [entry(), replace(entry(), external_id="444")]
     references = [
@@ -973,5 +975,5 @@ async def test_accepted_multi_account_results_pass_real_runtime_serialization(
             <= budgets[selected.external_id]
         )
         results.append(IntegrationContextResult(entry=selected, status="success", data=split))
-    result = fan_out_tool_return(results)
+    result = split_fan_out_tool_return(results)
     assert prepare_public_result(DEFINITION, result) <= DEFINITION.max_public_result_chars

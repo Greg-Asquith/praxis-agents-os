@@ -359,7 +359,13 @@ service owns the repeated lifecycle:
 - `context/results.py` publishes `IntegrationFanOutEntry`,
   `IntegrationFanOutOutput`, and `serialize_fan_out_results`. Provider result
   models subclass those bases only to narrow `data` or `results`; they never
-  copy the nine outer fields or add another serializer.
+  copy the outer fields or add another serializer.
+  `split_fan_out_tool_return` in the same module is the sole owner of the
+  model/transcript projection. Tools import it directly to project the fixed
+  `model_result` and `display_result` keys into the tool return and its
+  `public_result` metadata. Both projections preserve envelope order and error
+  status, including retained unverified evidence, without publishing internal
+  authorization fields. Non-mapping data passes through unchanged.
 - `services/integrations/operations.py` publishes
   `IntegrationAuditOutcome` and `run_audited_integration_operation`. The
   runner resolves the registered tool definition, validates the provider and

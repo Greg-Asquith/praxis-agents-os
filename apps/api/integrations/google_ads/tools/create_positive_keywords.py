@@ -49,6 +49,7 @@ from services.audit_events import (
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.operations import (
     IntegrationAuditOutcome,
@@ -63,7 +64,6 @@ from .utils import (
     RESULTS_FIELD,
     bounded_positive_keyword_result,
     display_positive_keyword_result,
-    fan_out_tool_return,
     google_ads_available,
     google_ads_client,
     login_customer_id,
@@ -234,7 +234,7 @@ async def google_ads_create_keywords(
         references=selected_ad_groups,
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def _validate_args(

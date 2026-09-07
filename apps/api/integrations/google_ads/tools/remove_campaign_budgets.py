@@ -32,6 +32,7 @@ from services.audit_events import (
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import resolve_runtime_references
 from services.integrations.operations import (
@@ -51,7 +52,6 @@ from .utils import (
     bounded_campaign_budget_removal_result,
     campaign_label_audit_evidence,
     display_campaign_budget_removal_result,
-    fan_out_tool_return,
     google_ads_available,
     google_ads_client,
     login_customer_id,
@@ -160,7 +160,7 @@ async def google_ads_remove_campaign_budgets(
         references=budgets,
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def _validate_selection(budgets: Sequence[GoogleAdsCampaignBudgetReference]) -> None:

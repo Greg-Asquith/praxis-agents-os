@@ -22,6 +22,7 @@ from services.audit_events import (
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.entity_references import ScopedEntityReference
 from services.integrations.operations import (
@@ -30,7 +31,6 @@ from services.integrations.operations import (
 )
 
 from .client import google_ads_client
-from .fan_out import fan_out_tool_return
 from .mutation_evidence import (
     audit_status,
     google_ads_account_target,
@@ -166,7 +166,7 @@ async def run_negative_keyword_tool(
         references=targets,
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def pending_operation_detail(

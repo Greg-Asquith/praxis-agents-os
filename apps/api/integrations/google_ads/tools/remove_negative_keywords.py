@@ -26,6 +26,7 @@ from services.audit_events import (
     PendingIntegrationOperationDetail,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.operations import (
     IntegrationAuditOutcome,
@@ -41,7 +42,6 @@ from .utils import (
     RESULTS_FIELD,
     bounded_negative_keyword_removal_result,
     complete_negative_keyword_removal_result,
-    fan_out_tool_return,
     google_ads_available,
     google_ads_client,
     login_customer_id,
@@ -125,7 +125,7 @@ async def google_ads_remove_negative_keywords(
         references=[negative_list],
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def _pending_operation_detail(

@@ -29,6 +29,7 @@ from services.agents.runtime.tools.contract import (
 )
 from services.audit_events import AuditStatus, PendingIntegrationOperationDetail
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.context.results import split_fan_out_tool_return
 from services.integrations.context.targeted import run_context_targets
 from services.integrations.operations import (
     IntegrationAuditOutcome,
@@ -41,7 +42,7 @@ from .schemas import (
     GoogleSearchConsoleIndexingNotification,
     GoogleSearchConsoleRequestIndexingOutput,
 )
-from .utils import fan_out_tool_return, indexing_notification_results
+from .utils import indexing_notification_results
 from .utils.bindings import GOOGLE_SEARCH_CONSOLE_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import (
     google_search_console_client,
@@ -191,7 +192,7 @@ async def google_search_console_request_indexing(
         references=references,
         operation=operation,
     )
-    return fan_out_tool_return(results)
+    return split_fan_out_tool_return(results)
 
 
 def _notifications_by_url(
