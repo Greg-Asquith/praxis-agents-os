@@ -110,7 +110,8 @@ export function useConversationRunState({
       activeRunStatus === "awaiting_approval" &&
       activeRunId !== null &&
       submittingApprovalRunId !== activeRunId &&
-      streamRunId === activeRunId
+      streamRunId === activeRunId &&
+      recoveredApprovals.length > 0
     const streamMatchesPersistedSettledRun = activeRunId === null && hasPersistedStreamResponse
 
     if (!streamMatchesPendingApproval && !streamMatchesPersistedSettledRun) {
@@ -136,6 +137,7 @@ export function useConversationRunState({
     streamRunId,
     streamToolCallCount,
     rawStreamMessages.length,
+    recoveredApprovals.length,
     resetStream,
     submittingApprovalRunId,
   ])

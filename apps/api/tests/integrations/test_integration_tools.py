@@ -65,6 +65,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_ads_add_ad_group_negative_keywords": ("write", "external", "approval", True),
         "google_ads_add_campaign_negative_keywords": ("write", "external", "approval", True),
         "google_ads_add_negative_keywords": ("write", "external", "approval", True),
+        "google_ads_create_keywords": ("write", "external", "approval", True),
         "google_ads_apply_recommendations": ("write", "external", "approval", True),
         "google_ads_assign_campaign_budgets": ("write", "external", "approval", True),
         "google_ads_create_campaign_budget": ("write", "external", "approval", True),
@@ -101,6 +102,8 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             "approval",
             True,
         ),
+        "google_ads_update_keywords": ("write", "external", "approval", True),
+        "google_ads_remove_keywords": ("write", "external", "approval", True),
         "airtable_list_records": ("read", "internal", "auto", False),
         "airtable_get_record": ("read", "internal", "auto", False),
         "airtable_create_record": ("write", "external", "approval", True),
@@ -250,6 +253,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
+        "google_ads_create_keywords",
         "google_ads_apply_recommendations",
         "google_ads_assign_campaign_budgets",
         "google_ads_create_campaign_budget",
@@ -266,6 +270,8 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_update_campaign_budget_amounts",
         "google_ads_update_campaign_status",
         "google_ads_update_device_bid_modifiers",
+        "google_ads_update_keywords",
+        "google_ads_remove_keywords",
     }
     for name in (
         "google_ads_get_report_field",
@@ -277,6 +283,7 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
+        "google_ads_create_keywords",
         "google_ads_apply_recommendations",
         "google_ads_assign_campaign_budgets",
         "google_ads_create_campaign_budget",
@@ -290,6 +297,8 @@ def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
         "google_ads_update_campaign_budget_amounts",
         "google_ads_update_campaign_status",
         "google_ads_update_device_bid_modifiers",
+        "google_ads_update_keywords",
+        "google_ads_remove_keywords",
     ):
         spend = definitions[name]
         assert spend.effect == "write"

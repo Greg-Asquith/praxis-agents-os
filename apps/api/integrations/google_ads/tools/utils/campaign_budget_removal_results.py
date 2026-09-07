@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from integrations.google_ads.references import GoogleAdsCampaignBudgetReference
 
-from .bounded_outcome_results import bounded_outcome_result
+from .bounded_outcome_results import bounded_outcome_result, optional_text
 
 type CampaignBudgetRemovalOutcome = Literal["removed", "failed", "unverified"]
 
@@ -69,13 +69,9 @@ def _budget_sample(row: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "reference": bounded_reference.model_dump(mode="json"),
         "previous_status": str(row.get("previous_status", ""))[:64],
-        "resulting_status": _optional_text(row.get("resulting_status"), 64),
+        "resulting_status": optional_text(row.get("resulting_status"), 64),
         "outcome": row.get("outcome"),
-        "external_ref": _optional_text(row.get("external_ref"), 1_000),
-        "error_code": _optional_text(row.get("error_code"), 100),
-        "message": _optional_text(row.get("message"), 500),
+        "external_ref": optional_text(row.get("external_ref"), 1_000),
+        "error_code": optional_text(row.get("error_code"), 100),
+        "message": optional_text(row.get("message"), 500),
     }
-
-
-def _optional_text(value: Any, max_chars: int) -> str | None:
-    return str(value)[:max_chars] if value is not None else None

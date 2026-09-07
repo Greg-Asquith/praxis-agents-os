@@ -25,6 +25,11 @@ from integrations.google_ads.entity_resolvers.campaign_budget import (
     resolve_google_ads_campaign_budgets,
     search_google_ads_campaign_budgets,
 )
+from integrations.google_ads.entity_resolvers.keyword import (
+    GOOGLE_ADS_KEYWORD_RESOLVER,
+    resolve_google_ads_keywords,
+    search_google_ads_keywords,
+)
 from integrations.google_ads.entity_resolvers.recommendation import (
     search_google_ads_recommendations,
 )
@@ -44,6 +49,7 @@ from integrations.google_ads.references import (
     GoogleAdsAdGroupReference,
     GoogleAdsCampaignBudgetReference,
     GoogleAdsCampaignReference,
+    GoogleAdsKeywordReference,
     GoogleAdsSharedSetReference,
 )
 from integrations.google_ads.tools.update_campaign_status import (
@@ -53,6 +59,7 @@ from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
 )
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
+from services.agents.runtime.entity_references.service import resolve_authorized_references
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from tests.integrations.google_ads.support import (
     _ad_group_reference,
@@ -116,6 +123,152 @@ def test_campaign_budget_resolver_matches_reference_contract() -> None:
         GoogleAdsCampaignBudgetReference.model_fields["entity_kind"].default
     )
     assert GOOGLE_ADS_CAMPAIGN_BUDGET_RESOLVER.reference_type is GoogleAdsCampaignBudgetReference
+
+
+def test_keyword_resolver_matches_reference_contract() -> None:
+    assert GOOGLE_ADS_KEYWORD_RESOLVER.entity_kind == (
+        GoogleAdsKeywordReference.model_fields["entity_kind"].default
+    )
+    assert GOOGLE_ADS_KEYWORD_RESOLVER.reference_type is GoogleAdsKeywordReference
+    assert GOOGLE_ADS_KEYWORD_RESOLVER.max_exact_values == 500
+    assert GOOGLE_ADS_CAMPAIGN_RESOLVER.max_exact_values == 50
+
+
+async def test_resolver_specific_exact_value_limit_fails_before_hydration() -> None:
+    authorized = SimpleNamespace(
+        resolver=SimpleNamespace(max_exact_values=50),
+        field_key="campaigns",
+        entity_kind="google_ads_campaign",
+    )
+
+    with pytest.raises(AppValidationError, match="Choose at most 50 values"):
+        await resolve_authorized_references(
+            authorized,
+            values=[{}] * 51,
+            dependent_args={},
+        )
+
+
+async def test_keyword_search_and_hydration_use_bounded_positive_criteria(monkeypatch) -> None:
+    active = _writable_google_ads_entry()
+    ctx = SimpleNamespace(
+        db=object(),
+        actor=object(),
+        workspace=object(),
+        active_context=ResolvedActiveContext(entries=(active,)),
+    )
+
+    def row(criterion_id: str) -> dict:
+        return {
+            "campaign": {"id": "1", "name": "Brand"},
+            "adGroup": {"id": "2", "name": "Exact", "status": "ENABLED"},
+            "adGroupCriterion": {
+                "criterionId": criterion_id,
+                "status": "PAUSED",
+                "keyword": {"text": f"keyword {criterion_id}", "matchType": "EXACT"},
+            },
+        }
+
+    query = AsyncMock(
+        side_effect=lambda _ctx, _entry, **kwargs: [
+            row(value) for value in kwargs.get("criterion_ids", ["9"])
+        ]
+    )
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.keyword._query", query)
+
+    page = await search_google_ads_keywords(ctx, "keyword", {}, 25, None)
+    references = [
+        GoogleAdsKeywordReference(
+            customer_id=active.external_id,
+            campaign_id="1",
+            ad_group_id="2",
+            criterion_id=str(index),
+            text=f"keyword {index}",
+            match_type="EXACT",
+            status="PAUSED",
+            label=f"keyword {index}",
+        )
+        for index in range(1, 52)
+    ]
+    choices = await resolve_google_ads_keywords(ctx, references, {})
+
+    assert [choice.value["criterion_id"] for choice in page.choices] == ["9"]
+    assert len(choices) == 51
+    hydration_calls = [call for call in query.await_args_list if call.kwargs.get("criterion_ids")]
+    assert [len(call.kwargs["criterion_ids"]) for call in hydration_calls] == [50, 1]
+    assert [call.kwargs["ad_group_ids"] for call in hydration_calls] == [["2"], ["2"]]
+
+
+async def test_keyword_search_pages_matching_criterion_ids_by_ad_group(monkeypatch) -> None:
+    active = _writable_google_ads_entry()
+    ctx = SimpleNamespace(active_context=ResolvedActiveContext(entries=(active,)))
+    rows = [
+        {
+            "campaign": {"id": "1", "name": "Brand"},
+            "adGroup": {"id": ad_group_id, "name": f"Group {ad_group_id}"},
+            "adGroupCriterion": {
+                "criterionId": "90",
+                "status": "PAUSED",
+                "keyword": {"text": "running shoes", "matchType": "EXACT"},
+            },
+        }
+        for ad_group_id in ("20", "30")
+    ]
+
+    async def query(_ctx, _entry, **kwargs):
+        minimum_ad_group_id = kwargs.get("minimum_ad_group_id")
+        return [
+            row
+            for row in rows
+            if minimum_ad_group_id is None or int(row["adGroup"]["id"]) > minimum_ad_group_id
+        ][: kwargs["limit"]]
+
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.keyword._query", query)
+
+    first = await search_google_ads_keywords(ctx, "running", {}, 1, None)
+    second = await search_google_ads_keywords(ctx, "running", {}, 1, first.next_cursor)
+
+    assert [choice.value["ad_group_id"] for choice in first.choices] == ["20"]
+    assert [choice.value["ad_group_id"] for choice in second.choices] == ["30"]
+
+
+async def test_keyword_hydration_keeps_composite_provider_identity(monkeypatch) -> None:
+    active = _writable_google_ads_entry()
+    ctx = SimpleNamespace(active_context=ResolvedActiveContext(entries=(active,)))
+    references = [
+        GoogleAdsKeywordReference(
+            customer_id=active.external_id,
+            campaign_id="1",
+            ad_group_id=ad_group_id,
+            criterion_id="90",
+            text="running shoes",
+            match_type="EXACT",
+            status="PAUSED",
+            label="running shoes",
+        )
+        for ad_group_id in ("20", "30")
+    ]
+
+    async def query(_ctx, _entry, **_kwargs):
+        return [
+            {
+                "campaign": {"id": "1", "name": "Brand"},
+                "adGroup": {"id": reference.ad_group_id, "name": "Shoes"},
+                "adGroupCriterion": {
+                    "criterionId": reference.criterion_id,
+                    "status": reference.status,
+                    "keyword": {"text": reference.text, "matchType": reference.match_type},
+                },
+            }
+            for reference in references
+        ]
+
+    monkeypatch.setattr("integrations.google_ads.entity_resolvers.keyword._query", query)
+
+    choices = await resolve_google_ads_keywords(ctx, references, {})
+
+    assert [reference.provider_entity_id for reference in references] == ["20~90", "30~90"]
+    assert [choice.value["ad_group_id"] for choice in choices] == ["20", "30"]
 
 
 async def test_campaign_budget_resolver_searches_and_hydrates_live_references(
@@ -246,6 +399,7 @@ def test_entity_cursor_round_trips_at_worst_case_within_generic_bound() -> None:
         fingerprint=fingerprint,
         last_entity_id=(1 << 63) - 1,
         last_integration_resource_id=resource_ids[-1],
+        last_secondary_entity_id=(1 << 63) - 1,
     )
 
     encoded = encode_entity_cursor(cursor)

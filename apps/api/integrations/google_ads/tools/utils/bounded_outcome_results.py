@@ -41,5 +41,10 @@ def bounded_outcome_result(
     return response
 
 
+def optional_text(value: Any, max_chars: int) -> str | None:
+    """Return optional result text within its field-specific bound."""
+    return str(value)[:max_chars] if value is not None else None
+
+
 def _serialized_chars(value: object) -> int:
     return len(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str))

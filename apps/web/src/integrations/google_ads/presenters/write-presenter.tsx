@@ -5,6 +5,7 @@ import type { ReactNode } from "react"
 import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
+import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { parseSettledFanOutData, type FanOutEntry } from "@/components/tool-ui/fan-out"
 import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
@@ -17,7 +18,14 @@ type ApprovalSpec<Args> = {
   label: string
   parseArgs: (value: unknown) => Args | null
   prompt: string | ((args: Args) => string)
-  renderSummary?: (value: unknown, fallback: Args) => ReactNode
+  renderFields?: boolean
+  renderInvalidDraft?: boolean
+  renderSummary?: (
+    value: unknown,
+    fallback: Args,
+    onFieldEdit: (key: string, value: EditedValue) => void,
+    disabled: boolean
+  ) => ReactNode
   title: string | ((args: Args) => string)
   validateArgs?: (value: unknown) => string | null
 }
@@ -70,25 +78,45 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
       }
       const fields = ui?.arg_fields ?? []
       const currentArgs = mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
-      const currentParsedArgs = variant.approval.parseArgs(currentArgs) ?? args
+      const currentParsedArgs = variant.approval.parseArgs(currentArgs)
+      const displayError = approvalDisplayError(currentArgs)
+      const argsError = variant.approval.validateArgs?.(currentArgs) ?? null
       const validationError =
-        approvalDisplayError(currentArgs) ?? variant.approval.validateArgs?.(currentArgs) ?? null
+        displayError ??
+        argsError ??
+        (currentParsedArgs === null
+          ? "The edited approval details are invalid. Correct them or decline this request."
+          : null)
+      const editField = (key: string, value: EditedValue) => {
+        if (approvalDecision.disabled || approvalDecision.submitting) return
+        approvalDecision.onDecisionChange({
+          decision: "pending",
+          edits: { ...approvalDecision.decision.edits, [key]: value },
+          message: "",
+        })
+      }
+      const renderFields = variant.approval.renderFields !== false
+      const customFieldsDisabled = approvalDecision.submitting
+        ? true
+        : (approvalDecision.disabled ?? false)
       return (
         <ToolApprovalDecisionCard
           activityId={activity.id}
           approveLabel={variant.approval.approveLabel}
           args={activity.args}
           controls={approvalDecision}
-          fallbackFields={approvalFallbackFields(activity.args, fields)}
-          fields={fields}
+          fallbackFields={renderFields ? approvalFallbackFields(activity.args, fields) : []}
+          fields={renderFields ? fields : []}
           icon={<GoogleAdsLogo className="size-4" />}
           label={variant.approval.label}
-          prompt={approvalCopy(variant.approval.prompt, currentParsedArgs)}
-          title={approvalCopy(variant.approval.title, currentParsedArgs)}
+          prompt={approvalCopy(variant.approval.prompt, currentParsedArgs ?? args)}
+          title={approvalCopy(variant.approval.title, currentParsedArgs ?? args)}
           toolName={activity.name}
           validationError={validationError}
         >
-          {validationError ? null : variant.approval.renderSummary?.(currentArgs, args)}
+          {displayError || (argsError && !variant.approval.renderInvalidDraft)
+            ? null
+            : variant.approval.renderSummary?.(currentArgs, args, editField, customFieldsDisabled)}
         </ToolApprovalDecisionCard>
       )
     }

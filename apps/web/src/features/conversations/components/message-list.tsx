@@ -3,6 +3,7 @@
 import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ToolApprovalLoadingCard } from "@/components/tool-ui/approval-card"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { AssistantMessageShell } from "@/features/conversations/components/message-shell"
@@ -125,7 +126,9 @@ export function MessageList({
           )}
 
           {timeline.approval && isApprovalLoading && timeline.approval.requests.length === 0 && (
-            <p className="text-muted-foreground pl-10 text-sm">Loading approval requests.</p>
+            <div className="pl-10">
+              <ToolApprovalLoadingCard />
+            </div>
           )}
 
           {runInterruption && (

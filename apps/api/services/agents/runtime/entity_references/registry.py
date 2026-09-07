@@ -36,6 +36,7 @@ class EntityResolverDefinition:
     search: SearchEntityReferencesFn
     resolve: ResolveEntityReferencesFn
     max_page_size: int = 25
+    max_exact_values: int = 50
     requires_active_context: bool = False
     provider_key: str | None = None
 
@@ -51,6 +52,8 @@ def register_entity_resolver(definition: EntityResolverDefinition) -> None:
         raise RuntimeError("Entity resolver kind must be lowercase snake_case")
     if definition.max_page_size < 1 or definition.max_page_size > 100:
         raise RuntimeError("Entity resolver max page size must be between 1 and 100")
+    if definition.max_exact_values < 1 or definition.max_exact_values > 500:
+        raise RuntimeError("Entity resolver exact-value limit must be between 1 and 500")
     if not issubclass(definition.reference_type, EntityReference):
         raise TypeError("Entity resolver reference type must extend EntityReference")
     declared_kind = definition.reference_type.model_fields["entity_kind"].default

@@ -6,6 +6,7 @@ import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/pres
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsApplyRecommendationsPresenter } from "@/integrations/google_ads/presenters/apply-recommendations"
+import { googleAdsCreatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/create-positive-keywords"
 import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_ads/presenters/dismiss-recommendations"
 import { googleAdsAssignCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/assign-campaign-budgets"
 import { googleAdsCreateCampaignBudgetPresenter } from "@/integrations/google_ads/presenters/create-campaign-budget"
@@ -16,6 +17,8 @@ import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/r
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
 import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
+import { googleAdsRemovePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/remove-positive-keywords"
+import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
@@ -32,8 +35,11 @@ export default {
     googleAdsDeviceBidModifiersPresenter,
     googleAdsApplyRecommendationsPresenter,
     googleAdsDismissRecommendationsPresenter,
+    googleAdsCreatePositiveKeywordsPresenter,
     googleAdsCreateCampaignBudgetPresenter,
     googleAdsUpdateCampaignBudgetAmountsPresenter,
+    googleAdsUpdatePositiveKeywordsPresenter,
+    googleAdsRemovePositiveKeywordsPresenter,
     googleAdsAssignCampaignBudgetsPresenter,
     googleAdsRemoveCampaignBudgetsPresenter,
   ],

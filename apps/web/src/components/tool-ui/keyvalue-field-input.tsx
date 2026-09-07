@@ -3,6 +3,7 @@
 import { PlusIcon, XIcon } from "lucide-react"
 
 import type { EditedKeyValue, EditedScalar } from "@/components/tool-ui/edited-values"
+import { nextKeyValueFieldName } from "@/components/tool-ui/keyvalue-field-values"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -15,15 +16,19 @@ import {
 } from "@/components/ui/select"
 
 export function KeyValueFieldInput({
+  ariaLabel = "Fields",
   disabled,
   id,
   lockedEntries,
+  maxEntries,
   onChange,
   value,
 }: {
+  ariaLabel?: string
   disabled: boolean
   id: string
   lockedEntries: string[]
+  maxEntries?: number
   onChange: (value: EditedKeyValue) => void
   value: EditedKeyValue
 }) {
@@ -33,7 +38,8 @@ export function KeyValueFieldInput({
     const normalized = nextKey.trim()
     if (
       !normalized ||
-      (normalized !== previousKey && (normalized in value || lockedEntries.includes(normalized)))
+      (normalized !== previousKey &&
+        (Object.hasOwn(value, normalized) || lockedEntries.includes(normalized)))
     ) {
       return
     }
@@ -49,12 +55,7 @@ export function KeyValueFieldInput({
   }
 
   function addRow() {
-    let index = entries.length + 1
-    let key = `Field ${String(index)}`
-    while (key in value || lockedEntries.includes(key)) {
-      index += 1
-      key = `Field ${String(index)}`
-    }
+    const key = nextKeyValueFieldName(value, lockedEntries)
     onChange({ ...value, [key]: "" })
   }
 
@@ -72,7 +73,7 @@ export function KeyValueFieldInput({
             key={key}
           >
             <Input
-              aria-label={`Field name ${String(index + 1)}`}
+              aria-label={`${ariaLabel}, field name ${String(index + 1)}`}
               className="h-7"
               defaultValue={key}
               disabled={disabled}
@@ -81,6 +82,7 @@ export function KeyValueFieldInput({
               }}
             />
             <ScalarInput
+              ariaLabel={`${ariaLabel}, value for ${key}`}
               disabled={disabled}
               id={`${id}-${String(index)}`}
               onChange={(nextValue) => {
@@ -89,7 +91,7 @@ export function KeyValueFieldInput({
               value={item}
             />
             <Button
-              aria-label={`Remove ${key}`}
+              aria-label={`Remove ${key} from ${ariaLabel}`}
               disabled={disabled}
               onClick={() => {
                 onChange(Object.fromEntries(entries.filter(([entryKey]) => entryKey !== key)))
@@ -113,7 +115,14 @@ export function KeyValueFieldInput({
         ))}
       </div>
       <div className="border-border border-t px-2.5 py-1.5">
-        <Button disabled={disabled} onClick={addRow} size="sm" type="button" variant="ghost">
+        <Button
+          aria-label={`Add field to ${ariaLabel}`}
+          disabled={disabled || (maxEntries !== undefined && entries.length >= maxEntries)}
+          onClick={addRow}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
           <PlusIcon />
           Add Field
         </Button>
@@ -123,11 +132,13 @@ export function KeyValueFieldInput({
 }
 
 function ScalarInput({
+  ariaLabel,
   disabled,
   id,
   onChange,
   value,
 }: {
+  ariaLabel: string
   disabled: boolean
   id: string
   onChange: (value: EditedScalar) => void
@@ -144,7 +155,7 @@ function ScalarInput({
         }}
         value={value}
       >
-        <SelectTrigger className="h-7 w-full" id={id}>
+        <SelectTrigger aria-label={ariaLabel} className="h-7 w-full" id={id}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="start">
@@ -163,6 +174,7 @@ function ScalarInput({
   if (typeof value === "number") {
     return (
       <Input
+        aria-label={ariaLabel}
         className="h-7"
         defaultValue={value}
         disabled={disabled}
@@ -180,6 +192,7 @@ function ScalarInput({
   }
   return (
     <Input
+      aria-label={ariaLabel}
       className="h-7"
       disabled={disabled}
       id={id}

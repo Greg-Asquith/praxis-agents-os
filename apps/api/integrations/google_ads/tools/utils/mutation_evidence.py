@@ -34,13 +34,18 @@ def google_ads_account_target(entry: ResolvedContextEntry) -> IntegrationOperati
 def terminal_operation_detail(
     pending: PendingIntegrationOperationDetail,
     ledger: GoogleAdsMutationLedger,
+    *,
+    identity_keys: tuple[str, ...] | None = None,
 ) -> TerminalIntegrationOperationDetail:
     """Attach every ledger parent and effect to its exact requested intent."""
-    identity_keys = tuple(key for key, _value in ledger.parents[0].identity)
+    resolved_identity_keys = identity_keys or tuple(
+        key for key, _value in ledger.parents[0].identity
+    )
     locations: dict[tuple[str, ...], tuple[int, int]] = {}
     for group_index, group in enumerate(pending.intent_groups):
         for intent_index, intent in enumerate(group.items):
-            identity = tuple(str(intent.fields.get(key, "")) for key in identity_keys)
+            fields = {**group.fields, **intent.fields}
+            identity = tuple(str(fields.get(key, "")) for key in resolved_identity_keys)
             if not all(identity) or identity in locations:
                 raise ValueError("Google Ads audit intents do not match unique ledger identities")
             locations[identity] = (group_index, intent_index)
@@ -50,7 +55,7 @@ def terminal_operation_detail(
     ]
     for parent in ledger.parents:
         identity_fields = thaw_fields(parent.identity)
-        identity = tuple(identity_fields[key] for key in identity_keys)
+        identity = tuple(identity_fields[key] for key in resolved_identity_keys)
         location = locations.pop(identity, None)
         if location is None:
             raise ValueError("Google Ads ledger contains an unknown audit intent")

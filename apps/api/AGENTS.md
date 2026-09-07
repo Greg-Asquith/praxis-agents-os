@@ -286,10 +286,29 @@ follows:
   wire behavior and identity source through `OAuthProtocol`; the shared flow keeps state
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
-  writes for recommendations, negative keywords, campaign status, device bid
-  adjustments, and campaign-budget creation, amount updates, assignment, and
-  unused-budget removal. Budget writes re-read provider state after approval
-  and retain exact outcome evidence through the shared mutation ledger. Budget
+  writes for recommendations, negative keywords, positive-keyword creation and
+  mutable-field updates, and permanent removal,
+  campaign status, device bid adjustments, and campaign-budget creation,
+  amount updates, assignment, and unused-budget removal. Keyword and budget
+  writes re-read provider state after approval and retain exact outcome evidence
+  through the shared mutation ledger. Positive-keyword creation and updates
+  accept only Search-standard and Display-standard targets. CPC bids require
+  manual CPC and, for Display, a keyword custom-bid dimension. Display placement
+  targeting may instead use a keyword bid modifier. CPM, CPV, and percent-CPC
+  bids are not keyword fields. Before provider execution, keyword updates reserve
+  per-account shares of the complete transcript budget, including all account
+  envelopes and maximally escaped diagnostics. Live preparation must fit the
+  reserved share and the terminal audit bound. Public results retain all accepted
+  rows; only model results sample. Keyword removal accepts up to 500 selected
+  criteria, rejects changed criterion state during reference hydration and
+  post-approval verification, and retains each prior configuration with its
+  requested removal and independent outcome. Removed criteria cannot be
+  re-enabled. Keyword suffixes, custom parameters, and mobile
+  destinations support inherited ad destinations. Changing a keyword tracking
+  template or final URL preserves Google's template-to-final-URL dependency;
+  unrelated status changes leave inherited settings intact. URL
+  custom-parameter names use ASCII letters and numbers, are unique ignoring
+  case, and use Google Ads' UTF-8 byte limits. Budget
   removal fails before mutation when any selected budget has a live campaign
   reference.
   BigQuery contributes service-account dataset discovery, a job-synchronized

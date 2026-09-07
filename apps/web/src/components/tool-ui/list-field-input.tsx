@@ -8,12 +8,14 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 
 export function ListFieldInput({
+  ariaLabel,
   disabled,
   id,
   onChange,
   placeholder,
   value,
 }: {
+  ariaLabel?: string
   disabled: boolean
   id: string
   onChange: (value: string[]) => void
@@ -54,7 +56,7 @@ export function ListFieldInput({
         >
           <span className="truncate">{item}</span>
           <Button
-            aria-label={`Remove ${item}`}
+            aria-label={ariaLabel ? `Remove ${item} from ${ariaLabel}` : `Remove ${item}`}
             className="size-5"
             disabled={disabled}
             onClick={() => {
@@ -69,7 +71,7 @@ export function ListFieldInput({
         </span>
       ))}
       <Input
-        aria-label="Add list item"
+        aria-label={ariaLabel ? `Add item to ${ariaLabel}` : "Add list item"}
         className="h-6 min-w-28 flex-1 border-0 px-0 shadow-none focus-visible:ring-0"
         disabled={disabled}
         id={id}
