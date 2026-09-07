@@ -3,35 +3,39 @@
 import {
   DeviceBidModifierApprovalSummary,
   DeviceBidModifierOutcomeCard,
-  type DeviceAdjustment,
   type DeviceBidModifierCampaign,
   type DeviceBidModifierOutcome,
   type DeviceBidModifierResult,
 } from "@/integrations/google_ads/components/device-bid-modifier-outcome"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
-import { formatDeviceBidAdjustment } from "@/integrations/google_ads/lib/device-bid-modifiers"
+import { formatBidAdjustment } from "@/integrations/google_ads/lib/bid-modifiers"
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import {
+  deviceBidModifierArgs,
+  deviceBidModifierArgsError,
+  DEVICES,
+  type DeviceBidModifierArgs,
+} from "@/integrations/google_ads/lib/device-bid-modifier-inputs"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { isNullableFiniteNumber, isNullableString, isOneOf, isRecord } from "@/lib/guards"
-
-const DEVICES = new Set(["DESKTOP", "MOBILE", "TABLET"] as const)
 const OUTCOMES = new Set(["updated", "already_set", "failed"] as const)
 
-type DeviceBidModifierArgs = {
-  adjustments: DeviceAdjustment[]
-  campaignIds: string[]
-  campaignLabels: string[]
-}
+const copy = googleAdsWriteCopy({
+  verb: "Update",
+  object: "device bid adjustments",
+  effect: "updated",
+})
 
 export const googleAdsDeviceBidModifiersPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-update-device-bid-modifiers",
   variants: {
     google_ads_update_device_bid_modifiers: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Update",
-        label: "Update Google Ads Device Bid Adjustments",
+        ...copy.approval,
         parseArgs: deviceBidModifierArgs,
         prompt:
           "Review the campaigns and multipliers before changing how much these campaigns bid per device.",
@@ -44,101 +48,17 @@ export const googleAdsDeviceBidModifiersPresenter = createGoogleAdsWritePresente
             />
           )
         },
-        title: "Update Device Bid Adjustments",
         validateArgs: deviceBidModifierArgsError,
       },
-      deniedDescription: "This device bid adjustment was declined. Nothing was changed.",
       details: deviceBidModifierDetails,
-      emptyLabel: "No Google Ads accounts changed device bid adjustments.",
-      failedDescription: "The update did not finish. No device bid adjustment was confirmed.",
-      heading: "Update Device Bid Adjustments",
-      malformedDescription:
-        "The system couldn't verify this account's device bid adjustment outcomes. Check the Google Ads platform before taking further action.",
       parseResult: deviceBidModifierResult,
-      progressLabel: "Updating Google Ads device bid adjustments…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets targets={args?.campaignLabels ?? []} description={description} />
       ),
       renderOutcome: (result) => <DeviceBidModifierOutcomeCard result={result} />,
-      resultAriaLabel: "Google Ads device bid adjustment results",
-      resultFailure:
-        "The system couldn't verify the device bid adjustment changes. Check the Google Ads platform before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads device bid adjustment update",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads applied these device bid adjustments. Check the Google Ads platform before taking further action.",
-      waitingLabel: "Waiting for device bid adjustment approval…",
     }),
   },
 })
-
-function deviceBidModifierArgs(value: unknown): DeviceBidModifierArgs | null {
-  if (
-    !isRecord(value) ||
-    !Array.isArray(value["campaign_ids"]) ||
-    value["campaign_ids"].length === 0 ||
-    !Array.isArray(value["adjustments"]) ||
-    value["adjustments"].length === 0
-  ) {
-    return null
-  }
-  const campaignIds: string[] = []
-  const campaignLabels: string[] = []
-  for (const campaign of value["campaign_ids"]) {
-    if (!isRecord(campaign) || typeof campaign["campaign_id"] !== "string") {
-      return null
-    }
-    const campaignId = campaign["campaign_id"].trim()
-    if (!campaignId) {
-      return null
-    }
-    campaignIds.push(campaignId)
-    const label = typeof campaign["label"] === "string" ? campaign["label"].trim() : ""
-    campaignLabels.push(label || campaignId)
-  }
-  const adjustments: DeviceAdjustment[] = []
-  const seenDevices = new Set<DeviceAdjustment["device"]>()
-  for (const item of value["adjustments"]) {
-    if (
-      !isRecord(item) ||
-      !isOneOf(DEVICES, item["device"]) ||
-      typeof item["bid_modifier"] !== "number" ||
-      !Number.isFinite(item["bid_modifier"]) ||
-      (item["bid_modifier"] !== 0 && (item["bid_modifier"] < 0.1 || item["bid_modifier"] > 10)) ||
-      seenDevices.has(item["device"])
-    ) {
-      return null
-    }
-    seenDevices.add(item["device"])
-    adjustments.push({ bidModifier: item["bid_modifier"], device: item["device"] })
-  }
-  return { adjustments, campaignIds, campaignLabels }
-}
-
-function deviceBidModifierArgsError(value: unknown): string | null {
-  if (!isRecord(value) || !Array.isArray(value["adjustments"])) {
-    return "Review the device bid adjustment fields before approving."
-  }
-  const seenDevices = new Set<DeviceAdjustment["device"]>()
-  for (const item of value["adjustments"]) {
-    if (!isRecord(item) || !isOneOf(DEVICES, item["device"])) {
-      return "Choose desktop, mobile, or tablet for every row before approving."
-    }
-    if (
-      typeof item["bid_modifier"] !== "number" ||
-      !Number.isFinite(item["bid_modifier"]) ||
-      (item["bid_modifier"] !== 0 && (item["bid_modifier"] < 0.1 || item["bid_modifier"] > 10))
-    ) {
-      return "Set each bid modifier to 0 or between 0.1 and 10 before approving."
-    }
-    if (seenDevices.has(item["device"])) {
-      return "Choose each device only once before approving."
-    }
-    seenDevices.add(item["device"])
-  }
-  return deviceBidModifierArgs(value)
-    ? null
-    : "Review the device bid adjustment fields before approving."
-}
 
 function deviceBidModifierDetails(args: DeviceBidModifierArgs | null) {
   if (!args) {
@@ -149,7 +69,7 @@ function deviceBidModifierDetails(args: DeviceBidModifierArgs | null) {
     {
       label: "Adjustments",
       value: args.adjustments
-        .map((item) => `${item.device}: ${formatDeviceBidAdjustment(item.bidModifier)}`)
+        .map((item) => `${item.device}: ${formatBidAdjustment(item.bidModifier)}`)
         .join(", "),
     },
   ]

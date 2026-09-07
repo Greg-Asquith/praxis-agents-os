@@ -1,5 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/campaign-links.tsx
 
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 
 import {
@@ -12,16 +14,26 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { titleCaseToken } from "@/lib/format"
 import { isOneOf, isRecord } from "@/lib/guards"
+
+const copySpec = { object: "campaign shared list" }
+const copy = googleAdsWriteCopy({
+  verb: "Update",
+  ...copySpec,
+  effect: "updated",
+})
+const linkCopy = googleAdsWriteCopy({ ...copySpec, verb: "Link", effect: "linked" })
+const unlinkCopy = googleAdsWriteCopy({ ...copySpec, verb: "Unlink", effect: "unlinked" })
 
 export const googleAdsCampaignLinksPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-negative-list-campaign-links",
   variants: {
     google_ads_link_negative_keyword_list: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Apply",
-        label: "Apply Google Ads Negative Keyword List",
+        ...copy.approval,
+        title: (args) =>
+          args.action === "UNLINK" ? unlinkCopy.approval.title : linkCopy.approval.title,
         parseArgs: campaignLinkArgs,
         prompt: (args) =>
           args.action === "LINK"
@@ -36,30 +48,15 @@ export const googleAdsCampaignLinksPresenter = createGoogleAdsWritePresenter({
             />
           )
         },
-        title: (args) =>
-          args.action === "LINK" ? "Apply negative keyword list" : "Remove negative keyword list",
       },
-      deniedDescription: "This campaign list change was declined. Nothing was changed.",
       details: campaignLinkDetails,
-      emptyLabel: "No Google Ads accounts were updated.",
-      failedDescription: "The update did not finish. No campaign list change was confirmed.",
-      heading: "Updated Campaign Shared List",
-      malformedDescription:
-        "The system couldn't verify this account's campaign list outcomes. Check the Google Ads platform before taking further action.",
-      parseResult: campaignLinkResult,
       progressLabel: (args) =>
-        `${args?.action === "UNLINK" ? "Removing" : "Applying"} negative keyword list…`,
+        args?.action === "UNLINK" ? unlinkCopy.progressLabel : linkCopy.progressLabel,
+      parseResult: campaignLinkResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets targets={args?.campaignLabels ?? []} description={description} />
       ),
       renderOutcome: (result) => <CampaignLinkOutcome result={result} />,
-      resultAriaLabel: "Google Ads campaign list results",
-      resultFailure:
-        "The system couldn't verify the campaign list changes. Check the Google Ads platform before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads campaign list update",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads applied this campaign list change. Check the Google Ads platform before taking further action.",
-      waitingLabel: "Waiting for campaign approval…",
     }),
   },
 })
@@ -127,7 +124,7 @@ function campaignLinkDetails(args: CampaignLinkArgs | null) {
   return [
     { label: "Negative keyword list", value: args.negativeList.name },
     { label: "Campaigns", value: args.campaignLabels.join(", ") },
-    { label: "Action", value: titleCaseToken(args.action, args.action) },
+    { label: "Action", value: googleAdsTokenLabel(args.action, args.action) },
   ]
 }
 

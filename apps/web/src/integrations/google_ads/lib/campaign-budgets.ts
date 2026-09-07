@@ -1,11 +1,12 @@
 // apps/web/src/integrations/google_ads/lib/campaign-budgets.ts
 
-import { isRecord } from "@/lib/guards"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
-  GOOGLE_ADS_ID_PATTERN,
   CURRENCY_CODE_PATTERN,
+  GOOGLE_ADS_ID_PATTERN,
 } from "@/integrations/google_ads/lib/field-values"
-import { formatCurrency, formatCurrencyAmount, titleCaseToken } from "@/lib/format"
+import { formatCurrency, formatCurrencyAmount } from "@/lib/format"
+import { isRecord } from "@/lib/guards"
 
 export function formatDailyEstimate(amount: string, currencyCode: string): string {
   const numeric = Number(amount)
@@ -30,7 +31,7 @@ export function budgetPeriodLabel(period: string | null): string {
     ? "Daily"
     : period === "CUSTOM_PERIOD"
       ? "Campaign total"
-      : titleCaseToken(period ?? "", "Period unavailable")
+      : googleAdsTokenLabel(period ?? "", "Period unavailable")
 }
 
 export type CampaignBudgetReference = {

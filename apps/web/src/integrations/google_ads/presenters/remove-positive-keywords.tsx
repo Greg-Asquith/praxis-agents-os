@@ -1,47 +1,26 @@
 // apps/web/src/integrations/google_ads/presenters/remove-positive-keywords.tsx
 
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
-import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
-import {
-  GoogleAdsOutcomeTable,
-  type GoogleAdsOutcomeRow,
-} from "@/integrations/google_ads/components/outcome-table"
-import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
-import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 
-import type { DataColumn } from "@/components/ui/data-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
-import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
+  OUTCOMES,
+  type RemovalArgs,
+  type RemovalResult,
+  type RemovalResultRow,
+  renderRemovalApprovalSummary,
+  renderRemovalOutcomeTable,
+} from "@/integrations/google_ads/components/remove-positive-keywords"
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   parsePositiveKeywordReference,
   type PositiveKeywordReference,
 } from "@/integrations/google_ads/lib/positive-keywords"
+import {
+  createGoogleAdsWritePresenter,
+  defineGoogleAdsWriteVariant,
+} from "@/integrations/google_ads/presenters/write-presenter"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
-
-const OUTCOMES = ["removed", "failed", "unverified"] as const
-type RemovalOutcome = (typeof OUTCOMES)[number]
-
-type RemovalArgs = {
-  keywords: PositiveKeywordReference[]
-}
-
-type RemovalResultRow = {
-  errorCode: string | null
-  message: string | null
-  outcome: RemovalOutcome
-  previousStatus: string
-  reference: PositiveKeywordReference
-  resultingStatus: string | null
-}
-
-type RemovalResult = {
-  counts: Record<RemovalOutcome, number>
-  rows: RemovalResultRow[]
-}
 
 const COLUMNS: DataColumn[] = [
   { key: "keyword", kind: "text", label: "Keyword" },
@@ -53,102 +32,33 @@ const COLUMNS: DataColumn[] = [
   { key: "resultingStatus", kind: "status", label: "After" },
 ]
 
+const copy = googleAdsWriteCopy({ verb: "Remove", object: "keywords", effect: "removed" })
+
 export const googleAdsRemovePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-remove-positive-keywords",
   variants: {
     google_ads_remove_keywords: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Remove",
-        label: "Remove Google Ads Keywords",
+        ...copy.approval,
         parseArgs: removalArgs,
         prompt:
           "Permanently remove these positive keywords from Google Ads. Removed keywords cannot be re-enabled.",
         renderSummary: (value, fallback) =>
           renderRemovalApprovalSummary(removalArgs(value) ?? fallback),
-        title: "Permanently Remove Keywords",
       },
-      deniedDescription: "This keyword removal was declined. Nothing was removed.",
       details: (args) => (args ? [{ label: "Keywords", value: String(args.keywords.length) }] : []),
-      emptyLabel: "No Google Ads accounts removed keywords.",
-      failedDescription: "The removal did not finish. No keyword removal was confirmed.",
-      heading: "Remove Keywords",
-      malformedDescription:
-        "The system couldn't verify this account's keyword removal outcomes. Check Google Ads before taking further action.",
       parseResult: removalResult,
-      progressLabel: "Removing Google Ads keywords…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
           description={description}
           targets={args?.keywords.map((item) => item.label) ?? []}
         />
       ),
-      renderOutcome: renderRemovalOutcomeTable,
-      resultAriaLabel: "Google Ads keyword removal results",
-      resultFailure:
-        "The system couldn't verify the keyword removals. Check Google Ads before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads keyword removal",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads removed these keywords. Check Google Ads before retrying.",
-      waitingLabel: "Waiting for keyword removal approval…",
+      renderOutcome: (result) => renderRemovalOutcomeTable(result, COLUMNS),
     }),
   },
 })
-
-function renderRemovalApprovalSummary(args: RemovalArgs) {
-  return (
-    <GoogleAdsApprovalSection
-      ariaLabel="Keywords selected for permanent removal"
-      countLine={approvalCountLine(args.keywords.length, "keyword")}
-    >
-      <p className="text-muted-foreground text-xs">
-        This action cannot be undone. Removed keywords stop targeting traffic and cannot be
-        re-enabled.
-      </p>
-      {args.keywords.map((keyword) => (
-        <GoogleAdsEntityCard
-          key={keyword.identity}
-          title={keyword.label}
-          meta={
-            <>
-              {keyword.scopeLabel} · Account {keyword.customerId} · {keyword.matchType}
-            </>
-          }
-          trailing={googleAdsTokenLabel(keyword.status, keyword.status)}
-        />
-      ))}
-    </GoogleAdsApprovalSection>
-  )
-}
-
-function renderRemovalOutcomeTable(result: RemovalResult) {
-  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
-    keyword: row.reference.text,
-    scope: row.reference.scopeLabel,
-    account: row.reference.customerId,
-    matchType: googleAdsTokenLabel(row.reference.matchType, row.reference.matchType),
-    requested: "Removed",
-    details: row.message ?? "",
-    outcome: row.outcome,
-    errorCode: row.errorCode,
-    previousStatus: googleAdsTokenLabel(row.previousStatus, row.previousStatus),
-    resultingStatus:
-      row.resultingStatus === null
-        ? "Unverified"
-        : googleAdsTokenLabel(row.resultingStatus, row.resultingStatus),
-  }))
-  return (
-    <GoogleAdsOutcomeTable
-      columns={COLUMNS}
-      exportFilename="removed-positive-keywords.csv"
-      outcomes={OUTCOMES.map((outcome) => ({
-        kind: outcomeKind(outcome),
-        label: outcomeLabel(outcome),
-        count: result.counts[outcome],
-      }))}
-      rows={rows}
-    />
-  )
-}
 
 function removalArgs(value: unknown): RemovalArgs | null {
   if (

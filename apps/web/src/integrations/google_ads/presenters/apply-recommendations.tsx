@@ -1,27 +1,27 @@
 // apps/web/src/integrations/google_ads/presenters/apply-recommendations.tsx
 
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
-import { countByKind } from "@/integrations/google_ads/lib/outcomes"
-import type { DataColumn } from "@/components/ui/data-table"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
+import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import {
+  parseRecommendationOutcome,
+  parseRecommendationReference,
+} from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { microsToCurrencyUnits } from "@/lib/format"
-import {
-  parseRecommendationReference,
-  parseRecommendationOutcome,
-} from "@/integrations/google_ads/lib/recommendations"
-import { isRecord, isNullableFiniteNumber, isPositiveInteger } from "@/lib/guards"
+import { isNullableFiniteNumber, isPositiveInteger, isRecord } from "@/lib/guards"
 
 const NUMBER_FORMAT = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 })
 
@@ -94,31 +94,25 @@ const COLUMNS: DataColumn[] = [
   { key: "impact", kind: "text", label: "Google Estimate" },
 ]
 
+const copy = googleAdsWriteCopy({ verb: "Apply", object: "recommendations", effect: "applied" })
+
 export const googleAdsApplyRecommendationsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-apply-recommendations",
   variants: {
     google_ads_apply_recommendations: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Apply",
-        label: "Apply Google Ads Recommendations",
+        ...copy.approval,
         parseArgs: applyRecommendationArgs,
         prompt:
           "Review every recommendation and any custom parameters before applying Google's proposed account changes.",
         renderSummary: (value, fallback) =>
           applyRecommendationApprovalSummary(applyRecommendationArgs(value) ?? fallback),
-        title: "Apply Google Ads Recommendations",
         validateArgs: applyRecommendationArgsError,
       },
-      deniedDescription: "These recommendation changes were declined. Nothing was applied.",
       details: (args) =>
         args ? [{ label: "Recommendations", value: String(args.recommendations.length) }] : [],
-      emptyLabel: "No Google Ads accounts applied recommendations.",
-      failedDescription: "The apply action did not finish. No recommendation change was confirmed.",
-      heading: "Apply Recommendations",
-      malformedDescription:
-        "The system couldn't verify this account's recommendation outcomes. Check Google Ads before taking further action.",
       parseResult: applyRecommendationResult,
-      progressLabel: "Applying Google Ads recommendations…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
           description={description}
@@ -126,13 +120,6 @@ export const googleAdsApplyRecommendationsPresenter = createGoogleAdsWritePresen
         />
       ),
       renderOutcome: applyRecommendationOutcomeTable,
-      resultAriaLabel: "Google Ads recommendation apply results",
-      resultFailure:
-        "The system couldn't verify the recommendation changes. Check Google Ads before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads recommendation apply",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads applied these recommendations. Check Google Ads before taking further action.",
-      waitingLabel: "Waiting for recommendation approval…",
     }),
   },
 })

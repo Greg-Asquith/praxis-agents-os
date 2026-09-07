@@ -1,65 +1,81 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/ad-group.tsx
 
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
   AdGroupNegativeKeywordApprovalSummary,
   AdGroupNegativeKeywordOutcome,
-  type AdGroupNegativeKeywordResult,
 } from "@/integrations/google_ads/components/negative-keyword-outcome"
-import { createNegativeKeywordPresenter } from "@/integrations/google_ads/presenters/negative-keywords/presenter"
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   adGroupNegativeKeywordArgs,
   adGroupNegativeKeywordResult,
   adGroupNegativeKeywordSummary,
 } from "@/integrations/google_ads/presenters/negative-keywords/utils"
+import {
+  createGoogleAdsWritePresenter,
+  defineGoogleAdsWriteVariant,
+} from "@/integrations/google_ads/presenters/write-presenter"
 
-export const googleAdsAdGroupNegativeKeywordsPresenter = createNegativeKeywordPresenter({
-  copy: {
-    approvalLabel: {
-      add: "Add Google Ads Ad Group Negative Keywords",
-      remove: "Remove Google Ads Ad Group Negative Keywords",
-    },
-    approvalPrompt: {
-      add: "Review the ad groups, campaigns, and keyword rows before blocking matching traffic.",
-      remove:
-        "Review the ad groups and exclusions. Removing them can re-enable traffic and increase spend.",
-    },
-    approvalTitle: {
-      add: "Add Ad Group Negative Keywords",
-      remove: "Remove Ad Group Negative Keywords",
-    },
-    deniedDescription: {
-      add: "This ad group negative keyword change was declined. Nothing was added.",
-      remove: "This ad group negative keyword change was declined. Nothing was removed.",
-    },
-    emptyLabel: "No Google Ads accounts changed ad group negative keywords.",
-    failedDescription:
-      "The update did not finish. No ad group negative keyword change was confirmed.",
-    heading: "Ad Group Negative Keywords",
-    progressLabel: {
-      add: "Adding ad group negative keywords…",
-      remove: "Removing ad group negative keywords…",
-    },
-    resultAriaLabel: "Google Ads ad group negative keyword results",
-    unconfirmedAriaLabel: "Unconfirmed Google Ads ad group negative keyword update",
-    waitingLabel: "Waiting for ad group negative keyword approval…",
-  },
+const addCopy = googleAdsWriteCopy({
+  verb: "Add",
+  object: "ad group negative keywords",
+  effect: "added",
+})
+const removeCopy = googleAdsWriteCopy({
+  verb: "Remove",
+  object: "ad group negative keywords",
+  effect: "removed",
+})
+
+export const googleAdsAdGroupNegativeKeywordsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-ad-group-negative-keywords",
-  parseArgs: adGroupNegativeKeywordArgs,
-  parseResult: adGroupNegativeKeywordResult,
-  renderApprovalSummary: (summary) => (
-    <AdGroupNegativeKeywordApprovalSummary
-      adGroupCount={summary.adGroupCount}
-      keywordCount={summary.keywordCount}
-      selectionLabels={summary.selectionLabels}
-    />
-  ),
-  renderOutcome: (result: AdGroupNegativeKeywordResult, removing) => (
-    <AdGroupNegativeKeywordOutcome action={removing ? "remove" : "add"} result={result} />
-  ),
-  failureTargets: (args) => args.selectionLabels,
-  summarize: adGroupNegativeKeywordSummary,
-  toolNames: {
-    add: "google_ads_add_ad_group_negative_keywords",
-    remove: "google_ads_remove_ad_group_negative_keywords",
+  variants: {
+    google_ads_add_ad_group_negative_keywords: defineGoogleAdsWriteVariant({
+      ...addCopy,
+      approval: {
+        ...addCopy.approval,
+        parseArgs: (value) => adGroupNegativeKeywordArgs(value, false),
+        prompt: "Review the ad groups, campaigns, keyword rows before blocking matching traffic.",
+        renderSummary: (value, fallback) => {
+          const summary = adGroupNegativeKeywordSummary(value, fallback)
+          return (
+            <AdGroupNegativeKeywordApprovalSummary
+              adGroupCount={summary.adGroupCount}
+              keywordCount={summary.keywordCount}
+              selectionLabels={summary.selectionLabels}
+            />
+          )
+        },
+      },
+      parseResult: (value) => adGroupNegativeKeywordResult(value, false),
+      renderOutcome: (result) => <AdGroupNegativeKeywordOutcome action="add" result={result} />,
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets description={description} targets={args?.selectionLabels ?? []} />
+      ),
+    }),
+    google_ads_remove_ad_group_negative_keywords: defineGoogleAdsWriteVariant({
+      ...removeCopy,
+      approval: {
+        ...removeCopy.approval,
+        parseArgs: (value) => adGroupNegativeKeywordArgs(value, true),
+        prompt:
+          "Review the ad groups and exclusions. Removing them can re-enable traffic and increase spend.",
+        renderSummary: (value, fallback) => {
+          const summary = adGroupNegativeKeywordSummary(value, fallback)
+          return (
+            <AdGroupNegativeKeywordApprovalSummary
+              adGroupCount={summary.adGroupCount}
+              keywordCount={summary.keywordCount}
+              selectionLabels={summary.selectionLabels}
+            />
+          )
+        },
+      },
+      parseResult: (value) => adGroupNegativeKeywordResult(value, true),
+      renderOutcome: (result) => <AdGroupNegativeKeywordOutcome action="remove" result={result} />,
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets description={description} targets={args?.selectionLabels ?? []} />
+      ),
+    }),
   },
 })

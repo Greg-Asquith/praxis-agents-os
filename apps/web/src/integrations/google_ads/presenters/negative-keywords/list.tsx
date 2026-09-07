@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/list.tsx
 
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 
 import {
@@ -19,13 +20,20 @@ import {
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 
+const addCopy = googleAdsWriteCopy({ verb: "Add", object: "negative keywords", effect: "added" })
+const removeCopy = googleAdsWriteCopy({
+  verb: "Remove",
+  object: "negative keywords",
+  effect: "removed",
+})
+
 export const googleAdsListNegativeKeywordsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-list-negative-keywords",
   variants: {
     google_ads_add_negative_keywords: defineGoogleAdsWriteVariant({
+      ...addCopy,
       approval: {
-        approveLabel: "Approve & Add",
-        label: "Add Google Ads Negative Keywords",
+        ...addCopy.approval,
         parseArgs: (value) => listNegativeKeywordArgs(value, false),
         prompt: "Review the target list and keyword rows before changing live ad delivery.",
         renderSummary: (value, fallback) => {
@@ -39,32 +47,17 @@ export const googleAdsListNegativeKeywordsPresenter = createGoogleAdsWritePresen
             />
           )
         },
-        title: "Add Negative Keywords",
       },
-      deniedDescription: "This negative keyword change was declined. Nothing was added.",
-      emptyLabel: "No Google Ads accounts added negative keywords.",
-      failedDescription: "The update did not finish. No negative keyword change was confirmed.",
-      heading: "Add Negative Keywords",
-      malformedDescription:
-        "The system couldn't verify this account's negative keyword outcomes. Check the Google Ads platform before taking further action.",
       parseResult: (value): NegativeKeywordResult | null => listNegativeKeywordResult(value, false),
-      progressLabel: "Adding Google Ads negative keywords…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets description={description} targets={args ? [args.listName] : []} />
       ),
       renderOutcome: (result) => <NegativeKeywordOutcome result={result} />,
-      resultAriaLabel: "Google Ads negative keyword results",
-      resultFailure:
-        "The system couldn't verify the negative keyword changes. Check the Google Ads platform before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads negative keyword update",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads added these negative keywords. Check the Google Ads platform before taking further action.",
-      waitingLabel: "Waiting for negative keyword approval…",
     }),
     google_ads_remove_negative_keywords: defineGoogleAdsWriteVariant({
+      ...removeCopy,
       approval: {
-        approveLabel: "Approve & Remove",
-        label: "Remove Google Ads Negative Keywords",
+        ...removeCopy.approval,
         parseArgs: (value) => listNegativeKeywordArgs(value, true),
         prompt:
           "Review the target list and keyword rows. Removing them re-enables matching traffic.",
@@ -79,28 +72,13 @@ export const googleAdsListNegativeKeywordsPresenter = createGoogleAdsWritePresen
             />
           )
         },
-        title: "Remove Negative Keywords",
       },
-      deniedDescription: "This negative keyword change was declined. Nothing was removed.",
-      emptyLabel: "No Google Ads accounts removed negative keywords.",
-      failedDescription: "The update did not finish. No negative keyword change was confirmed.",
-      heading: "Remove Negative Keywords",
-      malformedDescription:
-        "The system couldn't verify this account's negative keyword outcomes. Check the Google Ads platform before taking further action.",
       parseResult: (value): NegativeKeywordRemovalResult | null =>
         listNegativeKeywordResult(value, true),
-      progressLabel: "Removing Google Ads negative keywords…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets description={description} targets={args ? [args.listName] : []} />
       ),
       renderOutcome: (result) => <NegativeKeywordRemovalOutcome result={result} />,
-      resultAriaLabel: "Google Ads negative keyword results",
-      resultFailure:
-        "The system couldn't verify the negative keyword changes. Check the Google Ads platform before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads negative keyword update",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads removed these negative keywords. Check the Google Ads platform before taking further action.",
-      waitingLabel: "Waiting for negative keyword approval…",
     }),
   },
 })

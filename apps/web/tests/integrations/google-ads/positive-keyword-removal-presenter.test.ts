@@ -161,7 +161,7 @@ describe("positive keyword removal presenter", () => {
         status === "denied"
           ? "Nothing was removed"
           : status === "failed"
-            ? "No keyword removal was confirmed"
+            ? "No keywords change was confirmed"
             : "Removing Google Ads keywords"
       )
     }

@@ -56,8 +56,16 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   line instead of result stats. Budget amount changes, budget assignments, and
   keyword status use `GoogleAdsBeforeAfter`, whose proposed slot accepts the
   existing status editor. Budget removal uses the destructive section. Keyword
-  removal retains its consequence warning in a neutral section. Lifecycle-copy
-  adoption remains pending.
+  removal retains its consequence warning in a neutral section.
+  Every write variant uses `googleAdsWriteCopy`; keep semantic overrides visible
+  in the presenter, including declined recommendation dismissal. Campaign and
+  ad-group negative keywords each declare their add and remove variants directly.
+  Presenters compose `google_ads/components` and `google_ads/lib`: a new tool
+  adds no outcome table, approval section, or lifecycle template. Architecture
+  checks forbid direct Stat and Badge imports, and only the two report
+  presenters import the generic DataTable. Bid adjustment formatting belongs
+  to `lib/bid-modifiers.ts`. Tool-specific summaries stay inside the shared
+  approval section; a Lane V "flat presenter" means a constructor using this kit.
   Google Ads positive-keyword creation groups approval context by campaign,
   keeps optional bid and URL fields behind each row's progressive disclosure,
   applies provider byte and dependency checks before approval, and shows

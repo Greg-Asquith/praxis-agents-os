@@ -1,20 +1,26 @@
 // apps/web/src/integrations/google_ads/presenters/create-positive-keywords.tsx
 
-import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 
-import type { DataColumn } from "@/components/ui/data-table"
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import {
   GoogleAdsEntityCard,
   GoogleAdsEntityGroup,
 } from "@/integrations/google_ads/components/entity-card"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
+import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import {
+  parseAdGroupReference,
+  type AdGroupReference,
+} from "@/integrations/google_ads/lib/ad-groups"
+import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
 import {
   parsePositiveKeywordInput,
   positiveKeywordInputValidationError,
@@ -24,12 +30,6 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
-import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
-import {
-  parseAdGroupReference,
-  type AdGroupReference,
-} from "@/integrations/google_ads/lib/ad-groups"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
@@ -80,13 +80,15 @@ const RESULT_COLUMNS: DataColumn[] = [
   { key: "previousState", kind: "text", label: "Previous State" },
 ]
 
+const copy = googleAdsWriteCopy({ verb: "Add", object: "keywords", effect: "added" })
+
 export const googleAdsCreatePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-create-positive-keywords",
   variants: {
     google_ads_create_keywords: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Add",
-        label: "Add Google Ads Keywords",
+        ...copy.approval,
         parseArgs: createKeywordArgs,
         validateArgs: createKeywordArgsValidationError,
         prompt:
@@ -95,9 +97,7 @@ export const googleAdsCreatePositiveKeywordsPresenter = createGoogleAdsWritePres
           const parsed = createKeywordArgs(value)
           return parsed ? renderApprovalSummary(parsed) : null
         },
-        title: "Add Keywords",
       },
-      deniedDescription: "This keyword addition was declined. Nothing was added.",
       details: (args) =>
         args
           ? [
@@ -109,13 +109,7 @@ export const googleAdsCreatePositiveKeywordsPresenter = createGoogleAdsWritePres
               },
             ]
           : [],
-      emptyLabel: "No Google Ads accounts added keywords.",
-      failedDescription: "The update did not finish. No keyword addition was confirmed.",
-      heading: "Add Keywords",
-      malformedDescription:
-        "The system couldn't verify this account's keyword outcomes. Check Google Ads before taking further action.",
       parseResult: createKeywordResult,
-      progressLabel: "Adding Google Ads keywords…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
           description={description}
@@ -123,13 +117,6 @@ export const googleAdsCreatePositiveKeywordsPresenter = createGoogleAdsWritePres
         />
       ),
       renderOutcome: renderOutcome,
-      resultAriaLabel: "Google Ads positive keyword results",
-      resultFailure:
-        "The system couldn't verify the keyword additions. Check Google Ads before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads keyword addition",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads added these keywords. Check Google Ads before retrying.",
-      waitingLabel: "Waiting for keyword approval…",
     }),
   },
 })

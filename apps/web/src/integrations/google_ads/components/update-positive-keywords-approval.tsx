@@ -1,10 +1,11 @@
-// apps/web/src/integrations/google_ads/presenters/update-positive-keywords-approval.tsx
+// apps/web/src/integrations/google_ads/components/update-positive-keywords-approval.tsx
 
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
-import { Fragment, useState } from "react"
+import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { ArrowRightIcon, ChevronDownIcon } from "lucide-react"
+import { Fragment, useState } from "react"
 
 import type { EditedRecordCell, EditedRecords } from "@/components/tool-ui/edited-values"
 import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
@@ -20,10 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type {
-  PositiveKeywordStatus,
-  PositiveKeywordReference,
-} from "@/integrations/google_ads/lib/positive-keywords"
 import {
   formatPositiveKeywordValue,
   mutableStateFromReference,
@@ -35,7 +32,10 @@ import {
   type PatchField,
   type PositiveKeywordUpdateArgs,
 } from "@/integrations/google_ads/lib/positive-keyword-update"
-import { titleCaseToken } from "@/lib/format"
+import type {
+  PositiveKeywordReference,
+  PositiveKeywordStatus,
+} from "@/integrations/google_ads/lib/positive-keywords"
 
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
@@ -202,7 +202,7 @@ function KeywordPatchEditor({
         <div className="min-w-0 @3xl:pt-1">
           <p className="text-sm font-medium wrap-anywhere">{keyword.text}</p>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            {titleCaseToken(keyword.matchType.toLowerCase(), keyword.matchType)}
+            {googleAdsTokenLabel(keyword.matchType.toLowerCase(), keyword.matchType)}
           </p>
         </div>
         {POSITIVE_KEYWORD_PATCH_FIELDS.filter((field) => !field.advanced).map((field) => (
@@ -280,7 +280,7 @@ function PatchFieldEditor({
   const inputId = `${keyword.identity}-${field}`
   const value = included ? (patch[field] ?? null) : before[field]
   const changed = included && !sameFieldValue(field, before[field], value)
-  const context = `${keyword.text}, ${titleCaseToken(keyword.matchType.toLowerCase(), keyword.matchType)}, in ${keyword.scopeLabel}, account ${keyword.customerId}`
+  const context = `${keyword.text}, ${googleAdsTokenLabel(keyword.matchType.toLowerCase(), keyword.matchType)}, in ${keyword.scopeLabel}, account ${keyword.customerId}`
   const label = `${specification.label} for ${context}`
   const editor = (
     <div className={cn("min-w-0 rounded-md", changed && "bg-warning/5 ring-warning/40 ring-1")}>

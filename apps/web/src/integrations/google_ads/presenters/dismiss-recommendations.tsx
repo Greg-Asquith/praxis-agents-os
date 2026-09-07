@@ -1,25 +1,25 @@
 // apps/web/src/integrations/google_ads/presenters/dismiss-recommendations.tsx
 
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
-import { countByKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
-import type { DataColumn } from "@/components/ui/data-table"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
+import { countByKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+import {
+  parseRecommendationOutcome,
+  parseRecommendationReference,
+} from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import {
-  parseRecommendationReference,
-  parseRecommendationOutcome,
-} from "@/integrations/google_ads/lib/recommendations"
 import { isRecord } from "@/lib/guards"
 
 type RecommendationReference = {
@@ -53,32 +53,27 @@ const COLUMNS: DataColumn[] = [
   { key: "resourceName", kind: "id", label: "Resource Name" },
 ]
 
+const copy = googleAdsWriteCopy({ verb: "Dismiss", object: "recommendations", effect: "dismissed" })
+
 export const googleAdsDismissRecommendationsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-dismiss-recommendations",
   variants: {
     google_ads_dismiss_recommendations: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Dismiss",
-        label: "Dismiss Google Ads Recommendations",
+        ...copy.approval,
         parseArgs: dismissRecommendationArgs,
         prompt:
           "Dismissal hides these Google proposals. It does not apply the recommended account changes.",
         renderSummary: (value, fallback) =>
           dismissRecommendationApprovalSummary(dismissRecommendationArgs(value) ?? fallback),
-        title: "Dismiss Google Ads Recommendations",
         validateArgs: dismissRecommendationArgsError,
       },
       deniedDescription:
         "This dismissal was declined. The recommendations remain visible in Google Ads.",
       details: (args) =>
         args ? [{ label: "Recommendations", value: String(args.recommendations.length) }] : [],
-      emptyLabel: "No Google Ads accounts dismissed recommendations.",
-      failedDescription: "The dismissal did not finish. No recommendation was confirmed as hidden.",
-      heading: "Dismiss Recommendations",
-      malformedDescription:
-        "The system couldn't verify this account's recommendation dismissal outcomes. Check Google Ads before taking further action.",
       parseResult: dismissRecommendationResult,
-      progressLabel: "Dismissing Google Ads recommendations…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
           description={description}
@@ -86,13 +81,6 @@ export const googleAdsDismissRecommendationsPresenter = createGoogleAdsWritePres
         />
       ),
       renderOutcome: dismissRecommendationOutcomeTable,
-      resultAriaLabel: "Google Ads recommendation dismissal results",
-      resultFailure:
-        "The system couldn't verify the recommendation dismissals. Check Google Ads before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads recommendation dismissal",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads dismissed these recommendations. Check Google Ads before taking further action.",
-      waitingLabel: "Waiting for dismissal approval…",
     }),
   },
 })

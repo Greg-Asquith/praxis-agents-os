@@ -1,18 +1,16 @@
 // apps/web/src/integrations/google_ads/components/device-bid-modifier-outcome.tsx
 
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
-import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import type { DataColumn } from "@/components/ui/data-table"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
 import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
+import { formatBidAdjustment } from "@/integrations/google_ads/lib/bid-modifiers"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { countByKind, outcomeDetails } from "@/integrations/google_ads/lib/outcomes"
-import {
-  formatDeviceBidAdjustment,
-  humanizeGoogleAdsToken,
-} from "@/integrations/google_ads/lib/device-bid-modifiers"
 
 export type DeviceAdjustment = {
   bidModifier: number
@@ -64,8 +62,8 @@ export function DeviceBidModifierApprovalSummary({
         {adjustments.map((adjustment) => (
           <GoogleAdsEntityCard
             key={adjustment.device}
-            title={humanizeGoogleAdsToken(adjustment.device)}
-            trailing={formatDeviceBidAdjustment(adjustment.bidModifier)}
+            title={googleAdsTokenLabel(adjustment.device)}
+            trailing={formatBidAdjustment(adjustment.bidModifier)}
           />
         ))}
       </div>
@@ -80,13 +78,13 @@ export function DeviceBidModifierOutcomeCard({ result }: { result: DeviceBidModi
       campaignId: campaign.campaignId,
       details: outcomeDetails(device.message, null, device.note),
       errorCode: device.errorCode,
-      device: humanizeGoogleAdsToken(device.device),
+      device: googleAdsTokenLabel(device.device),
       outcome: device.outcome,
       previous:
         device.previousBidModifier === null
           ? "Not set"
-          : formatDeviceBidAdjustment(device.previousBidModifier),
-      requested: formatDeviceBidAdjustment(device.bidModifier),
+          : formatBidAdjustment(device.previousBidModifier),
+      requested: formatBidAdjustment(device.bidModifier),
       strategy: biddingStrategyLabel(campaign),
     }))
   )
@@ -102,7 +100,7 @@ export function DeviceBidModifierOutcomeCard({ result }: { result: DeviceBidModi
 }
 
 function biddingStrategyLabel(campaign: DeviceBidModifierCampaign): string {
-  const strategy = humanizeGoogleAdsToken(campaign.biddingStrategyType)
+  const strategy = googleAdsTokenLabel(campaign.biddingStrategyType)
   return campaign.biddingStrategyType === "MAXIMIZE_CONVERSIONS" && campaign.targetCpaConfigured
     ? `${strategy} · Target CPA`
     : strategy

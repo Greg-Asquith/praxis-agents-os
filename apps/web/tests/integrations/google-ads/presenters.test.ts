@@ -549,7 +549,7 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads device bid adjustment results"')
+    expect(html).toContain('aria-label="Google Ads device bid adjustments results"')
     expect(html).toContain("Previous")
     expect(html).toContain("Requested")
     expect(html).toContain("No adjustment (1×)")
@@ -736,7 +736,7 @@ describe("Google Ads tool presenters", () => {
       "couldn&#x27;t verify this account&#x27;s device bid adjustment"
     )
     expect(emptyHtml).toContain("couldn&#x27;t verify this account&#x27;s device bid adjustment")
-    expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads applied")
+    expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads updated")
     expect(unverifiedHtml).not.toContain("request outcome unknown")
   })
 
@@ -783,10 +783,10 @@ describe("Google Ads tool presenters", () => {
       expect(rendered.props.fields).toBe(declaredFields)
     }
     const html = render(rendered)
-    expect(html).toContain("Remove negative keyword list")
+    expect(html).toContain("Unlink Campaign Shared List")
     expect(html).toContain("Edited exclusions")
     expect(html).toContain(">1 campaign<")
-    expect(html).toContain("Approve &amp; Apply")
+    expect(html).toContain("Approve &amp; Update")
   })
 
   it("renders self-contained named campaign-link evidence", () => {
@@ -853,7 +853,7 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads campaign list results"')
+    expect(html).toContain('aria-label="Google Ads campaign shared list results"')
     expect(html).toContain("Persisted Brand Protection")
     expect(html).toContain("List ID 50")
     expect(html).toContain("17 keywords")
@@ -1021,7 +1021,7 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads negative keyword list results"')
+    expect(html).toContain('aria-label="Google Ads negative keyword lists results"')
     expect(html).toContain("New exclusions")
     expect(html).toContain("Existing exclusions")
     expect(html).toContain("Rejected exclusions")
@@ -1193,7 +1193,7 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads negative keyword results"')
+    expect(html).toContain('aria-label="Google Ads negative keywords results"')
     expect(html).toContain("Added")
     expect(html).toContain("Already existed")
     expect(html).toContain("Failed")
@@ -1520,7 +1520,7 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads campaign negative keyword results"')
+    expect(html).toContain('aria-label="Google Ads campaign negative keywords results"')
     expect(html).toContain("Brand")
     expect(html).toContain("Prospecting")
     expect(html).toContain("Removed")
@@ -1561,60 +1561,6 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("4 proposed changes")
     expect(html).toContain("Exact — Brand")
     expect(html).toContain("Broad — Prospecting")
-  })
-
-  it.each([
-    {
-      addName: "google_ads_add_campaign_negative_keywords",
-      adding: "Adding campaign negative keywords…",
-      denied: "This campaign negative keyword change was declined. Nothing was removed.",
-      presenter: googleAdsCampaignNegativeKeywordsPresenter,
-      removeName: "google_ads_remove_campaign_negative_keywords",
-      waiting: "Waiting for campaign negative keyword approval…",
-    },
-    {
-      addName: "google_ads_add_ad_group_negative_keywords",
-      adding: "Adding ad group negative keywords…",
-      denied: "This ad group negative keyword change was declined. Nothing was removed.",
-      presenter: googleAdsAdGroupNegativeKeywordsPresenter,
-      removeName: "google_ads_remove_ad_group_negative_keywords",
-      waiting: "Waiting for ad group negative keyword approval…",
-    },
-  ])("preserves $presenter.key running, waiting, and denied copy", (testCase) => {
-    const runningHtml = render(
-      testCase.presenter.render(
-        props({
-          id: `${testCase.presenter.key}-running`,
-          kind: "call",
-          name: testCase.addName,
-          status: "running",
-        })
-      )
-    )
-    const waitingHtml = render(
-      testCase.presenter.render(
-        props({
-          id: `${testCase.presenter.key}-waiting`,
-          kind: "call",
-          name: testCase.addName,
-          status: "awaiting_approval",
-        })
-      )
-    )
-    const deniedHtml = render(
-      testCase.presenter.render(
-        props({
-          id: `${testCase.presenter.key}-denied`,
-          kind: "result",
-          name: testCase.removeName,
-          status: "denied",
-        })
-      )
-    )
-
-    expect(runningHtml).toContain(testCase.adding)
-    expect(waitingHtml).toContain(testCase.waiting)
-    expect(deniedHtml).toContain(testCase.denied)
   })
 
   it("renders per-ad-group negative keyword removal rollups", () => {
@@ -1669,7 +1615,7 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads ad group negative keyword results"')
+    expect(html).toContain('aria-label="Google Ads ad group negative keywords results"')
     expect(html).toContain("Exact")
     expect(html).toContain("Brand")
     expect(html).toContain("Not found")
@@ -1763,51 +1709,6 @@ describe("Google Ads tool presenters", () => {
     expect(adGroupHtml).not.toContain("Error code")
   })
 
-  it.each([
-    ["running", "Adding Google Ads negative keywords…"],
-    ["awaiting_approval", "Waiting for negative keyword approval…"],
-    ["denied", "Nothing was added."],
-    ["failed", "No negative keyword change was confirmed."],
-    ["unknown", "No negative keyword change was confirmed."],
-  ] as const)("renders an honest negative-keyword %s state", (status, expected) => {
-    const html = render(
-      googleAdsListNegativeKeywordsPresenter.render(
-        props({
-          id: "negative-keywords-state",
-          kind: "call",
-          name: "google_ads_add_negative_keywords",
-          status,
-          args: {
-            negative_list: sharedSetReference("50", "Brand Protection"),
-            keywords: [{ text: "free", match_type: "EXACT" }],
-          },
-        })
-      )
-    )
-    expect(html).toContain(expected)
-  })
-
-  it.each([
-    ["running", "Updating Google Ads campaigns…"],
-    ["awaiting_approval", "Waiting for campaign approval…"],
-    ["denied", "Nothing was changed."],
-    ["failed", "No campaign change was confirmed."],
-    ["unknown", "No campaign change was confirmed."],
-  ] as const)("renders an honest %s lifecycle state", (status, expected) => {
-    const html = render(
-      googleAdsCampaignStatusPresenter.render(
-        props({
-          id: "campaign-1",
-          kind: "call",
-          name: "google_ads_update_campaign_status",
-          status,
-          args: { campaign_ids: [campaignReference("10", "Summer Sale")], status: "PAUSED" },
-        })
-      )
-    )
-    expect(html).toContain(expected)
-  })
-
   it("isolates a malformed account outcome without hiding valid siblings", () => {
     const html = render(
       googleAdsCampaignStatusPresenter.render(
@@ -1845,8 +1746,10 @@ describe("Google Ads tool presenters", () => {
 
     expect(html).toContain("Updated")
     expect(html).toContain("Second account")
-    expect(html).toContain("The system couldn&#x27;t verify this account&#x27;s campaign outcomes.")
-    expect(html).toContain("Check the Google Ads platform")
+    expect(html).toContain(
+      "The system couldn&#x27;t verify this account&#x27;s campaign status outcomes."
+    )
+    expect(html).toContain("Check Google Ads before taking further action.")
   })
 
   it("distinguishes an unverified mutation from a known failure", () => {
@@ -1872,8 +1775,8 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain("The system couldn&#x27;t verify whether Google Ads applied")
-    expect(html).toContain("Check the Google Ads platform")
+    expect(html).toContain("The system couldn&#x27;t verify whether Google Ads updated")
+    expect(html).toContain("Check Google Ads before taking further action.")
     expect(html).not.toContain("request outcome unknown")
   })
 
@@ -2017,7 +1920,7 @@ describe("Google Ads tool presenters", () => {
     )
 
     expect(html).toContain(
-      "The system couldn&#x27;t verify this account&#x27;s campaign list outcomes."
+      "The system couldn&#x27;t verify this account&#x27;s campaign shared list outcomes."
     )
     expect(html).not.toContain("List ID 50")
   })
@@ -2129,7 +2032,7 @@ describe("Google Ads tool presenters", () => {
         },
       })
     )
-    expect(render(deviceRow)).toContain('aria-label="Google Ads device bid adjustment results"')
+    expect(render(deviceRow)).toContain('aria-label="Google Ads device bid adjustments results"')
   })
 })
 

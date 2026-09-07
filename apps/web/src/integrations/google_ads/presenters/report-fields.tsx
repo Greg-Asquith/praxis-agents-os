@@ -2,7 +2,10 @@
 
 import { ChevronDownIcon } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
+import {
+  ReportFieldsDone,
+  ReportFieldFlag,
+} from "@/integrations/google_ads/components/report-field-indicators"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
@@ -130,7 +133,7 @@ function listReportFieldsResult(
         { label: "API version", summary: false, value: result.apiVersion },
       ]}
       heading={<GoogleAdsToolHeading>List Google Ads Report Fields</GoogleAdsToolHeading>}
-      trailing={<Badge variant="success">Done</Badge>}
+      trailing={<ReportFieldsDone />}
     >
       <div className="grid min-w-0 gap-4">
         {copyableName("Resource", result.resource)}
@@ -205,7 +208,7 @@ function getReportFieldResult(defaultOpen: boolean, result: GetReportField) {
         { label: "API version", summary: false, value: result.apiVersion },
       ]}
       heading={<GoogleAdsToolHeading>Get Google Ads Report Field</GoogleAdsToolHeading>}
-      trailing={<Badge variant="success">Done</Badge>}
+      trailing={<ReportFieldsDone />}
     >
       <div className="grid min-w-0 gap-4">
         {copyableName("API name", result.name)}
@@ -282,22 +285,11 @@ function metadataValue(label: string, value: string) {
 function fieldFlags(field: ReportField) {
   return (
     <dl aria-label="Report field capabilities" className="flex flex-wrap gap-2">
-      {flag("Selectable", field.selectable)}
-      {flag("Filterable", field.filterable)}
-      {flag("Sortable", field.sortable)}
-      {flag("Repeated", field.isRepeated)}
+      <ReportFieldFlag label="Selectable" value={field.selectable} />
+      <ReportFieldFlag label="Filterable" value={field.filterable} />
+      <ReportFieldFlag label="Sortable" value={field.sortable} />
+      <ReportFieldFlag label="Repeated" value={field.isRepeated} />
     </dl>
-  )
-}
-
-function flag(label: string, value: boolean) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd>
-        <Badge variant={value ? "success" : "outline"}>{value ? "Yes" : "No"}</Badge>
-      </dd>
-    </div>
   )
 }
 

@@ -13,6 +13,8 @@ import {
 } from "@/integrations/google_ads/lib/outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 
+export type GoogleAdsOutcomeColumn = DataColumn
+
 export type GoogleAdsOutcomeRow = DataRow & {
   outcome: Parameters<typeof outcomeKind>[0]
   details?: string

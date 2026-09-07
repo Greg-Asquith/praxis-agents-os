@@ -431,7 +431,7 @@ describe("Google Ads positive keyword update presenter", () => {
     expect(deniedHtml).toContain("declined")
     expect(loadingHtml).toContain("Updating Google Ads keywords…")
     expect(malformedHtml).toContain("couldn&#x27;t verify")
-    expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads applied")
+    expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads updated")
     expect(unverifiedHtml).not.toContain("provider transport detail")
   })
 

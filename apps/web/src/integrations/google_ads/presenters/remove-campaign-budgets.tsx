@@ -1,51 +1,27 @@
-// apps/web/src/integrations/google_ads/presenters/remove-campaing-budgets.tsx
+// apps/web/src/integrations/google_ads/presenters/remove-campaign-budgets.tsx
 
-import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
-import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import type { DataColumn } from "@/components/ui/data-table"
-import {
-  GoogleAdsOutcomeTable,
-  type GoogleAdsOutcomeRow,
-} from "@/integrations/google_ads/components/outcome-table"
+import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
+
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
-import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 import {
-  budgetPeriodLabel,
-  formatCampaignBudgetAmount,
+  OUTCOMES,
+  renderRemovalApprovalSummary,
+  renderRemovalOutcomeTable,
+  type RemovalArgs,
+  type RemovalResult,
+  type RemovalResultRow,
+} from "@/integrations/google_ads/components/remove-campaign-budgets"
+import {
   campaignBudgetIdentity,
   parseCampaignBudgetReference,
   type CampaignBudgetWithCurrency,
 } from "@/integrations/google_ads/lib/campaign-budgets"
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { titleCaseToken } from "@/lib/format"
-
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
-
-const OUTCOMES = ["removed", "failed", "unverified"] as const
-type RemovalOutcome = (typeof OUTCOMES)[number]
-
-type RemovalArgs = {
-  budgets: CampaignBudgetWithCurrency[]
-}
-
-type RemovalResultRow = {
-  errorCode: string | null
-  message: string | null
-  outcome: RemovalOutcome
-  previousStatus: string
-  reference: CampaignBudgetWithCurrency
-  resultingStatus: string | null
-}
-
-type RemovalResult = {
-  counts: Record<RemovalOutcome, number>
-  rows: RemovalResultRow[]
-  samplesTruncated: boolean
-}
 
 const COLUMNS: DataColumn[] = [
   { key: "budget", kind: "text", label: "Budget" },
@@ -57,106 +33,37 @@ const COLUMNS: DataColumn[] = [
   { key: "resultingStatus", kind: "status", label: "After" },
 ]
 
+const copy = googleAdsWriteCopy({
+  verb: "Remove",
+  object: "campaign budgets",
+  effect: "removed",
+  destructive: true,
+})
+
 export const googleAdsRemoveCampaignBudgetsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-remove-campaign-budgets",
   variants: {
     google_ads_remove_campaign_budgets: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Remove",
-        label: "Remove Google Ads Campaign Budgets",
+        ...copy.approval,
         parseArgs: removalArgs,
         prompt: "These unused campaign budgets are permanently removed from Google Ads.",
         renderSummary: (value, fallback) =>
           renderRemovalApprovalSummary(removalArgs(value) ?? fallback),
-        title: "Permanently Remove Campaign Budgets",
       },
-      deniedDescription: "This campaign budget removal was declined. Nothing was removed.",
       details: (args) => (args ? [{ label: "Budgets", value: String(args.budgets.length) }] : []),
-      emptyLabel: "No Google Ads accounts removed campaign budgets.",
-      failedDescription: "The removal did not finish. No campaign budget removal was confirmed.",
-      heading: "Remove Campaign Budgets",
-      malformedDescription:
-        "The system couldn't verify this account's campaign budget removal outcomes. Check Google Ads before taking further action.",
       parseResult: removalResult,
-      progressLabel: "Removing Google Ads campaign budgets…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
           description={description}
           targets={args?.budgets.map((budget) => budget.label) ?? []}
         />
       ),
-      renderOutcome: renderRemovalOutcomeTable,
-      resultAriaLabel: "Google Ads campaign budget removal results",
-      resultFailure:
-        "The system couldn't verify the campaign budget removals. Check Google Ads before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads campaign budget removal",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads removed these campaign budgets. Check Google Ads before retrying.",
-      waitingLabel: "Waiting for campaign budget removal approval…",
+      renderOutcome: (result) => renderRemovalOutcomeTable(result, COLUMNS),
     }),
   },
 })
-
-function renderRemovalApprovalSummary(args: RemovalArgs) {
-  return (
-    <GoogleAdsApprovalSection
-      ariaLabel="Campaign budgets selected for permanent removal"
-      tone="destructive"
-      countLine={approvalCountLine(args.budgets.length, "budget")}
-    >
-      <p className="text-muted-foreground text-xs">Each budget has zero linked campaigns.</p>
-      {args.budgets.map((budget) => (
-        <GoogleAdsEntityCard
-          key={campaignBudgetIdentity(budget)}
-          title={budget.label}
-          meta={
-            <>
-              {budgetPeriodLabel(budget.period)} ·{" "}
-              {budget.referenceCount === null
-                ? "Unavailable"
-                : approvalCountLine(budget.referenceCount, "campaign")}
-            </>
-          }
-          trailing={formatCampaignBudgetAmount(budget)}
-        />
-      ))}
-    </GoogleAdsApprovalSection>
-  )
-}
-
-function renderRemovalOutcomeTable(result: RemovalResult) {
-  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
-    amount: formatCampaignBudgetAmount(row.reference),
-    budget: row.reference.label,
-    budgetId: row.reference.budgetId,
-    details: row.message ?? "",
-    errorCode: row.errorCode,
-    linkedCampaigns:
-      row.reference.referenceCount === null
-        ? "Unavailable"
-        : approvalCountLine(row.reference.referenceCount, "campaign"),
-    outcome: row.outcome,
-    period: budgetPeriodLabel(row.reference.period),
-    previousStatus: titleCaseToken(row.previousStatus, row.previousStatus),
-    resultingStatus:
-      row.resultingStatus === null
-        ? "Unverified"
-        : titleCaseToken(row.resultingStatus, row.resultingStatus),
-  }))
-  return (
-    <GoogleAdsOutcomeTable
-      columns={COLUMNS}
-      exportFilename="removed-campaign-budgets.csv"
-      outcomes={OUTCOMES.map((token) => ({
-        kind: outcomeKind(token),
-        label: outcomeLabel(token),
-        count: result.counts[token],
-      }))}
-      rows={rows}
-      truncated={result.samplesTruncated}
-    />
-  )
-}
 
 function removalArgs(value: unknown): RemovalArgs | null {
   if (!isRecord(value) || !Array.isArray(value["budgets"]) || value["budgets"].length === 0) {

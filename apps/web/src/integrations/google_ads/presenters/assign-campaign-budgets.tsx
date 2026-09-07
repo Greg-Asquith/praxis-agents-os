@@ -1,62 +1,27 @@
 // apps/web/src/integrations/google_ads/presenters/assign-campaign-budgets.tsx
 
-import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
-import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
-import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import type { DataColumn } from "@/components/ui/data-table"
+import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 import {
-  GoogleAdsOutcomeTable,
-  type GoogleAdsOutcomeRow,
-} from "@/integrations/google_ads/components/outcome-table"
+  OUTCOMES,
+  renderAssignmentApprovalSummary,
+  renderAssignmentOutcomeTable,
+  type AssignmentArgs,
+  type AssignmentResult,
+  type AssignmentResultRow,
+  type AssignmentRoute,
+} from "@/integrations/google_ads/components/assign-campaign-budgets"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
-import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
-import {
-  budgetPeriodLabel,
-  parseCampaignBudgetReference,
-  type CampaignBudgetReference,
-} from "@/integrations/google_ads/lib/campaign-budgets"
-import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
-
+import { parseCampaignBudgetReference } from "@/integrations/google_ads/lib/campaign-budgets"
 import {
   parseCampaignReference,
   type CampaignReference,
 } from "@/integrations/google_ads/lib/campaigns"
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import {
+  createGoogleAdsWritePresenter,
+  defineGoogleAdsWriteVariant,
+} from "@/integrations/google_ads/presenters/write-presenter"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
-
-const OUTCOMES = ["assigned", "already_set", "failed", "unverified"] as const
-type AssignmentOutcome = (typeof OUTCOMES)[number]
-
-type AssignmentArgs = {
-  campaigns: CampaignReference[]
-  destination: CampaignBudgetReference
-  routes: AssignmentRoute[]
-}
-
-type AssignmentRoute = {
-  campaign: CampaignReference
-  destinationBudget: CampaignBudgetReference
-  previousBudget: CampaignBudgetReference
-}
-
-type AssignmentResultRow = {
-  campaign: CampaignReference
-  errorCode: string | null
-  message: string | null
-  outcome: AssignmentOutcome
-  previousBudget: CampaignBudgetReference
-  requestedBudget: CampaignBudgetReference
-}
-
-type AssignmentResult = {
-  counts: Record<AssignmentOutcome, number>
-  destination: CampaignBudgetReference
-  rows: AssignmentResultRow[]
-  samplesTruncated: boolean
-}
 
 const COLUMNS: DataColumn[] = [
   { key: "campaign", kind: "text", label: "Campaign" },
@@ -65,20 +30,20 @@ const COLUMNS: DataColumn[] = [
   { key: "requestedBudget", kind: "text", label: "After" },
 ]
 
+const copy = googleAdsWriteCopy({ verb: "Assign", object: "campaign budgets", effect: "assigned" })
+
 export const googleAdsAssignCampaignBudgetsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-assign-campaign-budgets",
   variants: {
     google_ads_assign_campaign_budgets: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Assign",
-        label: "Assign Google Ads Campaign Budgets",
+        ...copy.approval,
         parseArgs: assignmentArgs,
         prompt: "Review every campaign route before replacing its live campaign budget.",
         renderSummary: (value, fallback) =>
           renderAssignmentApprovalSummary(assignmentArgs(value) ?? fallback),
-        title: "Assign Campaign Budgets",
       },
-      deniedDescription: "This campaign budget assignment was declined. Nothing was changed.",
       details: (args) =>
         args
           ? [
@@ -86,100 +51,17 @@ export const googleAdsAssignCampaignBudgetsPresenter = createGoogleAdsWritePrese
               { label: "Campaigns", value: String(args.campaigns.length) },
             ]
           : [],
-      emptyLabel: "No Google Ads accounts assigned campaign budgets.",
-      failedDescription: "The assignment did not finish. No campaign budget route was confirmed.",
-      heading: "Assign Campaign Budgets",
-      malformedDescription:
-        "The system couldn't verify this account's campaign budget assignment outcomes. Check Google Ads before taking further action.",
       parseResult: assignmentResult,
-      progressLabel: "Assigning Google Ads campaign budgets…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
           description={description}
           targets={args?.campaigns.map((campaign) => campaign.label) ?? []}
         />
       ),
-      renderOutcome: renderAssignmentOutcomeTable,
-      resultAriaLabel: "Google Ads campaign budget assignment results",
-      resultFailure:
-        "The system couldn't verify the campaign budget assignments. Check Google Ads before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads campaign budget assignment",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads applied these campaign budget assignments. Check Google Ads before retrying.",
-      waitingLabel: "Waiting for campaign budget assignment approval…",
+      renderOutcome: (result) => renderAssignmentOutcomeTable(result, COLUMNS),
     }),
   },
 })
-
-function renderAssignmentApprovalSummary(args: AssignmentArgs) {
-  return (
-    <GoogleAdsApprovalSection
-      ariaLabel="Proposed campaign budget routes"
-      title={`Destination budget: ${args.destination.label}`}
-      countLine={approvalCountLine(args.routes.length, "campaign")}
-    >
-      {args.routes.map((route) => (
-        <GoogleAdsEntityCard
-          key={route.campaign.campaignId}
-          title={route.campaign.label}
-          trailing={
-            <GoogleAdsBeforeAfter
-              ariaLabel={`Budget for ${route.campaign.label}`}
-              current={route.previousBudget.label}
-              proposed={route.destinationBudget.label}
-            />
-          }
-        />
-      ))}
-      <p className="text-muted-foreground text-xs">
-        {budgetPeriodLabel(args.destination.period)} ·{" "}
-        {args.destination.referenceCount === null
-          ? "Unavailable"
-          : approvalCountLine(args.destination.referenceCount, "campaign")}{" "}
-        use this budget before the change
-      </p>
-    </GoogleAdsApprovalSection>
-  )
-}
-
-function renderAssignmentOutcomeTable(result: AssignmentResult) {
-  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
-    campaign: row.campaign.label,
-    campaignId: row.campaign.campaignId,
-    details: row.message ?? "",
-    errorCode: row.errorCode,
-    outcome: row.outcome,
-    previousBudget: row.previousBudget.label,
-    requestedBudget: row.requestedBudget.label,
-  }))
-  return (
-    <div className="grid gap-3">
-      <section className="border-border bg-muted/35 rounded-lg border px-3 py-2.5">
-        <p className="text-muted-foreground text-xs">Destination budget</p>
-        <div className="mt-0.5 flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-          <p className="truncate text-sm font-medium">{result.destination.label}</p>
-          <p className="text-muted-foreground text-xs">
-            {budgetPeriodLabel(result.destination.period)} ·{" "}
-            {result.destination.referenceCount === null
-              ? "Unavailable"
-              : approvalCountLine(result.destination.referenceCount, "campaign")}
-          </p>
-        </div>
-      </section>
-      <GoogleAdsOutcomeTable
-        columns={COLUMNS}
-        exportFilename="campaign-budget-assignments.csv"
-        outcomes={OUTCOMES.map((token) => ({
-          kind: outcomeKind(token),
-          label: outcomeLabel(token),
-          count: result.counts[token],
-        }))}
-        rows={rows}
-        truncated={result.samplesTruncated}
-      />
-    </div>
-  )
-}
 
 function assignmentArgs(value: unknown): AssignmentArgs | null {
   if (

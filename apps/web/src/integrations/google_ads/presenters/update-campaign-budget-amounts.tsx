@@ -1,62 +1,28 @@
 // apps/web/src/integrations/google_ads/presenters/update-campaign-budget-amounts.tsx
 
-import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
-import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
-import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 
-import type { DataColumn, DataRow } from "@/components/ui/data-table"
-import {
-  GoogleAdsOutcomeTable,
-  type GoogleAdsOutcomeRow,
-} from "@/integrations/google_ads/components/outcome-table"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
-import { outcomeKind, outcomeLabel, outcomeDetails } from "@/integrations/google_ads/lib/outcomes"
 import {
-  budgetPeriodLabel,
-  formatCampaignBudgetAmount,
-  formatDailyEstimate,
+  type BudgetAmountOutcome,
+  type BudgetAmountResult,
+  type BudgetAmountUpdate,
+  OUTCOMES,
+  renderUpdateBudgetApprovalSummary,
+  renderUpdateBudgetOutcome,
+  type UpdateBudgetArgs,
+  type UpdateBudgetResult,
+} from "@/integrations/google_ads/components/update-campaign-budget-amounts"
+import {
   campaignBudgetIdentity,
   parseCampaignBudgetReference,
-  type CampaignBudgetWithCurrency,
 } from "@/integrations/google_ads/lib/campaign-budgets"
+import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-
-import { formatCurrencyAmount, formatPercentageChange } from "@/lib/format"
 import { isNullableString, isRecord, parsePositiveDecimal } from "@/lib/guards"
-
-const OUTCOMES = ["updated", "already_set", "failed", "unverified"] as const
-type BudgetAmountOutcome = (typeof OUTCOMES)[number]
-
-type BudgetAmountUpdate = {
-  amount: string
-  budget: CampaignBudgetWithCurrency
-}
-
-type UpdateBudgetArgs = {
-  updates: BudgetAmountUpdate[]
-}
-
-type BudgetAmountResult = {
-  campaignLabelCount: number
-  campaignLabelsTruncated: boolean
-  errorCode: string | null
-  message: string | null
-  outcome: BudgetAmountOutcome
-  previousAmount: string
-  reference: CampaignBudgetWithCurrency
-  requestedAmount: string
-}
-
-type UpdateBudgetResult = {
-  campaignLabelsTruncated: boolean
-  counts: Record<BudgetAmountOutcome, number>
-  rows: BudgetAmountResult[]
-  samplesTruncated: boolean
-}
 
 const COLUMNS: DataColumn[] = [
   { key: "budget", kind: "text", label: "Budget" },
@@ -67,156 +33,36 @@ const COLUMNS: DataColumn[] = [
   { key: "linkedCampaigns", kind: "text", label: "Linked Campaigns" },
 ]
 
+const copy = googleAdsWriteCopy({
+  verb: "Update",
+  object: "campaign budget amounts",
+  effect: "updated",
+})
+
 export const googleAdsUpdateCampaignBudgetAmountsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-update-campaign-budget-amounts",
   variants: {
     google_ads_update_campaign_budget_amounts: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Update",
-        label: "Update Google Ads Campaign Budget Amounts",
+        ...copy.approval,
         parseArgs: updateBudgetArgs,
         prompt: "Review each selected budget amount before changing live spend limits.",
         renderSummary: (value, fallback) =>
           renderUpdateBudgetApprovalSummary(updateBudgetArgs(value) ?? fallback),
-        title: "Update Campaign Budget Amounts",
       },
-      deniedDescription: "This campaign budget update was declined. Nothing was changed.",
       details: (args) => (args ? [{ label: "Budgets", value: String(args.updates.length) }] : []),
-      emptyLabel: "No Google Ads accounts updated campaign budget amounts.",
-      failedDescription: "The update did not finish. No campaign budget change was confirmed.",
-      heading: "Update Campaign Budget Amounts",
-      malformedDescription:
-        "The system couldn't verify this account's campaign budget amount outcomes. Check Google Ads before taking further action.",
       parseResult: updateBudgetResult,
-      progressLabel: "Updating Google Ads campaign budget amounts…",
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
           description={description}
           targets={args?.updates.map((update) => update.budget.label) ?? []}
         />
       ),
-      renderOutcome: renderUpdateBudgetOutcome,
-      resultAriaLabel: "Google Ads campaign budget amount results",
-      resultFailure:
-        "The system couldn't verify the campaign budget amount changes. Check Google Ads before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads campaign budget amount update",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads applied these campaign budget amount changes. Check Google Ads before retrying.",
-      waitingLabel: "Waiting for campaign budget approval…",
+      renderOutcome: (result) => renderUpdateBudgetOutcome(result, COLUMNS),
     }),
   },
 })
-
-function renderUpdateBudgetApprovalSummary(args: UpdateBudgetArgs) {
-  return (
-    <GoogleAdsApprovalSection
-      ariaLabel="Proposed campaign budget amounts"
-      countLine={approvalCountLine(args.updates.length, "budget")}
-    >
-      {args.updates.map((update) => (
-        <GoogleAdsEntityCard
-          key={campaignBudgetIdentity(update.budget)}
-          title={update.budget.label}
-          meta={
-            <>
-              {budgetPeriodLabel(update.budget.period)} ·{" "}
-              {update.budget.referenceCount === null
-                ? "Unavailable"
-                : approvalCountLine(update.budget.referenceCount, "campaign")}
-            </>
-          }
-          trailing={
-            <GoogleAdsBeforeAfter
-              ariaLabel={`${formatCampaignBudgetAmount(update.budget)} before, ${formatCurrencyAmount(update.amount, update.budget.currencyCode)} after`}
-              current={formatCampaignBudgetAmount(update.budget)}
-              proposed={formatCurrencyAmount(update.amount, update.budget.currencyCode)}
-            />
-          }
-        />
-      ))}
-    </GoogleAdsApprovalSection>
-  )
-}
-
-function renderUpdateBudgetOutcome(result: UpdateBudgetResult) {
-  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
-    budget: row.reference.label,
-    change: formatPercentageChange(Number(row.previousAmount), Number(row.requestedAmount)),
-    details: outcomeDetails(
-      row.message,
-      null,
-      row.reference.period === "DAILY"
-        ? formatDailyEstimate(row.requestedAmount, row.reference.currencyCode)
-        : null
-    ),
-    errorCode: row.errorCode,
-    linkedCampaigns: approvalCountLine(
-      row.reference.referenceCount ?? row.campaignLabelCount,
-      "campaign"
-    ),
-    outcome: row.outcome,
-    period: budgetPeriodLabel(row.reference.period),
-    previous: formatCurrencyAmount(row.previousAmount, row.reference.currencyCode),
-    previousRaw: row.previousAmount,
-    requested: formatCurrencyAmount(row.requestedAmount, row.reference.currencyCode),
-    requestedRaw: row.requestedAmount,
-  }))
-  return (
-    <div className="grid gap-2">
-      <GoogleAdsOutcomeTable
-        columns={COLUMNS}
-        exportFilename="campaign-budget-amounts.csv"
-        outcomes={OUTCOMES.map((token) => ({
-          kind: outcomeKind(token),
-          label: outcomeLabel(token),
-          count: result.counts[token],
-        }))}
-        renderCell={renderBudgetChangeCell}
-        rows={rows}
-        truncated={result.samplesTruncated}
-      />
-      {result.campaignLabelsTruncated ? (
-        <p className="text-muted-foreground text-xs">
-          Some linked campaign names are omitted from the retained result.
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-function renderBudgetChangeCell(column: DataColumn, row: DataRow) {
-  if (column.key !== "change") {
-    return null
-  }
-  const previous = Number(row["previousRaw"])
-  const requested = Number(row["requestedRaw"])
-  const change = typeof row["change"] === "string" ? row["change"] : "—"
-  if (!Number.isFinite(previous) || !Number.isFinite(requested) || previous <= 0) {
-    return <span>{change}</span>
-  }
-  const maximum = Math.max(previous, requested)
-  return (
-    <div aria-label={`${change} from the previous amount`} className="grid gap-1">
-      <div className="bg-muted h-1.5 overflow-hidden rounded-full">
-        <div
-          className="bg-muted-foreground/45 h-full rounded-full"
-          style={{ width: `${String(Math.max(3, (previous / maximum) * 100))}%` }}
-        />
-      </div>
-      <div className="bg-muted h-1.5 overflow-hidden rounded-full">
-        <div
-          className={
-            requested >= previous
-              ? "bg-success h-full rounded-full"
-              : "bg-warning h-full rounded-full"
-          }
-          style={{ width: `${String(Math.max(3, (requested / maximum) * 100))}%` }}
-        />
-      </div>
-      <span className="text-muted-foreground text-xs tabular-nums">{change}</span>
-    </div>
-  )
-}
 
 function updateBudgetArgs(value: unknown): UpdateBudgetArgs | null {
   if (!isRecord(value) || !Array.isArray(value["updates"]) || value["updates"].length === 0) {

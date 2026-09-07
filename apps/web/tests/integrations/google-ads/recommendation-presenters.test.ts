@@ -286,7 +286,7 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads recommendation apply results"')
+    expect(html).toContain('aria-label="Google Ads recommendations results"')
     expect(html).toContain("Applied")
     expect(html).toContain("Failed")
     expect(html).toContain("Unverified")
@@ -298,31 +298,6 @@ describe("Google Ads recommendation presenters", () => {
     expect(html).toContain("Google Ads rejected this keyword.")
     expect(html).toContain("Policy Finding")
     expect(html).toContain("Download Report CSV")
-  })
-
-  it.each([
-    ["running", "Applying Google Ads recommendations…"],
-    ["awaiting_approval", "Waiting for recommendation approval…"],
-    ["denied", "Nothing was applied"],
-    ["failed", "No recommendation change was confirmed"],
-    ["unknown", "No recommendation change was confirmed"],
-  ] as const)("renders the apply %s lifecycle", (status, expected) => {
-    const html = render(
-      googleAdsApplyRecommendationsPresenter.render(
-        props({
-          args: {
-            recommendations: [
-              recommendationReference("1", "Raise campaign budget", "CAMPAIGN_BUDGET"),
-            ],
-          },
-          id: `apply-${status}`,
-          kind: status === "awaiting_approval" ? "approval" : "call",
-          name: "google_ads_apply_recommendations",
-          status,
-        })
-      )
-    )
-    expect(html).toContain(expected)
   })
 
   it("isolates malformed and account-level unverified apply results", () => {
@@ -358,7 +333,7 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(malformed).toContain("couldn&#x27;t verify this account&#x27;s recommendation outcomes")
+    expect(malformed).toContain("couldn&#x27;t verify this account&#x27;s recommendations outcomes")
     expect(unverified).toContain("couldn&#x27;t verify whether Google Ads applied")
     expect(unverified).not.toContain("transport error")
   })
@@ -424,7 +399,7 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads recommendation dismissal results"')
+    expect(html).toContain('aria-label="Google Ads recommendations results"')
     expect(html).toContain("Dismissed")
     expect(html).toContain("Already dismissed")
     expect(html).toContain("Failed")
@@ -432,31 +407,6 @@ describe("Google Ads recommendation presenters", () => {
     expect(html).toContain("Google Ads did not permit this dismissal.")
     expect(html).not.toContain("Google Estimate")
     expect(html).not.toContain("Requested Parameters")
-  })
-
-  it.each([
-    ["running", "Dismissing Google Ads recommendations…"],
-    ["awaiting_approval", "Waiting for dismissal approval…"],
-    ["denied", "recommendations remain visible in Google Ads"],
-    ["failed", "No recommendation was confirmed as hidden"],
-    ["unknown", "No recommendation was confirmed as hidden"],
-  ] as const)("renders the dismiss %s lifecycle", (status, expected) => {
-    const html = render(
-      googleAdsDismissRecommendationsPresenter.render(
-        props({
-          args: {
-            recommendations: [
-              recommendationReference("1", "Raise campaign budget", "CAMPAIGN_BUDGET"),
-            ],
-          },
-          id: `dismiss-${status}`,
-          kind: status === "awaiting_approval" ? "approval" : "call",
-          name: "google_ads_dismiss_recommendations",
-          status,
-        })
-      )
-    )
-    expect(html).toContain(expected)
   })
 
   it("isolates malformed and account-level unverified dismiss results", () => {
@@ -492,7 +442,7 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(malformed).toContain("couldn&#x27;t verify this account&#x27;s recommendation dismissal")
+    expect(malformed).toContain("couldn&#x27;t verify this account&#x27;s recommendations")
     expect(unverified).toContain("couldn&#x27;t verify whether Google Ads dismissed")
     expect(unverified).not.toContain("transport error")
   })

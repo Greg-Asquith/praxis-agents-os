@@ -2,11 +2,11 @@
 
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
+import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
 import { countByKind } from "@/integrations/google_ads/lib/outcomes"
 import {
@@ -15,13 +15,19 @@ import {
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { isRecord } from "@/lib/guards"
 
+const copy = googleAdsWriteCopy({
+  verb: "Create",
+  object: "negative keyword lists",
+  effect: "created",
+})
+
 export const googleAdsNegativeKeywordListsPresenter = createGoogleAdsWritePresenter({
   key: "google-ads-create-negative-keyword-list",
   variants: {
     google_ads_create_negative_keyword_list: defineGoogleAdsWriteVariant({
+      ...copy,
       approval: {
-        approveLabel: "Approve & Create",
-        label: "Create Google Ads Negative Keyword Lists",
+        ...copy.approval,
         parseArgs: negativeKeywordListArgs,
         renderSummary: (value, fallback) => {
           const args = negativeKeywordListArgs(value) ?? fallback
@@ -37,17 +43,8 @@ export const googleAdsNegativeKeywordListsPresenter = createGoogleAdsWritePresen
           )
         },
         prompt: "Review the list names before creating them in the selected accounts.",
-        title: "Create Negative Keyword Lists",
       },
-      deniedDescription: "This negative keyword list creation was declined. Nothing was created.",
-      emptyLabel: "No Google Ads accounts created a negative keyword list.",
-      failedDescription:
-        "The update did not finish. No negative keyword list creation was confirmed.",
-      heading: "Create Negative Keyword Lists",
-      malformedDescription:
-        "The system couldn't verify this account's negative keyword list outcomes. Check the Google Ads platform before taking further action.",
       parseResult: negativeKeywordListResult,
-      progressLabel: "Creating Google Ads negative keyword lists…",
       renderOutcome: (rows) => (
         <GoogleAdsOutcomeTable
           columns={[{ key: "name", kind: "text", label: "Name" }]}
@@ -56,13 +53,6 @@ export const googleAdsNegativeKeywordListsPresenter = createGoogleAdsWritePresen
           exportFilename="google-ads-negative-keyword-lists.csv"
         />
       ),
-      resultAriaLabel: "Google Ads negative keyword list results",
-      resultFailure:
-        "The system couldn't verify the negative keyword list changes. Check the Google Ads platform before taking further action.",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads negative keyword list update",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads created these negative keyword lists. Check the Google Ads platform before taking further action.",
-      waitingLabel: "Waiting for negative keyword list approval…",
     }),
   },
 })

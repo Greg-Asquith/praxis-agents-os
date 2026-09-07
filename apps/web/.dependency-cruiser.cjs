@@ -2,6 +2,23 @@
 module.exports = {
   forbidden: [
     {
+      name: "google-ads-presenters-compose-components",
+      severity: "error",
+      comment: "Google Ads presenters compose shared approval and outcome components.",
+      from: { path: "^src/integrations/google_ads/presenters/" },
+      to: { path: "^src/components/ui/(stat|badge)(/|\\.)" },
+    },
+    {
+      name: "google-ads-write-presenters-use-outcome-table",
+      severity: "error",
+      comment: "Only read report presenters use the generic table directly.",
+      from: {
+        path: "^src/integrations/google_ads/presenters/",
+        pathNot: "^src/integrations/google_ads/presenters/report(-fields)?\\.tsx$",
+      },
+      to: { path: "^src/components/ui/data-table(/|\\.)" },
+    },
+    {
       name: "no-circular",
       severity: "error",
       comment: "Circular dependencies make app behavior harder to reason about.",

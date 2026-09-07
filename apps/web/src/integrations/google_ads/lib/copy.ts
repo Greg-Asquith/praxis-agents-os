@@ -26,6 +26,8 @@ export function approvalCountLine(count: number, noun: string): string {
   return `${String(count)} ${noun}${count === 1 ? "" : "s"}`
 }
 
+export const GOOGLE_ADS_VERIFICATION = "Check Google Ads before taking further action."
+
 export function googleAdsWriteCopy(spec: WriteCopySpec) {
   const { verb, object, effect } = spec
   const plural = spec.objectPlural ?? object
@@ -33,7 +35,6 @@ export function googleAdsWriteCopy(spec: WriteCopySpec) {
     .split(" ")
     .map((word) => googleAdsTokenLabel(word))
     .join(" ")
-  const verification = "Check Google Ads before taking further action."
   return {
     heading: `${verb} ${title}`,
     approval: {
@@ -46,9 +47,9 @@ export function googleAdsWriteCopy(spec: WriteCopySpec) {
     deniedDescription: `This ${object} change was declined. Nothing was ${effect}.`,
     failedDescription: `The ${verb.toLowerCase()} did not finish. No ${object} change was confirmed.`,
     emptyLabel: `No Google Ads accounts ${effect} ${plural}.`,
-    malformedDescription: `The system couldn't verify this account's ${object} outcomes. ${verification}`,
-    resultFailure: `The system couldn't verify the ${object} changes. ${verification}`,
-    unverifiedDescription: `The system couldn't verify whether Google Ads ${effect} ${plural}. ${verification}`,
+    malformedDescription: `The system couldn't verify this account's ${object} outcomes. ${GOOGLE_ADS_VERIFICATION}`,
+    resultFailure: `The system couldn't verify the ${object} changes. ${GOOGLE_ADS_VERIFICATION}`,
+    unverifiedDescription: `The system couldn't verify whether Google Ads ${effect} ${plural}. ${GOOGLE_ADS_VERIFICATION}`,
     resultAriaLabel: `Google Ads ${object} results`,
     unconfirmedAriaLabel: `Unconfirmed Google Ads ${object} change`,
   }
