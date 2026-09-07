@@ -398,6 +398,25 @@ describe("Google Ads tool presenters", () => {
     }
   )
 
+  it("humanizes device tokens in retained result details", () => {
+    const html = render(
+      googleAdsDeviceBidModifiersPresenter.render(
+        props({
+          id: "device-details",
+          kind: "approval",
+          name: "google_ads_update_device_bid_modifiers",
+          status: "denied",
+          args: {
+            campaign_ids: [campaignReference("10", "Search")],
+            adjustments: [{ device: "DESKTOP", bid_modifier: 1.2 }],
+          },
+        })
+      )
+    )
+    expect(html).toContain("Desktop: Raise by 20% (1.2×)")
+    expect(html).not.toContain("DESKTOP")
+  })
+
   it("reviews edited device multipliers with plain-language effects", () => {
     const controls = approvalControls()
     controls.decision.edits = {

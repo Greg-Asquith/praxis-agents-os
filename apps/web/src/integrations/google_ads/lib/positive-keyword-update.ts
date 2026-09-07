@@ -1,6 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/positive-keyword-update.ts
 
 import {
+  CURRENCY_CODE_PATTERN,
   GOOGLE_ADS_ID_PATTERN,
   parseGoogleAdsCustomParameters,
   parseGoogleAdsMoney,
@@ -144,8 +145,6 @@ export const OUTCOMES = ["updated", "already_set", "failed", "unverified"] as co
 
 const PATCH_FIELDS = POSITIVE_KEYWORD_PATCH_FIELDS.map((field) => field.key)
 
-const CURRENCY_PATTERN = /^[A-Z]{3}$/
-
 type KeywordOutcome = (typeof OUTCOMES)[number]
 
 type UpdateKeywordRow = {
@@ -226,7 +225,7 @@ function parseAccounts(value: unknown): Map<string, { currencyCode: string; labe
       typeof customerId === "string" &&
       GOOGLE_ADS_ID_PATTERN.test(customerId) &&
       typeof currencyCode === "string" &&
-      CURRENCY_PATTERN.test(currencyCode) &&
+      CURRENCY_CODE_PATTERN.test(currencyCode) &&
       typeof label === "string" &&
       label.trim()
     ) {

@@ -50,7 +50,8 @@ export function renderRemovalApprovalSummary(args: RemovalArgs) {
           title={keyword.label}
           meta={
             <>
-              {keyword.scopeLabel} · Account {keyword.customerId} · {keyword.matchType}
+              {keyword.scopeLabel} · Account {keyword.customerId} ·{" "}
+              {googleAdsTokenLabel(keyword.matchType)}
             </>
           }
           trailing={googleAdsTokenLabel(keyword.status, keyword.status)}

@@ -106,7 +106,7 @@ describe("Google Ads campaign budget presenters", () => {
                   amount_micros: 12_500_000,
                   currency_code: "EUR",
                   delivery_method: "STANDARD",
-                  error_code: "BUDGET_NAME_DUPLICATE",
+                  error_code: "TARGET_CPA_ERROR",
                   explicitly_shared: true,
                   message: "A budget with this name already exists.",
                   name: "Autumn launch",
@@ -126,6 +126,8 @@ describe("Google Ads campaign budget presenters", () => {
     expect(html).toContain("Created")
     expect(html).toContain("Failed")
     expect(html).toContain("Budget ID 55")
+    expect(html).toContain("Target CPA Error")
+    expect(html).not.toContain("TARGET_CPA_ERROR")
     expect(html).toContain("A budget with this name already exists.")
     expect(html).toContain("estimated per month")
   })
@@ -358,7 +360,9 @@ describe("Google Ads campaign budget presenters", () => {
     )
 
     expect(html).toContain("Before")
+    expect(html).toContain("Requested")
     expect(html).toContain("After")
+    expect(html).toContain("Unconfirmed")
     expect(html).toContain("+50% from the previous amount")
     expect(html).toContain("Already set")
     expect(html).toContain("Unverified")
@@ -443,6 +447,7 @@ describe("Google Ads campaign budget presenters", () => {
     expect(resultHtml).toContain("Brand budget")
     expect(resultHtml).toContain("Shared growth budget")
     expect(resultHtml).toContain(">Before<")
+    expect(resultHtml).toContain(">Requested<")
     expect(resultHtml).toContain(">After<")
     expect(resultHtml).not.toContain("→")
     expect(resultHtml).toContain("Already set")

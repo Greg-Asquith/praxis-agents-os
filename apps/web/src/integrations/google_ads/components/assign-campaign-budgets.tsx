@@ -88,6 +88,10 @@ export function renderAssignmentOutcomeTable(result: AssignmentResult, columns: 
     outcome: row.outcome,
     previousBudget: row.previousBudget.label,
     requestedBudget: row.requestedBudget.label,
+    afterBudget:
+      row.outcome === "assigned" || row.outcome === "already_set"
+        ? row.requestedBudget.label
+        : "Unconfirmed",
   }))
   return (
     <div className="grid gap-3">

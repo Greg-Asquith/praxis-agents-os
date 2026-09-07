@@ -20,7 +20,8 @@ import {
   type AdGroupReference,
 } from "@/integrations/google_ads/lib/ad-groups"
 import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
-import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
+import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
+import { CURRENCY_CODE_PATTERN, googleAdsId } from "@/integrations/google_ads/lib/field-values"
 import {
   parsePositiveKeywordInput,
   positiveKeywordInputValidationError,
@@ -31,10 +32,9 @@ import {
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 import { formatCurrencyAmount } from "@/lib/format"
-import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
+import { isNullableString, isRecord } from "@/lib/guards"
 
 const OUTCOMES = ["added", "skipped_existing", "failed", "unverified"] as const
-const CURRENCY_PATTERN = /^[A-Z]{3}$/
 
 type KeywordOutcome = (typeof OUTCOMES)[number]
 
@@ -263,43 +263,20 @@ function createKeywordArgsValidationError(value: unknown): string | null {
 }
 
 function createKeywordResult(value: unknown): CreateKeywordResult | null {
-  if (!isResultEnvelope(value)) return null
-  const counts = {} as Record<KeywordOutcome, number>
-  const rows: CreateKeywordResultRow[] = []
-  for (const outcome of OUTCOMES) {
-    const count = value.counts[outcome]
-    const samples = value.samples[outcome]
-    if (!isNonNegativeInteger(count) || !Array.isArray(samples)) return null
-    counts[outcome] = count
-    for (const sample of samples) {
-      const row = parseResultRow(sample, outcome)
-      if (!row) return null
-      rows.push(row)
-    }
-  }
   if (
-    !value.samples_truncated &&
-    rows.length !== OUTCOMES.reduce((total, outcome) => total + counts[outcome], 0)
+    !isRecord(value) ||
+    typeof value["currency_code"] !== "string" ||
+    !CURRENCY_CODE_PATTERN.test(value["currency_code"])
   )
     return null
+  const envelope = parseOutcomeEnvelope(value, OUTCOMES, parseResultRow)
+  if (!envelope) return null
   return {
-    counts,
-    currencyCode: value.currency_code,
-    rows,
-    samplesTruncated: value.samples_truncated,
+    counts: envelope.counts,
+    currencyCode: value["currency_code"],
+    rows: envelope.rows,
+    samplesTruncated: envelope.truncated,
   }
-}
-
-function isResultEnvelope(value: unknown): value is Record<string, unknown> & {
-  currency_code: string
-  counts: Record<string, unknown>
-  samples: Record<string, unknown>
-  samples_truncated: boolean
-} {
-  if (!isRecord(value) || !isRecord(value["counts"]) || !isRecord(value["samples"])) return false
-  if (typeof value["currency_code"] !== "string") return false
-  if (!CURRENCY_PATTERN.test(value["currency_code"])) return false
-  return typeof value["samples_truncated"] === "boolean"
 }
 
 function parseResultRow(value: unknown, outcome: KeywordOutcome): CreateKeywordResultRow | null {

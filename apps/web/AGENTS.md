@@ -47,7 +47,12 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   outcome labels, stat order and tones, conditional detail and error columns,
   and sample notices. Tool columns and result validation stay with each tool. Legacy negative-keyword aggregates
   retain counts without reconstructing keyword identities. Keyword update results
-  separate Before, Requested, and verified After values. Campaign status and
+  separate Before, Requested, and verified After values. Budget assignment and
+  amount results use the same distinction, with Unconfirmed after values for failed
+  or unverified outcomes. Budget amount deltas and monthly estimates describe
+  requested values. Budget and keyword-creation sample envelopes and list negative
+  keyword results use shared per-outcome count validation, including truncated
+  sample upper bounds. List errors retain account-level failure semantics. Campaign status and
   negative keyword list creation also use the shared outcome table, with Campaign
   and Name as their leading columns. Campaign failures use shared label chips.
   Budget creation retains its single card and uses the shared outcome label.

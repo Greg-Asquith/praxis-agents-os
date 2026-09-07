@@ -16,18 +16,20 @@ import {
   parseCampaignReference,
   type CampaignReference,
 } from "@/integrations/google_ads/lib/campaigns"
+import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
+import { isNullableString, isRecord } from "@/lib/guards"
 
 const COLUMNS: DataColumn[] = [
   { key: "campaign", kind: "text", label: "Campaign" },
   { key: "campaignId", kind: "id", label: "Campaign ID" },
   { key: "previousBudget", kind: "text", label: "Before" },
-  { key: "requestedBudget", kind: "text", label: "After" },
+  { key: "requestedBudget", kind: "text", label: "Requested" },
+  { key: "afterBudget", kind: "text", label: "After" },
 ]
 
 const copy = googleAdsWriteCopy({ verb: "Assign", object: "campaign budgets", effect: "assigned" })
@@ -114,72 +116,44 @@ function assignmentArgs(value: unknown): AssignmentArgs | null {
 }
 
 function assignmentResult(value: unknown): AssignmentResult | null {
-  if (
-    !isRecord(value) ||
-    !isRecord(value["counts"]) ||
-    !isRecord(value["samples"]) ||
-    typeof value["samples_truncated"] !== "boolean"
-  ) {
-    return null
-  }
+  if (!isRecord(value)) return null
   const destination = parseCampaignBudgetReference(value["destination_budget"])
-  const counts = value["counts"]
+  if (!destination) return null
+  const envelope = parseOutcomeEnvelope(value, OUTCOMES, parseResultRow)
+  if (!envelope) return null
+  return {
+    counts: envelope.counts,
+    rows: envelope.rows,
+    samplesTruncated: envelope.truncated,
+    destination,
+  }
+}
+
+function parseResultRow(
+  sample: unknown,
+  outcome: (typeof OUTCOMES)[number]
+): AssignmentResultRow | null {
+  if (!isRecord(sample) || sample["outcome"] !== outcome) {
+    return null
+  }
+  const campaign = parseCampaignReference(sample["campaign"])
+  const previousBudget = parseCampaignBudgetReference(sample["previous_budget"])
+  const requestedBudget = parseCampaignBudgetReference(sample["requested_budget"])
   if (
-    !destination ||
-    !isNonNegativeInteger(counts["assigned"]) ||
-    !isNonNegativeInteger(counts["already_set"]) ||
-    !isNonNegativeInteger(counts["failed"]) ||
-    !isNonNegativeInteger(counts["unverified"])
+    !campaign ||
+    !previousBudget ||
+    !requestedBudget ||
+    !isNullableString(sample["error_code"] ?? null) ||
+    !isNullableString(sample["message"] ?? null)
   ) {
     return null
   }
-  const rows: AssignmentResultRow[] = []
-  for (const outcome of OUTCOMES) {
-    const samples = value["samples"][outcome]
-    if (!Array.isArray(samples)) {
-      return null
-    }
-    for (const sample of samples) {
-      if (!isRecord(sample) || sample["outcome"] !== outcome) {
-        return null
-      }
-      const campaign = parseCampaignReference(sample["campaign"])
-      const previousBudget = parseCampaignBudgetReference(sample["previous_budget"])
-      const requestedBudget = parseCampaignBudgetReference(sample["requested_budget"])
-      if (
-        !campaign ||
-        !previousBudget ||
-        !requestedBudget ||
-        !isNullableString(sample["error_code"] ?? null) ||
-        !isNullableString(sample["message"] ?? null)
-      ) {
-        return null
-      }
-      rows.push({
-        campaign,
-        errorCode: typeof sample["error_code"] === "string" ? sample["error_code"] : null,
-        message: typeof sample["message"] === "string" ? sample["message"] : null,
-        outcome,
-        previousBudget,
-        requestedBudget,
-      })
-    }
+  return {
+    campaign,
+    errorCode: typeof sample["error_code"] === "string" ? sample["error_code"] : null,
+    message: typeof sample["message"] === "string" ? sample["message"] : null,
+    outcome,
+    previousBudget,
+    requestedBudget,
   }
-  const parsedCounts = {
-    already_set: counts["already_set"],
-    assigned: counts["assigned"],
-    failed: counts["failed"],
-    unverified: counts["unverified"],
-  }
-  if (
-    !value["samples_truncated"] &&
-    rows.length !==
-      parsedCounts.assigned +
-        parsedCounts.already_set +
-        parsedCounts.failed +
-        parsedCounts.unverified
-  ) {
-    return null
-  }
-  return { counts: parsedCounts, destination, rows, samplesTruncated: value["samples_truncated"] }
 }

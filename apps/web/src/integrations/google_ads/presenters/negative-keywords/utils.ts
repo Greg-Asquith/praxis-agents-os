@@ -9,6 +9,7 @@ import type {
   NegativeKeywordResult,
   TargetNegativeKeywordOutcome,
 } from "@/integrations/google_ads/components/negative-keyword-outcome"
+import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import { parseKeywordRow } from "@/integrations/google_ads/lib/negative-keywords"
 import { isRecord } from "@/lib/guards"
 
@@ -332,124 +333,84 @@ export function adGroupNegativeKeywordResult(
 }
 
 function addResult(value: unknown): NegativeKeywordResult | null {
-  if (!isResultEnvelope(value, "added", "skipped_existing")) {
-    return null
-  }
-  const addedKeywords: NegativeKeyword[] = []
-  for (const item of value.samples.added) {
-    const keyword = parseKeywordRow(item)
-    if (!keyword || !isRecord(item) || typeof item["resource_name"] !== "string") {
-      return null
-    }
-    addedKeywords.push(keyword)
-  }
-  const skippedExisting = parseKeywords(value.samples.skipped_existing)
-  const errors = parseErrors(value.samples.failed)
-  if (!skippedExisting || !errors) {
-    return null
-  }
+  const result = parseListResult(value, "added", "skipped_existing")
+  if (!result) return null
   return {
-    addedCount: value.counts.added,
-    addedKeywords,
-    errors,
-    failedCount: value.counts.failed,
-    samplesTruncated: value.samples_truncated,
-    skippedCount: value.counts.skipped_existing,
-    skippedExisting,
+    addedCount: result.counts.added,
+    addedKeywords: result.applied,
+    errors: result.errors,
+    failedCount: result.counts.failed,
+    samplesTruncated: result.truncated,
+    skippedCount: result.counts.skipped_existing,
+    skippedExisting: result.skipped,
   }
 }
 
 function removalResult(value: unknown): NegativeKeywordRemovalResult | null {
-  if (!isResultEnvelope(value, "removed", "not_found")) {
-    return null
-  }
-  const removedKeywords: NegativeKeyword[] = []
-  for (const item of value.samples.removed) {
-    const keyword = parseKeywordRow(item)
-    if (!keyword || !isRecord(item) || typeof item["resource_name"] !== "string") {
-      return null
-    }
-    removedKeywords.push(keyword)
-  }
-  const notFound = parseKeywords(value.samples.not_found, true)
-  const errors = parseErrors(value.samples.failed)
-  if (!notFound || !errors) {
-    return null
-  }
+  const result = parseListResult(value, "removed", "not_found")
+  if (!result) return null
   return {
-    errors,
-    failedCount: value.counts.failed,
-    notFound,
-    notFoundCount: value.counts.not_found,
-    removedCount: value.counts.removed,
-    removedKeywords,
-    samplesTruncated: value.samples_truncated,
+    errors: result.errors,
+    failedCount: result.counts.failed,
+    notFound: result.skipped,
+    notFoundCount: result.counts.not_found,
+    removedCount: result.counts.removed,
+    removedKeywords: result.applied,
+    samplesTruncated: result.truncated,
   }
 }
 
-function isResultEnvelope<
-  AppliedKey extends "added" | "removed",
-  SkippedKey extends "not_found" | "skipped_existing",
->(
-  value: unknown,
-  appliedKey: AppliedKey,
-  skippedKey: SkippedKey
-): value is {
-  counts: Record<AppliedKey | SkippedKey | "failed", number>
-  samples: Record<AppliedKey | SkippedKey | "failed", unknown[]>
-  samples_truncated: boolean
-} {
-  return (
-    isRecord(value) &&
-    isRecord(value["counts"]) &&
-    isRecord(value["samples"]) &&
-    isOutcomeCount(value["counts"][appliedKey]) &&
-    isOutcomeCount(value["counts"][skippedKey]) &&
-    isOutcomeCount(value["counts"]["failed"]) &&
-    Array.isArray(value["samples"][appliedKey]) &&
-    Array.isArray(value["samples"][skippedKey]) &&
-    Array.isArray(value["samples"]["failed"]) &&
-    typeof value["samples_truncated"] === "boolean"
+type ListSample =
+  | { kind: "applied" | "skipped"; keyword: NegativeKeyword }
+  | { kind: "failed"; error: NegativeKeywordError }
+
+function parseListResult<
+  Applied extends "added" | "removed",
+  Skipped extends "skipped_existing" | "not_found",
+>(value: unknown, appliedKey: Applied, skippedKey: Skipped) {
+  const envelope = parseOutcomeEnvelope(
+    value,
+    [appliedKey, skippedKey, "failed"] as const,
+    (item, outcome): ListSample | null => {
+      if (outcome === "failed") {
+        const error = parseListError(item)
+        return error ? { kind: "failed", error } : null
+      }
+      const keyword = parseKeywordRow(item, outcome === "not_found")
+      if (
+        !keyword ||
+        (outcome === appliedKey && (!isRecord(item) || typeof item["resource_name"] !== "string"))
+      )
+        return null
+      return { kind: outcome === appliedKey ? "applied" : "skipped", keyword }
+    }
   )
-}
-
-function parseKeywords(values: unknown[], allowAny = false): NegativeKeyword[] | null {
-  const keywords: NegativeKeyword[] = []
-  for (const value of values) {
-    const keyword = parseKeywordRow(value, allowAny)
-    if (!keyword) {
-      return null
-    }
-    keywords.push(keyword)
-  }
-  return keywords
-}
-
-function parseErrors(values: unknown[]): NegativeKeywordError[] | null {
+  if (!envelope) return null
+  const applied: NegativeKeyword[] = []
+  const skipped: NegativeKeyword[] = []
   const errors: NegativeKeywordError[] = []
-  for (const item of values) {
-    if (
-      !isRecord(item) ||
-      typeof item["message"] !== "string" ||
-      (item["scope"] !== "keyword" && item["scope"] !== "account")
-    ) {
-      return null
-    }
-    const details = {
-      errorCode: typeof item["error_code"] === "string" ? item["error_code"] : "unknown",
-      message: item["message"],
-    }
-    if (item["scope"] === "account") {
-      errors.push({ ...details, scope: "account" })
-      continue
-    }
-    const keyword = parseKeywordRow(item)
-    if (!keyword) {
-      return null
-    }
-    errors.push({ ...details, ...keyword, scope: "keyword" })
+  for (const row of envelope.rows) {
+    if (row.kind === "failed") errors.push(row.error)
+    else if (row.kind === "applied") applied.push(row.keyword)
+    else skipped.push(row.keyword)
   }
-  return errors
+  return { counts: envelope.counts, truncated: envelope.truncated, applied, skipped, errors }
+}
+
+function parseListError(item: unknown): NegativeKeywordError | null {
+  if (
+    !isRecord(item) ||
+    typeof item["message"] !== "string" ||
+    (item["scope"] !== "keyword" && item["scope"] !== "account")
+  )
+    return null
+  const details = {
+    errorCode: typeof item["error_code"] === "string" ? item["error_code"] : "unknown",
+    message: item["message"],
+  }
+  if (item["scope"] === "account") return { ...details, scope: "account" }
+  const keyword = parseKeywordRow(item)
+  return keyword ? { ...details, ...keyword, scope: "keyword" } : null
 }
 
 function isOutcomeCount(value: unknown): value is number {

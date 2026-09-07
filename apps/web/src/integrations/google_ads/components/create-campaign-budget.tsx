@@ -107,7 +107,7 @@ export function renderCreateBudgetOutcome(result: CreateBudgetResult) {
             (result.outcome === "failed"
               ? "Google Ads did not create this campaign budget."
               : GOOGLE_ADS_VERIFICATION)}
-          {result.errorCode ? ` · ${result.errorCode}` : ""}
+          {result.errorCode ? ` · ${googleAdsTokenLabel(result.errorCode)}` : ""}
         </p>
       )}
     </section>

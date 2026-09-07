@@ -17,6 +17,7 @@ import {
   campaignBudgetIdentity,
   parseCampaignBudgetReference,
 } from "@/integrations/google_ads/lib/campaign-budgets"
+import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   createGoogleAdsWritePresenter,
@@ -27,8 +28,9 @@ import { isNullableString, isRecord, parsePositiveDecimal } from "@/lib/guards"
 const COLUMNS: DataColumn[] = [
   { key: "budget", kind: "text", label: "Budget" },
   { key: "previous", kind: "text", label: "Before", align: "right" },
-  { key: "requested", kind: "text", label: "After", align: "right" },
-  { key: "change", kind: "text", label: "Change", width: 180 },
+  { key: "requested", kind: "text", label: "Requested", align: "right" },
+  { key: "after", kind: "text", label: "After", align: "right" },
+  { key: "change", kind: "text", label: "Requested change", width: 180 },
   { key: "period", kind: "text", label: "Period" },
   { key: "linkedCampaigns", kind: "text", label: "Linked Campaigns" },
 ]
@@ -99,48 +101,14 @@ function updateBudgetArgs(value: unknown): UpdateBudgetArgs | null {
 }
 
 function updateBudgetResult(value: unknown): UpdateBudgetResult | null {
-  if (
-    !isRecord(value) ||
-    !isRecord(value["counts"]) ||
-    !isRecord(value["samples"]) ||
-    typeof value["samples_truncated"] !== "boolean" ||
-    typeof value["campaign_labels_truncated"] !== "boolean"
-  ) {
-    return null
-  }
-  const counts = {} as Record<BudgetAmountOutcome, number>
-  for (const outcome of OUTCOMES) {
-    const count = value["counts"][outcome]
-    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) {
-      return null
-    }
-    counts[outcome] = count
-  }
-  const rows: BudgetAmountResult[] = []
-  for (const outcome of OUTCOMES) {
-    const samples = value["samples"][outcome]
-    if (!Array.isArray(samples)) {
-      return null
-    }
-    for (const sample of samples) {
-      const row = budgetAmountRow(sample, outcome)
-      if (!row) {
-        return null
-      }
-      rows.push(row)
-    }
-  }
-  if (
-    !value["samples_truncated"] &&
-    rows.length !== OUTCOMES.reduce((total, outcome) => total + counts[outcome], 0)
-  ) {
-    return null
-  }
+  if (!isRecord(value) || typeof value["campaign_labels_truncated"] !== "boolean") return null
+  const envelope = parseOutcomeEnvelope(value, OUTCOMES, budgetAmountRow)
+  if (!envelope) return null
   return {
     campaignLabelsTruncated: value["campaign_labels_truncated"],
-    counts,
-    rows,
-    samplesTruncated: value["samples_truncated"],
+    counts: envelope.counts,
+    rows: envelope.rows,
+    samplesTruncated: envelope.truncated,
   }
 }
 

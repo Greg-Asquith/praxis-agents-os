@@ -89,7 +89,7 @@ export function renderUpdateBudgetOutcome(result: UpdateBudgetResult, columns: D
       row.message,
       null,
       row.reference.period === "DAILY"
-        ? formatDailyEstimate(row.requestedAmount, row.reference.currencyCode)
+        ? `Requested: ${formatDailyEstimate(row.requestedAmount, row.reference.currencyCode)}`
         : null
     ),
     errorCode: row.errorCode,
@@ -103,6 +103,10 @@ export function renderUpdateBudgetOutcome(result: UpdateBudgetResult, columns: D
     previousRaw: row.previousAmount,
     requested: formatCurrencyAmount(row.requestedAmount, row.reference.currencyCode),
     requestedRaw: row.requestedAmount,
+    after:
+      row.outcome === "updated" || row.outcome === "already_set"
+        ? formatCurrencyAmount(row.requestedAmount, row.reference.currencyCode)
+        : "Unconfirmed",
   }))
   return (
     <div className="grid gap-2">
@@ -139,7 +143,7 @@ function renderBudgetChangeCell(column: DataColumn, row: DataRow) {
   }
   const maximum = Math.max(previous, requested)
   return (
-    <div aria-label={`${change} from the previous amount`} className="grid gap-1">
+    <div aria-label={`Requested change: ${change} from the previous amount`} className="grid gap-1">
       <div className="bg-muted h-1.5 overflow-hidden rounded-full">
         <div
           className="bg-muted-foreground/45 h-full rounded-full"

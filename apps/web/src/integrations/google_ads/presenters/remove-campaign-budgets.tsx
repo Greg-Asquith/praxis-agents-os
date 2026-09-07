@@ -16,12 +16,13 @@ import {
   parseCampaignBudgetReference,
   type CampaignBudgetWithCurrency,
 } from "@/integrations/google_ads/lib/campaign-budgets"
+import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
+import { isNullableString, isRecord } from "@/lib/guards"
 
 const COLUMNS: DataColumn[] = [
   { key: "budget", kind: "text", label: "Budget" },
@@ -89,64 +90,36 @@ function removalArgs(value: unknown): RemovalArgs | null {
 }
 
 function removalResult(value: unknown): RemovalResult | null {
+  const envelope = parseOutcomeEnvelope(value, OUTCOMES, parseResultRow)
+  if (!envelope) return null
+  return { counts: envelope.counts, rows: envelope.rows, samplesTruncated: envelope.truncated }
+}
+
+function parseResultRow(
+  sample: unknown,
+  outcome: (typeof OUTCOMES)[number]
+): RemovalResultRow | null {
   if (
-    !isRecord(value) ||
-    !isRecord(value["counts"]) ||
-    !isRecord(value["samples"]) ||
-    typeof value["samples_truncated"] !== "boolean"
+    !isRecord(sample) ||
+    sample["outcome"] !== outcome ||
+    typeof sample["previous_status"] !== "string" ||
+    !isNullableString(sample["resulting_status"] ?? null) ||
+    !isNullableString(sample["error_code"] ?? null) ||
+    !isNullableString(sample["message"] ?? null)
   ) {
     return null
   }
-  const counts = value["counts"]
-  if (
-    !isNonNegativeInteger(counts["removed"]) ||
-    !isNonNegativeInteger(counts["failed"]) ||
-    !isNonNegativeInteger(counts["unverified"])
-  ) {
+  const reference = parseCampaignBudgetReference(sample["reference"])
+  if (!reference?.currencyCode) {
     return null
   }
-  const rows: RemovalResultRow[] = []
-  for (const outcome of OUTCOMES) {
-    const samples = value["samples"][outcome]
-    if (!Array.isArray(samples)) {
-      return null
-    }
-    for (const sample of samples) {
-      if (
-        !isRecord(sample) ||
-        sample["outcome"] !== outcome ||
-        typeof sample["previous_status"] !== "string" ||
-        !isNullableString(sample["resulting_status"] ?? null) ||
-        !isNullableString(sample["error_code"] ?? null) ||
-        !isNullableString(sample["message"] ?? null)
-      ) {
-        return null
-      }
-      const reference = parseCampaignBudgetReference(sample["reference"])
-      if (!reference?.currencyCode) {
-        return null
-      }
-      rows.push({
-        errorCode: typeof sample["error_code"] === "string" ? sample["error_code"] : null,
-        message: typeof sample["message"] === "string" ? sample["message"] : null,
-        outcome,
-        previousStatus: sample["previous_status"],
-        reference: { ...reference, currencyCode: reference.currencyCode },
-        resultingStatus:
-          typeof sample["resulting_status"] === "string" ? sample["resulting_status"] : null,
-      })
-    }
+  return {
+    errorCode: typeof sample["error_code"] === "string" ? sample["error_code"] : null,
+    message: typeof sample["message"] === "string" ? sample["message"] : null,
+    outcome,
+    previousStatus: sample["previous_status"],
+    reference: { ...reference, currencyCode: reference.currencyCode },
+    resultingStatus:
+      typeof sample["resulting_status"] === "string" ? sample["resulting_status"] : null,
   }
-  const parsedCounts = {
-    failed: counts["failed"],
-    removed: counts["removed"],
-    unverified: counts["unverified"],
-  }
-  if (
-    !value["samples_truncated"] &&
-    rows.length !== parsedCounts.removed + parsedCounts.failed + parsedCounts.unverified
-  ) {
-    return null
-  }
-  return { counts: parsedCounts, rows, samplesTruncated: value["samples_truncated"] }
 }

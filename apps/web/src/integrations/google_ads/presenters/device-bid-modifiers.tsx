@@ -9,6 +9,7 @@ import {
 } from "@/integrations/google_ads/components/device-bid-modifier-outcome"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import { formatBidAdjustment } from "@/integrations/google_ads/lib/bid-modifiers"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   deviceBidModifierArgs,
@@ -69,7 +70,9 @@ function deviceBidModifierDetails(args: DeviceBidModifierArgs | null) {
     {
       label: "Adjustments",
       value: args.adjustments
-        .map((item) => `${item.device}: ${formatBidAdjustment(item.bidModifier)}`)
+        .map(
+          (item) => `${googleAdsTokenLabel(item.device)}: ${formatBidAdjustment(item.bidModifier)}`
+        )
         .join(", "),
     },
   ]
