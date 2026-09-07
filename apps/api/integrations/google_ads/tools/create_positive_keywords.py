@@ -94,11 +94,13 @@ class _PositiveKeywordEligibility:
     ad_group_type: str
     cpc_strategy: str
     cpc_custom_bid_dimension: str | None = None
+    bid_modifier_excluded_dimension: str | None = None
 
 
 # The Google Ads API v24 campaign structure and criterion-simulation references
 # support keyword criteria for standard Search and Display ad groups. Google Ads
-# permits keyword custom bids but not keyword bid adjustments, explicitly rejects
+# permits keyword custom bids and Display keyword bid adjustments outside the
+# absolute custom-bid dimension, explicitly rejects
 # keyword-level CPM, and uses CPV/Percent CPC with non-keyword campaign types.
 _POSITIVE_KEYWORD_ELIGIBILITY = {
     "SEARCH": _PositiveKeywordEligibility(
@@ -109,6 +111,7 @@ _POSITIVE_KEYWORD_ELIGIBILITY = {
         ad_group_type="DISPLAY_STANDARD",
         cpc_strategy="MANUAL_CPC",
         cpc_custom_bid_dimension="KEYWORD",
+        bid_modifier_excluded_dimension="KEYWORD",
     ),
 }
 
@@ -333,6 +336,7 @@ def _validate_bid_compatibility(
     keywords: Sequence[GoogleAdsPositiveKeywordEntry],
 ) -> None:
     requests_cpc_bid = any(keyword.cpc_bid is not None for keyword in keywords)
+    requests_bid_modifier = any(keyword.bid_modifier is not None for keyword in keywords)
     for ad_group_id, context in contexts.items():
         eligibility = _POSITIVE_KEYWORD_ELIGIBILITY.get(context.channel)
         if eligibility is None or context.ad_group_type != eligibility.ad_group_type:
@@ -354,6 +358,17 @@ def _validate_bid_compatibility(
                 f"and {dimension} custom bid dimension. Remove the CPC bid or choose a compatible "
                 "ad group."
             )
+        bid_modifier_compatible = (
+            eligibility.bid_modifier_excluded_dimension is not None
+            and context.display_custom_bid_dimension != eligibility.bid_modifier_excluded_dimension
+        )
+        if requests_bid_modifier and not bid_modifier_compatible:
+            dimension = context.display_custom_bid_dimension or "unknown"
+            raise ModelRetry(
+                f"Ad group {ad_group_id} cannot use the requested bid adjustment with its live "
+                f"{context.channel} channel and {dimension} custom bid dimension. Remove the bid "
+                "adjustment or choose a compatible Display ad group."
+            )
 
 
 def _expanded_creates(
@@ -366,6 +381,7 @@ def _expanded_creates(
             text=keyword.text,
             match_type=keyword.match_type,
             status=keyword.status,
+            bid_modifier=keyword.bid_modifier,
             cpc_bid_micros=money_bid_to_micros(keyword.cpc_bid, label="CPC bid")
             if keyword.cpc_bid
             else None,
@@ -453,6 +469,7 @@ def _result_rows(
             "text": fields["text"],
             "match_type": fields["match_type"],
             "status": fields["status"],
+            "bid_modifier": float(fields["bid_modifier"]) if fields.get("bid_modifier") else None,
             "cpc_bid": micros_to_money(int(requested_micros)) if requested_micros else None,
             "cpc_bid_micros": requested_micros,
             "final_urls": json.loads(fields.get("final_urls", "[]")),
@@ -511,6 +528,7 @@ def _result_rows(
                     text=fields["text"],
                     match_type=fields["match_type"],
                     status=fields["status"],
+                    bid_modifier=requested["bid_modifier"],
                     cpc_bid_micros=int(requested_micros) if requested_micros else None,
                     final_urls=requested["final_urls"],
                     final_mobile_urls=requested["final_mobile_urls"],
@@ -540,6 +558,7 @@ def _requested_state_from_reference(
         "text": reference.text,
         "match_type": reference.match_type,
         "status": reference.status,
+        "bid_modifier": reference.bid_modifier,
         "cpc_bid": (
             micros_to_money(reference.cpc_bid_micros)
             if reference.cpc_bid_micros is not None
@@ -673,6 +692,7 @@ def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str,
     keywords = args.get("keywords")
     optional_defaults: dict[str, object] = {
         "status": "ENABLED",
+        "bid_modifier": "",
         "cpc_bid": "",
         "final_urls": [],
         "final_mobile_urls": [],
@@ -751,6 +771,12 @@ DEFINITION = RuntimeToolDefinition(
                         label="Status",
                         options=("ENABLED", "PAUSED"),
                         default_value="ENABLED",
+                    ),
+                    ToolFieldColumn(
+                        key="bid_modifier",
+                        label="Bid Adjustment",
+                        format="number",
+                        secondary=True,
                     ),
                     ToolFieldColumn(key="cpc_bid", label="CPC Bid", secondary=True),
                     ToolFieldColumn(

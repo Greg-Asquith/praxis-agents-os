@@ -285,7 +285,7 @@ def _combined_diagnostics(diagnostics: Sequence[tuple[str, str]]) -> dict[str, s
     codes = list(dict.fromkeys(code for _message, code in diagnostics))
     return {
         "message": " | ".join(messages),
-        "error_code": " | ".join(codes),
+        "error_code": " | ".join(codes)[:100],
     }
 
 

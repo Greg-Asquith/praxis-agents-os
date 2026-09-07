@@ -287,13 +287,22 @@ follows:
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
   writes for recommendations, negative keywords, positive-keyword creation and
-  status changes,
+  mutable-field updates,
   campaign status, device bid adjustments, and campaign-budget creation,
   amount updates, assignment, and unused-budget removal. Keyword and budget
   writes re-read provider state after approval and retain exact outcome evidence
-  through the shared mutation ledger. Positive-keyword creation accepts only
-  Search-standard and Display-standard targets, and it checks optional CPC bids
-  against the live campaign strategy and Display custom-bid dimension. URL
+  through the shared mutation ledger. Positive-keyword creation and updates
+  accept only Search-standard and Display-standard targets. CPC bids require
+  manual CPC and, for Display, a keyword custom-bid dimension. Display placement
+  targeting may instead use a keyword bid modifier. CPM, CPV, and percent-CPC
+  bids are not keyword fields. Before provider execution, keyword updates reserve
+  per-account shares of the complete transcript budget, including all account
+  envelopes and maximally escaped diagnostics. Live preparation must fit the
+  reserved share and the terminal audit bound. Public results retain all accepted
+  rows; only model results sample. Keyword suffixes, custom parameters, and mobile
+  destinations support inherited ad destinations. Changing a keyword tracking
+  template or final URL preserves Google's template-to-final-URL dependency;
+  unrelated status changes leave inherited settings intact. URL
   custom-parameter names use ASCII letters and numbers, are unique ignoring
   case, and use Google Ads' UTF-8 byte limits. Budget
   removal fails before mutation when any selected budget has a live campaign

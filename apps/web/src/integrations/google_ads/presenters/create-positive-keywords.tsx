@@ -23,7 +23,7 @@ type KeywordOutcome = (typeof OUTCOMES)[number]
 type AdGroupReference = {
   adGroupId: string
   campaignId: string
-  campaignLabel: string
+  campaignLabel: string | null
   customerId: string
   label: string
 }
@@ -145,24 +145,33 @@ function renderApprovalSummary(args: CreateKeywordArgs) {
           const account = args.accounts.get(first.customerId)
           return (
             <section
-              className="border-border bg-muted/35 rounded-lg border px-3 py-2.5"
+              className="border-border min-w-0 overflow-hidden rounded-lg border"
               key={key}
               role="listitem"
             >
-              <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-                <p className="truncate text-sm font-semibold">{first.campaignLabel}</p>
-                <p className="text-muted-foreground text-xs">
-                  {account?.label ?? "Google Ads account"} ·{" "}
+              <div className="bg-muted/35 flex min-w-0 items-start justify-between gap-3 px-3 py-2.5">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <p className="text-muted-foreground text-xs wrap-anywhere">
+                    {account?.label ?? "Google Ads account"}
+                  </p>
+                  {first.campaignLabel ? (
+                    <p className="text-sm font-medium wrap-anywhere">{first.campaignLabel}</p>
+                  ) : null}
+                </div>
+                <span className="text-muted-foreground shrink-0 text-xs">
                   {account?.currencyCode ?? "Currency unavailable"}
-                </p>
+                </span>
               </div>
-              <div className="mt-2 grid gap-1">
+              <div className="divide-border border-border divide-y border-t">
                 {adGroups.map((adGroup) => (
                   <div
-                    className="bg-card flex min-w-0 items-center justify-between gap-3 rounded-md border px-2.5 py-2 text-sm"
+                    className="flex min-w-0 items-start justify-between gap-4 px-3 py-2.5"
                     key={adGroup.adGroupId}
                   >
-                    <span className="truncate font-medium">{adGroup.label}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-muted-foreground mb-1 text-xs">Ad group</p>
+                      <p className="text-sm leading-relaxed wrap-anywhere">{adGroup.label}</p>
+                    </div>
                     <span className="text-muted-foreground shrink-0 text-xs">
                       {args.keywords.length} {args.keywords.length === 1 ? "keyword" : "keywords"}
                     </span>
@@ -334,7 +343,7 @@ function parseAdGroup(value: unknown): AdGroupReference | null {
     campaignLabel:
       typeof value["scope_label"] === "string" && value["scope_label"].trim()
         ? value["scope_label"]
-        : "Campaign",
+        : null,
     customerId,
     label: value["label"].trim() || adGroupId,
   }
@@ -462,10 +471,15 @@ function resultRowDiagnostics(
   }
 }
 
-function bidSummary(keyword: Pick<PositiveKeywordInput, "cpcBid">, currencyCode: string): string {
-  return keyword.cpcBid
-    ? `CPC ${formatCurrencyAmount(keyword.cpcBid, currencyCode)}`
-    : "Ad group default"
+function bidSummary(
+  keyword: Pick<PositiveKeywordInput, "bidModifier" | "cpcBid">,
+  currencyCode: string
+): string {
+  const bids = [
+    keyword.cpcBid ? `CPC ${formatCurrencyAmount(keyword.cpcBid, currencyCode)}` : null,
+    keyword.bidModifier === null ? null : `Adjustment ${String(keyword.bidModifier)}×`,
+  ].filter((value): value is string => value !== null)
+  return bids.length > 0 ? bids.join(" · ") : "Ad group default"
 }
 
 function urlSummary(

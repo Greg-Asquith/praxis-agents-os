@@ -31,12 +31,18 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
   Google Ads positive-keyword creation groups approval context by campaign,
-  keeps optional CPC and URL fields behind each row's progressive disclosure,
+  keeps optional bid and URL fields behind each row's progressive disclosure,
   applies provider byte and dependency checks before approval, and shows
   requested settings separately from an observed duplicate. It shows one
-  guarded, exportable outcome row per ad-group and keyword pair. Its
-  status action shows explicit before-and-after state and one exportable row per
-  selected criterion.
+  guarded, exportable outcome row per ad-group and keyword pair. Its update
+  action uses compact fixed, paginated keyword rows with shared account context
+  and per-row More fields disclosures. Fields are directly editable, with colour
+  and before/after indicators for changed values. It shows trusted currencies, supports
+  explicit nullable scalar clears, and keeps recoverable invalid drafts mounted
+  while blocking approval. Literal URL settings remain exact in comparisons and
+  exports; requested projections are labelled as requested state. Complete
+  results validate per-outcome counts and unique keyword identities before
+  presenting one exportable row per selected criterion.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

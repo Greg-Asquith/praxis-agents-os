@@ -11,6 +11,7 @@ from pydantic_ai import ModelRetry
 
 from integrations.google_ads.operations.create_positive_keywords import (
     GoogleAdsPositiveKeywordCreate,
+    _create_payload,
     create_positive_keywords,
     positive_keyword_creation_failure_ledger,
 )
@@ -136,7 +137,7 @@ def test_positive_keyword_schema_normalizes_only_whitespace_and_validates_provid
     ("field", "accepted"),
     [
         pytest.param("cpc_bid", True, id="cpc-custom-bid"),
-        pytest.param("bid_modifier", False, id="keyword-bid-adjustment-prohibited"),
+        pytest.param("bid_modifier", True, id="display-keyword-bid-adjustment"),
         pytest.param("cpm_bid", False, id="keyword-cpm-explicitly-unsupported"),
         pytest.param("cpv_bid", False, id="cpv-requires-non-keyword-video-target"),
         pytest.param(
@@ -149,12 +150,13 @@ def test_positive_keyword_schema_normalizes_only_whitespace_and_validates_provid
 def test_v24_positive_keyword_bid_field_contract(field: str, accepted: bool) -> None:
     # Sources: v24 AdGroupCriterion, AdGroupCriterionError, criterion-simulation
     # combinations, manual-bidding guidance, and Hotel bidding guidance. Google
-    # Ads permits keyword custom bids but prohibits keyword bid adjustments;
-    # keyword CPM is explicitly unsupported, while CPV and Percent CPC belong to
-    # campaign/criterion combinations that do not accept positive keywords.
+    # Ads permits keyword custom bids and Display keyword bid adjustments outside
+    # the absolute custom-bid dimension. Keyword CPM is explicitly unsupported,
+    # while CPV and Percent CPC belong to campaign/criterion combinations that do
+    # not accept positive keywords.
     fields = {"text": "shoes", "match_type": "EXACT", field: "1"}
     if accepted:
-        assert GoogleAdsPositiveKeywordEntry(**fields).cpc_bid == "1"
+        assert field in GoogleAdsPositiveKeywordEntry(**fields).model_fields_set
     else:
         with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             GoogleAdsPositiveKeywordEntry(**fields)
@@ -488,6 +490,40 @@ def test_display_absolute_keyword_bid_requires_keyword_dimension(dimension: str)
         )
 
 
+def test_display_keyword_bid_adjustment_requires_non_keyword_dimension() -> None:
+    keyword = GoogleAdsPositiveKeywordEntry(
+        text="shoes",
+        match_type="BROAD",
+        bid_modifier=1.25,
+    )
+    _validate_bid_compatibility(
+        {
+            "20": _KeywordCreateContext(
+                strategy="MANUAL_CPC",
+                channel="DISPLAY",
+                ad_group_type="DISPLAY_STANDARD",
+                display_custom_bid_dimension="PLACEMENT",
+            )
+        },
+        [keyword],
+    )
+    for channel, dimension in (("SEARCH", ""), ("DISPLAY", "KEYWORD")):
+        with pytest.raises(ModelRetry, match="bid adjustment"):
+            _validate_bid_compatibility(
+                {
+                    "20": _KeywordCreateContext(
+                        strategy="MANUAL_CPC",
+                        channel=channel,
+                        ad_group_type=(
+                            "SEARCH_STANDARD" if channel == "SEARCH" else "DISPLAY_STANDARD"
+                        ),
+                        display_custom_bid_dimension=dimension,
+                    )
+                },
+                [keyword],
+            )
+
+
 @pytest.mark.parametrize("ad_group_type", ["", "UNKNOWN", "UNSPECIFIED"])
 def test_keyword_bid_rejects_unknown_ad_group_type(ad_group_type: str) -> None:
     with pytest.raises(ModelRetry, match="cannot accept positive keyword criteria"):
@@ -568,6 +604,21 @@ async def test_create_positive_keywords_skips_existing_pair_and_sends_optional_b
         ],
         "partialFailure": True,
     }
+
+
+def test_create_payload_includes_supported_display_keyword_bid_adjustment() -> None:
+    assert (
+        _create_payload(
+            GoogleAdsPositiveKeywordCreate(
+                "20",
+                "trail shoes",
+                "PHRASE",
+                bid_modifier=1.25,
+            ),
+            customer_id="333",
+        )["bidModifier"]
+        == 1.25
+    )
 
 
 async def test_create_positive_keywords_ignores_mismatched_existing_resource() -> None:
@@ -660,6 +711,7 @@ def test_add_positive_keyword_definition_is_approval_only_without_selection_advi
         "text",
         "match_type",
         "status",
+        "bid_modifier",
         "cpc_bid",
         "final_urls",
         "final_mobile_urls",
@@ -786,6 +838,7 @@ def test_positive_keyword_approval_projection_fills_optional_record_cells() -> N
             "text": "running shoes",
             "match_type": "EXACT",
             "status": "ENABLED",
+            "bid_modifier": "",
             "cpc_bid": "",
             "final_urls": [],
             "final_mobile_urls": [],

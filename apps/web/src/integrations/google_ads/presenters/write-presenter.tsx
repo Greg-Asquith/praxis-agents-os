@@ -19,6 +19,7 @@ type ApprovalSpec<Args> = {
   parseArgs: (value: unknown) => Args | null
   prompt: string | ((args: Args) => string)
   renderFields?: boolean
+  renderInvalidDraft?: boolean
   renderSummary?: (
     value: unknown,
     fallback: Args,
@@ -113,7 +114,7 @@ export function defineGoogleAdsWriteVariant<Args, Result>(
           toolName={activity.name}
           validationError={validationError}
         >
-          {displayError || argsError
+          {displayError || (argsError && !variant.approval.renderInvalidDraft)
             ? null
             : variant.approval.renderSummary?.(currentArgs, args, editField, customFieldsDisabled)}
         </ToolApprovalDecisionCard>

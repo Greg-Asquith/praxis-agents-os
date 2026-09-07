@@ -595,7 +595,7 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
         ),
         "google_ads_remove_negative_keywords": ("EXACT", "PHRASE", "BROAD", "ANY"),
         "google_ads_update_device_bid_modifiers": ("DESKTOP", "MOBILE", "TABLET"),
-        "google_ads_update_keyword_status": ("ENABLED", "PAUSED"),
+        "google_ads_update_keywords": ("ENABLED", "PAUSED"),
         "notion_create_page": (
             "title",
             "rich_text",
@@ -680,14 +680,21 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
             assert adjustments_schema["minItems"] == 1
             assert adjustments_schema["maxItems"] == 3
             actual[definition.name] = field.columns[0].options
-        elif definition.name == "google_ads_update_keyword_status":
-            assert field.key == "statuses"
+        elif definition.name == "google_ads_update_keywords":
+            assert field.key == "patches"
             assert [(column.key, column.required) for column in field.columns] == [
-                ("status", True),
+                ("status", False),
+                ("bid_modifier", False),
+                ("cpc_bid", False),
+                ("final_urls", False),
+                ("final_mobile_urls", False),
+                ("final_url_suffix", False),
+                ("tracking_url_template", False),
+                ("url_custom_parameters", False),
             ]
-            statuses_schema = schema["properties"]["statuses"]
-            assert statuses_schema["minItems"] == 1
-            assert statuses_schema["maxItems"] == 500
+            patches_schema = schema["properties"]["patches"]
+            assert patches_schema["minItems"] == 1
+            assert patches_schema["maxItems"] == 500
             actual[definition.name] = field.columns[0].options
         else:
             assert field.key == "keywords"
@@ -699,6 +706,7 @@ def test_eligible_record_batch_write_declarations_are_complete_and_faithful() ->
                 expected_columns.extend(
                     [
                         ("status", False),
+                        ("bid_modifier", False),
                         ("cpc_bid", False),
                         ("final_urls", False),
                         ("final_mobile_urls", False),
@@ -2137,3 +2145,192 @@ def _force_only_nested_tool(
         return [*filtered, build_run_workflow_tool(catalog)]
 
     monkeypatch.setattr(loop, "build_runtime_tools", forced_build)
+
+
+@pytest.mark.parametrize("failure", [None, "pause", "create"])
+async def test_google_ads_pause_then_create_uses_separate_approvals_and_evidence(
+    db_session_factory,
+    monkeypatch,
+    failure,
+) -> None:
+    from uuid import uuid4
+
+    from pydantic import SecretStr
+
+    from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+    from integrations.google_ads.tools.utils.client import google_ads_settings
+    from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+
+    selected = ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="google_ads",
+        resource_type="google_ads_account",
+        external_id="333",
+        display_name="Example account",
+        connection_id=uuid4(),
+        connection_label="Google Ads",
+        connection_status="active",
+        write_allowed=True,
+        permissions_metadata={"login_customer_id": "111", "currency_code": "GBP"},
+    )
+    active = ResolvedActiveContext(entries=(selected,))
+    monkeypatch.setattr(
+        "services.agents.runtime.execute.setup.resolve_active_context",
+        AsyncMock(return_value=active),
+    )
+    monkeypatch.setattr(
+        "services.audit_events.integration_events.get_async_db_session_factory",
+        lambda: db_session_factory,
+    )
+    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_DEVELOPER_TOKEN", SecretStr("test-token"))
+    statuses = {"20": "ENABLED", "21": "ENABLED"}
+    writes = []
+
+    def provider_rows():
+        return [
+            {
+                "campaign": {
+                    "id": "10",
+                    "name": "Search",
+                    "biddingStrategyType": "MANUAL_CPC",
+                    "advertisingChannelType": "SEARCH",
+                },
+                "adGroup": {
+                    "id": group,
+                    "name": f"Shoes {group}",
+                    "status": "ENABLED",
+                    "type": "SEARCH_STANDARD",
+                },
+                "adGroupCriterion": {
+                    "criterionId": "90",
+                    "status": status,
+                    "negative": False,
+                    "resourceName": f"customers/333/adGroupCriteria/{group}~90",
+                    "finalUrlSuffix": "src=ads",
+                    "keyword": {"text": "running shoes", "matchType": "EXACT"},
+                },
+            }
+            for group, status in statuses.items()
+        ]
+
+    async def post(path, **kwargs):
+        if not path.endswith(":mutate"):
+            return [{"results": provider_rows()}]
+        operations = kwargs["json"]["operations"]
+        kind = "pause" if "update" in operations[0] else "create"
+        writes.append(kind)
+        if kind == failure:
+            raise IntegrationError(
+                "Provider rejected the change.",
+                provider_key="google_ads",
+                failure_disposition=IntegrationFailureDisposition.REJECTED,
+            )
+        if kind == "pause":
+            statuses.update(dict.fromkeys(statuses, "PAUSED"))
+            return {
+                "results": [{"resourceName": op["update"]["resourceName"]} for op in operations]
+            }
+        return {
+            "results": [
+                {"resourceName": f"customers/333/adGroupCriteria/{group}~91"} for group in statuses
+            ]
+        }
+
+    client = type("KeywordWorkflowClient", (), {"post": staticmethod(post)})()
+    for module in ("create_positive_keywords", "update_positive_keywords"):
+        monkeypatch.setattr(
+            f"integrations.google_ads.tools.{module}.google_ads_client",
+            AsyncMock(return_value=client),
+        )
+    references = [
+        {
+            "version": 1,
+            "entity_kind": "google_ads_keyword",
+            "customer_id": "333",
+            "campaign_id": "10",
+            "ad_group_id": group,
+            "criterion_id": "90",
+            "text": "running shoes",
+            "match_type": "EXACT",
+            "status": "ENABLED",
+            "final_url_suffix": "src=ads",
+            "label": "running shoes",
+            "scope_label": f"Search · Shoes {group}",
+        }
+        for group in statuses
+    ]
+    groups = [
+        {
+            "version": 1,
+            "entity_kind": "google_ads_ad_group",
+            "customer_id": "333",
+            "campaign_id": "10",
+            "ad_group_id": group,
+            "label": f"Shoes {group}",
+            "scope_label": "Search",
+        }
+        for group in statuses
+    ]
+    code = (
+        f"paused = await google_ads_update_keywords(keywords={references!r}, patches=[{{'status': 'PAUSED'}}, {{'status': 'PAUSED'}}])\n"
+        "if paused['results'][0]['data']['counts']['updated'] == 2:\n"
+        f"    created = await google_ads_create_keywords(ad_groups={groups!r}, keywords=[{{'text': 'running shoes', 'match_type': 'PHRASE', 'final_url_suffix': 'src=ads'}}])\n"
+        "    message = 'Replacement added; old keywords remain paused.' if created['results'][0]['data']['counts']['added'] == 2 else 'Creation failed; old keywords remain paused.'\n"
+        "else:\n"
+        "    message = 'Pause failed; no replacement was requested.'\n"
+        "message"
+    )
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["google_ads_update_keywords", "google_ads_create_keywords"],
+        code_mode_enabled=True,
+    )
+    model = scripted_model(
+        turns=[
+            ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, "keyword-workflow"),)),
+            "Workflow finished.",
+        ]
+    )
+    first = await run_scenario(db_session_factory, context, model=model)
+    assert first.run.status == "awaiting_approval"
+    assert writes == []
+    second = await _resume_code_mode_scenario(
+        db_session_factory, context, suspended=first, model=model
+    )
+    if failure == "pause":
+        assert second.run.status == "completed"
+        assert writes == ["pause"]
+        assert set(statuses.values()) == {"ENABLED"}
+        completed = second
+    else:
+        assert second.run.status == "awaiting_approval"
+        assert writes == ["pause"]
+        assert set(statuses.values()) == {"PAUSED"}
+        completed = await _resume_code_mode_scenario(
+            db_session_factory, context, suspended=second, model=model
+        )
+        assert completed.run.status == "completed"
+        assert writes == ["pause", "create"]
+        assert set(statuses.values()) == {"PAUSED"}
+    transcript = json.dumps([message.parts for message in completed.messages])
+    expected = (
+        "Pause failed; no replacement was requested."
+        if failure == "pause"
+        else "Creation failed; old keywords remain paused."
+        if failure == "create"
+        else "Replacement added; old keywords remain paused."
+    )
+    assert expected in transcript
+    operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
+    expected_tools = ["google_ads_update_keywords"] + (
+        [] if failure == "pause" else ["google_ads_create_keywords"]
+    )
+    for tool_name in expected_tools:
+        events = [row for row in operations if row.tool_name == tool_name]
+        assert len(events) == 2
+        pending = next(row for row in events if row.status == "pending")
+        terminal = next(row for row in events if row.status != "pending")
+        assert terminal.details["related_event_id"] == str(pending.id)
+        counts = terminal.details["operation_detail"]["intent_counts"]
+        failed = failure == ("pause" if tool_name == "google_ads_update_keywords" else "create")
+        assert counts["failed" if failed else "applied"] == 2

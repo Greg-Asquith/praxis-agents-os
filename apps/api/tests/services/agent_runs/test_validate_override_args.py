@@ -13,8 +13,8 @@ from integrations.google_ads.tools.add_negative_keywords import (
 from integrations.google_ads.tools.remove_negative_keywords import (
     DEFINITION as GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
 )
-from integrations.google_ads.tools.update_positive_keyword_status import (
-    DEFINITION as GOOGLE_ADS_UPDATE_KEYWORD_STATUS_DEFINITION,
+from integrations.google_ads.tools.update_positive_keywords import (
+    DEFINITION as GOOGLE_ADS_UPDATE_KEYWORDS_DEFINITION,
 )
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.runtime.tools.contract import (
@@ -269,10 +269,10 @@ async def test_google_ads_keyword_override_reauthorizes_list_and_preserves_edite
     resolve.assert_awaited_once()
 
 
-async def test_positive_keyword_status_resume_preserves_edited_positional_rows(monkeypatch) -> None:
+async def test_positive_keyword_update_resume_preserves_edited_positional_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         "services.agents.runtime.tools.registry.get_runtime_tool_definition",
-        lambda _tool_name: GOOGLE_ADS_UPDATE_KEYWORD_STATUS_DEFINITION,
+        lambda _tool_name: GOOGLE_ADS_UPDATE_KEYWORDS_DEFINITION,
     )
     keywords = [
         {
@@ -314,18 +314,18 @@ async def test_positive_keyword_status_resume_preserves_edited_positional_rows(m
         membership=SimpleNamespace(),
         run=SimpleNamespace(conversation_id=uuid4()),
         tool_call=_call(
-            "google_ads_update_keyword_status",
-            {"keywords": keywords, "statuses": [{"status": "PAUSED"}, {"status": "ENABLED"}]},
+            "google_ads_update_keywords",
+            {"keywords": keywords, "patches": [{"status": "PAUSED"}, {"status": "ENABLED"}]},
         ),
         override_args={
             "keywords": keywords,
-            "statuses": [{"status": "ENABLED"}, {"status": "PAUSED"}],
+            "patches": [{"status": "ENABLED"}, {"status": "PAUSED"}],
         },
     )
 
     assert result == {
         "keywords": canonical,
-        "statuses": [{"status": "ENABLED"}, {"status": "PAUSED"}],
+        "patches": [{"status": "ENABLED"}, {"status": "PAUSED"}],
     }
     resolve.assert_awaited_once()
 

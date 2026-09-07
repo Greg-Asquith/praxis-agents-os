@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select"
 
 export function KeyValueFieldInput({
+  ariaLabel = "Fields",
   disabled,
   id,
   lockedEntries,
@@ -23,6 +24,7 @@ export function KeyValueFieldInput({
   onChange,
   value,
 }: {
+  ariaLabel?: string
   disabled: boolean
   id: string
   lockedEntries: string[]
@@ -71,7 +73,7 @@ export function KeyValueFieldInput({
             key={key}
           >
             <Input
-              aria-label={`Field name ${String(index + 1)}`}
+              aria-label={`${ariaLabel}, field name ${String(index + 1)}`}
               className="h-7"
               defaultValue={key}
               disabled={disabled}
@@ -80,6 +82,7 @@ export function KeyValueFieldInput({
               }}
             />
             <ScalarInput
+              ariaLabel={`${ariaLabel}, value for ${key}`}
               disabled={disabled}
               id={`${id}-${String(index)}`}
               onChange={(nextValue) => {
@@ -88,7 +91,7 @@ export function KeyValueFieldInput({
               value={item}
             />
             <Button
-              aria-label={`Remove ${key}`}
+              aria-label={`Remove ${key} from ${ariaLabel}`}
               disabled={disabled}
               onClick={() => {
                 onChange(Object.fromEntries(entries.filter(([entryKey]) => entryKey !== key)))
@@ -113,6 +116,7 @@ export function KeyValueFieldInput({
       </div>
       <div className="border-border border-t px-2.5 py-1.5">
         <Button
+          aria-label={`Add field to ${ariaLabel}`}
           disabled={disabled || (maxEntries !== undefined && entries.length >= maxEntries)}
           onClick={addRow}
           size="sm"
@@ -128,11 +132,13 @@ export function KeyValueFieldInput({
 }
 
 function ScalarInput({
+  ariaLabel,
   disabled,
   id,
   onChange,
   value,
 }: {
+  ariaLabel: string
   disabled: boolean
   id: string
   onChange: (value: EditedScalar) => void
@@ -149,7 +155,7 @@ function ScalarInput({
         }}
         value={value}
       >
-        <SelectTrigger className="h-7 w-full" id={id}>
+        <SelectTrigger aria-label={ariaLabel} className="h-7 w-full" id={id}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="start">
@@ -168,6 +174,7 @@ function ScalarInput({
   if (typeof value === "number") {
     return (
       <Input
+        aria-label={ariaLabel}
         className="h-7"
         defaultValue={value}
         disabled={disabled}
@@ -185,6 +192,7 @@ function ScalarInput({
   }
   return (
     <Input
+      aria-label={ariaLabel}
       className="h-7"
       disabled={disabled}
       id={id}

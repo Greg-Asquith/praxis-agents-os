@@ -24,6 +24,7 @@ export type PositiveKeywordReference = {
   scopeLabel: string
   status: PositiveKeywordStatus
   text: string
+  bidModifier: number | null
   cpcBid: string | null
   finalMobileUrls: string[]
   finalUrls: string[]
@@ -33,6 +34,7 @@ export type PositiveKeywordReference = {
 }
 
 export type PositiveKeywordInput = {
+  bidModifier: number | null
   cpcBid: string | null
   finalMobileUrls: string[]
   finalUrls: string[]
@@ -57,9 +59,11 @@ export function parsePositiveKeywordInput(value: unknown): PositiveKeywordInput 
   if (!core || !urls) return null
   const cpcBid = optionalMoneyBid(value["cpc_bid"])
   if (cpcBid === undefined) return null
+  const bidModifier = optionalBidModifier(value["bid_modifier"])
+  if (bidModifier === undefined) return null
   const urlCustomParameters = customParameters(value["url_custom_parameters"])
   if (urlCustomParameters === null) return null
-  return { ...core, ...urls, cpcBid, urlCustomParameters }
+  return { ...core, ...urls, bidModifier, cpcBid, urlCustomParameters }
 }
 
 function positiveKeywordCore(value: Record<string, unknown>): PositiveKeywordCore | null {
@@ -111,6 +115,9 @@ export function positiveKeywordInputValidationError(value: unknown): string | nu
   if (optionalMoneyBid(value["cpc_bid"]) === undefined) {
     return "CPC bids must be positive, use at most six decimal places, and fit Google Ads' limit."
   }
+  if (optionalBidModifier(value["bid_modifier"]) === undefined) {
+    return "Bid adjustments must be a number from 0.1 through 10."
+  }
   const finalUrls = urlList(value["final_urls"])
   const trackingTemplate = optionalBoundedString(value["tracking_url_template"], 2048)
   if (trackingTemplate && finalUrls?.length === 0) {
@@ -128,6 +135,12 @@ function optionalMoneyBid(value: unknown): string | null | undefined {
   const [whole = "0", fraction = ""] = candidate.split(".")
   const micros = BigInt(whole) * 1_000_000n + BigInt(fraction.padEnd(6, "0"))
   return micros > 0n && micros <= GOOGLE_ADS_INT64_MAX ? candidate : undefined
+}
+
+function optionalBidModifier(value: unknown): number | null | undefined {
+  if (value == null || value === "") return null
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined
+  return value >= 0.1 && value <= 10 ? value : undefined
 }
 
 function urlList(value: unknown): string[] | null {
@@ -202,20 +215,45 @@ export function parsePositiveKeywordReference(value: unknown): PositiveKeywordRe
   if (!isRecord(value)) return null
   const identity = positiveKeywordReferenceIdentity(value)
   if (!identity) return null
-  const cpcBid = microsDecimal(value["cpc_bid_micros"])
-  if (cpcBid === undefined) return null
-  const configuration = parsePositiveKeywordInput({ ...value, cpc_bid: cpcBid })
+  const bids = positiveKeywordReferenceBids(value)
+  if (!bids) return null
+  const configuration = parsePositiveKeywordInput({
+    ...value,
+    cpc_bid: bids.cpcBid === "0" ? null : bids.cpcBid,
+  })
   if (!configuration) return null
-  const label = typeof value["label"] === "string" ? value["label"] : ""
   return {
     ...identity,
-    label: label.trim() || configuration.text,
-    scopeLabel:
-      typeof value["scope_label"] === "string" && value["scope_label"].trim()
-        ? value["scope_label"]
-        : "Campaign and ad group unavailable",
     ...configuration,
+    ...bids,
+    label: keywordReferenceLabel(value["label"], configuration.text),
+    scopeLabel: keywordReferenceScopeLabel(value["scope_label"]),
   }
+}
+
+function positiveKeywordReferenceBids(
+  value: Record<string, unknown>
+): Pick<PositiveKeywordReference, "bidModifier" | "cpcBid"> | null {
+  const cpcBid = microsDecimal(value["cpc_bid_micros"])
+  const rawBidModifier = value["bid_modifier"]
+  const bidModifier =
+    rawBidModifier == null
+      ? null
+      : typeof rawBidModifier === "number" &&
+          Number.isFinite(rawBidModifier) &&
+          rawBidModifier >= 0.1 &&
+          rawBidModifier <= 10
+        ? rawBidModifier
+        : undefined
+  return cpcBid === undefined || bidModifier === undefined ? null : { bidModifier, cpcBid }
+}
+
+function keywordReferenceLabel(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback
+}
+
+function keywordReferenceScopeLabel(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value : "Campaign and ad group unavailable"
 }
 
 function positiveKeywordReferenceIdentity(

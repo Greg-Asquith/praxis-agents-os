@@ -41,9 +41,6 @@ class GoogleAdsKeywordReference(ScopedEntityReference):
     status: Literal["ENABLED", "PAUSED"]
     bid_modifier: float | None = Field(default=None, ge=0.1, le=10)
     cpc_bid_micros: int | None = Field(default=None, ge=0, le=GOOGLE_ADS_INT64_MAX)
-    cpm_bid_micros: int | None = Field(default=None, ge=0, le=GOOGLE_ADS_INT64_MAX)
-    cpv_bid_micros: int | None = Field(default=None, ge=0, le=GOOGLE_ADS_INT64_MAX)
-    percent_cpc_bid_micros: int | None = Field(default=None, ge=0, le=999_999)
     final_urls: list[str] = Field(default_factory=list, max_length=10)
     final_mobile_urls: list[str] = Field(default_factory=list, max_length=10)
     final_url_suffix: str | None = Field(default=None, max_length=2048)
@@ -80,13 +77,7 @@ class GoogleAdsKeywordReference(ScopedEntityReference):
             normalized["criterion_id"] = criterion_id
         return normalized
 
-    @field_serializer(
-        "cpc_bid_micros",
-        "cpm_bid_micros",
-        "cpv_bid_micros",
-        "percent_cpc_bid_micros",
-        when_used="json",
-    )
+    @field_serializer("cpc_bid_micros", when_used="json")
     def serialize_bid_micros(self, value: int | None) -> str | None:
         """Keeps provider int64 money values exact in JSON clients."""
         return str(value) if value is not None else None
@@ -147,9 +138,6 @@ def positive_keyword_reference_from_row(
     campaign_name = str(campaign.get("name", "")).strip() or "(unnamed campaign)"
     ad_group_name = str(ad_group.get("name", "")).strip() or "(unnamed ad group)"
     cpc_bid_micros = _nonnegative_int(criterion.get("cpcBidMicros"))
-    cpm_bid_micros = _nonnegative_int(criterion.get("cpmBidMicros"))
-    cpv_bid_micros = _nonnegative_int(criterion.get("cpvBidMicros"))
-    percent_cpc_bid_micros = _nonnegative_int(criterion.get("percentCpcBidMicros"))
     raw_bid_modifier = criterion.get("bidModifier")
     if raw_bid_modifier is None:
         bid_modifier = None
@@ -178,12 +166,7 @@ def positive_keyword_reference_from_row(
         or not tracking_template_valid
     ):
         return None
-    numeric_values = (
-        (criterion.get("cpcBidMicros"), cpc_bid_micros),
-        (criterion.get("cpmBidMicros"), cpm_bid_micros),
-        (criterion.get("cpvBidMicros"), cpv_bid_micros),
-        (criterion.get("percentCpcBidMicros"), percent_cpc_bid_micros),
-    )
+    numeric_values = ((criterion.get("cpcBidMicros"), cpc_bid_micros),)
     if any(raw is not None and parsed is None for raw, parsed in numeric_values):
         return None
     try:
@@ -197,9 +180,6 @@ def positive_keyword_reference_from_row(
             status=status,
             bid_modifier=bid_modifier,
             cpc_bid_micros=cpc_bid_micros,
-            cpm_bid_micros=cpm_bid_micros,
-            cpv_bid_micros=cpv_bid_micros,
-            percent_cpc_bid_micros=percent_cpc_bid_micros,
             final_urls=final_urls,
             final_mobile_urls=final_mobile_urls,
             final_url_suffix=final_url_suffix,

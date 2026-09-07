@@ -12,7 +12,6 @@ from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GoogleAdsClient, normalize_customer_id
 from ..constants import GOOGLE_ADS_INT64_MAX
-from .url_custom_parameters import validate_url_custom_parameter_items
 from .list_positive_keywords import list_positive_keyword_pairs
 from .mutation_outcomes import (
     GoogleAdsMutationLedger,
@@ -20,6 +19,7 @@ from .mutation_outcomes import (
     build_mutation_ledger,
     freeze_fields,
 )
+from .url_custom_parameters import validate_url_custom_parameter_items
 from .utils import grouped_partial_failure_errors
 
 type KeywordMatchType = Literal["EXACT", "PHRASE", "BROAD"]
@@ -41,6 +41,7 @@ class GoogleAdsPositiveKeywordCreate:
     text: str
     match_type: KeywordMatchType
     cpc_bid_micros: int | None = None
+    bid_modifier: float | None = None
     status: Literal["ENABLED", "PAUSED"] = "ENABLED"
     final_urls: tuple[str, ...] = ()
     final_mobile_urls: tuple[str, ...] = ()
@@ -185,6 +186,8 @@ def _create_payload(item: GoogleAdsPositiveKeywordCreate, *, customer_id: str) -
     }
     if item.cpc_bid_micros is not None:
         create["cpcBidMicros"] = str(item.cpc_bid_micros)
+    if item.bid_modifier is not None:
+        create["bidModifier"] = item.bid_modifier
     for field, value in (
         ("finalUrls", item.final_urls),
         ("finalMobileUrls", item.final_mobile_urls),
@@ -314,6 +317,8 @@ def _validate_create_identity(item: GoogleAdsPositiveKeywordCreate) -> None:
 
 
 def _validate_create_bids(item: GoogleAdsPositiveKeywordCreate) -> None:
+    if item.bid_modifier is not None and not 0.1 <= item.bid_modifier <= 10:
+        raise ValueError("Google Ads positive keyword bid adjustment must be between 0.1 and 10")
     if item.cpc_bid_micros is not None and not (0 < item.cpc_bid_micros <= GOOGLE_ADS_INT64_MAX):
         raise ValueError("Google Ads positive keyword CPC bid must be positive")
 
@@ -352,6 +357,7 @@ def _optional_identity_fields(item: GoogleAdsPositiveKeywordCreate) -> dict[str,
     fields = {
         key: str(value)
         for key, value in (
+            ("bid_modifier", item.bid_modifier),
             ("cpc_bid_micros", item.cpc_bid_micros),
             ("final_url_suffix", item.final_url_suffix),
             ("tracking_url_template", item.tracking_url_template),
