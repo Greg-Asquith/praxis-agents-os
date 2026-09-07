@@ -1,7 +1,11 @@
 // apps/web/src/integrations/google_ads/components/campaign-link-outcome.tsx
 
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import type { DataColumn } from "@/components/ui/data-table"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { countByKind } from "@/integrations/google_ads/lib/outcomes"
 
 export type CampaignLinkCampaignOutcome = {
   campaignId: string
@@ -25,14 +29,7 @@ export type CampaignLinkResult = {
 const COLUMNS: DataColumn[] = [
   { key: "campaign", kind: "text", label: "Campaign" },
   { key: "campaignId", kind: "text", label: "Campaign ID" },
-  { key: "outcome", kind: "status", label: "Outcome" },
 ]
-const ERROR_COLUMNS: DataColumn[] = [
-  ...COLUMNS,
-  { key: "message", kind: "text", label: "Details" },
-  { key: "errorCode", kind: "badge", label: "Error Code" },
-]
-
 export function CampaignLinkApprovalSummary({
   campaignCount,
   listName,
@@ -52,19 +49,12 @@ export function CampaignLinkApprovalSummary({
 
 export function CampaignLinkOutcome({ result }: { result: CampaignLinkResult }) {
   const action = result.action
-  const successLabel = action === "LINK" ? "Linked" : "Unlinked"
-  const skippedLabel = action === "LINK" ? "Already linked" : "Not linked"
-  const {
-    failed: failedCount,
-    skipped: skippedCount,
-    succeeded: succeededCount,
-  } = campaignOutcomeCounts(result)
-  const rows: DataRow[] = result.campaigns.map((campaign) => ({
+  const rows: GoogleAdsOutcomeRow[] = result.campaigns.map((campaign) => ({
     campaign: campaign.campaignName || campaign.campaignId,
     campaignId: campaign.campaignId,
     errorCode: campaign.errorCode ?? "",
-    message: campaign.message ?? "",
-    outcome: campaignOutcomeLabel(campaign.outcome),
+    details: campaign.message ?? "",
+    outcome: campaign.outcome,
   }))
   return (
     <div className="grid gap-3">
@@ -83,62 +73,12 @@ export function CampaignLinkOutcome({ result }: { result: CampaignLinkResult }) 
           {` · ${action === "LINK" ? "Apply" : "Remove"}`}
         </p>
       </section>
-      <DataTable
-        columns={failedCount > 0 ? ERROR_COLUMNS : COLUMNS}
+      <GoogleAdsOutcomeTable
+        columns={COLUMNS}
         exportFilename={action === "LINK" ? "linked-campaigns.csv" : "unlinked-campaigns.csv"}
-        header={
-          <StatGroup className="px-3 pt-2">
-            <Stat
-              label={successLabel}
-              tone={succeededCount > 0 ? "success" : undefined}
-              value={succeededCount}
-            />
-            <Stat
-              label={skippedLabel}
-              tone={skippedCount > 0 ? "warning" : undefined}
-              value={skippedCount}
-            />
-            <Stat
-              label="Failed"
-              tone={failedCount > 0 ? "danger" : undefined}
-              value={failedCount}
-            />
-          </StatGroup>
-        }
-        pageSize={25}
+        outcomes={countByKind(rows)}
         rows={rows}
       />
     </div>
   )
-}
-
-function campaignOutcomeLabel(outcome: CampaignLinkCampaignOutcome["outcome"]) {
-  switch (outcome) {
-    case "already_linked":
-      return "Already linked"
-    case "linked":
-      return "Linked"
-    case "not_linked":
-      return "Not linked"
-    case "unlinked":
-      return "Unlinked"
-    case "failed":
-      return "Failed"
-  }
-}
-
-function campaignOutcomeCounts(result: CampaignLinkResult) {
-  let failed = 0
-  let skipped = 0
-  let succeeded = 0
-  for (const campaign of result.campaigns) {
-    if (campaign.outcome === "failed") {
-      failed += 1
-    } else if (campaign.outcome === "already_linked" || campaign.outcome === "not_linked") {
-      skipped += 1
-    } else {
-      succeeded += 1
-    }
-  }
-  return { failed, skipped, succeeded }
 }

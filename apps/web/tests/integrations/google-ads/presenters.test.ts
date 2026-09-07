@@ -517,6 +517,117 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("Download Report CSV")
   })
 
+  it.each([
+    ["previous_bid_modifier", "0.7"],
+    ["previous_bid_modifier", Number.NaN],
+    ["previous_bid_modifier", Number.POSITIVE_INFINITY],
+    ["external_ref", 123],
+    ["message", false],
+    ["error_code", {}],
+    ["note", []],
+  ])("rejects malformed nullable device field %s", (key, value) => {
+    const html = render(
+      googleAdsDeviceBidModifiersPresenter.render(
+        props({
+          id: "invalid-device",
+          kind: "result",
+          name: "google_ads_update_device_bid_modifiers",
+          status: "completed",
+          result: {
+            results: [
+              entry({
+                campaigns: [
+                  {
+                    campaign_id: "10",
+                    campaign_name: "Brand",
+                    bidding_strategy_type: "MANUAL_CPC",
+                    target_cpa_configured: false,
+                    devices: [
+                      {
+                        device: "MOBILE",
+                        requested_bid_modifier: 0.7,
+                        outcome: "updated",
+                        external_ref: "customers/123/campaignCriteria/10~1",
+                        [key]: value,
+                      },
+                    ],
+                  },
+                ],
+              }),
+            ],
+          },
+        })
+      )
+    )
+    expect(html).toContain("couldn&#x27;t verify this account&#x27;s device bid adjustment")
+  })
+
+  it.each([null, undefined, 0])(
+    "accepts nullable or zero previous device modifiers: %s",
+    (previous) => {
+      const html = render(
+        googleAdsDeviceBidModifiersPresenter.render(
+          props({
+            id: "valid-device",
+            kind: "result",
+            name: "google_ads_update_device_bid_modifiers",
+            status: "completed",
+            result: {
+              results: [
+                entry({
+                  campaigns: [
+                    {
+                      campaign_id: "10",
+                      campaign_name: "Brand",
+                      bidding_strategy_type: "MANUAL_CPC",
+                      target_cpa_configured: false,
+                      devices: [
+                        {
+                          device: "MOBILE",
+                          requested_bid_modifier: 0.7,
+                          previous_bid_modifier: previous,
+                          outcome: "updated",
+                          external_ref: "customers/123/campaignCriteria/10~1",
+                        },
+                      ],
+                    },
+                  ],
+                }),
+              ],
+            },
+          })
+        )
+      )
+      expect(html).toContain("Download Report CSV")
+      expect(html).not.toContain("couldn&#x27;t verify")
+    }
+  )
+
+  it.each([
+    [
+      googleAdsDeviceBidModifiersPresenter,
+      "google_ads_update_device_bid_modifiers",
+      {
+        campaign_ids: [campaignReference("10", "Brand")],
+        adjustments: [{ device: "MOBILE", bid_modifier: 0.7 }],
+      },
+    ],
+    [
+      googleAdsCampaignLinksPresenter,
+      "google_ads_link_negative_keyword_list",
+      {
+        campaign_ids: [campaignReference("10", "Brand")],
+        action: "LINK",
+        negative_list: sharedSetReference("20", "Exclusions"),
+      },
+    ],
+  ] as const)("shows campaign label chips for failed %s", (presenter, name, args) => {
+    const html = render(
+      presenter.render(props({ id: "failed", kind: "result", name, args, status: "failed" }))
+    )
+    expect(html).toMatch(/data-slot="badge"[^>]*>Brand<\/span>/)
+  })
+
   it("isolates malformed device outcomes and protects unverified writes", () => {
     const malformedHtml = render(
       googleAdsDeviceBidModifiersPresenter.render(

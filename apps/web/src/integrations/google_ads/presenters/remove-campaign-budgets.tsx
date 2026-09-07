@@ -1,8 +1,13 @@
 // apps/web/src/integrations/google_ads/presenters/remove-campaing-budgets.tsx
 
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import type { DataColumn } from "@/components/ui/data-table"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 import {
   budgetPeriodLabel,
   formatCampaignBudgetAmount,
@@ -48,8 +53,6 @@ const COLUMNS: DataColumn[] = [
   { key: "linkedCampaigns", kind: "text", label: "Linked Campaigns" },
   { key: "previousStatus", kind: "status", label: "Before" },
   { key: "resultingStatus", kind: "status", label: "After" },
-  { key: "outcome", kind: "status", label: "Outcome" },
-  { key: "details", kind: "text", label: "Details" },
 ]
 
 export const googleAdsRemoveCampaignBudgetsPresenter = createGoogleAdsWritePresenter({
@@ -74,6 +77,12 @@ export const googleAdsRemoveCampaignBudgetsPresenter = createGoogleAdsWritePrese
         "The system couldn't verify this account's campaign budget removal outcomes. Check Google Ads before taking further action.",
       parseResult: removalResult,
       progressLabel: "Removing Google Ads campaign budgets…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets
+          description={description}
+          targets={args?.budgets.map((budget) => budget.label) ?? []}
+        />
+      ),
       renderOutcome: renderRemovalOutcomeTable,
       resultAriaLabel: "Google Ads campaign budget removal results",
       resultFailure:
@@ -122,59 +131,35 @@ function renderRemovalApprovalSummary(args: RemovalArgs) {
 }
 
 function renderRemovalOutcomeTable(result: RemovalResult) {
-  const rows = result.rows.map<DataRow>((row) => {
-    const details = [row.message]
-    if (row.errorCode) {
-      details.push(titleCaseToken(row.errorCode, row.errorCode))
-    }
-    return {
-      amount: formatCampaignBudgetAmount(row.reference),
-      budget: row.reference.label,
-      budgetId: row.reference.budgetId,
-      details: details.filter((value): value is string => Boolean(value)).join(" · ") || "—",
-      linkedCampaigns:
-        row.reference.referenceCount === null
-          ? "Unavailable"
-          : approvalCountLine(row.reference.referenceCount, "campaign"),
-      outcome: titleCaseToken(row.outcome, row.outcome),
-      period: budgetPeriodLabel(row.reference.period),
-      previousStatus: titleCaseToken(row.previousStatus, row.previousStatus),
-      resultingStatus:
-        row.resultingStatus === null
-          ? "Unverified"
-          : titleCaseToken(row.resultingStatus, row.resultingStatus),
-    }
-  })
+  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
+    amount: formatCampaignBudgetAmount(row.reference),
+    budget: row.reference.label,
+    budgetId: row.reference.budgetId,
+    details: row.message ?? "",
+    errorCode: row.errorCode,
+    linkedCampaigns:
+      row.reference.referenceCount === null
+        ? "Unavailable"
+        : approvalCountLine(row.reference.referenceCount, "campaign"),
+    outcome: row.outcome,
+    period: budgetPeriodLabel(row.reference.period),
+    previousStatus: titleCaseToken(row.previousStatus, row.previousStatus),
+    resultingStatus:
+      row.resultingStatus === null
+        ? "Unverified"
+        : titleCaseToken(row.resultingStatus, row.resultingStatus),
+  }))
   return (
-    <DataTable
+    <GoogleAdsOutcomeTable
       columns={COLUMNS}
       exportFilename="removed-campaign-budgets.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Removed"
-            tone={result.counts.removed > 0 ? "success" : undefined}
-            value={result.counts.removed}
-          />
-          <Stat
-            label="Failed"
-            tone={result.counts.failed > 0 ? "danger" : undefined}
-            value={result.counts.failed}
-          />
-          <Stat
-            label="Unverified"
-            tone={result.counts.unverified > 0 ? "warning" : undefined}
-            value={result.counts.unverified}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
+      outcomes={OUTCOMES.map((token) => ({
+        kind: outcomeKind(token),
+        label: outcomeLabel(token),
+        count: result.counts[token],
+      }))}
       rows={rows}
-      truncationNote={
-        result.samplesTruncated
-          ? "The table contains a representative sample. Complete evidence is available in the Audit Log."
-          : null
-      }
+      truncated={result.samplesTruncated}
     />
   )
 }

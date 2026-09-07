@@ -1,5 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/campaign-links.tsx
 
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+
 import {
   CampaignLinkApprovalSummary,
   CampaignLinkOutcome,
@@ -47,6 +49,9 @@ export const googleAdsCampaignLinksPresenter = createGoogleAdsWritePresenter({
       parseResult: campaignLinkResult,
       progressLabel: (args) =>
         `${args?.action === "UNLINK" ? "Removing" : "Applying"} negative keyword list…`,
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets targets={args?.campaignLabels ?? []} description={description} />
+      ),
       renderOutcome: (result) => <CampaignLinkOutcome result={result} />,
       resultAriaLabel: "Google Ads campaign list results",
       resultFailure:

@@ -8,13 +8,13 @@ import {
   type DeviceBidModifierOutcome,
   type DeviceBidModifierResult,
 } from "@/integrations/google_ads/components/device-bid-modifier-outcome"
-import { CampaignFailure } from "@/integrations/google_ads/components/campaign-outcome"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import { formatDeviceBidAdjustment } from "@/integrations/google_ads/lib/device-bid-modifiers"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { isOneOf, isRecord } from "@/lib/guards"
+import { isNullableFiniteNumber, isNullableString, isOneOf, isRecord } from "@/lib/guards"
 
 const DEVICES = new Set(["DESKTOP", "MOBILE", "TABLET"] as const)
 const OUTCOMES = new Set(["updated", "already_set", "failed"] as const)
@@ -57,7 +57,7 @@ export const googleAdsDeviceBidModifiersPresenter = createGoogleAdsWritePresente
       parseResult: deviceBidModifierResult,
       progressLabel: "Updating Google Ads device bid adjustments…",
       renderFailure: (args, description) => (
-        <CampaignFailure args={rawCampaignArgs(args)} description={description} />
+        <GoogleAdsFailureTargets targets={args?.campaignLabels ?? []} description={description} />
       ),
       renderOutcome: (result) => <DeviceBidModifierOutcomeCard result={result} />,
       resultAriaLabel: "Google Ads device bid adjustment results",
@@ -206,19 +206,19 @@ function deviceOutcome(value: unknown): DeviceBidModifierOutcome | null {
   ) {
     return null
   }
-  const previous = value["previous_bid_modifier"]
-  if (previous !== null && previous !== undefined && !isFiniteNumber(previous)) {
+  const previous = value["previous_bid_modifier"] ?? null
+  if (!isNullableFiniteNumber(previous)) {
     return null
   }
-  const externalRef = optionalString(value["external_ref"])
-  const message = optionalString(value["message"])
-  const errorCode = optionalString(value["error_code"])
-  const note = optionalString(value["note"])
+  const externalRef = value["external_ref"] ?? null
+  const message = value["message"] ?? null
+  const errorCode = value["error_code"] ?? null
+  const note = value["note"] ?? null
   if (
-    externalRef === undefined ||
-    message === undefined ||
-    errorCode === undefined ||
-    note === undefined ||
+    !isNullableString(externalRef) ||
+    !isNullableString(message) ||
+    !isNullableString(errorCode) ||
+    !isNullableString(note) ||
     (value["outcome"] !== "failed" && !externalRef)
   ) {
     return null
@@ -231,29 +231,6 @@ function deviceOutcome(value: unknown): DeviceBidModifierOutcome | null {
     message,
     note,
     outcome: value["outcome"],
-    previousBidModifier: previous ?? null,
+    previousBidModifier: previous,
   }
-}
-
-function optionalString(value: unknown): string | null | undefined {
-  return value === null || value === undefined
-    ? null
-    : typeof value === "string"
-      ? value
-      : undefined
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value)
-}
-
-function rawCampaignArgs(args: DeviceBidModifierArgs | null): unknown {
-  return args
-    ? {
-        campaign_ids: args.campaignIds.map((campaignId, index) => ({
-          campaign_id: campaignId,
-          label: args.campaignLabels[index] ?? campaignId,
-        })),
-      }
-    : null
 }

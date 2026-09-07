@@ -1,7 +1,11 @@
 // apps/web/src/integrations/google_ads/components/device-bid-modifier-outcome.tsx
 
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import type { DataColumn } from "@/components/ui/data-table"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { countByKind, outcomeDetails } from "@/integrations/google_ads/lib/outcomes"
 import {
   formatDeviceBidAdjustment,
   humanizeGoogleAdsToken,
@@ -39,9 +43,7 @@ const COLUMNS: DataColumn[] = [
   { key: "device", kind: "text", label: "Device" },
   { key: "previous", kind: "text", label: "Previous" },
   { key: "requested", kind: "text", label: "Requested" },
-  { key: "outcome", kind: "status", label: "Outcome" },
   { key: "strategy", kind: "text", label: "Bidding Strategy" },
-  { key: "details", kind: "text", label: "Details" },
 ]
 export function DeviceBidModifierApprovalSummary({
   adjustments,
@@ -75,15 +77,14 @@ export function DeviceBidModifierApprovalSummary({
 }
 
 export function DeviceBidModifierOutcomeCard({ result }: { result: DeviceBidModifierResult }) {
-  const counts = outcomeCounts(result)
-  const rows: DataRow[] = result.campaigns.flatMap((campaign) =>
+  const rows: GoogleAdsOutcomeRow[] = result.campaigns.flatMap((campaign) =>
     campaign.devices.map((device) => ({
       campaign: campaign.campaignName || campaign.campaignId,
       campaignId: campaign.campaignId,
-      details: outcomeDetails(device),
+      details: outcomeDetails(device.message, null, device.note),
+      errorCode: device.errorCode,
       device: humanizeGoogleAdsToken(device.device),
-      outcome:
-        device.outcome === "already_set" ? "Already set" : humanizeGoogleAdsToken(device.outcome),
+      outcome: device.outcome,
       previous:
         device.previousBidModifier === null
           ? "Not set"
@@ -94,29 +95,10 @@ export function DeviceBidModifierOutcomeCard({ result }: { result: DeviceBidModi
   )
 
   return (
-    <DataTable
+    <GoogleAdsOutcomeTable
       columns={COLUMNS}
       exportFilename="device-bid-adjustments.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Updated"
-            tone={counts.updated > 0 ? "success" : undefined}
-            value={counts.updated}
-          />
-          <Stat
-            label="Already set"
-            tone={counts.alreadySet > 0 ? "warning" : undefined}
-            value={counts.alreadySet}
-          />
-          <Stat
-            label="Failed"
-            tone={counts.failed > 0 ? "danger" : undefined}
-            value={counts.failed}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
+      outcomes={countByKind(rows)}
       rows={rows}
     />
   )
@@ -127,30 +109,4 @@ function biddingStrategyLabel(campaign: DeviceBidModifierCampaign): string {
   return campaign.biddingStrategyType === "MAXIMIZE_CONVERSIONS" && campaign.targetCpaConfigured
     ? `${strategy} · Target CPA`
     : strategy
-}
-
-function outcomeCounts(result: DeviceBidModifierResult) {
-  let alreadySet = 0
-  let failed = 0
-  let updated = 0
-  for (const campaign of result.campaigns) {
-    for (const device of campaign.devices) {
-      if (device.outcome === "already_set") {
-        alreadySet += 1
-      } else if (device.outcome === "failed") {
-        failed += 1
-      } else {
-        updated += 1
-      }
-    }
-  }
-  return { alreadySet, failed, updated }
-}
-
-function outcomeDetails(device: DeviceBidModifierOutcome): string {
-  const details = [device.message, device.note]
-  if (device.errorCode) {
-    details.push(humanizeGoogleAdsToken(device.errorCode))
-  }
-  return details.filter((value): value is string => Boolean(value)).join(" · ") || "—"
 }

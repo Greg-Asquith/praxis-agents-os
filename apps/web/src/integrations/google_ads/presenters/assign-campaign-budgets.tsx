@@ -1,8 +1,13 @@
 // apps/web/src/integrations/google_ads/presenters/assign-campaign-budgets.tsx
 
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import type { DataColumn } from "@/components/ui/data-table"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 import {
   budgetPeriodLabel,
   parseCampaignBudgetReference,
@@ -12,7 +17,6 @@ import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
-import { titleCaseToken } from "@/lib/format"
 
 import {
   parseCampaignReference,
@@ -54,11 +58,8 @@ type AssignmentResult = {
 const COLUMNS: DataColumn[] = [
   { key: "campaign", kind: "text", label: "Campaign" },
   { key: "campaignId", kind: "id", label: "Campaign ID" },
-  { key: "previousBudget", kind: "text", label: "From" },
-  { key: "requestedBudget", kind: "text", label: "To" },
-  { key: "route", kind: "text", label: "Budget Route", width: 260 },
-  { key: "outcome", kind: "status", label: "Outcome" },
-  { key: "details", kind: "text", label: "Details" },
+  { key: "previousBudget", kind: "text", label: "Before" },
+  { key: "requestedBudget", kind: "text", label: "After" },
 ]
 
 export const googleAdsAssignCampaignBudgetsPresenter = createGoogleAdsWritePresenter({
@@ -89,6 +90,12 @@ export const googleAdsAssignCampaignBudgetsPresenter = createGoogleAdsWritePrese
         "The system couldn't verify this account's campaign budget assignment outcomes. Check Google Ads before taking further action.",
       parseResult: assignmentResult,
       progressLabel: "Assigning Google Ads campaign budgets…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets
+          description={description}
+          targets={args?.campaigns.map((campaign) => campaign.label) ?? []}
+        />
+      ),
       renderOutcome: renderAssignmentOutcomeTable,
       resultAriaLabel: "Google Ads campaign budget assignment results",
       resultFailure:
@@ -143,22 +150,15 @@ function renderAssignmentApprovalSummary(args: AssignmentArgs) {
 }
 
 function renderAssignmentOutcomeTable(result: AssignmentResult) {
-  const rows = result.rows.map<DataRow>((row) => {
-    const details = [row.message]
-    if (row.errorCode) {
-      details.push(titleCaseToken(row.errorCode, row.errorCode))
-    }
-    return {
-      campaign: row.campaign.label,
-      campaignId: row.campaign.campaignId,
-      details: details.filter((value): value is string => Boolean(value)).join(" · ") || "—",
-      outcome:
-        row.outcome === "already_set" ? "Already set" : titleCaseToken(row.outcome, row.outcome),
-      previousBudget: row.previousBudget.label,
-      requestedBudget: row.requestedBudget.label,
-      route: `${row.previousBudget.label} → ${row.requestedBudget.label}`,
-    }
-  })
+  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
+    campaign: row.campaign.label,
+    campaignId: row.campaign.campaignId,
+    details: row.message ?? "",
+    errorCode: row.errorCode,
+    outcome: row.outcome,
+    previousBudget: row.previousBudget.label,
+    requestedBudget: row.requestedBudget.label,
+  }))
   return (
     <div className="grid gap-3">
       <section className="border-border bg-muted/35 rounded-lg border px-3 py-2.5">
@@ -173,36 +173,16 @@ function renderAssignmentOutcomeTable(result: AssignmentResult) {
           </p>
         </div>
       </section>
-      <DataTable
+      <GoogleAdsOutcomeTable
         columns={COLUMNS}
         exportFilename="campaign-budget-assignments.csv"
-        header={
-          <StatGroup className="px-3 pt-2">
-            <Stat
-              label="Assigned"
-              tone={result.counts.assigned > 0 ? "success" : undefined}
-              value={result.counts.assigned}
-            />
-            <Stat label="Already set" value={result.counts.already_set} />
-            <Stat
-              label="Failed"
-              tone={result.counts.failed > 0 ? "danger" : undefined}
-              value={result.counts.failed}
-            />
-            <Stat
-              label="Unverified"
-              tone={result.counts.unverified > 0 ? "warning" : undefined}
-              value={result.counts.unverified}
-            />
-          </StatGroup>
-        }
-        pageSize={25}
+        outcomes={OUTCOMES.map((token) => ({
+          kind: outcomeKind(token),
+          label: outcomeLabel(token),
+          count: result.counts[token],
+        }))}
         rows={rows}
-        truncationNote={
-          result.samplesTruncated
-            ? "The table contains a representative sample. Complete evidence is available in the Audit Log."
-            : null
-        }
+        truncated={result.samplesTruncated}
       />
     </div>
   )

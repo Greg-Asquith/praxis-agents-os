@@ -3,8 +3,13 @@
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { ArrowRightIcon } from "lucide-react"
 
-import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import type { DataColumn, DataRow } from "@/components/ui/data-table"
+import {
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
+import { outcomeKind, outcomeLabel, outcomeDetails } from "@/integrations/google_ads/lib/outcomes"
 import {
   budgetPeriodLabel,
   formatCampaignBudgetAmount,
@@ -18,7 +23,7 @@ import {
   defineGoogleAdsWriteVariant,
 } from "@/integrations/google_ads/presenters/write-presenter"
 
-import { formatCurrencyAmount, formatPercentageChange, titleCaseToken } from "@/lib/format"
+import { formatCurrencyAmount, formatPercentageChange } from "@/lib/format"
 import { isNullableString, isRecord, parsePositiveDecimal } from "@/lib/guards"
 
 const OUTCOMES = ["updated", "already_set", "failed", "unverified"] as const
@@ -58,8 +63,6 @@ const COLUMNS: DataColumn[] = [
   { key: "change", kind: "text", label: "Change", width: 180 },
   { key: "period", kind: "text", label: "Period" },
   { key: "linkedCampaigns", kind: "text", label: "Linked Campaigns" },
-  { key: "outcome", kind: "status", label: "Outcome" },
-  { key: "details", kind: "text", label: "Details" },
 ]
 
 export const googleAdsUpdateCampaignBudgetAmountsPresenter = createGoogleAdsWritePresenter({
@@ -84,6 +87,12 @@ export const googleAdsUpdateCampaignBudgetAmountsPresenter = createGoogleAdsWrit
         "The system couldn't verify this account's campaign budget amount outcomes. Check Google Ads before taking further action.",
       parseResult: updateBudgetResult,
       progressLabel: "Updating Google Ads campaign budget amounts…",
+      renderFailure: (args, description) => (
+        <GoogleAdsFailureTargets
+          description={description}
+          targets={args?.updates.map((update) => update.budget.label) ?? []}
+        />
+      ),
       renderOutcome: renderUpdateBudgetOutcome,
       resultAriaLabel: "Google Ads campaign budget amount results",
       resultFailure:
@@ -140,65 +149,48 @@ function renderUpdateBudgetApprovalSummary(args: UpdateBudgetArgs) {
 }
 
 function renderUpdateBudgetOutcome(result: UpdateBudgetResult) {
-  const rows = result.rows.map<DataRow>((row) => {
-    const details = [row.message]
-    if (row.errorCode) {
-      details.push(titleCaseToken(row.errorCode, row.errorCode))
-    }
-    if (row.reference.period === "DAILY") {
-      details.push(formatDailyEstimate(row.requestedAmount, row.reference.currencyCode))
-    }
-    return {
-      budget: row.reference.label,
-      change: formatPercentageChange(Number(row.previousAmount), Number(row.requestedAmount)),
-      details: details.filter((value): value is string => Boolean(value)).join(" · ") || "—",
-      linkedCampaigns: approvalCountLine(
-        row.reference.referenceCount ?? row.campaignLabelCount,
-        "campaign"
-      ),
-      outcome:
-        row.outcome === "already_set" ? "Already set" : titleCaseToken(row.outcome, row.outcome),
-      period: budgetPeriodLabel(row.reference.period),
-      previous: formatCurrencyAmount(row.previousAmount, row.reference.currencyCode),
-      previousRaw: row.previousAmount,
-      requested: formatCurrencyAmount(row.requestedAmount, row.reference.currencyCode),
-      requestedRaw: row.requestedAmount,
-    }
-  })
-  const note = result.samplesTruncated
-    ? "The table contains a representative sample. Complete evidence is available in the Audit Log."
-    : result.campaignLabelsTruncated
-      ? "Some linked campaign names are omitted from the retained result."
-      : null
+  const rows = result.rows.map<GoogleAdsOutcomeRow>((row) => ({
+    budget: row.reference.label,
+    change: formatPercentageChange(Number(row.previousAmount), Number(row.requestedAmount)),
+    details: outcomeDetails(
+      row.message,
+      null,
+      row.reference.period === "DAILY"
+        ? formatDailyEstimate(row.requestedAmount, row.reference.currencyCode)
+        : null
+    ),
+    errorCode: row.errorCode,
+    linkedCampaigns: approvalCountLine(
+      row.reference.referenceCount ?? row.campaignLabelCount,
+      "campaign"
+    ),
+    outcome: row.outcome,
+    period: budgetPeriodLabel(row.reference.period),
+    previous: formatCurrencyAmount(row.previousAmount, row.reference.currencyCode),
+    previousRaw: row.previousAmount,
+    requested: formatCurrencyAmount(row.requestedAmount, row.reference.currencyCode),
+    requestedRaw: row.requestedAmount,
+  }))
   return (
-    <DataTable
-      columns={COLUMNS}
-      exportFilename="campaign-budget-amounts.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Updated"
-            tone={result.counts.updated > 0 ? "success" : undefined}
-            value={result.counts.updated}
-          />
-          <Stat label="Already set" value={result.counts.already_set} />
-          <Stat
-            label="Failed"
-            tone={result.counts.failed > 0 ? "danger" : undefined}
-            value={result.counts.failed}
-          />
-          <Stat
-            label="Unverified"
-            tone={result.counts.unverified > 0 ? "warning" : undefined}
-            value={result.counts.unverified}
-          />
-        </StatGroup>
-      }
-      pageSize={25}
-      renderCell={renderBudgetChangeCell}
-      rows={rows}
-      truncationNote={note}
-    />
+    <div className="grid gap-2">
+      <GoogleAdsOutcomeTable
+        columns={COLUMNS}
+        exportFilename="campaign-budget-amounts.csv"
+        outcomes={OUTCOMES.map((token) => ({
+          kind: outcomeKind(token),
+          label: outcomeLabel(token),
+          count: result.counts[token],
+        }))}
+        renderCell={renderBudgetChangeCell}
+        rows={rows}
+        truncated={result.samplesTruncated}
+      />
+      {result.campaignLabelsTruncated ? (
+        <p className="text-muted-foreground text-xs">
+          Some linked campaign names are omitted from the retained result.
+        </p>
+      ) : null}
+    </div>
   )
 }
 

@@ -10,6 +10,40 @@ import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_a
 import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
 
 describe("Google Ads campaign budget presenters", () => {
+  it.each([
+    [
+      googleAdsUpdateCampaignBudgetAmountsPresenter,
+      "google_ads_update_campaign_budget_amounts",
+      { updates: [{ budget: budgetReference("55", "Brand budget"), amount: "12.50" }] },
+      "Brand budget",
+    ],
+    [
+      googleAdsAssignCampaignBudgetsPresenter,
+      "google_ads_assign_campaign_budgets",
+      {
+        campaigns: [campaignReference("10", "Brand campaign")],
+        destination_budget: budgetReference("55", "Shared budget"),
+        _budget_routes: [
+          {
+            campaign: campaignReference("10", "Brand campaign"),
+            previous_budget: budgetReference("54", "Old budget"),
+            destination_budget: budgetReference("55", "Shared budget"),
+          },
+        ],
+      },
+      "Brand campaign",
+    ],
+    [
+      googleAdsRemoveCampaignBudgetsPresenter,
+      "google_ads_remove_campaign_budgets",
+      { budgets: [budgetReference("55", "Unused budget", { reference_count: 0 })] },
+      "Unused budget",
+    ],
+  ] as const)("shows selected labels for failed %s", (presenter, name, args, label) => {
+    const html = render(presenter.render(props(activity(name, "failed", args))))
+    expect(html).toMatch(new RegExp(`data-slot="badge"[^>]*>${label}</span>`))
+  })
+
   it("shows trusted account currencies in the create approval", () => {
     const html = render(
       googleAdsCreateCampaignBudgetPresenter.render(
@@ -405,7 +439,11 @@ describe("Google Ads campaign budget presenters", () => {
     expect(approvalHtml).toContain("Shared growth budget")
     expect(approvalHtml).toContain("Brand budget")
     expect(approvalHtml).toContain("→")
-    expect(resultHtml).toContain("Brand budget → Shared growth budget")
+    expect(resultHtml).toContain("Brand budget")
+    expect(resultHtml).toContain("Shared growth budget")
+    expect(resultHtml).toContain(">Before<")
+    expect(resultHtml).toContain(">After<")
+    expect(resultHtml).not.toContain("→")
     expect(resultHtml).toContain("Already set")
     expect(resultHtml).toContain("Assigned")
   })
