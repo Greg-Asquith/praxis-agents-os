@@ -8,7 +8,7 @@ model and a fully-resolved model spec ready for the factory to instantiate.
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypeGuard
 
 from core.exceptions.general import ProblemDetailsError
 
@@ -16,13 +16,26 @@ PROVIDER_ANTHROPIC = "anthropic"
 PROVIDER_OPENAI = "openai"
 PROVIDER_GOOGLE = "google"
 PROVIDER_AZURE = "azure"
+PROVIDER_META = "meta"
+PROVIDER_MISTRAL = "mistral"
+PROVIDER_XAI = "xai"
 
-ALL_PROVIDERS = frozenset({PROVIDER_ANTHROPIC, PROVIDER_OPENAI, PROVIDER_GOOGLE, PROVIDER_AZURE})
+VERTEX_PARTNER_PROVIDERS = frozenset({PROVIDER_META, PROVIDER_MISTRAL, PROVIDER_XAI})
+ALL_PROVIDERS = frozenset(
+    {
+        PROVIDER_ANTHROPIC,
+        PROVIDER_OPENAI,
+        PROVIDER_GOOGLE,
+        PROVIDER_AZURE,
+        *VERTEX_PARTNER_PROVIDERS,
+    }
+)
 
 # Fallback step ceiling when an agent does not pin max_steps.
 DEFAULT_MAX_STEPS = 20
 
 ModelType = Literal["light", "standard", "powerful", "max"]
+ProviderTransport = Literal["direct", "google-cloud"]
 
 
 class ModelConfigurationError(ProblemDetailsError):
@@ -69,11 +82,17 @@ class ModelInfo:
     supports_structured_output: bool = True
     default_settings: Mapping[str, Any] = field(default_factory=dict)
     deprecated: bool = False
+    vertex_model: str | None = None
 
     @property
     def qualified_id(self) -> str:
         """Provider-qualified id consumed by Pydantic AI, e.g. 'openai:gpt-5.4-mini'."""
         return f"{self.provider}:{self.model}"
+
+
+def has_vertex_model_id(value: str | None) -> TypeGuard[str]:
+    """Checks whether a catalog entry has a usable Vertex AI model ID."""
+    return bool(value and value.strip())
 
 
 @dataclass(frozen=True)
@@ -90,6 +109,7 @@ class ResolvedModel:
 
     provider: str
     model: str
+    transport_model: str
     settings: Mapping[str, Any]
     max_steps: int
     azure_deployment: str | None = None

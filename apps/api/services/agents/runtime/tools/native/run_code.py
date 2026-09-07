@@ -43,7 +43,7 @@ from services.agents.models.resolution import (
     require_configured_provider,
     require_helper_model,
 )
-from services.agents.models.utils import is_provider_configured
+from services.agents.models.utils import is_provider_configured, provider_transport
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_native_tool_invocation_audit_event
 from services.agents.runtime.entity_references.domain import FileReference
@@ -117,9 +117,13 @@ class RunCodeOutput(BaseModel):
 
 def configured_native_run_code_providers() -> tuple[str, ...]:
     """Returns configured providers that support native code execution."""
-    return configured_helper_providers(
-        SUPPORTED_NATIVE_RUN_CODE_PROVIDERS,
-        is_configured=is_provider_configured,
+    return tuple(
+        provider
+        for provider in configured_helper_providers(
+            SUPPORTED_NATIVE_RUN_CODE_PROVIDERS,
+            is_configured=is_provider_configured,
+        )
+        if not (provider == PROVIDER_ANTHROPIC and provider_transport(provider) == "google-cloud")
     )
 
 

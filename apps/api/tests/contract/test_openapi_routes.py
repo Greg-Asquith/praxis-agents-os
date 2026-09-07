@@ -55,6 +55,18 @@ def test_model_catalog_route_is_registered_under_api_v1(
     assert "/api/v1/models/catalog" in paths
 
 
+def test_model_catalog_provider_schema_requires_transport_contract(
+    openapi_schema: dict[str, object],
+) -> None:
+    provider_schema = openapi_schema["components"]["schemas"]["ModelCatalogProvider"]
+
+    assert "transport" in provider_schema["required"]
+    assert provider_schema["properties"]["transport"]["enum"] == [
+        "direct",
+        "google-cloud",
+    ]
+
+
 def test_tool_catalog_route_is_registered_under_api_v1(
     openapi_schema: dict[str, object],
 ) -> None:

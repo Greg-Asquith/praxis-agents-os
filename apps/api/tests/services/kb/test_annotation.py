@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.kb import KBChunk
-from services.kb.annotation import annotate_chunks
+from services.agents.models.domain import ModelConfigurationError
+from services.kb.annotation import _resolve_annotation_model, annotate_chunks
 from tests.factories import build_kb_chunk, build_kb_document
 from tests.services.kb.conftest import KBActors
 
@@ -29,6 +30,17 @@ def _user_prompt(messages) -> str:
         for part in message.parts
         if isinstance(part, UserPromptPart) and isinstance(part.content, str)
     )
+
+
+async def test_annotation_model_resolution_fails_closed_for_missing_vertex_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "KB_ANNOTATION_PROVIDER", "anthropic")
+    monkeypatch.setattr(settings, "KB_ANNOTATION_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
+
+    with pytest.raises(ModelConfigurationError, match="has no Vertex AI model ID"):
+        _resolve_annotation_model()
 
 
 async def test_hostile_content_is_framed_and_context_is_bounded(

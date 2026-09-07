@@ -118,6 +118,9 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
 
 ### 4. Complete the first deployment
 
+- [ ] For Claude or other serverless partner models through Vertex AI,
+      complete [model enablement](#enable-serverless-partner-models) in the
+      target project before the first inference request.
 - [ ] Optional local preview:
       `deploy/gcp/deploy.sh --render-only /tmp/praxis-render $ENV_FILE`
 - [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes both images,
@@ -136,6 +139,29 @@ and embedding usage is billed to `GCP_PROJECT_ID` through Application Default
 Credentials. `GOOGLE_VERTEX_LOCATION` defaults to `global`. The
 `GOOGLE_API_KEY` binding can be removed from `RUNTIME_SECRET_BINDINGS` when no
 other configured feature needs it.
+
+#### Enable serverless partner models
+
+Model Garden enablement is a manual deployment prerequisite for each selected
+partner model in each target project. The bootstrap and deploy scripts do not
+enable these models. Enabling the Vertex AI API and granting service-account
+access do not complete this step.
+
+1. In Google Cloud Console, select the project used for Vertex requests:
+   `GOOGLE_VERTEX_PROJECT`, falling back to `GCP_PROJECT_ID`.
+2. In **Model Garden**, open each selected serverless partner model's card,
+   including the exact Claude model version. If **Enable** is available,
+   click it and complete the model's access and terms flow as the authorized
+   operator. Repeat for each environment and each additional model.
+3. After deployment, send a small streamed request through Praxis for each
+   selected model. Confirm a model response before considering the model
+   ready for use; API health alone does not verify model access.
+
+If a request returns a quota error, first verify model enablement in the
+request's project. If the error persists after enablement, inspect the quota
+named in the response and request an increase if needed. An unenabled Sonnet 5
+model returned a quota-exceeded 429 during deployment verification; that status
+alone does not establish that an enabled model has exhausted its allowance.
 
 ### 5. Create the first super admin
 
@@ -203,6 +229,9 @@ machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
 
 ## Deploy a change
 
+- [ ] If the change adds a Vertex partner model or changes the Vertex project,
+      complete [model enablement](#enable-serverless-partner-models) for that
+      model and project, then verify inference after deployment.
 - [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes both images
       tagged with the git SHA (override via `GIT_SHA=...`), replaces and
       waits for the migration job, then replaces the API, web, and worker.

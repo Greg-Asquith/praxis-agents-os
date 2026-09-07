@@ -29,8 +29,12 @@ from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_AZURE,
     PROVIDER_GOOGLE,
+    PROVIDER_META,
+    PROVIDER_MISTRAL,
     PROVIDER_OPENAI,
+    PROVIDER_XAI,
     ModelConfigurationError,
+    ModelInfo,
 )
 
 
@@ -151,6 +155,7 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
 
     providers = {provider.provider: provider for provider in response.providers}
     assert providers[PROVIDER_OPENAI].configured is True
+    assert providers[PROVIDER_OPENAI].transport == "direct"
     assert providers[PROVIDER_OPENAI].model_count == len(response.models)
     assert providers[PROVIDER_OPENAI].model_type_defaults == {
         "max": "openai:gpt-5.6-sol",
@@ -161,6 +166,10 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
     assert providers[PROVIDER_ANTHROPIC].configured is False
     assert providers[PROVIDER_ANTHROPIC].model_type_defaults == {}
     assert providers[PROVIDER_GOOGLE].configured is False
+    assert providers[PROVIDER_META].display_name == "Meta"
+    assert providers[PROVIDER_MISTRAL].display_name == "Mistral AI"
+    assert providers[PROVIDER_XAI].display_name == "xAI"
+    assert providers[PROVIDER_META].transport == "google-cloud"
     assert all(model.model_type for model in response.models)
 
 
@@ -192,6 +201,59 @@ def test_model_catalog_lists_google_models_when_vertex_project_is_configured(mon
     assert response.defaults.agent_model == google_model.qualified_id
     providers = {provider.provider: provider for provider in response.providers}
     assert providers[PROVIDER_GOOGLE].configured is True
+    assert providers[PROVIDER_GOOGLE].transport == "google-cloud"
+
+
+def test_model_catalog_lists_documented_anthropic_vertex_models(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+
+    response = list_model_catalog()
+
+    providers = {provider.provider: provider for provider in response.providers}
+    assert providers[PROVIDER_ANTHROPIC].configured is True
+    assert providers[PROVIDER_ANTHROPIC].transport == "google-cloud"
+    assert providers[PROVIDER_ANTHROPIC].model_count == 8
+    assert {model.model for model in response.models} == {
+        "claude-fable-5-1",
+        "claude-fable-5",
+        "claude-opus-4-8",
+        "claude-opus-4-7",
+        "claude-opus-4-6",
+        "claude-sonnet-5",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+    }
+    assert all(model.provider == PROVIDER_ANTHROPIC for model in response.models)
+    for model in list_models():
+        if model.provider == PROVIDER_ANTHROPIC:
+            assert model.vertex_model == model.model
+
+
+@pytest.mark.parametrize("missing_id", [None, "", "   "])
+def test_model_catalog_lists_only_vertex_entries_with_transport_ids(
+    monkeypatch,
+    missing_id,
+):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    catalog_module = importlib.import_module("services.agents.models.list_model_catalog")
+    available = ModelInfo(
+        provider=PROVIDER_ANTHROPIC,
+        model="claude-available",
+        display_name="Claude Available",
+        context_window=200_000,
+        model_type="standard",
+        vertex_model="claude-available@20260901",
+    )
+    unavailable = replace(available, model="claude-unavailable", vertex_model=missing_id)
+    monkeypatch.setattr(catalog_module, "list_models", lambda: [available, unavailable])
+
+    response = catalog_module.list_model_catalog()
+
+    assert [model.id for model in response.models] == [available.qualified_id]
 
 
 def test_model_catalog_reports_configured_azure_without_catalog_models(monkeypatch):
@@ -204,8 +266,48 @@ def test_model_catalog_reports_configured_azure_without_catalog_models(monkeypat
     assert response.models == []
     providers = {provider.provider: provider for provider in response.providers}
     assert providers[PROVIDER_AZURE].configured is True
+    assert providers[PROVIDER_AZURE].transport == "direct"
     assert providers[PROVIDER_AZURE].model_count == 0
     assert providers[PROVIDER_AZURE].model_type_defaults == {}
+
+
+@pytest.mark.parametrize("provider", [PROVIDER_META, PROVIDER_MISTRAL])
+def test_model_catalog_reports_configured_partner_provider_without_catalog_models(
+    monkeypatch,
+    provider,
+):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+
+    response = list_model_catalog()
+
+    providers = {entry.provider: entry for entry in response.providers}
+    assert providers[provider].configured is True
+    assert providers[provider].transport == "google-cloud"
+    assert providers[provider].model_count == 0
+    assert providers[provider].model_type_defaults == {}
+
+
+def test_model_catalog_exposes_probed_grok_variants(monkeypatch):
+    _clear_model_provider_settings(monkeypatch)
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_LOCATION", "global")
+    response = list_model_catalog()
+    provider = next(entry for entry in response.providers if entry.provider == PROVIDER_XAI)
+    assert provider.transport == "google-cloud"
+    assert provider.model_type_defaults == {
+        "powerful": "xai:grok-4-20-reasoning",
+        "standard": "xai:grok-4-20-non-reasoning",
+    }
+    assert provider.model_count == 2
+    assert {model.model for model in response.models} == {
+        "grok-4-20-reasoning",
+        "grok-4-20-non-reasoning",
+    }
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", False)
+    assert list_model_catalog().models == []
 
 
 def test_model_catalog_uses_first_visible_model_for_each_provider_type(monkeypatch):
@@ -342,6 +444,8 @@ def _clear_model_provider_settings(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", False)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", None)
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
     monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", None)

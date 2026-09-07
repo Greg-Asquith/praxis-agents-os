@@ -39,7 +39,7 @@ from middleware import (
     SecurityHeadersMiddleware,
 )
 from routes import api_router, artifact_serving_router, health_router
-from services.agents.models import close_google_vertex_clients
+from services.agents.models import close_vertex_clients
 from services.agents.runtime import run_task_registry, sweep_abandoned_agent_runs_on_startup
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.events import STREAM_VERSION_HEADER
@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI):
             await close_code_mode_executor()
         finally:
             try:
-                await close_google_vertex_clients()
+                await close_vertex_clients()
             finally:
                 await close_db_connections()
 

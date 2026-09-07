@@ -2,9 +2,51 @@
 
 """Test environment defaults used before importing application settings."""
 
+from __future__ import annotations
+
 import os
+from typing import TYPE_CHECKING, Any
 
 from cryptography.fernet import Fernet
+
+if TYPE_CHECKING:
+    from core.settings import Settings
+
+
+def production_settings(**overrides: Any) -> Settings:
+    """Creates valid production settings with caller-owned overrides."""
+    from core.settings import Settings
+
+    values: dict[str, Any] = {
+        "ENVIRONMENT": "production",
+        "STORAGE_PROVIDER": "s3",
+        "EMAIL_PROVIDER": "ses",
+        "SECRET_PROVIDER": "aws_secrets_manager",
+        "CREDENTIAL_MASTER_KEYS": None,
+        "DATABASE_URL": (
+            "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require"
+        ),
+        "DATABASE_MAINTENANCE_URL": (
+            "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require"
+        ),
+        "SECRET_KEY": "x" * 40,
+        "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
+        "SECURE_COOKIES": True,
+        "OPENAI_API_KEY": "sk-openai-test",
+        "GOOGLE_VERTEX_AI": False,
+        "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
+        "WORKSPACE_BUCKET_PREFIX": "praxis-test",
+        "AWS_REGION": "eu-west-2",
+        "AWS_ACCOUNT_ID": "123456789012",
+        "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
+        "APP_BASE_URL": "https://api.example.com",
+        "FRONTEND_URL": "https://app.example.com",
+        "INTEGRATIONS_OAUTH_REDIRECT_URI": ("https://api.example.com/integrations/oauth/callback"),
+        "ARTIFACT_SHARING_ENABLED": False,
+        "RATE_LIMIT_ENABLED": True,
+    }
+    values.update(overrides)
+    return Settings(_env_file=None, **values)
 
 
 def configure_test_environment() -> None:

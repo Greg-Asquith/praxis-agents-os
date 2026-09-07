@@ -14,7 +14,7 @@ from core.database import (
 )
 from core.logging import setup_logging
 from core.settings import settings
-from services.agents.models import close_google_vertex_clients
+from services.agents.models import close_vertex_clients
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.runtime_catalogs import assemble_runtime_catalogs
 from services.security import ensure_application_encryption_keys_loaded
@@ -43,7 +43,7 @@ async def main() -> int:
             await close_code_mode_executor()
         finally:
             try:
-                await close_google_vertex_clients()
+                await close_vertex_clients()
             finally:
                 await close_db_connections()
 

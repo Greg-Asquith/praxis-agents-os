@@ -12,7 +12,7 @@ from google.genai import Client, errors, types
 from core.settings import settings
 from services.agents.models import provider_api_key, retrying_http_client
 from services.agents.models.domain import PROVIDER_GOOGLE
-from services.agents.models.google_vertex_client import get_google_vertex_client
+from services.agents.models.vertex_clients import get_google_vertex_client
 from services.embeddings.domain import (
     EMBEDDING_PROVIDER_GOOGLE,
     EmbeddingBatch,

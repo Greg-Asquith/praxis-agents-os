@@ -275,6 +275,37 @@ apps/api/
   configuration, closed during API, worker, and eval shutdown. Usage-ledger
   attribution and public-rate pricing are keyed by the Google provider and
   model, independent of the selected transport.
+- **Transport-aware model IDs:** The catalog keeps a stable provider and model
+  alias for application contracts. A catalog entry can also declare a
+  provider-facing `vertex_model` ID. When a provider uses the `google-cloud`
+  transport, resolution requires that ID to contain non-whitespace text. The
+  catalog omits entries without one, and direct resolution fails closed. The
+  resolved model carries the provider-facing ID into the factory, so callers
+  do not reconstruct or bypass transport selection.
+- **Anthropic transport:** `ANTHROPIC_VERTEX_AI` routes Claude through
+  `AsyncAnthropicVertex` with Application Default Credentials. Its project
+  follows the shared fallback, and `ANTHROPIC_VERTEX_LOCATION` defaults to
+  `global`. Model IDs come from the documented Model Garden cards, including
+  IDs without date suffixes. Claude clients share the retrying HTTP client and
+  close with Google clients during API, worker, and eval shutdown. Prompt-cache
+  defaults remain enabled; Pydantic AI applies per-block caching on Vertex.
+  Native web fetch and code execution exclude Anthropic on this transport.
+  Web search and classification remain available. Usage attribution retains
+  the Anthropic provider and catalog model. Enable each model in Model Garden
+  before use and select a location supported by that model.
+- **Partner transport:** `VERTEX_PARTNER_MODELS_ENABLED` enables cataloged
+  partner models through Vertex's OpenAI-compatible Chat Completions API.
+  A dedicated retrying HTTP client loads and refreshes Application Default
+  Credentials off the event loop under a lock. It closes through the shared
+  Vertex shutdown operation. The project follows the shared fallback;
+  `VERTEX_PARTNER_LOCATION` selects the endpoint. The catalog includes the
+  probe-verified Grok 4.20 reasoning and non-reasoning variants, which require
+  `global`. Both support streaming, tools, structured output, and image input.
+  Attribution retains `xai` and the catalog alias. Public-rate estimates use
+  the base context tier; the daily ledger cannot distinguish the doubled rate
+  above 200K input tokens. Meta and Mistral catalog entries remain pending
+  because their endpoint probes failed. Partner providers join no native
+  helper provider sets.
 - Infrastructure provider settings live in `core/settings/providers.py`.
   Large language model (LLM) configuration remains separate and includes the
   model catalog and credentials.

@@ -23,8 +23,10 @@ from services.agents.models.domain import (
     PROVIDER_AZURE,
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
+    VERTEX_PARTNER_PROVIDERS,
     MissingModelCredentialError,
     ModelConfigurationError,
+    ProviderTransport,
 )
 
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
@@ -44,6 +46,8 @@ def _raise_for_retryable_status(response: httpx.Response) -> None:
 
 def _build_retrying_http_client(
     wrapped: httpx.AsyncBaseTransport | None = None,
+    *,
+    auth: httpx.Auth | None = None,
 ) -> httpx.AsyncClient:
     transport = AsyncTenacityTransport(
         config=RetryConfig(
@@ -61,6 +65,7 @@ def _build_retrying_http_client(
         validate_response=_raise_for_retryable_status,
     )
     return httpx.AsyncClient(
+        auth=auth,
         transport=transport,
         timeout=httpx.Timeout(timeout=DEFAULT_HTTP_TIMEOUT, connect=5),
     )
@@ -100,11 +105,32 @@ def has_provider_api_key(provider: str) -> bool:
     return secret is not None and bool(secret.get_secret_value().strip())
 
 
+def vertex_project() -> str | None:
+    """Returns the configured Vertex AI project, including the deployment fallback."""
+    for project in (settings.GOOGLE_VERTEX_PROJECT, settings.GCP_PROJECT_ID):
+        normalized = (project or "").strip()
+        if normalized:
+            return normalized
+    return None
+
+
+def provider_transport(provider: str) -> ProviderTransport:
+    """Returns the active transport for a model provider."""
+    if provider == PROVIDER_GOOGLE and settings.GOOGLE_VERTEX_AI:
+        return "google-cloud"
+    if provider == PROVIDER_ANTHROPIC and settings.ANTHROPIC_VERTEX_AI:
+        return "google-cloud"
+    if provider in VERTEX_PARTNER_PROVIDERS:
+        return "google-cloud"
+    return "direct"
+
+
 def is_provider_configured(provider: str) -> bool:
     """Return whether the provider has the runtime configuration needed to build a model."""
-    if provider == PROVIDER_GOOGLE and settings.GOOGLE_VERTEX_AI:
-        project = settings.GOOGLE_VERTEX_PROJECT or settings.GCP_PROJECT_ID
-        return bool((project or "").strip())
+    if provider in VERTEX_PARTNER_PROVIDERS:
+        return settings.VERTEX_PARTNER_MODELS_ENABLED and vertex_project() is not None
+    if provider_transport(provider) == "google-cloud":
+        return vertex_project() is not None
     if provider == PROVIDER_AZURE:
         return has_provider_api_key(provider) and bool(
             (settings.AZURE_OPENAI_ENDPOINT or "").strip()

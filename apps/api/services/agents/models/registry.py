@@ -12,6 +12,7 @@ from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
+    PROVIDER_XAI,
     ModelConfigurationError,
     ModelInfo,
 )
@@ -87,10 +88,12 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_vision=True,
     ),
-    # Anthropic (model IDs are aliases — no date suffix)
+    # Anthropic (Vertex IDs follow the Model Garden cards, checked 2026-09-04).
+    # Model Garden: Claude Fable 5.1 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-fable-5-1",
+        vertex_model="claude-fable-5-1",
         display_name="Claude Fable 5.1",
         context_window=1_000_000,
         model_type="max",
@@ -98,9 +101,11 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # Model Garden: Claude Fable 5 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-fable-5",
+        vertex_model="claude-fable-5",
         display_name="Claude Fable 5",
         context_window=1_000_000,
         model_type="max",
@@ -108,9 +113,11 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # Model Garden: Claude Opus 4.8 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-opus-4-8",
+        vertex_model="claude-opus-4-8",
         display_name="Claude Opus 4.8",
         context_window=1_000_000,
         model_type="powerful",
@@ -118,9 +125,11 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # Model Garden: Claude Opus 4.7 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-opus-4-7",
+        vertex_model="claude-opus-4-7",
         display_name="Claude Opus 4.7",
         context_window=1_000_000,
         model_type="powerful",
@@ -128,9 +137,11 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # Model Garden: Claude Opus 4.6 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-opus-4-6",
+        vertex_model="claude-opus-4-6",
         display_name="Claude Opus 4.6",
         context_window=1_000_000,
         model_type="powerful",
@@ -138,9 +149,11 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # Model Garden: Claude Sonnet 5 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-sonnet-5",
+        vertex_model="claude-sonnet-5",
         display_name="Claude Sonnet 5",
         context_window=1_000_000,
         model_type="standard",
@@ -148,9 +161,11 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # Model Garden: Claude Sonnet 4.6 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-sonnet-4-6",
+        vertex_model="claude-sonnet-4-6",
         display_name="Claude Sonnet 4.6",
         context_window=1_000_000,
         model_type="standard",
@@ -158,9 +173,11 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # Model Garden: Claude Haiku 4.5 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,
         model="claude-haiku-4-5",
+        vertex_model="claude-haiku-4-5",
         display_name="Claude Haiku 4.5",
         context_window=200_000,
         model_type="light",
@@ -177,6 +194,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
+        vertex_model="gemini-3.8-flash",
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -187,6 +205,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
+        vertex_model="gemini-3.7-flash",
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -197,6 +216,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
+        vertex_model="gemini-3.6-flash",
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -207,6 +227,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
+        vertex_model="gemini-3.5-flash",
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -217,6 +238,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
+        vertex_model="gemini-3.5-flash-lite",
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -227,6 +249,7 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
+        vertex_model="gemini-3.1-pro",
     ),
     ModelInfo(
         provider=PROVIDER_GOOGLE,
@@ -236,6 +259,33 @@ _CATALOG: tuple[ModelInfo, ...] = (
         model_type="light",
         chars_per_token=4.0,
         supports_vision=True,
+        vertex_model="gemini-3.1-flash-lite",
+    ),
+    # Model Garden Grok 4.20 cards; streaming, tools, JSON, and vision probed 2026-09-05.
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/partner-models/grok/grok-4-20
+    ModelInfo(
+        provider=PROVIDER_XAI,
+        model="grok-4-20-reasoning",
+        display_name="Grok 4.20 (Reasoning)",
+        context_window=2_000_000,
+        model_type="powerful",
+        supports_tools=True,
+        supports_thinking=True,
+        supports_vision=True,
+        supports_structured_output=True,
+        vertex_model="xai/grok-4.20-reasoning",
+    ),
+    ModelInfo(
+        provider=PROVIDER_XAI,
+        model="grok-4-20-non-reasoning",
+        display_name="Grok 4.20 (Non-reasoning)",
+        context_window=2_000_000,
+        model_type="standard",
+        supports_tools=True,
+        supports_thinking=False,
+        supports_vision=True,
+        supports_structured_output=True,
+        vertex_model="xai/grok-4.20-non-reasoning",
     ),
 )
 

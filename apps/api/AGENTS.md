@@ -397,12 +397,27 @@ follows:
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials
   only through the `provider_api_key` seam — never rely on implicit env
-  pickup. All providers share the retrying HTTP client
-  (`retrying_http_client()`). Vertex model and embedding calls share a
-  process-owned Google client per stable configuration; every API, worker, and
-  eval process closes those clients during shutdown.
+  pickup. Direct providers share the retrying HTTP client
+  (`retrying_http_client()`). Google Vertex model and embedding calls share a
+  process-owned Google client per stable configuration. `ANTHROPIC_VERTEX_AI`
+  selects a process-owned `AsyncAnthropicVertex` client with Application
+  Default Credentials and `ANTHROPIC_VERTEX_LOCATION` (default `global`). Both
+  use `GOOGLE_VERTEX_PROJECT`, falling back to `GCP_PROJECT_ID`. Vertex model
+  IDs come from the catalog's `vertex_model`; entries without one stay
+  unavailable. Every API, worker, and eval process calls `close_vertex_clients`
+  during shutdown. Anthropic prompt-cache defaults and catalog attribution
+  remain unchanged across transports. Each Claude model requires Model Garden
+  enablement and a supported location.
+  Partner models use a dedicated retrying Chat Completions HTTP client with
+  locked, off-loop ADC loading and refresh. `VERTEX_PARTNER_MODELS_ENABLED`
+  gates construction, and `VERTEX_PARTNER_LOCATION` selects the endpoint.
+  Cataloged Grok 4.20 variants require `global`; Meta and Mistral catalog
+  entries remain pending. Partner models retain maker/alias usage attribution
+  and do not join native helper provider sets. The shared Vertex shutdown
+  closes their HTTP client too.
 - Native URL fetching uses the governed `fetch_url` helper-tool path for
-  Anthropic and Google only. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
+  direct Anthropic and Google only. Anthropic's Vertex transport does not
+  support native web fetch. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
   requests, `NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS` is passed to the provider,
   and comma-separated `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` is enforced before
   dispatch as well as passed natively. Google is unavailable while that
@@ -413,7 +428,9 @@ follows:
   computation, create-from-text document generation, and declared append-only
   edits of existing workspace documents. It is an internal
   write, defaults to approval, never nests with `run_workflow`, and is offered
-  only for configured OpenAI, Anthropic, or Google providers. Anthropic and
+  only for configured OpenAI, direct Anthropic, or Google providers. Anthropic
+  on Vertex is excluded because the file bridge requires the Files API.
+  Anthropic and
   OpenAI receive bounded current-revision bytes through the provider file
   bridge; Google receives bounded framed text or AnyDoc-derived Markdown.
   Generated text artifacts and governed Files persist directly. Retained File
