@@ -12,10 +12,10 @@ from core.settings import settings
 from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_analytics.settings import google_analytics_settings
+from integrations.google_search_console.settings import google_search_console_settings
 from integrations.outlook_calendar.settings import outlook_calendar_settings
 from integrations.outlook_mail.settings import outlook_mail_settings
 from integrations.sharepoint.settings import sharepoint_settings
-from integrations.google_search_console.settings import google_search_console_settings
 from services.agents.runtime.entity_references.registry import ENTITY_RESOLVERS
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.loader import _validate_plugin, load_enabled_providers
@@ -223,12 +223,11 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
             "gmail",
             "google_ads",
             "google_analytics",
+            "google_search_console",
             "notion",
             "outlook_calendar",
             "outlook_mail",
             "sharepoint",
-            "google_search_console",
-            "notion",
         ],
     )
     load_enabled_providers()
@@ -238,12 +237,11 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
         "gmail",
         "google_ads",
         "google_analytics",
+        "google_search_console",
         "notion",
         "outlook_calendar",
         "outlook_mail",
         "sharepoint",
-        "google_search_console",
-        "notion",
     ]
     assert sorted(PROVIDER_MANIFESTS) == expected
     assert sorted(PROVIDER_PLUGINS) == expected

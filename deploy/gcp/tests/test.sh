@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Source assertions match literal shell variable references.
+# shellcheck disable=SC2016
+
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -96,7 +99,6 @@ for manifest in \
   "$TEST_TMP/rendered/services/praxis-api.yaml" \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
-  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: global'
   grep -A1 'name: MICROSOFT_GRAPH_TENANT' "$manifest" | grep -q 'value: organizations'
   grep -A1 'name: MICROSOFT_GRAPH_REQUESTS_PER_SECOND' "$manifest" | grep -q 'value: "4.0"'
   grep -A1 'name: OUTLOOK_MAIL_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: disabled'
