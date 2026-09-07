@@ -1783,7 +1783,17 @@ describe("Google Ads tool presenters", () => {
           result: {
             results: [
               {
-                ...entry(null),
+                ...entry({
+                  campaigns: [
+                    {
+                      campaign_id: "10",
+                      campaign_name: "Evidence-only campaign",
+                      requested_status: "PAUSED",
+                      outcome: "updated",
+                      external_ref: "customers/1234567890/campaigns/10",
+                    },
+                  ],
+                }),
                 status: "error",
                 error_code: "unverified_mutation",
                 error_message: "request outcome unknown",
@@ -1797,6 +1807,7 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("The system couldn&#x27;t verify whether Google Ads updated")
     expect(html).toContain("Check Google Ads before taking further action.")
     expect(html).not.toContain("request outcome unknown")
+    expect(html).not.toContain("Evidence-only campaign")
   })
 
   it("routes every write through the shared approval and lifecycle shell", () => {

@@ -593,6 +593,17 @@ or any `features/` code. Reviewers hold the line here.
 
 ## 9. Provider set
 
+Google Ads and Search Console configure `src/integrations/write-presenter.tsx`
+through thin adapters at their existing presenter paths. This provider-neutral
+seam owns approval argument merging, fail-closed validation, untrusted-source
+metadata, lifecycle states, and settled fan-out rendering. Provider packages
+own identity, copy, parsers, validation, summaries, and outcome components.
+Search Console supplies `renderUnverifiedOutcome` to retain detailed evidence
+beneath the warning. Google Ads keeps its failure view without that callback.
+The shared module imports no provider package, and providers import no sibling.
+This shared ownership supersedes the provider-local write renderer decision
+from Plan 206. Notion retains its separate write presenter.
+
 The shipped providers are Gmail, Google Ads, Airtable, BigQuery, Google
 Analytics, Notion, Outlook Mail, Outlook Calendar, and SharePoint. Each follows
 the section 8 checklist. There is no sample provider in product
@@ -661,8 +672,9 @@ It defaults to approval, supports scheduled automatic execution, declares each
 provider request as a non-retried mutation, and records pending intent before
 dispatch. A read after each write records the submitted sitemap's processing
 state as terminal evidence; ambiguous transport outcomes remain unverified.
-Its provider-local presenter composes the shared approval, fan-out, and table
-surfaces and explains that Google decides whether and when to crawl the URLs.
+Its presenter configures the shared integration write renderer and supplies
+provider-owned summary and outcome tables. It explains that Google decides
+whether and when to crawl the URLs.
 An operator setting adds the `indexing` OAuth scope and exposes a second write
 tool for Indexing API notifications. The tool accepts only declared job posting
 or livestream video page types, verifies Search Console Owner permission before

@@ -1,6 +1,6 @@
 // apps/web/tests/integrations/google-search-console/write-approvals.test.ts
 
-import { createElement, type ReactNode } from "react"
+import { createElement, isValidElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
@@ -115,6 +115,60 @@ const INDEXING_ARGS = {
 }
 
 describe("Search Console sitemap write presenter", () => {
+  it("fails closed for malformed retained approvals and preserves provenance", () => {
+    const malformed = renderPresenter(activity("awaiting_approval", null), pendingControls())
+    expect(malformed).toContain("Decline this request, then ask the agent")
+    const sources = [{ source_kind: "integration", source_ref: "source-page" }]
+    const node = submitSitemapPresenter.render({
+      activity: {
+        ...activity("awaiting_approval", ARGS),
+        derivedFromUntrusted: true,
+        taintSources: sources,
+      },
+      providerKey: "google_search_console",
+      approvalDecision: pendingControls(),
+      compact: false,
+      defaultOpen: true,
+      live: false,
+      ui: UI,
+    })
+    expect(isValidElement(node)).toBe(true)
+    if (isValidElement<{ derivedFromUntrusted: boolean; taintSources: unknown }>(node)) {
+      expect(node.props.derivedFromUntrusted).toBe(true)
+      expect(node.props.taintSources).toEqual(sources)
+    }
+  })
+
+  it("keeps lifecycle states and malformed results distinct", () => {
+    expect(renderPresenter(activity("running", ARGS))).toContain(
+      "Submitting Search Console sitemaps"
+    )
+    expect(renderPresenter(activity("awaiting_approval", ARGS))).toContain(
+      "Waiting for sitemap submission approval"
+    )
+    expect(renderPresenter(activity("unknown", ARGS))).toContain(
+      "No sitemap submission was confirmed"
+    )
+    expect(renderPresenter(resultActivity({ results: [entry({ invalid: true })] }))).toContain(
+      "Failed"
+    )
+    const mixed = renderPresenter(
+      resultActivity({
+        results: [
+          entry({ sitemaps: [submissionRow()], submitted_count: 1, failed_count: 0 }),
+          entry(null, {
+            display_name: "Second site",
+            status: "error",
+            error_message: "Site unavailable",
+          }),
+        ],
+      })
+    )
+    expect(mixed).toContain("1/2 connections")
+    expect(mixed).toContain("https://example.com/one.xml")
+    expect(mixed).toContain("Site unavailable")
+  })
+
   it("shows editable approval details and distinguishes add from resubmit", () => {
     const html = renderPresenter(activity("awaiting_approval", ARGS), pendingControls())
 

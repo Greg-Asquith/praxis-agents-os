@@ -33,6 +33,13 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
+  Google Ads and Search Console write presenters configure
+  `integrations/write-presenter.tsx`. This shared seam owns approval merging,
+  validation precedence, provenance, lifecycle states, and fan-out rendering.
+  Provider adapters own branding, copy, parsers, summaries, and outcome views.
+  Detailed unverified evidence requires the explicit `renderUnverifiedOutcome`
+  callback; Search Console supplies it, while Google Ads keeps its failure view.
+  Do not copy the state machine into provider packages.
   Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
   types and parsers belong to their domain modules: `campaign-budgets.ts`,
   `campaigns.ts`, `ad-groups.ts`, `positive-keywords.ts`, `negative-keywords.ts`,
@@ -92,12 +99,11 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   Inspection presenters over the shared fan-out and table kits. Inspection
   results use one compact card per requested URL with status, canonical,
   referring-URL, rich-result, and Search Console report details. Sitemap
-  submissions use the provider-local write presenter over the shared approval
-  and fan-out surfaces. The approval view distinguishes a new sitemap from a
-  resubmission when live status is available, validates edited URLs against the
+  submissions configure the shared integration write presenter. The approval
+  view distinguishes a new sitemap from a resubmission when live status is available, validates edited URLs against the
   selected writable sites, and states that Google controls whether and when it
   crawls the listed URLs.
-  Indexing API notifications use the same provider-local write presenter with
+  Indexing API notifications configure the same shared write presenter with
   an editable records field for the URL, notification type, and eligible page
   type. The approval copy states Google's job posting and livestream video
   restriction, and outcome rows distinguish quota, permission, scope, and
