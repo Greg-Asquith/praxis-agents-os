@@ -2334,3 +2334,99 @@ async def test_google_ads_pause_then_create_uses_separate_approvals_and_evidence
         counts = terminal.details["operation_detail"]["intent_counts"]
         failed = failure == ("pause" if tool_name == "google_ads_update_keywords" else "create")
         assert counts["failed" if failed else "applied"] == 2
+
+
+@pytest.mark.parametrize("approved", [False, True])
+async def test_google_ads_keyword_removal_requires_approval_and_retains_two_group_evidence(
+    db_session_factory, monkeypatch, approved
+) -> None:
+    from uuid import uuid4
+
+    from pydantic import SecretStr
+
+    from integrations.google_ads.tools.utils.client import google_ads_settings
+    from services.integrations.context.domain import ResolvedActiveContext
+    from tests.integrations.google_ads.test_positive_keyword_update_tool import (
+        entry,
+        keyword,
+        provider_row,
+    )
+
+    selected = entry()
+    active = ResolvedActiveContext(entries=(selected,))
+    monkeypatch.setattr(
+        "services.agents.runtime.execute.setup.resolve_active_context",
+        AsyncMock(return_value=active),
+    )
+    monkeypatch.setattr(
+        "services.audit_events.integration_events.get_async_db_session_factory",
+        lambda: db_session_factory,
+    )
+    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_DEVELOPER_TOKEN", SecretStr("test-token"))
+    writes = []
+    second_row = provider_row()
+    second_row["adGroup"]["id"] = "21"
+    second_row["adGroupCriterion"]["resourceName"] = "customers/333/adGroupCriteria/21~90"
+
+    async def post(path, **kwargs):
+        if not path.endswith(":mutate"):
+            return [{"results": [provider_row(), second_row]}]
+        operations = kwargs["json"]["operations"]
+        writes.extend(operations)
+        return {"results": [{"resourceName": operation["remove"]} for operation in operations]}
+
+    client = type("KeywordRemovalClient", (), {"post": staticmethod(post)})()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.remove_positive_keywords.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    # The scenario's active connection is synthetic; provider lookups use the same fixture.
+    monkeypatch.setattr(
+        "integrations.google_ads.entity_resolvers.keyword.google_ads_client_for_principal",
+        AsyncMock(return_value=client),
+    )
+    references = [
+        keyword().model_copy(update={"ad_group_id": group}).model_dump(mode="json")
+        for group in ("20", "21")
+    ]
+    code = f"await google_ads_remove_keywords(keywords={references!r})"
+    context = await build_scenario_agent(
+        db_session_factory, tool_names=["google_ads_remove_keywords"], code_mode_enabled=True
+    )
+    model = scripted_model(
+        turns=[
+            ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, str(uuid4())),)),
+            "Removal request finished.",
+        ]
+    )
+    first = await run_scenario(db_session_factory, context, model=model)
+    assert first.run.status == "awaiting_approval"
+    assert writes == []
+    completed = await _resume_code_mode_scenario(
+        db_session_factory,
+        context,
+        suspended=first,
+        model=model,
+        decision="approved" if approved else "denied",
+    )
+    assert completed.run.status == "completed"
+    if not approved:
+        assert writes == []
+        return
+    assert writes == [
+        {"remove": "customers/333/adGroupCriteria/20~90"},
+        {"remove": "customers/333/adGroupCriteria/21~90"},
+    ]
+    operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
+    pending = next(row for row in operations if row.status == "pending")
+    terminal = next(row for row in operations if row.status == "success")
+    assert terminal.details["related_event_id"] == str(pending.id)
+    detail = terminal.details["operation_detail"]
+    assert detail["intent_counts"]["applied"] == detail["effect_counts"]["applied"] == 2
+    assert {item["fields"]["ad_group_id"] for item in detail["intent_groups"][0]["items"]} == {
+        "20",
+        "21",
+    }
+    transcript = json.dumps([message.parts for message in completed.messages])
+    assert "presentation_result" in transcript
+    assert "REMOVED" in transcript

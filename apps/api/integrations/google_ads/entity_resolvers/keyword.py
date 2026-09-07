@@ -10,6 +10,7 @@ from integrations.google_ads.references import (
     GoogleAdsKeywordReference,
     positive_keyword_reference_from_row,
 )
+from integrations.google_ads.references.keyword import positive_keyword_state
 from integrations.google_ads.tools.utils import (
     GOOGLE_ADS_BINDING,
     google_ads_client_for_principal,
@@ -97,7 +98,9 @@ async def resolve_google_ads_keywords(ctx, values: Sequence[Any], _dependent_arg
     for entry, references in grouped:
         for start in range(0, len(references), _QUERY_BATCH_SIZE):
             batch = references[start : start + _QUERY_BATCH_SIZE]
-            expected = {(reference.ad_group_id, reference.criterion_id) for reference in batch}
+            expected = {
+                (reference.ad_group_id, reference.criterion_id): reference for reference in batch
+            }
             criterion_ids = sorted({reference.criterion_id for reference in batch})
             ad_group_ids = sorted({reference.ad_group_id for reference in batch})
             rows = await _query(
@@ -113,6 +116,9 @@ async def resolve_google_ads_keywords(ctx, values: Sequence[Any], _dependent_arg
                     reference is None
                     or (reference.ad_group_id, reference.criterion_id) not in expected
                 ):
+                    continue
+                original = expected[(reference.ad_group_id, reference.criterion_id)]
+                if positive_keyword_state(original) != positive_keyword_state(reference):
                     continue
                 choices.append(EntityChoice.from_reference(reference, icon="google_ads"))
     return tuple(choices)

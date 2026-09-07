@@ -42,7 +42,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   while blocking approval. Literal URL settings remain exact in comparisons and
   exports; requested projections are labelled as requested state. Complete
   results validate per-outcome counts and unique keyword identities before
-  presenting one exportable row per selected criterion.
+  presenting one exportable row per selected criterion. Keyword removal has a
+  separate destructive approval card with account and ad-group context. Its
+  paginated result table distinguishes confirmed removal, failure, and
+  unverified outcomes, and rejects incomplete or contradictory result evidence.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;

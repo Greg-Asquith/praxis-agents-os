@@ -17,6 +17,7 @@ import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/r
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/remove-campaign-budgets"
 import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
+import { googleAdsRemovePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/remove-positive-keywords"
 import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
 
 export default {
@@ -38,6 +39,7 @@ export default {
     googleAdsCreateCampaignBudgetPresenter,
     googleAdsUpdateCampaignBudgetAmountsPresenter,
     googleAdsUpdatePositiveKeywordsPresenter,
+    googleAdsRemovePositiveKeywordsPresenter,
     googleAdsAssignCampaignBudgetsPresenter,
     googleAdsRemoveCampaignBudgetsPresenter,
   ],

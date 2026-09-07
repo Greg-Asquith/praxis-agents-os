@@ -99,6 +99,15 @@ class GoogleAdsKeywordReference(ScopedEntityReference):
         return f"{self.ad_group_id}~{self.criterion_id}"
 
 
+def positive_keyword_state(reference: GoogleAdsKeywordReference) -> dict[str, Any]:
+    """Returns criterion state without display labels or parameter ordering."""
+    state = reference.model_dump(mode="json", exclude={"label", "description", "scope_label"})
+    state["url_custom_parameters"] = sorted(
+        state["url_custom_parameters"], key=lambda item: item["key"]
+    )
+    return state
+
+
 def _criterion_identity(value: Any) -> tuple[str | None, str | None, str | None]:
     candidate = str(value).strip() if value is not None else ""
     if candidate.isdigit():
@@ -117,12 +126,23 @@ def positive_keyword_reference_from_row(
     criterion = row.get("adGroupCriterion")
     if not all(isinstance(value, Mapping) for value in (campaign, ad_group, criterion)):
         return None
+    if (
+        criterion.get("negative", False) is not False
+        or criterion.get("type", "KEYWORD") != "KEYWORD"
+    ):
+        return None
     keyword = criterion.get("keyword")
     if not isinstance(keyword, Mapping):
         return None
     campaign_id = str(campaign.get("id", "")).strip()
     ad_group_id = str(ad_group.get("id", "")).strip()
     criterion_id = str(criterion.get("criterionId", "")).strip()
+    resource_name = criterion.get("resourceName")
+    if (
+        resource_name is not None
+        and resource_name != f"customers/{customer_id}/adGroupCriteria/{ad_group_id}~{criterion_id}"
+    ):
+        return None
     text = str(keyword.get("text", "")).strip()
     match_type = str(keyword.get("matchType", "")).strip()
     status = str(criterion.get("status", "")).strip()

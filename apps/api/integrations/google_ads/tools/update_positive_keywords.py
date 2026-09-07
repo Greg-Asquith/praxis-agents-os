@@ -1,4 +1,4 @@
-# apps/api/integrations/google_ads/tools/update_positive_keywords.py
+# apps/api/integrations/google_ads/tools/update_positive_keywords.py
 
 """Approval-only Google Ads positive-keyword patch tool."""
 

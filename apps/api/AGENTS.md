@@ -287,7 +287,7 @@ follows:
   validation and bounded non-secret connection metadata provider-neutral.
   Google Ads contributes bounded report and field discovery plus approval-only
   writes for recommendations, negative keywords, positive-keyword creation and
-  mutable-field updates,
+  mutable-field updates, and permanent removal,
   campaign status, device bid adjustments, and campaign-budget creation,
   amount updates, assignment, and unused-budget removal. Keyword and budget
   writes re-read provider state after approval and retain exact outcome evidence
@@ -299,7 +299,11 @@ follows:
   per-account shares of the complete transcript budget, including all account
   envelopes and maximally escaped diagnostics. Live preparation must fit the
   reserved share and the terminal audit bound. Public results retain all accepted
-  rows; only model results sample. Keyword suffixes, custom parameters, and mobile
+  rows; only model results sample. Keyword removal accepts up to 500 selected
+  criteria, rejects changed criterion state during reference hydration and
+  post-approval verification, and retains each prior configuration with its
+  requested removal and independent outcome. Removed criteria cannot be
+  re-enabled. Keyword suffixes, custom parameters, and mobile
   destinations support inherited ad destinations. Changing a keyword tracking
   template or final URL preserves Google's template-to-final-URL dependency;
   unrelated status changes leave inherited settings intact. URL

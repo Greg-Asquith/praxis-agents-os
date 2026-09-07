@@ -105,6 +105,7 @@ async def list_positive_keywords(
         "SELECT campaign.id, campaign.name, ad_group.id, ad_group.name, "  # noqa: S608 -- digit-only ids and escaped search
         "ad_group.status, ad_group_criterion.resource_name, "
         "ad_group_criterion.criterion_id, ad_group_criterion.status, "
+        "ad_group_criterion.negative, ad_group_criterion.type, "
         "ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type, "
         "ad_group_criterion.bid_modifier, ad_group_criterion.cpc_bid_micros, "
         "ad_group_criterion.final_urls, "
