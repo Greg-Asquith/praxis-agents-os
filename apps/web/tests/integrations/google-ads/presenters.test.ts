@@ -343,13 +343,60 @@ describe("Google Ads tool presenters", () => {
       )
     )
 
-    expect(html).toContain("Succeeded")
+    expect(html).toContain(">Campaign<")
+    expect(html).toContain(">Outcome<")
+    expect(html).toContain("Summer Sale")
+    expect(html).toContain("Brand Awareness")
+    expect(html).toContain("Download Report CSV")
     expect(html).toContain("Failed")
     expect(html).toContain("10")
     expect(html).toContain("20")
     expect(html).toContain("Campaign is removed.")
     expect(html).toContain("Updated")
   })
+
+  it.each([
+    {
+      presenter: googleAdsCampaignStatusPresenter,
+      name: "google_ads_update_campaign_status",
+      key: "campaigns",
+      row: { campaign_id: "10", outcome: "updated" },
+      column: "Campaign",
+      label: "10",
+    },
+    {
+      presenter: googleAdsNegativeKeywordListsPresenter,
+      name: "google_ads_create_negative_keyword_list",
+      key: "outcomes",
+      row: { name: "Brand exclusions", outcome: "created" },
+      column: "Name",
+      label: "Brand exclusions",
+    },
+  ])(
+    "renders and guards the $column result table",
+    ({ presenter, name, key, row, column, label }) => {
+      const resultHtml = (rows: unknown[]) =>
+        render(
+          presenter.render(
+            props({
+              id: "list-result",
+              kind: "result",
+              name,
+              status: "completed",
+              result: { results: [entry({ [key]: rows })] },
+            })
+          )
+        )
+      const html = resultHtml([row])
+      expect(html).toContain(`>${column}<`)
+      expect(html).toContain(">Outcome<")
+      expect(html).toContain(label)
+      expect(html).toContain("Download Report CSV")
+      for (const rows of [[{ ...row, outcome: "unknown" }], [row, row], [null]]) {
+        expect(resultHtml(rows)).toContain("couldn&#x27;t verify this account&#x27;s")
+      }
+    }
+  )
 
   it("reviews edited device multipliers with plain-language effects", () => {
     const controls = approvalControls()
@@ -604,6 +651,11 @@ describe("Google Ads tool presenters", () => {
   )
 
   it.each([
+    [
+      googleAdsCampaignStatusPresenter,
+      "google_ads_update_campaign_status",
+      { campaign_ids: [campaignReference("10", "Brand")], status: "PAUSED" },
+    ],
     [
       googleAdsDeviceBidModifiersPresenter,
       "google_ads_update_device_bid_modifiers",
@@ -973,6 +1025,9 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("New exclusions")
     expect(html).toContain("Existing exclusions")
     expect(html).toContain("Rejected exclusions")
+    expect(html).toContain(">Name<")
+    expect(html).toContain(">Outcome<")
+    expect(html).toContain("Download Report CSV")
     expect(html).toContain("Already existed")
     expect(html).toContain("This list name is not allowed.")
     expect(html).toContain("Created")

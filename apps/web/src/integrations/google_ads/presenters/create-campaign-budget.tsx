@@ -1,5 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/create-campaign-budget.tsx
 
+import { outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+
 import { Badge } from "@/components/ui/badge"
 import {
   budgetPeriodLabel,
@@ -128,7 +130,7 @@ function renderCreateBudgetOutcome(result: CreateBudgetResult) {
         <Badge
           variant={successful ? "success" : result.outcome === "failed" ? "destructive" : "warning"}
         >
-          {successful ? "Created" : result.outcome === "failed" ? "Failed" : "Unverified"}
+          {outcomeLabel(result.outcome)}
         </Badge>
       </div>
       <div>

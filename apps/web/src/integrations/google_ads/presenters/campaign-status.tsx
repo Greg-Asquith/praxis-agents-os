@@ -1,12 +1,16 @@
 // apps/web/src/integrations/google_ads/presenters/campaign-status.tsx
 
+import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
-  CampaignFailure,
-  CampaignOutcome,
-  type CampaignError,
-  type CampaignStatusResult,
-} from "@/integrations/google_ads/components/campaign-outcome"
-import { googleAdsCampaignDetails } from "@/integrations/google_ads/lib/tool-details"
+  GoogleAdsOutcomeTable,
+  type GoogleAdsOutcomeRow,
+} from "@/integrations/google_ads/components/outcome-table"
+import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
+import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import {
+  campaignReferenceLabels,
+  googleAdsCampaignDetails,
+} from "@/integrations/google_ads/lib/tool-details"
 import {
   createGoogleAdsWritePresenter,
   defineGoogleAdsWriteVariant,
@@ -34,9 +38,19 @@ export const googleAdsCampaignStatusPresenter = createGoogleAdsWritePresenter({
       parseResult: campaignResult,
       progressLabel: "Updating Google Ads campaigns…",
       renderFailure: (args, description) => (
-        <CampaignFailure args={args} description={description} />
+        <GoogleAdsFailureTargets
+          targets={campaignReferenceLabels(args)}
+          description={description}
+        />
       ),
-      renderOutcome: (result) => <CampaignOutcome result={result} />,
+      renderOutcome: (rows) => (
+        <GoogleAdsOutcomeTable
+          columns={[{ key: "campaign", kind: "text", label: "Campaign" }]}
+          rows={rows}
+          outcomes={countByKind(rows)}
+          exportFilename="google-ads-campaign-status.csv"
+        />
+      ),
       resultAriaLabel: "Google Ads campaign update results",
       resultFailure:
         "The system couldn't verify the campaign changes. Check the Google Ads platform before taking further action.",
@@ -61,32 +75,33 @@ function campaignArgs(value: unknown): Record<string, unknown> | null {
     : null
 }
 
-function campaignResult(value: unknown): CampaignStatusResult | null {
-  if (!isRecord(value) || !Array.isArray(value["campaigns"])) {
+function campaignResult(value: unknown) {
+  return parseOutcomeList(value, "campaigns", campaignRow, (row) => row.campaignId)
+}
+
+function campaignRow(value: unknown): (GoogleAdsOutcomeRow & { campaignId: string }) | null {
+  if (
+    !isRecord(value) ||
+    typeof value["campaign_id"] !== "string" ||
+    (value["outcome"] !== "updated" && value["outcome"] !== "failed")
+  )
     return null
-  }
-  const errors: CampaignError[] = []
-  const succeededIds: string[] = []
-  for (const item of value["campaigns"]) {
-    if (
-      !isRecord(item) ||
-      typeof item["campaign_id"] !== "string" ||
-      (item["outcome"] !== "updated" && item["outcome"] !== "failed")
-    ) {
-      return null
-    }
-    if (item["outcome"] === "updated") {
-      succeededIds.push(item["campaign_id"])
-    } else {
-      errors.push({
-        campaignId: item["campaign_id"],
-        errorCode: typeof item["error_code"] === "string" ? item["error_code"] : "",
-        message: typeof item["message"] === "string" ? item["message"] : "Update failed.",
-      })
-    }
-  }
   return {
-    errors,
-    succeededIds,
+    campaignId: value["campaign_id"],
+    campaign:
+      typeof value["campaign_name"] === "string" && value["campaign_name"]
+        ? value["campaign_name"]
+        : value["campaign_id"] || "Campaign",
+    outcome: value["outcome"],
+    details:
+      value["outcome"] === "failed"
+        ? typeof value["message"] === "string"
+          ? value["message"]
+          : "Update failed."
+        : "",
+    errorCode:
+      value["outcome"] === "failed" && typeof value["error_code"] === "string"
+        ? value["error_code"]
+        : "",
   }
 }
