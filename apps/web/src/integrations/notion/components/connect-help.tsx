@@ -16,7 +16,7 @@ export function NotionConnectHelp({ provider }: { provider: IntegrationProvider 
           <h2 className="text-sm font-medium">Choose pages during authorization</h2>
           <p className="text-muted-foreground text-sm">
             The {provider.display_name} authorization picker decides which pages this connection can
-            read. Select only the pages you want available in Praxis.
+            read. Select only the pages you want available the the agent.
           </p>
         </div>
       </div>
@@ -28,8 +28,8 @@ export function NotionConnectHelp({ provider }: { provider: IntegrationProvider 
         <div className="grid gap-1">
           <h2 className="text-sm font-medium">Connect your own account</h2>
           <p className="text-muted-foreground text-sm">
-            Other Praxis users authorize separately with their own Notion account, so each
-            connection follows that person's Notion access.
+            Other users authorise separately with their own Notion account, so each connection
+            follows that person's Notion access.
           </p>
         </div>
       </div>
@@ -41,7 +41,7 @@ export function NotionConnectHelp({ provider }: { provider: IntegrationProvider 
         <div className="grid gap-1">
           <h2 className="text-sm font-medium">Use an editor account</h2>
           <p className="text-muted-foreground text-sm">
-            The person who connects must be an editor in this Praxis workspace.
+            The person who connects must be an editor in this workspace.
           </p>
         </div>
       </div>

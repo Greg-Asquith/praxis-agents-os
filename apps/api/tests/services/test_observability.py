@@ -7,15 +7,16 @@ from pydantic import ValidationError
 
 from core import observability
 from core.settings import Settings
+from tests.support.settings import production_settings
 
 
 def test_settings_reject_agent_trace_content_in_production() -> None:
     with pytest.raises(ValidationError, match="AGENT_TRACING_INCLUDE_CONTENT"):
-        _production_settings(AGENT_TRACING_INCLUDE_CONTENT=True)
+        production_settings(AGENT_TRACING_INCLUDE_CONTENT=True)
 
 
 def test_settings_allow_agent_trace_content_in_production_with_explicit_override() -> None:
-    settings = _production_settings(
+    settings = production_settings(
         AGENT_TRACING_INCLUDE_CONTENT=True,
         AGENT_TRACING_ALLOW_CONTENT_IN_PRODUCTION=True,
     )
@@ -26,12 +27,12 @@ def test_settings_allow_agent_trace_content_in_production_with_explicit_override
 
 def test_settings_reject_metrics_without_token_outside_dev() -> None:
     with pytest.raises(ValidationError, match="METRICS_TOKEN"):
-        _production_settings(METRICS_ENABLED=True)
+        production_settings(METRICS_ENABLED=True)
 
 
 def test_settings_allow_metrics_with_token_outside_dev() -> None:
     metrics_token = uuid4().hex
-    settings = _production_settings(METRICS_ENABLED=True, METRICS_TOKEN=metrics_token)
+    settings = production_settings(METRICS_ENABLED=True, METRICS_TOKEN=metrics_token)
 
     assert settings.METRICS_ENABLED is True
     assert metrics_token == settings.METRICS_TOKEN
@@ -103,34 +104,9 @@ def test_setup_agent_tracing_configures_once(monkeypatch: pytest.MonkeyPatch) ->
     assert observability._agent_tracing_configured is True
 
 
-def _production_settings(**overrides: Any) -> Settings:
-    values: dict[str, Any] = {
-        "ENVIRONMENT": "production",
-        "STORAGE_PROVIDER": "s3",
-        "EMAIL_PROVIDER": "ses",
-        "SECRET_PROVIDER": "aws_secrets_manager",
-        "CREDENTIAL_MASTER_KEYS": None,
-        "DATABASE_URL": "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require",
-        "DATABASE_MAINTENANCE_URL": "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require",
-        "SECRET_KEY": "x" * 40,
-        "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
-        "SECURE_COOKIES": True,
-        "OPENAI_API_KEY": "sk-test",
-        "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
-        "WORKSPACE_BUCKET_PREFIX": "praxis-test",
-        "AWS_REGION": "eu-west-2",
-        "AWS_ACCOUNT_ID": "123456789012",
-        "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
-        "INTEGRATIONS_OAUTH_REDIRECT_URI": "https://api.example.com/integrations/oauth/callback",
-        "ARTIFACT_SHARING_ENABLED": False,
-    }
-    values.update(overrides)
-    return Settings(_env_file=None, **values)
-
-
 def test_settings_require_distinct_production_database_roles() -> None:
     with pytest.raises(ValidationError, match="distinct from DATABASE_URL"):
-        _production_settings(
+        production_settings(
             DATABASE_MAINTENANCE_URL=(
                 "postgresql+asyncpg://praxis_app:other@db.example.com/maintenance?sslmode=require"
             )
@@ -139,7 +115,7 @@ def test_settings_require_distinct_production_database_roles() -> None:
 
 def test_settings_require_praxis_app_runtime_role() -> None:
     with pytest.raises(ValidationError, match="praxis_app role"):
-        _production_settings(
+        production_settings(
             DATABASE_URL=(
                 "postgresql+asyncpg://owner:postgres@db.example.com/postgres?sslmode=require"
             )

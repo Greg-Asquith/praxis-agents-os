@@ -21,6 +21,9 @@ from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DE
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
 )
+from integrations.google_search_console.tools import (
+    TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
+)
 from integrations.notion.tools import TOOL_DEFINITIONS as NOTION_TOOL_DEFINITIONS
 from models.agent import Agent
 from models.agent_run import AgentRun
@@ -51,6 +54,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *AIRTABLE_TOOL_DEFINITIONS,
             *BIGQUERY_TOOL_DEFINITIONS,
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+            *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
             *NOTION_TOOL_DEFINITIONS,
         )
     }
@@ -112,6 +116,11 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "google_analytics_list_report_fields": ("read", "internal", "auto", False),
         "google_analytics_run_realtime_report": ("read", "internal", "auto", False),
         "google_analytics_run_report": ("read", "internal", "auto", False),
+        "google_search_console_list_sitemaps": ("read", "internal", "auto", False),
+        "google_search_console_inspect_url": ("read", "internal", "auto", False),
+        "google_search_console_query_search_analytics": ("read", "internal", "auto", False),
+        "google_search_console_submit_sitemap": ("write", "external", "approval", True),
+        "google_search_console_request_indexing": ("write", "external", "approval", True),
         "notion_search_pages": ("read", "internal", "auto", False),
         "notion_read_page": ("read", "internal", "auto", False),
         "notion_query_data_source": ("read", "internal", "auto", False),
@@ -120,6 +129,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "notion_update_page_properties": ("write", "external", "approval", True),
     }
     assert set(definitions) == set(expected)
+    assert definitions["google_search_console_request_indexing"].supports_auto is False
     denylisted = {
         "account_id",
         "base_id",
@@ -153,6 +163,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *AIRTABLE_TOOL_DEFINITIONS,
         *BIGQUERY_TOOL_DEFINITIONS,
         *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+        *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
         *NOTION_TOOL_DEFINITIONS,
     )
 
@@ -166,6 +177,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         if definition.name in {
             "google_analytics_run_realtime_report",
             "google_analytics_run_report",
+            "google_search_console_query_search_analytics",
         }:
             allowed_dynamic_markers.extend(
                 (
@@ -174,6 +186,8 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
                     ".properties.minimums.items",
                 )
             )
+        if definition.name == "google_search_console_query_search_analytics":
+            allowed_dynamic_markers.append(".properties.keys")
         if definition.name == "notion_query_data_source":
             allowed_dynamic_markers.append(".NotionRecordData.properties.properties")
         for path in _dynamic_object_paths(definition.output_model.model_json_schema()):

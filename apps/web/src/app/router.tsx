@@ -66,6 +66,7 @@ const authRoute = createRoute({
       throw redirect({ href: safeRedirectPath(search["redirect"]) ?? "/" })
     }
   },
+  pendingComponent: PendingRoute,
   component: lazyRouteComponent(() => import("@/routes/auth-layout"), "AuthLayoutRoute"),
 })
 
@@ -115,6 +116,7 @@ const appRoute = createRoute({
     setActiveUserId(user.id)
     await context.queryClient.ensureQueryData(workspacesQueryOptions())
   },
+  pendingComponent: PendingRoute,
   component: lazyRouteComponent(() => import("@/routes/app-layout"), "AppLayoutRoute"),
 })
 

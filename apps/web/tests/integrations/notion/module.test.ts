@@ -48,7 +48,7 @@ describe("Notion integration module", () => {
     )
 
     expect(html).toContain("authorization picker")
-    expect(html).toContain("Other Praxis users authorize separately")
-    expect(html).toContain("editor in this Praxis workspace")
+    expect(html).toContain("Other users authorise separately")
+    expect(html).toContain("editor in this workspace")
   })
 })

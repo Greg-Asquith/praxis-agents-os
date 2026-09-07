@@ -6,12 +6,15 @@ from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
+from pydantic import SecretStr
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.evaluators.llm_as_a_judge import GradingOutput
 
+from core.settings import settings
 from evals.evaluators import EvalOutput, OutputFormat
 from evals.run import _configured_model, _load_dataset, _run_case
+from services.agents.models import build_model, close_vertex_clients, resolve_catalog_model
 from services.agents.runtime.loop import build_runtime_agent
 
 
@@ -19,16 +22,29 @@ def test_configured_model_fails_clearly_without_provider_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("EVALS_MODEL", "openai:gpt-5.6-luna")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
 
-    with pytest.raises(SystemExit, match="OPENAI_API_KEY is required"):
+    with pytest.raises(SystemExit, match="Provider 'openai' is not configured"):
         _configured_model()
+
+
+def test_configured_model_uses_runtime_vertex_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVALS_MODEL", "meta:llama-probe")
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("unused"))
+
+    assert _configured_model() == ("meta", "llama-probe")
 
 
 async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    dataset = _load_dataset("openai:gpt-5.6-luna")
+    judge_model = FunctionModel(lambda _messages, _info: "pass", model_name="eval-judge-probe")
+    dataset = _load_dataset(judge_model)
     cases = {case.name: case for case in dataset.cases}
 
     assert len(cases) == 15
@@ -36,6 +52,7 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     assert not any(isinstance(item, LLMJudge) for item in cases["json_format"].evaluators)
     judges = [item for item in cases["identity_name"].evaluators if isinstance(item, LLMJudge)]
     assert len(judges) == 3
+    assert all(judge.model is judge_model for judge in judges)
     assert [judge.assertion["evaluation_name"] for judge in judges] == [
         "instruction_adherence",
         "safe_and_honest",
@@ -83,6 +100,29 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     )
     assert evaluator.evaluate(json_context)
     assert evaluator.evaluate(bullet_context)
+
+
+async def test_google_vertex_eval_judges_use_the_application_model_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EVALS_MODEL", "google:gemini-3.1-pro")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+    monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+
+    provider, model = _configured_model()
+    judge_model = build_model(resolve_catalog_model(provider, model))
+    try:
+        dataset = _load_dataset(judge_model)
+        case = next(case for case in dataset.cases if case.name == "identity_name")
+        judges = [item for item in case.evaluators if isinstance(item, LLMJudge)]
+
+        assert judges
+        assert all(judge.model is judge_model for judge in judges)
+        assert judge_model.provider.client.vertexai is True
+    finally:
+        await close_vertex_clients()
 
 
 async def test_tool_selection_case_records_call_without_response_judges(

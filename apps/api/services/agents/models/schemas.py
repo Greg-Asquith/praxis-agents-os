@@ -6,12 +6,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from services.agents.models.domain import ModelType
+from services.agents.models.domain import ModelType, ProviderTransport
 
 
 class ModelCatalogProvider(BaseModel):
     provider: str
     display_name: str
+    transport: ProviderTransport
     configured: bool
     model_count: int
     model_type_defaults: dict[str, str] = Field(default_factory=dict)

@@ -51,6 +51,14 @@ spec:
               value: "${GOOGLE_VERTEX_AI}"
             - name: GOOGLE_VERTEX_LOCATION
               value: ${GOOGLE_VERTEX_LOCATION}
+            - name: ANTHROPIC_VERTEX_AI
+              value: "${ANTHROPIC_VERTEX_AI}"
+            - name: ANTHROPIC_VERTEX_LOCATION
+              value: "${ANTHROPIC_VERTEX_LOCATION}"
+            - name: VERTEX_PARTNER_MODELS_ENABLED
+              value: "${VERTEX_PARTNER_MODELS_ENABLED}"
+            - name: VERTEX_PARTNER_MODEL_LOCATIONS
+              value: ${VERTEX_PARTNER_MODEL_LOCATIONS_YAML}
             - name: GCS_PUBLIC_ASSETS_BUCKET
               value: ${GCS_PUBLIC_ASSETS_BUCKET}
             - name: GCS_WORKSPACE_BUCKET_LOCATION
@@ -131,6 +139,10 @@ spec:
               value: ${EMBEDDINGS_MODEL}
             - name: EMBEDDINGS_DIMENSIONS
               value: "${EMBEDDINGS_DIMENSIONS}"
+            - name: KB_ANNOTATION_PROVIDER
+              value: "${KB_ANNOTATION_PROVIDER}"
+            - name: KB_ANNOTATION_MODEL
+              value: "${KB_ANNOTATION_MODEL}"
             - name: METRICS_ENABLED
               value: "${METRICS_ENABLED}"
             - name: TRUSTED_PROXY_CIDRS
@@ -141,6 +153,20 @@ spec:
               value: "${SECURITY_EVENTS_RETENTION_DAYS}"
             - name: AGENT_RUN_APPROVAL_EXPIRY_DAYS
               value: "${AGENT_RUN_APPROVAL_EXPIRY_DAYS}"
+            - name: DB_POOL_SIZE
+              value: "${DB_POOL_SIZE}"
+            - name: DB_POOL_MAX_OVERFLOW
+              value: "${DB_POOL_MAX_OVERFLOW}"
+            - name: DB_MAINTENANCE_POOL_SIZE
+              value: "${DB_MAINTENANCE_POOL_SIZE}"
+            - name: DB_MAINTENANCE_POOL_MAX_OVERFLOW
+              value: "${DB_MAINTENANCE_POOL_MAX_OVERFLOW}"
+            - name: AI_USAGE_DB_POOL_SIZE
+              value: "${AI_USAGE_DB_POOL_SIZE}"
+            - name: AGENT_RUN_MAX_CONCURRENT_TURNS
+              value: "${AGENT_RUN_MAX_CONCURRENT_TURNS}"
+            - name: WORKER_MAX_CONCURRENT_RUNS
+              value: "${WORKER_MAX_CONCURRENT_RUNS}"
 ${RUNTIME_SECRET_ENV_YAML}
           startupProbe:
             httpGet:

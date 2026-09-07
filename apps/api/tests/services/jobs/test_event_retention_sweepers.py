@@ -1,11 +1,9 @@
 """Audit and security event retention sweeper tests."""
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from cryptography.fernet import Fernet
 from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,43 +28,16 @@ from services.jobs.handlers.sweep_expired_security_events import (
     sweep_expired_security_events,
 )
 from tests.factories import build_job, build_user, build_workspace
-
-
-def _production_settings(**overrides: Any) -> Settings:
-    values: dict[str, Any] = {
-        "ENVIRONMENT": "production",
-        "STORAGE_PROVIDER": "s3",
-        "EMAIL_PROVIDER": "ses",
-        "SECRET_PROVIDER": "aws_secrets_manager",
-        "CREDENTIAL_MASTER_KEYS": "",
-        "DATABASE_URL": (
-            "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require"
-        ),
-        "DATABASE_MAINTENANCE_URL": (
-            "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require"
-        ),
-        "SECRET_KEY": "x" * 40,
-        "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
-        "SECURE_COOKIES": True,
-        "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
-        "WORKSPACE_BUCKET_PREFIX": "praxis-test",
-        "AWS_REGION": "eu-west-2",
-        "AWS_ACCOUNT_ID": "123456789012",
-        "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
-        "INTEGRATIONS_OAUTH_REDIRECT_URI": ("https://api.example.com/integrations/oauth/callback"),
-        "ARTIFACT_SHARING_ENABLED": False,
-    }
-    values.update(overrides)
-    return Settings(_env_file=None, **values)
+from tests.support.settings import production_settings
 
 
 def test_event_retention_settings_enforce_positive_values_and_production_floor() -> None:
     resolved = Settings(_env_file=None)
     assert resolved.AUDIT_EVENTS_RETENTION_DAYS == 400
     assert resolved.SECURITY_EVENTS_RETENTION_DAYS == 400
-    assert _production_settings().AUDIT_EVENTS_RETENTION_DAYS == 400
+    assert production_settings().AUDIT_EVENTS_RETENTION_DAYS == 400
 
-    staging = _production_settings(
+    staging = production_settings(
         ENVIRONMENT="staging",
         AUDIT_EVENTS_RETENTION_DAYS=90,
         SECURITY_EVENTS_RETENTION_DAYS=90,
@@ -79,9 +50,9 @@ def test_event_retention_settings_enforce_positive_values_and_production_floor()
     with pytest.raises(ValidationError, match="SECURITY_EVENTS_RETENTION_DAYS"):
         Settings(_env_file=None, SECURITY_EVENTS_RETENTION_DAYS=0)
     with pytest.raises(ValidationError, match="AUDIT_EVENTS_RETENTION_DAYS"):
-        _production_settings(AUDIT_EVENTS_RETENTION_DAYS=399)
+        production_settings(AUDIT_EVENTS_RETENTION_DAYS=399)
     with pytest.raises(ValidationError, match="SECURITY_EVENTS_RETENTION_DAYS"):
-        _production_settings(SECURITY_EVENTS_RETENTION_DAYS=90)
+        production_settings(SECURITY_EVENTS_RETENTION_DAYS=90)
 
 
 async def test_sweeps_enforce_boundaries_isolation_subject_survival_and_repeat_runs(

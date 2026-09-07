@@ -158,6 +158,10 @@ per-agent `tool_policies`. The following rules define the policy:
 - Any tool that **spends money**, such as a Google Ads mutation, is
   `approval` with `supports_auto=False` — per-agent configuration may not
   weaken it. _(enforced)_
+- The Google Search Console Indexing API tool is also `approval` with
+  `supports_auto=False`. Each action consumes a shared daily quota and Google
+  permits notifications only for eligible job posting and livestream video
+  pages. _(enforced)_
 - Non-interactive principals: scheduled runs stamp a server-minted
   side-effect grant at run preparation time; the default is
   `require_approval`, and schedules may explicitly opt into `allow` when

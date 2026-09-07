@@ -159,7 +159,7 @@ async def test_drain_mode_with_empty_queues_exits_zero(
     monkeypatch.setattr(worker_main.agent_runner, "run_drain", drain_agent)
     monkeypatch.setattr(worker_main.job_runner, "run_drain", drain_jobs)
     monkeypatch.setattr(worker_main, "close_db_connections", close_connections)
-    monkeypatch.setattr(worker_main, "close_google_vertex_clients", close_vertex_clients)
+    monkeypatch.setattr(worker_main, "close_vertex_clients", close_vertex_clients)
 
     assert await asyncio.wait_for(worker_main.main(), timeout=1) == 0
     assert calls == {"agent": 1, "job": 1}

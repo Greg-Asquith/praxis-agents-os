@@ -4,11 +4,9 @@
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
-from typing import Any
 from uuid import uuid4
 
 import pytest
-from cryptography.fernet import Fernet
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +21,7 @@ from services.jobs.handlers.sweep_expired_artifact_shares import (
     sweep_expired_artifact_shares,
 )
 from tests.factories import build_user, build_workspace
+from tests.support.settings import production_settings
 from tests.support.storage import reset_storage_provider_cache
 
 
@@ -37,36 +36,6 @@ def local_storage_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterato
         reset_storage_provider_cache()
 
 
-def _production_settings(**overrides: Any) -> Settings:
-    values: dict[str, Any] = {
-        "ENVIRONMENT": "production",
-        "STORAGE_PROVIDER": "s3",
-        "EMAIL_PROVIDER": "ses",
-        "SECRET_PROVIDER": "aws_secrets_manager",
-        "CREDENTIAL_MASTER_KEYS": "",
-        "DATABASE_URL": (
-            "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require"
-        ),
-        "DATABASE_MAINTENANCE_URL": (
-            "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require"
-        ),
-        "SECRET_KEY": "x" * 40,
-        "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
-        "SECURE_COOKIES": True,
-        "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
-        "WORKSPACE_BUCKET_PREFIX": "praxis-test",
-        "AWS_REGION": "eu-west-2",
-        "AWS_ACCOUNT_ID": "123456789012",
-        "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
-        "APP_BASE_URL": "https://api.example.com",
-        "FRONTEND_URL": "https://app.example.com",
-        "ARTIFACT_SHARING_ENABLED": True,
-        "RATE_LIMIT_ENABLED": True,
-    }
-    values.update(overrides)
-    return Settings(_env_file=None, **values)
-
-
 @pytest.mark.parametrize(
     "origin",
     [
@@ -78,19 +47,26 @@ def _production_settings(**overrides: Any) -> Settings:
 )
 def test_production_sharing_requires_a_distinct_origin(origin: str) -> None:
     with pytest.raises(ValidationError, match="ARTIFACT_ORIGIN"):
-        _production_settings(ARTIFACT_ORIGIN=origin)
+        production_settings(ARTIFACT_SHARING_ENABLED=True, ARTIFACT_ORIGIN=origin)
 
 
 def test_production_sharing_accepts_a_separate_origin() -> None:
-    resolved = _production_settings(ARTIFACT_ORIGIN="https://praxis-artifacts.example.net")
+    resolved = production_settings(
+        ARTIFACT_SHARING_ENABLED=True,
+        ARTIFACT_ORIGIN="https://praxis-artifacts.example.net",
+    )
     assert resolved.ARTIFACT_ORIGIN == "https://praxis-artifacts.example.net"
 
 
 def test_production_sharing_requires_https_and_rate_limiting() -> None:
     with pytest.raises(ValidationError, match="HTTPS"):
-        _production_settings(ARTIFACT_ORIGIN="http://praxis-artifacts.example.net")
+        production_settings(
+            ARTIFACT_SHARING_ENABLED=True,
+            ARTIFACT_ORIGIN="http://praxis-artifacts.example.net",
+        )
     with pytest.raises(ValidationError, match="RATE_LIMIT_ENABLED"):
-        _production_settings(
+        production_settings(
+            ARTIFACT_SHARING_ENABLED=True,
             ARTIFACT_ORIGIN="https://praxis-artifacts.example.net",
             RATE_LIMIT_ENABLED=False,
         )
@@ -98,7 +74,8 @@ def test_production_sharing_requires_https_and_rate_limiting() -> None:
 
 def test_production_sharing_rejects_cookie_domain_coverage() -> None:
     with pytest.raises(ValidationError, match="COOKIE_DOMAIN"):
-        _production_settings(
+        production_settings(
+            ARTIFACT_SHARING_ENABLED=True,
             ARTIFACT_ORIGIN="https://artifacts.example.net",
             COOKIE_DOMAIN=".example.net",
         )

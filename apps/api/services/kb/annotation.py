@@ -13,9 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.kb import KBChunk, KBDocument
-from services.agents.models.domain import DEFAULT_MAX_STEPS, ResolvedModel
-from services.agents.models.factory import build_model
-from services.agents.models.registry import get_model
+from services.agents.models import build_model, resolve_catalog_model
+from services.agents.models.domain import ResolvedModel
 from services.ai_usage.domain import PURPOSE_KB_ANNOTATION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
 
@@ -118,10 +117,7 @@ async def annotate_chunks(
 
 
 def _resolve_annotation_model() -> ResolvedModel:
-    info = get_model(settings.KB_ANNOTATION_PROVIDER, settings.KB_ANNOTATION_MODEL)
-    return ResolvedModel(
-        provider=info.provider,
-        model=info.model,
-        settings=dict(info.default_settings),
-        max_steps=DEFAULT_MAX_STEPS,
+    return resolve_catalog_model(
+        settings.KB_ANNOTATION_PROVIDER,
+        settings.KB_ANNOTATION_MODEL,
     )

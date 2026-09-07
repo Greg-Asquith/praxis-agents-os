@@ -265,9 +265,18 @@ apps/api/
   details. This boundary supports replacing the provider layer without
   changing the execution path. LiteLLM is the preferred replacement if
   Pydantic AI no longer covers the required providers.
-- **Google transport:** Google models use the Gemini Developer API with an API
+- **Vertex AI transports:** `GOOGLE_VERTEX_AI`, `ANTHROPIC_VERTEX_AI`, and
+  `VERTEX_PARTNER_MODELS_ENABLED` select the transports described below.
+  Agent provider labels append "via Google Cloud" from catalog transport
+  metadata. Google models use the Gemini Developer API with an API
   key by default. When `GOOGLE_VERTEX_AI` is enabled, they use Vertex AI with
-  Application Default Credentials and the configured location. The project
+  Application Default Credentials. `GOOGLE_VERTEX_LOCATION=auto` selects
+  catalog defaults: `eu` for Gemini Flash and Flash-Lite, `global` for Gemini
+  3.1 Pro. Embeddings retain `global` under `auto`. An explicit location
+  overrides the defaults and must be supported by the selected Gemini model.
+  Unsupported combinations fail before client construction, without region
+  fallback. The SDK routes `eu` and `us` through multi-region hostnames.
+  The project
   resolves from `GOOGLE_VERTEX_PROJECT`, then falls back to `GCP_PROJECT_ID`.
   The model catalog, native helper availability, and Google embeddings follow
   the same switch, so transport selection does not change agent or tool
@@ -275,6 +284,60 @@ apps/api/
   configuration, closed during API, worker, and eval shutdown. Usage-ledger
   attribution and public-rate pricing are keyed by the Google provider and
   model, independent of the selected transport.
+- **Transport-aware model IDs:** The catalog keeps a stable provider and model
+  alias for application contracts. A catalog entry can also declare a
+  provider-facing `vertex_model` ID. When a provider uses the `google-cloud`
+  transport, resolution requires that ID to contain non-whitespace text. The
+  catalog omits entries without one, and direct resolution fails closed. The
+  resolved model carries the provider-facing ID into the factory, so callers
+  do not reconstruct or bypass transport selection.
+- **Anthropic transport:** `ANTHROPIC_VERTEX_AI` routes Claude through
+  `AsyncAnthropicVertex` with Application Default Credentials. Its project
+  follows the shared fallback, and `ANTHROPIC_VERTEX_LOCATION` defaults to
+  `global`. Model IDs come from the documented Model Garden cards, including
+  IDs without date suffixes. Claude clients share the retrying HTTP client and
+  close with Google clients during API, worker, and eval shutdown. Prompt-cache
+  defaults remain enabled; Pydantic AI applies per-block caching on Vertex.
+  Native web fetch and code execution exclude Anthropic on this transport.
+  Web search and classification remain available. Usage attribution retains
+  the Anthropic provider and catalog model. Enable each model in Model Garden
+  before use and select a location supported by that model.
+- **Partner transports:** `VERTEX_PARTNER_MODELS_ENABLED` enables cataloged
+  Meta, xAI, and Mistral models. Resolution carries a stable catalog alias and
+  an immutable transport kind, model ID, project, and supported location.
+  Meta Llama 4 uses Chat Completions in `us-east5`; Grok 4.20 uses the same API
+  in `global`. Both Llama entries default to `max_tokens=8192`; Vertex rejects
+  requests without an output limit. Meta schemas move typed dictionary-value
+  constraints into descriptions because Vertex rejects schema-valued
+  `additionalProperties`; local Pydantic validation retains those constraints.
+  Mistral Small uses publisher `rawPredict` and `streamRawPredict`
+  in `europe-west4`, with `us-central1` available as an override. Defaults
+  prefer European endpoints where supported; Llama 4 and Grok 4.20 have no
+  supported European regional endpoint. Its payload
+  uses the unversioned model name and `max_tokens`; the endpoint retains the
+  publisher and version. Pydantic AI's existing chat model owns messages,
+  tools, structured output, streaming, and actual usage parsing.
+  `VERTEX_PARTNER_MODEL_LOCATIONS` maps provider-qualified catalog aliases to
+  supported locations. Shared startup, catalog, and resolution validation
+  rejects unknown aliases, unsupported regions, and missing metadata.
+  The removed `VERTEX_PARTNER_LOCATION` setting fails with migration guidance.
+  Authentication loads and refreshes ADC off the event loop under a lock.
+  Mistral HTTP clients are keyed by endpoint configuration and retry policy;
+  Meta/xAI share an unbound HTTP client. Shared Vertex shutdown closes them.
+  No request changes shared location settings or falls back to another region.
+  Partner models retain maker/alias usage attribution and join no native helper
+  provider sets. Grok public-rate estimates use the base context tier because
+  daily usage buckets cannot distinguish its doubled rate above 200K input
+  tokens. Mistral Medium is outside the selected model set.
+- Provider HTTP retries have one owner. The shared transport bounds actual
+  attempts with `LLM_HTTP_RETRY_MAX_ATTEMPTS`, including the first request.
+  Anthropic, OpenAI, Azure, and partner SDK retries are disabled. Direct Gemini
+  uses one SDK attempt over that transport; Google Vertex retains its
+  SDK-owned retry policy. Backoff and `Retry-After` waits remain bounded by
+  the configured wait limits. Exhausted HTTP responses reach the SDK intact,
+  including their status and body; connection failures remain connection
+  failures. Run failures persist and emit the same safe `model_rate_limited`
+  message for HTTP 429, without provider bodies or project details.
 - Infrastructure provider settings live in `core/settings/providers.py`.
   Large language model (LLM) configuration remains separate and includes the
   model catalog and credentials.

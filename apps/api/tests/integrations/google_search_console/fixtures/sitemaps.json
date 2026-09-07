@@ -1,0 +1,23 @@
+{
+  "sitemap": [
+    {
+      "path": "https://example.com/older.xml",
+      "lastSubmitted": "2026-08-01T10:00:00Z",
+      "type": "sitemap",
+      "warnings": "1",
+      "errors": "0",
+      "contents": [{ "type": "web", "submitted": "3", "indexed": "2" }]
+    },
+    {
+      "path": "https://example.com/latest.xml",
+      "lastSubmitted": "2026-08-20T10:00:00Z",
+      "lastDownloaded": "2026-08-21T10:00:00Z",
+      "type": "sitemap",
+      "isPending": true,
+      "isSitemapsIndex": true,
+      "warnings": 0,
+      "errors": 2,
+      "contents": [{ "type": "web", "submitted": 5, "indexed": 4 }]
+    }
+  ]
+}

@@ -18,15 +18,26 @@ from services.agents.models.domain import (
     DEFAULT_MAX_STEPS,
     PROVIDER_AZURE,
     PROVIDER_OPENAI,
+    VERTEX_PARTNER_PROVIDERS,
     ModelConfigurationError,
     ModelContextBudget,
+    ModelInfo,
     ResolvedModel,
+    has_vertex_model_id,
 )
 from services.agents.models.registry import find_model, get_model
-from services.agents.models.utils import has_provider_api_key
+from services.agents.models.utils import (
+    has_provider_api_key,
+    partner_location,
+    provider_transport,
+    vertex_project,
+)
+from services.agents.models.validate_partner_configuration import (
+    validate_partner_configuration,
+)
 
 
-def _require_active(provider: str, model: str):
+def _require_active(provider: str, model: str) -> ModelInfo:
     """Return the catalog entry, rejecting unknown and deprecated models."""
     info = get_model(provider, model)
     if info.deprecated:
@@ -35,6 +46,46 @@ def _require_active(provider: str, model: str):
             details={"provider": provider, "model": model},
         )
     return info
+
+
+def _transport_model(info: ModelInfo) -> str:
+    """Returns the provider-facing model ID for the active transport."""
+    if provider_transport(info.provider) == "direct":
+        return info.model
+    if has_vertex_model_id(info.vertex_model):
+        return info.vertex_model
+    raise ModelConfigurationError(
+        f"Model '{info.provider}:{info.model}' has no Vertex AI model ID.",
+        details={"provider": info.provider, "model": info.model, "setting": "vertex_model"},
+    )
+
+
+def resolve_catalog_model(
+    provider: str,
+    model: str,
+    *,
+    settings_overrides: Mapping[str, Any] | None = None,
+    max_steps: int = DEFAULT_MAX_STEPS,
+) -> ResolvedModel:
+    """Resolves an active catalog entry to its provider-facing model ID."""
+    validate_partner_configuration()
+    info = _require_active(provider, model)
+    partner = provider in VERTEX_PARTNER_PROVIDERS
+    merged: dict[str, Any] = {
+        **info.default_settings,
+        **(settings_overrides or {}),
+    }
+    _apply_openai_reasoning_summary(provider, merged)
+    return ResolvedModel(
+        provider=provider,
+        model=model,
+        transport_model=_transport_model(info),
+        settings=merged,
+        max_steps=max_steps,
+        partner_transport=info.partner_transport if partner else None,
+        vertex_project=vertex_project() if partner else None,
+        vertex_location=partner_location(info) if partner else None,
+    )
 
 
 def configured_helper_providers(
@@ -116,12 +167,9 @@ def require_helper_model(
         raise ModelRetry(
             f"Model '{normalized_provider}:{resolved_model}' does not support structured output."
         )
-
-    return ResolvedModel(
-        provider=normalized_provider,
-        model=resolved_model,
-        settings=dict(info.default_settings),
-        max_steps=DEFAULT_MAX_STEPS,
+    return resolve_catalog_model(
+        normalized_provider,
+        resolved_model,
     )
 
 
@@ -136,19 +184,21 @@ def resolve_agent_model(agent) -> ResolvedModel:
 
     # Azure is deployment-based: the deployment name is customer-defined and not
     # part of the Python catalog, so membership is not validated for it.
-    default_settings = (
-        {}
-        if provider == PROVIDER_AZURE
-        else dict(_require_active(provider, model).default_settings)
-    )
-
-    merged: dict[str, Any] = {**default_settings, **(agent.model_settings or {})}
-    _apply_openai_reasoning_summary(provider, merged)
     max_steps = agent.max_steps or DEFAULT_MAX_STEPS
+    if provider != PROVIDER_AZURE:
+        return resolve_catalog_model(
+            provider,
+            model,
+            settings_overrides=agent.model_settings,
+            max_steps=max_steps,
+        )
 
+    merged = dict(agent.model_settings or {})
+    _apply_openai_reasoning_summary(provider, merged)
     return ResolvedModel(
         provider=provider,
         model=model,
+        transport_model=model,
         settings=merged,
         max_steps=max_steps,
         azure_deployment=agent.azure_deployment,
@@ -171,28 +221,14 @@ def resolve_naming_model() -> ResolvedModel:
     """Resolve the fixed model used to generate conversation titles."""
     provider = settings.CONVERSATION_NAMING_PROVIDER
     model = settings.CONVERSATION_NAMING_MODEL
-    info = _require_active(provider, model)
-
-    return ResolvedModel(
-        provider=provider,
-        model=model,
-        settings=dict(info.default_settings),
-        max_steps=DEFAULT_MAX_STEPS,
-    )
+    return resolve_catalog_model(provider, model)
 
 
 def resolve_history_summary_model() -> ResolvedModel:
     """Resolve the fixed model used by out-of-band history compaction."""
     provider = settings.AGENT_HISTORY_SUMMARY_MODEL_PROVIDER
     model = settings.AGENT_HISTORY_SUMMARY_MODEL
-    info = _require_active(provider, model)
-
-    return ResolvedModel(
-        provider=provider,
-        model=model,
-        settings=dict(info.default_settings),
-        max_steps=DEFAULT_MAX_STEPS,
-    )
+    return resolve_catalog_model(provider, model)
 
 
 def resolve_model_context_budget(resolved_model: ResolvedModel) -> ModelContextBudget:

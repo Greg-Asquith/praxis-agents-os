@@ -105,7 +105,7 @@ function airtableWritePresenter(config: AirtableWriteConfig): ToolRowPresenter {
         return writeFailure(
           activity,
           config,
-          `Praxis could not confirm the Airtable record ${config.action}.`,
+          `The system could not confirm the Airtable record ${config.action}.`,
           defaultOpen
         )
       }

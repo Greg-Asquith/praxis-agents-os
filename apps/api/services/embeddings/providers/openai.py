@@ -31,6 +31,7 @@ class OpenAIEmbeddingsProvider(EmbeddingProvider):
             base_url=settings.OPENAI_BASE_URL,
             api_key=provider_api_key(PROVIDER_OPENAI),
             http_client=retrying_http_client(),
+            max_retries=0,
         )
 
     async def embed_texts(

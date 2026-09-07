@@ -3,7 +3,6 @@
 """Model registry, resolution, and factory for the agent runtime."""
 
 from services.agents.models.factory import build_model
-from services.agents.models.google_vertex_client import close_google_vertex_clients
 from services.agents.models.list_model_catalog import list_model_catalog
 from services.agents.models.registry import (
     find_model,
@@ -14,15 +13,17 @@ from services.agents.models.registry import (
 )
 from services.agents.models.resolution import (
     resolve_agent_model,
+    resolve_catalog_model,
     resolve_history_summary_model,
     resolve_model_context_budget,
     resolve_naming_model,
 )
 from services.agents.models.utils import provider_api_key, retrying_http_client
+from services.agents.models.vertex_clients import close_vertex_clients
 
 __all__ = [
     "build_model",
-    "close_google_vertex_clients",
+    "close_vertex_clients",
     "find_model",
     "get_model",
     "is_known",
@@ -31,6 +32,7 @@ __all__ = [
     "provider_api_key",
     "qualified_id",
     "resolve_agent_model",
+    "resolve_catalog_model",
     "resolve_history_summary_model",
     "resolve_model_context_budget",
     "resolve_naming_model",

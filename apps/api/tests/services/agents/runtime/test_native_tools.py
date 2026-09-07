@@ -193,6 +193,7 @@ def _set_native_provider_keys(
     azure: str | None = None,
 ) -> None:
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
     for setting_name, value in (
         ("ANTHROPIC_API_KEY", anthropic),
         ("GOOGLE_API_KEY", google),
@@ -298,6 +299,36 @@ def test_google_helper_availability_follows_vertex_configuration(
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", gcp_project_id)
 
     assert (PROVIDER_GOOGLE in configured_providers()) is expected_configured
+
+
+@pytest.mark.parametrize(
+    ("configured_providers", "vertex_supported"),
+    [
+        (classifier_tools.configured_classifier_providers, True),
+        (web_search_tools.configured_native_search_providers, True),
+        (web_fetch_tools.configured_native_fetch_providers, False),
+        (run_code_tools.configured_native_run_code_providers, False),
+    ],
+)
+@pytest.mark.parametrize("vertex", [False, True])
+@pytest.mark.parametrize("project", [None, "vertex-project"])
+def test_anthropic_helper_availability_follows_transport(
+    monkeypatch,
+    configured_providers,
+    vertex_supported,
+    vertex,
+    project,
+) -> None:
+    _set_native_provider_keys(monkeypatch, anthropic="direct-key")
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", vertex)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", project)
+    monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
+
+    expected = not vertex or (vertex_supported and project is not None)
+    assert (PROVIDER_ANTHROPIC in configured_providers()) is expected
+    if vertex:
+        monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+        assert (PROVIDER_ANTHROPIC in configured_providers()) is expected
 
 
 def test_run_code_rejects_provider_without_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -829,6 +860,7 @@ async def test_run_code_helper_is_metered_with_output_counts(
         model_spec=ResolvedModel(
             provider=PROVIDER_OPENAI,
             model="gpt-5.6-luna",
+            transport_model="gpt-5.6-luna",
             settings={},
             max_steps=3,
         ),
@@ -917,7 +949,11 @@ async def test_run_code_bridge_lifecycle_uploads_mounts_cleans_up_and_audits(
         task="Add totals",
         inputs=inputs,
         model_spec=ResolvedModel(
-            provider=provider, model="sandbox-model", settings={}, max_steps=3
+            provider=provider,
+            model="sandbox-model",
+            transport_model="sandbox-model",
+            settings={},
+            max_steps=3,
         ),
         tool_call_id="run-code-1",
     )
@@ -995,7 +1031,11 @@ async def test_run_code_helper_failure_after_mount_still_deletes_and_audits_uplo
                 _run_code_input(name="notes.md", content=b"# notes"),
             ),
             model_spec=ResolvedModel(
-                provider=provider, model="sandbox-model", settings={}, max_steps=3
+                provider=provider,
+                model="sandbox-model",
+                transport_model="sandbox-model",
+                settings={},
+                max_steps=3,
             ),
             tool_call_id="run-code-1",
         )
@@ -1066,7 +1106,11 @@ async def test_run_code_partial_upload_failure_is_contained_and_cleaned_up(
                 _run_code_input(name="notes.md", content=b"# notes"),
             ),
             model_spec=ResolvedModel(
-                provider=provider, model="sandbox-model", settings={}, max_steps=3
+                provider=provider,
+                model="sandbox-model",
+                transport_model="sandbox-model",
+                settings={},
+                max_steps=3,
             ),
             tool_call_id="run-code-1",
         )
@@ -1510,6 +1554,7 @@ async def test_run_code_audits_native_parts_when_helper_run_fails(
             model_spec=ResolvedModel(
                 provider=PROVIDER_OPENAI,
                 model="gpt-5.6-luna",
+                transport_model="gpt-5.6-luna",
                 settings={},
                 max_steps=3,
             ),
@@ -1559,6 +1604,7 @@ async def test_run_code_contains_provider_api_failure_as_tool_failure(
             model_spec=ResolvedModel(
                 provider=PROVIDER_ANTHROPIC,
                 model="claude-sonnet-5",
+                transport_model="claude-sonnet-5",
                 settings={},
                 max_steps=3,
             ),
@@ -2233,6 +2279,7 @@ async def test_native_classifier_batches_calls_and_records_each_invocation(
         model_spec=ResolvedModel(
             provider=PROVIDER_OPENAI,
             model="gpt-5.4-nano",
+            transport_model="gpt-5.4-nano",
             settings={},
             max_steps=2,
         ),
@@ -2289,6 +2336,7 @@ async def test_native_classifier_later_batch_failure_returns_no_partial_result(
             model_spec=ResolvedModel(
                 provider=PROVIDER_OPENAI,
                 model="gpt-5.4-nano",
+                transport_model="gpt-5.4-nano",
                 settings={},
                 max_steps=2,
             ),
@@ -2656,7 +2704,13 @@ async def test_native_image_generation_probe_extracts_normalized_provider_image(
 
     monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
     monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
-    spec = ResolvedModel(provider=provider, model="probe-model", settings={}, max_steps=3)
+    spec = ResolvedModel(
+        provider=provider,
+        model="probe-model",
+        transport_model="probe-model",
+        settings={},
+        max_steps=3,
+    )
 
     result = await image_generation_tools.run_native_image_generation(
         deps=_metering_deps(),
@@ -2715,6 +2769,7 @@ async def test_native_image_editing_probe_sends_input_image_and_edit_action(
         model_spec=ResolvedModel(
             provider=provider,
             model="probe-model",
+            transport_model="probe-model",
             settings={},
             max_steps=3,
         ),
@@ -2824,6 +2879,7 @@ async def test_native_video_to_image_probe_sends_inline_video_to_google(
         model_spec=ResolvedModel(
             provider=PROVIDER_GOOGLE,
             model="gemini-3.1-flash-image",
+            transport_model="gemini-3.1-flash-image",
             settings={},
             max_steps=3,
         ),
@@ -2880,6 +2936,7 @@ async def test_native_image_generation_rejects_multiple_provider_images(
             model_spec=ResolvedModel(
                 provider=PROVIDER_GOOGLE,
                 model="probe-model",
+                transport_model="probe-model",
                 settings={},
                 max_steps=3,
             ),
@@ -2896,6 +2953,7 @@ async def test_native_image_generation_rejects_google_only_ratio_for_openai() ->
             model_spec=ResolvedModel(
                 provider=PROVIDER_OPENAI,
                 model="probe-model",
+                transport_model="probe-model",
                 settings={},
                 max_steps=3,
             ),
@@ -2936,6 +2994,7 @@ async def test_native_image_generation_probe_maps_content_policy_refusals(
     spec = ResolvedModel(
         provider=response.provider_name or PROVIDER_OPENAI,
         model="probe-model",
+        transport_model="probe-model",
         settings={},
         max_steps=3,
     )
@@ -3170,7 +3229,13 @@ async def test_native_web_fetch_parser_handles_normalized_provider_messages_and_
     monkeypatch.setattr(web_fetch_tools, "PydanticAgent", FakeHelper)
     monkeypatch.setattr(web_fetch_tools, "build_model", lambda spec: spec)
     monkeypatch.setattr(settings, "NATIVE_WEB_FETCH_BLOCKED_DOMAINS", "blocked.example")
-    spec = ResolvedModel(provider=provider, model="probe-model", settings={}, max_steps=2)
+    spec = ResolvedModel(
+        provider=provider,
+        model="probe-model",
+        transport_model="probe-model",
+        settings={},
+        max_steps=2,
+    )
 
     result = await web_fetch_tools.run_native_web_fetch(
         deps=_metering_deps(),
