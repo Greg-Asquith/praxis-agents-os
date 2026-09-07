@@ -1,7 +1,9 @@
 // apps/web/src/integrations/google_ads/presenters/update-campaign-budget-amounts.tsx
 
+import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
-import { ArrowRightIcon } from "lucide-react"
 
 import type { DataColumn, DataRow } from "@/components/ui/data-table"
 import {
@@ -107,44 +109,32 @@ export const googleAdsUpdateCampaignBudgetAmountsPresenter = createGoogleAdsWrit
 
 function renderUpdateBudgetApprovalSummary(args: UpdateBudgetArgs) {
   return (
-    <section aria-label="Proposed campaign budget amounts" className="grid gap-1.5">
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed campaign budget amounts"
+      countLine={approvalCountLine(args.updates.length, "budget")}
+    >
       {args.updates.map((update) => (
-        <div
-          className="border-border/80 bg-card grid min-w-0 gap-3 rounded-lg border px-3 py-3 shadow-xs sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-          key={`${campaignBudgetIdentity(update.budget)}:${update.amount}`}
-        >
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{update.budget.label}</p>
-            <p className="text-muted-foreground mt-0.5 text-xs">
+        <GoogleAdsEntityCard
+          key={campaignBudgetIdentity(update.budget)}
+          title={update.budget.label}
+          meta={
+            <>
               {budgetPeriodLabel(update.budget.period)} ·{" "}
               {update.budget.referenceCount === null
                 ? "Unavailable"
                 : approvalCountLine(update.budget.referenceCount, "campaign")}
-            </p>
-          </div>
-          <div
-            aria-label={`${formatCampaignBudgetAmount(update.budget)} before, ${formatCurrencyAmount(update.amount, update.budget.currencyCode)} after`}
-            className="border-border bg-muted/25 grid grid-cols-[minmax(5rem,1fr)_auto_minmax(5rem,1fr)] items-center gap-2 rounded-md border px-3 py-2 tabular-nums sm:min-w-64"
-          >
-            <div>
-              <p className="text-muted-foreground text-[11px] leading-none">Current</p>
-              <p className="mt-1 text-sm font-medium">
-                {formatCampaignBudgetAmount(update.budget)}
-              </p>
-            </div>
-            <span className="bg-background text-muted-foreground flex size-6 items-center justify-center rounded-full border">
-              <ArrowRightIcon aria-hidden="true" className="size-3.5" />
-            </span>
-            <div className="text-right">
-              <p className="text-muted-foreground text-[11px] leading-none">Proposed</p>
-              <p className="mt-1 text-sm font-semibold">
-                {formatCurrencyAmount(update.amount, update.budget.currencyCode)}
-              </p>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+          trailing={
+            <GoogleAdsBeforeAfter
+              ariaLabel={`${formatCampaignBudgetAmount(update.budget)} before, ${formatCurrencyAmount(update.amount, update.budget.currencyCode)} after`}
+              current={formatCampaignBudgetAmount(update.budget)}
+              proposed={formatCurrencyAmount(update.amount, update.budget.currencyCode)}
+            />
+          }
+        />
       ))}
-    </section>
+    </GoogleAdsApprovalSection>
   )
 }
 

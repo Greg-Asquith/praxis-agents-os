@@ -1,13 +1,54 @@
-import { createElement, type ReactNode } from "react"
+import { createElement, type ComponentProps, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
+import type * as SelectModule from "@/components/ui/select"
 import type { ToolUi } from "@/features/tools/types"
 import { replacePositiveKeywordPatch } from "@/integrations/google_ads/lib/positive-keyword-update"
 import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
 
+const statusEdits = vi.hoisted(() => [] as ((value: string) => void)[])
+
+vi.mock("@/components/ui/select", async (importOriginal) => {
+  const original = await importOriginal<typeof SelectModule>()
+  return {
+    ...original,
+    Select: (props: ComponentProps<typeof original.Select>) => {
+      if (props.onValueChange) statusEdits.push(props.onValueChange as (value: string) => void)
+      return createElement(original.Select, props)
+    },
+  }
+})
+
 describe("Google Ads positive keyword update presenter", () => {
+  it.each([false, true])("preserves status edits and the submitting lock (%s)", (submitting) => {
+    statusEdits.length = 0
+    const controls = { ...approvalControls(), submitting }
+    render(
+      googleAdsUpdatePositiveKeywordsPresenter.render(
+        props(
+          activity("awaiting_approval", {
+            keywords: [keyword("PAUSED"), { ...keyword("PAUSED"), criterion_id: "91" }],
+            patches: [{ status: "ENABLED", cpc_bid: "2.50" }, { status: "ENABLED" }],
+          }),
+          controls
+        )
+      )
+    )
+    expect(statusEdits).toHaveLength(2)
+    statusEdits[1]?.("PAUSED")
+    if (submitting) {
+      expect(controls.onDecisionChange).not.toHaveBeenCalled()
+    } else {
+      expect(controls.onDecisionChange).toHaveBeenCalledWith({
+        decision: "pending",
+        message: "",
+        edits: { patches: [{ status: "ENABLED", cpc_bid: "2.50" }, { status: "PAUSED" }] },
+      })
+    }
+  })
+
   it("shows selected keyword labels as failure chips", () => {
     const html = render(
       googleAdsUpdatePositiveKeywordsPresenter.render(
@@ -293,8 +334,8 @@ describe("Google Ads positive keyword update presenter", () => {
     expect(html).toContain(
       "Status for running shoes, Phrase, in Search · Shoes, account 1234567890"
     )
-    expect(html).toContain("Before: ")
-    expect(html).toContain("Requested: ")
+    expect(html).toContain(">Current<")
+    expect(html).toContain(">Proposed<")
   })
 
   it("allows destination inheritance for independent URL settings", () => {

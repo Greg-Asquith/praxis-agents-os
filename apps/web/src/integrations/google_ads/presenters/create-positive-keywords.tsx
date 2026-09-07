@@ -9,7 +9,12 @@ import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/fa
 import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 
 import type { DataColumn } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
+import {
+  GoogleAdsEntityCard,
+  GoogleAdsEntityGroup,
+} from "@/integrations/google_ads/components/entity-card"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import {
   parsePositiveKeywordInput,
   positiveKeywordInputValidationError,
@@ -141,57 +146,32 @@ function renderApprovalSummary(args: CreateKeywordArgs) {
     }
   }
   return (
-    <section aria-label="Proposed keyword additions" className="grid gap-3">
-      <StatGroup>
-        <Stat label="Ad groups" value={args.adGroups.length} />
-        <Stat label="Keyword rows" value={args.keywords.length} />
-        <Stat label="Planned additions" value={args.adGroups.length * args.keywords.length} />
-      </StatGroup>
-      <div className="grid gap-2" role="list">
-        {[...campaignGroups.entries()].map(([key, adGroups]) => {
-          const first = adGroups[0]
-          if (!first) return null
-          const account = args.accounts.get(first.customerId)
-          return (
-            <section
-              className="border-border min-w-0 overflow-hidden rounded-lg border"
-              key={key}
-              role="listitem"
-            >
-              <div className="bg-muted/35 flex min-w-0 items-start justify-between gap-3 px-3 py-2.5">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <p className="text-muted-foreground text-xs wrap-anywhere">
-                    {account?.label ?? "Google Ads account"}
-                  </p>
-                  {first.campaignLabel ? (
-                    <p className="text-sm font-medium wrap-anywhere">{first.campaignLabel}</p>
-                  ) : null}
-                </div>
-                <span className="text-muted-foreground shrink-0 text-xs">
-                  {account?.currencyCode ?? "Currency unavailable"}
-                </span>
-              </div>
-              <div className="divide-border border-border divide-y border-t">
-                {adGroups.map((adGroup) => (
-                  <div
-                    className="flex min-w-0 items-start justify-between gap-4 px-3 py-2.5"
-                    key={adGroup.adGroupId}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-muted-foreground mb-1 text-xs">Ad group</p>
-                      <p className="text-sm leading-relaxed wrap-anywhere">{adGroup.label}</p>
-                    </div>
-                    <span className="text-muted-foreground shrink-0 text-xs">
-                      {args.keywords.length} {args.keywords.length === 1 ? "keyword" : "keywords"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )
-        })}
-      </div>
-    </section>
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed keyword additions"
+      countLine={`${approvalCountLine(args.keywords.length, "keyword")} × ${approvalCountLine(args.adGroups.length, "ad group")} · ${approvalCountLine(args.adGroups.length * args.keywords.length, "planned addition")}`}
+    >
+      {[...campaignGroups.entries()].map(([key, adGroups]) => {
+        const first = adGroups[0]
+        if (!first) return null
+        const account = args.accounts.get(first.customerId)
+        return (
+          <GoogleAdsEntityGroup
+            key={key}
+            title={first.campaignLabel ?? "Campaign"}
+            meta={`${account?.label ?? "Google Ads account"} · ${account?.currencyCode ?? "Currency unavailable"}`}
+          >
+            {adGroups.map((adGroup) => (
+              <GoogleAdsEntityCard
+                key={adGroup.adGroupId}
+                title={adGroup.label}
+                meta="Ad group"
+                trailing={approvalCountLine(args.keywords.length, "keyword")}
+              />
+            ))}
+          </GoogleAdsEntityGroup>
+        )
+      })}
+    </GoogleAdsApprovalSection>
   )
 }
 

@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/remove-positive-keywords.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
@@ -93,34 +96,27 @@ export const googleAdsRemovePositiveKeywordsPresenter = createGoogleAdsWritePres
 
 function renderRemovalApprovalSummary(args: RemovalArgs) {
   return (
-    <section
-      aria-label="Keywords selected for permanent removal"
-      className="border-destructive/35 bg-destructive/5 grid gap-2 rounded-lg border px-3 py-2.5"
+    <GoogleAdsApprovalSection
+      ariaLabel="Keywords selected for permanent removal"
+      countLine={approvalCountLine(args.keywords.length, "keyword")}
     >
-      <p className="text-destructive text-xs font-medium">
+      <p className="text-muted-foreground text-xs">
         This action cannot be undone. Removed keywords stop targeting traffic and cannot be
         re-enabled.
       </p>
-      <div className="grid gap-1" role="list">
-        {args.keywords.map((keyword) => (
-          <div
-            className="bg-card flex min-w-0 flex-wrap items-baseline justify-between gap-2 rounded-md border px-2.5 py-2"
-            key={keyword.identity}
-            role="listitem"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{keyword.label}</p>
-              <p className="text-muted-foreground text-xs">
-                {keyword.scopeLabel} · Account {keyword.customerId} · {keyword.matchType}
-              </p>
-            </div>
-            <p className="text-sm font-semibold tabular-nums">
-              {googleAdsTokenLabel(keyword.status, keyword.status)}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
+      {args.keywords.map((keyword) => (
+        <GoogleAdsEntityCard
+          key={keyword.identity}
+          title={keyword.label}
+          meta={
+            <>
+              {keyword.scopeLabel} · Account {keyword.customerId} · {keyword.matchType}
+            </>
+          }
+          trailing={googleAdsTokenLabel(keyword.status, keyword.status)}
+        />
+      ))}
+    </GoogleAdsApprovalSection>
   )
 }
 

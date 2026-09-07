@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/create-campaign-budget.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 
 import { Badge } from "@/components/ui/badge"
@@ -76,38 +79,32 @@ export const googleAdsCreateCampaignBudgetPresenter = createGoogleAdsWritePresen
 
 function renderCreateBudgetApprovalSummary(args: CreateBudgetArgs) {
   return (
-    <section
-      aria-label="Proposed campaign budget"
-      className="border-border bg-muted/35 grid gap-2 rounded-lg border px-3 py-2.5"
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed campaign budget"
+      title={args.name}
+      countLine={approvalCountLine(args.accounts.length, "account")}
     >
-      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-        <p className="truncate text-sm font-medium">{args.name}</p>
-      </div>
-      <div className="grid gap-1 sm:grid-cols-2">
-        {args.accounts.map((account) => (
-          <div
-            className="bg-card rounded-md border px-2.5 py-2"
-            key={`${account.label}:${account.currencyCode}`}
-          >
-            <p className="truncate text-xs font-medium">{account.label}</p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums">
+      {args.accounts.map((account) => (
+        <GoogleAdsEntityCard
+          key={`${account.label}:${account.currencyCode}`}
+          title={account.label}
+          meta={
+            args.period === "DAILY" ? formatDailyEstimate(args.amount, account.currencyCode) : null
+          }
+          trailing={
+            <>
               {formatCurrencyAmount(args.amount, account.currencyCode)}
               {args.period === "DAILY" ? " per day" : " total"}
-            </p>
-            {args.period === "DAILY" ? (
-              <p className="text-muted-foreground mt-0.5 text-xs">
-                {formatDailyEstimate(args.amount, account.currencyCode)}
-              </p>
-            ) : null}
-          </div>
-        ))}
-      </div>
+            </>
+          }
+        />
+      ))}
       <p className="text-muted-foreground text-xs">
         {budgetPeriodLabel(args.period)} ·{" "}
         {titleCaseToken(args.deliveryMethod, "Delivery unavailable")} ·{" "}
         {args.explicitlyShared ? "Shared" : "Not shared"}
       </p>
-    </section>
+    </GoogleAdsApprovalSection>
   )
 }
 

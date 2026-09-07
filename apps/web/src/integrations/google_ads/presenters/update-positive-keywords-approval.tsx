@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/update-positive-keywords-approval.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { Fragment, useState } from "react"
 import { ArrowRightIcon, ChevronDownIcon } from "lucide-react"
 
@@ -67,10 +70,12 @@ export function UpdatePositiveKeywordsApproval({
   }
 
   return (
-    <section aria-label="Proposed keyword changes" className="flex flex-col gap-2">
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed keyword changes"
+      countLine={approvalCountLine(args.keywords.length, "keyword")}
+    >
       <ApprovalPagination
         disabled={disabled}
-        itemCount={args.keywords.length}
         onPageChange={setPageIndex}
         pageCount={pageCount}
         pageIndex={safePageIndex}
@@ -94,7 +99,7 @@ export function UpdatePositiveKeywordsApproval({
                 <p className="mt-1 text-xs wrap-anywhere">{keyword.scopeLabel}</p>
                 <div
                   aria-hidden="true"
-                  className="text-muted-foreground mt-3 hidden gap-4 text-xs sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_8rem]"
+                  className="text-muted-foreground mt-3 hidden gap-4 text-xs @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(16rem,1.5fr)_minmax(0,1fr)_8rem]"
                 >
                   <span>Keyword</span>
                   <span>Status</span>
@@ -119,28 +124,24 @@ export function UpdatePositiveKeywordsApproval({
           </Fragment>
         )
       })}
-    </section>
+    </GoogleAdsApprovalSection>
   )
 }
 
 function ApprovalPagination({
   disabled,
-  itemCount,
   onPageChange,
   pageCount,
   pageIndex,
 }: {
   disabled: boolean
-  itemCount: number
   onPageChange: (page: number) => void
   pageCount: number
   pageIndex: number
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <p className="text-muted-foreground text-xs">
-        {String(itemCount)} {itemCount === 1 ? "keyword" : "keywords"}. Edit the values to change.
-      </p>
+      <p className="text-muted-foreground text-xs">Edit the values to change.</p>
       {pageCount > 1 ? (
         <div className="flex shrink-0 items-center gap-1">
           <Button
@@ -197,8 +198,8 @@ function KeywordPatchEditor({
       aria-label={`${keyword.text}, ${keyword.matchType}, ${keyword.scopeLabel}, account ${keyword.customerId}`}
       className="border-border min-w-0 border-b py-2 last:border-b-0"
     >
-      <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_8rem] sm:gap-4">
-        <div className="min-w-0 sm:pt-1">
+      <div className="grid items-start gap-3 @3xl:grid-cols-[minmax(0,1fr)_minmax(16rem,1.5fr)_minmax(0,1fr)_8rem] @3xl:gap-4">
+        <div className="min-w-0 @3xl:pt-1">
           <p className="text-sm font-medium wrap-anywhere">{keyword.text}</p>
           <p className="text-muted-foreground mt-0.5 text-xs">
             {titleCaseToken(keyword.matchType.toLowerCase(), keyword.matchType)}
@@ -220,7 +221,7 @@ function KeywordPatchEditor({
         <Button
           aria-expanded={expanded}
           aria-label={`${expanded ? "Less fields" : "More fields"} for ${keyword.text}, ${keyword.matchType}, account ${keyword.customerId}`}
-          className="justify-self-start sm:justify-self-end"
+          className="justify-self-start @3xl:justify-self-end"
           disabled={disabled}
           onClick={onExpandedChange}
           size="sm"
@@ -281,25 +282,36 @@ function PatchFieldEditor({
   const changed = included && !sameFieldValue(field, before[field], value)
   const context = `${keyword.text}, ${titleCaseToken(keyword.matchType.toLowerCase(), keyword.matchType)}, in ${keyword.scopeLabel}, account ${keyword.customerId}`
   const label = `${specification.label} for ${context}`
+  const editor = (
+    <div className={cn("min-w-0 rounded-md", changed && "bg-warning/5 ring-warning/40 ring-1")}>
+      <PatchValueInput
+        disabled={disabled}
+        field={field}
+        id={inputId}
+        label={label}
+        onChange={(nextValue) => {
+          onChange(withPatchField(patch, field, nextValue))
+        }}
+        value={value}
+      />
+    </div>
+  )
   return (
     <Field className="min-w-0 gap-1.5" data-disabled={disabled || undefined}>
-      <FieldLabel className={cn("min-w-0", compact && "sm:sr-only")} htmlFor={inputId}>
+      <FieldLabel className={cn("min-w-0", compact && "@3xl:sr-only")} htmlFor={inputId}>
         {specification.label}
         {field === "cpc_bid" && currencyCode ? ` (${currencyCode})` : ""}
       </FieldLabel>
-      <div className={cn("min-w-0 rounded-md", changed && "bg-warning/5 ring-warning/40 ring-1")}>
-        <PatchValueInput
-          disabled={disabled}
-          field={field}
-          id={inputId}
-          label={label}
-          onChange={(nextValue) => {
-            onChange(withPatchField(patch, field, nextValue))
-          }}
-          value={value}
+      {field === "status" ? (
+        <GoogleAdsBeforeAfter
+          ariaLabel={label}
+          current={formatPositiveKeywordValue(field, before[field], currencyCode)}
+          proposed={editor}
         />
-      </div>
-      {changed ? (
+      ) : (
+        editor
+      )}
+      {changed && field !== "status" ? (
         <p className="text-warning-foreground flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs">
           <span className="sr-only">Changed. </span>
           <span className="wrap-anywhere">

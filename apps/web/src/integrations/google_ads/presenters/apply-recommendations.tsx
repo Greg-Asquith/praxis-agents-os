@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/apply-recommendations.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { countByKind } from "@/integrations/google_ads/lib/outcomes"
 import type { DataColumn } from "@/components/ui/data-table"
 import {
@@ -142,36 +145,26 @@ function applyRecommendationApprovalSummary(args: ApplyRecommendationArgs) {
     ])
   )
   return (
-    <section
-      aria-label="Recommendations to apply"
-      className="border-border bg-muted/35 grid gap-2 rounded-lg border px-3 py-2.5"
+    <GoogleAdsApprovalSection
+      ariaLabel="Recommendations to apply"
+      countLine={approvalCountLine(args.recommendations.length, "recommendation")}
     >
-      <p className="text-muted-foreground text-xs">
-        {String(args.recommendations.length)} selected Google Ads
-        {args.recommendations.length === 1 ? " recommendation" : " recommendations"}
-      </p>
-      <div className="grid gap-1.5">
-        {args.recommendations.map((recommendation) => {
-          const parameters = parametersByName.get(recommendation.resourceName)
-          return (
-            <div
-              className="bg-card grid min-w-0 gap-1 rounded-md border px-2.5 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]"
-              key={recommendation.resourceName}
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{recommendation.label}</p>
-                <p className="text-muted-foreground text-xs">
-                  {googleAdsTokenLabel(recommendation.recommendationType)}
-                </p>
-              </div>
-              <p className="text-muted-foreground min-w-0 text-xs sm:text-right">
+      {args.recommendations.map((recommendation) => {
+        const parameters = parametersByName.get(recommendation.resourceName)
+        return (
+          <GoogleAdsEntityCard
+            key={recommendation.resourceName}
+            title={recommendation.label}
+            meta={googleAdsTokenLabel(recommendation.recommendationType)}
+            trailing={
+              <span className="text-muted-foreground text-xs">
                 {parameters ? formatParameters(parameters) : "Use Google's proposed values"}
-              </p>
-            </div>
-          )
-        })}
-      </div>
-    </section>
+              </span>
+            }
+          />
+        )
+      })}
+    </GoogleAdsApprovalSection>
   )
 }
 

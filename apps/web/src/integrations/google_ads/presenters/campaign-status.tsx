@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/campaign-status.tsx
 
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
   GoogleAdsOutcomeTable,
@@ -25,6 +28,19 @@ export const googleAdsCampaignStatusPresenter = createGoogleAdsWritePresenter({
         approveLabel: "Approve & Update",
         label: "Update Google Ads Campaign Status",
         parseArgs: campaignArgs,
+        renderSummary: (value, fallback) => {
+          const labels = campaignReferenceLabels(campaignArgs(value) ?? fallback)
+          return (
+            <GoogleAdsApprovalSection
+              ariaLabel="Proposed campaign status changes"
+              countLine={approvalCountLine(labels.length, "campaign")}
+            >
+              {labels.map((label, index) => (
+                <GoogleAdsEntityCard key={`${String(index)}:${label}`} title={label} />
+              ))}
+            </GoogleAdsApprovalSection>
+          )
+        },
         prompt: "This changes live campaign delivery.",
         title: "Review campaign status change",
       },

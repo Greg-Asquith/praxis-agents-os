@@ -1,5 +1,7 @@
 // apps/web/src/integrations/google_ads/components/campaign-link-outcome.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import type { DataColumn } from "@/components/ui/data-table"
 import {
   GoogleAdsOutcomeTable,
@@ -38,12 +40,11 @@ export function CampaignLinkApprovalSummary({
   listName: string
 }) {
   return (
-    <div className="bg-muted/50 grid gap-1 rounded-lg px-3 py-2.5">
-      <p className="text-sm font-medium">{listName}</p>
-      <p className="text-muted-foreground text-xs">
-        {String(campaignCount)} {campaignCount === 1 ? "campaign" : "campaigns"} selected
-      </p>
-    </div>
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed campaign list links"
+      title={listName}
+      countLine={approvalCountLine(campaignCount, "campaign")}
+    />
   )
 }
 

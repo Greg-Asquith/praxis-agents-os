@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/dismiss-recommendations.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { countByKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 import type { DataColumn } from "@/components/ui/data-table"
 import {
@@ -96,28 +99,18 @@ export const googleAdsDismissRecommendationsPresenter = createGoogleAdsWritePres
 
 function dismissRecommendationApprovalSummary(args: DismissRecommendationArgs) {
   return (
-    <section
-      aria-label="Recommendations to dismiss"
-      className="border-border bg-muted/35 grid gap-2 rounded-lg border px-3 py-2.5"
+    <GoogleAdsApprovalSection
+      ariaLabel="Recommendations to dismiss"
+      countLine={approvalCountLine(args.recommendations.length, "recommendation")}
     >
-      <p className="text-muted-foreground text-xs">
-        {String(args.recommendations.length)} selected Google Ads
-        {args.recommendations.length === 1 ? " recommendation" : " recommendations"}
-      </p>
-      <div className="grid gap-1.5 sm:grid-cols-2">
-        {args.recommendations.map((recommendation) => (
-          <div
-            className="bg-card min-w-0 rounded-md border px-2.5 py-2"
-            key={recommendation.resourceName}
-          >
-            <p className="truncate text-sm font-medium">{recommendation.label}</p>
-            <p className="text-muted-foreground text-xs">
-              {googleAdsTokenLabel(recommendation.recommendationType)}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
+      {args.recommendations.map((recommendation) => (
+        <GoogleAdsEntityCard
+          key={recommendation.resourceName}
+          title={recommendation.label}
+          meta={googleAdsTokenLabel(recommendation.recommendationType)}
+        />
+      ))}
+    </GoogleAdsApprovalSection>
   )
 }
 

@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/components/device-bid-modifier-outcome.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import type { DataColumn } from "@/components/ui/data-table"
 import {
   GoogleAdsOutcomeTable,
@@ -53,26 +56,20 @@ export function DeviceBidModifierApprovalSummary({
   campaignCount: number
 }) {
   return (
-    <section
-      aria-label="Proposed device bid adjustments"
-      className="border-border bg-muted/35 grid gap-2 rounded-lg border px-3 py-2.5"
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed device bid adjustments"
+      countLine={approvalCountLine(campaignCount, "campaign")}
     >
-      <p className="text-muted-foreground text-xs">
-        Applies to {String(campaignCount)} {campaignCount === 1 ? "campaign" : "campaigns"}
-      </p>
-      <dl className="grid gap-1.5 sm:grid-cols-3">
+      <div className="grid gap-1.5 sm:grid-cols-3">
         {adjustments.map((adjustment) => (
-          <div className="bg-card min-w-0 rounded-md border px-2.5 py-2" key={adjustment.device}>
-            <dt className="text-muted-foreground text-xs">
-              {humanizeGoogleAdsToken(adjustment.device)}
-            </dt>
-            <dd className="mt-0.5 text-sm font-medium tabular-nums">
-              {formatDeviceBidAdjustment(adjustment.bidModifier)}
-            </dd>
-          </div>
+          <GoogleAdsEntityCard
+            key={adjustment.device}
+            title={humanizeGoogleAdsToken(adjustment.device)}
+            trailing={formatDeviceBidAdjustment(adjustment.bidModifier)}
+          />
         ))}
-      </dl>
-    </section>
+      </div>
+    </GoogleAdsApprovalSection>
   )
 }
 

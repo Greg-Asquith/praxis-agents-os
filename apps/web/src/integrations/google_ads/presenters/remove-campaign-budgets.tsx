@@ -1,5 +1,7 @@
 // apps/web/src/integrations/google_ads/presenters/remove-campaing-budgets.tsx
 
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import type { DataColumn } from "@/components/ui/data-table"
 import {
@@ -97,36 +99,28 @@ export const googleAdsRemoveCampaignBudgetsPresenter = createGoogleAdsWritePrese
 
 function renderRemovalApprovalSummary(args: RemovalArgs) {
   return (
-    <section
-      aria-label="Campaign budgets selected for permanent removal"
-      className="border-destructive/35 bg-destructive/5 grid gap-2 rounded-lg border px-3 py-2.5"
+    <GoogleAdsApprovalSection
+      ariaLabel="Campaign budgets selected for permanent removal"
+      tone="destructive"
+      countLine={approvalCountLine(args.budgets.length, "budget")}
     >
-      <p className="text-destructive text-xs font-medium">
-        This action cannot be undone. Each budget has zero linked campaigns.
-      </p>
-      <div className="grid gap-1" role="list">
-        {args.budgets.map((budget) => (
-          <div
-            className="bg-card flex min-w-0 flex-wrap items-baseline justify-between gap-2 rounded-md border px-2.5 py-2"
-            key={campaignBudgetIdentity(budget)}
-            role="listitem"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium">{budget.label}</p>
-              <p className="text-muted-foreground text-xs">
-                {budgetPeriodLabel(budget.period)} ·{" "}
-                {budget.referenceCount === null
-                  ? "Unavailable"
-                  : approvalCountLine(budget.referenceCount, "campaign")}
-              </p>
-            </div>
-            <p className="text-sm font-semibold tabular-nums">
-              {formatCampaignBudgetAmount(budget)}
-            </p>
-          </div>
-        ))}
-      </div>
-    </section>
+      <p className="text-muted-foreground text-xs">Each budget has zero linked campaigns.</p>
+      {args.budgets.map((budget) => (
+        <GoogleAdsEntityCard
+          key={campaignBudgetIdentity(budget)}
+          title={budget.label}
+          meta={
+            <>
+              {budgetPeriodLabel(budget.period)} ·{" "}
+              {budget.referenceCount === null
+                ? "Unavailable"
+                : approvalCountLine(budget.referenceCount, "campaign")}
+            </>
+          }
+          trailing={formatCampaignBudgetAmount(budget)}
+        />
+      ))}
+    </GoogleAdsApprovalSection>
   )
 }
 

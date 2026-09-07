@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/assign-campaign-budgets.tsx
 
+import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import type { DataColumn } from "@/components/ui/data-table"
 import {
@@ -110,34 +113,24 @@ export const googleAdsAssignCampaignBudgetsPresenter = createGoogleAdsWritePrese
 
 function renderAssignmentApprovalSummary(args: AssignmentArgs) {
   return (
-    <section
-      aria-label="Proposed campaign budget routes"
-      className="border-border bg-muted/35 grid gap-2 rounded-lg border px-3 py-2.5"
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed campaign budget routes"
+      title={`Destination budget: ${args.destination.label}`}
+      countLine={approvalCountLine(args.routes.length, "campaign")}
     >
-      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-        <p className="text-muted-foreground text-xs">Destination budget</p>
-        <p className="truncate text-sm font-semibold">{args.destination.label}</p>
-      </div>
-      <div className="grid gap-1" role="list">
-        {args.routes.map((route) => (
-          <div
-            className="bg-card grid min-w-0 gap-1 rounded-md border px-2.5 py-2 text-sm"
-            key={route.campaign.campaignId}
-            role="listitem"
-          >
-            <span className="truncate font-medium">{route.campaign.label}</span>
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate">{route.previousBudget.label}</span>
-              <span aria-hidden="true" className="text-muted-foreground">
-                →
-              </span>
-              <span className="min-w-0 flex-1 truncate font-medium">
-                {route.destinationBudget.label}
-              </span>
-            </span>
-          </div>
-        ))}
-      </div>
+      {args.routes.map((route) => (
+        <GoogleAdsEntityCard
+          key={route.campaign.campaignId}
+          title={route.campaign.label}
+          trailing={
+            <GoogleAdsBeforeAfter
+              ariaLabel={`Budget for ${route.campaign.label}`}
+              current={route.previousBudget.label}
+              proposed={route.destinationBudget.label}
+            />
+          }
+        />
+      ))}
       <p className="text-muted-foreground text-xs">
         {budgetPeriodLabel(args.destination.period)} ·{" "}
         {args.destination.referenceCount === null
@@ -145,7 +138,7 @@ function renderAssignmentApprovalSummary(args: AssignmentArgs) {
           : approvalCountLine(args.destination.referenceCount, "campaign")}{" "}
         use this budget before the change
       </p>
-    </section>
+    </GoogleAdsApprovalSection>
   )
 }
 

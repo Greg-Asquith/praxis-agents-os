@@ -1,5 +1,8 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keyword-lists.tsx
 
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
+import { GoogleAdsEntityCard } from "@/integrations/google_ads/components/entity-card"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
@@ -20,6 +23,19 @@ export const googleAdsNegativeKeywordListsPresenter = createGoogleAdsWritePresen
         approveLabel: "Approve & Create",
         label: "Create Google Ads Negative Keyword Lists",
         parseArgs: negativeKeywordListArgs,
+        renderSummary: (value, fallback) => {
+          const args = negativeKeywordListArgs(value) ?? fallback
+          return (
+            <GoogleAdsApprovalSection
+              ariaLabel="Proposed negative keyword lists"
+              countLine={approvalCountLine(args.names.length, "list")}
+            >
+              {args.names.map((name, index) => (
+                <GoogleAdsEntityCard key={`${String(index)}:${name}`} title={name} />
+              ))}
+            </GoogleAdsApprovalSection>
+          )
+        },
         prompt: "Review the list names before creating them in the selected accounts.",
         title: "Create Negative Keyword Lists",
       },
@@ -51,12 +67,16 @@ export const googleAdsNegativeKeywordListsPresenter = createGoogleAdsWritePresen
   },
 })
 
-function negativeKeywordListArgs(value: unknown): Record<string, unknown> | null {
+function negativeKeywordListArgs(
+  value: unknown
+): (Record<string, unknown> & { names: string[] }) | null {
   return isRecord(value) &&
     Array.isArray(value["names"]) &&
     value["names"].length > 0 &&
-    value["names"].every((name) => typeof name === "string" && name.trim().length > 0)
-    ? value
+    value["names"].every(
+      (name): name is string => typeof name === "string" && name.trim().length > 0
+    )
+    ? { ...value, names: value["names"] }
     : null
 }
 

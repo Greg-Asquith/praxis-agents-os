@@ -436,7 +436,7 @@ describe("Google Ads tool presenters", () => {
     }
     const html = render(rendered)
     expect(html).toContain("Review the campaigns and multipliers")
-    expect(html).toContain("Applies to 1 campaign")
+    expect(html).toContain(">1 campaign<")
     expect(html).toContain("Mobile")
     expect(html).toContain("Tablet")
     expect(html).toContain("Lower by 30% (0.7×)")
@@ -785,7 +785,7 @@ describe("Google Ads tool presenters", () => {
     const html = render(rendered)
     expect(html).toContain("Remove negative keyword list")
     expect(html).toContain("Edited exclusions")
-    expect(html).toContain("1 campaign selected")
+    expect(html).toContain(">1 campaign<")
     expect(html).toContain("Approve &amp; Apply")
   })
 

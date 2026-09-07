@@ -51,7 +51,13 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   negative keyword list creation also use the shared outcome table, with Campaign
   and Name as their leading columns. Campaign failures use shared label chips.
   Budget creation retains its single card and uses the shared outcome label.
-  Shared approval components and lifecycle-copy adoption remain pending.
+  Approval summaries use `GoogleAdsApprovalSection` and `GoogleAdsEntityCard`.
+  Ad-group targets use `GoogleAdsEntityGroup`; approval scale uses one count
+  line instead of result stats. Budget amount changes, budget assignments, and
+  keyword status use `GoogleAdsBeforeAfter`, whose proposed slot accepts the
+  existing status editor. Budget removal uses the destructive section. Keyword
+  removal retains its consequence warning in a neutral section. Lifecycle-copy
+  adoption remains pending.
   Google Ads positive-keyword creation groups approval context by campaign,
   keeps optional bid and URL fields behind each row's progressive disclosure,
   applies provider byte and dependency checks before approval, and shows
@@ -65,7 +71,7 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   exports; requested projections are labelled as requested state. Complete
   results validate per-outcome counts and unique keyword identities before
   presenting one exportable row per selected criterion. Keyword removal has a
-  separate destructive approval card with account and ad-group context. Its
+  separate approval card with a permanent-removal warning and account and ad-group context. Its
   paginated result table distinguishes confirmed removal, failure, and
   unverified outcomes, and rejects incomplete or contradictory result evidence.
   Google Search Console contributes its logo, catalog description, and

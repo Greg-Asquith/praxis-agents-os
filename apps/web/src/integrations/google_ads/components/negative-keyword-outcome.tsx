@@ -1,5 +1,11 @@
 // apps/web/src/integrations/google_ads/components/negative-keyword-outcome.tsx
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
+import {
+  GoogleAdsEntityCard,
+  GoogleAdsEntityGroup,
+} from "@/integrations/google_ads/components/entity-card"
+import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
 import type { DataColumn, DataRow } from "@/components/ui/data-table"
 import {
   GoogleAdsOutcomeTable,
@@ -117,16 +123,15 @@ export function NegativeKeywordApprovalSummary({
 }) {
   const counts = matchTypeCounts(keywords)
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-0.5">
-      <p className="text-sm font-medium">
-        {String(total)} {total === 1 ? "keyword" : "keywords"}
-        <span className="text-muted-foreground"> · {listName}</span>
-      </p>
+    <GoogleAdsApprovalSection
+      ariaLabel="Proposed list keyword changes"
+      countLine={`${approvalCountLine(total, "keyword")} · ${listName}`}
+    >
       <p className="text-muted-foreground text-xs">
         Exact {String(counts.EXACT)} · Phrase {String(counts.PHRASE)} · Broad {String(counts.BROAD)}
         {includeAny ? ` · Any ${String(counts.ANY)}` : null}
       </p>
-    </div>
+    </GoogleAdsApprovalSection>
   )
 }
 
@@ -176,25 +181,19 @@ function ScopedNegativeKeywordApprovalSummary({
   keywordCount: number
   selectionLabels?: string[]
 }) {
-  const operationCount = entityCount * keywordCount
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-0.5">
-      <p className="text-sm font-medium">
-        {String(keywordCount)} {keywordCount === 1 ? "keyword" : "keywords"}
-        <span className="text-muted-foreground">
-          {" "}
-          × {String(entityCount)} {entityCount === 1 ? entityLabel : `${entityLabel}s`}
-        </span>
-      </p>
-      <p className="text-muted-foreground text-xs">
-        {String(operationCount)} proposed {operationCount === 1 ? "change" : "changes"}
-      </p>
+    <GoogleAdsApprovalSection
+      ariaLabel={`Proposed ${entityLabel} keyword changes`}
+      countLine={`${approvalCountLine(keywordCount, "keyword")} × ${approvalCountLine(entityCount, entityLabel)} · ${approvalCountLine(entityCount * keywordCount, "proposed change")}`}
+    >
       {selectionLabels.length > 0 ? (
-        <p className="text-muted-foreground w-full truncate text-xs">
-          {selectionLabels.join(" · ")}
-        </p>
+        <GoogleAdsEntityGroup title="Ad groups">
+          {selectionLabels.map((label, index) => (
+            <GoogleAdsEntityCard key={`${String(index)}:${label}`} title={label} />
+          ))}
+        </GoogleAdsEntityGroup>
       ) : null}
-    </div>
+    </GoogleAdsApprovalSection>
   )
 }
 
