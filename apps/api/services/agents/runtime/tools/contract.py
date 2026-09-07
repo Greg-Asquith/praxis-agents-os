@@ -37,6 +37,7 @@ ToolFieldFormat = Literal[
     "entity",
     "entity_list",
 ]
+ToolRecordCellFormat = Literal["text", "number", "list", "keyvalue"]
 
 TOOL_POLICY_AUTO: ToolPolicy = "auto"
 TOOL_POLICY_APPROVAL: ToolPolicy = "approval"
@@ -138,6 +139,7 @@ VALID_TOOL_ICONS = frozenset(
         "gmail",
         "google_ads",
         "google_analytics",
+        "google_search_console",
         "airtable",
         "bigquery",
         "notion",
@@ -157,9 +159,13 @@ class ToolFieldColumn:
 
     key: str
     label: str
+    format: ToolRecordCellFormat = "text"
     options: tuple[str, ...] = ()
     placeholder: str = ""
     required: bool = False
+    secondary: bool = False
+    default_value: str | int | float | bool | None = None
+    max_entries: int | None = None
 
 
 @dataclass(frozen=True)
@@ -492,85 +498,9 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
     if presentation.approve_label and not presentation.approve_label.strip():
         raise RuntimeError("Runtime tool presentation approve label must not be blank")
     for field in (*presentation.arg_fields, *presentation.result_fields):
-        if not field.key.strip():
-            raise RuntimeError("Runtime tool presentation field keys must not be blank")
-        if not field.label.strip():
-            raise RuntimeError("Runtime tool presentation field labels must not be blank")
-        if field.format not in VALID_TOOL_FIELD_FORMATS:
-            raise RuntimeError(
-                f"Runtime tool presentation field format must be one of the known formats, got {field.format!r}"
-            )
-        if field.editable and field.format not in EDITABLE_TOOL_FIELD_FORMATS:
-            raise RuntimeError(
-                "Editable runtime tool presentation fields must use an editable format"
-            )
-        if (field.options or field.placeholder) and not field.editable:
-            raise RuntimeError(
-                "Runtime tool presentation field options and placeholders require editable fields"
-            )
-        if field.options and field.format not in STRING_TOOL_FIELD_FORMATS:
-            raise RuntimeError(
-                "Runtime tool presentation field options require a string-shaped format"
-            )
-        normalized_options = [option.strip() for option in field.options]
-        if any(not option for option in normalized_options):
-            raise RuntimeError("Runtime tool presentation field options must not be blank")
-        if len(normalized_options) != len(set(normalized_options)):
-            raise RuntimeError("Runtime tool presentation field options must be unique")
-        if field.columns and field.format != "records":
-            raise RuntimeError("Runtime tool presentation field columns require the records format")
-        if field.format == "records" and not field.columns:
-            raise RuntimeError("Records runtime tool presentation fields require columns")
-        if type(field.min_rows) is not int or field.min_rows < 0:
-            raise RuntimeError(
-                "Runtime tool presentation field min_rows must be a non-negative integer"
-            )
-        if field.format != "records" and field.min_rows != 0:
-            raise RuntimeError(
-                "Runtime tool presentation field min_rows requires the records format"
-            )
-        if field.min_rows > RECORDS_FIELD_MAX_ROWS:
-            raise RuntimeError(
-                f"Runtime tool presentation field min_rows cannot exceed {RECORDS_FIELD_MAX_ROWS}"
-            )
-        column_keys = [column.key for column in field.columns]
-        if len(column_keys) != len(set(column_keys)):
-            raise RuntimeError("Runtime tool presentation record column keys must be unique")
-        for column in field.columns:
-            if type(column.required) is not bool:
-                raise RuntimeError(
-                    "Runtime tool presentation record column required must be a boolean"
-                )
-            if not _TOOL_NAME_PATTERN.fullmatch(column.key):
-                raise RuntimeError(
-                    "Runtime tool presentation record column keys must be lowercase snake_case"
-                )
-            if not column.label.strip():
-                raise RuntimeError(
-                    "Runtime tool presentation record column labels must not be blank"
-                )
-            normalized_column_options = [option.strip() for option in column.options]
-            if any(not option for option in normalized_column_options):
-                raise RuntimeError(
-                    "Runtime tool presentation record column options must not be blank"
-                )
-            if len(normalized_column_options) != len(set(normalized_column_options)):
-                raise RuntimeError("Runtime tool presentation record column options must be unique")
-        is_entity = field.format in {"entity", "entity_list"}
-        if is_entity and field.entity_kind is None:
-            raise RuntimeError("Entity runtime tool presentation fields require an entity kind")
-        if not is_entity and field.entity_kind is not None:
-            raise RuntimeError("Non-entity runtime tool presentation fields cannot set entity kind")
-        if field.entity_kind is not None and not _TOOL_NAME_PATTERN.fullmatch(field.entity_kind):
-            raise RuntimeError("Runtime tool presentation entity kind must be lowercase snake_case")
-        if field.depends_on and not is_entity:
-            raise RuntimeError(
-                "Only entity runtime tool presentation fields can declare dependencies"
-            )
-        if len(field.depends_on) != len(set(field.depends_on)):
-            raise RuntimeError("Runtime tool presentation field dependencies must be unique")
-        if field.key in field.depends_on:
-            raise RuntimeError("Runtime tool presentation fields cannot depend on themselves")
+        _validate_presentation_field_shape(field)
+        _validate_record_columns(field)
+        _validate_presentation_entity(field)
     for field in presentation.result_fields:
         if field.editable:
             raise RuntimeError("Runtime tool result presentation fields cannot be editable")
@@ -585,3 +515,119 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
                 "Runtime tool presentation field dependencies must name input arguments: "
                 f"{', '.join(sorted(unknown_dependencies))}"
             )
+
+
+def _validate_presentation_field_shape(field: ToolFieldPresentation) -> None:
+    if not field.key.strip():
+        raise RuntimeError("Runtime tool presentation field keys must not be blank")
+    if not field.label.strip():
+        raise RuntimeError("Runtime tool presentation field labels must not be blank")
+    if field.format not in VALID_TOOL_FIELD_FORMATS:
+        raise RuntimeError(
+            f"Runtime tool presentation field format must be one of the known formats, got {field.format!r}"
+        )
+    if field.editable and field.format not in EDITABLE_TOOL_FIELD_FORMATS:
+        raise RuntimeError("Editable runtime tool presentation fields must use an editable format")
+    _validate_presentation_field_options(field)
+    _validate_presentation_record_shape(field)
+
+
+def _validate_presentation_field_options(field: ToolFieldPresentation) -> None:
+    if (field.options or field.placeholder) and not field.editable:
+        raise RuntimeError(
+            "Runtime tool presentation field options and placeholders require editable fields"
+        )
+    if field.options and field.format not in STRING_TOOL_FIELD_FORMATS:
+        raise RuntimeError("Runtime tool presentation field options require a string-shaped format")
+    normalized_options = [option.strip() for option in field.options]
+    if any(not option for option in normalized_options):
+        raise RuntimeError("Runtime tool presentation field options must not be blank")
+    if len(normalized_options) != len(set(normalized_options)):
+        raise RuntimeError("Runtime tool presentation field options must be unique")
+
+
+def _validate_presentation_record_shape(field: ToolFieldPresentation) -> None:
+    if field.columns and field.format != "records":
+        raise RuntimeError("Runtime tool presentation field columns require the records format")
+    if field.format == "records" and not field.columns:
+        raise RuntimeError("Records runtime tool presentation fields require columns")
+    if type(field.min_rows) is not int or field.min_rows < 0:
+        raise RuntimeError(
+            "Runtime tool presentation field min_rows must be a non-negative integer"
+        )
+    if field.format != "records" and field.min_rows != 0:
+        raise RuntimeError("Runtime tool presentation field min_rows requires the records format")
+    if field.min_rows > RECORDS_FIELD_MAX_ROWS:
+        raise RuntimeError(
+            f"Runtime tool presentation field min_rows cannot exceed {RECORDS_FIELD_MAX_ROWS}"
+        )
+
+
+def _validate_presentation_entity(field: ToolFieldPresentation) -> None:
+    is_entity = field.format in {"entity", "entity_list"}
+    if is_entity and field.entity_kind is None:
+        raise RuntimeError("Entity runtime tool presentation fields require an entity kind")
+    if not is_entity and field.entity_kind is not None:
+        raise RuntimeError("Non-entity runtime tool presentation fields cannot set entity kind")
+    if field.entity_kind is not None and not _TOOL_NAME_PATTERN.fullmatch(field.entity_kind):
+        raise RuntimeError("Runtime tool presentation entity kind must be lowercase snake_case")
+    if field.depends_on and not is_entity:
+        raise RuntimeError("Only entity runtime tool presentation fields can declare dependencies")
+    if len(field.depends_on) != len(set(field.depends_on)):
+        raise RuntimeError("Runtime tool presentation field dependencies must be unique")
+    if field.key in field.depends_on:
+        raise RuntimeError("Runtime tool presentation fields cannot depend on themselves")
+
+
+def _validate_record_columns(field: ToolFieldPresentation) -> None:
+    column_keys = [column.key for column in field.columns]
+    if len(column_keys) != len(set(column_keys)):
+        raise RuntimeError("Runtime tool presentation record column keys must be unique")
+    for column in field.columns:
+        _validate_record_column(column)
+
+
+def _validate_record_column(column: ToolFieldColumn) -> None:
+    if type(column.required) is not bool:
+        raise RuntimeError("Runtime tool presentation record column required must be a boolean")
+    if type(column.secondary) is not bool:
+        raise RuntimeError("Runtime tool presentation record column secondary must be a boolean")
+    if column.format not in {"text", "number", "list", "keyvalue"}:
+        raise RuntimeError("Runtime tool presentation record columns must use a supported format")
+    if column.options and column.format != "text":
+        raise RuntimeError("Runtime tool presentation record column options require text format")
+    if not _TOOL_NAME_PATTERN.fullmatch(column.key):
+        raise RuntimeError(
+            "Runtime tool presentation record column keys must be lowercase snake_case"
+        )
+    if not column.label.strip():
+        raise RuntimeError("Runtime tool presentation record column labels must not be blank")
+    normalized_options = [option.strip() for option in column.options]
+    if any(not option for option in normalized_options):
+        raise RuntimeError("Runtime tool presentation record column options must not be blank")
+    if len(normalized_options) != len(set(normalized_options)):
+        raise RuntimeError("Runtime tool presentation record column options must be unique")
+    _validate_record_column_metadata(column)
+
+
+def _validate_record_column_metadata(column: ToolFieldColumn) -> None:
+    if column.default_value is not None:
+        valid_default = (column.format == "text" and isinstance(column.default_value, str)) or (
+            column.format == "number"
+            and not isinstance(column.default_value, bool)
+            and isinstance(column.default_value, int | float)
+        )
+        if not valid_default:
+            raise RuntimeError(
+                "Runtime tool presentation record column defaults must match the column format"
+            )
+        if column.options and column.default_value not in column.options:
+            raise RuntimeError(
+                "Runtime tool presentation record column defaults must use an allowed option"
+            )
+    if column.max_entries is not None and (
+        column.format != "keyvalue" or type(column.max_entries) is not int or column.max_entries < 1
+    ):
+        raise RuntimeError(
+            "Runtime tool presentation record column max_entries requires a positive keyvalue limit"
+        )

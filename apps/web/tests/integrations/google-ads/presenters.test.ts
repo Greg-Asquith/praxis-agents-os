@@ -1869,8 +1869,11 @@ describe("Google Ads tool presenters", () => {
       "google-ads-update-device-bid-modifiers",
       "google-ads-apply-recommendations",
       "google-ads-dismiss-recommendations",
+      "google-ads-create-positive-keywords",
       "google-ads-create-campaign-budget",
       "google-ads-update-campaign-budget-amounts",
+      "google-ads-update-positive-keywords",
+      "google-ads-remove-positive-keywords",
       "google-ads-assign-campaign-budgets",
       "google-ads-remove-campaign-budgets",
     ])
@@ -2085,7 +2088,7 @@ function approvalControls() {
 function assertCustomApproval(
   activity: ToolActivity,
   controls: ReturnType<typeof approvalControls>,
-  rows: Record<string, string | number>[],
+  rows: EditedRecords,
   expectedTotal: string,
   expectedCount: string
 ) {

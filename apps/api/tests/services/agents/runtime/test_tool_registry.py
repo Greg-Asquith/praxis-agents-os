@@ -49,6 +49,9 @@ from integrations.google_ads.tools.dismiss_recommendations import (
 from integrations.google_ads.tools.remove_negative_keywords import (
     DEFINITION as GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
 )
+from integrations.google_ads.tools.remove_positive_keywords import (
+    DEFINITION as GOOGLE_ADS_REMOVE_POSITIVE_KEYWORDS_DEFINITION,
+)
 from integrations.google_ads.tools.run_report import (
     DEFINITION as GOOGLE_ADS_RUN_REPORT_DEFINITION,
 )
@@ -58,6 +61,9 @@ from integrations.google_ads.tools.update_campaign_status import (
 )
 from integrations.google_ads.tools.update_device_bid_modifiers import (
     DEFINITION as GOOGLE_ADS_UPDATE_DEVICE_BID_MODIFIERS_DEFINITION,
+)
+from integrations.google_ads.tools.update_positive_keywords import (
+    DEFINITION as GOOGLE_ADS_UPDATE_POSITIVE_KEYWORDS_DEFINITION,
 )
 from integrations.google_ads.tools.utils import GOOGLE_ADS_BINDING
 from integrations.google_analytics.tools import (
@@ -429,6 +435,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_add_ad_group_negative_keywords": "external_write",
         "google_ads_add_campaign_negative_keywords": "external_write",
         "google_ads_add_negative_keywords": "external_write",
+        "google_ads_create_keywords": "external_write",
         "google_ads_apply_recommendations": "external_write",
         "google_ads_assign_campaign_budgets": "external_write",
         "google_ads_create_campaign_budget": "external_write",
@@ -445,6 +452,8 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "google_ads_update_campaign_status": "external_write",
         "google_ads_update_campaign_budget_amounts": "external_write",
         "google_ads_update_device_bid_modifiers": "external_write",
+        "google_ads_update_keywords": "external_write",
+        "google_ads_remove_keywords": "external_write",
         "google_analytics_check_report_fields": "provider_query",
         "google_analytics_list_google_ads_links": "provider_query",
         "google_analytics_list_report_fields": "provider_query",
@@ -504,6 +513,7 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_add_ad_group_negative_keywords",
         "google_ads_add_campaign_negative_keywords",
         "google_ads_add_negative_keywords",
+        "google_ads_create_keywords",
         "google_ads_apply_recommendations",
         "google_ads_assign_campaign_budgets",
         "google_ads_create_campaign_budget",
@@ -520,6 +530,8 @@ def test_first_party_tool_code_eligibility_is_exhaustive() -> None:
         "google_ads_update_campaign_status",
         "google_ads_update_campaign_budget_amounts",
         "google_ads_update_device_bid_modifiers",
+        "google_ads_update_keywords",
+        "google_ads_remove_keywords",
         "google_analytics_check_report_fields",
         "google_analytics_list_google_ads_links",
         "google_analytics_list_report_fields",
@@ -940,6 +952,33 @@ def test_validate_definition_accepts_editable_records_columns() -> None:
             None,
             "column required must be a boolean",
         ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(
+                    ToolFieldColumn(
+                        key="status",
+                        label="Status",
+                        options=("ENABLED",),
+                        default_value="PAUSED",
+                    ),
+                ),
+            ),
+            None,
+            "defaults must use an allowed option",
+        ),
+        (
+            ToolFieldPresentation(
+                key="rows",
+                label="Rows",
+                format="records",
+                columns=(ToolFieldColumn(key="text", label="Text", max_entries=8),),
+            ),
+            None,
+            "max_entries requires a positive keyvalue limit",
+        ),
     ],
 )
 def test_validate_definition_rejects_invalid_records_presentation(
@@ -988,6 +1027,7 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
                         key="match_type",
                         label="Match Type",
                         options=("EXACT", "PHRASE"),
+                        default_value="EXACT",
                     ),
                 ),
             ),
@@ -1004,16 +1044,24 @@ def test_presentation_wire_schema_preserves_typed_field_formats() -> None:
         {
             "key": "text",
             "label": "Keyword",
+            "format": "text",
             "options": [],
             "placeholder": "",
             "required": True,
+            "secondary": False,
+            "default_value": None,
+            "max_entries": None,
         },
         {
             "key": "match_type",
             "label": "Match Type",
+            "format": "text",
             "options": ["EXACT", "PHRASE"],
             "placeholder": "",
             "required": False,
+            "secondary": False,
+            "default_value": "EXACT",
+            "max_entries": None,
         },
     ]
 
@@ -1079,6 +1127,8 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         GOOGLE_ADS_REMOVE_NEGATIVE_KEYWORDS_DEFINITION,
         GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
         GOOGLE_ADS_UPDATE_DEVICE_BID_MODIFIERS_DEFINITION,
+        GOOGLE_ADS_UPDATE_POSITIVE_KEYWORDS_DEFINITION,
+        GOOGLE_ADS_REMOVE_POSITIVE_KEYWORDS_DEFINITION,
     )
     definitions = {definition.name: definition for definition in integration_definitions}
     definitions.update(
@@ -1122,6 +1172,8 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         "google_ads_remove_negative_keywords": {"keywords", "negative_list"},
         "google_ads_update_campaign_status": {"campaign_ids", "status"},
         "google_ads_update_device_bid_modifiers": {"adjustments", "campaign_ids"},
+        "google_ads_update_keywords": {"patches"},
+        "google_ads_remove_keywords": {"keywords"},
         "save_memory": {
             "content",
             "expires_in_days",
@@ -1176,6 +1228,9 @@ def test_approval_editability_declarations_cover_the_catalog_sweep() -> None:
         ("google_ads_update_campaign_status", "campaign_ids"): "entity_list",
         ("google_ads_update_device_bid_modifiers", "campaign_ids"): "entity_list",
         ("google_ads_update_device_bid_modifiers", "adjustments"): "records",
+        ("google_ads_update_keywords", "keywords"): "entity_list",
+        ("google_ads_remove_keywords", "keywords"): "entity_list",
+        ("google_ads_update_keywords", "patches"): "records",
         ("google_ads_add_negative_keywords", "negative_list"): "entity",
         ("google_ads_add_negative_keywords", "keywords"): "records",
         ("google_ads_create_negative_keyword_list", "names"): "list",

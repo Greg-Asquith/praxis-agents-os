@@ -298,6 +298,7 @@ def resolve_image_generation_model(
         return ResolvedModel(
             provider=requested_provider,
             model=google_model,
+            transport_model=google_model,
             settings={},
             max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
         )

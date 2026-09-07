@@ -1,41 +1,14 @@
 """Secrets-provider selection and production gating."""
 
-from typing import Any
-
 import pytest
 from cryptography.fernet import Fernet
 
 from core.settings import Settings, settings
 from services.secrets import factory
+from tests.support.settings import production_settings
 
 LOCAL_EXAMPLE_SECRET_KEY = "not-a-secret-local-development-secret-key-change-me"
 LOCAL_EXAMPLE_ENCRYPTION_KEY = "bm90LWEtc2VjcmV0LWxvY2FsLWRldi1rZXktMDAwMDA="
-
-
-def _production_settings(**overrides: Any) -> Settings:
-    values: dict[str, Any] = {
-        "ENVIRONMENT": "production",
-        "STORAGE_PROVIDER": "s3",
-        "EMAIL_PROVIDER": "ses",
-        "DATABASE_URL": (
-            "postgresql+asyncpg://praxis_app:postgres@db.example.com/postgres?sslmode=require"
-        ),
-        "DATABASE_MAINTENANCE_URL": (
-            "postgresql+asyncpg://maintenance:postgres@db.example.com/postgres?sslmode=require"
-        ),
-        "SECRET_KEY": "x" * 40,
-        "ENCRYPTION_KEYS": Fernet.generate_key().decode(),
-        "SECURE_COOKIES": True,
-        "S3_PUBLIC_ASSETS_BUCKET": "public-assets",
-        "WORKSPACE_BUCKET_PREFIX": "praxis-test",
-        "AWS_REGION": "eu-west-2",
-        "AWS_ACCOUNT_ID": "123456789012",
-        "PUBLIC_ASSETS_BASE_URL": "https://assets.example.com",
-        "INTEGRATIONS_OAUTH_REDIRECT_URI": "https://api.example.com/integrations/oauth/callback",
-        "ARTIFACT_SHARING_ENABLED": False,
-    }
-    values.update(overrides)
-    return Settings(_env_file=None, **values)
 
 
 @pytest.mark.parametrize(
@@ -49,12 +22,12 @@ def _production_settings(**overrides: Any) -> Settings:
 )
 def test_production_secret_provider_validation(provider, overrides, expected) -> None:
     with pytest.raises(ValueError, match=expected):
-        _production_settings(SECRET_PROVIDER=provider, **overrides)
+        production_settings(SECRET_PROVIDER=provider, **overrides)
 
 
 def test_local_master_keys_cannot_leave_local() -> None:
     with pytest.raises(ValueError, match="CREDENTIAL_MASTER_KEYS"):
-        _production_settings(
+        production_settings(
             SECRET_PROVIDER="aws_secrets_manager",  # noqa: S106 - provider selector
             CREDENTIAL_MASTER_KEYS=Fernet.generate_key().decode(),
         )
@@ -70,7 +43,7 @@ def test_local_master_keys_cannot_leave_local() -> None:
 )
 def test_public_local_security_defaults_cannot_leave_local(overrides, expected) -> None:
     with pytest.raises(ValueError, match=expected):
-        _production_settings(**overrides)
+        production_settings(**overrides)
 
 
 def test_public_local_security_defaults_are_allowed_in_local_environment() -> None:
@@ -98,12 +71,12 @@ def test_workspace_bucket_prefix_uses_cross_provider_safe_naming(prefix: str) ->
 
 def test_default_local_workspace_bucket_prefix_cannot_leave_local() -> None:
     with pytest.raises(ValueError, match="WORKSPACE_BUCKET_PREFIX"):
-        _production_settings(WORKSPACE_BUCKET_PREFIX="praxis-local")
+        production_settings(WORKSPACE_BUCKET_PREFIX="praxis-local")
 
 
 def test_s3_storage_requires_account_id() -> None:
     with pytest.raises(ValueError, match="AWS_ACCOUNT_ID"):
-        _production_settings(
+        production_settings(
             SECRET_PROVIDER="aws_secrets_manager",  # noqa: S106 - provider selector
             CREDENTIAL_MASTER_KEYS=None,
             AWS_ACCOUNT_ID="",
@@ -112,7 +85,7 @@ def test_s3_storage_requires_account_id() -> None:
 
 def test_s3_workspace_prefix_must_fit_account_regional_name() -> None:
     with pytest.raises(ValueError, match="at most 11 characters"):
-        _production_settings(
+        production_settings(
             SECRET_PROVIDER="aws_secrets_manager",  # noqa: S106 - provider selector
             CREDENTIAL_MASTER_KEYS=None,
             WORKSPACE_BUCKET_PREFIX="praxis-stage",
@@ -132,7 +105,7 @@ def test_gcs_storage_requires_explicit_project_and_location() -> None:
 
 def test_non_local_integration_oauth_redirect_requires_https() -> None:
     with pytest.raises(ValueError, match="INTEGRATIONS_OAUTH_REDIRECT_URI must use HTTPS"):
-        _production_settings(
+        production_settings(
             SECRET_PROVIDER="aws_secrets_manager",  # noqa: S106 - provider selector
             CREDENTIAL_MASTER_KEYS=None,
             INTEGRATIONS_OAUTH_REDIRECT_URI="http://api.example.test/callback",

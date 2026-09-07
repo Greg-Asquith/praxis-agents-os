@@ -111,11 +111,16 @@ async def test_oauth_login_rejects_transferred_state_before_code_exchange(monkey
         next_path=None,
     )
     provider = SimpleNamespace(exchange_code=AsyncMock())
+    record_login_failure = AsyncMock()
     record_security_event = AsyncMock()
 
     monkeypatch.setattr(
         "services.auth.oauth.complete_oauth_login.oauth_registry.get_provider",
         lambda _provider_name: provider,
+    )
+    monkeypatch.setattr(
+        "services.auth.oauth.complete_oauth_login.record_and_enforce_login_failure",
+        record_login_failure,
     )
     monkeypatch.setattr(
         "services.auth.oauth.complete_oauth_login.record_auth_security_event",
@@ -139,6 +144,7 @@ async def test_oauth_login_rejects_transferred_state_before_code_exchange(monkey
         )
 
     provider.exchange_code.assert_not_awaited()
+    record_login_failure.assert_awaited_once()
     record_security_event.assert_awaited_once()
 
 

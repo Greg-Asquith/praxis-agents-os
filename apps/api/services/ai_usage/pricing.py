@@ -64,7 +64,8 @@ _OPENAI_PRICES = (
     _price("openai", "text-embedding-3-large", date(2024, 1, 25), "0.13", "0", "0", "0"),
 )
 
-# Standard first-party Claude API rates as of 2026-09-02. Cache writes use
+# Standard Claude API rates, shared by direct and global Vertex transports, as of
+# 2026-09-05. Cache writes use
 # the default five-minute rate; one-hour writes and regional inference are not
 # distinguishable in the usage ledger.
 # https://platform.claude.com/docs/en/about-claude/pricing
@@ -101,11 +102,34 @@ _GOOGLE_PRICES = (
 # https://www.ollama.com/pricing (local models are unlimited on local hardware)
 _OLLAMA_PRICES = (_price("ollama", "bge-m3", date(2024, 1, 1), "0", "0", "0", "0"),)
 
+# Vertex public rates checked 2026-09-05, for contexts up to 200K tokens.
+# The daily ledger cannot distinguish the doubled long-context tier.
+# Cache rates use input pricing when probes report no cached input usage.
+# https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing
+_XAI_PRICES = (
+    _price("xai", "grok-4-20-reasoning", date(2026, 9, 5), "1.25", "1.25", "1.25", "2.50"),
+    _price("xai", "grok-4-20-non-reasoning", date(2026, 9, 5), "1.25", "1.25", "1.25", "2.50"),
+)
+
+# Vertex public rates checked 2026-09-07; cache rates fall back to input pricing.
+# https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing
+_MISTRAL_PRICES = (
+    _price("mistral", "mistral-small-2503", date(2026, 9, 7), "0.10", "0.10", "0.10", "0.30"),
+)
+
+_META_PRICES = (
+    _price("meta", "llama-4-maverick", date(2026, 9, 7), "0.35", "0.35", "0.35", "1.15"),
+    _price("meta", "llama-4-scout", date(2026, 9, 7), "0.25", "0.25", "0.25", "0.70"),
+)
+
 MODEL_PRICES: tuple[ModelPrice, ...] = (
     *_OPENAI_PRICES,
     *_ANTHROPIC_PRICES,
     *_GOOGLE_PRICES,
     *_OLLAMA_PRICES,
+    *_XAI_PRICES,
+    *_META_PRICES,
+    *_MISTRAL_PRICES,
 )
 
 # Image-output estimates as of 2026-08-12. Text and source-image input costs are

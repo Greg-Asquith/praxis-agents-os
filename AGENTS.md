@@ -64,7 +64,11 @@ behind good defaults and progressive disclosure, not in their face.
   API/IAM/billable mutations behind a typed interactive approval gate. It
   generates initial Cloud SQL credentials and core Secret Manager payloads in
   memory, redacts them from previews, and seeds them without writing them to
-  disk. Deployments run manually from an authenticated operator machine; the
+  disk. Operators manually enable each selected serverless partner model in
+  Model Garden for the Vertex request's project before use, and verify
+  inference after deployment. API enablement and IAM grants do not enable
+  individual models; bootstrap does not accept partner terms.
+  Deployments run manually from an authenticated operator machine; the
   bootstrap does not provision GitHub Actions deployment identity federation.
 
 Domains wired end to end (service + route + UI): auth (password, OAuth, TOTP,

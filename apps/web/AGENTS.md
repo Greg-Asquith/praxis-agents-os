@@ -33,6 +33,37 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   connection guidance, and guarded report, realtime, report-field,
   compatibility, and linked-Google-Ads-account presenters over the shared
   fan-out and table kits.
+  Google Ads positive-keyword creation groups approval context by campaign,
+  keeps optional bid and URL fields behind each row's progressive disclosure,
+  applies provider byte and dependency checks before approval, and shows
+  requested settings separately from an observed duplicate. It shows one
+  guarded, exportable outcome row per ad-group and keyword pair. Its update
+  action uses compact fixed, paginated keyword rows with shared account context
+  and per-row More fields disclosures. Fields are directly editable, with colour
+  and before/after indicators for changed values. It shows trusted currencies, supports
+  explicit nullable scalar clears, and keeps recoverable invalid drafts mounted
+  while blocking approval. Literal URL settings remain exact in comparisons and
+  exports; requested projections are labelled as requested state. Complete
+  results validate per-outcome counts and unique keyword identities before
+  presenting one exportable row per selected criterion. Keyword removal has a
+  separate destructive approval card with account and ad-group context. Its
+  paginated result table distinguishes confirmed removal, failure, and
+  unverified outcomes, and rejects incomplete or contradictory result evidence.
+  Google Search Console contributes its logo, catalog description, and
+  connection guidance, plus guarded Search Analytics, sitemap, and URL
+  Inspection presenters over the shared fan-out and table kits. Inspection
+  results use one compact card per requested URL with status, canonical,
+  referring-URL, rich-result, and Search Console report details. Sitemap
+  submissions use the provider-local write presenter over the shared approval
+  and fan-out surfaces. The approval view distinguishes a new sitemap from a
+  resubmission when live status is available, validates edited URLs against the
+  selected writable sites, and states that Google controls whether and when it
+  crawls the listed URLs.
+  Indexing API notifications use the same provider-local write presenter with
+  an editable records field for the URL, notification type, and eligible page
+  type. The approval copy states Google's job posting and livestream video
+  restriction, and outcome rows distinguish quota, permission, scope, and
+  unverified results without promising a crawl or indexing result.
 - Layering is enforced by `.dependency-cruiser.cjs` (`pnpm arch`): no cycles;
   `components/ui` stays generic; `lib/api` stays framework-light; integration
   packages may use the published UI, tool UI, and Markdown component seams;
@@ -223,6 +254,10 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   origin directly. Production nginx CSP permits browser connections to the API
   and the explicit `WEB_PUBLIC_ASSET_ORIGINS` allowlist so direct cloud-storage
   uploads work without widening `connect-src` to wildcard origins.
+
+Agent provider labels read the catalog transport and append "via Google Cloud"
+for `google-cloud`. Keep transport labels derived from the catalog; the
+classifier provider set is unchanged.
 
 ## Checks
 

@@ -7,6 +7,7 @@ from .campaign import (
     verify_campaigns_for_device_bidding,
 )
 from .campaign_budget import campaign_budget_reference_from_row, verify_campaign_budgets
+from .keyword import verify_positive_keywords
 from .recommendation import verify_recommendations
 from .shared_set import verify_shared_sets
 
@@ -17,6 +18,7 @@ __all__ = [
     "verify_campaigns",
     "verify_campaigns_for_budget_assignment",
     "verify_campaigns_for_device_bidding",
+    "verify_positive_keywords",
     "verify_recommendations",
     "verify_shared_sets",
 ]

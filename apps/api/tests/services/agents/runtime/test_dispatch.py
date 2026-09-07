@@ -1366,6 +1366,7 @@ async def test_workspace_classifier_dispatch_is_audited_as_classifier_provider(
         lambda **_kwargs: ResolvedModel(
             provider="openai",
             model="gpt-5.6-luna",
+            transport_model="gpt-5.6-luna",
             settings={},
             max_steps=2,
         ),

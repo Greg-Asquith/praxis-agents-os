@@ -99,3 +99,20 @@ describe("formatAgentModelType", () => {
     ).toBe("Azure OpenAI · Custom")
   })
 })
+
+it.each([undefined, "direct", "google-cloud"] as const)(
+  "labels the active provider transport %s",
+  (transport) => {
+    const transported: ModelCatalogResponse = {
+      ...catalog,
+      providers: catalog.providers.map((provider) => ({
+        ...provider,
+        ...(transport ? { transport } : {}),
+      })),
+    }
+    const suffix = transport === "google-cloud" ? " via Google Cloud" : ""
+    const agent = { azure_deployment: null, model: null, model_provider: null }
+    expect(formatAgentModelType(agent, transported)).toBe(`OpenAI${suffix} · Standard`)
+    expect(formatAgentModel(agent, transported)).toBe(`Default · OpenAI${suffix} · GPT-5.6 Luna`)
+  }
+)

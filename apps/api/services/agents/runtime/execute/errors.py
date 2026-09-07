@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import UsageLimitExceeded
+from pydantic_ai.exceptions import ModelHTTPError
 
 from core.exceptions.general import ConflictError
 from services.agents.models.domain import ModelConfigurationError
@@ -47,6 +48,14 @@ def public_run_error(exc: Exception) -> PublicRunError:
         return PublicRunError(
             code=str(getattr(exc, "error_code", "model_configuration_error")),
             message=str(exc),
+        )
+    if isinstance(exc, ModelHTTPError) and exc.status_code == 429:
+        return PublicRunError(
+            code="model_rate_limited",
+            message=(
+                "The model provider is limiting requests. Try again later. "
+                "If this continues, ask your administrator to check model access and quota."
+            ),
         )
     if isinstance(exc, ConflictError):
         return PublicRunError(

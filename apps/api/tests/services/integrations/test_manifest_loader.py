@@ -15,6 +15,7 @@ from integrations.google_analytics.settings import google_analytics_settings
 from integrations.outlook_calendar.settings import outlook_calendar_settings
 from integrations.outlook_mail.settings import outlook_mail_settings
 from integrations.sharepoint.settings import sharepoint_settings
+from integrations.google_search_console.settings import google_search_console_settings
 from services.agents.runtime.entity_references.registry import ENTITY_RESOLVERS
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.loader import _validate_plugin, load_enabled_providers
@@ -53,6 +54,7 @@ def clear_loaded_provider_state():
                 "gmail_",
                 "google_ads_",
                 "google_analytics_",
+                "google_search_console_",
                 "notion_",
                 "outlook_calendar_",
                 "outlook_mail_",
@@ -73,6 +75,7 @@ def clear_loaded_provider_state():
                 "gmail_",
                 "google_ads_",
                 "google_analytics_",
+                "google_search_console_",
                 "notion_",
                 "outlook_calendar_",
                 "outlook_mail_",
@@ -97,6 +100,7 @@ def clear_loaded_provider_state():
                 "gmail_",
                 "google_ads_",
                 "google_analytics_",
+                "google_search_console_",
                 "notion_",
                 "outlook_calendar_",
                 "outlook_mail_",
@@ -223,6 +227,8 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
             "outlook_calendar",
             "outlook_mail",
             "sharepoint",
+            "google_search_console",
+            "notion",
         ],
     )
     load_enabled_providers()
@@ -236,6 +242,8 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
         "outlook_calendar",
         "outlook_mail",
         "sharepoint",
+        "google_search_console",
+        "notion",
     ]
     assert sorted(PROVIDER_MANIFESTS) == expected
     assert sorted(PROVIDER_PLUGINS) == expected
@@ -246,6 +254,7 @@ def test_loader_uses_one_allowlist_for_every_provider(monkeypatch) -> None:
     assert not hasattr(settings, "OUTLOOK_MAIL_OAUTH_CLIENT_ID")
     assert not hasattr(settings, "OUTLOOK_CALENDAR_OAUTH_CLIENT_ID")
     assert not hasattr(settings, "SHAREPOINT_OAUTH_CLIENT_ID")
+    assert not hasattr(settings, "GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_ID")
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
 
@@ -288,6 +297,9 @@ def test_provider_packages_own_distinct_oauth_credentials(monkeypatch) -> None:
     from integrations.gmail import oauth_config as gmail_oauth_config
     from integrations.google_ads import oauth_config as google_ads_oauth_config
     from integrations.google_analytics import oauth_config as google_analytics_oauth_config
+    from integrations.google_search_console import (
+        oauth_config as google_search_console_oauth_config,
+    )
 
     monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_ID", "gmail-client")
     monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_SECRET", SecretStr("gmail-secret"))
@@ -307,16 +319,29 @@ def test_provider_packages_own_distinct_oauth_credentials(monkeypatch) -> None:
         "GOOGLE_ANALYTICS_OAUTH_CLIENT_SECRET",
         SecretStr("analytics-secret"),
     )
+    monkeypatch.setattr(
+        google_search_console_settings,
+        "GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_ID",
+        "search-console-client",
+    )
+    monkeypatch.setattr(
+        google_search_console_settings,
+        "GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_SECRET",
+        SecretStr("search-console-secret"),
+    )
 
     gmail_config = gmail_oauth_config()
     ads_config = google_ads_oauth_config()
     analytics_config = google_analytics_oauth_config()
+    search_console_config = google_search_console_oauth_config()
     assert gmail_config.client_id == "gmail-client"
     assert ads_config.client_id == "ads-client"
     assert gmail_config.client_secret.get_secret_value() == "gmail-secret"
     assert ads_config.client_secret.get_secret_value() == "ads-secret"
     assert analytics_config.client_id == "analytics-client"
     assert analytics_config.client_secret.get_secret_value() == "analytics-secret"
+    assert search_console_config.client_id == "search-console-client"
+    assert search_console_config.client_secret.get_secret_value() == "search-console-secret"
 
 
 def test_loader_accepts_all_microsoft_providers_with_isolated_clients(monkeypatch) -> None:

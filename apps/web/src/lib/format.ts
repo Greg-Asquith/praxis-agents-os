@@ -185,6 +185,16 @@ export function humanizeKey(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase()
 }
 
+export function filenameStem(value: string, fallback: string): string {
+  const stem = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+  return stem || fallback
+}
+
 export function initials(value: string | null | undefined) {
   if (!value) {
     return "PA"

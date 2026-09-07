@@ -160,8 +160,61 @@ class LLMSettingsMixin:
         default=None, description="GCP project for Vertex AI. Falls back to GCP_PROJECT_ID."
     )
     GOOGLE_VERTEX_LOCATION: str = Field(
-        default="global", description="Vertex AI location, e.g. 'global' or 'us-central1'."
+        default="auto",
+        description=(
+            "Vertex AI location. Auto uses catalog defaults for Gemini and global for "
+            "embeddings. Explicit locations must be supported by the selected model."
+        ),
     )
+    ANTHROPIC_VERTEX_AI: bool = Field(
+        default=False,
+        description=(
+            "Route Anthropic models through Vertex AI with Application Default Credentials. "
+            "The project uses GOOGLE_VERTEX_PROJECT, then GCP_PROJECT_ID."
+        ),
+    )
+    ANTHROPIC_VERTEX_LOCATION: str = Field(
+        default="global",
+        description=(
+            "Vertex AI location for Anthropic models using Application Default Credentials. "
+            "The project uses GOOGLE_VERTEX_PROJECT, then GCP_PROJECT_ID."
+        ),
+    )
+    VERTEX_PARTNER_MODELS_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Expose Vertex AI partner models through Application Default Credentials. "
+            "The project uses GOOGLE_VERTEX_PROJECT, then GCP_PROJECT_ID."
+        ),
+    )
+    VERTEX_PARTNER_MODEL_LOCATIONS: dict[str, str] = Field(
+        default_factory=dict,
+        description="Vertex partner location overrides keyed by provider-qualified catalog alias.",
+    )
+    VERTEX_PARTNER_LOCATION: str | None = Field(default=None, exclude=True, repr=False)
+
+    @field_validator("VERTEX_PARTNER_LOCATION", mode="before")
+    @classmethod
+    def reject_legacy_partner_location(cls, value):
+        if value is not None:
+            raise ValueError(
+                "VERTEX_PARTNER_LOCATION was removed. Remove it to use model defaults, "
+                "or migrate to VERTEX_PARTNER_MODEL_LOCATIONS JSON keyed by catalog alias."
+            )
+        return value
+
+    @field_validator("VERTEX_PARTNER_MODEL_LOCATIONS", mode="before")
+    @classmethod
+    def validate_partner_location_shape(cls, value):
+        if not isinstance(value, dict) or any(
+            not isinstance(key, str)
+            or not isinstance(location, str)
+            or not key.strip()
+            or not location.strip()
+            for key, location in value.items()
+        ):
+            raise ValueError("VERTEX_PARTNER_MODEL_LOCATIONS must be a JSON object of strings.")
+        return value
 
     # Azure OpenAI (deployment-based; uses the agent's azure_deployment at resolution).
     AZURE_OPENAI_API_KEY: SecretStr | None = Field(
@@ -212,27 +265,52 @@ class LLMSettingsMixin:
             self.CONVERSATION_NAMING_PROVIDER,
             self.AGENT_HISTORY_SUMMARY_MODEL_PROVIDER,
         }
-        missing: list[str] = []
-        for provider in active_providers:
-            if provider == "google" and self.GOOGLE_VERTEX_AI:
-                # Vertex authenticates via ADC; it needs a project, not an API key.
-                if not (self.GOOGLE_VERTEX_PROJECT or getattr(self, "GCP_PROJECT_ID", None)):
-                    missing.append("GOOGLE_VERTEX_PROJECT")
-                continue
-            attr = _PROVIDER_KEY_ATTR.get(provider)
-            if attr is None:
-                raise ValueError(f"Unknown LLM provider configured: '{provider}'")
-            if getattr(self, attr) is None:
-                missing.append(attr)
-
-        if (
-            self.DEFAULT_MODEL_PROVIDER == "azure"
-            and not (self.AZURE_OPENAI_ENDPOINT or "").strip()
-        ):
-            missing.append("AZURE_OPENAI_ENDPOINT")
+        missing = [
+            requirement
+            for provider in active_providers
+            if (requirement := self._missing_provider_requirement(provider)) is not None
+        ]
+        if requirement := self._missing_azure_endpoint_requirement():
+            missing.append(requirement)
 
         if missing:
             raise ValueError(
                 "Missing LLM provider credentials in production: " + ", ".join(sorted(set(missing)))
             )
         return self
+
+    def _missing_provider_requirement(self, provider: str) -> str | None:
+        if provider == "anthropic" and self.ANTHROPIC_VERTEX_AI:
+            return self._missing_vertex_project_requirement()
+        if provider == "google" and self.GOOGLE_VERTEX_AI:
+            return self._missing_vertex_project_requirement()
+        if provider in {"meta", "mistral", "xai"}:
+            if not self.VERTEX_PARTNER_MODELS_ENABLED:
+                raise ValueError(
+                    f"LLM provider '{provider}' requires VERTEX_PARTNER_MODELS_ENABLED=true"
+                )
+            return self._missing_vertex_project_requirement()
+
+        attr = _PROVIDER_KEY_ATTR.get(provider)
+        if attr is None:
+            raise ValueError(f"Unknown LLM provider configured: '{provider}'")
+        credential = getattr(self, attr)
+        return attr if credential is None or not credential.get_secret_value().strip() else None
+
+    def _missing_vertex_project_requirement(self) -> str | None:
+        return None if self._vertex_project() else "GOOGLE_VERTEX_PROJECT or GCP_PROJECT_ID"
+
+    def _missing_azure_endpoint_requirement(self) -> str | None:
+        if (
+            self.DEFAULT_MODEL_PROVIDER == "azure"
+            and not (self.AZURE_OPENAI_ENDPOINT or "").strip()
+        ):
+            return "AZURE_OPENAI_ENDPOINT"
+        return None
+
+    def _vertex_project(self) -> str | None:
+        for project in (self.GOOGLE_VERTEX_PROJECT, getattr(self, "GCP_PROJECT_ID", None)):
+            normalized = (project or "").strip()
+            if normalized:
+                return normalized
+        return None

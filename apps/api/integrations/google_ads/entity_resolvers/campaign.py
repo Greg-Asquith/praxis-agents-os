@@ -81,7 +81,7 @@ async def _query(
 async def search_google_ads_campaigns(ctx, search, _dependent_args, page_size, cursor):
     normalized_search = search.strip()
 
-    async def query_entry(entry, minimum_id, inclusive, limit):
+    async def query_entry(entry, minimum_id, _minimum_secondary_id, inclusive, limit):
         return await _query(
             ctx,
             entry,

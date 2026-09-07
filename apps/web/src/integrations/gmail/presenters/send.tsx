@@ -69,7 +69,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
       return sendFailure(
         activity.id,
         activity.args,
-        "Praxis could not confirm that this email was delivered.",
+        "The system could not confirm that this email was delivered.",
         defaultOpen
       )
     }

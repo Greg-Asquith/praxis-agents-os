@@ -1,0 +1,7 @@
+{
+  "url": "https://example.com/jobs/one",
+  "latestUpdate": {
+    "type": "URL_UPDATED",
+    "notifyTime": "2026-09-03T12:00:00Z"
+  }
+}

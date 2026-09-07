@@ -85,6 +85,7 @@ async def lookup_entity_references(
     )
     dependent_args = {key: payload.dependent_args.get(key) for key in authorized.depends_on}
     if payload.exact_values is not None:
+        _validate_exact_value_count(authorized, payload.exact_values)
         choices = await _resolve_with_failure_audit(
             authorized,
             values=payload.exact_values,
@@ -213,6 +214,7 @@ async def resolve_authorized_references(
     dependent_args: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Validate and canonically hydrate a bounded ordered reference list."""
+    _validate_exact_value_count(authorized, values)
     validated = []
     for value in values:
         try:
@@ -249,6 +251,18 @@ async def resolve_authorized_references(
             details={"entity_kind": authorized.entity_kind},
         )
     return [by_identity[identity] for identity in identities]
+
+
+def _validate_exact_value_count(
+    authorized: AuthorizedEntityField,
+    values: list[Any],
+) -> None:
+    if len(values) > authorized.resolver.max_exact_values:
+        raise AppValidationError(
+            f"Choose at most {authorized.resolver.max_exact_values} values for this field",
+            field=authorized.field_key,
+            details={"entity_kind": authorized.entity_kind},
+        )
 
 
 async def resolve_runtime_references(

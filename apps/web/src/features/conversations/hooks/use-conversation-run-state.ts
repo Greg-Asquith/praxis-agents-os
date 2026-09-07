@@ -110,7 +110,8 @@ export function useConversationRunState({
       activeRunStatus === "awaiting_approval" &&
       activeRunId !== null &&
       submittingApprovalRunId !== activeRunId &&
-      streamRunId === activeRunId
+      streamRunId === activeRunId &&
+      recoveredApprovals.length > 0
     const streamMatchesPersistedSettledRun = activeRunId === null && hasPersistedStreamResponse
 
     if (!streamMatchesPendingApproval && !streamMatchesPersistedSettledRun) {
@@ -136,6 +137,7 @@ export function useConversationRunState({
     streamRunId,
     streamToolCallCount,
     rawStreamMessages.length,
+    recoveredApprovals.length,
     resetStream,
     submittingApprovalRunId,
   ])
@@ -158,7 +160,7 @@ export function formatStreamError(error: StreamError | null): string | null {
   if (error?.code === MODEL_PROVIDER_NOT_CONFIGURED) {
     return (
       `${error.message} Add the provider's API key to .local/targets/local.secrets.env ` +
-      "(Docker stack) or apps/api/.env (make dev), then restart Praxis."
+      "(Docker stack) or apps/api/.env (make dev), then restart the system."
     )
   }
   return error?.message ?? null

@@ -18,10 +18,15 @@ ENV_FILE=$1
 [[ -f "$ENV_FILE" ]] || die "environment file not found: $ENV_FILE"
 set -a
 unset GOOGLE_VERTEX_AI GOOGLE_VERTEX_LOCATION
+unset ANTHROPIC_VERTEX_AI ANTHROPIC_VERTEX_LOCATION VERTEX_PARTNER_MODELS_ENABLED VERTEX_PARTNER_LOCATION VERTEX_PARTNER_MODEL_LOCATIONS
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 GOOGLE_VERTEX_AI=${GOOGLE_VERTEX_AI:-false}
+ANTHROPIC_VERTEX_AI=${ANTHROPIC_VERTEX_AI:-false}
+VERTEX_PARTNER_MODELS_ENABLED=${VERTEX_PARTNER_MODELS_ENABLED:-false}
 set +a
+VERTEX_PARTNER_MODEL_LOCATIONS_YAML=$(python3 "$SCRIPT_DIR/helpers.py" partner-locations)
+export VERTEX_PARTNER_MODEL_LOCATIONS_YAML
 
 required_vars=(
   GCP_PROJECT_ID GCP_PROJECT_NUMBER GCP_REGION CUSTOMER_ID DEPLOYMENT_ENVIRONMENT
@@ -48,7 +53,8 @@ done
 (( ${#WORKSPACE_BUCKET_PREFIX} <= 26 )) || die "WORKSPACE_BUCKET_PREFIX must be at most 26 characters"
 [[ "$LOG_RETENTION_DAYS" =~ ^[0-9]+$ ]] || die "LOG_RETENTION_DAYS must be an integer"
 for boolean_variable in \
-  CLOUD_SQL_DELETION_PROTECTION CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE GOOGLE_VERTEX_AI; do
+  CLOUD_SQL_DELETION_PROTECTION CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE GOOGLE_VERTEX_AI \
+  ANTHROPIC_VERTEX_AI VERTEX_PARTNER_MODELS_ENABLED; do
   [[ "${!boolean_variable}" == "true" || "${!boolean_variable}" == "false" ]] \
     || die "$boolean_variable must be true or false"
 done
@@ -233,7 +239,8 @@ apis=(
   logging.googleapis.com monitoring.googleapis.com storage.googleapis.com
   containerscanning.googleapis.com
 )
-if [[ "$GOOGLE_VERTEX_AI" == "true" ]]; then
+if [[ "$GOOGLE_VERTEX_AI" == "true" || "$ANTHROPIC_VERTEX_AI" == "true" \
+  || "$VERTEX_PARTNER_MODELS_ENABLED" == "true" ]]; then
   apis+=(aiplatform.googleapis.com)
 fi
 for api in "${apis[@]}"; do
@@ -588,7 +595,8 @@ for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do
     --role="projects/${GCP_PROJECT_ID}/roles/praxisWorkspaceStorage" \
     --condition=None --quiet
 done
-if [[ "$GOOGLE_VERTEX_AI" == "true" ]]; then
+if [[ "$GOOGLE_VERTEX_AI" == "true" || "$ANTHROPIC_VERTEX_AI" == "true" \
+  || "$VERTEX_PARTNER_MODELS_ENABLED" == "true" ]]; then
   for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do
     plan gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
       --member="serviceAccount:${service_account}" --role=roles/aiplatform.user \
@@ -610,9 +618,13 @@ plan gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
   --member="serviceAccount:${WORKER_SERVICE_ACCOUNT}" \
   --role="projects/${GCP_PROJECT_ID}/roles/praxisWorkerJobInvoker" \
   --condition=None --quiet
-plan gcloud iam service-accounts add-iam-policy-binding "$API_SERVICE_ACCOUNT" \
-  --project="$GCP_PROJECT_ID" --member="serviceAccount:${API_SERVICE_ACCOUNT}" \
-  --role=roles/iam.serviceAccountTokenCreator --quiet
+# Signed URLs sign through IAM signBlob with the caller's own identity; the
+# worker signs too because scheduled agent runs read files and artifacts.
+for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do
+  plan gcloud iam service-accounts add-iam-policy-binding "$service_account" \
+    --project="$GCP_PROJECT_ID" --member="serviceAccount:${service_account}" \
+    --role=roles/iam.serviceAccountTokenCreator --quiet
+done
 
 for secret_id in "${secret_ids[@]}"; do
   for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do

@@ -299,10 +299,29 @@ follows:
   and `sharepoint_drive` resources, respectively. Their tools land in later
   provider slices.
   Google Ads contributes bounded report and field discovery plus approval-only
-  writes for recommendations, negative keywords, campaign status, device bid
-  adjustments, and campaign-budget creation, amount updates, assignment, and
-  unused-budget removal. Budget writes re-read provider state after approval
-  and retain exact outcome evidence through the shared mutation ledger. Budget
+  writes for recommendations, negative keywords, positive-keyword creation and
+  mutable-field updates, and permanent removal,
+  campaign status, device bid adjustments, and campaign-budget creation,
+  amount updates, assignment, and unused-budget removal. Keyword and budget
+  writes re-read provider state after approval and retain exact outcome evidence
+  through the shared mutation ledger. Positive-keyword creation and updates
+  accept only Search-standard and Display-standard targets. CPC bids require
+  manual CPC and, for Display, a keyword custom-bid dimension. Display placement
+  targeting may instead use a keyword bid modifier. CPM, CPV, and percent-CPC
+  bids are not keyword fields. Before provider execution, keyword updates reserve
+  per-account shares of the complete transcript budget, including all account
+  envelopes and maximally escaped diagnostics. Live preparation must fit the
+  reserved share and the terminal audit bound. Public results retain all accepted
+  rows; only model results sample. Keyword removal accepts up to 500 selected
+  criteria, rejects changed criterion state during reference hydration and
+  post-approval verification, and retains each prior configuration with its
+  requested removal and independent outcome. Removed criteria cannot be
+  re-enabled. Keyword suffixes, custom parameters, and mobile
+  destinations support inherited ad destinations. Changing a keyword tracking
+  template or final URL preserves Google's template-to-final-URL dependency;
+  unrelated status changes leave inherited settings intact. URL
+  custom-parameter names use ASCII letters and numbers, are unique ignoring
+  case, and use Google Ads' UTF-8 byte limits. Budget
   removal fails before mutation when any selected budget has a live campaign
   reference.
   BigQuery contributes service-account dataset discovery, a job-synchronized
@@ -330,6 +349,34 @@ follows:
   metadata, and discovery must not add per-property enrichment calls. Its OAuth
   settings stay in the provider package
   and use a Google Cloud client isolated from every other Google service.
+  Google Search Console contributes workspace OAuth through its own isolated
+  Google Cloud client. It requests the full `webmasters` scope so later sitemap
+  actions use the same connection. Discovery
+  canonicalizes each verified property's scheme and host while retaining its
+  path in the external ID, and maps
+  Search Console permission levels to read-only or writable resources. The
+  provider package contributes code-eligible reads for bounded Search Analytics
+  rows, up to 200 submitted sitemaps per selected site, and indexed-status
+  inspection for up to ten requested URLs. Inspection routes each URL to the
+  longest matching selected URL-prefix property before falling back to a
+  matching domain property, then executes sequentially per site against the
+  provider's 2,000-inspection daily property quota. Query and page values,
+  sitemap paths, canonicals, referring URLs, and provider error text retain
+  untrusted-content provenance, while audit evidence contains parameters and
+  counts rather than provider content. Its code-eligible sitemap write routes
+  up to 20 URLs to selected writable properties, defaults to approval while
+  supporting scheduled automatic execution, and uses one non-retried mutation
+  per sitemap. The tool reads existing state during preparation, records the
+  complete pending intent immediately before mutation, and reads each sitemap
+  back for terminal status evidence. An ambiguous submission remains
+  unverified and is not replayed automatically.
+  `GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED` adds the `indexing` OAuth scope
+  and exposes an approval-only Indexing API tool. The tool accepts up to 20
+  declared job posting or livestream video pages, routes them with the same
+  longest-property rule, and requires Search Console Owner permission before
+  approval. It sends one non-retried mutation per URL and reads notification
+  metadata for terminal evidence. It never supports automatic execution, and
+  ambiguous notifications remain unverified.
   Notion contributes a personal public OAuth grant, a versioned REST client,
   provider-owned token and live identity resolution, and one stable workspace
   resource. Its authorization picker controls page access. Three code-eligible
@@ -382,12 +429,54 @@ follows:
   `registry.py` is the single source of truth for available models;
   `factory.py` builds pydantic-ai models per provider. Resolve credentials
   only through the `provider_api_key` seam — never rely on implicit env
-  pickup. All providers share the retrying HTTP client
-  (`retrying_http_client()`). Vertex model and embedding calls share a
-  process-owned Google client per stable configuration; every API, worker, and
-  eval process closes those clients during shutdown.
+  pickup. Direct providers share the retrying HTTP client
+  (`retrying_http_client()`). Google Vertex model and embedding calls share a
+  process-owned Google client per project, location, and retry policy.
+  `GOOGLE_VERTEX_LOCATION=auto` uses catalog defaults: Gemini Flash and
+  Flash-Lite use `eu`, Gemini 3.1 Pro uses `global`, and embeddings retain
+  `global`. Explicit locations must appear in the Gemini model's supported
+  locations. Clients use the SDK's multi-region hostname for `eu` and `us`.
+  Existing explicit `global` settings remain global; select `auto` to adopt
+  the catalog defaults. `ANTHROPIC_VERTEX_AI`
+  selects a process-owned `AsyncAnthropicVertex` client with Application
+  Default Credentials and `ANTHROPIC_VERTEX_LOCATION` (default `global`). Both
+  use `GOOGLE_VERTEX_PROJECT`, falling back to `GCP_PROJECT_ID`. Vertex model
+  IDs come from the catalog's `vertex_model`; entries without one stay
+  unavailable. Every API, worker, and eval process calls `close_vertex_clients`
+  during shutdown. Anthropic prompt-cache defaults and catalog attribution
+  remain unchanged across transports. Each Claude model requires Model Garden
+  enablement and a supported location.
+  Partner models use locked, off-loop ADC loading and refresh.
+  `VERTEX_PARTNER_MODELS_ENABLED` gates construction. Resolution carries
+  immutable transport, project, model ID, and location into the factory.
+  Meta Llama 4 defaults to `us-east5` and Grok 4.20 to `global`, using Chat
+  Completions. Both Llama models default to 8,192 output tokens because Vertex
+  rejects requests that omit an output limit. Meta schemas move dictionary-value
+  constraints into descriptions because Vertex rejects schema-valued
+  `additionalProperties`; local Pydantic validation retains those constraints.
+  Prefer European partner endpoints where supported. Meta Llama 4 and Grok
+  4.20 have no supported European regional endpoint.
+  Mistral Small defaults to `europe-west4` and uses the publisher
+  `rawPredict`/`streamRawPredict` API, with endpoint-bound HTTP clients and
+  the existing Pydantic AI chat model. Its profile sends `max_tokens`.
+  `VERTEX_PARTNER_MODEL_LOCATIONS` accepts a JSON object of catalog alias to
+  supported region. Settings validate the shape; shared model validation
+  checks aliases and regions at startup, catalog reads, and resolution.
+  The removed `VERTEX_PARTNER_LOCATION` setting fails with migration guidance.
+  Partner models retain maker/alias usage attribution and do not join native
+  helper provider sets. Shared Vertex shutdown closes all partner clients.
+- Provider HTTP retries have one owner. The shared transport bounds actual
+  attempts with `LLM_HTTP_RETRY_MAX_ATTEMPTS`, including the first request.
+  Anthropic, OpenAI, Azure, and partner SDK retries are disabled. Direct Gemini
+  uses one SDK attempt over that transport; Google Vertex retains its
+  SDK-owned retry policy. Backoff and `Retry-After` waits remain bounded by
+  the configured wait limits. Exhausted HTTP responses reach the SDK intact,
+  including their status and body; connection failures remain connection
+  failures. Run failures persist and emit the same safe `model_rate_limited`
+  message for HTTP 429, without provider bodies or project details.
 - Native URL fetching uses the governed `fetch_url` helper-tool path for
-  Anthropic and Google only. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
+  direct Anthropic and Google only. Anthropic's Vertex transport does not
+  support native web fetch. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
   requests, `NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS` is passed to the provider,
   and comma-separated `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` is enforced before
   dispatch as well as passed natively. Google is unavailable while that
@@ -398,7 +487,9 @@ follows:
   computation, create-from-text document generation, and declared append-only
   edits of existing workspace documents. It is an internal
   write, defaults to approval, never nests with `run_workflow`, and is offered
-  only for configured OpenAI, Anthropic, or Google providers. Anthropic and
+  only for configured OpenAI, direct Anthropic, or Google providers. Anthropic
+  on Vertex is excluded because the file bridge requires the Files API.
+  Anthropic and
   OpenAI receive bounded current-revision bytes through the provider file
   bridge; Google receives bounded framed text or AnyDoc-derived Markdown.
   Generated text artifacts and governed Files persist directly. Retained File

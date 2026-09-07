@@ -10,7 +10,7 @@ from integrations.google_ads.references import (
     GoogleAdsCampaignReference,
 )
 
-from .bounded_outcome_results import bounded_outcome_result
+from .bounded_outcome_results import bounded_outcome_result, optional_text
 
 type CampaignBudgetAssignmentOutcome = Literal["assigned", "already_set", "failed", "unverified"]
 
@@ -93,15 +93,11 @@ def _campaign_sample(row: Mapping[str, Any]) -> dict[str, Any]:
         "previous_budget": _budget_reference(previous_budget),
         "requested_budget": _budget_reference(requested_budget),
         "outcome": row.get("outcome"),
-        "external_ref": _optional_text(row.get("external_ref"), 1_000),
-        "error_code": _optional_text(row.get("error_code"), 100),
-        "message": _optional_text(row.get("message"), 500),
+        "external_ref": optional_text(row.get("external_ref"), 1_000),
+        "error_code": optional_text(row.get("error_code"), 100),
+        "message": optional_text(row.get("message"), 500),
     }
 
 
 def _budget_reference(reference: GoogleAdsCampaignBudgetReference) -> dict[str, Any]:
     return reference.model_copy(update={"campaign_labels": ()}).model_dump(mode="json")
-
-
-def _optional_text(value: Any, max_chars: int) -> str | None:
-    return str(value)[:max_chars] if value is not None else None

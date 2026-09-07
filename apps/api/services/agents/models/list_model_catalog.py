@@ -7,8 +7,12 @@ from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_AZURE,
     PROVIDER_GOOGLE,
+    PROVIDER_META,
+    PROVIDER_MISTRAL,
     PROVIDER_OPENAI,
+    PROVIDER_XAI,
     ModelInfo,
+    has_vertex_model_id,
 )
 from services.agents.models.registry import list_models
 from services.agents.models.schemas import (
@@ -17,13 +21,17 @@ from services.agents.models.schemas import (
     ModelCatalogProvider,
     ModelCatalogResponse,
 )
-from services.agents.models.utils import is_provider_configured
+from services.agents.models.utils import is_provider_configured, provider_transport
+from services.agents.models.validate_partner_configuration import validate_partner_configuration
 
 _PROVIDER_DISPLAY_NAMES = {
     PROVIDER_OPENAI: "OpenAI",
     PROVIDER_ANTHROPIC: "Anthropic",
     PROVIDER_GOOGLE: "Google",
     PROVIDER_AZURE: "Azure OpenAI",
+    PROVIDER_META: "Meta",
+    PROVIDER_MISTRAL: "Mistral AI",
+    PROVIDER_XAI: "xAI",
 }
 
 _PROVIDER_ORDER = (
@@ -31,15 +39,27 @@ _PROVIDER_ORDER = (
     PROVIDER_ANTHROPIC,
     PROVIDER_GOOGLE,
     PROVIDER_AZURE,
+    PROVIDER_META,
+    PROVIDER_MISTRAL,
+    PROVIDER_XAI,
 )
 
 
 def list_model_catalog() -> ModelCatalogResponse:
     """Return non-deprecated catalog models whose provider is configured."""
+    validate_partner_configuration()
     configured_providers = {
         provider for provider in _PROVIDER_ORDER if is_provider_configured(provider)
     }
-    available_models = [model for model in list_models() if model.provider in configured_providers]
+    available_models = [
+        model
+        for model in list_models()
+        if model.provider in configured_providers
+        and (
+            provider_transport(model.provider) == "direct"
+            or has_vertex_model_id(model.vertex_model)
+        )
+    ]
     available_ids = {model.qualified_id for model in available_models}
 
     return ModelCatalogResponse(
@@ -47,6 +67,7 @@ def list_model_catalog() -> ModelCatalogResponse:
             ModelCatalogProvider(
                 provider=provider,
                 display_name=_PROVIDER_DISPLAY_NAMES[provider],
+                transport=provider_transport(provider),
                 configured=provider in configured_providers,
                 model_count=sum(1 for model in available_models if model.provider == provider),
                 model_type_defaults=_model_type_defaults(provider, available_models),

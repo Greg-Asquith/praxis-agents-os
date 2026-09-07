@@ -12,9 +12,13 @@ from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolPr
 class ToolFieldColumnRead(BaseModel):
     key: str
     label: str
+    format: str
     options: list[str]
     placeholder: str
     required: bool
+    secondary: bool
+    default_value: str | int | float | bool | None
+    max_entries: int | None
 
 
 class ToolFieldPresentationRead(BaseModel):
@@ -69,9 +73,13 @@ class ToolPresentationRead(BaseModel):
                         ToolFieldColumnRead(
                             key=column.key,
                             label=column.label,
+                            format=column.format,
                             options=list(column.options),
                             placeholder=column.placeholder,
                             required=column.required,
+                            secondary=column.secondary,
+                            default_value=column.default_value,
+                            max_entries=column.max_entries,
                         )
                         for column in field.columns
                     ],
@@ -94,9 +102,13 @@ class ToolPresentationRead(BaseModel):
                         ToolFieldColumnRead(
                             key=column.key,
                             label=column.label,
+                            format=column.format,
                             options=list(column.options),
                             placeholder=column.placeholder,
                             required=column.required,
+                            secondary=column.secondary,
+                            default_value=column.default_value,
+                            max_entries=column.max_entries,
                         )
                         for column in field.columns
                     ],

@@ -380,7 +380,7 @@ function FileHistoryHeading({ file }: { file: WorkspaceFile }) {
 
 function FilePreview({ file }: { file: WorkspaceFile }) {
   if (file.processing_status === "pending" || file.processing_status === "processing") {
-    return <p className="text-muted-foreground text-sm">Praxis is still preparing this file.</p>
+    return <p className="text-muted-foreground text-sm">The system is still preparing this file.</p>
   }
 
   if (file.processing_status === "error") {

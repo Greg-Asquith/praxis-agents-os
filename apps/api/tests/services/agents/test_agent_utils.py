@@ -2,8 +2,12 @@
 
 """Unit tests for agent service helpers."""
 
+import pytest
 from sqlalchemy.exc import IntegrityError
 
+from core.exceptions.general import AppValidationError
+from services.agents import utils as agent_utils
+from services.agents.models.domain import PROVIDER_META, ModelInfo
 from services.agents.utils import (
     AGENT_SLUG_UNIQUE_INDEX,
     is_agent_slug_integrity_error,
@@ -40,6 +44,55 @@ def test_normalize_model_provider_collapses_blank_values() -> None:
     assert normalize_model_provider(None) is None
     assert normalize_model_provider("   ") is None
     assert normalize_model_provider(" Azure ") == "azure"
+
+
+def test_validate_model_configuration_accepts_partner_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_utils,
+        "find_model",
+        lambda provider, model: ModelInfo(
+            provider=provider,
+            model=model,
+            display_name="Llama probe",
+            context_window=128_000,
+            model_type="standard",
+            vertex_model="meta/llama-probe",
+        ),
+    )
+
+    normalized = validate_model_configuration(
+        model_provider=PROVIDER_META,
+        model="llama-probe",
+        azure_deployment=None,
+    )
+
+    assert normalized == PROVIDER_META
+
+
+def test_validate_model_configuration_rejects_azure_deployment_for_partner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_utils,
+        "find_model",
+        lambda provider, model: ModelInfo(
+            provider=provider,
+            model=model,
+            display_name="Llama probe",
+            context_window=128_000,
+            model_type="standard",
+            vertex_model="meta/llama-probe",
+        ),
+    )
+
+    with pytest.raises(AppValidationError, match="azure_deployment can only be used"):
+        validate_model_configuration(
+            model_provider=PROVIDER_META,
+            model="llama-probe",
+            azure_deployment="partner-deployment",
+        )
 
 
 def test_agent_slug_integrity_error_matches_slug_unique_index() -> None:

@@ -72,7 +72,7 @@ describe("conversation stream errors", () => {
     ).toBe(
       "No API key is configured for model provider 'anthropic'. Add the provider's API key " +
         "to .local/targets/local.secrets.env (Docker stack) or apps/api/.env (make dev), " +
-        "then restart Praxis."
+        "then restart the system."
     )
   })
 
