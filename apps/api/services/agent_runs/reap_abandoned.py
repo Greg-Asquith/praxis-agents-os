@@ -6,17 +6,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.agent_run import AgentRun
 from services.agent_runs.domain import RUN_STATUS_PENDING, RUN_STATUS_RUNNING
-from services.agent_runs.fail import fail_agent_run
-from services.agent_runs.staged_content_cleanup import (
-    enqueue_staged_approval_content_cleanup,
-)
-from services.agents.runtime.approval_state import clear_suspended_run_metadata
+from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
 from utils.dates import normalize_utc_datetime
 
 DEFAULT_REAPER_BATCH_SIZE = 100
@@ -66,9 +62,8 @@ async def reap_abandoned_runs(
                 hard_deadline_cutoff=hard_deadline_cutoff,
             ),
         )
-        .order_by(AgentRun.created_at)
+        .order_by(func.coalesce(AgentRun.parent_run_id, AgentRun.id), AgentRun.id)
         .limit(batch_size)
-        .with_for_update(skip_locked=True, of=AgentRun)
     )
     if run_id is not None:
         stmt = stmt.where(AgentRun.id == run_id)
@@ -79,15 +74,27 @@ async def reap_abandoned_runs(
     runs = list(result.scalars())
     failed_run_ids: list[UUID] = []
     for run in runs:
-        await enqueue_staged_approval_content_cleanup(db, run=run)
-        run.metadata_json = clear_suspended_run_metadata(run)
-        await fail_agent_run(
+        await lock_run_family(db, run_id=run.id)
+        still_abandoned = await db.scalar(
+            select(AgentRun.id).where(
+                AgentRun.id == run.id,
+                AgentRun.status.in_({RUN_STATUS_PENDING, RUN_STATUS_RUNNING}),
+                _abandoned_condition(
+                    now_utc=now_utc,
+                    pending_cutoff=pending_cutoff,
+                    hard_deadline_cutoff=hard_deadline_cutoff,
+                ),
+            )
+        )
+        if still_abandoned is None:
+            continue
+        changed = await settle_run_family(
             db,
-            run,
+            run_id=run.id,
             error_code=RUN_ABANDONED_ERROR_CODE,
             error_message=_abandoned_message(run, now_utc=now_utc),
         )
-        failed_run_ids.append(run.id)
+        failed_run_ids.extend(item.id for item in changed)
 
     return ReapAbandonedRunsResult(failed_run_ids=failed_run_ids)
 

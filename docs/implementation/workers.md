@@ -28,3 +28,15 @@ exclusive workspace or user
 concurrency ownership; authenticated work must use one of those buckets,
 while `NULL` ownership is reserved for system work. Queue new background work
 as jobs rather than inventing ad-hoc task mechanisms.
+
+Abandoned agent executions use the recurring `agent_runs.sweep_abandoned` job.
+Startup ensures a pending or running sweep, and each successful sweep queues
+its successor after `AGENT_RUN_REAPER_INTERVAL_SECONDS`, which defaults to 30.
+The job and lazy conversation recovery call the same root-first family service.
+Local execution deadlines also stop healthy-heartbeat runs without a reader
+or recovery job.
+
+Agent execution owns its heartbeat through bounded finalisation. A committed
+completion or approval suspension does not interrupt its own finaliser.
+Shutdown failures remain distinct from human cancellation, and scheduled-run
+settlement uses a bounded cleanup path.

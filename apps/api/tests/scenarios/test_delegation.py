@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.database import set_session_tenant_context
 from core.settings import settings
+from models.agent import Agent
 from models.agent_memories import AgentMemory
 from models.agent_run import AgentRun
 from models.ai_usage_event import AIUsageEvent
@@ -155,10 +156,12 @@ async def test_parent_delegates_to_child_run_and_receives_result(
     assert any("Delegate-only context" in request for request in child_requests)
 
 
+@pytest.mark.parametrize("revocation", [None, "depth", "permission"])
 async def test_child_approval_then_parent_resume(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     effects: ScenarioEffects,
+    revocation: str | None,
 ) -> None:
     context = await build_scenario_agent(
         committed_db_session_factory,
@@ -192,12 +195,33 @@ async def test_child_approval_then_parent_resume(
         )
         assert child_run.status == "awaiting_approval"
         assert load_suspended_run_state(child_run).pending_tool_call_ids == ["child-write"]
+    if revocation == "depth":
+        monkeypatch.setattr(settings, "AGENT_MAX_DELEGATION_DEPTH", 0)
+    elif revocation == "permission":
+        async with committed_db_session_factory() as db:
+            parent_agent = await db.get(Agent, context.agent_id)
+            parent_agent.allowed_agent_ids = []
+            await db.commit()
     resumed = await resume_scenario(
         committed_db_session_factory,
         context,
         model=model,
         decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
     )
+    if revocation is not None:
+        assert not effects.calls
+        assert not any(event.event == "tool.approval_required" for event in resumed.events)
+        async with committed_db_session_factory() as db:
+            child_run = await db.get(AgentRun, child_run.id)
+            assert child_run.status == "failed"
+            assert "approval_state" not in (child_run.metadata_json or {})
+        assert resumed.run.status in {"completed", "failed"}
+        if revocation == "depth":
+            assert resumed.run.status == "failed"
+            assert resumed.run.outcome == "blocked"
+            assert resumed.run.error_code == "delegation_requires_recovery"
+        assert resumed.events[-1].data["status"] == resumed.run.status
+        return
     assert resumed.run.status == "completed"
     assert resumed.run.parent_run_id is None
     assert resumed.output == "parent final"

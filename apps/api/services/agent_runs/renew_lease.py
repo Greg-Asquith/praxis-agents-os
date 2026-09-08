@@ -17,25 +17,27 @@ async def renew_agent_run_lease(
     db: AsyncSession,
     *,
     run_id: UUID,
-    owner_instance_id: str | None = None,
+    owner_instance_id: str,
+    workspace_id: UUID,
+    user_id: UUID,
     now: datetime | None = None,
     ttl_seconds: int | None = None,
 ) -> bool:
-    """Extend a pending/running run lease and return whether a row was updated."""
+    """Extends an unexpired lease held by this invocation in the active tenant."""
     now_utc = now or datetime.now(UTC)
     ttl = ttl_seconds if ttl_seconds is not None else settings.AGENT_RUN_LEASE_TTL_SECONDS
-    values = {"lease_expires_at": now_utc + timedelta(seconds=ttl)}
-    if owner_instance_id is not None:
-        values["owner_instance_id"] = owner_instance_id
-
     result = await db.execute(
         update(AgentRun)
         .where(
             AgentRun.id == run_id,
+            AgentRun.workspace_id == workspace_id,
+            AgentRun.user_id == user_id,
+            AgentRun.owner_instance_id == owner_instance_id,
+            AgentRun.lease_expires_at > now_utc,
             AgentRun.deleted == False,  # noqa: E712
             AgentRun.status.in_({RUN_STATUS_PENDING, RUN_STATUS_RUNNING}),
         )
-        .values(**values)
+        .values(lease_expires_at=now_utc + timedelta(seconds=ttl))
     )
     await db.flush()
     return bool(result.rowcount)

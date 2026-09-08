@@ -2,9 +2,7 @@
 
 """Run a delegated child agent call."""
 
-import asyncio
 import logging
-from contextlib import suppress
 from typing import Annotated
 from uuid import UUID
 
@@ -35,12 +33,11 @@ from services.agents.runtime.delegation.resume_approved_delegate_run import (
 )
 from services.agents.runtime.delegation.schemas import DelegateRunResult
 from services.agents.runtime.delegation.utils import (
-    heartbeat,
-    owner_instance_id,
     safe_error,
     truncate,
 )
 from services.agents.runtime.entity_references.domain import AgentReference, internal_entity_id
+from services.agents.runtime.heartbeat import agent_run_owner_instance_id
 from services.agents.runtime.sinks import NullSink
 
 logger = logging.getLogger(__name__)
@@ -83,9 +80,7 @@ async def delegate_to_agent(
     child_run_id: UUID | None = None
     child_conversation_id: UUID | None = None
     target_name = "Unknown agent"
-    owner_id = owner_instance_id()
-    heartbeat_stop = asyncio.Event()
-    heartbeat_task: asyncio.Task[None] | None = None
+    owner_id = agent_run_owner_instance_id()
 
     try:
         await configure_async_db_session(session)
@@ -133,6 +128,9 @@ async def delegate_to_agent(
             user_id=ctx.deps.user.id,
             trigger=RUN_TRIGGER_DELEGATED,
             parent_run_id=ctx.deps.run.id,
+            parent_owner_instance_id=ctx.deps.execution_control.owner_instance_id
+            if ctx.deps.execution_control
+            else ctx.deps.run.owner_instance_id,
             delegation_depth=ctx.deps.delegation_depth + 1,
             metadata={
                 "parent_conversation_id": str(ctx.deps.conversation.id),
@@ -149,18 +147,6 @@ async def delegate_to_agent(
         child_run_id = child_run.id
         child_conversation_id = child_conversation.id
 
-        heartbeat_task = asyncio.create_task(
-            heartbeat(
-                child_run.id,
-                ctx.deps.workspace.id,
-                ctx.deps.user.id,
-                owner_id,
-                heartbeat_stop,
-                cancel_target=asyncio.current_task(),
-            ),
-            name=f"delegated-agent-run-heartbeat:{child_run.id}",
-        )
-
         from services.agents.runtime.execute_run import execute_run
 
         child_result = await execute_run(
@@ -172,6 +158,7 @@ async def delegate_to_agent(
             owner_instance_id=owner_id,
             usage=ctx.usage,
             parent_metering=ctx.deps.metering,
+            root_execution=ctx.deps.execution_control,
         )
 
         if child_result.run.status == RUN_STATUS_AWAITING_APPROVAL and isinstance(
@@ -211,9 +198,4 @@ async def delegate_to_agent(
             error=safe_error(exc),
         )
     finally:
-        heartbeat_stop.set()
-        if heartbeat_task is not None:
-            heartbeat_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await heartbeat_task
         await session.close()

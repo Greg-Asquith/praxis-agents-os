@@ -2,7 +2,7 @@
 
 """Create and stream one interactive conversation turn."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
@@ -13,13 +13,15 @@ from models.conversation import CONVERSATION_SOURCE_DELEGATED
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import create_agent_run, reap_abandoned_runs
+from services.agent_runs.claim_execution import claim_agent_run_execution
 from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
 from services.agents.runtime import streaming as runtime_streaming
 from services.agents.runtime.events import (
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
-from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
+from services.agents.runtime.execution_control import execution_control_for_run
+from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.agents.runtime.worker import run_turn_worker
@@ -135,13 +137,18 @@ async def create_conversation_turn_stream(
             attachment_file_ids=attachment_file_ids,
         ),
     )
+    owner_instance_id = str(uuid4())
+    await claim_agent_run_execution(db, run, owner_instance_id=owner_instance_id)
     await db.commit()
 
+    execution_control = execution_control_for_run(run)
     sink = StreamSink(run_id=run.id, conversation_id=conversation.id)
     await sink.emit(RunStatusEvent(status=run.status))
     run_task_registry.spawn(
         run.id,
         run_turn_worker(
+            owner_instance_id=owner_instance_id,
+            execution_control=execution_control,
             run_id=run.id,
             conversation_id=conversation.id,
             workspace_id=workspace.id,
@@ -152,7 +159,7 @@ async def create_conversation_turn_stream(
             client_message_id=payload.client_message_id,
         ),
         sink=sink,
-        queued_lease=QueuedRunLease(workspace_id=workspace.id, user_id=actor.id),
+        execution_control=execution_control,
     )
 
     return StreamingResponse(

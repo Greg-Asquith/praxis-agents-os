@@ -2,10 +2,8 @@
 
 """Detached worker wrapper for interactive agent turns."""
 
-import asyncio
 import logging
 from collections.abc import Sequence
-from contextlib import suppress
 from uuid import UUID
 
 from pydantic_ai import DeferredToolResults
@@ -26,10 +24,11 @@ from services.agent_runs.domain import (
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
 )
+from services.agents.runtime.execute.setup import admitted_setup
 from services.agents.runtime.execute_run import execute_run
+from services.agents.runtime.execution_control import ExecutionControl
 from services.agents.runtime.heartbeat import (
     agent_run_owner_instance_id,
-    heartbeat_agent_run_lease,
 )
 from services.agents.runtime.run_persistence import restored_run_usage
 from services.agents.runtime.sinks import EventSink
@@ -48,34 +47,22 @@ async def run_turn_worker(
     sink: EventSink,
     client_message_id: str | None = None,
     model: Model | None = None,
+    owner_instance_id: str | None = None,
+    execution_control: ExecutionControl | None = None,
 ) -> None:
     """Run one interactive turn to completion with an independent DB session."""
-    owner_instance_id = agent_run_owner_instance_id()
-    heartbeat_stop = asyncio.Event()
-    heartbeat_task: asyncio.Task[None] | None = None
+    owner_instance_id = owner_instance_id or agent_run_owner_instance_id()
     session_factory = get_async_db_session_factory()
     session = session_factory()
 
     try:
-        worker_task = asyncio.current_task()
-        heartbeat_task = asyncio.create_task(
-            heartbeat_agent_run_lease(
-                run_id=run_id,
+        async with admitted_setup(session, control=execution_control, sink=sink):
+            await set_session_tenant_context(
+                session,
                 workspace_id=workspace_id,
                 user_id=user_id,
-                owner_instance_id=owner_instance_id,
-                stop=heartbeat_stop,
-                cancel_target=worker_task,
-            ),
-            name=f"agent-run-heartbeat:{run_id}",
-        )
-
-        await configure_async_db_session(session)
-        await set_session_tenant_context(
-            session,
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
+            )
+            await configure_async_db_session(session)
         await execute_run(
             session,
             conversation_id=conversation_id,
@@ -86,6 +73,7 @@ async def run_turn_worker(
             model=model,
             client_message_id=client_message_id,
             owner_instance_id=owner_instance_id,
+            execution_control=execution_control,
             expected_status=RUN_STATUS_PENDING,
         )
     except Exception:
@@ -95,11 +83,6 @@ async def run_turn_worker(
             extra={"run_id": str(run_id), "owner_instance_id": owner_instance_id},
         )
     finally:
-        heartbeat_stop.set()
-        if heartbeat_task is not None:
-            heartbeat_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await heartbeat_task
         await session.close()
         await sink.close()
 
@@ -114,42 +97,30 @@ async def run_resume_worker(
     deferred_tool_results: DeferredToolResults,
     sink: EventSink,
     model: Model | None = None,
+    owner_instance_id: str | None = None,
+    execution_control: ExecutionControl | None = None,
     expected_status: str = RUN_STATUS_AWAITING_APPROVAL,
 ) -> None:
     """Resume a suspended approval run with an independent DB session."""
-    owner_instance_id = agent_run_owner_instance_id()
-    heartbeat_stop = asyncio.Event()
-    heartbeat_task: asyncio.Task[None] | None = None
+    owner_instance_id = owner_instance_id or agent_run_owner_instance_id()
     session_factory = get_async_db_session_factory()
     session = session_factory()
 
     try:
-        worker_task = asyncio.current_task()
-        heartbeat_task = asyncio.create_task(
-            heartbeat_agent_run_lease(
-                run_id=run_id,
+        async with admitted_setup(session, control=execution_control, sink=sink):
+            await set_session_tenant_context(
+                session,
                 workspace_id=workspace_id,
                 user_id=user_id,
-                owner_instance_id=owner_instance_id,
-                stop=heartbeat_stop,
-                cancel_target=worker_task,
-            ),
-            name=f"agent-run-resume-heartbeat:{run_id}",
-        )
-
-        await configure_async_db_session(session)
-        await set_session_tenant_context(
-            session,
-            workspace_id=workspace_id,
-            user_id=user_id,
-        )
-        run = await session.get(AgentRun, run_id)
-        if run is None:
-            raise ConflictError(
-                "Agent run no longer exists",
-                conflicting_resource="agent_run",
-                details={"run_id": str(run_id)},
             )
+            await configure_async_db_session(session)
+            run = await session.get(AgentRun, run_id)
+            if run is None:
+                raise ConflictError(
+                    "Agent run no longer exists",
+                    conflicting_resource="agent_run",
+                    details={"run_id": str(run_id)},
+                )
         await execute_run(
             session,
             conversation_id=conversation_id,
@@ -158,6 +129,7 @@ async def run_resume_worker(
             sink=sink,
             model=model,
             owner_instance_id=owner_instance_id,
+            execution_control=execution_control,
             expected_status=expected_status,
             message_history=message_history,
             deferred_tool_results=deferred_tool_results,
@@ -170,16 +142,17 @@ async def run_resume_worker(
             extra={"run_id": str(run_id), "owner_instance_id": owner_instance_id},
         )
     finally:
-        heartbeat_stop.set()
-        if heartbeat_task is not None:
-            heartbeat_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await heartbeat_task
         await session.close()
-        await _finalize_linked_schedule_run(
-            run_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
+        from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
+        from services.agents.runtime.execute.finalize import CANCEL_FINALIZE_TIMEOUT
+
+        await bounded_finalisation(
+            _finalize_linked_schedule_run(
+                run_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+            ),
+            max_wait=CANCEL_FINALIZE_TIMEOUT,
         )
         await sink.close()
 

@@ -130,8 +130,11 @@ async def test_create_turn_stream_returns_ordered_sse_events(
         sink: EventSink,
         client_message_id: str | None = None,
         model=None,
+        owner_instance_id=None,
+        execution_control=None,
     ) -> None:
         assert user_prompt == "Hello"
+        assert execution_control.owner_instance_id == owner_instance_id
         assert list(attachment_file_ids) == []
         assert client_message_id == "client-1"
         await sink.emit(RunStatusEvent(status="running"))
@@ -233,8 +236,11 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         sink: EventSink,
         client_message_id: str | None = None,
         model=None,
+        owner_instance_id=None,
+        execution_control=None,
     ) -> None:
         assert user_prompt == "Plan the launch"
+        assert execution_control.owner_instance_id == owner_instance_id
         assert list(attachment_file_ids) == []
         assert client_message_id == "first-message"
         await sink.emit(RunStatusEvent(status="running"))
@@ -902,9 +908,9 @@ async def test_concurrent_turn_creations_allow_exactly_one_active_run(
         worker: Coroutine[Any, Any, Any],
         *,
         sink=None,
-        queued_lease=None,
+        execution_control=None,
     ) -> None:
-        del sink, queued_lease
+        del sink, execution_control
         worker.close()
 
     monkeypatch.setattr(run_task_registry, "spawn", discard_worker)

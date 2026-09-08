@@ -382,7 +382,7 @@ async def test_cleanup_enqueue_failure_rolls_back_expiry_without_deleting_conten
         raise RuntimeError("cleanup enqueue unavailable")
 
     monkeypatch.setattr(
-        "services.jobs.handlers.sweep_expired_agent_run_approvals.enqueue_staged_approval_content_cleanup",
+        "services.agent_runs.settle_run_family.enqueue_staged_approval_content_cleanup",
         fail_cleanup_enqueue,
     )
 
@@ -457,8 +457,8 @@ async def test_resume_reservation_rejects_second_request_before_streaming(
 
     spawned = []
 
-    def capture_spawn(_run_id, coroutine, *, sink=None, queued_lease=None) -> None:
-        del sink, queued_lease
+    def capture_spawn(_run_id, coroutine, *, sink=None, execution_control=None) -> None:
+        del sink, execution_control
         spawned.append(coroutine)
 
     monkeypatch.setattr(run_task_registry, "spawn", capture_spawn)

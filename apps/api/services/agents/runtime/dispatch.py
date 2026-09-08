@@ -50,7 +50,6 @@ from core.settings import settings
 from models.workspace import WorkspaceMembership
 from services.agents.runtime.cancellation import (
     is_agent_run_cancel_request,
-    raise_if_agent_run_cancelled,
 )
 from services.agents.runtime.code_mode.metadata import (
     CODE_MODE_DERIVED_FROM_UNTRUSTED_METADATA_KEY,
@@ -61,6 +60,7 @@ from services.agents.runtime.code_mode.metadata import (
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
+from services.agents.runtime.execution_control import check_execution_permission
 from services.agents.runtime.staged_tool_content import (
     WRITE_FILE_CONTENT_REF_ARG,
     WRITE_FILE_TOOL_NAME,
@@ -426,11 +426,7 @@ async def dispatch_tool_execution(
     await ctx.deps.db.commit()
 
     try:
-        await raise_if_agent_run_cancelled(
-            run_id=ctx.deps.run.id,
-            workspace_id=ctx.deps.workspace.id,
-            user_id=ctx.deps.user.id,
-        )
+        await check_execution_permission(ctx.deps)
         metadata = getattr(ctx, "tool_call_metadata", None)
         if isinstance(metadata, dict) and parent_tool_call_id is not None:
             metadata[CODE_MODE_HANDLER_STARTED_METADATA_KEY] = True

@@ -126,6 +126,30 @@ The following contracts apply in this area:
 
 ## Finalisation and interruption
 
+Admission claims an opaque invocation UUID before queueing. The same identity
+owns the lease and usage settlement. Renewal matches the run, workspace, user,
+and current owner, and rejects an expired lease. Renewal cannot claim work.
+
+Each continuation has a monotonic execution deadline derived from its durable
+start. The default 1,200 seconds includes queue time. Approval waiting is
+excluded, and reservation starts the resumed continuation clock once.
+Specialists share the root's remaining deadline. Finalisation cleanup has its
+own bounded wait outside the execution deadline.
+
+`AGENT_MAX_DELEGATION_DEPTH` accepts zero to disable delegation or one for
+direct specialists. The heartbeat interval must stay below the lease TTL.
+
+Fresh permission reads precede model and tool requests. Failed reads cannot
+authorise another request. Heartbeats retry database failures only within the
+last confirmed lease window. An external request already accepted by a provider
+can complete after local stopping; the runtime does not replay it automatically.
+
+Family mutations lock the root before children in ID order. Cancellation,
+permanent failure, and abandoned-run recovery settle non-terminal descendants
+through `parent_run_id`, preserving completed children. Cleanup jobs are queued
+before suspended metadata is cleared. A root with unfinished children records
+blocked recovery instead of successful completion.
+
 The committed run row controls final status, error events, and delegated
 results. Completion, suspension, failure, and cancellation preserve an earlier
 terminal verdict and its completion evidence. A suspension that loses this

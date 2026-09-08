@@ -42,6 +42,7 @@ MAX_ERROR_MESSAGE_LENGTH = 1000
 BLOCKED_ERROR_CODES = frozenset(
     {
         "approval_expired",
+        "delegation_requires_recovery",
         "code_mode_resume_requires_recovery",
         "schedule_execution_abandoned",
     }

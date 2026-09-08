@@ -11,7 +11,6 @@ from pydantic import TypeAdapter
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
@@ -23,13 +22,10 @@ from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.await_approval import mark_run_awaiting_approval
-from services.agent_runs.cancel import cancel_agent_run
 from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
-    RUN_OUTCOME_CANCELLED,
     RUN_OUTCOME_GATE_FAILED,
     RUN_OUTCOME_SUCCESS,
-    RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_TRIGGER_EVENT,
     RUN_TRIGGER_SCHEDULED,
@@ -37,9 +33,8 @@ from services.agent_runs.domain import (
     RunUsageSnapshot,
     is_terminal,
 )
-from services.agent_runs.fail import fail_agent_run
 from services.agent_runs.record_usage import record_run_usage
-from services.agent_runs.utils import failure_completion_json, terminal_run_outcome
+from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
 from services.agents.runtime.approval_state import (
     build_suspended_run_metadata,
     clear_suspended_run_metadata,
@@ -81,6 +76,14 @@ async def persist_suspended_run(
         populate_existing=True,
         lock_run=True,
     )
+    if (
+        usage_event is not None
+        and run.owner_instance_id is not None
+        and run.owner_instance_id != (usage_event.details or {}).get("invocation_id")
+    ):
+        await record_ai_usage_in_transaction(db, usage_event)
+        await db.commit()
+        return run, 0, None
     if is_terminal(run.status):
         final_run, count = await persist_successful_run(
             db,
@@ -162,6 +165,14 @@ async def persist_successful_run(
         populate_existing=True,
         lock_run=True,
     )
+    if (
+        usage_event is not None
+        and run.owner_instance_id is not None
+        and run.owner_instance_id != (usage_event.details or {}).get("invocation_id")
+    ):
+        await record_ai_usage_in_transaction(db, usage_event)
+        await db.commit()
+        return run, 0
     new_messages = terminal_result.new_messages()
     messages_to_persist = (
         without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
@@ -214,6 +225,16 @@ async def persist_successful_run(
     await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
     if usage_event is not None:
         await record_ai_usage_in_transaction(db, usage_event)
+    family = await lock_run_family(db, run_id=run.id)
+    if run.parent_run_id is None and any(not is_terminal(child.status) for child in family[1:]):
+        await settle_run_family(
+            db,
+            run_id=run.id,
+            error_code="delegation_requires_recovery",
+            error_message="A specialist still needs attention. Review its unfinished work before continuing.",
+        )
+        await db.commit()
+        return run, len(persisted_messages)
     run.metadata_json = clear_suspended_run_metadata(run)
     outcome, completion_json = _successful_run_completion(run)
     await complete_agent_run(
@@ -234,31 +255,39 @@ async def persist_failed_run(
     error_message: str,
     completion_json: dict[str, Any] | None = None,
     metering: AgentRunMeteringContext | None = None,
+    owner_instance_id: str | None = None,
 ) -> AgentRun | None:
     """Mark a started run failed without losing diagnostic state."""
-    run = await db.scalar(
-        select(AgentRun)
-        .where(AgentRun.id == run_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    family = await lock_run_family(db, run_id=run_id)
+    run = next((item for item in family if item.id == run_id), None)
     if run is None:
         await db.commit()
         return None
+    owner_instance_id = owner_instance_id or (
+        str(metering.invocation_id) if metering is not None else None
+    )
+    if (
+        owner_instance_id is not None
+        and run.owner_instance_id is not None
+        and run.owner_instance_id != owner_instance_id
+    ):
+        if metering is not None:
+            await record_ai_usage_in_transaction(db, metering.event())
+        await db.commit()
+        return run
     await record_agent_run_fallback(db, run=run, metering=metering)
     if is_terminal(run.status):
         await db.commit()
         return run
 
-    run.metadata_json = clear_suspended_run_metadata(run)
-    await fail_agent_run(
+    await settle_run_family(
         db,
-        run,
+        run_id=run.id,
         error_code=error_code,
         error_message=error_message,
-        outcome=terminal_run_outcome(RUN_STATUS_FAILED, error_code=error_code),
-        completion_json=completion_json or failure_completion_json(error_code),
     )
+    if completion_json is not None:
+        run.completion_json = completion_json
     await db.commit()
     return run
 
@@ -269,6 +298,7 @@ async def persist_cancelled_run(
     workspace_id: UUID,
     user_id: UUID,
     metering: AgentRunMeteringContext | None = None,
+    owner_instance_id: str | None = None,
 ) -> AgentRun | None:
     """Mark a run cancelled in an isolated transaction without raising to unwind code."""
     try:
@@ -280,22 +310,29 @@ async def persist_cancelled_run(
                 workspace_id=workspace_id,
                 user_id=user_id,
             )
-            run = await db.scalar(
-                select(AgentRun)
-                .where(AgentRun.id == run_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
+            family = await lock_run_family(db, run_id=run_id)
+            run = next((item for item in family if item.id == run_id), None)
             if run is None:
                 await db.commit()
                 return None
+            owner_instance_id = owner_instance_id or (
+                str(metering.invocation_id) if metering is not None else None
+            )
+            if (
+                owner_instance_id is not None
+                and run.owner_instance_id is not None
+                and run.owner_instance_id != owner_instance_id
+            ):
+                if metering is not None:
+                    await record_ai_usage_in_transaction(db, metering.event())
+                await db.commit()
+                return run
             await record_agent_run_fallback(db, run=run, metering=metering)
             if is_terminal(run.status):
                 await db.commit()
                 return run
 
-            run.metadata_json = clear_suspended_run_metadata(run)
-            await cancel_agent_run(db, run, outcome=RUN_OUTCOME_CANCELLED)
+            await settle_run_family(db, run_id=run.id, status="cancelled")
             await db.commit()
             return run
     except Exception:

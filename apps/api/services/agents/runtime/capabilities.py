@@ -9,6 +9,7 @@ from pydantic_ai.capabilities import AgentCapability, Hooks, ProcessHistory
 from models.agent import Agent
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import dispatch_tool_execution
+from services.agents.runtime.execution_control import check_execution_permission
 from services.agents.runtime.history import HistoryCompaction, HistoryTrimmer, history_trimmer
 from services.agents.runtime.untrusted import render_untrusted_frames
 
@@ -37,7 +38,9 @@ def build_runtime_capabilities(
         )
 
     @hooks.on.model_request
-    async def render_untrusted_content_for_model(_ctx, *, request_context, handler):
+    async def render_untrusted_content_for_model(ctx, *, request_context, handler):
+        if ctx.deps is not None:
+            await check_execution_permission(ctx.deps)
         model_request = replace(
             request_context,
             messages=render_untrusted_frames(request_context.messages),

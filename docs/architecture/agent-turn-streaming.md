@@ -143,76 +143,54 @@ mirrors the scheduled path, which survives dead workers via a lease
 (`agent_schedule_runs.claim_expires_at`, reaped lazily at claim time).
 Interactive `agent_runs` carries the analogous lease and reaps the same way.
 
-### Defense in depth (ordered by detection latency)
+### Execution ownership and recovery
 
-1. **Graceful drain.** During planned restarts, `drain()` in `lifespan` awaits in-flight
-   workers so they commit. No orphan created in the first place.
-2. **Lease and heartbeat.** The worker stamps `agent_runs.lease_expires_at = now +
-LEASE_TTL` when it starts and renews it on a heartbeat ticker. A dead worker
-   stops renewing; its lease goes stale within one TTL regardless of crash cause.
-3. **Reaping during reads.** The paths that ask "is a run active?" reap a
-   lease-expired run _before_ answering:
-   - the **active-run guard** (new turn on a conversation): a stale
-     `running`/`pending` run is failed first, so an orphan can never block
-     future turns;
-   - the **active-run status read** (refresh heal loop): a stale run is failed
-     before being reported, so the heal loop can never spin forever.
-     Both call `reap_abandoned_runs` scoped to the one run/conversation — the
-     same lazy-at-claim-time pattern the scheduler uses.
-4. **Startup sweep.** A one-time sweep at startup fails any run left non-terminal
-   with an expired lease by a prior process (covers crash-then-restart).
-5. **Hard deadline.** `reap_abandoned_runs` also fails runs past
-   `started_at + AGENT_RUN_MAX_DURATION_SECONDS`. Catches an alive-but-wedged
-   worker (hung provider call, runaway tool loop) that is still leasing.
+Admission claims one opaque UUID invocation owner under a row lock. The queue,
+worker, runtime, and usage settlement carry that identity. Each specialist has
+its own invocation and the controlling root's identity and deadline.
 
-Together, these controls place a time bound on the terminal state of every
-observed run. The API lifespan doesn't run a periodic sweep for unobserved
-rows because interactive turns have an observer.
+The continuation deadline includes queue time and active execution. Approval
+waiting is excluded: reservation restarts the clock once, before worker entry.
+The local monotonic deadline interrupts a stalled provider call without waiting
+for a browser read or database sweep. Finalisation has a separate bounded window.
+Shutdown cancels outstanding work and waits for bounded settlement.
 
-### Schema
+### Schema and heartbeat
 
-- `agent_runs.lease_expires_at TIMESTAMPTZ NULL` — the live lease.
-- `agent_runs.owner_instance_id TEXT NULL` — process id for diagnostics only;
-  correctness comes from the lease, not ownership.
-- Partial index `ix_agent_runs_lease_expiry` on `lease_expires_at`
-  `WHERE deleted = false AND status IN ('pending','running')`, mirroring
-  `ix_agent_schedule_runs_claim_expiry`, so the reaper scan is cheap.
+`agent_runs.owner_instance_id` stores the invocation UUID in the existing
+nullable string column. `lease_expires_at` records permission to continue.
+Renewal uses a separate short-lived tenant session and matches the run,
+workspace, actor, owner, live status, and unexpired lease. It cannot claim a run
+or revive an expired lease. The lease-expiry partial index covers live rows.
 
-### Heartbeat ticker
+The heartbeat retries database failures only until the last confirmed lease
+deadline. Before each model request and tool call, a fresh read must confirm
+own permission and a live controlling root. A failed read cannot authorise the
+next effect. An external request already accepted may still complete after
+local cancellation.
 
-The worker spawns a sibling ticker task that, every
-`AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS`, runs a targeted update on its own
-short-lived session (`UPDATE agent_runs SET lease_expires_at = now() + :ttl
-WHERE id = :id`) and commits immediately. It must not share the turn's session:
-the turn flushes-but-does-not-commit until the end, so a heartbeat commit on
-that session can prematurely commit partial state. The ticker is cancelled
-when the turn finishes.
+The local phases are queued, executing, finalising, and released. During own
+finalisation, a committed completion or approval suspension does not cause the
+heartbeat to cancel the invocation. A replacement owner still revokes it.
 
-False-positive safety: the lease TTL is comfortably larger than the heartbeat
-interval (default TTL 90s, interval 30s) to tolerate transient event-loop
-blocking, and settings validation rejects `HEARTBEAT_INTERVAL >= LEASE_TTL` so
-a misconfiguration cannot make every live run look abandoned. A genuinely
-CPU-blocking tool can stall the loop and pause heartbeats, so such tools must
-run in a threadpool.
+### Family settlement and reaping
 
-### Reaper
+Cancellation, failure, completion, and recovery lock the root before children
+in deterministic ID order. Child creation and approval claims use the same
+order and recheck the root before proceeding. Family settlement follows
+`parent_run_id`, preserves terminal children, and queues staged-content cleanup
+before clearing suspension metadata.
 
-One `reap_abandoned_runs` service operation (`services/agent_runs/`),
-multi-process safe the same way the scheduler is: guarded conditional
-transitions (`... WHERE id = :id AND status IN ('pending','running')`) so
-concurrent callers each fail a row at most once. It transitions matched runs to
-`failed` with `error_code = "run_abandoned"` and a message naming the stale
-lease, so the client heal loop terminates on a real terminal state and can offer
-retry. It accepts a scope — a single `run_id` (lazy on-read path) or a batch
-over all expired runs (startup sweep) — so the same logic backs every caller.
+The first terminal verdict survives competing finalisers. A root cannot report
+successful completion while a child remains live or awaits approval. It settles
+the family and reports blocked recovery instead.
 
-### The completion/reaper race
-
-If a worker completes at the same moment the reaper fails it (only possible
-under a false-positive, i.e. too-tight TTL), the guarded transitions stay
-consistent: the reaper's `WHERE status IN ('pending','running')` matches zero
-rows if the worker already wrote `completed`; if the reaper wins, the worker's
-`complete_agent_run` treats the already-terminal run as a no-op.
+`reap_abandoned_runs` backs lazy active-run reads, scheduled reconciliation, and
+the recurring `agent_runs.sweep_abandoned` job. Startup ensures a pending sweep.
+The job schedules its successor using the generic queue's deduplication and retry
+contracts, so recovery also reaches unobserved runs. Each candidate is checked
+again after family locks are acquired. Expired leases and continuation deadlines
+produce `run_abandoned` failures without replacing an existing terminal verdict.
 
 ### Settings
 

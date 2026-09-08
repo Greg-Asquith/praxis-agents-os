@@ -57,13 +57,13 @@ async def fail_child_run_delegate_not_allowed(
     conversation_id: UUID,
     agent_name: str,
 ) -> DelegateRunResult:
-    from services.agent_runs.fail import fail_agent_run
+    from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
 
-    await session.refresh(child_run, with_for_update=True)
+    await lock_run_family(session, run_id=child_run.id)
     if not is_terminal(child_run.status):
-        await fail_agent_run(
+        await settle_run_family(
             session,
-            child_run,
+            run_id=child_run.id,
             error_code=DELEGATE_NOT_ALLOWED_ERROR_CODE,
             error_message=DELEGATE_NOT_ALLOWED_ERROR_MESSAGE,
         )

@@ -11,6 +11,7 @@ from pydantic_ai.exceptions import ModelHTTPError
 
 from core.exceptions.general import ConflictError
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.execution_control import ExecutionInterruptedError, InterruptionReason
 
 DEFAULT_RUN_ERROR_CODE = "agent_run_failed"
 DEFAULT_RUN_ERROR_MESSAGE = "The agent run failed unexpectedly."
@@ -44,6 +45,15 @@ def public_run_error(exc: Exception) -> PublicRunError:
     """Return the explicit public mapping for an execute-run exception."""
     from services.agents.runtime.code_mode.state import CodeModeResumeRequiresRecoveryError
 
+    if isinstance(exc, ExecutionInterruptedError):
+        messages = {
+            InterruptionReason.DURATION_EXPIRED: "The agent run reached its time limit.",
+            InterruptionReason.LEASE_LOST: "The agent run stopped because execution ownership could not be confirmed.",
+            InterruptionReason.PARENT_TERMINATED: "The specialist stopped because its parent run ended.",
+            InterruptionReason.PROCESS_SHUTDOWN: "The agent run stopped during service shutdown.",
+            InterruptionReason.REQUESTED_CANCELLATION: "The agent run was stopped.",
+        }
+        return PublicRunError(code=exc.reason.value, message=messages[exc.reason])
     if isinstance(exc, ModelConfigurationError):
         return PublicRunError(
             code=str(getattr(exc, "error_code", "model_configuration_error")),

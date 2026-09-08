@@ -41,7 +41,7 @@ async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> Non
     )
     monkeypatch.setattr(
         dispatch,
-        "raise_if_agent_run_cancelled",
+        "check_execution_permission",
         AsyncMock(),
     )
     deps = SimpleNamespace(

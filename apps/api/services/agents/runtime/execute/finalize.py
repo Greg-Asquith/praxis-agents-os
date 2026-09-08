@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.database import (
     configure_async_db_session,
     get_ai_usage_async_db_session_factory,
+    get_async_db_session_factory,
     set_session_tenant_context,
 )
 from models.agent_run import AgentRun
@@ -32,6 +33,7 @@ from services.agents.runtime.approval_events import (
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_policy_approval_request_audit_events
+from services.agents.runtime.execution_control import ExecutionInterruptedError, InterruptionReason
 from services.agents.runtime.run_persistence import (
     persist_cancelled_run,
     persist_failed_run,
@@ -135,7 +137,7 @@ async def finalize_suspended_run(
         eager_tool_return_ids=eager_tool_return_ids,
         usage_event=usage_event,
     )
-    if suspended_run.status == RUN_STATUS_AWAITING_APPROVAL:
+    if suspended_run.status == RUN_STATUS_AWAITING_APPROVAL and deferred_tool_requests is not None:
         await emit_approval_required_events(event_sink, deferred_tool_requests)
     else:
         deferred_tool_requests = None
@@ -186,7 +188,16 @@ async def finalize_successful_run(
 
     return ExecuteRunResult(
         run=final_run,
-        output=terminal_result.output if final_run.status == RUN_STATUS_COMPLETED else None,
+        output=(
+            terminal_result.output
+            if final_run.status == RUN_STATUS_COMPLETED
+            and (
+                usage_event is None
+                or final_run.owner_instance_id is None
+                or final_run.owner_instance_id == (usage_event.details or {}).get("invocation_id")
+            )
+            else None
+        ),
         new_message_count=new_message_count,
     )
 
@@ -199,6 +210,7 @@ async def emit_failure_events(
     run_id: UUID,
     exc: Exception,
     metering: AgentRunMeteringContext | None = None,
+    owner_instance_id: str | None = None,
 ) -> AgentRun | None:
     public_error = public_run_error(exc)
     logger.error(
@@ -219,6 +231,7 @@ async def emit_failure_events(
             error_message=public_error.message,
             completion_json=public_error.completion_json,
             metering=metering,
+            owner_instance_id=owner_instance_id,
         )
         if failed_run is not None:
             await emit_final_events(event_sink, failed_run)
@@ -238,6 +251,7 @@ async def finalize_cancelled_run(
     workspace_id: UUID,
     user_id: UUID,
     metering: AgentRunMeteringContext | None = None,
+    owner_instance_id: str | None = None,
 ) -> None:
     """Settles cancellation using an isolated persistence session."""
     cancelled_run = await persist_cancelled_run(
@@ -245,6 +259,7 @@ async def finalize_cancelled_run(
         workspace_id=workspace_id,
         user_id=user_id,
         metering=metering,
+        owner_instance_id=owner_instance_id,
     )
     if cancelled_run is None:
         raise RuntimeError("Cancellation settlement did not complete")
@@ -272,3 +287,30 @@ async def finalize_interrupted_usage(event: AIUsageEventData) -> None:
         await set_session_tenant_context(db, workspace_id=event.workspace_id, user_id=event.user_id)
         await record_ai_usage_in_transaction(db, event)
         await db.commit()
+
+
+async def finalize_stopped_run(
+    *,
+    event_sink: EventSink,
+    run_id: UUID,
+    workspace_id: UUID,
+    user_id: UUID,
+    reason: InterruptionReason,
+    owner_instance_id: str | None,
+    metering: AgentRunMeteringContext | None = None,
+) -> None:
+    """Settles an interrupted invocation in its own tenant session."""
+    error = public_run_error(ExecutionInterruptedError(reason))
+    async with get_async_db_session_factory()() as db:
+        await configure_async_db_session(db)
+        await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
+        run = await persist_failed_run(
+            db,
+            run_id=run_id,
+            error_code=error.code,
+            error_message=error.message,
+            metering=metering,
+            owner_instance_id=owner_instance_id,
+        )
+        if run is not None:
+            await emit_final_events(event_sink, run)

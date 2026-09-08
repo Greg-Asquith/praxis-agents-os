@@ -5,7 +5,6 @@
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -36,7 +35,6 @@ from services.agent_schedules.runs import (
 )
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
-from services.agents.runtime.heartbeat import cancel_target_if_run_cancelled
 from services.agents.runtime.sinks import NullSink
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -111,6 +109,43 @@ async def _set_schedule_tenant_context(db: AsyncSession, schedule_id: UUID) -> N
             )
         ).one()
     await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
+
+
+async def test_schedule_deadline_stops_provider_wait_and_releases_worker(
+    committed_db_session_factory,
+    monkeypatch,
+):
+    schedule_id = await _create_due_schedule(committed_db_session_factory)
+    monkeypatch.setattr(settings, "AGENT_RUN_MAX_DURATION_SECONDS", 1)
+    monkeypatch.setattr(settings, "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+    stopped = asyncio.Event()
+
+    async def provider_wait(_messages, _info):
+        try:
+            await asyncio.Event().wait()
+            yield "Unreachable"
+        finally:
+            stopped.set()
+
+    await asyncio.wait_for(
+        run_once(
+            owner_instance_id="test-worker",
+            model=FunctionModel(stream_function=provider_wait),
+        ),
+        timeout=5,
+    )
+    assert stopped.is_set()
+    async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, schedule_id)
+        schedule_run = await db.scalar(
+            select(AgentScheduleRun).where(
+                AgentScheduleRun.schedule_id == schedule_id,
+            )
+        )
+        assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
+        run = await db.get(AgentRun, schedule_run.agent_run_id)
+        assert run.status == "failed" and run.error_code == "run_duration_expired"
+    assert await run_once(owner_instance_id="test-worker") == 0
 
 
 @pytest.fixture
@@ -211,7 +246,7 @@ async def test_run_once_executes_claimed_schedules_concurrently(
 
     async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
         nonlocal active, peak_active
-        assert owner_instance_id == "parallel-worker"
+        assert owner_instance_id == prepared.owner_instance_id
         assert model is None
         active += 1
         peak_active = max(peak_active, active)
@@ -461,7 +496,7 @@ async def test_run_once_finalizes_cooperatively_cancelled_schedule(
     schedule_id = await _create_due_schedule(committed_db_session_factory)
 
     async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
-        assert owner_instance_id == "test-worker"
+        assert owner_instance_id == prepared.owner_instance_id
         assert model is None
         async with committed_db_session_factory() as db:
             await set_session_tenant_context(
@@ -506,51 +541,9 @@ async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(
         await _create_due_schedule(committed_db_session_factory),
         await _create_due_schedule(committed_db_session_factory),
     ]
-    cancelled_run_ids: set[UUID] = set()
-    cancelled_run_events: dict[UUID, asyncio.Event] = {}
-
-    def event_for_run(run_id: UUID) -> asyncio.Event:
-        event = cancelled_run_events.get(run_id)
-        if event is None:
-            event = asyncio.Event()
-            cancelled_run_events[run_id] = event
-        return event
-
-    async def fake_status(*, run_id, **_kwargs):
-        return RUN_STATUS_CANCELLED if run_id in cancelled_run_ids else None
-
-    async def fake_heartbeat(
-        *,
-        run_id,
-        workspace_id,
-        user_id,
-        owner_instance_id: str,
-        stop: asyncio.Event,
-        cancel_target: asyncio.Task | None = None,
-    ) -> None:
-        cancelled_wait = asyncio.create_task(event_for_run(run_id).wait())
-        stopped_wait = asyncio.create_task(stop.wait())
-        done, pending = await asyncio.wait(
-            {cancelled_wait, stopped_wait},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
-        for task in pending:
-            with suppress(asyncio.CancelledError):
-                await task
-        if stopped_wait in done:
-            return
-        await cancel_target_if_run_cancelled(
-            run_id=run_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-            owner_instance_id=owner_instance_id,
-            cancel_target=cancel_target,
-        )
 
     async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
-        assert owner_instance_id == "test-worker"
+        assert owner_instance_id == prepared.owner_instance_id
         assert model is None
         async with committed_db_session_factory() as db:
             await set_session_tenant_context(
@@ -562,17 +555,10 @@ async def test_run_once_cancels_multiple_schedule_runs_in_one_batch(
             assert run is not None
             await cancel_agent_run(db, run)
             await db.commit()
-        cancelled_run_ids.add(prepared.agent_run_id)
-        event_for_run(prepared.agent_run_id).set()
-        await asyncio.Event().wait()
+        raise asyncio.CancelledError("agent_run_cancel_requested")
 
     monkeypatch.setattr(settings, "AGENT_SCHEDULE_WORKER_BATCH_SIZE", 2)
     monkeypatch.setattr(agent_runner, "_execute_prepared", fake_execute_prepared)
-    monkeypatch.setattr(agent_runner, "heartbeat_agent_run_lease", fake_heartbeat)
-    monkeypatch.setattr(
-        "services.agents.runtime.heartbeat.read_agent_run_status_once",
-        fake_status,
-    )
 
     attempted = await asyncio.wait_for(
         run_once(owner_instance_id="test-worker"),
@@ -615,7 +601,7 @@ async def test_run_once_shutdown_cancel_does_not_mark_schedule_cancelled(
     execution_started = asyncio.Event()
 
     async def fake_execute_prepared(prepared, *, owner_instance_id: str, model=None) -> None:
-        assert owner_instance_id == "test-worker"
+        assert owner_instance_id == prepared.owner_instance_id
         assert model is None
         execution_started.set()
         await asyncio.Event().wait()

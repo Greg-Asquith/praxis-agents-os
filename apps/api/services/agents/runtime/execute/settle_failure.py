@@ -24,6 +24,7 @@ async def settle_failure(
     exc: Exception,
     metering: AgentRunMeteringContext | None,
     max_wait: float,
+    owner_instance_id: str | None = None,
 ) -> AgentRun | None:
     if metering is not None:
         metering.freeze()
@@ -36,6 +37,7 @@ async def settle_failure(
                 run_id=run_id,
                 exc=exc,
                 metering=metering,
+                owner_instance_id=owner_instance_id,
             )
     except Exception:
         warn_accounting_incomplete(metering, run_id)

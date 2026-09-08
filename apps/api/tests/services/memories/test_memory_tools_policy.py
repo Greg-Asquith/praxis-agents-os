@@ -45,6 +45,7 @@ async def _runtime_context(
     db.add(run)
     await db.flush()
     deps = SimpleNamespace(
+        execution_control=None,
         db=db,
         user=context.user,
         workspace=context.workspace,

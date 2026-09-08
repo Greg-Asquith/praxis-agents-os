@@ -823,8 +823,9 @@ async def test_nested_dispatch_audits_each_call_with_parent_and_effective_args_d
     monkeypatch.setattr(dispatch_module, "_active_workspace_role", AsyncMock(return_value="member"))
     record_invocation = AsyncMock()
     monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
-    monkeypatch.setattr(dispatch_module, "raise_if_agent_run_cancelled", AsyncMock())
+    monkeypatch.setattr(dispatch_module, "check_execution_permission", AsyncMock())
     deps = SimpleNamespace(
+        execution_control=None,
         db=SimpleNamespace(commit=AsyncMock()),
         membership=SimpleNamespace(id=uuid4()),
         workspace=SimpleNamespace(id=uuid4()),
@@ -1886,10 +1887,11 @@ async def test_nested_calls_reach_praxis_authorization_and_envelope_hooks(
     monkeypatch.setattr(dispatch_module, "record_invocation", record_invocation)
     monkeypatch.setattr(
         dispatch_module,
-        "raise_if_agent_run_cancelled",
+        "check_execution_permission",
         AsyncMock(),
     )
     deps = SimpleNamespace(
+        execution_control=None,
         db=SimpleNamespace(commit=AsyncMock()),
         membership=SimpleNamespace(id=uuid4()),
         workspace=SimpleNamespace(id=uuid4()),

@@ -2,8 +2,10 @@
 
 """Prepare database state, prompt content, and runtime deps for execute_run."""
 
+import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -39,6 +41,7 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation import list_visible_delegate_agents
 from services.agents.runtime.dispatch import record_denied_approval_audit_events
 from services.agents.runtime.envelope import build_run_envelope
+from services.agents.runtime.execution_control import ExecutionControl
 from services.agents.runtime.history import (
     HistoryCompaction,
     history_exceeds_context_budget,
@@ -65,6 +68,57 @@ from services.tools import get_disabled_tools
 from .types import BuiltRuntimeAgent, PreparedRuntime
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def admitted_setup(
+    db: AsyncSession, *, control: ExecutionControl | None, sink: EventSink
+) -> AsyncIterator[None]:
+    """Bounds worker session setup with the admitted continuation's deadline."""
+    from services.agents.runtime.execution_control import (
+        ExecutionInterruptedError,
+        ExecutionPhase,
+        InterruptionReason,
+    )
+
+    from .finalize import CANCEL_FINALIZE_TIMEOUT
+    from .settle_failure import settle_failure
+    from .settle_interruption import settle_interruption
+
+    try:
+        async with asyncio.timeout_at(control.deadline if control else None):
+            yield
+    except asyncio.CancelledError as exc:
+        if control is not None:
+            await settle_interruption(
+                db,
+                exc=exc,
+                event_sink=sink,
+                run_id=control.run_id,
+                workspace_id=control.workspace_id,
+                user_id=control.user_id,
+                execution_control=control,
+                metering=None,
+                max_wait=CANCEL_FINALIZE_TIMEOUT,
+            )
+        raise
+    except Exception as exc:
+        if control is not None:
+            if isinstance(exc, TimeoutError):
+                control.interrupt(InterruptionReason.DURATION_EXPIRED)
+                exc = ExecutionInterruptedError(control.reason)
+            control.phase = ExecutionPhase.FINALISING
+            await settle_failure(
+                db,
+                event_sink=sink,
+                started=True,
+                run_id=control.run_id,
+                exc=exc,
+                metering=None,
+                owner_instance_id=control.owner_instance_id,
+                max_wait=CANCEL_FINALIZE_TIMEOUT,
+            )
+        raise
 
 
 def validate_execution_preconditions(

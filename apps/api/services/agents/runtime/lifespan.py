@@ -12,10 +12,15 @@ logger = logging.getLogger(__name__)
 
 async def sweep_abandoned_agent_runs_on_startup() -> None:
     """Fail stale non-terminal agent runs left behind by a prior process."""
+    from services.jobs.handlers.sweep_abandoned_agent_runs import (
+        ensure_abandoned_agent_run_sweep_job,
+    )
+
     session_factory = get_maintenance_async_db_session_factory()
     async with session_factory() as db:
         await configure_async_db_session(db)
         result = await reap_abandoned_runs(db)
+        await ensure_abandoned_agent_run_sweep_job(db)
         await db.commit()
         if result.failed_count:
             logger.warning(

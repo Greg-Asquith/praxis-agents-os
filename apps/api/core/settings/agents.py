@@ -66,7 +66,7 @@ class AgentRunSettingsMixin:
     AGENT_RUN_MAX_DURATION_SECONDS: int = Field(
         default=1200,
         gt=0,
-        description="Hard maximum runtime before an observed agent run can be reaped.",
+        description="Maximum seconds per admitted continuation, including queue time and excluding approval wait.",
     )
     AGENT_RUN_MAX_CONCURRENT_TURNS: int = Field(
         default=11,
@@ -76,7 +76,7 @@ class AgentRunSettingsMixin:
     AGENT_RUN_REAPER_INTERVAL_SECONDS: int = Field(
         default=30,
         gt=0,
-        description="Default interval for future periodic abandoned-run sweeps.",
+        description="Seconds between recurring abandoned-run recovery jobs.",
     )
     AGENT_RUN_SHUTDOWN_DRAIN_SECONDS: float = Field(
         default=120.0,
@@ -188,7 +188,8 @@ class AgentRunSettingsMixin:
     AGENT_MAX_DELEGATION_DEPTH: int = Field(
         default=1,
         ge=0,
-        description="Maximum nested delegated-agent depth allowed for one run.",
+        le=1,
+        description="Delegation depth: zero disables delegation; one permits direct specialists.",
     )
     AGENT_HISTORY_MAX_TURNS: int | None = Field(
         default=40,

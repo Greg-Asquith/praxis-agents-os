@@ -183,29 +183,32 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
     assert all(event.event != "error" for event in sink.events)
 
 
-async def test_remote_cancellation_prevents_pending_tool_side_effect(
+@pytest.mark.parametrize("revocation", ["cancelled", "failed", "owner", "database"])
+async def test_remote_revocation_prevents_pending_tool_side_effect(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
+    revocation: str,
 ) -> None:
+    from uuid import uuid4
+
+    from services.agent_runs.settle_run_family import settle_run_family
+    from services.agents.runtime.execution_control import ExecutionInterruptedError
+
     with scenario_effects() as effects:
         context = await build_scenario_agent(
             committed_db_session_factory,
             tool_names=[effects.name],
         )
         barrier = ScenarioBarrier()
-        durable_cancel_check = dispatch_module.raise_if_agent_run_cancelled
+        durable_cancel_check = dispatch_module.check_execution_permission
 
-        async def paused_cancel_check(*, run_id, workspace_id, user_id):
+        async def paused_cancel_check(deps):
             await barrier.pause()
-            await durable_cancel_check(
-                run_id=run_id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-            )
+            await durable_cancel_check(deps)
 
         monkeypatch.setattr(
             dispatch_module,
-            "raise_if_agent_run_cancelled",
+            "check_execution_permission",
             paused_cancel_check,
         )
 
@@ -226,18 +229,42 @@ async def test_remote_cancellation_prevents_pending_tool_side_effect(
             async with committed_db_session_factory() as remote_db:
                 run = await remote_db.get(AgentRun, context.run_id)
                 assert run is not None
-                await cancel_agent_run(remote_db, run)
+                if revocation == "cancelled":
+                    await cancel_agent_run(remote_db, run)
+                elif revocation == "failed":
+                    await settle_run_family(remote_db, run_id=run.id, error_code="run_abandoned")
+                elif revocation == "owner":
+                    run.owner_instance_id = str(uuid4())
                 await remote_db.commit()
 
+            if revocation == "database":
+
+                async def unavailable(**_kwargs):
+                    raise ConnectionError("Permission database unavailable")
+
+                monkeypatch.setattr(
+                    "services.agents.runtime.execution_control.read_execution_states", unavailable
+                )
+
             barrier.release.set()
-            with pytest.raises(asyncio.CancelledError):
+            with pytest.raises(
+                asyncio.CancelledError if revocation == "cancelled" else ExecutionInterruptedError
+            ):
                 await task
 
             assert effects.calls == []
             async with committed_db_session_factory() as db:
                 run = await db.get(AgentRun, context.run_id)
                 assert run is not None
-                assert run.status == "cancelled"
+                assert (
+                    run.status
+                    == {
+                        "cancelled": "cancelled",
+                        "failed": "failed",
+                        "owner": "running",
+                        "database": "failed",
+                    }[revocation]
+                )
 
 
 @pytest.mark.parametrize("human_cancel", [False, True])
@@ -295,7 +322,9 @@ async def test_interruption_bounds_owner_rollback_and_preserves_cancellation(
         await asyncio.gather(task, return_exceptions=True)
     async with committed_db_session_factory() as db:
         run = await db.get(AgentRun, context.run_id)
-        assert run.status == ("cancelled" if human_cancel else "running")
+        assert run.status == ("cancelled" if human_cancel else "failed")
+        if not human_cancel:
+            assert run.error_code == "run_process_shutdown"
         [event] = (
             await db.scalars(select(AIUsageEvent).where(AIUsageEvent.run_id == context.run_id))
         ).all()
@@ -328,7 +357,7 @@ async def test_cancellation_during_failure_settlement(
     interruption = importlib.import_module("services.agents.runtime.execute.settle_interruption")
     original_failure = failure_module.emit_failure_events
     original_cancel = interruption.finalize_cancelled_run
-    original_usage = interruption.finalize_interrupted_usage
+    original_stopped = interruption.finalize_stopped_run
     failure_barrier = ScenarioBarrier()
     isolated_barrier = ScenarioBarrier()
     captured = []
@@ -381,15 +410,15 @@ async def test_cancellation_during_failure_settlement(
         await isolated_barrier.pause()
         await original_cancel(**kwargs)
 
-    async def isolated_usage(event):
-        assert event == captured[0]
+    async def isolated_stopped(**kwargs):
+        assert kwargs["metering"].event() == captured[0]
         await isolated_barrier.pause()
-        await original_usage(event)
+        await original_stopped(**kwargs)
 
     monkeypatch.setattr(execution, "consume_stream", failing_stream)
     monkeypatch.setattr(failure_module, "emit_failure_events", failure)
     monkeypatch.setattr(interruption, "finalize_cancelled_run", isolated_cancel)
-    monkeypatch.setattr(interruption, "finalize_interrupted_usage", isolated_usage)
+    monkeypatch.setattr(interruption, "finalize_stopped_run", isolated_stopped)
     monkeypatch.setattr(execution, "CANCEL_FINALIZE_TIMEOUT", 0.5)
     task = asyncio.create_task(
         run_scenario(committed_db_session_factory, context, model=scripted_model(turns=["Done."]))
@@ -422,7 +451,7 @@ async def test_cancellation_during_failure_settlement(
             assert (run.status, run.error_code, run.error_message, run.completion_json) == expected
         else:
             assert run.status == (
-                "cancelled" if human_cancel and not settlement_blocked else "running"
+                "running" if settlement_blocked else "cancelled" if human_cancel else "failed"
             )
         rows = list(
             await db.scalars(select(AIUsageEvent).where(AIUsageEvent.run_id == context.run_id))

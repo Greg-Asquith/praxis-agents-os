@@ -4,9 +4,8 @@
 
 import asyncio
 import logging
-import os
 from contextlib import suppress
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from core.database import (
     configure_async_db_session,
@@ -15,19 +14,19 @@ from core.database import (
     set_session_tenant_context,
 )
 from core.settings import settings
-from services.agent_runs import renew_agent_run_lease
-from services.agent_runs.domain import RUN_STATUS_CANCELLED
-from services.agents.runtime.cancellation import (
-    read_agent_run_status_once,
-    request_agent_run_task_cancel,
+from services.agent_runs.renew_lease import renew_agent_run_lease
+from services.agents.runtime.execution_control import (
+    ExecutionControl,
+    ExecutionInterruptedError,
+    InterruptionReason,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def agent_run_owner_instance_id() -> str:
-    """Returns the process identity recorded on live agent-run leases."""
-    return f"{os.uname().nodename}:{os.getpid()}"
+    """Returns an opaque identity for one admitted invocation."""
+    return str(uuid4())
 
 
 def _runtime_pool_status() -> str:
@@ -54,6 +53,8 @@ async def renew_agent_run_lease_once(
                 db,
                 run_id=run_id,
                 owner_instance_id=owner_instance_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
             )
             await db.commit()
             return renewed
@@ -64,80 +65,80 @@ async def renew_agent_run_lease_once(
 
 async def heartbeat_agent_run_lease(
     *,
-    run_id: UUID,
-    workspace_id: UUID,
-    user_id: UUID,
-    owner_instance_id: str,
+    execution_control: ExecutionControl,
     stop: asyncio.Event,
     cancel_target: asyncio.Task | None = None,
     renew_immediately: bool = False,
 ) -> None:
-    """Renew a run lease until ``stop`` is set or the run is no longer live."""
+    """Renews the admitted owner until release or confirmed permission loss."""
+    control = execution_control
     interval = settings.AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS
     while not stop.is_set():
         if not renew_immediately:
+            remaining = max(0, control.lease_deadline - asyncio.get_running_loop().time())
             with suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=interval)
-                break
+                await asyncio.wait_for(stop.wait(), timeout=min(interval, remaining))
+                return
         renew_immediately = False
-
         try:
-            renewed = await renew_agent_run_lease_once(
-                run_id=run_id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                owner_instance_id=owner_instance_id,
-            )
+            renewed = await _renew_owned_lease(control)
         except Exception:
             logger.error(
                 "Failed to renew agent run lease",
                 exc_info=True,
                 extra={
-                    "run_id": str(run_id),
-                    "owner_instance_id": owner_instance_id,
+                    "run_id": str(control.run_id),
+                    "owner_instance_id": control.owner_instance_id,
                     "pool_status": _runtime_pool_status(),
                 },
             )
+            if asyncio.get_running_loop().time() >= control.lease_deadline:
+                _cancel_revoked_execution(control, InterruptionReason.LEASE_LOST, cancel_target)
+                return
             continue
-
+        try:
+            if not renewed or control.root is not None:
+                await control.check_permission()
+        except ExecutionInterruptedError as exc:
+            _cancel_revoked_execution(control, exc.reason, cancel_target)
+            return
         if not renewed:
-            await cancel_target_if_run_cancelled(
-                run_id=run_id,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                owner_instance_id=owner_instance_id,
-                cancel_target=cancel_target,
-            )
-            logger.info(
-                "Stopping agent run heartbeat because the run is no longer live",
-                extra={"run_id": str(run_id), "owner_instance_id": owner_instance_id},
-            )
-            break
+            return
 
 
-async def cancel_target_if_run_cancelled(
-    *,
-    run_id: UUID,
-    workspace_id: UUID,
-    user_id: UUID,
-    owner_instance_id: str,
-    cancel_target: asyncio.Task | None,
-) -> bool:
-    """Cancel ``cancel_target`` after a failed renewal only when the row is cancelled."""
-    if cancel_target is None or cancel_target.done() or cancel_target.cancelling() > 0:
-        return False
+async def _renew_owned_lease(control: ExecutionControl) -> bool:
+    renewal_started = asyncio.get_running_loop().time()
+    async with asyncio.timeout_at(control.lease_deadline):
+        renewed = await renew_agent_run_lease_once(
+            run_id=control.run_id,
+            workspace_id=control.workspace_id,
+            user_id=control.user_id,
+            owner_instance_id=control.owner_instance_id,
+        )
+    if renewed:
+        control.lease_deadline = renewal_started + settings.AGENT_RUN_LEASE_TTL_SECONDS
+    return renewed
 
-    status = await read_agent_run_status_once(
-        run_id=run_id,
-        workspace_id=workspace_id,
-        user_id=user_id,
-    )
-    if status != RUN_STATUS_CANCELLED:
-        return False
 
-    logger.info(
-        "Cancelling agent run task after heartbeat observed cancellation",
-        extra={"run_id": str(run_id), "owner_instance_id": owner_instance_id},
-    )
-    request_agent_run_task_cancel(cancel_target, run_id=run_id)
-    return True
+async def stop_agent_run_heartbeat(
+    stop: asyncio.Event | None,
+    task: asyncio.Task | None,
+) -> None:
+    """Stops and joins the ticker before handing off or releasing execution."""
+    if stop is not None:
+        stop.set()
+    if task is not None:
+        task.cancel()
+        await asyncio.wait({task})
+        if not task.cancelled():
+            task.result()
+
+
+def _cancel_revoked_execution(
+    control: ExecutionControl,
+    reason: InterruptionReason,
+    target: asyncio.Task | None,
+) -> None:
+    control.interrupt(reason)
+    if target is not None and not target.done() and not target.cancelling():
+        target.cancel(control.reason.value)

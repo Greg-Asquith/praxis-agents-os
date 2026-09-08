@@ -2,9 +2,7 @@
 
 """Resume a delegated child run after approval."""
 
-import asyncio
 import logging
-from contextlib import suppress
 from uuid import UUID
 
 from pydantic import TypeAdapter
@@ -16,10 +14,12 @@ from core.database import (
     get_async_db_session_factory,
     set_session_tenant_context,
 )
-from core.exceptions.general import NotFoundError
+from core.exceptions.general import ConflictError, NotFoundError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
-from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_RUNNING
+from services.agent_runs.execution_state import require_execution_owner
+from services.agent_runs.settle_run_family import lock_run_family
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
     DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY,
@@ -42,10 +42,9 @@ from services.agents.runtime.delegation.results import (
 )
 from services.agents.runtime.delegation.schemas import DelegateRunResult
 from services.agents.runtime.delegation.utils import (
-    heartbeat,
-    owner_instance_id,
     safe_error,
 )
+from services.agents.runtime.heartbeat import agent_run_owner_instance_id
 from services.agents.runtime.sinks import NullSink
 from utils.metadata import metadata_str, metadata_uuid
 
@@ -91,9 +90,7 @@ async def resume_approved_delegate_run(
 
     session_factory = get_async_db_session_factory()
     session = session_factory()
-    owner_id = owner_instance_id()
-    heartbeat_stop = asyncio.Event()
-    heartbeat_task: asyncio.Task[None] | None = None
+    owner_id = agent_run_owner_instance_id()
 
     try:
         await configure_async_db_session(session)
@@ -102,6 +99,13 @@ async def resume_approved_delegate_run(
             workspace_id=ctx.deps.workspace.id,
             user_id=ctx.deps.user.id,
         )
+        family = await lock_run_family(session, run_id=ctx.deps.run.id)
+        if not family or family[0].status != RUN_STATUS_RUNNING:
+            raise ConflictError(
+                "Parent run is no longer executable", conflicting_resource="agent_run"
+            )
+        if ctx.deps.execution_control is not None:
+            require_execution_owner(family[0], ctx.deps.execution_control.owner_instance_id)
         child_run = await session.scalar(
             select(AgentRun).where(
                 AgentRun.id == child_run_id,
@@ -144,18 +148,6 @@ async def resume_approved_delegate_run(
 
         target_name = target.name
         suspended_state = load_suspended_run_state(child_run)
-        heartbeat_task = asyncio.create_task(
-            heartbeat(
-                child_run.id,
-                ctx.deps.workspace.id,
-                ctx.deps.user.id,
-                owner_id,
-                heartbeat_stop,
-                cancel_target=asyncio.current_task(),
-            ),
-            name=f"delegated-agent-run-resume-heartbeat:{child_run.id}",
-        )
-
         from services.agents.runtime.execute_run import execute_run
 
         child_result = await execute_run(
@@ -170,6 +162,7 @@ async def resume_approved_delegate_run(
             deferred_tool_results=child_deferred_results,
             usage=ctx.usage,
             parent_metering=ctx.deps.metering,
+            root_execution=ctx.deps.execution_control,
         )
 
         if child_result.run.status == RUN_STATUS_AWAITING_APPROVAL and isinstance(
@@ -212,9 +205,4 @@ async def resume_approved_delegate_run(
             error=safe_error(exc),
         )
     finally:
-        heartbeat_stop.set()
-        if heartbeat_task is not None:
-            heartbeat_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await heartbeat_task
         await session.close()

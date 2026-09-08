@@ -2,7 +2,7 @@
 
 """Resume a suspended agent run and stream the continuation."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
@@ -17,7 +17,9 @@ from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_RUNNING
+from services.agent_runs.execution_state import require_execution_owner
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
+from services.agent_runs.settle_run_family import lock_run_family
 from services.agent_runs.start_with_lease import start_agent_run_with_lease
 from services.agent_runs.utils import (
     denial_message_for_model,
@@ -36,7 +38,8 @@ from services.agents.runtime.events import (
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
-from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
+from services.agents.runtime.execution_control import execution_control_for_run
+from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.audit_events.utils import request_audit_context
@@ -60,7 +63,6 @@ async def resume_agent_run_stream(
             AgentRun.user_id == actor.id,
             AgentRun.deleted == False,  # noqa: E712
         )
-        .with_for_update(of=AgentRun)
         .execution_options(populate_existing=True)
     )
     if run is None:
@@ -69,6 +71,14 @@ async def resume_agent_run_stream(
             resource_type="agent_run",
             resource_id=str(run_id),
         )
+    family = await lock_run_family(db, run_id=run_id)
+    if not family:
+        raise ConflictError("Parent run is no longer active", conflicting_resource="agent_run")
+    if run.parent_run_id is not None:
+        root = family[0]
+        if root.status != RUN_STATUS_RUNNING or root.owner_instance_id is None:
+            raise ConflictError("Parent run is no longer active", conflicting_resource="agent_run")
+        require_execution_owner(root, root.owner_instance_id)
     if run.status != RUN_STATUS_AWAITING_APPROVAL:
         raise ConflictError(
             "Agent run is not awaiting approval",
@@ -99,9 +109,12 @@ async def resume_agent_run_stream(
             **(run.metadata_json or {}),
             "audit_context": request_audit_context(request),
         }
-    await start_agent_run_with_lease(db, run)
+    owner_instance_id = str(uuid4())
+    await start_agent_run_with_lease(db, run, owner_instance_id=owner_instance_id)
     await db.commit()
 
+    root_execution = execution_control_for_run(family[0]) if run.parent_run_id is not None else None
+    execution_control = execution_control_for_run(run, root=root_execution)
     sink = StreamSink(run_id=run.id, conversation_id=run.conversation_id)
     await sink.emit(RunStatusEvent(status=run.status))
     from services.agents.runtime.worker import run_resume_worker
@@ -109,6 +122,8 @@ async def resume_agent_run_stream(
     run_task_registry.spawn(
         run.id,
         run_resume_worker(
+            owner_instance_id=owner_instance_id,
+            execution_control=execution_control,
             run_id=run.id,
             conversation_id=run.conversation_id,
             workspace_id=workspace.id,
@@ -119,7 +134,7 @@ async def resume_agent_run_stream(
             expected_status=RUN_STATUS_RUNNING,
         ),
         sink=sink,
-        queued_lease=QueuedRunLease(workspace_id=workspace.id, user_id=actor.id),
+        execution_control=execution_control,
     )
 
     return StreamingResponse(

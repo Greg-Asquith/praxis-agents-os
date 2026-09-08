@@ -15,7 +15,6 @@ from models.agent_run import AgentRun
 from models.jobs import Job
 from services.agent_runs.staged_content_cleanup import (
     DELETE_STAGED_APPROVAL_CONTENT_KIND,
-    enqueue_staged_approval_content_cleanup,
 )
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.registry import job_handler
@@ -89,9 +88,8 @@ async def sweep_expired_agent_run_approvals(
     """Fail one locked batch of approval waits older than the configured TTL."""
     from core.exceptions.general import ConflictError
     from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
-    from services.agent_runs.fail import fail_agent_run
+    from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
     from services.agents.runtime.approval_state import (
-        clear_suspended_run_metadata,
         load_suspended_run_state,
     )
 
@@ -118,12 +116,15 @@ async def sweep_expired_agent_run_approvals(
             )
             .order_by(AgentRun.updated_at, AgentRun.id)
             .limit(1)
-            .with_for_update(skip_locked=True, of=AgentRun)
             .execution_options(populate_existing=True)
         )
         if run is None:
             break
 
+        await lock_run_family(db, run_id=run.id)
+        if run.status != RUN_STATUS_AWAITING_APPROVAL or run.updated_at > cutoff:
+            await db.commit()
+            continue
         try:
             load_suspended_run_state(run)
         except ConflictError:
@@ -132,11 +133,9 @@ async def sweep_expired_agent_run_approvals(
                 extra={"run_id": str(run.id)},
                 exc_info=True,
             )
-        await enqueue_staged_approval_content_cleanup(db, run=run)
-        run.metadata_json = clear_suspended_run_metadata(run)
-        await fail_agent_run(
+        await settle_run_family(
             db,
-            run,
+            run_id=run.id,
             error_code=APPROVAL_EXPIRED_ERROR_CODE,
             error_message=(
                 f"This approval expired after {configured_days} days, so the action wasn't taken. "

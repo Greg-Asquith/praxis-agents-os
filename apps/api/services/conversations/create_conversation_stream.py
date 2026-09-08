@@ -5,7 +5,7 @@
 import asyncio
 import logging
 from collections.abc import Sequence
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
@@ -20,13 +20,15 @@ from models.conversation import CONVERSATION_SOURCE_DIRECT, Conversation
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import create_agent_run
+from services.agent_runs.claim_execution import claim_agent_run_execution
 from services.agent_runs.domain import RUN_TRIGGER_INTERACTIVE
 from services.agents.runtime import streaming as runtime_streaming
 from services.agents.runtime.events import (
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
-from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
+from services.agents.runtime.execution_control import ExecutionControl, execution_control_for_run
+from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.stream_protocol import (
     ConversationCreatedEvent,
@@ -129,8 +131,11 @@ async def create_conversation_stream(
             attachment_file_ids=attachment_file_ids,
         ),
     )
+    owner_instance_id = str(uuid4())
+    await claim_agent_run_execution(db, run, owner_instance_id=owner_instance_id)
     await db.commit()
 
+    execution_control = execution_control_for_run(run)
     sink = StreamSink(run_id=run.id, conversation_id=conversation.id)
     await sink.emit(
         ConversationCreatedEvent(
@@ -146,6 +151,8 @@ async def create_conversation_stream(
     run_task_registry.spawn(
         run.id,
         _run_initial_conversation_worker(
+            owner_instance_id=owner_instance_id,
+            execution_control=execution_control,
             run_id=run.id,
             conversation_id=conversation.id,
             workspace_id=workspace.id,
@@ -157,7 +164,7 @@ async def create_conversation_stream(
             client_message_id=payload.client_message_id,
         ),
         sink=sink,
-        queued_lease=QueuedRunLease(workspace_id=workspace.id, user_id=actor.id),
+        execution_control=execution_control,
     )
 
     return StreamingResponse(
@@ -183,6 +190,8 @@ async def _run_initial_conversation_worker(
     fallback_title: str,
     sink: StreamSink,
     client_message_id: str | None,
+    owner_instance_id: str | None = None,
+    execution_control: ExecutionControl | None = None,
 ) -> None:
     title_task = _spawn_title_task(
         run_conversation_title_worker(
@@ -208,6 +217,8 @@ async def _run_initial_conversation_worker(
         user_prompt=user_prompt,
         attachment_file_ids=attachment_file_ids,
         sink=title_update_sink,
+        owner_instance_id=owner_instance_id,
+        execution_control=execution_control,
         client_message_id=client_message_id,
     )
     await _prune_failed_initial_conversation(

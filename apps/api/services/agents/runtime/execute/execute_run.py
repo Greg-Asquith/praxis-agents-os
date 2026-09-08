@@ -13,6 +13,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.settings import settings
 from services.agent_runs.domain import (
     RUN_STATUS_COMPLETED,
     RUN_STATUS_PENDING,
@@ -23,6 +24,14 @@ from services.agent_runs.domain import (
 from services.agents.runtime.cancellation import (
     clear_agent_run_cancel_request,
 )
+from services.agents.runtime.execution_control import (
+    ExecutionControl,
+    ExecutionInterruptedError,
+    ExecutionPhase,
+    InterruptionReason,
+    execution_control_for_run,
+)
+from services.agents.runtime.heartbeat import heartbeat_agent_run_lease, stop_agent_run_heartbeat
 from services.agents.runtime.load_context import (
     load_actor_context,
     load_agent_skills,
@@ -74,130 +83,166 @@ async def execute_run(
     deferred_tool_results: DeferredToolResults | None = None,
     usage: RunUsage | None = None,
     parent_metering: AgentRunMeteringContext | None = None,
+    execution_control: ExecutionControl | None = None,
+    root_execution: ExecutionControl | None = None,
 ) -> ExecuteRunResult:
-    invocation_id = uuid4()
+    invocation_id = UUID(owner_instance_id) if owner_instance_id is not None else uuid4()
+    owner_instance_id = str(invocation_id)
     usage_accumulator = usage if usage is not None else RunUsage()
     usage_baseline = usage_values(usage_accumulator)
-    run, conversation, agent = await load_run_context(
-        db,
-        conversation_id=conversation_id,
-        run_id=run_id,
-        lock_run=True,
-    )
-    skills = await load_agent_skills(db, agent)
-    available_files = await load_available_files(db, conversation)
-    event_sink = sink or NullSink(run_id=run.id, conversation_id=conversation.id)
-    run_workspace_id = run.workspace_id
-    run_user_id = run.user_id
-    is_delegated = run.trigger == RUN_TRIGGER_DELEGATED
+    event_sink = sink or NullSink(run_id=run_id, conversation_id=conversation_id)
+    run_workspace_id = execution_control.workspace_id if execution_control else None
+    run_user_id = execution_control.user_id if execution_control else None
+    is_delegated = root_execution is not None
     started = False
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task: asyncio.Task | None = None
     metering: AgentRunMeteringContext | None = None
 
     try:
         try:
-            validate_execution_preconditions(
-                run,
-                user_prompt=user_prompt,
-                message_history=message_history,
-                deferred_tool_results=deferred_tool_results,
-                expected_status=expected_status,
+            deadline = (
+                execution_control.deadline
+                if execution_control
+                else (
+                    root_execution.deadline
+                    if root_execution
+                    else asyncio.get_running_loop().time() + settings.AGENT_RUN_MAX_DURATION_SECONDS
+                )
             )
+            execution_timeout = asyncio.timeout_at(deadline)
+            async with execution_timeout:
+                run, conversation, agent = await load_run_context(
+                    db,
+                    conversation_id=conversation_id,
+                    run_id=run_id,
+                    lock_run=True,
+                )
+                run_workspace_id, run_user_id = run.workspace_id, run.user_id
+                is_delegated = run.trigger == RUN_TRIGGER_DELEGATED
+                validate_execution_preconditions(
+                    run,
+                    user_prompt=user_prompt,
+                    message_history=message_history,
+                    deferred_tool_results=deferred_tool_results,
+                    expected_status=expected_status,
+                )
 
-            await start_run(db, run, owner_instance_id=owner_instance_id)
-            started = True
-            prepared_user_prompt = user_prompt
-            attachment_file_ids_for_prepare = attachment_file_ids
-            runtime_message_history = message_history
-            eager_message_count = 0
-            user_prompt_persisted = False
-            if user_prompt is not None and run.trigger == RUN_TRIGGER_INTERACTIVE:
-                if runtime_message_history is None:
-                    runtime_message_history = await load_message_history(
-                        db,
-                        conversation_id=conversation.id,
+                await start_run(db, run, owner_instance_id=owner_instance_id)
+                started = True
+                execution_control = execution_control or execution_control_for_run(
+                    run, root=root_execution
+                )
+                execution_control.phase = ExecutionPhase.EXECUTING
+                heartbeat_task = asyncio.create_task(
+                    heartbeat_agent_run_lease(
+                        stop=heartbeat_stop,
+                        cancel_target=asyncio.current_task(),
+                        execution_control=execution_control,
                     )
-                if attachment_file_ids:
-                    _user, workspace, _membership = await load_actor_context(db, run)
-                    prepared_user_prompt = await assemble_user_prompt(
+                )
+                execution_timeout.reschedule(execution_control.deadline)
+                skills = await load_agent_skills(db, agent)
+                available_files = await load_available_files(db, conversation)
+                prepared_user_prompt = user_prompt
+                attachment_file_ids_for_prepare = attachment_file_ids
+                runtime_message_history = message_history
+                eager_message_count = 0
+                user_prompt_persisted = False
+                if user_prompt is not None and run.trigger == RUN_TRIGGER_INTERACTIVE:
+                    if runtime_message_history is None:
+                        runtime_message_history = await load_message_history(
+                            db,
+                            conversation_id=conversation.id,
+                        )
+                    if attachment_file_ids:
+                        _user, workspace, _membership = await load_actor_context(db, run)
+                        prepared_user_prompt = await assemble_user_prompt(
+                            db,
+                            workspace=workspace,
+                            agent=agent,
+                            user_prompt=user_prompt,
+                            attachment_file_ids=attachment_file_ids,
+                        )
+                        attachment_file_ids_for_prepare = ()
+                    eager_rows = await persist_eager_user_prompt(
                         db,
-                        workspace=workspace,
-                        agent=agent,
-                        user_prompt=user_prompt,
-                        attachment_file_ids=attachment_file_ids,
+                        conversation=conversation,
+                        run_id=run.id,
+                        user_prompt=prepared_user_prompt,
+                        client_message_id=client_message_id,
                     )
-                    attachment_file_ids_for_prepare = ()
-                eager_rows = await persist_eager_user_prompt(
+                    await db.commit()
+                    eager_message_count = len(eager_rows)
+                    user_prompt_persisted = True
+                await event_sink.emit(RunStatusEvent(status=RUN_STATUS_RUNNING))
+
+                prepared = await prepare_runtime(
+                    db,
+                    run=run,
+                    conversation=conversation,
+                    agent=agent,
+                    model=model,
+                    event_sink=event_sink,
+                    user_prompt=prepared_user_prompt,
+                    attachment_file_ids=attachment_file_ids_for_prepare,
+                    message_history=runtime_message_history,
+                    deferred_tool_results=deferred_tool_results,
+                    skills=skills,
+                    available_files=available_files,
+                )
+                built_agent = prepared.built_agent
+                resolved_model = built_agent.runtime_agent.resolved_model
+                metering = AgentRunMeteringContext(
+                    invocation_id=invocation_id,
+                    parent=parent_metering,
+                    baseline=usage_baseline,
+                    usage=usage_accumulator,
+                    provider=resolved_model.provider,
+                    model=resolved_model.model,
+                )
+                metering.capture_run(run)
+                prepared = replace(
+                    prepared,
+                    deps=replace(
+                        prepared.deps, metering=metering, execution_control=execution_control
+                    ),
+                )
+                eager_tool_return_ids = await persist_eager_denied_tool_results(
                     db,
                     conversation=conversation,
                     run_id=run.id,
-                    user_prompt=prepared_user_prompt,
-                    client_message_id=client_message_id,
-                )
-                await db.commit()
-                eager_message_count = len(eager_rows)
-                user_prompt_persisted = True
-            await event_sink.emit(RunStatusEvent(status=RUN_STATUS_RUNNING))
-
-            prepared = await prepare_runtime(
-                db,
-                run=run,
-                conversation=conversation,
-                agent=agent,
-                model=model,
-                event_sink=event_sink,
-                user_prompt=prepared_user_prompt,
-                attachment_file_ids=attachment_file_ids_for_prepare,
-                message_history=runtime_message_history,
-                deferred_tool_results=deferred_tool_results,
-                skills=skills,
-                available_files=available_files,
-            )
-            built_agent = prepared.built_agent
-            resolved_model = built_agent.runtime_agent.resolved_model
-            metering = AgentRunMeteringContext(
-                invocation_id=invocation_id,
-                parent=parent_metering,
-                baseline=usage_baseline,
-                usage=usage_accumulator,
-                provider=resolved_model.provider,
-                model=resolved_model.model,
-            )
-            metering.capture_run(run)
-            prepared = replace(prepared, deps=replace(prepared.deps, metering=metering))
-            eager_tool_return_ids = await persist_eager_denied_tool_results(
-                db,
-                conversation=conversation,
-                run_id=run.id,
-                message_history=built_agent.history,
-                deferred_tool_results=deferred_tool_results,
-            )
-            await db.commit()
-
-            # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
-            live_deferred_result_ids: set[str] = set()
-            with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
-                async with built_agent.runtime_agent.agent.run_stream_events(
-                    prepared.user_prompt,
-                    deps=prepared.deps,
                     message_history=built_agent.history,
                     deferred_tool_results=deferred_tool_results,
-                    conversation_id=str(conversation.id),
-                    usage_limits=built_agent.runtime_agent.usage_limits,
-                    usage=usage_accumulator,
-                ) as stream:
-                    terminal_result = await consume_stream(
-                        stream,
+                )
+                await db.commit()
+
+                # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
+                live_deferred_result_ids: set[str] = set()
+                with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
+                    async with built_agent.runtime_agent.agent.run_stream_events(
+                        prepared.user_prompt,
                         deps=prepared.deps,
-                        skills=skills,
-                        run=run,
+                        message_history=built_agent.history,
                         deferred_tool_results=deferred_tool_results,
-                        event_sink=event_sink,
-                        live_deferred_result_ids=live_deferred_result_ids,
-                    )
+                        conversation_id=str(conversation.id),
+                        usage_limits=built_agent.runtime_agent.usage_limits,
+                        usage=usage_accumulator,
+                    ) as stream:
+                        terminal_result = await consume_stream(
+                            stream,
+                            deps=prepared.deps,
+                            skills=skills,
+                            run=run,
+                            deferred_tool_results=deferred_tool_results,
+                            event_sink=event_sink,
+                            live_deferred_result_ids=live_deferred_result_ids,
+                        )
 
-            if terminal_result is None:
-                raise RuntimeError("Pydantic AI stream ended without a terminal result")
+                if terminal_result is None:
+                    raise RuntimeError("Pydantic AI stream ended without a terminal result")
 
+            execution_control.phase = ExecutionPhase.FINALISING
             metering.freeze()
             usage_event = metering.event()
 
@@ -217,13 +262,13 @@ async def execute_run(
                     eager_tool_return_ids=eager_tool_return_ids,
                     usage_event=usage_event,
                 )
-            watermark_key = built_agent.runtime_agent.history_trimmer.watermark_key
-            if result.run.status == RUN_STATUS_COMPLETED and watermark_key is not None:
-                await safe_enqueue_history_summary(
-                    conversation_id=conversation.id,
-                    workspace_id=conversation.workspace_id,
-                    watermark_key=watermark_key,
-                )
+                watermark_key = built_agent.runtime_agent.history_trimmer.watermark_key
+                if result.run.status == RUN_STATUS_COMPLETED and watermark_key is not None:
+                    await safe_enqueue_history_summary(
+                        conversation_id=conversation.id,
+                        workspace_id=conversation.workspace_id,
+                        watermark_key=watermark_key,
+                    )
             eager_message_count += 1 if eager_tool_return_ids else 0
             if eager_message_count == 0:
                 return result
@@ -233,10 +278,20 @@ async def execute_run(
                 new_message_count=result.new_message_count + eager_message_count,
             )
         except Exception as exc:
+            if (
+                isinstance(exc, TimeoutError)
+                and execution_control is not None
+                and execution_timeout.expired()
+            ):
+                execution_control.interrupt(InterruptionReason.DURATION_EXPIRED)
+                exc = ExecutionInterruptedError(InterruptionReason.DURATION_EXPIRED)
+            if execution_control is not None:
+                execution_control.phase = ExecutionPhase.FINALISING
             failed_run = await settle_failure(
                 db,
                 event_sink=event_sink,
-                started=started,
+                started=started or execution_control is not None,
+                owner_instance_id=owner_instance_id,
                 run_id=run_id,
                 exc=exc,
                 metering=metering,
@@ -246,17 +301,22 @@ async def execute_run(
                 return ExecuteRunResult(run=failed_run, output=None, new_message_count=0)
             raise
     except asyncio.CancelledError as exc:
-        await settle_interruption(
-            db,
-            exc=exc,
-            event_sink=event_sink,
-            run_id=run_id,
-            workspace_id=run_workspace_id,
-            user_id=run_user_id,
-            metering=metering,
-            max_wait=CANCEL_FINALIZE_TIMEOUT,
-        )
+        if run_workspace_id is not None and run_user_id is not None:
+            await settle_interruption(
+                db,
+                exc=exc,
+                event_sink=event_sink,
+                run_id=run_id,
+                workspace_id=run_workspace_id,
+                user_id=run_user_id,
+                execution_control=execution_control,
+                metering=metering,
+                max_wait=CANCEL_FINALIZE_TIMEOUT,
+            )
         raise
     finally:
+        await stop_agent_run_heartbeat(heartbeat_stop, heartbeat_task)
+        if execution_control is not None:
+            execution_control.phase = ExecutionPhase.RELEASED
         clear_agent_run_cancel_request(run_id)
         await event_sink.close()

@@ -34,6 +34,7 @@ from services.agent_runs import (
     link_schedule_run,
     mark_run_awaiting_approval,
     record_run_usage,
+    renew_agent_run_lease,
     start_agent_run,
     start_agent_run_with_lease,
 )
@@ -300,6 +301,43 @@ async def test_start_with_lease_sets_owner_and_expiry(
     assert run.started_at is not None
     assert run.owner_instance_id == "api-1"
     assert run.lease_expires_at == now + timedelta(seconds=30)
+
+
+@pytest.mark.parametrize(
+    "owner,elapsed,expected", [("old", 1, False), ("current", 30, False), ("current", 1, True)]
+)
+async def test_renewal_cannot_steal_or_revive_lease(
+    db_session: AsyncSession, run_context: RunContext, owner: str, elapsed: int, expected: bool
+) -> None:
+    now = datetime.now(UTC)
+    run = await _create(db_session, run_context)
+    await start_agent_run_with_lease(
+        db_session, run, owner_instance_id="current", now=now, ttl_seconds=30
+    )
+    renewed = await renew_agent_run_lease(
+        db_session,
+        run_id=run.id,
+        owner_instance_id=owner,
+        workspace_id=run_context.workspace_id,
+        user_id=run_context.user_id,
+        now=now + timedelta(seconds=elapsed),
+        ttl_seconds=30,
+    )
+    assert renewed is expected
+    await db_session.refresh(run)
+    assert run.owner_instance_id == "current"
+    assert run.lease_expires_at == now + timedelta(seconds=31 if expected else 30)
+
+
+async def test_start_cannot_replace_live_owner(
+    db_session: AsyncSession, run_context: RunContext
+) -> None:
+    run = await _create(db_session, run_context)
+    await start_agent_run_with_lease(db_session, run, owner_instance_id="current")
+    with pytest.raises(ConflictError):
+        await start_agent_run_with_lease(db_session, run, owner_instance_id="old")
+    await db_session.refresh(run)
+    assert run.owner_instance_id == "current"
 
 
 async def test_awaiting_approval_then_resume(
