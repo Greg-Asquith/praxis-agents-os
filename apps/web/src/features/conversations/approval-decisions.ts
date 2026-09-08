@@ -183,6 +183,13 @@ function mergeEditedValue(original: unknown, edit: EditedValue, field?: Approval
       : trimmedEdit
   }
 
+  if (typeof edit === "boolean") {
+    if (typeof original !== "boolean") {
+      return INVALID_EDIT
+    }
+    return edit === original ? NO_CHANGE : edit
+  }
+
   if (typeof edit === "number") {
     if (
       typeof original !== "number" ||

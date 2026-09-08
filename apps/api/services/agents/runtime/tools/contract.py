@@ -111,6 +111,8 @@ EDITABLE_TOOL_FIELD_FORMATS = frozenset(
         "markdown",
         "html",
         "number",
+        "datetime",
+        "boolean",
         "list",
         "keyvalue",
         "records",

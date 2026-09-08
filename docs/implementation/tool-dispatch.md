@@ -48,6 +48,11 @@ The following contracts apply in this area:
   A tool may add trusted display-only approval arguments from resolved runtime
   context; persist them as presentation metadata and keep the original tool
   arguments as the only replayable execution payload.
+  Editable `datetime` fields accept local date-time strings in
+  `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS` form, without an offset or zone.
+  Editable `boolean` fields accept JSON booleans only. Validate effective values
+  before direct or nested resume, including approvals without edits. Secondary
+  scalar fields may be absent or null; primary fields require a valid value.
   Editable `records` fields also enforce their declared minimum row count and
   required columns before resume, even when the operator approves without edits.
   An omitted secondary records field stays optional; when present, it must meet
@@ -100,3 +105,15 @@ The following contracts apply in this area:
   Keep editor feedback, approval gating, and decision merge on the shared
   record-validity helper, and give repeated controls row-specific accessible
   names.
+
+## Scalar approval editors
+
+Editable date-time fields use the shared input with `type="datetime-local"`
+and `step={60}`. Preserve the raw value, including supplied seconds, and remove
+an edit when the input is cleared. Boolean fields use the shared labelled
+checkbox and submit the boolean itself. Unchanged booleans produce no override.
+Both formats use compact grid cells. Decided cards display local date-time
+components verbatim, including supplied seconds, independently of the browser
+time zone. Timestamps with an offset or `Z` retain instant-style formatting.
+Tools that need a time zone declare a separate text field. Date-only fields and
+a time-zone picker remain follow-ups for a tool that needs them.

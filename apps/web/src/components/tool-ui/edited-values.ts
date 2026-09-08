@@ -7,5 +7,5 @@ type EditedRecord = Record<string, EditedRecordCell>
 export type EditedRecords = EditedRecord[]
 type EditedReference = Record<string, unknown>
 export type EditedValue =
-  string | number | string[] | EditedKeyValue | EditedRecords | EditedReference | EditedReference[]
+  EditedScalar | string[] | EditedKeyValue | EditedRecords | EditedReference | EditedReference[]
 export type EditedValues = Record<string, EditedValue>

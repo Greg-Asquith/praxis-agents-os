@@ -125,7 +125,10 @@ function toolFieldDisplayValue(value: unknown, format: ToolFieldFormat): string 
     return formatBytes(value)
   }
   if (format === "datetime" && typeof value === "string") {
-    return formatDateTime(value)
+    // Local approval values belong to the tool's zone, not the browser's zone.
+    return /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?$/.test(value)
+      ? value
+      : formatDateTime(value)
   }
   if (format === "boolean") {
     return value === true ? "Yes" : value === false ? "No" : null

@@ -4,7 +4,9 @@
 
 import json
 import math
+import re
 from collections.abc import Mapping
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +49,7 @@ async def validate_and_canonicalize_override_args(
         effective_args=effective_args,
         tool_name=tool_name,
     )
+    _validate_scalar_override(definition, effective_args=effective_args)
     _validate_record_fields(definition, effective_args=effective_args)
     await _canonicalize_entity_fields(
         db,
@@ -101,6 +104,30 @@ def _validate_locked_changes(
             field="override_args",
             details={"tool_name": tool_name, "locked_fields": locked_changes},
         )
+
+
+def _validate_scalar_override(
+    definition: "RuntimeToolDefinition", *, effective_args: Mapping[str, Any]
+) -> None:
+    for field in definition.presentation.arg_fields:
+        if not field.editable or field.format not in {"datetime", "boolean"}:
+            continue
+        value = effective_args.get(field.key)
+        if field.secondary and value is None:
+            continue
+        if field.format == "boolean":
+            if type(value) is not bool:
+                raise AppValidationError("This field must be on or off", field=field.key)
+        else:
+            error = "Date and time must be in the form YYYY-MM-DDTHH:MM"
+            if not isinstance(value, str) or not re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?", value
+            ):
+                raise AppValidationError(error, field=field.key)
+            try:
+                datetime.fromisoformat(value)
+            except ValueError as exc:
+                raise AppValidationError(error, field=field.key) from exc
 
 
 def _validate_record_fields(

@@ -29,6 +29,54 @@ const approvals: PendingToolApproval[] = [
 ]
 
 describe("approval decision helpers", () => {
+  it.each([true, false])("serialises boolean edits from %s with replay arguments", (original) => {
+    const approval: PendingToolApproval = {
+      tool_call_id: "scalar",
+      name: "update_settings",
+      args: { enabled: original, _label: "Display only" },
+      replay_args: { enabled: original, target: "retained", metadata: { version: 1 } },
+    }
+    const decisions: ApprovalDecisionMap = {
+      scalar: { decision: "approved", edits: { enabled: !original }, message: "" },
+    }
+    expect(buildResumeDecisions([approval], decisions)).toEqual([
+      {
+        tool_call_id: "scalar",
+        decision: "approved",
+        override_args: { enabled: !original, target: "retained", metadata: { version: 1 } },
+      },
+    ])
+    decisions["scalar"] = { decision: "approved", edits: { enabled: original }, message: "" }
+    expect(buildResumeDecisions([approval], decisions)).toEqual([
+      {
+        tool_call_id: "scalar",
+        decision: "approved",
+        override_args: null,
+      },
+    ])
+  })
+
+  it.each([true, false])("omits an unchanged boolean %s", (enabled) => {
+    expect(
+      buildResumeDecisions(
+        [{ tool_call_id: "scalar", name: "update_settings", args: { enabled } }],
+        { scalar: { decision: "approved", edits: { enabled }, message: "" } }
+      )
+    ).toEqual([{ tool_call_id: "scalar", decision: "approved", override_args: null }])
+  })
+
+  it.each(["true", "false", 0, 1, null, undefined, [], {}])(
+    "rejects a boolean edit over original %j",
+    (enabled) => {
+      expect(
+        buildResumeDecisions(
+          [{ tool_call_id: "scalar", name: "update_settings", args: { enabled } }],
+          { scalar: { decision: "approved", edits: { enabled: true }, message: "" } }
+        )
+      ).toBe("This request can no longer be edited. Refresh and try again.")
+    }
+  )
+
   it("summarizes pending, approved, and denied decisions", () => {
     const decisions: ApprovalDecisionMap = {
       "tool-1": { decision: "approved", message: "", edits: {} },

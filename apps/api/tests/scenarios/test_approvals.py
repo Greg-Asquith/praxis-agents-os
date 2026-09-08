@@ -4,24 +4,31 @@
 
 import json
 from collections.abc import AsyncIterator
+from dataclasses import replace
 
 import pytest
 from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.database import set_session_tenant_context
+from core.exceptions.general import AppValidationError
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_FAILED
+from services.agent_runs.resume_run_stream import _approval_result_for_decision
+from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agent_runs.utils import denial_message_for_model
 from services.agents.runtime.approval_state import (
     APPROVAL_STATE_METADATA_KEY,
     load_suspended_run_state,
 )
 from services.agents.runtime.entity_references.domain import ArtifactReference
+from services.agents.runtime.tools.contract import ToolFieldPresentation, ToolPresentation
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.artifacts import create_artifact, get_artifact
 from tests.factories import build_conversation
 from tests.support.scenario import (
@@ -80,6 +87,88 @@ async def test_approval_suspend_then_override_args_and_execute(
     persisted = json.dumps([message.parts for message in resumed.messages])
     assert '"ok": true' in persisted
     assert resumed.output == "The approved write completed."
+
+
+@pytest.mark.parametrize(
+    "format,original,edited,invalid",
+    [
+        ("datetime", "2026-09-08T09:30:45", "2026-09-09T10:15:45", "2026-09-09T10:15Z"),
+        ("boolean", True, False, "false"),
+    ],
+)
+async def test_scalar_approval_validates_before_resumed_execution(
+    db_session_factory,
+    monkeypatch,
+    format,
+    original,
+    edited,
+    invalid,
+):
+    executed = []
+
+    async def write(value: str | bool) -> dict[str, bool]:
+        executed.append(value)
+        return {"ok": True}
+
+    definition = replace(
+        RUNTIME_TOOL_CATALOG["scenario_external_write"],
+        function=write,
+        presentation=ToolPresentation(
+            arg_fields=(
+                ToolFieldPresentation(key="value", label="Value", format=format, editable=True),
+            )
+        ),
+    )
+    monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=[definition.name],
+        tool_policies={definition.name: "approval"},
+    )
+    model = scripted_model(
+        turns=[
+            ToolTurn((ToolCall(definition.name, {"value": original}, "scalar-call"),)),
+            "The approved write completed.",
+        ]
+    )
+    suspended = await run_scenario(db_session_factory, context, model=model)
+    assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
+    assert executed == []
+    state = load_suspended_run_state(suspended.run)
+
+    async with db_session_factory() as db:
+
+        async def validate(value):
+            return await _approval_result_for_decision(
+                db,
+                actor=None,
+                workspace=None,
+                membership=None,
+                run=suspended.run,
+                tool_call=ToolCallPart(definition.name, {"value": original}, "scalar-call"),
+                decision=AgentRunResumeDecision(
+                    tool_call_id="scalar-call",
+                    decision="approved",
+                    override_args={"value": value},
+                ),
+            )
+
+        with pytest.raises(AppValidationError):
+            await validate(invalid)
+        assert executed == []
+        approved = await validate(edited)
+    resumed = await run_scenario(
+        db_session_factory,
+        context,
+        model=model,
+        prompt=None,
+        expected_status=RUN_STATUS_AWAITING_APPROVAL,
+        message_history=state.message_history,
+        deferred_tool_results=DeferredToolResults(approvals={"scalar-call": approved}),
+    )
+    assert resumed.run.status == "completed"
+    assert executed == [edited]
+    assert type(executed[0]) is type(edited)
 
 
 async def test_auto_mounted_artifact_tool_runs_without_agent_configuration(

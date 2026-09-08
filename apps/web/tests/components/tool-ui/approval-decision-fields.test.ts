@@ -1,6 +1,6 @@
-import { createElement } from "react"
+import { createElement, type ChangeEvent } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { assert, describe, expect, it, vi } from "vitest"
 
 import {
   ApprovalRequestFields,
@@ -21,7 +21,148 @@ import {
   updateRecordCell,
 } from "@/components/tool-ui/records-field-values"
 
+import { buildResumeDecisions } from "@/features/conversations/approval-decisions"
+import type { EditedValues } from "@/components/tool-ui/edited-values"
+import { formatDateTime } from "@/lib/format"
+
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
+
+vi.mock("@/components/ui/input", async (importOriginal) => {
+  const original = await importOriginal<{ Input: typeof Input }>()
+  return { ...original, Input: vi.fn(original.Input) }
+})
+
+vi.mock("@/components/ui/checkbox", async (importOriginal) => {
+  const original = await importOriginal<{ Checkbox: typeof Checkbox }>()
+  return { ...original, Checkbox: vi.fn(original.Checkbox) }
+})
+
 describe("ApprovalRequestFields", () => {
+  it.each(["2026-09-08T09:30", "2026-09-08T09:30:45"])(
+    "preserves the local date-time %s and submits raw edits",
+    (original) => {
+      vi.mocked(Input).mockClear()
+      const onEditsChange = vi.fn()
+      const html = renderToStaticMarkup(
+        createElement(ApprovalRequestFields, {
+          activityId: "scalar",
+          args: { start: original },
+          decision: { decision: "pending", edits: { other: "retained" }, message: "" },
+          disabled: false,
+          fallbackFields: [],
+          fields: [{ ...approvalField("start", "Start", "datetime"), editable: true }],
+          onEditsChange,
+        })
+      )
+      expect(html).toContain('type="datetime-local"')
+      expect(html).toContain(`value="${original}"`)
+      expect(html).toContain('step="60"')
+      expect(html).toContain('for="scalar-start-edit"')
+      expect(html).not.toContain("sm:col-span-2")
+      const props = vi.mocked(Input).mock.calls[0]?.[0]
+      props?.onChange?.({
+        currentTarget: { value: "2026-09-09T10:15:45" },
+      } as ChangeEvent<HTMLInputElement>)
+      expect(onEditsChange).toHaveBeenLastCalledWith({
+        other: "retained",
+        start: "2026-09-09T10:15:45",
+      })
+      props?.onChange?.({ currentTarget: { value: "" } } as ChangeEvent<HTMLInputElement>)
+      expect(onEditsChange).toHaveBeenLastCalledWith({ other: "retained" })
+    }
+  )
+
+  it.each([true, false])("renders boolean %s and submits the boolean edit", (original) => {
+    vi.mocked(Checkbox).mockClear()
+    const onEditsChange = vi.fn<(edits: EditedValues) => void>()
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "scalar",
+        args: { enabled: original, start: "2026-09-08T09:30:45" },
+        decision: { decision: "pending", edits: { start: "2026-03-29T01:30:45" }, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [{ ...approvalField("enabled", "Enabled", "boolean"), editable: true }],
+        onEditsChange,
+      })
+    )
+    expect(html).toContain('role="checkbox"')
+    expect(html).toContain(`aria-checked="${String(original)}"`)
+    expect(html).toContain('for="scalar-enabled-edit"')
+    expect(html).not.toContain("sm:col-span-2")
+    const props = vi.mocked(Checkbox).mock.calls[0]?.[0]
+    props?.onCheckedChange?.(!original, {
+      reason: "none",
+      event: new Event("change"),
+      cancel: () => undefined,
+      allowPropagation: () => undefined,
+      isCanceled: false,
+      isPropagationAllowed: false,
+      trigger: undefined,
+    })
+    expect(onEditsChange).toHaveBeenCalledWith({ enabled: !original, start: "2026-03-29T01:30:45" })
+    const edits = onEditsChange.mock.calls[0]?.[0]
+    assert(edits)
+    expect(
+      buildResumeDecisions(
+        [
+          {
+            tool_call_id: "scalar",
+            name: "update_settings",
+            args: { enabled: original, start: "2026-09-08T09:30:45", target: "retained" },
+          },
+        ],
+        { scalar: { decision: "approved", edits, message: "" } }
+      )
+    ).toEqual([
+      {
+        tool_call_id: "scalar",
+        decision: "approved",
+        override_args: { enabled: !original, start: "2026-03-29T01:30:45", target: "retained" },
+      },
+    ])
+  })
+
+  it.each(["2026-03-29T01:30:45", "2026-09-08T09:30", "2026-09-08T09:30:45"])(
+    "preserves decided local date-time components for %s",
+    (value) => {
+      for (const decision of ["pending", "approved"] as const) {
+        const html = renderToStaticMarkup(
+          createElement(ApprovalRequestFields, {
+            activityId: "local-time",
+            args: { start: value },
+            decision: { decision, edits: { start: value }, message: "" },
+            disabled: false,
+            fallbackFields: [],
+            fields: [{ ...approvalField("start", "Start", "datetime"), editable: true }],
+            onEditsChange: () => undefined,
+          })
+        )
+        expect(html).toContain(value)
+      }
+    }
+  )
+
+  it.each(["2026-03-29T01:30:45Z", "2026-09-08T09:30:45+02:00"])(
+    "retains decided instant formatting for %s",
+    (value) => {
+      const html = renderToStaticMarkup(
+        createElement(ApprovalRequestFields, {
+          activityId: "instant",
+          args: { start: value },
+          decision: { decision: "approved", edits: {}, message: "" },
+          disabled: false,
+          fallbackFields: [],
+          fields: [approvalField("start", "Start", "datetime")],
+          onEditsChange: () => undefined,
+        })
+      )
+      expect(html).toContain(formatDateTime(value))
+      expect(html).not.toContain(value)
+    }
+  )
+
   it("uses two columns for compact fields and full width for long-form fields", () => {
     const html = renderToStaticMarkup(
       createElement(ApprovalRequestFields, {

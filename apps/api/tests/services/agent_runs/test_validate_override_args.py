@@ -551,3 +551,132 @@ async def test_locked_records_override_is_rejected(monkeypatch) -> None:
             ),
             override_args={"rows": [{"text": "new", "match_type": "PHRASE"}]},
         )
+
+
+def _scalar_tool(value: str | bool | None = None) -> str:
+    return str(value)
+
+
+@pytest.fixture
+def scalar_definition(monkeypatch):
+    def configure(format, *, secondary=False):
+        definition = RuntimeToolDefinition(
+            name="scalar_write",
+            function=_scalar_tool,
+            description="Review a scalar.",
+            presentation=ToolPresentation(
+                arg_fields=(
+                    ToolFieldPresentation(
+                        key="value",
+                        label="Value",
+                        format=format,
+                        editable=True,
+                        secondary=secondary,
+                    ),
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+            lambda _name: definition,
+        )
+
+    return configure
+
+
+@pytest.mark.parametrize(
+    "format,value",
+    [
+        ("datetime", "2026-09-08T09:30"),
+        ("datetime", "2024-02-29T09:30:45"),
+        ("boolean", True),
+        ("boolean", False),
+    ],
+)
+@pytest.mark.parametrize("edited", [False, True])
+async def test_scalar_approval_preserves_exact_values(scalar_definition, format, value, edited):
+    scalar_definition(format)
+    args = {"value": value}
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(),
+        tool_call=_call("scalar_write", {"value": None} if edited else args),
+        override_args=args if edited else None,
+    )
+    assert result == (args if edited else None)
+    if edited:
+        assert type(result["value"]) is type(value)
+
+
+@pytest.mark.parametrize(
+    "format,value",
+    [
+        ("datetime", "2026-09-08T09:30+01:00"),
+        ("datetime", "2026-09-08T09:30Z"),
+        ("datetime", "2026-02-30T09:30"),
+        ("datetime", "2026-09-08T24:00"),
+        ("datetime", "2026-09-08T09:30:60"),
+        ("datetime", "2026-09-08T09:30:00.123"),
+        ("datetime", "2026-09-08 09:30"),
+        ("datetime", "2026-09-08"),
+        ("datetime", "2026-09-08T09:30\n"),
+        ("datetime", 123),
+        ("datetime", None),
+        ("datetime", ""),
+        ("boolean", "true"),
+        ("boolean", "false"),
+        ("boolean", 1),
+        ("boolean", 0),
+        ("boolean", None),
+    ],
+)
+@pytest.mark.parametrize("edited", [False, True])
+async def test_scalar_approval_rejects_malformed_effective_values(
+    scalar_definition, format, value, edited
+):
+    scalar_definition(format)
+    error = (
+        "Date and time must be in the form YYYY-MM-DDTHH:MM"
+        if format == "datetime"
+        else "This field must be on or off"
+    )
+    with pytest.raises(AppValidationError, match=error) as exc_info:
+        await validate_and_canonicalize_override_args(
+            AsyncMock(),
+            actor=SimpleNamespace(),
+            workspace=SimpleNamespace(),
+            membership=SimpleNamespace(),
+            run=SimpleNamespace(),
+            tool_call=_call("scalar_write", {"value": value}),
+            override_args={"value": value} if edited else None,
+        )
+    assert exc_info.value.field == "value"
+
+
+@pytest.mark.parametrize("format", ["datetime", "boolean"])
+@pytest.mark.parametrize("args", [{}, {"value": None}])
+@pytest.mark.parametrize("secondary", [False, True])
+async def test_scalar_approval_requires_only_primary_values(
+    scalar_definition, format, args, secondary
+):
+    scalar_definition(format, secondary=secondary)
+
+    async def validate():
+        return await validate_and_canonicalize_override_args(
+            AsyncMock(),
+            actor=SimpleNamespace(),
+            workspace=SimpleNamespace(),
+            membership=SimpleNamespace(),
+            run=SimpleNamespace(),
+            tool_call=_call("scalar_write", args),
+            override_args=None,
+        )
+
+    if secondary:
+        assert await validate() is None
+    else:
+        with pytest.raises(AppValidationError):
+            await validate()

@@ -172,6 +172,16 @@ framing remains necessary because provider adapters don't preserve the typed
 `denied` outcome. This reuses the existing `RUN_STATUS_AWAITING_APPROVAL` state for scheduled
 runs and the generic run status for interactive runs.
 
+Editable approval formats are `text`, `multiline`, `markdown`, `html`,
+`number`, `list`, `keyvalue`, `records`, `entity`, `entity_list`, `datetime`,
+and `boolean`. `bytes` and `url` remain display-only. Date-time edits preserve
+local date-time strings, including seconds when supplied, without offsets or
+zones. Boolean edits preserve JSON booleans. The server validates effective
+values before direct and nested resume, including approvals without edits.
+Secondary scalar fields may be absent or null. Primary fields require values.
+See the [tool dispatch contract](../implementation/tool-dispatch.md) for the
+validation and editor rules.
+
 Only persist JSON-serializable message/state data that we know how to rehydrate.
 Do not store opaque Pydantic AI runtime objects in run metadata.
 

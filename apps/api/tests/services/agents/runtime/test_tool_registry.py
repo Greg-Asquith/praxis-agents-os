@@ -669,7 +669,11 @@ def test_integration_binding_rejects_untyped_scope_parameters(
             "options must be unique",
         ),
         (
-            ToolFieldPresentation(key="enabled", label="Enabled", format="boolean", editable=True),
+            ToolFieldPresentation(key="size", label="Size", format="bytes", editable=True),
+            "must use an editable format",
+        ),
+        (
+            ToolFieldPresentation(key="link", label="Link", format="url", editable=True),
             "must use an editable format",
         ),
         (
@@ -787,7 +791,7 @@ def test_validate_definition_accepts_rich_result_fields() -> None:
 
 @pytest.mark.parametrize(
     "format",
-    ["text", "multiline", "markdown", "number", "list", "keyvalue"],
+    ["text", "multiline", "markdown", "html", "number", "list", "keyvalue", "datetime", "boolean"],
 )
 def test_validate_definition_accepts_every_editable_field_format(format: str) -> None:
     definition = RuntimeToolDefinition(

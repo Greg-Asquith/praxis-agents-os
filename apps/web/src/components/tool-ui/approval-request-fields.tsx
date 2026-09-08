@@ -27,6 +27,7 @@ import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
 import { ListFieldInput } from "@/components/tool-ui/list-field-input"
 import { RecordsFieldInput } from "@/components/tool-ui/records-field-input"
 import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
+import { ScalarFieldInput } from "@/components/tool-ui/scalar-field-input"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -286,30 +287,20 @@ export function ApprovalRequestFields({
                 }}
                 value={value}
               />
-            ) : field.format === "number" && typeof value === "number" ? (
-              <Input
-                className={fieldWellClass}
-                defaultValue={value}
+            ) : ["number", "boolean", "datetime"].includes(field.format) ? (
+              <ScalarFieldInput
                 disabled={disabled}
+                format={field.format}
                 id={id}
-                inputMode="decimal"
-                onChange={(event) => {
-                  const raw = event.currentTarget.value
-                  const nextValue = Number(raw)
-                  if (!raw) {
-                    onEditsChange(withoutEdit(decision.edits, field.key))
-                  } else if (
-                    Number.isFinite(nextValue) &&
-                    (!Number.isInteger(rawValue) || Number.isInteger(nextValue))
-                  ) {
-                    applyFieldEdit(field.key, nextValue)
-                  } else {
-                    event.currentTarget.value = String(value)
-                  }
+                onChange={(nextValue) => {
+                  applyFieldEdit(field.key, nextValue)
                 }}
-                ref={focusRef}
-                step={Number.isInteger(rawValue) ? 1 : "any"}
-                type="number"
+                onClear={() => {
+                  onEditsChange(withoutEdit(decision.edits, field.key))
+                }}
+                focusRef={focusRef}
+                rawValue={rawValue}
+                value={value}
               />
             ) : field.format === "html" && typeof value === "string" ? (
               <HtmlFieldInput
@@ -415,8 +406,11 @@ function fieldSpanClass(format: ToolFieldFormat): string | undefined {
 
 function editableValue(field: ApprovalField, value: unknown): EditedValue | null {
   const { format } = field
-  if (format === "text" || format === "multiline" || format === "markdown" || format === "html") {
+  if (["text", "multiline", "markdown", "html", "datetime"].includes(format)) {
     return typeof value === "string" ? value : null
+  }
+  if (format === "boolean") {
+    return typeof value === "boolean" ? value : null
   }
   if (format === "number") {
     return typeof value === "number" && Number.isFinite(value) ? value : null
