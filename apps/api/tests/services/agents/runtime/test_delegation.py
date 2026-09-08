@@ -616,12 +616,14 @@ async def test_delegated_child_approval_is_visible_and_resumes_parent(
                 workspace=workspace,
                 run_id=runtime_context.run_id,
                 payload=AgentRunResumeRequest(
+                    approval_revision=approval_state.approval_revision,
                     decisions=[
                         AgentRunResumeDecision(
                             tool_call_id="child-write",
+                            approval_id=approval_state.approvals[0].approval_id,
                             decision="approved",
                         )
-                    ]
+                    ],
                 ),
             )
 
@@ -867,23 +869,28 @@ async def test_delegated_child_approval_resume_rechecks_allowlist(
             workspace = await db.get(Workspace, runtime_context.workspace_id)
             assert user is not None
             assert workspace is not None
+            approval_state = await get_agent_run_approval_state(
+                db, actor=user, workspace=workspace, run_id=runtime_context.run_id
+            )
             response = await resume_agent_run_stream(
                 db,
                 actor=user,
                 workspace=workspace,
                 run_id=runtime_context.run_id,
                 payload=AgentRunResumeRequest(
+                    approval_revision=approval_state.approval_revision,
                     decisions=[
                         AgentRunResumeDecision(
                             tool_call_id="child-add",
+                            approval_id=approval_state.approvals[0].approval_id,
                             decision="approved",
                         )
-                    ]
+                    ],
                 ),
             )
 
         body = await _read_streaming_response(response)
-        assert "parent handled delegated failure" in body
+        assert "agent_run_resume_requires_recovery" in body
         assert child_resumed_after_approval is False
 
         async with committed_db_session_factory() as db:
@@ -893,7 +900,8 @@ async def test_delegated_child_approval_resume_rechecks_allowlist(
                 select(AgentRun).where(AgentRun.parent_run_id == runtime_context.run_id)
             )
             assert child_run is not None
-            assert parent_run.status == RUN_STATUS_COMPLETED
+            assert parent_run.status == RUN_STATUS_FAILED
+            assert parent_run.outcome == "blocked"
             assert child_run.status == RUN_STATUS_FAILED
             assert child_run.error_code == DELEGATE_NOT_ALLOWED_ERROR_CODE
     finally:

@@ -282,6 +282,7 @@ async def run_scenario(
     usage: RunUsage | None = None,
     attachment_file_ids: Sequence[UUID] = (),
     sink: CollectingSink | None = None,
+    owner_instance_id: str | None = None,
 ) -> ScenarioResult:
     """Execute one real runtime turn and collect its durable evidence."""
     event_sink = sink or CollectingSink(
@@ -298,6 +299,7 @@ async def run_scenario(
             sink=event_sink,
             model=model,
             expected_status=expected_status,
+            owner_instance_id=owner_instance_id,
             message_history=message_history,
             deferred_tool_results=deferred_tool_results,
             usage=usage,

@@ -14,16 +14,11 @@ from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agent_runs.schemas import (
     PendingApprovalRunRead,
     PendingApprovalsListResponse,
 )
-from services.agent_runs.utils import load_delegated_child_run_for_approval
-from services.agents.delegation_approval import (
-    DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
-)
-from services.agents.runtime.approval_state import load_suspended_run_state
-from utils.metadata import metadata_str
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +53,11 @@ async def list_pending_agent_run_approvals(
     items: list[PendingApprovalRunRead] = []
     for run, conversation_title, agent_name in rows:
         try:
-            pending_tool_names, delegated_agent_names = await _pending_names(db, run)
+            projection = await get_agent_run_approval_state(
+                db, actor=actor, workspace=workspace, run_id=run.id
+            )
+            pending_tool_names = [approval.name for approval in projection.approvals]
+            delegated_agent_names = [item.child_agent_name for item in projection.delegations]
         except ConflictError:
             logger.warning(
                 "Skipping pending approval run with invalid suspended state",
@@ -81,30 +80,3 @@ async def list_pending_agent_run_approvals(
         )
 
     return PendingApprovalsListResponse(items=items, total=total or 0)
-
-
-async def _pending_names(
-    db: AsyncSession,
-    run: AgentRun,
-) -> tuple[list[str], list[str]]:
-    suspended_state = load_suspended_run_state(run)
-    pending_tool_names: list[str] = []
-    delegated_agent_names: list[str] = []
-
-    for approval in suspended_state.deferred_tool_requests.approvals:
-        metadata = suspended_state.deferred_tool_requests.metadata.get(approval.tool_call_id)
-        child_run = await load_delegated_child_run_for_approval(
-            db,
-            parent_run=run,
-            metadata=metadata,
-        )
-        if child_run is None:
-            pending_tool_names.append(approval.tool_name)
-            continue
-
-        load_suspended_run_state(child_run)
-        delegated_agent_names.append(
-            metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)) or "Delegate agent"
-        )
-
-    return pending_tool_names, delegated_agent_names

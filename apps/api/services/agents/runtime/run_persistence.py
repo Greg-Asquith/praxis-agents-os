@@ -11,6 +11,7 @@ from pydantic import TypeAdapter
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
@@ -35,11 +36,17 @@ from services.agent_runs.domain import (
 )
 from services.agent_runs.record_usage import record_run_usage
 from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
+from services.agents.runtime.approval_identity import APPROVAL_REVISION_KEY
+from services.agents.runtime.approval_projection import build_approval_graph, project_approval_graph
 from services.agents.runtime.approval_state import (
+    APPROVAL_STATE_METADATA_KEY,
     build_suspended_run_metadata,
     clear_suspended_run_metadata,
 )
-from services.agents.runtime.completion_contract import completion_contract_from_run_metadata
+from services.agents.runtime.completion_contract import (
+    completion_contract_from_run_metadata,
+    validate_completion_json,
+)
 from services.agents.runtime.load_context import load_run_context
 from services.agents.runtime.persistence import (
     persist_new_messages,
@@ -141,6 +148,24 @@ async def persist_suspended_run(
         deferred_tool_requests=staged.deferred_tool_requests,
     )
     await mark_run_awaiting_approval(db, run)
+    if run.parent_run_id is None:
+        children = await db.scalars(
+            select(AgentRun).where(
+                AgentRun.parent_run_id == run.id,
+                AgentRun.workspace_id == run.workspace_id,
+                AgentRun.user_id == run.user_id,
+                AgentRun.deleted == False,  # noqa: E712
+            )
+        )
+        projection = project_approval_graph(
+            build_approval_graph(run, {child.id: child for child in children})
+        )
+        metadata = dict(run.metadata_json)
+        metadata[APPROVAL_STATE_METADATA_KEY] = {
+            **metadata[APPROVAL_STATE_METADATA_KEY],
+            APPROVAL_REVISION_KEY: projection.approval_revision,
+        }
+        run.metadata_json = metadata
     await db.commit()
     return run, len(persisted_messages), staged.deferred_tool_requests
 
@@ -286,8 +311,11 @@ async def persist_failed_run(
         error_code=error_code,
         error_message=error_message,
     )
-    if completion_json is not None:
-        run.completion_json = completion_json
+    if completion_json is not None and run.error_code != "agent_run_resume_requires_recovery":
+        recovery = (run.completion_json or {}).get("recovery")
+        run.completion_json = validate_completion_json(
+            {**completion_json, "recovery": recovery} if recovery is not None else completion_json
+        )
     await db.commit()
     return run
 

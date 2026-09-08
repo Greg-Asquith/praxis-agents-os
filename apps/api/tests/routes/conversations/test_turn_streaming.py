@@ -35,7 +35,9 @@ from services.agent_runs import (
     mark_run_awaiting_approval,
     start_agent_run,
 )
+from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.approval_projection import build_approval_graph
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
     EVENT_CONVERSATION_CREATED,
@@ -67,6 +69,7 @@ from tests.factories import (
     build_workspace,
     build_workspace_membership,
 )
+from tests.support.approvals import approval_submission
 from tests.support.auth import bearer_headers
 
 pytestmark = pytest.mark.asyncio
@@ -1189,6 +1192,16 @@ async def test_resume_run_streams_approved_tool_to_completion(
         stored_run = await db.get(AgentRun, run.id)
         assert stored_run is not None
         tool_call_id = load_suspended_run_state(stored_run).pending_tool_call_ids[0]
+        payload = approval_submission(
+            build_approval_graph(stored_run, {}),
+            [
+                AgentRunResumeDecision(
+                    tool_call_id=tool_call_id,
+                    decision="approved",
+                    override_args={"a": 4, "b": 7},
+                )
+            ],
+        )
 
     try:
         transport = ASGITransport(app=app)
@@ -1198,15 +1211,7 @@ async def test_resume_run_streams_approved_tool_to_completion(
                 "POST",
                 f"/api/v1/agent-runs/{run.id}/resume",
                 headers=headers,
-                json={
-                    "decisions": [
-                        {
-                            "tool_call_id": tool_call_id,
-                            "decision": "approved",
-                            "override_args": {"a": 4, "b": 7},
-                        },
-                    ],
-                },
+                json=payload.model_dump(mode="json"),
             ) as response,
         ):
             body = (await response.aread()).decode()
@@ -1311,6 +1316,16 @@ async def test_resume_run_replays_edited_integer_through_conditional_approval(
             stored_run = await db.get(AgentRun, run.id)
             assert stored_run is not None
             tool_call_id = load_suspended_run_state(stored_run).pending_tool_call_ids[0]
+            payload = approval_submission(
+                build_approval_graph(stored_run, {}),
+                [
+                    AgentRunResumeDecision(
+                        tool_call_id=tool_call_id,
+                        decision="approved",
+                        override_args={"value": 5},
+                    )
+                ],
+            )
 
         transport = ASGITransport(app=app)
         async with (
@@ -1319,15 +1334,7 @@ async def test_resume_run_replays_edited_integer_through_conditional_approval(
                 "POST",
                 f"/api/v1/agent-runs/{run.id}/resume",
                 headers=headers,
-                json={
-                    "decisions": [
-                        {
-                            "tool_call_id": tool_call_id,
-                            "decision": "approved",
-                            "override_args": {"value": 5},
-                        },
-                    ],
-                },
+                json=payload.model_dump(mode="json"),
             ) as response,
         ):
             body = (await response.aread()).decode()

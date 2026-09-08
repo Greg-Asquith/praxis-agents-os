@@ -18,6 +18,7 @@ from models.agent_memories import AgentMemory
 from models.agent_run import AgentRun
 from models.ai_usage_event import AIUsageEvent
 from models.conversation import Conversation, ConversationMessage
+from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
 from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_projection import build_approval_graph, project_approval_graph
@@ -174,7 +175,10 @@ async def test_child_approval_then_parent_resume(
         context,
         tool_names=[effects.name],
     )
-    model = _delegation_model(child_ids=[str(child.id)], write_tool=effects.name)
+    seen_requests: list[str] = []
+    model = _delegation_model(
+        child_ids=[str(child.id)], write_tool=effects.name, seen_requests=seen_requests
+    )
     monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
 
     result = await run_scenario(committed_db_session_factory, context, model=model)
@@ -205,7 +209,7 @@ async def test_child_approval_then_parent_resume(
         assert pending.tool_call_id == "child-write"
         assert pending.approval_id is not None
         assert load_suspended_run_state(child_run).approval_batch_id is not None
-        assert "approval_id" not in approvals[0]
+        assert approvals[0]["approval_id"] == str(pending.approval_id)
     if revocation == "depth":
         monkeypatch.setattr(settings, "AGENT_MAX_DELEGATION_DEPTH", 0)
     elif revocation == "permission":
@@ -213,26 +217,31 @@ async def test_child_approval_then_parent_resume(
             parent_agent = await db.get(Agent, context.agent_id)
             parent_agent.allowed_agent_ids = []
             await db.commit()
+    if revocation is not None:
+        request_count = len(seen_requests)
+        with pytest.raises(AgentRunResumeRequiresRecoveryError):
+            await resume_scenario(
+                committed_db_session_factory,
+                context,
+                model=model,
+                decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+            )
+        assert effects.calls == []
+        assert len(seen_requests) == request_count
+        async with committed_db_session_factory() as db:
+            root = await db.get(AgentRun, context.run_id)
+            saved_child = await db.get(AgentRun, child_run.id)
+            assert root.status == "failed"
+            assert root.outcome == "blocked"
+            assert root.error_code == "agent_run_resume_requires_recovery"
+            assert saved_child.status == "failed"
+        return
     resumed = await resume_scenario(
         committed_db_session_factory,
         context,
         model=model,
         decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
     )
-    if revocation is not None:
-        assert not effects.calls
-        assert not any(event.event == "tool.approval_required" for event in resumed.events)
-        async with committed_db_session_factory() as db:
-            child_run = await db.get(AgentRun, child_run.id)
-            assert child_run.status == "failed"
-            assert "approval_state" not in (child_run.metadata_json or {})
-        assert resumed.run.status in {"completed", "failed"}
-        if revocation == "depth":
-            assert resumed.run.status == "failed"
-            assert resumed.run.outcome == "blocked"
-            assert resumed.run.error_code == "delegation_requires_recovery"
-        assert resumed.events[-1].data["status"] == resumed.run.status
-        return
     assert resumed.run.status == "completed"
     assert resumed.run.parent_run_id is None
     assert resumed.output == "parent final"
@@ -357,15 +366,28 @@ def _delegation_model(
     child_ids: list[str],
     write_tool: str,
     seen_child_requests: list[str] | None = None,
+    seen_requests: list[str] | None = None,
+    workflow_code: str | None = None,
 ) -> FunctionModel:
     async def stream(
         messages: list[ModelMessage], info: AgentInfo
     ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        if seen_requests is not None:
+            seen_requests.append(str(messages))
         names = {tool.name for tool in info.function_tools}
         if "list_delegate_agents" not in names:
             if seen_child_requests is not None:
                 seen_child_requests.append(str(messages))
-            if not _has_return(messages, write_tool):
+            if workflow_code is not None and not _has_return(messages, "run_workflow"):
+                yield {
+                    0: DeltaToolCall(
+                        name="run_workflow",
+                        json_args=json.dumps({"code": workflow_code}),
+                        tool_call_id="child-workflow",
+                    )
+                }
+                return
+            if workflow_code is None and not _has_return(messages, write_tool):
                 yield {
                     0: DeltaToolCall(
                         name=write_tool,
@@ -635,16 +657,18 @@ async def test_reaped_resumed_child_does_not_propagate_another_approval(
         return await original(db, **kwargs)
 
     monkeypatch.setattr(execution, "finalize_terminal_run", settled_child)
-    result = await resume_scenario(
-        committed_db_session_factory,
-        context,
-        model=model,
-        decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
-    )
-    assert result.run.status == "completed"
-    [returned] = result.tool_returns("delegate_to_agent")
-    assert "Child execution expired." in str(returned["content"])
-    assert not any(event.event == "tool.approval_required" for event in result.events)
+    with pytest.raises(AgentRunResumeRequiresRecoveryError):
+        await resume_scenario(
+            committed_db_session_factory,
+            context,
+            model=model,
+            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+        )
+    async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        assert root.status == "failed"
+        assert root.outcome == "blocked"
+        assert root.error_code == "agent_run_resume_requires_recovery"
     assert len(effects.calls) == 1
     assert effects.calls[0][1] == "external"
 
@@ -702,33 +726,121 @@ async def test_unavailable_resumed_delegate_preserves_terminal_winner(
         )
 
     monkeypatch.setattr(resume, "get_visible_delegate_agent", unavailable)
-    result = await resume_scenario(
-        committed_db_session_factory,
-        context,
-        model=model,
-        decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
-    )
-    assert result.run.status == "completed"
+    with pytest.raises(AgentRunResumeRequiresRecoveryError):
+        await resume_scenario(
+            committed_db_session_factory,
+            context,
+            model=model,
+            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+        )
     assert effects.calls == []
-    assert not any(event.event == "tool.approval_required" for event in result.events)
-    [returned] = result.tool_returns("delegate_to_agent")
-    content = returned["content"]
-    if isinstance(content, str):
-        content = json.loads(content)
-    assert content["status"] == "failed"
-    assert content["pending_approvals"] == []
-    assert not content.get("output")
-    assert content["error"] == (
-        expected[2]
-        if winner == "reaped"
-        else "Delegate run did not complete."
-        if winner == "cancelled"
-        else DELEGATE_NOT_ALLOWED_ERROR_MESSAGE
-    )
     async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        assert root.status == "failed"
+        assert root.outcome == "blocked"
         run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == context.run_id))
         if winner is not None:
             assert (run.status, run.error_code, run.error_message, run.completion_json) == expected
         else:
             assert run.status == "failed"
             assert run.error_message == DELEGATE_NOT_ALLOWED_ERROR_MESSAGE
+
+
+@pytest.mark.parametrize("second_decision", ["approved", "denied"])
+async def test_delegated_workflow_resumes_twice_without_repeating_effects(
+    committed_db_session_factory, monkeypatch, effects, code_mode_executor_cleanup, second_decision
+):
+    from dataclasses import replace
+
+    from services.agents.runtime.tools.contract import ToolFieldPresentation, ToolPresentation
+    from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+
+    definition = RUNTIME_TOOL_CATALOG[effects.name]
+    RUNTIME_TOOL_CATALOG[effects.name] = replace(
+        definition,
+        presentation=ToolPresentation(
+            arg_fields=(
+                ToolFieldPresentation(key="value", label="Value", format="text", editable=True),
+            )
+        ),
+    )
+    context = await build_scenario_agent(
+        committed_db_session_factory,
+        trigger="scheduled",
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+    child = await add_scenario_delegate(
+        committed_db_session_factory, context, tool_names=[effects.name]
+    )
+    async with committed_db_session_factory() as db:
+        saved = await db.get(Agent, child.id)
+        saved.code_mode_enabled = True
+        await db.commit()
+    model = _delegation_model(
+        child_ids=[str(child.id)],
+        write_tool=effects.name,
+        workflow_code=f"await {effects.name}(value='first')\ntry:\n    await {effects.name}(value='second')\nexcept PermissionError:\n    pass\n'child result'",
+    )
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+    first = await run_scenario(committed_db_session_factory, context, model=model)
+    assert first.run.status == "awaiting_approval"
+    [pending] = [event.data for event in first.events if event.event == "tool.approval_required"]
+    assert pending["name"] == effects.name
+    assert effects.calls == []
+    await close_code_mode_executor()
+    second = await resume_scenario(
+        committed_db_session_factory,
+        context,
+        model=model,
+        decisions=[
+            AgentRunResumeDecision(
+                tool_call_id=pending["tool_call_id"],
+                decision="approved",
+                override_args={"value": "edited"},
+            )
+        ],
+    )
+    assert second.run.status == "awaiting_approval"
+    [next_pending] = [
+        event.data for event in second.events if event.event == "tool.approval_required"
+    ]
+    assert next_pending["approval_id"] != pending["approval_id"]
+    assert next_pending["approval_revision"] != pending["approval_revision"]
+    owner_id = next_pending["owner_run_id"]
+    assert [(str(owner), value) for owner, value in effects.calls] == [(owner_id, "edited")]
+    await close_code_mode_executor()
+    completed = await resume_scenario(
+        committed_db_session_factory,
+        context,
+        model=model,
+        decisions=[
+            AgentRunResumeDecision(
+                tool_call_id=next_pending["tool_call_id"],
+                decision=second_decision,
+                message="Skip the second action" if second_decision == "denied" else None,
+            )
+        ],
+    )
+    assert completed.run.status == "completed"
+    assert [value for _, value in effects.calls] == (
+        ["edited", "second"] if second_decision == "approved" else ["edited"]
+    )
+    assert all(str(owner) == owner_id for owner, _ in effects.calls)
+    async with committed_db_session_factory() as db:
+        [child_run] = list(
+            await db.scalars(select(AgentRun).where(AgentRun.parent_run_id == context.run_id))
+        )
+        assert child_run.status == "completed"
+        assert "code_mode_state" not in (child_run.metadata_json or {})
+        messages = list(
+            await db.scalars(
+                select(ConversationMessage).where(
+                    ConversationMessage.conversation_id == child_run.conversation_id
+                )
+            )
+        )
+        assert any(
+            part.get("tool_name") == "run_workflow" and part.get("part_kind") == "tool-return"
+            for message in messages
+            for part in message.parts["parts"]
+        )

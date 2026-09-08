@@ -134,6 +134,8 @@ async def test_list_pending_approvals_enforces_scope_and_projects_delegation(
         metadata={
             DELEGATED_APPROVAL_KIND_KEY: DELEGATED_APPROVAL_KIND,
             DELEGATED_APPROVAL_CHILD_RUN_ID_KEY: str(child.id),
+            "child_agent_id": str(child.agent_id),
+            "child_conversation_id": str(child.conversation_id),
             DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY: child_agent.name,
         },
     )
@@ -242,7 +244,7 @@ async def test_list_pending_approvals_enforces_scope_and_projects_delegation(
 
     assert response.total == 1
     assert [item.run_id for item in response.items] == [parent.id]
-    assert response.items[0].pending_tool_names == []
+    assert response.items[0].pending_tool_names == ["create_invoice"]
     assert response.items[0].delegated_agent_names == ["Finance delegate"]
 
 

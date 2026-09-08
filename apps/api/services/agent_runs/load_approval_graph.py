@@ -10,6 +10,7 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace
+from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 from services.agents.delegation_approval import DELEGATED_APPROVAL_KIND
 from services.agents.runtime.approval_identity import MAX_PROJECTION_LEAVES, invalid_approval_state
 from services.agents.runtime.approval_projection import (
@@ -38,6 +39,8 @@ async def load_approval_graph(
             raise NotFoundError(
                 "Agent run not found", resource_type="agent_run", resource_id=str(run_id)
             )
+        if root.status != RUN_STATUS_AWAITING_APPROVAL:
+            raise invalid_approval_state("The root run is not awaiting approval")
         await _validate_conversation(db, root)
         suspended = load_suspended_run_state(root)
         if len(suspended.deferred_tool_requests.approvals) > MAX_PROJECTION_LEAVES:

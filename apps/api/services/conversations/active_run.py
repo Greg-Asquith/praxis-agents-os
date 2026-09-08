@@ -2,13 +2,11 @@
 
 """Read the active run for a conversation."""
 
-from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.settings import settings
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
@@ -47,15 +45,13 @@ async def get_conversation_active_run(
     latest_run = active_run
     if latest_run is None:
         latest_run = await get_latest_run_for_conversation(db, conversation_id=conversation.id)
-    approval_expires_at = None
-    if (
-        active_run is not None
-        and active_run.status == RUN_STATUS_AWAITING_APPROVAL
-        and settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS > 0
-    ):
-        approval_expires_at = active_run.updated_at + timedelta(
-            days=settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS
-        )
+    from services.agent_runs.approval_expiry import read_approval_family_deadline
+
+    approval_expires_at = (
+        await read_approval_family_deadline(db, run=active_run)
+        if active_run is not None and active_run.status == RUN_STATUS_AWAITING_APPROVAL
+        else None
+    )
     root_run = await _verified_root_run(db, run=latest_run, actor=actor, workspace=workspace)
     return ConversationActiveRunResponse(
         approval_revision=_saved_approval_revision(active_run),

@@ -17,12 +17,12 @@ from core.database import (
 from core.exceptions.general import ConflictError, NotFoundError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
+from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_RUNNING
 from services.agent_runs.execution_state import require_execution_owner
 from services.agent_runs.settle_run_family import lock_run_family
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
-    DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY,
     DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY,
     DELEGATED_APPROVAL_CHILD_RUN_ID_KEY,
     DELEGATED_APPROVAL_KIND,
@@ -41,9 +41,6 @@ from services.agents.runtime.delegation.results import (
     fail_child_run_delegate_not_allowed,
 )
 from services.agents.runtime.delegation.schemas import DelegateRunResult
-from services.agents.runtime.delegation.utils import (
-    safe_error,
-)
 from services.agents.runtime.heartbeat import agent_run_owner_instance_id
 from services.agents.runtime.sinks import NullSink
 from utils.metadata import metadata_str, metadata_uuid
@@ -57,36 +54,25 @@ async def resume_approved_delegate_run(
     ctx: RunContext[RuntimeDeps],
     *,
     agent_id: UUID,
-) -> DelegateRunResult | None:
+) -> DelegateRunResult:
+    from services.agent_runs.claim_child_approval import claim_child_approval
+
     metadata = ctx.tool_call_metadata
     if not isinstance(metadata, dict):
-        return None
+        raise AgentRunResumeRequiresRecoveryError()
     if metadata.get(DELEGATED_APPROVAL_KIND_KEY) != DELEGATED_APPROVAL_KIND:
-        return None
+        raise AgentRunResumeRequiresRecoveryError()
 
     child_run_id = metadata_uuid(metadata.get(DELEGATED_APPROVAL_CHILD_RUN_ID_KEY))
     child_deferred_results_raw = metadata.get(DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY)
     if child_run_id is None or child_deferred_results_raw is None:
-        return DelegateRunResult(
-            status="failed",
-            agent_id=agent_id,
-            agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
-            or "Unknown agent",
-            error="Delegated approval metadata is incomplete.",
-        )
-
+        raise AgentRunResumeRequiresRecoveryError()
     try:
         child_deferred_results = _DEFERRED_TOOL_RESULTS_ADAPTER.validate_python(
             child_deferred_results_raw
         )
     except Exception as exc:
-        return DelegateRunResult(
-            status="failed",
-            agent_id=agent_id,
-            agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
-            or "Unknown agent",
-            error=safe_error(exc),
-        )
+        raise AgentRunResumeRequiresRecoveryError() from exc
 
     session_factory = get_async_db_session_factory()
     session = session_factory()
@@ -138,7 +124,7 @@ async def resume_approved_delegate_run(
                 target_agent_id=child_run.agent_id,
             )
         except NotFoundError:
-            return await fail_child_run_delegate_not_allowed(
+            await fail_child_run_delegate_not_allowed(
                 session,
                 child_run=child_run,
                 conversation_id=child_conversation.id,
@@ -146,8 +132,21 @@ async def resume_approved_delegate_run(
                 or "Unknown agent",
             )
 
+            raise AgentRunResumeRequiresRecoveryError() from None
+
         target_name = target.name
         suspended_state = load_suspended_run_state(child_run)
+        await claim_child_approval(
+            session,
+            root=family[0],
+            child=child_run,
+            parent_tool_call_id=ctx.tool_call_id,
+            root_owner=ctx.deps.execution_control.owner_instance_id
+            if ctx.deps.execution_control
+            else ctx.deps.run.owner_instance_id,
+            child_owner=owner_id,
+            results=child_deferred_results,
+        )
         from services.agents.runtime.execute_run import execute_run
 
         child_result = await execute_run(
@@ -157,7 +156,7 @@ async def resume_approved_delegate_run(
             user_prompt=None,
             sink=NullSink(run_id=child_run.id, conversation_id=child_conversation.id),
             owner_instance_id=owner_id,
-            expected_status=RUN_STATUS_AWAITING_APPROVAL,
+            expected_status=RUN_STATUS_RUNNING,
             message_history=suspended_state.message_history,
             deferred_tool_results=child_deferred_results,
             usage=ctx.usage,
@@ -174,6 +173,8 @@ async def resume_approved_delegate_run(
                 conversation_id=child_conversation.id,
                 deferred_tool_requests=child_result.output,
             )
+        if child_result.run.status != "completed":
+            raise AgentRunResumeRequiresRecoveryError()
         return completed_or_failed_result(
             agent_name=target_name,
             run=child_result.run,
@@ -193,16 +194,6 @@ async def resume_approved_delegate_run(
                 "parent_run_id": str(ctx.deps.run.id),
             },
         )
-        return DelegateRunResult(
-            status="failed",
-            agent_id=agent_id,
-            agent_name=metadata_str(metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY))
-            or "Unknown agent",
-            run_id=child_run_id,
-            conversation_id=metadata_uuid(
-                metadata.get(DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY)
-            ),
-            error=safe_error(exc),
-        )
+        raise AgentRunResumeRequiresRecoveryError() from exc
     finally:
         await session.close()

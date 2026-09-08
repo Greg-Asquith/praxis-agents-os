@@ -284,6 +284,10 @@ def stream_protocol_samples() -> list[dict[str, Any]]:
         ),
         ToolApprovalRequiredEvent(
             tool_call_id="nested-call",
+            approval_id=UUID("22222222-2222-4222-8222-222222222222"),
+            approval_revision="a" * 64,
+            owner_run_id=sample_uuid,
+            root_run_id=sample_uuid,
             name="sample_tool",
             args={"query": "sample"},
             replay_args={"query": "sample"},

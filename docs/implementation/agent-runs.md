@@ -176,3 +176,46 @@ operational evidence containing the run, invocation, provider, model, and
 usage counters. Total
 database failure can leave accounting incomplete and does not trigger effect
 replay.
+
+## Shared approval reads
+
+A root suspension persists its approval revision before emitting approval
+leaves. REST reloads, stream events, and the pending approvals list derive
+those leaves from the same actor-scoped graph. Child runs retain their own
+suspension batches, and their approvals appear through the root conversation.
+Missing or terminal child references cannot become ordinary delegation
+approval cards.
+
+## Durable approval continuation
+
+The root resume operation validates the current graph revision, exact leaf
+coverage, and effective arguments under root-first family locks. It persists a
+bounded, versioned `approval_continuation` reservation, marks the run running,
+and reserves its execution owner in one transaction before starting work.
+The reservation references existing child batches instead of copying their
+message histories or interpreter snapshots. Its serialised size is limited to
+four MiB, using the shared proposal bound.
+
+Only that owner can start the continuation. Children are claimed when the
+parent reaches their delegation calls. Identical repeated submissions return
+`approval_already_reserved`; different decisions return
+`approval_decisions_conflict`. Both responses refresh the client reads without
+retrying the approval POST. Fresh suspension replaces the reservation and
+installs a fresh batch.
+
+Resume and the expiry sweep apply the same earliest pending family deadline.
+An unexpired reservation protects its referenced queued children from separate
+approval expiry. Execution lease loss, cancellation, or an uncertain effect
+still stops the family. `agent_run_resume_requires_recovery` maps to the
+existing blocked outcome and retains safe recovery evidence before cleanup.
+This includes at most 25 completed or uncertain actions, a truncation marker,
+and specialist conversation references. It contains no executable snapshots,
+raw arguments, or provider payloads. Accepted continuations are not replayed
+automatically after a process failure.
+
+Cancellation retains this action evidence while keeping the cancelled outcome.
+Accepted denials do not appear as uncertain actions. If a specialist settles
+first, its safe evidence remains available when the root subsequently stops.
+Standalone workflow recovery retains the existing Code Mode failure contract.
+If delegation permission or depth is revoked while approval is pending, the
+accepted continuation stops before another model request or specialist action.

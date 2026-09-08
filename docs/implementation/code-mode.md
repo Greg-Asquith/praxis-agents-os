@@ -56,3 +56,27 @@ When nested results contain exact mutation counts, summarise the settled
 container in outcome language and keep applied, skipped, failed, and declined
 outcomes distinct. Derive this only from retained structured results; do not
 infer effects from proposed arguments or a model-authored reason.
+
+## Pending workflow projection
+
+Approval reloads expose a `workflows` list for root and delegated workflows.
+Each workflow retains its owning run and delegation reference. Its pending
+leaf carries the nested action's identity, editable arguments, and untrusted
+data warning. The singular `workflow` field remains available for one root
+workflow. Root stream approval events use these same leaves after suspension
+commits, so child workflow arguments and warnings match reload.
+
+Approval reads reject malformed or unavailable workflow state instead of
+presenting an unverifiable action. A root resume against that state stops with
+bounded recovery evidence, preserving completed effects for inspection.
+
+Delegated workflow decisions compile against the child's saved interpreter
+state. The parent carries the child's deferred results, including the nested
+call identity and effective-argument digest. A later suspension creates a fresh
+batch and requires another decision. Completed nested effects remain in the
+saved trace, so continuing a second approval round does not rerun them.
+
+If a delegated workflow cannot resume safely, family recovery preserves its
+completed and uncertain effect references before executable state is cleared.
+The main conversation shows that evidence and links to the specialist
+transcripts. Recovery does not authorise automatic redrafting or effect replay.

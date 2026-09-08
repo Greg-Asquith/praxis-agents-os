@@ -32,6 +32,7 @@ from services.agent_schedules.runs import (
     RUN_STATUS_COMPLETED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
+    claim_due_schedule_runs,
 )
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_state import load_suspended_run_state
@@ -116,6 +117,16 @@ async def test_schedule_deadline_stops_provider_wait_and_releases_worker(
     monkeypatch,
 ):
     schedule_id = await _create_due_schedule(committed_db_session_factory)
+    unrelated_schedule_id = await _create_due_schedule(committed_db_session_factory)
+
+    async def claim_test_schedule() -> UUID | None:
+        async with committed_db_session_factory() as db:
+            await _set_schedule_tenant_context(db, schedule_id)
+            claimed = await claim_due_schedule_runs(db, batch_size=1)
+            await db.commit()
+            return claimed[0].run.id if claimed else None
+
+    monkeypatch.setattr(agent_runner, "_claim_one_schedule_run", claim_test_schedule)
     monkeypatch.setattr(settings, "AGENT_RUN_MAX_DURATION_SECONDS", 1)
     monkeypatch.setattr(settings, "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS", 0.05)
     stopped = asyncio.Event()
@@ -146,6 +157,20 @@ async def test_schedule_deadline_stops_provider_wait_and_releases_worker(
         run = await db.get(AgentRun, schedule_run.agent_run_id)
         assert run.status == "failed" and run.error_code == "run_duration_expired"
     assert await run_once(owner_instance_id="test-worker") == 0
+    async with committed_db_session_factory() as db:
+        await _set_schedule_tenant_context(db, unrelated_schedule_id)
+        assert (
+            await db.scalar(
+                select(AgentScheduleRun.id).where(
+                    AgentScheduleRun.schedule_id == unrelated_schedule_id
+                )
+            )
+            is None
+        )
+        unrelated_schedule = await db.get(AgentSchedule, unrelated_schedule_id)
+        unrelated_schedule.is_active = False
+        unrelated_schedule.next_run_at = None
+        await db.commit()
 
 
 @pytest.fixture

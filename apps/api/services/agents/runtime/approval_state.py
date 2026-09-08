@@ -46,6 +46,7 @@ def build_suspended_run_metadata(
 ) -> dict[str, Any]:
     """Return run metadata with a fresh approval-state snapshot."""
     metadata = dict(run.metadata_json or {})
+    metadata.pop("approval_continuation", None)
     metadata[APPROVAL_STATE_METADATA_KEY] = {
         "version": APPROVAL_STATE_VERSION,
         APPROVAL_BATCH_KEY: str(uuid4()),
@@ -64,6 +65,7 @@ def clear_suspended_run_metadata(run: AgentRun) -> dict[str, Any] | None:
     metadata = dict(run.metadata_json or {})
     metadata.pop(APPROVAL_STATE_METADATA_KEY, None)
     metadata.pop("code_mode_state", None)
+    metadata.pop("approval_continuation", None)
     return metadata or None
 
 

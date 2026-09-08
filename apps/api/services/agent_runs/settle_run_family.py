@@ -67,6 +67,25 @@ async def settle_run_family(
         owner_instance_id is not None and target.owner_instance_id != owner_instance_id
     ):
         return []
+    completion_json = None
+    if (status == RUN_STATUS_FAILED and error_code == "agent_run_resume_requires_recovery") or (
+        (family[0].metadata_json or {}).get("approval_continuation") is not None
+    ):
+        from services.agent_runs.build_family_recovery_evidence import (
+            RECOVERY_ERROR_CODE,
+            build_family_recovery_evidence,
+        )
+
+        completion_json = await build_family_recovery_evidence(db, family=family)
+        if status == RUN_STATUS_FAILED and (
+            target.id == family[0].id
+            or error_code in {RECOVERY_ERROR_CODE, "code_mode_resume_requires_recovery"}
+        ):
+            error_code = RECOVERY_ERROR_CODE
+            error_message = (
+                "The approved work stopped before its result could be confirmed. "
+                "Review completed and uncertain actions before starting more work."
+            )
     changed = []
     for run in family:
         if run.id != run_id and run.parent_run_id != run_id:
@@ -79,6 +98,7 @@ async def settle_run_family(
             run,
             status,
             error_code=error_code if run.id == run_id else "run_parent_terminated",
+            completion_json=completion_json if run.id == run_id else None,
             error_message=error_message
             if run.id == run_id
             else "The specialist stopped because its parent run ended.",

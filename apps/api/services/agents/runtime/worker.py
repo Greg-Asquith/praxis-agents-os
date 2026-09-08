@@ -93,8 +93,8 @@ async def run_resume_worker(
     conversation_id: UUID,
     workspace_id: UUID,
     user_id: UUID,
-    message_history: Sequence[ModelMessage],
-    deferred_tool_results: DeferredToolResults,
+    message_history: Sequence[ModelMessage] | None = None,
+    deferred_tool_results: DeferredToolResults | None = None,
     sink: EventSink,
     model: Model | None = None,
     owner_instance_id: str | None = None,
@@ -121,6 +121,18 @@ async def run_resume_worker(
                     conflicting_resource="agent_run",
                     details={"run_id": str(run_id)},
                 )
+            if expected_status == RUN_STATUS_RUNNING:
+                from services.agent_runs.claim_approval_continuation import (
+                    claim_approval_continuation,
+                )
+
+                claimed = await claim_approval_continuation(
+                    session, run_id=run_id, owner_instance_id=owner_instance_id
+                )
+                if claimed is None:
+                    return
+                suspended, deferred_tool_results = claimed
+                message_history = suspended.message_history
         await execute_run(
             session,
             conversation_id=conversation_id,

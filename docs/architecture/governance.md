@@ -171,6 +171,27 @@ per-agent `tool_policies`. The following rules define the policy:
   parent's side-effect grant and delegation cap at child-run creation.
   _(enforced)_
 
+### Root-owned approval continuations
+
+The main run owns approval mutations for its specialist runs. Consent names
+one current proposal revision and exactly one decision for every leaf action.
+Repeated native tool-call IDs in different runs do not share consent. Legacy
+consent is accepted only when it maps unambiguously to the same direct action.
+
+Accepted decisions are durable before execution starts. One execution owner
+claims the reservation, and a repeated submission cannot execute it again.
+A different repeated submission is a conflict, not acceptance of its changes.
+Approval, cancellation, and expiry coordinate under the same root-first locks.
+Reserved child batches wait for the parent to claim them and do not expire
+independently while the valid parent reservation remains active.
+
+A missing or terminal specialist cannot become a replacement approval or a
+new specialist invocation. Uncertain approved effects stop the family with a
+blocked outcome. Recovery retains bounded completed and uncertain action
+references and specialist transcript links before removing executable state.
+Operators review that evidence before giving another instruction. The system
+does not automatically replay accepted effects after a crash.
+
 ## 3. Retention and deletion
 
 Two rules govern deletion:

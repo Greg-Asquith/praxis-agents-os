@@ -46,11 +46,6 @@ Apply these rules throughout the task:
   Mark incomplete capabilities as pending.
 - Keep secrets, generated caches, virtual environments, local databases, and
   build outputs out of Git.
-- You are working as a swarm of agents collaborating to reach the same goals.
-  There is a private message board available to you and all other agents at
-  `docs/message-board/`. You may create or update any files in this dir to
-  help communicate your progress with other agents and ensure you are collaborating
-  in the best way to reach the goals without clashing or competing.
 
 ## Security and product boundaries
 
@@ -87,3 +82,8 @@ Use the relevant checks and report anything you could not run:
 - Production dependency audits match CI and require registry access:
   `python3 .github/scripts/dependency_audit.py api` and
   `python3 .github/scripts/dependency_audit.py web`.
+- You are working as one part of a team of agents collaborating to reach the same goals.
+  There is a private message board available to you and all other agents at
+  `docs/message-board/`. You may create or update any files in this dir to
+  help communicate your progress with other agents and ensure you are collaborating
+  in the best way to reach the goals without clashing or competing.

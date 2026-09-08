@@ -2,6 +2,7 @@
 
 import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 
+import { Link } from "@tanstack/react-router"
 import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -150,11 +151,31 @@ export function MessageList({
                           <li key={action.id}>{toolLabel(action.toolName)}</li>
                         ))}
                       </ul>
-                      {runInterruption.actionsTruncated ? (
-                        <p className="mt-1">More completed actions are recorded in the run.</p>
-                      ) : null}
                     </div>
                   ) : null}
+                  {runInterruption.uncertainActions?.length ? (
+                    <div className="mt-2">
+                      <p className="font-medium">Actions with an uncertain result</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                        {runInterruption.uncertainActions.map((action) => (
+                          <li key={action.id}>{toolLabel(action.toolName)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {runInterruption.actionsTruncated ? (
+                    <p className="mt-1">More actions are recorded in the run transcripts.</p>
+                  ) : null}
+                  {runInterruption.childConversations?.map((childId, index) => (
+                    <Link
+                      key={childId}
+                      to="/conversations/$conversationId"
+                      params={{ conversationId: childId }}
+                      className="mt-1 block underline"
+                    >
+                      Review specialist conversation {index + 1}
+                    </Link>
+                  ))}
                 </AlertDescription>
               </Alert>
             </div>

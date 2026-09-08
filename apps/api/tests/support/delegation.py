@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.resume_run_stream import _build_deferred_tool_results
 from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.context import RuntimeDeps
@@ -24,6 +23,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_EGRESS_EXTERNAL_WRITE,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
+from tests.support.approvals import approval_submission, compile_scenario_decisions
 from tests.support.scenario import ScenarioContext, ScenarioResult, run_scenario
 
 
@@ -67,6 +67,14 @@ async def resume_scenario(
     decisions: Sequence[AgentRunResumeDecision],
 ) -> ScenarioResult:
     """Rehydrates committed state and compiles decisions through the production seam."""
+    from services.agent_runs.claim_approval_continuation import claim_approval_continuation
+    from services.agent_runs.reserve_approval_continuation import reserve_approval_continuation
+    from services.agent_runs.settle_run_family import lock_run_family
+    from services.agents.runtime.approval_projection import (
+        build_approval_graph,
+        project_approval_graph,
+    )
+
     async with session_factory() as db:
         run = await db.get(AgentRun, context.run_id)
         actor = await db.get(User, context.user_id)
@@ -77,23 +85,44 @@ async def resume_scenario(
                 WorkspaceMembership.user_id == context.user_id,
             )
         )
+        family = await lock_run_family(db, run_id=run.id)
+        runs = {member.id: member for member in family}
+        graph = build_approval_graph(run, runs)
+        payload = approval_submission(graph, decisions)
         state = load_suspended_run_state(run)
         usage = restored_run_usage(run)
-        results = await _build_deferred_tool_results(
+        results = await compile_scenario_decisions(
             db,
             actor=actor,
             workspace=workspace,
             membership=membership,
             run=run,
-            suspended_state=state,
             decisions=list(decisions),
         )
+        reservation = await reserve_approval_continuation(
+            db,
+            run=run,
+            graph=graph,
+            runs=runs,
+            payload=payload,
+            revision=project_approval_graph(graph).approval_revision,
+            results=results,
+        )
+        await db.commit()
+        claimed = await claim_approval_continuation(
+            db,
+            run_id=run.id,
+            owner_instance_id=str(reservation.owner_instance_id),
+        )
+        assert claimed is not None
+        state, results = claimed
     return await run_scenario(
         session_factory,
         context,
         model=model,
         prompt=None,
-        expected_status="awaiting_approval",
+        expected_status="running",
+        owner_instance_id=str(reservation.owner_instance_id),
         message_history=state.message_history,
         deferred_tool_results=results,
         usage=usage,

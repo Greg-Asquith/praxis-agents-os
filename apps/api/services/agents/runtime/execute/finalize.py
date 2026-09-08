@@ -25,10 +25,11 @@ from services.agent_runs.domain import (
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
 )
+from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agents.runtime.approval_events import (
     add_approval_display_args,
+    approval_events_for_projection,
     build_deferred_tool_result_metadata,
-    emit_approval_required_events,
     emit_deferred_tool_resume_events,
 )
 from services.agents.runtime.context import RuntimeDeps
@@ -138,7 +139,12 @@ async def finalize_suspended_run(
         usage_event=usage_event,
     )
     if suspended_run.status == RUN_STATUS_AWAITING_APPROVAL and deferred_tool_requests is not None:
-        await emit_approval_required_events(event_sink, deferred_tool_requests)
+        if suspended_run.parent_run_id is None:
+            projection = await get_agent_run_approval_state(
+                db, actor=deps.user, workspace=deps.workspace, run_id=suspended_run.id
+            )
+            for event in approval_events_for_projection(projection):
+                await event_sink.emit(event)
     else:
         deferred_tool_requests = None
     await emit_final_events(event_sink, suspended_run)

@@ -443,15 +443,17 @@ async def test_existing_reconcile_finalizes_expired_scheduled_approval(
     assert schedule.is_active is False
 
 
+@pytest.mark.parametrize("competitor", ["resume", "expiry", "cancel"])
 async def test_resume_reservation_rejects_second_request_before_streaming(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
+    competitor: str,
 ) -> None:
     async with committed_db_session_factory() as setup_db:
         parked = await _park_approval(
             setup_db,
             now=datetime.now(UTC),
-            age_days=1,
+            age_days=8 if competitor == "expiry" else 1,
         )
         await setup_db.commit()
 
@@ -462,13 +464,24 @@ async def test_resume_reservation_rejects_second_request_before_streaming(
         spawned.append(coroutine)
 
     monkeypatch.setattr(run_task_registry, "spawn", capture_spawn)
+    from services.agent_runs.get_approval_state import get_agent_run_approval_state
+
+    async with committed_db_session_factory() as read_db:
+        approval = await get_agent_run_approval_state(
+            read_db,
+            actor=parked.user,
+            workspace=parked.workspace,
+            run_id=parked.run.id,
+        )
     payload = AgentRunResumeRequest(
+        approval_revision=approval.approval_revision,
         decisions=[
             AgentRunResumeDecision(
                 tool_call_id=parked.tool_call_id,
+                approval_id=approval.approvals[0].approval_id,
                 decision="approved",
             )
-        ]
+        ],
     )
     start_barrier = asyncio.Barrier(2)
 
@@ -488,14 +501,50 @@ async def test_resume_reservation_rejects_second_request_before_streaming(
                 return "conflict"
         return "stream"
 
-    try:
-        results = await asyncio.gather(resume_concurrently(), resume_concurrently())
-        assert sorted(results) == ["conflict", "stream"]
+    async def competing_mutation() -> str:
+        if competitor == "resume":
+            return await resume_concurrently()
+        await start_barrier.wait()
+        async with committed_db_session_factory() as db:
+            if competitor == "expiry":
+                await sweep_expired_agent_run_approvals(db, expiry_days=7)
+            else:
+                from services.agent_runs.request_cancel import request_agent_run_cancellation
 
+                membership = await db.scalar(
+                    select(WorkspaceMembership).where(
+                        WorkspaceMembership.workspace_id == parked.workspace.id,
+                        WorkspaceMembership.user_id == parked.user.id,
+                    )
+                )
+                await request_agent_run_cancellation(
+                    db,
+                    actor=parked.user,
+                    workspace=parked.workspace,
+                    membership=membership,
+                    run_id=parked.run.id,
+                )
+            await db.commit()
+        return competitor
+
+    try:
+        results = await asyncio.gather(resume_concurrently(), competing_mutation())
+        if competitor == "resume":
+            assert sorted(results) == ["conflict", "stream"]
+        elif competitor == "expiry":
+            assert sorted(results) == ["conflict", "expiry"]
+            assert not spawned
+        else:
+            assert results[0] in {"stream", "conflict"}
+            assert results[1] == "cancel"
+        assert len(spawned) <= 1
         async with committed_db_session_factory() as verify_db:
             stored = await verify_db.get(AgentRun, parked.run.id)
             assert stored is not None
-            assert stored.status == "running"
+            assert (
+                stored.status
+                == {"resume": "running", "expiry": "failed", "cancel": "cancelled"}[competitor]
+            )
     finally:
         for coroutine in spawned:
             coroutine.close()
@@ -513,3 +562,239 @@ async def test_resume_reservation_rejects_second_request_before_streaming(
             await cleanup_db.execute(delete(Workspace).where(Workspace.id == parked.workspace.id))
             await cleanup_db.execute(delete(User).where(User.id == parked.user.id))
             await cleanup_db.commit()
+
+
+async def test_child_deadline_expires_whole_family(db_session: AsyncSession) -> None:
+    from services.agent_runs.approval_expiry import read_approval_family_deadline
+
+    now = datetime.now(UTC)
+    root = await _park_approval(db_session, now=now, age_days=1)
+    child = await _park_approval(
+        db_session,
+        now=now,
+        age_days=8,
+        user=root.user,
+        workspace=root.workspace,
+        agent=root.agent,
+    )
+    child.run.parent_run_id = root.run.id
+    child.run.delegation_depth = 1
+    await db_session.flush()
+    child.run.updated_at = now - timedelta(days=8)
+    await db_session.flush()
+    assert await read_approval_family_deadline(db_session, run=root.run) == now - timedelta(days=1)
+
+    result = await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
+    assert set(result.expired_run_ids) == {root.run.id, child.run.id}
+    assert root.run.error_code == "approval_expired"
+    assert child.run.status == "failed"
+
+
+@pytest.mark.parametrize("ending", ["reap", "cancel", "malformed"])
+async def test_live_reservation_protects_queued_child_then_retains_recovery(
+    db_session: AsyncSession,
+    ending: str,
+) -> None:
+    from services.agent_runs.reap_abandoned import reap_abandoned_runs
+
+    now = datetime.now(UTC)
+    root = await _park_approval(db_session, now=now, age_days=1)
+    child = await _park_approval(
+        db_session,
+        now=now,
+        age_days=8,
+        user=root.user,
+        workspace=root.workspace,
+        agent=root.agent,
+    )
+    child.run.parent_run_id = root.run.id
+    child.run.delegation_depth = 1
+    await db_session.flush()
+    child.run.updated_at = now - timedelta(days=8)
+    child_started_at = child.run.started_at
+    root.run.status = "running"
+    root.run.owner_instance_id = str(uuid4())
+    root.run.started_at = now
+    root.run.lease_expires_at = now + timedelta(seconds=60)
+    root.run.metadata_json = {
+        **root.run.metadata_json,
+        "approval_continuation": {
+            "version": 1,
+            "owner_instance_id": root.run.owner_instance_id,
+            "generation": str(uuid4()),
+            "approval_revision": "a" * 64,
+            "request_digest": "b" * 64,
+            "child_batches": {
+                str(child.run.id): child.run.metadata_json["approval_state"].get(
+                    "approval_batch_id"
+                )
+            },
+            "deferred_tool_results": {"approvals": {}},
+            "phase": "reserved",
+        },
+    }
+    await db_session.flush()
+    result = await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
+    assert result.expired_count == 0
+    assert child.run.status == "awaiting_approval"
+    assert child.run.started_at == child_started_at
+
+    from services.agent_runs.claim_approval_continuation import claim_approval_continuation
+
+    owner = root.run.owner_instance_id
+    if ending == "cancel":
+        from services.agent_runs.request_cancel import request_agent_run_cancellation
+
+        membership = await db_session.scalar(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == root.workspace.id,
+                WorkspaceMembership.user_id == root.user.id,
+            )
+        )
+        await request_agent_run_cancellation(
+            db_session,
+            actor=root.user,
+            workspace=root.workspace,
+            membership=membership,
+            run_id=root.run.id,
+        )
+        assert root.run.status == child.run.status == "cancelled"
+        with pytest.raises(ConflictError):
+            await claim_approval_continuation(
+                db_session, run_id=root.run.id, owner_instance_id=owner
+            )
+        return
+    if ending == "malformed":
+        root.run.metadata_json = {
+            **root.run.metadata_json,
+            "approval_continuation": {"version": 900},
+        }
+        await db_session.flush()
+        with pytest.raises(ConflictError):
+            await claim_approval_continuation(
+                db_session, run_id=root.run.id, owner_instance_id=owner
+            )
+        await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
+    else:
+        root.run.lease_expires_at = now - timedelta(seconds=1)
+        await db_session.flush()
+        await reap_abandoned_runs(db_session, run_id=root.run.id, now=now)
+    assert root.run.outcome == "blocked"
+    assert root.run.error_code == "agent_run_resume_requires_recovery"
+    assert root.run.completion_json["recovery"]["children"] == [
+        {"run_id": str(child.run.id), "conversation_id": str(child.conversation.id)}
+    ]
+    assert {item["owner_run_id"] for item in root.run.completion_json["recovery"]["actions"]} == {
+        str(root.run.id),
+        str(child.run.id),
+    }
+    assert "approval_continuation" not in (root.run.metadata_json or {})
+    assert "approval_state" not in (child.run.metadata_json or {})
+
+
+async def test_recovery_retains_bounded_effects_from_damaged_workflow(
+    db_session: AsyncSession,
+) -> None:
+    from services.agent_runs.settle_run_family import settle_run_family
+
+    parked = await _park_approval(db_session, now=datetime.now(UTC), age_days=1)
+    unavailable_child_id = uuid4()
+    parked.run.metadata_json = {
+        **parked.run.metadata_json,
+        "approval_continuation": {"child_batches": {str(unavailable_child_id): None}},
+        "code_mode_state": {
+            "run_id": str(parked.run.id),
+            "snapshot_b64": "private broken interpreter state",
+            "executed_effects": [
+                {
+                    "nested_call_id": f"effect-{index:02}",
+                    "tool_name": "write_file",
+                    "args_sha256": "private argument digest",
+                }
+                for index in range(30)
+            ],
+        },
+    }
+    await db_session.flush()
+    await settle_run_family(
+        db_session,
+        run_id=parked.run.id,
+        error_code="agent_run_resume_requires_recovery",
+    )
+    evidence = parked.run.completion_json["recovery"]
+    assert evidence["unavailable_child_run_ids"] == [str(unavailable_child_id)]
+    assert evidence["children"] == []
+    assert len(evidence["actions"]) == 25
+    assert evidence["truncated"] is True
+    assert all(action["status"] == "completed" for action in evidence["actions"])
+    assert "private" not in str(evidence)
+    assert "code_mode_state" not in (parked.run.metadata_json or {})
+
+
+async def test_child_completion_and_family_cancellation_have_one_terminal_winner(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
+    from services.agent_runs.utils import transition_run_status
+
+    async with committed_db_session_factory() as db:
+        root = await _park_approval(db, now=datetime.now(UTC), age_days=1)
+        child = await _park_approval(
+            db,
+            now=datetime.now(UTC),
+            age_days=1,
+            user=root.user,
+            workspace=root.workspace,
+            agent=root.agent,
+        )
+        child.run.parent_run_id = root.run.id
+        child.run.delegation_depth = 1
+        await start_agent_run(db, child.run)
+        await db.commit()
+    barrier = asyncio.Barrier(2)
+
+    async def complete_child() -> None:
+        await barrier.wait()
+        async with committed_db_session_factory() as db:
+            family = await lock_run_family(db, run_id=child.run.id)
+            stored = next(run for run in family if run.id == child.run.id)
+            if stored.status == "running":
+                await transition_run_status(db, stored, "completed")
+            await db.commit()
+
+    async def cancel_family() -> None:
+        await barrier.wait()
+        async with committed_db_session_factory() as db:
+            await settle_run_family(db, run_id=root.run.id, status="cancelled")
+            await db.commit()
+
+    try:
+        await asyncio.gather(complete_child(), cancel_family())
+        async with committed_db_session_factory() as db:
+            stored_root = await db.get(AgentRun, root.run.id)
+            stored_child = await db.get(AgentRun, child.run.id)
+            assert stored_root.status == "cancelled"
+            assert stored_child.status in {"completed", "cancelled"}
+            assert stored_child.outcome == (
+                "success" if stored_child.status == "completed" else "cancelled"
+            )
+            verdict = stored_child.status
+            await settle_run_family(db, run_id=root.run.id, status="cancelled")
+            assert stored_child.status == verdict
+    finally:
+        async with committed_db_session_factory() as db:
+            await db.execute(delete(AgentRun).where(AgentRun.id.in_([root.run.id, child.run.id])))
+            await db.execute(
+                delete(Conversation).where(
+                    Conversation.id.in_([root.conversation.id, child.conversation.id]),
+                )
+            )
+            await db.execute(delete(Agent).where(Agent.id == root.agent.id))
+            await db.execute(
+                delete(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == root.workspace.id,
+                )
+            )
+            await db.execute(delete(Workspace).where(Workspace.id == root.workspace.id))
+            await db.execute(delete(User).where(User.id == root.user.id))
+            await db.commit()

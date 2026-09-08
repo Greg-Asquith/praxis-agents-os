@@ -43,7 +43,15 @@ _BUDGET_KINDS = {
 
 def public_run_error(exc: Exception) -> PublicRunError:
     """Return the explicit public mapping for an execute-run exception."""
+    from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
     from services.agents.runtime.code_mode.state import CodeModeResumeRequiresRecoveryError
+
+    if isinstance(exc, AgentRunResumeRequiresRecoveryError):
+        return PublicRunError(
+            code="agent_run_resume_requires_recovery",
+            message=str(exc),
+            completion_json=exc.completion_json,
+        )
 
     if isinstance(exc, ExecutionInterruptedError):
         messages = {

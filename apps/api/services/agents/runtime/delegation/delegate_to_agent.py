@@ -60,6 +60,10 @@ async def delegate_to_agent(
         )
 
     if ctx.deps.envelope.max_delegation_depth <= ctx.deps.delegation_depth:
+        if ctx.tool_call_approved:
+            from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
+
+            raise AgentRunResumeRequiresRecoveryError()
         return DelegateRunResult(
             status="failed",
             agent_id=resolved_agent_id,
@@ -68,12 +72,10 @@ async def delegate_to_agent(
         )
 
     if ctx.tool_call_approved:
-        resumed_result = await resume_approved_delegate_run(
+        return await resume_approved_delegate_run(
             ctx,
             agent_id=resolved_agent_id,
         )
-        if resumed_result is not None:
-            return resumed_result
 
     session_factory = get_async_db_session_factory()
     session = session_factory()

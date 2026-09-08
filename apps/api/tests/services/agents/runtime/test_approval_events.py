@@ -11,35 +11,12 @@ from services.agent_runs.schemas import AgentRunApprovalStateResponse, PendingTo
 from services.agents.runtime.approval_events import (
     add_approval_display_args,
     approval_events_for_projection,
-    emit_approval_required_events,
 )
 from services.agents.runtime.code_mode.approval import build_code_mode_approval_metadata
-from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.staged_tool_content import (
     tool_args_for_display,
     tool_replay_args_for_editing,
 )
-
-
-async def test_production_approval_emitter_retains_legacy_payload() -> None:
-    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
-    await emit_approval_required_events(
-        sink,
-        DeferredToolRequests(
-            approvals=[ToolCallPart("external_write", {"amount": "12.50"}, "native")]
-        ),
-    )
-    assert len(sink.events) == 1
-    event = sink.events[0]
-    assert event.event == "tool.approval_required"
-    assert event.data == {
-        "run_id": str(sink.run_id),
-        "conversation_id": str(sink.conversation_id),
-        "seq": 1,
-        "tool_call_id": "native",
-        "name": "external_write",
-        "args": {"amount": "12.50"},
-    }
 
 
 def test_projected_events_preserve_leaf_identity_and_server_proposal() -> None:

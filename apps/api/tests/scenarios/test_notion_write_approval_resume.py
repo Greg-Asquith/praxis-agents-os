@@ -18,7 +18,6 @@ from integrations.notion.tools.update_page_properties import (
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.resume_run_stream import _build_deferred_tool_results
 from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
@@ -27,6 +26,7 @@ from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.execution import _run_authorized_entries
+from tests.support.approvals import compile_scenario_decisions
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -167,13 +167,12 @@ async def test_direct_create_resume_reauthorizes_edited_parent_and_records_exact
         )
         assert actor is not None and workspace is not None and run is not None
         assert membership is not None
-        deferred = await _build_deferred_tool_results(
+        deferred = await compile_scenario_decisions(
             db,
             actor=actor,
             workspace=workspace,
             membership=membership,
             run=run,
-            suspended_state=state,
             decisions=[
                 AgentRunResumeDecision(
                     tool_call_id="notion-create",
@@ -352,13 +351,12 @@ async def test_code_mode_resume_reauthorizes_edits_and_rejects_changed_option_sc
         )
         assert actor is not None and workspace is not None and run is not None
         assert membership is not None
-        deferred = await _build_deferred_tool_results(
+        deferred = await compile_scenario_decisions(
             db,
             actor=actor,
             workspace=workspace,
             membership=membership,
             run=run,
-            suspended_state=state,
             decisions=[
                 AgentRunResumeDecision(
                     tool_call_id="workflow-call:1",
