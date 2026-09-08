@@ -24,11 +24,12 @@ export const delegationToolPresenters: ToolRowPresenter[] = [
     handlesApprovals: true,
     key: "delegation",
     matches: (activity) => Boolean(activity.delegate),
-    render: ({ activity, approvalDecision, defaultOpen }) => (
+    render: ({ activity, approvalDecision, defaultOpen, live }) => (
       <DelegationToolRow
         activity={activity}
         {...(approvalDecision ? { approvalDecision } : {})}
         defaultOpen={defaultOpen}
+        live={live}
       />
     ),
   },

@@ -1,13 +1,17 @@
 // apps/web/src/features/conversations/components/message-shell.tsx
 
-import type { ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 import { CheckIcon, CopyIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
+import { AssistantTurnContext } from "@/features/conversations/assistant-turn-context"
 import { useClipboardCopy } from "@/hooks/use-clipboard-copy"
 import { formatTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
+
+export const userMessageBubbleClass =
+  "bg-muted text-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed"
 
 function MessageCopyButton({ text }: { text: string }) {
   const { copied, copy } = useClipboardCopy()
@@ -43,9 +47,7 @@ export function UserMessageShell({
   return (
     <div className="group/message flex justify-end px-1">
       <div className="flex max-w-[min(38rem,90%)] flex-col items-end gap-1.5">
-        <div className="bg-muted text-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed">
-          {children}
-        </div>
+        <div className={userMessageBubbleClass}>{children}</div>
         <div
           className={cn(
             "text-muted-foreground flex items-center gap-1.5 text-xs transition-opacity group-hover/message:opacity-100",
@@ -79,6 +81,11 @@ export function AssistantMessageShell({
   label?: string
   streaming?: boolean
 }) {
+  const identity = useMemo(
+    () => ({ agentId, label, metadata: agentMetadata }),
+    [agentId, agentMetadata, label]
+  )
+
   return (
     <div className="group/message flex w-full justify-start px-1">
       <div className="flex w-full min-w-0 flex-col gap-3">
@@ -103,7 +110,9 @@ export function AssistantMessageShell({
             ) : null}
           </div>
         </div>
-        <div className="flex min-w-0 flex-col gap-3">{children}</div>
+        <AssistantTurnContext value={identity}>
+          <div className="flex min-w-0 flex-col gap-3">{children}</div>
+        </AssistantTurnContext>
       </div>
     </div>
   )
