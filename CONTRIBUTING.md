@@ -1,6 +1,6 @@
 # Contributing to Praxis Agents OS
 
-Thank you for helping improve Praxis Agents OS. The project favors focused,
+Thank you for helping improve Praxis Agents OS. The project favours focused,
 maintainable changes that strengthen a clean foundation for small teams.
 
 ## Development setup
@@ -25,6 +25,8 @@ Focused commands and architecture expectations are documented in
 [AGENTS.md](AGENTS.md), [apps/api/AGENTS.md](apps/api/AGENTS.md), and
 [apps/web/AGENTS.md](apps/web/AGENTS.md). The
 [review checklist](REVIEW.md) describes the maintainers' review criteria.
+Use the [documentation index](docs/README.md) for focused implementation
+references, including third-party connections and provider-specific behaviour.
 
 ## Issue-driven workflow
 

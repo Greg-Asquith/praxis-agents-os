@@ -1,6 +1,6 @@
 # REVIEW.md
 
-Focus areas for reviewing draft code in this repository — use this when
+Focus areas for reviewing draft code in this repository. Use this when
 reviewing a PR or agent-produced change, and for self-review before finishing
 work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 
@@ -10,10 +10,11 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
   refactors, new abstractions, speculative generality, and unrelated
   formatting churn.
 - If an issue or design note drove the work, its scope and explicit stop
-  conditions were honored, and private planning references did not leak into
+  conditions were honoured, and private planning references did not leak into
   code, comments, or docstrings.
-- Docs (README, AGENTS.md files) were updated in the same change when
-  commands, routes, env vars, or architecture moved.
+- The owning implementation or architecture docs were updated when commands,
+  routes, environment variables, or behaviour changed. AGENTS.md files retain
+  top-level rules and accurate pointers rather than detailed feature inventories.
 
 ## Security And Tenancy
 
@@ -36,8 +37,8 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 - Nothing loosens CORS, cookie, CSRF, rate-limit, or provider validation, and
   no exempt lists were widened, even "temporarily" or for local convenience.
 - No secrets committed or logged. Credentials resolve through the established
-  seams (`provider_api_key`, the secrets provider, secret references) — never
-  implicit env pickup or plaintext storage.
+  seams (`provider_api_key`, the secrets provider, secret references). Never
+  use implicit env pickup or plaintext storage.
 - Sensitive operations (workspace membership, security, approvals,
   credentials, schedules) write audit records with enough context to debug
   later.
@@ -48,10 +49,10 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 ## Agent Runtime Invariants
 
 - All agent-callable tools go through the registry and the dispatch choke
-  point — no tool execution around it, no unaudited side effects.
+  point. Do not bypass it or perform unaudited side effects.
 - External-effect tools respect run envelopes and approval policy; deferred
   approvals resume correctly, including for delegated runs.
-- SSE protocol changes ship the client change first — the stream parser
+- SSE protocol changes ship the client change first. The stream parser
   throws on unknown event names, so a new server event breaks stale clients.
 - Long or free-text tool results stay bounded, and long-running work remains
   cancellable.
@@ -85,8 +86,8 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 
 ## Tests And Verification
 
-- Test coverage is proportional to risk — auth, permissions, audit records,
-  scheduling, migrations, approvals, and provider boundaries come first.
+- Test coverage is proportional to risk, with auth, permissions, audit records,
+  scheduling, migrations, approvals, and provider boundaries taking priority.
 - Tests live in the right place: `apps/api/tests/<intent>/` on the backend,
   `apps/web/tests/` mirroring source paths on the frontend, never colocated
   under `src/`.
@@ -98,14 +99,14 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 ## Code Quality
 
 - No duplication. New code does not copy-paste logic that already exists, and
-  does not re-implement it with slight variations — the drift between copies
+  does not re-implement it with slight variations. The drift between copies
   is where bugs breed. If similar logic already lives elsewhere, the change
   should call it, extract it, or explain why it genuinely differs.
 - Helpers go in the shared home, not the bottom of the file. A two-or-three
   line utility appended to every file that needs it is duplication in
-  disguise. Reusable logic belongs in the established shared locations —
+  disguise. Reusable logic belongs in the established shared locations:
   `apps/api/utils/` or the service's `utils.py` on the backend; `src/lib/`
-  (forms, formatting, query-key factories) on the frontend — as a single
+  (forms, formatting, query-key factories) on the frontend. Use a single
   generic, well-named function.
 - Watch the per-feature scaffolding especially. Both apps are built as
   parallel vertical features, and their shared plumbing (query keys,
@@ -118,6 +119,6 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 - The change reads like the surrounding code: same patterns, naming, and
   comment density. Comments are terse and state only what the code cannot.
 - No dead code, unused exports, or lint/typecheck warnings introduced.
-- Failure paths are handled where they can be acted on and are observable —
+- Failure paths are handled where they can be acted on and are observable:
   errors surface through the exception layer or UI states, not silent
   swallows.

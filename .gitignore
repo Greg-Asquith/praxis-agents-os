@@ -124,5 +124,7 @@ log/
 # Documentation
 ########################################
 docs/*
+!docs/README.md
 !docs/architecture/
 !docs/guides/
+!docs/implementation/
