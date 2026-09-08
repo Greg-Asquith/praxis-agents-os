@@ -230,6 +230,66 @@ describe("Google Ads recommendation presenters", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Apply<\/button>/)
   })
 
+  describe.each([
+    ["targetRoasOptIn", "target_roas", "new_campaign_budget_amount_micros"],
+    ["forecastingSetTargetRoas", "target_roas", "campaign_budget_amount_micros"],
+    ["setTargetRoas", "target_roas", "campaign_budget_amount_micros"],
+    ["forecastingSetTargetCpa", "target_cpa_micros", "campaign_budget_amount_micros"],
+    ["setTargetCpa", "target_cpa_micros", "campaign_budget_amount_micros"],
+  ])("%s optional parameter presence", (parameterType, firstKey, secondKey) => {
+    it.each(
+      [undefined, null, 3, "invalid", 0, Infinity].flatMap((first) =>
+        [undefined, null, 3, "invalid", 0, Infinity].map((second) => ({ first, second }))
+      )
+    )("validates approval and result values $first / $second", ({ first, second }) => {
+      const parameters = {
+        parameter_type: parameterType,
+        recommendation_resource_name: recommendationName("1"),
+        ...(first === undefined ? {} : { [firstKey]: first }),
+        ...(second === undefined ? {} : { [secondKey]: second }),
+      }
+      const valid =
+        [first, second].every((value) => value == null || value === 3) &&
+        [first, second].some((value) => value === 3)
+      const activity: ToolActivity = {
+        id: "pair",
+        kind: "approval",
+        name: "google_ads_apply_recommendations",
+        status: "awaiting_approval",
+        args: {
+          recommendations: [recommendationReference("1", "Selected", "SET_TARGET_ROAS")],
+          parameters: [parameters],
+        },
+      }
+      const approval = render(
+        googleAdsApplyRecommendationsPresenter.render(props(activity, approvalControls()))
+      )
+      expect(/<button[^>]*disabled=""[^>]*>Approve &amp; Apply<\/button>/.test(approval)).toBe(
+        !valid
+      )
+      const result = render(
+        googleAdsApplyRecommendationsPresenter.render(
+          props({
+            ...activity,
+            status: "completed",
+            result: {
+              results: [
+                entry({
+                  recommendations: [
+                    applyOutcome("1", "Selected", "SET_TARGET_ROAS", "applied", {
+                      requested_parameters: parameters,
+                    }),
+                  ],
+                }),
+              ],
+            },
+          })
+        )
+      )
+      expect(result.includes("Download Report CSV")).toBe(valid)
+    })
+  })
+
   it("renders every apply outcome with campaigns, parameters, and Google impact estimates", () => {
     const html = render(
       googleAdsApplyRecommendationsPresenter.render(

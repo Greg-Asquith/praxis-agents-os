@@ -5,7 +5,11 @@ import { describe, expect, it, vi } from "vitest"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import type * as SelectModule from "@/components/ui/select"
 import type { ToolUi } from "@/features/tools/types"
-import { replacePositiveKeywordPatch } from "@/integrations/google_ads/lib/positive-keyword-update"
+import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import {
+  updateKeywordArgs,
+  replacePositiveKeywordPatch,
+} from "@/integrations/google_ads/lib/positive-keyword-update"
 import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_ads/presenters/update-positive-keywords"
 
 const statusEdits = vi.hoisted(() => [] as ((value: string) => void)[])
@@ -47,6 +51,172 @@ describe("Google Ads positive keyword update presenter", () => {
         edits: { patches: [{ status: "ENABLED", cpc_bid: "2.50" }, { status: "PAUSED" }] },
       })
     }
+  })
+
+  it.each(["approved", "denied"] as const)(
+    "locks a %s card beside a pending duplicate keyword",
+    (decision) => {
+      statusEdits.length = 0
+      const settled = {
+        ...approvalControls(),
+        decision: { decision, edits: {}, message: "" as const },
+        pendingCount: 2,
+      }
+      const pending = { ...approvalControls(), pendingCount: 2 }
+      const html = render(
+        [settled, pending].map((controls) =>
+          createElement(
+            "section",
+            { key: controls.decision.decision },
+            googleAdsUpdatePositiveKeywordsPresenter.render(
+              props(
+                {
+                  ...activity("awaiting_approval", {
+                    keywords: [keyword("PAUSED")],
+                    patches: [{ status: "ENABLED" }],
+                  }),
+                  id: `request-${controls.decision.decision}`,
+                },
+                controls
+              )
+            )
+          )
+        )
+      )
+      const sections = html.match(/<section[\s\S]*?<\/section>/g) ?? []
+      expect(sections).toHaveLength(2)
+      const ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1])
+      expect(new Set(ids).size).toBe(ids.length)
+      for (const section of sections) {
+        const targets = [...section.matchAll(/ for="([^"]+)"/g)].map((match) => match[1])
+        expect(targets.length).toBeGreaterThan(0)
+        for (const target of targets) {
+          expect(target).toBeDefined()
+          expect(section).toContain(`id="${String(target)}"`)
+        }
+      }
+      expect(sections[0]).toMatch(/<input[^>]*disabled=""[^>]*aria-label="CPC bid/)
+      expect(sections[1]).not.toMatch(/<input[^>]*disabled=""[^>]*aria-label="CPC bid/)
+      statusEdits[0]?.("PAUSED")
+      statusEdits[1]?.("PAUSED")
+      expect(settled.onDecisionChange).not.toHaveBeenCalled()
+      expect(pending.onDecisionChange).toHaveBeenCalledOnce()
+    }
+  )
+
+  it.each(["source", "SOURCE"])("rejects duplicate custom parameter key %s", (key) => {
+    for (const field of ["before", "requested"]) {
+      const before = {
+        ...state("PAUSED", "1.25", ["https://example.com/old"]),
+        url_custom_parameters: [{ key: "source", value: "before" }],
+      }
+      const requested = {
+        ...state("ENABLED", null, []),
+        url_custom_parameters: [{ key: "source", value: "two" }],
+      }
+      const row = {
+        ...resultRow("updated", before, requested),
+        keyword: {
+          ...resultRow("updated", before, requested).keyword,
+          url_custom_parameters: requested.url_custom_parameters,
+        },
+        requested_fields: ["status", "cpc_bid", "final_urls", "url_custom_parameters"],
+        update_mask: "status,cpcBidMicros,finalUrls,urlCustomParameters",
+      }
+      expect(renderResult({ updated: [row] })).toContain("Download Report CSV")
+      expect(
+        renderResult({
+          updated: [
+            {
+              ...row,
+              [field]: {
+                ...(field === "before" ? before : requested),
+                url_custom_parameters: [
+                  { key: "source", value: "one" },
+                  { key, value: "two" },
+                ],
+              },
+            },
+          ],
+        })
+      ).not.toContain("Download Report CSV")
+    }
+  })
+
+  it.each([{ source: "retained" }, [{ key: "source", value: "retained" }]])(
+    "accepts object and array custom parameter states %j",
+    (parameters) => {
+      const before = {
+        ...state("PAUSED", "1.25", ["https://example.com/old"]),
+        url_custom_parameters: parameters,
+      }
+      const requested = { ...state("ENABLED", null, []), url_custom_parameters: parameters }
+      const row = resultRow("updated", before, requested)
+      expect(
+        renderResult({
+          updated: [
+            {
+              ...row,
+              keyword: {
+                ...row.keyword,
+                url_custom_parameters: [{ key: "source", value: "retained" }],
+              },
+            },
+          ],
+        })
+      ).toContain("Download Report CSV")
+    }
+  )
+
+  it.each([
+    { requested_fields: ["status", "status"], update_mask: "status,status" },
+    { requested_fields: ["status"], update_mask: "finalUrls" },
+  ])("rejects duplicate or mismatched update masks %j", (evidence) => {
+    const before = state("PAUSED", "1.25", ["https://example.com/old"])
+    const requested = { ...before, status: "ENABLED" }
+    const row = {
+      ...resultRow("updated", before, requested),
+      keyword: keyword("ENABLED"),
+      requested_fields: ["status"],
+      update_mask: "status",
+    }
+    expect(renderResult({ updated: [row] })).toContain("Download Report CSV")
+    expect(renderResult({ updated: [{ ...row, ...evidence }] })).not.toContain(
+      "Download Report CSV"
+    )
+  })
+
+  it("rejects an unmasked change even when the observed reference matches Requested", () => {
+    const before = state("PAUSED", "1.25", ["https://example.com/old"])
+    const requested = { ...before, status: "ENABLED", final_url_suffix: "hidden=change" }
+    const row = {
+      ...resultRow("updated", before, requested),
+      keyword: { ...keyword("ENABLED"), final_url_suffix: "hidden=change" },
+      requested_fields: ["status"],
+      update_mask: "status",
+    }
+    expect(renderResult({ updated: [row] })).not.toContain("Download Report CSV")
+  })
+
+  it.each([
+    undefined,
+    null,
+    {},
+    [],
+    [null],
+    [{ customer_id: "1234567890", label: "Account", currency_code: "bad" }],
+    [{ customer_id: "1234567890", label: "", currency_code: "GBP" }],
+    [{ customer_id: "1234567890", label: "   ", currency_code: "GBP" }],
+    [{ customer_id: "1234567890", label: "Account", currency_code: "GBP" }],
+  ])("uses shared account eligibility for %j", (accounts) => {
+    const args = updateKeywordArgs({
+      keywords: [keyword("PAUSED")],
+      patches: [{ status: "ENABLED" }],
+      _account_currencies: accounts,
+    })
+    const shared = parseAccountCurrencies(accounts)
+    expect(args !== null).toBe(shared.has("1234567890"))
+    if (args) expect(args.accounts).toEqual(shared)
   })
 
   it("shows selected keyword labels as failure chips", () => {

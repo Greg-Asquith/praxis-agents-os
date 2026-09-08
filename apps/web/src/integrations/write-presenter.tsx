@@ -1,6 +1,8 @@
 // apps/web/src/integrations/write-presenter.tsx
 
 import type { ReactNode } from "react"
+import { RefreshedWriteApproval } from "@/integrations/refreshed-write-approval"
+import type { ApprovalDisplayRefresh } from "@/integrations/approval-display-query"
 
 import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
@@ -25,6 +27,7 @@ type ApprovalSpec<Args> = {
   label: string
   parseArgs: (value: unknown) => Args | null
   prompt: string | ((args: Args) => string)
+  refreshDisplay?: { fields: readonly string[]; refresh: ApprovalDisplayRefresh }
   renderFields?: boolean
   renderInvalidDraft?: boolean
   renderSummary?: (
@@ -68,6 +71,27 @@ export function defineIntegrationWriteVariant<Args, Result>(
     const args = variant.approval.parseArgs(activity.args)
 
     if (approvalDecision) {
+      const refresh = variant.approval.refreshDisplay
+      if (
+        args !== null &&
+        !approvalDisplayError(activity.args) &&
+        refresh?.fields.some((key) => Object.hasOwn(approvalDecision.decision.edits, key))
+      ) {
+        return (
+          <RefreshedWriteApproval
+            args={mergeApprovalArgs(activity.args, approvalDecision.decision.edits)}
+            locked={
+              Boolean(approvalDecision.disabled) ||
+              approvalDecision.submitting ||
+              approvalDecision.decision.decision !== "pending"
+            }
+            refresh={refresh.refresh}
+            toolName={activity.name}
+          >
+            {(value, error) => renderApproval(context, args, provider, variant, { value, error })}
+          </RefreshedWriteApproval>
+        )
+      }
       return renderApproval(context, args, provider, variant)
     }
 
@@ -167,7 +191,8 @@ function renderApproval<Args, Result>(
   { activity, approvalDecision, ui }: ToolRowPresenterProps,
   args: Args | null,
   provider: IntegrationWriteProvider,
-  variant: IntegrationWriteVariant<Args, Result>
+  variant: IntegrationWriteVariant<Args, Result>,
+  refreshed?: { value: unknown; error: string | null }
 ) {
   if (!approvalDecision) return null
   if (args === null) {
@@ -191,18 +216,25 @@ function renderApproval<Args, Result>(
     )
   }
   const fields = ui?.arg_fields ?? []
-  const currentArgs = mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
+  const currentArgs = refreshed
+    ? refreshed.value
+    : mergeApprovalArgs(activity.args, approvalDecision.decision.edits)
   const currentParsedArgs = variant.approval.parseArgs(currentArgs)
   const displayError = approvalDisplayError(currentArgs)
   const argsError = displayError ? null : (variant.approval.validateArgs?.(currentArgs) ?? null)
   const validationError =
+    refreshed?.error ??
     displayError ??
     argsError ??
     (currentParsedArgs === null
       ? "The edited approval details are invalid. Correct them or decline this request."
       : null)
+  const customFieldsDisabled =
+    Boolean(approvalDecision.disabled) ||
+    approvalDecision.submitting ||
+    approvalDecision.decision.decision !== "pending"
   const editField = (key: string, value: EditedValue) => {
-    if (approvalDecision.disabled || approvalDecision.submitting) return
+    if (customFieldsDisabled) return
     approvalDecision.onDecisionChange({
       decision: "pending",
       edits: { ...approvalDecision.decision.edits, [key]: value },
@@ -210,9 +242,6 @@ function renderApproval<Args, Result>(
     })
   }
   const renderFields = variant.approval.renderFields !== false
-  const customFieldsDisabled = approvalDecision.submitting
-    ? true
-    : (approvalDecision.disabled ?? false)
   return (
     <ToolApprovalDecisionCard
       activityId={activity.id}
@@ -223,7 +252,14 @@ function renderApproval<Args, Result>(
         ? {}
         : { derivedFromUntrusted: activity.derivedFromUntrusted })}
       {...(activity.taintSources === undefined ? {} : { taintSources: activity.taintSources })}
-      fallbackFields={renderFields ? approvalFallbackFields(activity.args, fields) : []}
+      fallbackFields={
+        renderFields
+          ? approvalFallbackFields(
+              mergeApprovalArgs(activity.args, approvalDecision.decision.edits),
+              fields
+            )
+          : []
+      }
       fields={renderFields ? fields : []}
       icon={provider.renderIcon()}
       label={variant.approval.label}
@@ -232,7 +268,7 @@ function renderApproval<Args, Result>(
       toolName={activity.name}
       validationError={validationError}
     >
-      {displayError || (argsError && !variant.approval.renderInvalidDraft)
+      {refreshed?.error || displayError || (argsError && !variant.approval.renderInvalidDraft)
         ? null
         : variant.approval.renderSummary?.(currentArgs, args, editField, customFieldsDisabled)}
     </ToolApprovalDecisionCard>

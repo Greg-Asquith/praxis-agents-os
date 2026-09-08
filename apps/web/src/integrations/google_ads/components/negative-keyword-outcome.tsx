@@ -51,7 +51,7 @@ export type MatchType = "ANY" | "BROAD" | "EXACT" | "PHRASE"
 
 type CampaignNegativeKeywordError = NegativeKeywordErrorBase & NegativeKeyword
 
-export type TargetNegativeKeywordOutcome = NegativeKeyword & {
+type TargetNegativeKeywordOutcome = NegativeKeyword & {
   errorCode?: string
   externalRef?: string
   outcome: "added" | "failed" | "not_found" | "removed" | "skipped_existing"

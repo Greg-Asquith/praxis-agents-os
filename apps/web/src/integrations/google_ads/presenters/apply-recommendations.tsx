@@ -353,8 +353,7 @@ function validOptionalPair(
   secondKey: string,
   secondValidator: ScalarValidator
 ): RecommendationParameters | null {
-  if (value[firstKey] === null && value[secondKey] === null) return null
-  if (value[firstKey] === undefined && value[secondKey] === undefined) return null
+  if ((value[firstKey] ?? null) === null && (value[secondKey] ?? null) === null) return null
   return validParameter(value, commonKeys, [], {
     [firstKey]: firstValidator,
     [secondKey]: secondValidator,

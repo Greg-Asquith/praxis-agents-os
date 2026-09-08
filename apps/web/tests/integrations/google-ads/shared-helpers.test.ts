@@ -352,6 +352,8 @@ describe("Google Ads reference parsers", () => {
       ...parseAccountCurrencies([
         { customer_id: "1", label: "Account", currency_code: "GBP" },
         { customer_id: "2", label: "Other", currency_code: "bad" },
+        { customer_id: "3", label: "   ", currency_code: "GBP" },
+        { customer_id: "4", label: "", currency_code: "GBP" },
         null,
       ]),
     ]).toEqual([["1", { currencyCode: "GBP", label: "Account" }]])

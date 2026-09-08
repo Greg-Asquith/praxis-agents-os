@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/assign-campaign-budgets.tsx
 
+import { refreshBudgetAssignment } from "@/integrations/google_ads/api/refresh-budget-assignment"
 import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 import {
   OUTCOMES,
@@ -42,9 +43,15 @@ export const googleAdsAssignCampaignBudgetsPresenter = createGoogleAdsWritePrese
       approval: {
         ...copy.approval,
         parseArgs: assignmentArgs,
+        refreshDisplay: {
+          fields: ["destination_budget", "campaigns"],
+          refresh: refreshBudgetAssignment,
+        },
         prompt: "Review every campaign route before replacing its live campaign budget.",
-        renderSummary: (value, fallback) =>
-          renderAssignmentApprovalSummary(assignmentArgs(value) ?? fallback),
+        renderSummary: (value) => {
+          const args = assignmentArgs(value)
+          return args ? renderAssignmentApprovalSummary(args) : null
+        },
       },
       details: (args) =>
         args
@@ -82,7 +89,12 @@ function assignmentArgs(value: unknown): AssignmentArgs | null {
   const campaignIds = new Set<string>()
   for (const valueCampaign of value["campaigns"]) {
     const campaign = parseCampaignReference(valueCampaign)
-    if (!campaign || campaignIds.has(campaign.campaignId)) {
+    if (
+      !campaign ||
+      !isRecord(valueCampaign) ||
+      valueCampaign["customer_id"] !== destination.customerId ||
+      campaignIds.has(campaign.campaignId)
+    ) {
       return null
     }
     campaignIds.add(campaign.campaignId)
@@ -96,7 +108,13 @@ function assignmentArgs(value: unknown): AssignmentArgs | null {
     const campaign = parseCampaignReference(routeValue["campaign"])
     const previousBudget = parseCampaignBudgetReference(routeValue["previous_budget"])
     const destinationBudget = parseCampaignBudgetReference(routeValue["destination_budget"])
-    if (!campaign || !previousBudget || !destinationBudget) {
+    if (
+      !campaign ||
+      !previousBudget ||
+      !destinationBudget ||
+      !isRecord(routeValue["campaign"]) ||
+      routeValue["campaign"]["customer_id"] !== destination.customerId
+    ) {
       return null
     }
     routes.push({ campaign, destinationBudget, previousBudget })
@@ -106,6 +124,7 @@ function assignmentArgs(value: unknown): AssignmentArgs | null {
     routes.some(
       (route, index) =>
         route.campaign.campaignId !== campaigns[index]?.campaignId ||
+        route.previousBudget.customerId !== destination.customerId ||
         route.destinationBudget.customerId !== destination.customerId ||
         route.destinationBudget.budgetId !== destination.budgetId
     )

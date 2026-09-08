@@ -194,12 +194,14 @@ describe("integration write presenter", () => {
     }
   )
 
-  it.each(["enabled", "disabled", "submitting"])(
+  it.each(["enabled", "disabled", "submitting", "approved", "denied"])(
     "preserves custom field edits and locks (%s)",
     (state) => {
       const context = props("awaiting_approval")
       const decision = controls()
       context.approvalDecision = decision
+      decision.pendingCount = 2
+      if (state === "approved" || state === "denied") decision.decision.decision = state
       decision.disabled = state === "disabled"
       decision.submitting = state === "submitting"
       decision.decision.edits = { other: "Retained" }

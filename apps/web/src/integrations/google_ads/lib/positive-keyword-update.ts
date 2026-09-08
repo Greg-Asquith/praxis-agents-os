@@ -1,8 +1,8 @@
 // apps/web/src/integrations/google_ads/lib/positive-keyword-update.ts
 
+import { parseAccountCurrencies } from "@/integrations/google_ads/lib/accounts"
+import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import {
-  CURRENCY_CODE_PATTERN,
-  GOOGLE_ADS_ID_PATTERN,
   parseGoogleAdsCustomParameters,
   parseGoogleAdsMoney,
   parseGoogleAdsUrlList,
@@ -12,7 +12,7 @@ import {
   type PositiveKeywordReference,
   type PositiveKeywordStatus,
 } from "@/integrations/google_ads/lib/positive-keywords"
-import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
+import { isNullableString, isRecord } from "@/lib/guards"
 
 export const POSITIVE_KEYWORD_PATCH_FIELDS = [
   {
@@ -173,7 +173,7 @@ export function updateKeywordArgs(
   const keywords = parseKeywordReferences(arrays.keywords)
   const patches = parseKeywordPatches(arrays.patches, parseRow)
   if (!keywords || !patches) return null
-  const accounts = parseAccounts(value["_account_currencies"])
+  const accounts = parseAccountCurrencies(value["_account_currencies"])
   if (keywords.some((keyword) => !accounts.has(keyword.customerId))) return null
   return { accounts, keywords, patches }
 }
@@ -211,28 +211,6 @@ function parseKeywordPatches(
     patches.push(patch)
   }
   return patches
-}
-
-function parseAccounts(value: unknown): Map<string, { currencyCode: string; label: string }> {
-  const accounts = new Map<string, { currencyCode: string; label: string }>()
-  if (!Array.isArray(value)) return accounts
-  for (const item of value) {
-    if (!isRecord(item)) continue
-    const customerId = item["customer_id"]
-    const currencyCode = item["currency_code"]
-    const label = item["label"]
-    if (
-      typeof customerId === "string" &&
-      GOOGLE_ADS_ID_PATTERN.test(customerId) &&
-      typeof currencyCode === "string" &&
-      CURRENCY_CODE_PATTERN.test(currencyCode) &&
-      typeof label === "string" &&
-      label.trim()
-    ) {
-      accounts.set(customerId, { currencyCode, label })
-    }
-  }
-  return accounts
 }
 
 export function updateKeywordArgsValidationError(value: unknown): string | null {
@@ -344,38 +322,14 @@ function nullableBidModifier(value: unknown): number | null | typeof INVALID {
 export function updateKeywordResult(value: unknown): UpdateKeywordResult | null {
   if (!isRecord(value)) return null
   const currencyCode = value["currency_code"]
-  const countsValue = value["counts"]
-  const samplesValue = value["samples"]
   if (typeof currencyCode !== "string" || !currencyCode.trim()) return null
-  if (!isRecord(countsValue) || !isRecord(samplesValue)) return null
   if (value["samples_truncated"] !== false) return null
-  const parsed = parseOutcomeSamples(countsValue, samplesValue)
+  const parsed = parseOutcomeEnvelope(value, OUTCOMES, parseResultRow)
   if (!parsed) return null
   const total = OUTCOMES.reduce((sum, outcome) => sum + parsed.counts[outcome], 0)
   if (parsed.rows.length !== total) return null
   if (new Set(parsed.rows.map((row) => row.reference.identity)).size !== total) return null
   return { counts: parsed.counts, currencyCode, rows: parsed.rows }
-}
-
-function parseOutcomeSamples(
-  countsValue: Record<string, unknown>,
-  samplesValue: Record<string, unknown>
-): Pick<UpdateKeywordResult, "counts" | "rows"> | null {
-  const counts = {} as Record<KeywordOutcome, number>
-  const rows: UpdateKeywordRow[] = []
-  for (const outcome of OUTCOMES) {
-    const count = countsValue[outcome]
-    const samples = samplesValue[outcome]
-    if (!isNonNegativeInteger(count) || !Array.isArray(samples) || samples.length !== count)
-      return null
-    counts[outcome] = count
-    for (const sample of samples) {
-      const row = parseResultRow(sample, outcome)
-      if (!row) return null
-      rows.push(row)
-    }
-  }
-  return { counts, rows }
 }
 
 function parseResultRow(value: unknown, outcome: KeywordOutcome): UpdateKeywordRow | null {
@@ -401,7 +355,7 @@ function parseResultRow(value: unknown, outcome: KeywordOutcome): UpdateKeywordR
 }
 
 function parseRequestedFields(value: unknown): PatchField[] | null {
-  if (!Array.isArray(value) || value.length < 1) return null
+  if (!Array.isArray(value) || value.length < 1 || new Set(value).size !== value.length) return null
   return value.every(
     (field): field is PatchField =>
       typeof field === "string" && POSITIVE_KEYWORD_PATCH_FIELD_SET.has(field)
@@ -435,6 +389,12 @@ function resultStateIsConsistent(
   requestedFields: PatchField[],
   outcome: KeywordOutcome
 ): boolean {
+  if (
+    PATCH_FIELDS.some(
+      (field) => !requestedFields.includes(field) && !valuesEqual(before[field], requested[field])
+    )
+  )
+    return false
   const everyValueMatches = requestedFields.every((field) =>
     valuesEqual(before[field], requested[field])
   )
@@ -466,16 +426,7 @@ function parseStateValue(
 }
 
 function stateCustomParameters(value: unknown): Record<string, string> | typeof INVALID {
-  if (isRecord(value)) return parseGoogleAdsCustomParameters(value) ?? INVALID
-  if (!Array.isArray(value) || value.length > 8) return INVALID
-  const parameters: Record<string, string> = {}
-  for (const item of value) {
-    if (!isRecord(item) || typeof item["key"] !== "string" || typeof item["value"] !== "string") {
-      return INVALID
-    }
-    parameters[item["key"]] = item["value"]
-  }
-  return parseGoogleAdsCustomParameters(parameters) ?? INVALID
+  return parseGoogleAdsCustomParameters(value) ?? INVALID
 }
 
 function valuesEqual(

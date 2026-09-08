@@ -43,7 +43,7 @@ const entityReferenceQueryKeys = {
     [...entityReferenceQueryKeys.field(request), "search", request.search] as const,
 }
 
-async function lookupEntityReferences(
+export async function lookupEntityReferences(
   request: LookupBase & {
     search?: string
     exactValues?: EntityReferenceValue[]

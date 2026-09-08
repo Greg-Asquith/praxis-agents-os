@@ -16,6 +16,7 @@ export function parseAccountCurrencies(
     if (
       !customerId ||
       typeof label !== "string" ||
+      !label.trim() ||
       typeof currencyCode !== "string" ||
       !CURRENCY_CODE_PATTERN.test(currencyCode)
     )

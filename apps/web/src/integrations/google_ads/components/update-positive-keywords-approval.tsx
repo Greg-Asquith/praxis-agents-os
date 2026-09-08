@@ -5,7 +5,7 @@ import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/a
 import { GoogleAdsBeforeAfter } from "@/integrations/google_ads/components/before-after"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { ArrowRightIcon, ChevronDownIcon } from "lucide-react"
-import { Fragment, useState } from "react"
+import { Fragment, useId, useState } from "react"
 
 import type { EditedRecordCell, EditedRecords } from "@/components/tool-ui/edited-values"
 import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
@@ -274,10 +274,11 @@ function PatchFieldEditor({
   onChange: (patch: KeywordPatch) => void
   patch: KeywordPatch
 }) {
+  const instanceId = useId()
   const included = Object.hasOwn(patch, field)
   const specification = POSITIVE_KEYWORD_PATCH_FIELDS_BY_KEY.get(field)
   if (!specification) return null
-  const inputId = `${keyword.identity}-${field}`
+  const inputId = `${instanceId}-${keyword.identity}-${field}`
   const value = included ? (patch[field] ?? null) : before[field]
   const changed = included && !sameFieldValue(field, before[field], value)
   const context = `${keyword.text}, ${googleAdsTokenLabel(keyword.matchType.toLowerCase(), keyword.matchType)}, in ${keyword.scopeLabel}, account ${keyword.customerId}`

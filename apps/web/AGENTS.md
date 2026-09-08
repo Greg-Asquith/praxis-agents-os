@@ -40,12 +40,21 @@ server runtime. Repo-wide expectations are in the root `AGENTS.md`.
   Detailed unverified evidence requires the explicit `renderUnverifiedOutcome`
   callback; Search Console supplies it, while Google Ads keeps its failure view.
   Do not copy the state machine into provider packages.
+  Edited budget assignments refresh campaign and source-budget evidence through
+  the conversation-scoped entity lookup. The shared approval refresh query keeps
+  approval unavailable until the selected routes are verified, isolates stale
+  responses by selection, and preserves completed decisions. Provider refresh
+  functions own entity validation; refreshed display metadata stays out of edits.
   Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
   types and parsers belong to their domain modules: `campaign-budgets.ts`,
   `campaigns.ts`, `ad-groups.ts`, `positive-keywords.ts`, `negative-keywords.ts`,
   and `recommendations.ts`. Account-currency metadata belongs to `accounts.ts`.
   Import directly from those modules. Shared scalar and URL-field validation
   lives in `field-values.ts`; callers own normalization, defaults, and clears.
+  Scoped negative-keyword evidence belongs to `scoped-negative-keyword-results.ts`.
+  It reconciles operation-specific exact rows, per-target counts, aggregate
+  counts, and truncated samples while retaining historical count-only results.
+  Account metadata requires a nonblank label and a valid currency code.
   Outcome vocabulary, token labels, lifecycle copy, and result envelopes have
   separate modules. Device bid modifiers, campaign list links, budget amount
   updates, budget assignments, budget removals, recommendations, list/campaign/

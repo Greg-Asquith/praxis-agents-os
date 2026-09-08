@@ -601,8 +601,17 @@ own identity, copy, parsers, validation, summaries, and outcome components.
 Search Console supplies `renderUnverifiedOutcome` to retain detailed evidence
 beneath the warning. Google Ads keeps its failure view without that callback.
 The shared module imports no provider package, and providers import no sibling.
-This shared ownership supersedes the provider-local write renderer decision
-from Plan 206. Notion retains its separate write presenter.
+Google Ads and Search Console share the write lifecycle because their approval
+and result envelopes follow the same contract. Notion retains its separate
+write presenter.
+
+Editable budget assignments refresh display evidence through the authorized
+conversation-scoped entity lookup. Campaign reads establish source budget IDs;
+budget reads provide verified source and destination details. The shared
+approval refresh query keys results by workspace, conversation, tool, and
+selection. Approval remains unavailable while evidence loads or fails, and
+late responses cannot replace another selection. Refreshes update display
+evidence without changing the operator's decision or executable edits.
 
 The shipped providers are Gmail, Google Ads, Airtable, BigQuery, Google
 Analytics, Notion, Outlook Mail, Outlook Calendar, and SharePoint. Each follows

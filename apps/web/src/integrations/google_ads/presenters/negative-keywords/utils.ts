@@ -1,5 +1,11 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/utils.tsx
 
+import {
+  parseScopedNegativeKeywordResult,
+  campaignNegativeKeywordIdentity,
+  adGroupNegativeKeywordIdentity,
+} from "@/integrations/google_ads/lib/scoped-negative-keyword-results"
+
 import type {
   AdGroupNegativeKeywordResult,
   CampaignNegativeKeywordResult,
@@ -7,7 +13,6 @@ import type {
   NegativeKeywordError,
   NegativeKeywordRemovalResult,
   NegativeKeywordResult,
-  TargetNegativeKeywordOutcome,
 } from "@/integrations/google_ads/components/negative-keyword-outcome"
 import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import { parseKeywordRow } from "@/integrations/google_ads/lib/negative-keywords"
@@ -125,77 +130,16 @@ export function campaignNegativeKeywordResult(
   value: unknown,
   removing: boolean
 ): CampaignNegativeKeywordResult | null {
-  const appliedKey = removing ? "removed" : "added"
-  const skippedKey = removing ? "not_found" : "skipped_existing"
-  if (
-    !isRecord(value) ||
-    !isRecord(value["counts"]) ||
-    !isOutcomeCount(value["counts"][appliedKey]) ||
-    !isOutcomeCount(value["counts"][skippedKey]) ||
-    !isOutcomeCount(value["counts"]["failed"]) ||
-    !Array.isArray(value["campaigns"]) ||
-    typeof value["campaigns_truncated"] !== "boolean"
-  ) {
-    return null
-  }
-  const campaigns = []
-  for (const item of value["campaigns"]) {
-    if (
-      !isRecord(item) ||
-      typeof item["campaign_id"] !== "string" ||
-      typeof item["campaign_name"] !== "string" ||
-      !isRecord(item["counts"]) ||
-      !isOutcomeCount(item["counts"][appliedKey]) ||
-      !isOutcomeCount(item["counts"][skippedKey]) ||
-      !isOutcomeCount(item["counts"]["failed"]) ||
-      !Array.isArray(item["campaign_errors"]) ||
-      typeof item["errors_truncated"] !== "boolean"
-    ) {
-      return null
-    }
-    const errors = []
-    for (const error of item["campaign_errors"]) {
-      const keyword = parseKeywordRow(error, true)
-      if (
-        !keyword ||
-        !isRecord(error) ||
-        typeof error["message"] !== "string" ||
-        typeof error["error_code"] !== "string"
-      ) {
-        return null
-      }
-      errors.push({
-        ...keyword,
-        errorCode: error["error_code"],
-        message: error["message"],
-      })
-    }
-    const keywordOutcomes = parseTargetKeywordOutcomes(item["keyword_outcomes"])
-    if (item["keyword_outcomes"] !== undefined && keywordOutcomes === null) {
-      return null
-    }
-    campaigns.push({
-      campaignId: item["campaign_id"],
-      campaignName: item["campaign_name"],
-      counts: {
-        applied: item["counts"][appliedKey],
-        failed: item["counts"]["failed"],
-        skipped: item["counts"][skippedKey],
-      },
-      errors,
-      errorsTruncated: item["errors_truncated"],
-      keywordOutcomes,
-    })
-  }
-  return {
-    campaigns,
-    campaignsTruncated: value["campaigns_truncated"],
-    totals: {
-      applied: value["counts"][appliedKey],
-      failed: value["counts"]["failed"],
-      skipped: value["counts"][skippedKey],
-    },
-  }
+  const result = parseScopedNegativeKeywordResult(
+    value,
+    removing,
+    "campaigns",
+    "campaign_errors",
+    campaignNegativeKeywordIdentity
+  )
+  return result
+    ? { campaigns: result.rows, campaignsTruncated: result.truncated, totals: result.totals }
+    : null
 }
 
 export function adGroupNegativeKeywordArgs(
@@ -257,79 +201,16 @@ export function adGroupNegativeKeywordResult(
   value: unknown,
   removing: boolean
 ): AdGroupNegativeKeywordResult | null {
-  const appliedKey = removing ? "removed" : "added"
-  const skippedKey = removing ? "not_found" : "skipped_existing"
-  if (
-    !isRecord(value) ||
-    !isRecord(value["counts"]) ||
-    !isOutcomeCount(value["counts"][appliedKey]) ||
-    !isOutcomeCount(value["counts"][skippedKey]) ||
-    !isOutcomeCount(value["counts"]["failed"]) ||
-    !Array.isArray(value["ad_groups"]) ||
-    typeof value["ad_groups_truncated"] !== "boolean"
-  ) {
-    return null
-  }
-  const adGroups = []
-  for (const item of value["ad_groups"]) {
-    if (
-      !isRecord(item) ||
-      typeof item["ad_group_id"] !== "string" ||
-      typeof item["ad_group_name"] !== "string" ||
-      typeof item["campaign_name"] !== "string" ||
-      !isRecord(item["counts"]) ||
-      !isOutcomeCount(item["counts"][appliedKey]) ||
-      !isOutcomeCount(item["counts"][skippedKey]) ||
-      !isOutcomeCount(item["counts"]["failed"]) ||
-      !Array.isArray(item["ad_group_errors"]) ||
-      typeof item["errors_truncated"] !== "boolean"
-    ) {
-      return null
-    }
-    const errors = []
-    for (const error of item["ad_group_errors"]) {
-      const keyword = parseKeywordRow(error, true)
-      if (
-        !keyword ||
-        !isRecord(error) ||
-        typeof error["message"] !== "string" ||
-        typeof error["error_code"] !== "string"
-      ) {
-        return null
-      }
-      errors.push({
-        ...keyword,
-        errorCode: error["error_code"],
-        message: error["message"],
-      })
-    }
-    const keywordOutcomes = parseTargetKeywordOutcomes(item["keyword_outcomes"])
-    if (item["keyword_outcomes"] !== undefined && keywordOutcomes === null) {
-      return null
-    }
-    adGroups.push({
-      adGroupId: item["ad_group_id"],
-      adGroupName: item["ad_group_name"],
-      campaignName: item["campaign_name"],
-      counts: {
-        applied: item["counts"][appliedKey],
-        failed: item["counts"]["failed"],
-        skipped: item["counts"][skippedKey],
-      },
-      errors,
-      errorsTruncated: item["errors_truncated"],
-      keywordOutcomes,
-    })
-  }
-  return {
-    adGroups,
-    adGroupsTruncated: value["ad_groups_truncated"],
-    totals: {
-      applied: value["counts"][appliedKey],
-      failed: value["counts"]["failed"],
-      skipped: value["counts"][skippedKey],
-    },
-  }
+  const result = parseScopedNegativeKeywordResult(
+    value,
+    removing,
+    "ad_groups",
+    "ad_group_errors",
+    adGroupNegativeKeywordIdentity
+  )
+  return result
+    ? { adGroups: result.rows, adGroupsTruncated: result.truncated, totals: result.totals }
+    : null
 }
 
 function addResult(value: unknown): NegativeKeywordResult | null {
@@ -411,37 +292,4 @@ function parseListError(item: unknown): NegativeKeywordError | null {
   if (item["scope"] === "account") return { ...details, scope: "account" }
   const keyword = parseKeywordRow(item)
   return keyword ? { ...details, ...keyword, scope: "keyword" } : null
-}
-
-function isOutcomeCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-}
-
-function parseTargetKeywordOutcomes(value: unknown): TargetNegativeKeywordOutcome[] | null {
-  if (value === undefined) return null
-  if (!Array.isArray(value)) return null
-  const outcomes: TargetNegativeKeywordOutcome[] = []
-  for (const item of value) {
-    const keyword = parseKeywordRow(item, true)
-    if (
-      !keyword ||
-      !isRecord(item) ||
-      (item["outcome"] !== "added" &&
-        item["outcome"] !== "removed" &&
-        item["outcome"] !== "skipped_existing" &&
-        item["outcome"] !== "not_found" &&
-        item["outcome"] !== "failed") ||
-      !(item["external_ref"] === undefined || typeof item["external_ref"] === "string") ||
-      !(item["error_code"] === undefined || typeof item["error_code"] === "string")
-    ) {
-      return null
-    }
-    outcomes.push({
-      ...keyword,
-      ...(typeof item["error_code"] === "string" ? { errorCode: item["error_code"] } : {}),
-      ...(typeof item["external_ref"] === "string" ? { externalRef: item["external_ref"] } : {}),
-      outcome: item["outcome"],
-    })
-  }
-  return outcomes
 }
