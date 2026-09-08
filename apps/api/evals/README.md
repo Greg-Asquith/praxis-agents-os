@@ -28,7 +28,7 @@ The injection scaffolds place hostile external knowledge and provider content
 in model history as typed tool returns and check both tool choice and outbound
 argument canaries. Internal memory is trusted agent state and is deliberately
 excluded from untrusted-content framing and injection-warning evaluations. The
-Gmail case uses the shared hostile-email fixture and production untrusted-
+Gmail and Outlook cases use the shared hostile-email fixture and production untrusted-
 content framing before placing the tool return in history.
 The code-mode case uses the shared hostile workflow-result fixture and the
 production `code_mode_workflow` provenance frame; it verifies that the

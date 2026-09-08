@@ -22,14 +22,16 @@ type MicrosoftModuleContract = {
 }
 
 export function testMicrosoftIntegrationModule(contract: MicrosoftModuleContract) {
-  it("loads lazily through the registry without tool presenters", async () => {
+  it("loads lazily through the registry with its declared tool presenters", async () => {
     await loadIntegrationUiModules([contract.providerKey])
 
     expect(providerKeyForToolName(`${contract.providerKey}_future_tool`)).toBe(contract.providerKey)
     expect(integrationIcon(contract.providerKey)).toBe(
       contract.module.icons?.[contract.providerKey]
     )
-    expect(integrationToolRowPresenters(contract.providerKey)).toEqual([])
+    expect(integrationToolRowPresenters(contract.providerKey)).toEqual(
+      contract.module.toolRowPresenters ?? []
+    )
     expect(contract.module.catalogDescription).toBe(contract.description)
   })
 

@@ -337,7 +337,7 @@ describe("ApprovalRequestFields", () => {
     expect(html).toContain('inputMode="decimal"')
     expect(html).toContain("one@example.com")
     expect(html).toContain("Remove one@example.com")
-    expect(html).toContain("Add list item")
+    expect(html).toContain("Add item to Recipients")
     expect(html).toContain("Add Field")
     expect(html).toContain("Active")
     expect(html).toContain("Complex value — read only")

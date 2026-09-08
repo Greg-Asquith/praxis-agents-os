@@ -47,6 +47,13 @@ async def get_integration_preview(
     definition = _get_preview_definition(connection, kind=kind)
 
     try:
+        if definition.ref_pattern.fullmatch(ref) is None:
+            raise IntegrationValidationError(
+                "The preview reference is invalid for this provider",
+                provider_key=connection.provider_key,
+                operation=definition.operation,
+            )
+        await db.commit()
         payload = await definition.fetch(db, connection, ref)
         content = payload.content
         if len(content.encode("utf-8")) > settings.INTEGRATION_PREVIEW_MAX_BYTES:

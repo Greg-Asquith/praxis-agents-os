@@ -2,6 +2,7 @@
 
 """Provider contribution contract used by the settings-driven loader."""
 
+import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -225,6 +226,7 @@ class IntegrationPreviewDefinition:
     kind: str
     operation: str
     fetch: IntegrationPreviewFetchFn
+    ref_pattern: re.Pattern[str] = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 
 @dataclass(frozen=True)

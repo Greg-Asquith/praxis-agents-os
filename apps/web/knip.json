@@ -1,6 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["tests/**/*.test.ts", "src/integrations/contract.ts", "src/integrations/*/index.ts"],
+  "entry": [
+    "tests/**/*.test.ts",
+    "tests/integrations/outlook_mail/preview-interaction.tsx",
+    "src/integrations/contract.ts",
+    "src/integrations/*/index.ts"
+  ],
   "project": ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}"],
   "ignore": ["src/components/ui/**"]
 }

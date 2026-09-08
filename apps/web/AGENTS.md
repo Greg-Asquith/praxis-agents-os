@@ -85,6 +85,7 @@ table are relative to this file:
 | Change area                                                  | Required reference                                                                            |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Integration connections, recovery, or provider presenters    | [Integration guide and provider references](../../docs/implementation/integrations/README.md) |
+| Outlook mail approvals, results, or shared email previews    | [Microsoft Graph](../../docs/implementation/integrations/microsoft-graph.md)                  |
 | Conversation streaming, recovery, context, or schedules      | [Agent runs](../../docs/implementation/agent-runs.md)                                         |
 | Approval fields, entity editors, tool results, or artifacts  | [Tool dispatch](../../docs/implementation/tool-dispatch.md)                                   |
 | Workflow rows and nested approval replay                     | [Code Mode](../../docs/implementation/code-mode.md)                                           |

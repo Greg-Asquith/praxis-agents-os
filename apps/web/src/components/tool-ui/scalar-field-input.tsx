@@ -5,6 +5,20 @@ import type { EditedScalar } from "@/components/tool-ui/edited-values"
 import { fieldWellClass } from "@/components/tool-ui/field-styles"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+const OPTIONAL_BOOLEAN_OPTIONS = [
+  { value: "unchanged", label: "No change" },
+  { value: "true", label: "Yes" },
+  { value: "false", label: "No" },
+]
 
 type ScalarFieldInputProps = {
   disabled: boolean
@@ -23,10 +37,14 @@ export function ScalarFieldInput(
   if (format === "number" && typeof value === "number") {
     return <NumberFieldInput {...props} value={value} />
   }
+  if (format === "boolean" && props.rawValue == null) {
+    return <OptionalBooleanFieldInput {...props} />
+  }
   if (format === "boolean" && typeof value === "boolean") {
     return (
       <Checkbox
         checked={value}
+        className="order-first"
         disabled={disabled}
         id={id}
         onCheckedChange={onChange}
@@ -92,5 +110,39 @@ function NumberFieldInput({
       step={Number.isInteger(rawValue) ? 1 : "any"}
       type="number"
     />
+  )
+}
+
+function OptionalBooleanFieldInput({
+  disabled,
+  id,
+  onChange,
+  onClear,
+  focusRef,
+  value,
+}: ScalarFieldInputProps) {
+  return (
+    <Select<string>
+      disabled={disabled}
+      items={OPTIONAL_BOOLEAN_OPTIONS}
+      value={typeof value === "boolean" ? String(value) : "unchanged"}
+      onValueChange={(nextValue) => {
+        if (nextValue === "unchanged") onClear()
+        else if (nextValue === "true" || nextValue === "false") onChange(nextValue === "true")
+      }}
+    >
+      <SelectTrigger className={fieldWellClass} id={id} ref={focusRef}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {OPTIONAL_BOOLEAN_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   )
 }

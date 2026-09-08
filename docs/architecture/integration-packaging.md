@@ -626,8 +626,26 @@ path; revisit only if a real provider cannot use it.
 Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft
 Graph seam. Each provider has an isolated Entra application, settings,
 manifest, discovery implementation, and lazy web module. These foundation
-packages expose connections and resources; provider tools ship in their
-service-specific follow-up slices.
+packages expose connections and resources. Outlook Mail contributes five
+bounded read tools, scoped message and attachment resolvers, and an
+`outlook_message` preview. Seven approval-gated mail writes require one selected
+mailbox and retain immutable message references and terminal evidence. Move
+and update also support operator-configured automatic execution. Real-tenant
+reply rendering verification remains pending. Calendar tools and SharePoint
+tools remain pending. Gmail and Outlook share the provider-neutral preview query
+and content loader in `components/tool-ui/`; provider wrappers own metadata
+chips and message presentation.
+
+Outlook deliberately retains per-tool execution closures for its multi-request
+writes. The shared operation runner remains the only audit and durability
+owner. Outlook's outcome builders translate its known draft, patch, and send
+effects, while each closure keeps preparation and cancellation explicit.
+A generic extraction would need separate success, failure, and cancellation
+callbacks plus access to prepared provider state. That expands the shared
+runner's contract without another provider using that shape. Defer lifecycle
+consolidation until a second provider needs the same partial-effect contract;
+then extract through the shared runner and verify both providers. Do not add
+an Outlook audit runner to hide these closures.
 
 BigQuery demonstrates the checklist end to end. Its package under
 `integrations/bigquery/` contributes a workspace-owned service-account

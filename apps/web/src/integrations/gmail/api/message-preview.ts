@@ -1,8 +1,6 @@
 // apps/web/src/integrations/gmail/api/message-preview.ts
 
-import { queryOptions } from "@tanstack/react-query"
-
-import { apiRequest } from "@/lib/api/client"
+import { providerPreviewQueryOptions } from "@/components/tool-ui/provider-preview-queries"
 import { baseIntegrationQueryKeys } from "@/lib/integration-query-keys"
 
 export type GmailMessagePreview = {
@@ -39,15 +37,12 @@ export function gmailMessagePreviewQueryOptions(
   mailboxId: string,
   messageId: string
 ) {
-  return queryOptions({
+  return providerPreviewQueryOptions<GmailMessagePreview["meta"]>({
+    conversationId,
+    providerKey: "gmail",
+    kind: "gmail_message",
+    scopeId: mailboxId,
+    ref: messageId,
     queryKey: gmailQueryKeys.messagePreview(conversationId ?? "unavailable", mailboxId, messageId),
-    enabled: conversationId !== null,
-    queryFn: () =>
-      apiRequest<GmailMessagePreview>(
-        `/integrations/conversations/${conversationId ?? "unavailable"}/previews/gmail_message`,
-        { query: { provider_key: "gmail", ref: messageId, scope_id: mailboxId } }
-      ),
-    staleTime: Number.POSITIVE_INFINITY,
-    retry: 1,
   })
 }

@@ -148,7 +148,9 @@ async def list_artifacts(
 )
 async def read_artifact(
     ctx: RunContext[RuntimeDeps],
-    artifact_id: ArtifactReference,
+    artifact_id: Annotated[
+        ArtifactReference, Field(description="Artifact reference returned by list_artifacts.")
+    ],
 ) -> dict[str, object]:
     try:
         artifact = await get_artifact_service(

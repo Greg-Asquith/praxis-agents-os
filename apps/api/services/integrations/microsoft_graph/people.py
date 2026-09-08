@@ -2,6 +2,7 @@
 
 """Provider-neutral Microsoft Graph people search."""
 
+import re
 from typing import Any
 
 from core.exceptions.integration import IntegrationValidationError
@@ -41,11 +42,12 @@ async def search_people(
     return [
         (
             _string(resource.get("displayName")),
-            _person_address(resource),
+            address,
             _string(resource.get("jobTitle")),
             _string(resource.get("department")),
         )
         for resource in resources[:bounded_limit]
+        if (address := _person_address(resource))
     ]
 
 
@@ -71,17 +73,17 @@ def _person_resources(payload: object) -> list[dict[str, Any]]:
 
 
 def _person_address(resource: dict[str, Any]) -> str:
-    for key in ("emailAddresses", "phones"):
-        values = resource.get(key)
-        if not isinstance(values, list):
-            continue
-        for value in values:
-            if not isinstance(value, dict):
-                continue
-            address = _string(value.get("address")) or _string(value.get("number"))
-            if address:
-                return address
-    return _string(resource.get("userPrincipalName"))
+    values = resource.get("emailAddresses")
+    addresses = (
+        [_string(value.get("address")) for value in values if isinstance(value, dict)]
+        if isinstance(values, list)
+        else []
+    )
+    addresses.append(_string(resource.get("userPrincipalName")))
+    return next(
+        (address for address in addresses if re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", address)),
+        "",
+    )
 
 
 def _string(value: object) -> str:

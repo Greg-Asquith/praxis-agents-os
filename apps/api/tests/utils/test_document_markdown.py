@@ -127,3 +127,34 @@ async def test_convert_document_to_markdown_maps_blank_pdf_error() -> None:
             filename="scan.pdf",
             max_bytes=100_000,
         )
+
+
+@pytest.mark.parametrize(
+    "content_type,expected",
+    [
+        ("", None),
+        ("malformed", None),
+        ("application/unknown", None),
+        ("image/png", None),
+        ("TEXT/PLAIN; charset=utf-8", None),
+        (" TEXT/PLAIN ", "text/plain"),
+        ("Application/PDF", "application/pdf"),
+        ("application/msword", "application/msword"),
+        (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ),
+        (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ),
+        (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ),
+    ],
+)
+def test_document_content_type_uses_supported_document_contract(content_type, expected):
+    from utils.document_markdown import document_content_type
+
+    assert document_content_type(content_type) == expected

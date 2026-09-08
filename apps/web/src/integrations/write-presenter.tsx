@@ -8,13 +8,17 @@ import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/ap
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import { parseSettledFanOutData, type FanOutEntry } from "@/components/tool-ui/fan-out"
+import {
+  parseSettledFanOutData,
+  type FanOutEntry,
+  type ParsedFanOutData,
+} from "@/components/tool-ui/fan-out"
 import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 
 export type IntegrationWriteProvider = {
   contextLabel: string
-  externalLabel: string
+  externalLabel: string | null
   fallbackDisplayName: string
   formatContextValue?: (value: string) => string
   providerKey: string
@@ -50,11 +54,20 @@ export type IntegrationWriteVariant<Args, Result> = {
   malformedDescription: string
   parseResult: (value: unknown) => Result | null
   progressLabel: string | ((args: Args | null) => string)
-  renderFailure?: (args: Args | null, description: string) => ReactNode
-  renderOutcome: (result: Result) => ReactNode
-  renderUnverifiedOutcome?: (result: Result) => ReactNode
+  renderFailure?: (
+    args: Args | null,
+    description: string,
+    result: Result | null,
+    disposition: "failed" | "unconfirmed"
+  ) => ReactNode
+  renderOutcome: (result: Result, args: Args | null) => ReactNode
+  renderUnverifiedOutcome?: (result: Result, args: Args | null) => ReactNode
   resultAriaLabel: string
   resultFailure: string
+  /** Describes a failure the provider reported inside a successful entry. */
+  settledFailure?: (result: Result) => string | null
+  /** Identifies ambiguous evidence even when the outer entry reports success. */
+  settledUnverified?: (result: Result) => boolean
   unconfirmedAriaLabel: string
   unverifiedDescription: string
   waitingLabel: string
@@ -124,67 +137,91 @@ export function defineIntegrationWriteVariant<Args, Result>(
       return writeFailure(
         activity.id,
         args,
-        variant.failedDescription,
+        activity.status === "unknown" ? variant.resultFailure : variant.failedDescription,
         defaultOpen,
         variant,
-        provider
+        provider,
+        activity.status === "unknown" ? "unconfirmed" : "failed"
       )
     }
 
-    const fanOut = parseSettledFanOutData(activity.result, variant.parseResult, {
-      malformed: variant.malformedDescription,
-      unverified: variant.unverifiedDescription,
-    })
-    if (!fanOut) {
-      return writeFailure(activity.id, args, variant.resultFailure, defaultOpen, variant, provider)
-    }
+    return renderSettledWrite(context, args, provider, variant)
+  }
+}
 
-    return (
-      <div aria-label={variant.resultAriaLabel} className="w-full min-w-0">
-        <FanOutShell
-          contextLabel={provider.contextLabel}
-          defaultOpen={defaultOpen}
-          {...(variant.details ? { details: variant.details(args) } : {})}
-          entries={fanOut.entries}
-          emptyLabel={variant.emptyLabel}
-          externalLabel={provider.externalLabel}
-          {...(provider.formatContextValue
-            ? { formatContextValue: provider.formatContextValue }
-            : {})}
-          heading={provider.renderHeading(variant.heading)}
-          renderFailed={(entry, index) => {
-            const result = fanOut.data[index] ?? null
-            if (
-              entry.errorCode === "unverified_mutation" &&
-              result !== null &&
-              variant.renderUnverifiedOutcome
-            ) {
-              return (
-                <div className="grid gap-3">
-                  <p className="text-warning-foreground bg-warning/10 rounded-md px-2.5 py-2 text-sm">
-                    {entry.errorMessage ?? variant.unverifiedDescription}
-                  </p>
-                  {variant.renderUnverifiedOutcome(result)}
-                </div>
-              )
-            }
-            return (
-              variant.renderFailure?.(args, entry.errorMessage ?? variant.failedDescription) ?? (
-                <p className="text-destructive text-sm">
-                  {entry.errorMessage ?? variant.failedDescription}
-                </p>
-              )
-            )
-          }}
-        >
-          {(_entry, index) => {
-            const result = fanOut.data[index] ?? null
-            return result === null ? null : variant.renderOutcome(result)
-          }}
-        </FanOutShell>
-      </div>
+function renderSettledWrite<Args, Result>(
+  { activity, defaultOpen }: ToolRowPresenterProps,
+  args: Args | null,
+  provider: IntegrationWriteProvider,
+  variant: IntegrationWriteVariant<Args, Result>
+) {
+  const fanOut = parseSettledFanOutData(activity.result, variant.parseResult, {
+    malformed: variant.malformedDescription,
+    unverified: variant.unverifiedDescription,
+  })
+  if (!fanOut) {
+    return writeFailure(
+      activity.id,
+      args,
+      variant.resultFailure,
+      defaultOpen,
+      variant,
+      provider,
+      "unconfirmed"
     )
   }
+  const entries = settleEntries(fanOut, variant)
+
+  return (
+    <div aria-label={variant.resultAriaLabel} className="w-full min-w-0">
+      <FanOutShell
+        contextLabel={provider.contextLabel}
+        defaultOpen={defaultOpen}
+        {...(variant.details ? { details: variant.details(args) } : {})}
+        entries={entries}
+        emptyLabel={variant.emptyLabel}
+        externalLabel={provider.externalLabel}
+        {...(provider.formatContextValue
+          ? { formatContextValue: provider.formatContextValue }
+          : {})}
+        heading={provider.renderHeading(variant.heading)}
+        renderFailed={(entry, index) => {
+          const result = fanOut.data[index] ?? null
+          if (
+            entry.errorCode === "unverified_mutation" &&
+            result !== null &&
+            variant.renderUnverifiedOutcome
+          ) {
+            return (
+              <div className="grid gap-3">
+                <p className="text-warning-foreground bg-warning/10 rounded-md px-2.5 py-2 text-sm">
+                  {entry.errorMessage ?? variant.unverifiedDescription}
+                </p>
+                {variant.renderUnverifiedOutcome(result, args)}
+              </div>
+            )
+          }
+          return (
+            variant.renderFailure?.(
+              args,
+              entry.errorMessage ?? variant.failedDescription,
+              result,
+              entry.status === "unconfirmed" ? "unconfirmed" : "failed"
+            ) ?? (
+              <p className="text-destructive text-sm">
+                {entry.errorMessage ?? variant.failedDescription}
+              </p>
+            )
+          )
+        }}
+      >
+        {(_entry, index) => {
+          const result = fanOut.data[index] ?? null
+          return result === null ? null : variant.renderOutcome(result, args)
+        }}
+      </FanOutShell>
+    </div>
+  )
 }
 
 function renderApproval<Args, Result>(
@@ -294,6 +331,32 @@ function approvalCopy<Args>(value: string | ((args: Args) => string), args: Args
   return typeof value === "function" ? value(args) : value
 }
 
+// Parsed provider evidence can override a successful outer status.
+function settleEntries<Args, Result>(
+  fanOut: ParsedFanOutData<Result>,
+  variant: IntegrationWriteVariant<Args, Result>
+): FanOutEntry[] {
+  return fanOut.entries.map((entry, index) => {
+    if (entry.errorCode === "malformed_result" || entry.errorCode === "unverified_mutation") {
+      return { ...entry, status: "unconfirmed" }
+    }
+    const result = fanOut.data[index] ?? null
+    if (entry.status !== "success" || result === null) return entry
+    if (variant.settledUnverified?.(result)) {
+      return {
+        ...entry,
+        status: "unconfirmed",
+        errorCode: "unverified_mutation",
+        errorMessage: variant.unverifiedDescription,
+      }
+    }
+    const description = variant.settledFailure?.(result) ?? null
+    return description === null
+      ? entry
+      : { ...entry, errorCode: null, errorMessage: description, status: "failed" }
+  })
+}
+
 function writeDenied<Args, Result>(
   activityId: string,
   args: Args | null,
@@ -327,7 +390,8 @@ function writeFailure<Args, Result>(
   description: string,
   defaultOpen: boolean,
   variant: IntegrationWriteVariant<Args, Result>,
-  provider: IntegrationWriteProvider
+  provider: IntegrationWriteProvider,
+  disposition: "failed" | "unconfirmed"
 ) {
   const entry: FanOutEntry = {
     data: null,
@@ -337,7 +401,7 @@ function writeFailure<Args, Result>(
     externalId: provider.fallbackDisplayName,
     providerKey: provider.providerKey,
     renderKey: `${provider.providerKey}:failure:${activityId}`,
-    status: "failed",
+    status: disposition,
   }
   return (
     <div aria-label={variant.unconfirmedAriaLabel} className="w-full min-w-0">
@@ -352,7 +416,7 @@ function writeFailure<Args, Result>(
           : {})}
         heading={provider.renderHeading(variant.heading)}
         renderFailed={() =>
-          variant.renderFailure?.(args, description) ?? (
+          variant.renderFailure?.(args, description, null, disposition) ?? (
             <p className="text-destructive text-sm">{description}</p>
           )
         }

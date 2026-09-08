@@ -31,6 +31,7 @@ from services.audit_events import (
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.http import TransportAttemptCounter, track_transport_attempts
+from services.integrations.utils import integration_failure_code
 
 type IntegrationTerminalAuditStatus = Literal[
     AuditStatus.SUCCESS,
@@ -142,7 +143,7 @@ async def run_audited_integration_operation[T](
                         and isinstance(exception_detail, TerminalIntegrationOperationDetail)
                         else AuditStatus.FAILURE
                     ),
-                    error_code=_failure_error_code(exc, disposition),
+                    error_code=integration_failure_code(exc),
                     operation_detail=exception_detail,
                     related_event_id=pending_event_id,
                     latency_ms=_elapsed_ms(started),
@@ -171,7 +172,7 @@ async def run_audited_integration_operation[T](
                     and isinstance(exception_detail, TerminalIntegrationOperationDetail)
                     else AuditStatus.FAILURE
                 ),
-                error_code=_failure_error_code(exc, disposition),
+                error_code=integration_failure_code(exc),
                 operation_detail=exception_detail,
                 related_event_id=pending_event_id,
                 latency_ms=_elapsed_ms(started),
@@ -219,15 +220,6 @@ def _exception_operation_detail(
 
 def _elapsed_ms(started: float) -> int:
     return max(1, int((monotonic() - started) * 1000))
-
-
-def _failure_error_code(
-    exc: BaseException,
-    disposition: IntegrationFailureDisposition | None,
-) -> str:
-    if disposition is IntegrationFailureDisposition.AMBIGUOUS:
-        return "unverified_mutation"
-    return exc.__class__.__name__
 
 
 async def _record_terminal_operation(

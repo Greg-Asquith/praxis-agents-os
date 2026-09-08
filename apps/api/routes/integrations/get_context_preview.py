@@ -25,7 +25,7 @@ async def get_context_preview(
     kind: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_]*$")],
     provider_key: Annotated[str, Query(pattern=r"^[a-z][a-z0-9_-]*$")],
     scope_id: Annotated[str, Query(min_length=1, max_length=512)],
-    ref: Annotated[str, Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")],
+    ref: Annotated[str, Query(min_length=1, max_length=512, pattern=r"^[A-Za-z0-9_+/=-]+$")],
     db: AsyncDbSessionDep,
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,

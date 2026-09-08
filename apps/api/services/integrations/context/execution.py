@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions.integration import (
     IntegrationError,
-    IntegrationFailureDisposition,
     IntegrationUnverifiedMutationError,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import IntegrationContextResult
 from services.integrations.context.utils import sanitize_context_error
+from services.integrations.utils import integration_failure_code
 
 if TYPE_CHECKING:
     from pydantic_ai import RunContext
@@ -53,12 +53,6 @@ async def _run_authorized_entries[T](
         try:
             data = await operation(entry, operation_input)
         except Exception as exc:
-            error_code = (
-                "unverified_mutation"
-                if getattr(exc, "failure_disposition", None)
-                is IntegrationFailureDisposition.AMBIGUOUS
-                else exc.__class__.__name__
-            )
             results.append(
                 IntegrationContextResult(
                     entry=entry,
@@ -68,7 +62,7 @@ async def _run_authorized_entries[T](
                         if isinstance(exc, IntegrationUnverifiedMutationError)
                         else None
                     ),
-                    error_code=error_code,
+                    error_code=integration_failure_code(exc),
                     error_message=sanitize_context_error(
                         exc.user_message if isinstance(exc, IntegrationError) else str(exc)
                     ),

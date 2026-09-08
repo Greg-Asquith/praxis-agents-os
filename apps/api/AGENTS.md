@@ -60,6 +60,7 @@ architecture decisions. Paths in this table are relative to this file:
 | Tools, startup catalogues, results, or approval fields | [Tool dispatch](../../docs/implementation/tool-dispatch.md) |
 | Code Mode or nested approvals | [Code Mode](../../docs/implementation/code-mode.md) |
 | Third-party connections, discovery, or integration tools | [Integration guide and provider references](../../docs/implementation/integrations/README.md) |
+| Outlook mail tools, approvals, attachments, or previews | [Microsoft Graph](../../docs/implementation/integrations/microsoft-graph.md) |
 | Model catalogue, Vertex, or model HTTP clients | [Model providers](../../docs/implementation/model-providers.md) |
 | Native fetch, code, classifiers, or image tools | [Native helper tools](../../docs/implementation/native-tools.md) |
 | Worker admission, leases, or shutdown | [Workers](../../docs/implementation/workers.md) |

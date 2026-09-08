@@ -110,12 +110,10 @@ describe("Gmail tool presenters", () => {
     )
     vi.stubGlobal("fetch", fetchPreview)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const onOpen = vi.fn()
     const selectMessage = gmailSearchMessageSelectHandler({
       conversationId: "conversation-1",
       mailboxId: "hello@example.com",
       messageId: "message-1",
-      onOpen,
       queryClient,
     })
 
@@ -129,7 +127,6 @@ describe("Gmail tool presenters", () => {
       ).toMatchObject({ content: "Full message" })
     })
 
-    expect(onOpen).toHaveBeenCalledOnce()
     expect(fetchPreview).toHaveBeenCalledOnce()
     expect(String(fetchPreview.mock.calls[0]?.[0])).toContain(
       "/integrations/conversations/conversation-1/previews/gmail_message?provider_key=gmail&ref=message-1&scope_id=hello%40example.com"

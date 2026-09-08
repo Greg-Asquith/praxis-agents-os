@@ -16,6 +16,7 @@ import httpx2
 
 from core.exceptions.integration import (
     IntegrationAuthError,
+    IntegrationDownloadTooLargeError,
     IntegrationFailureDisposition,
     IntegrationValidationError,
 )
@@ -213,6 +214,42 @@ class MicrosoftGraphClient:
                 max_bytes=max_bytes,
             )
 
+    async def get_graph_bytes(self, path: str, *, operation: str, max_bytes: int) -> bytes:
+        """Reads bounded binary content from Graph with one credential refresh."""
+        if max_bytes < 1:
+            raise ValueError("Microsoft Graph byte limit must be positive")
+        url = self._graph_url(path)
+        request_headers = self._request_headers(path, None)
+        request_headers["Accept"] = "*/*"
+
+        async def consume(response: httpx2.Response) -> bytes:
+            if response.status_code != 200:
+                raise self._response_error(operation)
+            return await self._consume_bytes(response, operation=operation, max_bytes=max_bytes)
+
+        async def download(token: str) -> bytes:
+            request_headers["Authorization"] = f"Bearer {token}"
+            return await consume_stream_with_retries(
+                "GET",
+                url,
+                operation=operation,
+                provider_key=self._provider_key,
+                policy=IntegrationRequestPolicy.READ,
+                consume=consume,
+                client=self._client,
+                attempt_context=lambda: self._request_attempt(request_headers),
+                include_original_error=False,
+                headers=request_headers,
+                follow_redirects=False,
+            )
+
+        token = await resolve_before_dispatch(lambda: self._access_token(False))
+        try:
+            return await download(token)
+        except IntegrationAuthError:
+            token = await resolve_before_dispatch(lambda: self._access_token(True))
+            return await download(token)
+
     async def _request(
         self,
         method: str,
@@ -304,15 +341,7 @@ class MicrosoftGraphClient:
         }
 
         async def consume(response: httpx2.Response) -> bytes:
-            content_length = response.headers.get("Content-Length")
-            if content_length and content_length.isdigit() and int(content_length) > max_bytes:
-                raise self._size_error(operation)
-            body = bytearray()
-            async for chunk in response.aiter_bytes():
-                if len(body) + len(chunk) > max_bytes:
-                    raise self._size_error(operation)
-                body.extend(chunk)
-            return bytes(body)
+            return await self._consume_bytes(response, operation=operation, max_bytes=max_bytes)
 
         return await consume_stream_with_retries(
             "GET",
@@ -329,6 +358,19 @@ class MicrosoftGraphClient:
             follow_redirects=False,
             timeout=settings.INTEGRATIONS_HTTP_TIMEOUT_SECONDS,
         )
+
+    async def _consume_bytes(
+        self, response: httpx2.Response, *, operation: str, max_bytes: int
+    ) -> bytes:
+        content_length = response.headers.get("Content-Length")
+        if content_length and content_length.isdigit() and int(content_length) > max_bytes:
+            raise self._size_error(operation)
+        body = bytearray()
+        async for chunk in response.aiter_bytes():
+            if len(body) + len(chunk) > max_bytes:
+                raise self._size_error(operation)
+            body.extend(chunk)
+        return bytes(body)
 
     @asynccontextmanager
     async def _request_attempt(
@@ -425,8 +467,8 @@ class MicrosoftGraphClient:
             ),
         )
 
-    def _size_error(self, operation: str) -> IntegrationValidationError:
-        return IntegrationValidationError(
+    def _size_error(self, operation: str) -> IntegrationDownloadTooLargeError:
+        return IntegrationDownloadTooLargeError(
             "Microsoft Graph download exceeds the size limit",
             provider_key=self._provider_key,
             operation=operation,
