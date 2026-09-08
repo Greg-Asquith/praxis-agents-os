@@ -265,12 +265,24 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
         )
 
 
+@pytest.mark.parametrize("existing_job", [False, True])
 async def test_sweep_disabled_at_zero_and_does_not_enqueue(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
+    existing_job: bool,
 ) -> None:
     now = datetime.now(UTC)
     parked = await _park_approval(db_session, now=now, age_days=30)
+    if existing_job:
+        db_session.add(
+            Job(
+                kind=SWEEP_EXPIRED_AGENT_RUN_APPROVALS_KIND,
+                status="succeeded",
+            )
+        )
+        await db_session.flush()
+    sweep_jobs = select(Job.id).where(Job.kind == SWEEP_EXPIRED_AGENT_RUN_APPROVALS_KIND)
+    jobs_before = set(await db_session.scalars(sweep_jobs))
 
     result = await sweep_expired_agent_run_approvals(
         db_session,
@@ -283,12 +295,7 @@ async def test_sweep_disabled_at_zero_and_does_not_enqueue(
     assert result.expired_run_ids == []
     assert parked.run.status == "awaiting_approval"
     assert ensured is None
-    assert (
-        await db_session.scalar(
-            select(Job).where(Job.kind == SWEEP_EXPIRED_AGENT_RUN_APPROVALS_KIND)
-        )
-        is None
-    )
+    assert set(await db_session.scalars(sweep_jobs)) == jobs_before
 
 
 async def test_ensure_approval_sweep_job_is_idempotent(
