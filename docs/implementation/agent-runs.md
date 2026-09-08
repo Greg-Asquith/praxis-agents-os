@@ -29,7 +29,11 @@ The following contracts apply in this area:
   report attempts fail without replacing its evidence.
   Optional schedule `max_requests` and `max_total_tokens` completion-contract
   budgets may only tighten the resolved model/platform `UsageLimits`; they
-  never widen defaults. Approval continuations must restore the run's persisted
+  never widen defaults. Delegated starts and continuations copy the actual
+  parent limits and intersect them with the child's limits. Each non-null
+  ceiling is an absolute cumulative limit, including child `max_steps`; it
+  does not allocate a fresh allowance to each specialist. Approval continuations
+  must restore the run's persisted
   cumulative Pydantic AI usage so those limits apply across the whole generic
   run, not once per resume segment. A tripped limit fails the run with outcome
   `budget_exhausted` and records only its allowlisted kind and limit in bounded
@@ -111,6 +115,41 @@ completion-contract extension data through schedule edits. Run history names
 the precise tripped budget when bounded evidence contains it. Keep persisted
 budget values within JavaScript's safe-integer range so API-created schedules
 round-trip without numeric loss.
+
+## Cumulative usage ceilings
+
+Runtime preparation stores a validated, versioned `effective_usage_limits`
+snapshot in server-owned run metadata before model execution. Each continuation
+intersects saved ceilings with newly resolved settings and inherited limits.
+Settings edits can tighten an accepted run but cannot widen its saved ceilings.
+Run creation rejects caller-supplied effective-budget metadata.
+
+The root worker restores cumulative usage once. Every specialist receives the
+same accumulator; saved child usage is never added to it. Completion reporting
+and schedule criteria remain root-owned. The shared composition helper guards
+the SDK field inventory, takes numeric minima, and preserves enabled token
+counting. The runtime sets only request and total-token ceilings.
+
+Request limits apply at the framework model-request boundary. An approved action
+produced by the last permitted request can settle before the next model request
+is refused. Denials retain their separate consent handling. A terminal exhausted
+root cannot resume or start another specialist.
+
+Framework checks produce typed budget evidence. An inherited limit failure
+propagates through delegation and ends the root with `budget_exhausted`, including
+after approval continuation. A stricter child-only limit can return a bounded
+specialist failure while the parent retains its own budget. Recovery evidence
+remains available when approved work stops.
+
+Token ceilings use observed provider usage. An already-streaming response can
+overshoot its ceiling before stopping; these limits are not a preflight token
+or monetary guarantee. Observed exhaustion stops further model/tool continuation.
+Invocation metering still records partial responses under each agent's model.
+
+Legacy runs without a saved snapshot acquire one from the limits resolved on
+their next execution, including any retained schedule contract. Historical
+settings cannot be reconstructed. This rollout limitation applies until those
+runs finish or receive their first effective snapshot.
 
 ## Context selection controls
 

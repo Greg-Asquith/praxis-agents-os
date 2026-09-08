@@ -776,3 +776,17 @@ async def test_link_schedule_run_rejects_context_mismatch(
 
     with pytest.raises(ConflictError, match="cannot be linked"):
         await link_schedule_run(db_session, schedule_run, run)
+
+
+@pytest.mark.parametrize("snapshot", [None, {}, {"version": 1, "limits": {"request_limit": 999}}])
+async def test_create_rejects_caller_supplied_effective_budget(db_session, run_context, snapshot):
+    with pytest.raises(CustomValueError, match="owned by run execution"):
+        await create_agent_run(
+            db_session,
+            conversation_id=run_context.conversation_id,
+            agent_id=run_context.agent_id,
+            workspace_id=run_context.workspace_id,
+            user_id=run_context.user_id,
+            trigger="interactive",
+            metadata={"effective_usage_limits": snapshot},
+        )

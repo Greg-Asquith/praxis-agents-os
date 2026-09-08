@@ -26,6 +26,7 @@ from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.code_mode.state import load_code_mode_state
 from services.agents.runtime.entity_references.domain import AgentReference
+from services.agents.runtime.usage_limits import EFFECTIVE_USAGE_LIMITS_KEY, BudgetLimitExceeded
 from tests.support.delegation import ScenarioEffects, resume_scenario, scenario_effects
 from tests.support.scenario import (
     ToolCall,
@@ -52,12 +53,16 @@ async def code_mode_executor_cleanup() -> AsyncIterator[None]:
 
 
 @pytest.mark.parametrize("specialist_count", [1, 2])
+@pytest.mark.parametrize("unbounded_tokens", [False, True])
 async def test_parent_delegates_to_child_run_and_receives_result(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     effects: ScenarioEffects,
     specialist_count: int,
+    unbounded_tokens: bool,
 ) -> None:
+    if unbounded_tokens:
+        monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", None)
     context = await build_scenario_agent(committed_db_session_factory)
     children = [
         await add_scenario_delegate(
@@ -96,6 +101,10 @@ async def test_parent_delegates_to_child_run_and_receives_result(
     result = await run_scenario(committed_db_session_factory, context, model=model)
 
     assert result.output == "parent final"
+    assert (
+        result.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["total_tokens_limit"]
+        == settings.AGENT_RUN_TOTAL_TOKENS_LIMIT
+    )
     async with committed_db_session_factory() as db:
         await set_session_tenant_context(db, workspace_id=context.workspace_id)
         assert result.run.status == "completed"
@@ -747,8 +756,14 @@ async def test_unavailable_resumed_delegate_preserves_terminal_winner(
 
 
 @pytest.mark.parametrize("second_decision", ["approved", "denied"])
+@pytest.mark.parametrize("legacy", [False, True])
 async def test_delegated_workflow_resumes_twice_without_repeating_effects(
-    committed_db_session_factory, monkeypatch, effects, code_mode_executor_cleanup, second_decision
+    committed_db_session_factory,
+    monkeypatch,
+    effects,
+    code_mode_executor_cleanup,
+    second_decision,
+    legacy,
 ):
     from dataclasses import replace
 
@@ -767,7 +782,10 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
     context = await build_scenario_agent(
         committed_db_session_factory,
         trigger="scheduled",
-        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+        metadata={
+            "envelope": {"side_effect_policy": "require_approval"},
+            "completion_contract": {"required": False, "max_requests": 5},
+        },
     )
     child = await add_scenario_delegate(
         committed_db_session_factory, context, tool_names=[effects.name]
@@ -787,6 +805,24 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
     [pending] = [event.data for event in first.events if event.event == "tool.approval_required"]
     assert pending["name"] == effects.name
     assert effects.calls == []
+    assert first.run.usage_json["requests"] == 3
+    async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+        for run in [root, child_run]:
+            assert run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 5
+            if legacy:
+                run.metadata_json = {
+                    key: value
+                    for key, value in run.metadata_json.items()
+                    if key != EFFECTIVE_USAGE_LIMITS_KEY
+                }
+        if not legacy:
+            root.metadata_json = {
+                **root.metadata_json,
+                "completion_contract": {"required": False, "max_requests": 10},
+            }
+        await db.commit()
     await close_code_mode_executor()
     second = await resume_scenario(
         committed_db_session_factory,
@@ -801,6 +837,8 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
         ],
     )
     assert second.run.status == "awaiting_approval"
+    assert second.run.usage_json["requests"] == 3
+    assert second.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 5
     [next_pending] = [
         event.data for event in second.events if event.event == "tool.approval_required"
     ]
@@ -822,6 +860,8 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
         ],
     )
     assert completed.run.status == "completed"
+    assert completed.run.usage_json["requests"] == 5
+    assert completed.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 5
     assert [value for _, value in effects.calls] == (
         ["edited", "second"] if second_decision == "approved" else ["edited"]
     )
@@ -844,3 +884,249 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
             for message in messages
             for part in message.parts["parts"]
         )
+
+
+@pytest.mark.parametrize("request_limit", [2, 3, 5])
+async def test_schedule_budget_stops_delegation_at_exact_shared_request_count(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    effects: ScenarioEffects,
+    request_limit: int,
+) -> None:
+    context = await build_scenario_agent(
+        committed_db_session_factory,
+        trigger="scheduled",
+        metadata={
+            "completion_contract": {"required": False, "max_requests": request_limit},
+            "envelope": {"side_effect_policy": "allow"},
+        },
+    )
+    children = [
+        await add_scenario_delegate(
+            committed_db_session_factory, context, tool_names=[effects.name]
+        )
+        for _ in range(2)
+    ]
+    seen_requests: list[str] = []
+    model = _delegation_model(
+        child_ids=[str(child.id) for child in children],
+        write_tool=effects.name,
+        seen_requests=seen_requests,
+    )
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+    with pytest.raises(BudgetLimitExceeded) as error:
+        await run_scenario(committed_db_session_factory, context, model=model)
+    assert error.value.inherited
+    assert len(seen_requests) == request_limit
+    async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        child_runs = list(
+            await db.scalars(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+        )
+        assert root.outcome == "budget_exhausted"
+        assert root.completion_json["tripped_budget"] == {
+            "kind": "requests",
+            "limit": request_limit,
+            "scope": "inherited",
+        }
+        assert all(run.status in {"completed", "failed"} for run in child_runs)
+        assert len(child_runs) == (2 if request_limit == 5 else 1)
+        for run in [root, *child_runs]:
+            assert (
+                run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"]
+                == request_limit
+            )
+        events = list(
+            await db.scalars(
+                select(AIUsageEvent).where(
+                    AIUsageEvent.run_id.in_([root.id, *(run.id for run in child_runs)])
+                )
+            )
+        )
+        assert sum(event.requests for event in events) == request_limit
+
+
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+@pytest.mark.parametrize("updated_limit", [2, 20])
+async def test_last_request_approval_settles_without_widening_saved_budget(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    effects: ScenarioEffects,
+    decision: str,
+    updated_limit: int,
+) -> None:
+    context = await build_scenario_agent(
+        committed_db_session_factory,
+        trigger="scheduled",
+        metadata={
+            "completion_contract": {"required": False, "max_requests": 3},
+            "envelope": {"side_effect_policy": "require_approval"},
+        },
+    )
+    child = await add_scenario_delegate(
+        committed_db_session_factory, context, tool_names=[effects.name]
+    )
+    seen_requests: list[str] = []
+    model = _delegation_model(
+        child_ids=[str(child.id)], write_tool=effects.name, seen_requests=seen_requests
+    )
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+    parked = await run_scenario(committed_db_session_factory, context, model=model)
+    assert parked.run.status == "awaiting_approval"
+    assert len(seen_requests) == 3
+    assert not effects.calls
+    async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        root.metadata_json = {
+            **root.metadata_json,
+            "completion_contract": {"required": False, "max_requests": updated_limit},
+        }
+        await db.commit()
+    with pytest.raises(BudgetLimitExceeded):
+        await resume_scenario(
+            committed_db_session_factory,
+            context,
+            model=model,
+            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision=decision)],
+        )
+    assert len(seen_requests) == 3
+    assert len(effects.calls) == (1 if decision == "approved" else 0)
+    async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+        assert root.outcome == "budget_exhausted"
+        assert child_run.outcome == "budget_exhausted"
+        assert root.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == min(
+            3, updated_limit
+        )
+        assert child_run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"][
+            "request_limit"
+        ] == min(3, updated_limit)
+        events = list(
+            await db.scalars(
+                select(AIUsageEvent).where(AIUsageEvent.run_id.in_([root.id, child_run.id]))
+            )
+        )
+        assert sum(event.requests for event in events) == 3
+        assert root.usage_json["requests"] == 3
+
+    from core.exceptions.general import ConflictError
+
+    settled_effects = list(effects.calls)
+    with pytest.raises(ConflictError):
+        await run_scenario(committed_db_session_factory, context, model=model, expected_status=None)
+    assert len(seen_requests) == 3
+    assert effects.calls == settled_effects
+
+
+@pytest.mark.parametrize("resume", [False, True])
+async def test_stricter_child_ceiling_returns_failure_while_parent_can_finish(
+    committed_db_session_factory, monkeypatch, effects, resume
+):
+    context = await build_scenario_agent(
+        committed_db_session_factory,
+        trigger="scheduled",
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+    child = await add_scenario_delegate(
+        committed_db_session_factory, context, tool_names=[effects.name]
+    )
+    seen_requests: list[str] = []
+    model = _delegation_model(
+        child_ids=[str(child.id)], write_tool=effects.name, seen_requests=seen_requests
+    )
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+    if resume:
+        parked = await run_scenario(committed_db_session_factory, context, model=model)
+        assert parked.run.status == "awaiting_approval"
+    async with committed_db_session_factory() as db:
+        saved_child = await db.get(Agent, child.id)
+        saved_child.max_steps = 3 if resume else 2
+        await db.commit()
+    if resume:
+        result = await resume_scenario(
+            committed_db_session_factory,
+            context,
+            model=model,
+            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+        )
+    else:
+        result = await run_scenario(committed_db_session_factory, context, model=model)
+    assert result.run.outcome == "success"
+    assert len(seen_requests) == (4 if resume else 3)
+    assert len(effects.calls) == (1 if resume else 0)
+    async with committed_db_session_factory() as db:
+        child_run = await db.scalar(
+            select(AgentRun).where(AgentRun.parent_run_id == context.run_id)
+        )
+        assert child_run.outcome == "budget_exhausted"
+        assert child_run.completion_json["tripped_budget"]["scope"] == "local"
+        assert result.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 20
+
+
+async def test_inherited_streaming_token_overrun_preserves_mixed_model_ledger(
+    committed_db_session_factory, monkeypatch, effects
+):
+    import importlib
+
+    context = await build_scenario_agent(
+        committed_db_session_factory,
+        trigger="scheduled",
+        metadata={
+            "completion_contract": {
+                "required": True,
+                "criteria": ["Confirm the task result."],
+                "max_total_tokens": 1000,
+            }
+        },
+    )
+    child = await add_scenario_delegate(committed_db_session_factory, context)
+    async with committed_db_session_factory() as db:
+        saved = await db.get(Agent, child.id)
+        saved.model_provider = "google"
+        saved.model = "gemini-3.8-flash"
+        await db.commit()
+    shared_usage = []
+    entry = importlib.import_module("services.agents.runtime.execute_run")
+    original = entry.execute_run
+
+    async def capture_usage(db, **kwargs):
+        shared_usage.append(kwargs["usage"])
+        return await original(db, **kwargs)
+
+    monkeypatch.setattr(entry, "execute_run", capture_usage)
+    parent_model = _delegation_model(child_ids=[str(child.id)], write_tool=effects.name)
+    chunks = []
+
+    async def stream(messages, info):
+        assert "report_completion" not in {tool.name for tool in info.function_tools}
+        chunks.append("first")
+        yield "token " * 2000
+        chunks.append("second")
+        yield "unreachable"
+
+    child_model = FunctionModel(stream_function=stream)
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: child_model)
+    with pytest.raises(BudgetLimitExceeded) as error:
+        await run_scenario(committed_db_session_factory, context, model=parent_model)
+    assert error.value.inherited
+    assert error.value.kind == "total_tokens_limit"
+    assert chunks == ["first"]
+    [usage] = shared_usage
+    assert usage.total_tokens > 1000
+    async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+        assert root.outcome == child_run.outcome == "budget_exhausted"
+        events = list(
+            await db.scalars(
+                select(AIUsageEvent).where(AIUsageEvent.run_id.in_([root.id, child_run.id]))
+            )
+        )
+        assert {(event.provider, event.model) for event in events} == {
+            ("openai", "gpt-5.4-mini"),
+            ("google", "gemini-3.8-flash"),
+        }
+        assert sum(event.requests for event in events) == usage.requests == 3
+        assert sum(event.input_tokens for event in events) == usage.input_tokens
+        assert sum(event.output_tokens for event in events) == usage.output_tokens

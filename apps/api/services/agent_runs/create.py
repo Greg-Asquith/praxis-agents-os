@@ -12,6 +12,7 @@ from services.agent_runs.domain import ALL_RUN_TRIGGERS, RUN_STATUS_PENDING, RUN
 from services.agent_runs.execution_state import require_execution_owner
 from services.agent_runs.settle_run_family import lock_run_family
 from services.agent_runs.utils import validate_run_context
+from services.agents.runtime.usage_limits import EFFECTIVE_USAGE_LIMITS_KEY
 
 
 async def create_agent_run(
@@ -29,6 +30,8 @@ async def create_agent_run(
     delegation_depth: int = 0,
 ) -> AgentRun:
     """Insert a pending run for one agent turn and return it (flushed, not committed)."""
+    if metadata is not None and EFFECTIVE_USAGE_LIMITS_KEY in metadata:
+        raise CustomValueError("Effective usage limits are owned by run execution")
     if trigger not in ALL_RUN_TRIGGERS:
         raise CustomValueError(f"Unknown agent run trigger: {trigger!r}")
     if delegation_depth < 0:

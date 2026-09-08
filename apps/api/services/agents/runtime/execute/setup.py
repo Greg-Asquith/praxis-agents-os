@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -58,6 +59,13 @@ from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
+from services.agents.runtime.usage_limits import (
+    EFFECTIVE_USAGE_LIMITS_KEY,
+    EffectiveUsageLimits,
+    RuntimeUsageLimits,
+    SavedUsageLimits,
+    intersect_usage_limits,
+)
 from services.conversation_summaries.load_history_summary import load_history_summary
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context
@@ -181,6 +189,7 @@ async def prepare_runtime(
     deferred_tool_results: DeferredToolResults | None,
     skills: Sequence[Skill],
     available_files: Sequence[AvailableFile],
+    inherited_usage_limits: EffectiveUsageLimits | None = None,
 ) -> PreparedRuntime:
     user, workspace, membership = await load_actor_context(db, run)
     conversation_context_block = render_conversation_context_block(
@@ -249,6 +258,7 @@ async def prepare_runtime(
         available_files=available_files,
         active_context=active_context,
         workspace_definitions=workspace_definitions,
+        inherited_usage_limits=inherited_usage_limits,
     )
     deps = RuntimeDeps(
         db=db,
@@ -324,6 +334,7 @@ async def build_agent_for_run(
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     workspace_definitions: Sequence[RuntimeToolDefinition],
+    inherited_usage_limits: EffectiveUsageLimits | None = None,
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
     delegate_agents = (
@@ -373,6 +384,22 @@ async def build_agent_for_run(
         workspace_definitions=workspace_definitions,
         history_compaction=history_compaction,
     )
+    metadata = dict(run.metadata_json or {})
+    saved = (
+        SavedUsageLimits.model_validate(metadata[EFFECTIVE_USAGE_LIMITS_KEY]).limits
+        if EFFECTIVE_USAGE_LIMITS_KEY in metadata
+        else None
+    )
+    effective = intersect_usage_limits(
+        EffectiveUsageLimits.from_sdk(runtime_agent.usage_limits), saved, inherited_usage_limits
+    )
+    runtime_agent = replace(
+        runtime_agent, usage_limits=RuntimeUsageLimits(effective, inherited_usage_limits)
+    )
+    metadata[EFFECTIVE_USAGE_LIMITS_KEY] = SavedUsageLimits(limits=effective).model_dump(
+        mode="json"
+    )
+    run.metadata_json = metadata
     _record_skipped_runtime_tools(run, skipped_tool_names)
     run.model_name = runtime_agent.resolved_model.qualified_id
 

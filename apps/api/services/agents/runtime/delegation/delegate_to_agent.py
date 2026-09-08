@@ -39,6 +39,7 @@ from services.agents.runtime.delegation.utils import (
 from services.agents.runtime.entity_references.domain import AgentReference, internal_entity_id
 from services.agents.runtime.heartbeat import agent_run_owner_instance_id
 from services.agents.runtime.sinks import NullSink
+from services.agents.runtime.usage_limits import BudgetLimitExceeded, EffectiveUsageLimits
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,7 @@ async def delegate_to_agent(
             sink=NullSink(run_id=child_run.id, conversation_id=child_conversation.id),
             owner_instance_id=owner_id,
             usage=ctx.usage,
+            inherited_usage_limits=EffectiveUsageLimits.from_sdk(ctx.usage_limits),
             parent_metering=ctx.deps.metering,
             root_execution=ctx.deps.execution_control,
         )
@@ -178,7 +180,7 @@ async def delegate_to_agent(
             conversation_id=child_result.run.conversation_id,
             output=child_result.output,
         )
-    except ApprovalRequired:
+    except (ApprovalRequired, BudgetLimitExceeded):
         raise
     except Exception as exc:
         await session.rollback()

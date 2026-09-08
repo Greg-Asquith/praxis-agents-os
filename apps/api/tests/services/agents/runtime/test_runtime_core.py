@@ -38,6 +38,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import UsageLimits
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -1072,14 +1073,17 @@ async def test_execute_run_has_no_open_transaction_while_streaming(
         def run_stream_events(self, *_args, **_kwargs) -> BlockingStream:
             return BlockingStream()
 
-    fake_runtime_agent = SimpleNamespace(
+    from services.agents.runtime.loop import RuntimeAgent
+
+    fake_runtime_agent = RuntimeAgent(
         agent=BlockingAgent(),
         resolved_model=SimpleNamespace(
             qualified_id="openai:gpt-5.4-mini",
             provider="openai",
             model="gpt-5.4-mini",
         ),
-        usage_limits=None,
+        usage_limits=UsageLimits(),
+        history_trimmer=SimpleNamespace(watermark_key=None),
     )
     monkeypatch.setattr(
         runtime_setup_module,
@@ -1172,7 +1176,7 @@ async def test_execute_run_total_token_limit_fails_cleanly(
     assert stored_run.outcome == "budget_exhausted"
     assert stored_run.completion_json == {
         "error_code": "usage_limit_exceeded",
-        "tripped_budget": {"kind": "total_tokens", "limit": 1},
+        "tripped_budget": {"kind": "total_tokens", "limit": 1, "scope": "local"},
     }
 
     event_names = [event.event for event in sink.events]

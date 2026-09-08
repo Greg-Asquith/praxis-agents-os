@@ -77,9 +77,13 @@ async def settle_run_family(
         )
 
         completion_json = await build_family_recovery_evidence(db, family=family)
-        if status == RUN_STATUS_FAILED and (
-            target.id == family[0].id
-            or error_code in {RECOVERY_ERROR_CODE, "code_mode_resume_requires_recovery"}
+        if (
+            status == RUN_STATUS_FAILED
+            and error_code != "usage_limit_exceeded"
+            and (
+                target.id == family[0].id
+                or error_code in {RECOVERY_ERROR_CODE, "code_mode_resume_requires_recovery"}
+            )
         ):
             error_code = RECOVERY_ERROR_CODE
             error_message = (

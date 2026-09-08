@@ -43,6 +43,7 @@ from services.agents.runtime.delegation.results import (
 from services.agents.runtime.delegation.schemas import DelegateRunResult
 from services.agents.runtime.heartbeat import agent_run_owner_instance_id
 from services.agents.runtime.sinks import NullSink
+from services.agents.runtime.usage_limits import BudgetLimitExceeded, EffectiveUsageLimits
 from utils.metadata import metadata_str, metadata_uuid
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,7 @@ async def resume_approved_delegate_run(
             message_history=suspended_state.message_history,
             deferred_tool_results=child_deferred_results,
             usage=ctx.usage,
+            inherited_usage_limits=EffectiveUsageLimits.from_sdk(ctx.usage_limits),
             parent_metering=ctx.deps.metering,
             root_execution=ctx.deps.execution_control,
         )
@@ -173,7 +175,10 @@ async def resume_approved_delegate_run(
                 conversation_id=child_conversation.id,
                 deferred_tool_requests=child_result.output,
             )
-        if child_result.run.status != "completed":
+        if (
+            child_result.run.status != "completed"
+            and child_result.run.outcome != "budget_exhausted"
+        ):
             raise AgentRunResumeRequiresRecoveryError()
         return completed_or_failed_result(
             agent_name=target_name,
@@ -181,7 +186,7 @@ async def resume_approved_delegate_run(
             conversation_id=child_result.run.conversation_id,
             output=child_result.output,
         )
-    except ApprovalRequired:
+    except (ApprovalRequired, BudgetLimitExceeded):
         raise
     except Exception as exc:
         await session.rollback()

@@ -237,6 +237,14 @@ enforcement**. Values not marked _(enforced)_ are
 | Artifact-share creation | 10/hour/workspace _(enforced)_                                                                                                                                                                                                                        |
 | Integration API retries | `Retry-After`-aware, bounded attempts _(enforced)_                                                                                                                                                                                                    |
 
+Delegation uses a shared cumulative usage counter and the intersection of parent,
+child, and saved run ceilings. Approval continuations can tighten saved ceilings
+but cannot widen them. A parent budget failure ends the root with
+`budget_exhausted`; a stricter specialist-only ceiling can stop that specialist.
+Request limits count model requests, so an already-approved action from the last
+permitted request can settle. Token limits use observed usage and can overshoot
+during a streamed response; they are not monetary guarantees. _(enforced)_
+
 ## 5. Secrets operating model
 
 - Production **requires** a cloud secret-manager provider (GCP Secret

@@ -45,6 +45,7 @@ from services.agents.runtime.persistence import (
 )
 from services.agents.runtime.sinks import EventSink, NullSink
 from services.agents.runtime.stream_protocol import RunStatusEvent
+from services.agents.runtime.usage_limits import BudgetLimitExceeded, EffectiveUsageLimits
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 from services.ai_usage.utils import usage_values
 from services.conversation_summaries.safe_enqueue_history_summary import (
@@ -82,6 +83,7 @@ async def execute_run(
     message_history: Sequence[ModelMessage] | None = None,
     deferred_tool_results: DeferredToolResults | None = None,
     usage: RunUsage | None = None,
+    inherited_usage_limits: EffectiveUsageLimits | None = None,
     parent_metering: AgentRunMeteringContext | None = None,
     execution_control: ExecutionControl | None = None,
     root_execution: ExecutionControl | None = None,
@@ -190,6 +192,7 @@ async def execute_run(
                     deferred_tool_results=deferred_tool_results,
                     skills=skills,
                     available_files=available_files,
+                    inherited_usage_limits=inherited_usage_limits,
                 )
                 built_agent = prepared.built_agent
                 resolved_model = built_agent.runtime_agent.resolved_model
@@ -219,6 +222,7 @@ async def execute_run(
 
                 # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
                 live_deferred_result_ids: set[str] = set()
+                built_agent.runtime_agent.usage_limits.check_tokens(usage_accumulator)
                 with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
                     async with built_agent.runtime_agent.agent.run_stream_events(
                         prepared.user_prompt,
@@ -297,6 +301,8 @@ async def execute_run(
                 metering=metering,
                 max_wait=CANCEL_FINALIZE_TIMEOUT,
             )
+            if isinstance(exc, BudgetLimitExceeded) and exc.inherited:
+                raise
             if is_delegated and failed_run is not None:
                 return ExecuteRunResult(run=failed_run, output=None, new_message_count=0)
             raise
