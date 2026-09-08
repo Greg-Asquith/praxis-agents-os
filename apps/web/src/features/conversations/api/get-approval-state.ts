@@ -1,30 +1,23 @@
 // apps/web/src/features/conversations/api/get-approval-state.ts
 
-import { queryOptions, useQuery } from "@tanstack/react-query"
+import { queryOptions } from "@tanstack/react-query"
 
+import { conversationReadRetry } from "@/features/conversations/conversation-heal-polling"
 import { conversationsQueryKeys } from "@/features/conversations/api/list-conversations"
 import type { AgentRunApprovalStateResponse } from "@/features/conversations/types"
 import { apiRequest } from "@/lib/api/client"
 
-async function getAgentRunApprovalState(runId: string) {
-  return apiRequest<AgentRunApprovalStateResponse>(`/agent-runs/${runId}/approval-state`)
-}
-
-function agentRunApprovalStateQueryOptions(runId: string, revision?: string | null) {
-  return queryOptions({
-    queryKey: [...conversationsQueryKeys.approvalState(runId), revision ?? null],
-    queryFn: () => getAgentRunApprovalState(runId),
-    staleTime: 5_000,
+export async function getAgentRunApprovalState(runId: string, signal: AbortSignal) {
+  return apiRequest<AgentRunApprovalStateResponse>(`/agent-runs/${runId}/approval-state`, {
+    signal,
   })
 }
 
-export function useAgentRunApprovalStateQuery(
-  runId: string,
-  enabled: boolean,
-  revision?: string | null
-) {
-  return useQuery({
-    ...agentRunApprovalStateQueryOptions(runId, revision),
-    enabled,
+export function agentRunApprovalStateQueryOptions(runId: string, revision?: string | null) {
+  return queryOptions({
+    queryKey: [...conversationsQueryKeys.approvalState(runId), revision ?? null],
+    queryFn: ({ signal }) => getAgentRunApprovalState(runId, signal),
+    retry: conversationReadRetry,
+    staleTime: 5_000,
   })
 }

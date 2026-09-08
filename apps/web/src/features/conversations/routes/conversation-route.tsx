@@ -2,32 +2,22 @@
 
 import { useMemo, useState } from "react"
 import { Link, useParams } from "@tanstack/react-router"
-import {
-  useQuery,
-  useQueryClient,
-  useSuspenseQueries,
-  useSuspenseQuery,
-  type Query,
-} from "@tanstack/react-query"
+import { useQuery, useSuspenseQueries, useSuspenseQuery } from "@tanstack/react-query"
 import { ArrowDownIcon, LockKeyholeIcon } from "lucide-react"
 
+import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { agentQueryOptions } from "@/features/agents/api/get-agent"
+import { reconcileApprovalSubmission } from "@/features/conversations/approval-submission"
 import { approvalBatchIsReady } from "@/features/conversations/approval-decisions"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { MessageList } from "@/features/conversations/components/message-list"
-import {
-  conversationActiveRunRefetchInterval,
-  conversationHealPollInterval,
-} from "@/features/conversations/conversation-heal-polling"
+import { conversationRecoveryMessage } from "@/features/conversations/conversation-heal-polling"
+import { useConversationRecovery } from "@/features/conversations/hooks/use-conversation-recovery"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
-import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
-import { conversationsQueryKeys } from "@/features/conversations/api/list-conversations"
-import { useAgentRunApprovalStateQuery } from "@/features/conversations/api/get-approval-state"
-import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
 import { useConversationReadReceipt } from "@/features/conversations/hooks/use-conversation-read-receipt"
 import { useConversationRunState } from "@/features/conversations/hooks/use-conversation-run-state"
@@ -36,11 +26,11 @@ import {
   conversationScheduleContext,
 } from "@/features/conversations/format"
 import { projectConversationTimeline } from "@/features/conversations/message-parts/timeline"
-import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
 import {
-  approvalConflictMessage,
-  conversationRunInterruptionOutcome,
-} from "@/features/conversations/run-error-copy"
+  getConversationComposerDisabledReason,
+  resolveConversationActiveRun,
+} from "@/features/conversations/run-state"
+import { conversationRunInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import {
   EMPTY_CONVERSATION_MESSAGES,
   streamActiveRunFromState,
@@ -49,13 +39,12 @@ import type {
   AgentRunResumeDecision,
   Conversation,
   ConversationActiveRunResponse,
-  ConversationMessagesResponse,
 } from "@/features/conversations/types"
 import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { scheduleQueryOptions } from "@/features/schedules/api/get-schedule"
 import { scheduleTitle } from "@/features/schedules/format"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
-import { ApiError, getErrorMessage } from "@/lib/api/errors"
+import { getErrorMessage } from "@/lib/api/errors"
 
 export function ConversationRoute() {
   const params = useParams({ strict: false })
@@ -74,7 +63,13 @@ export function ConversationRoute() {
   })
   const conversation = streamConversation ?? listedConversation ?? conversationQuery.data
 
-  return <ConversationDetail conversation={conversation} conversationId={conversationId} />
+  return (
+    <ConversationDetail
+      key={conversationId}
+      conversation={conversation}
+      conversationId={conversationId}
+    />
+  )
 }
 
 function ConversationDetail({
@@ -84,7 +79,6 @@ function ConversationDetail({
   conversation: Conversation
   conversationId: string
 }) {
-  const queryClient = useQueryClient()
   const scheduleContext =
     conversation.source === "scheduled" ? conversationScheduleContext(conversation.metadata) : null
   const scheduleQuery = useQuery({
@@ -111,65 +105,21 @@ function ConversationDetail({
           approval_expires_at: null,
         } satisfies ConversationActiveRunResponse)
       : undefined
-  const messagesOptions = conversationMessagesQueryOptions(conversationId)
-  const activeRunOptions = conversationActiveRunQueryOptions(conversationId)
-  const activeRunQueryKey = conversationsQueryKeys.activeRun(conversationId)
-  const [messagesQuery, activeRunQuery] = useSuspenseQueries({
-    queries: [
-      {
-        ...messagesOptions,
-        ...(isLiveStreamConversation ? { initialData: EMPTY_CONVERSATION_MESSAGES } : {}),
-        refetchInterval: (
-          query: Query<
-            ConversationMessagesResponse,
-            Error,
-            ConversationMessagesResponse,
-            ReturnType<typeof conversationsQueryKeys.messages>
-          >
-        ) => {
-          const activeRunState =
-            queryClient.getQueryState<ConversationActiveRunResponse>(activeRunQueryKey)
-          return conversationHealPollInterval(
-            streamActiveRun?.status ?? activeRunState?.data?.active_run?.status,
-            query.state.error ?? activeRunState?.error ?? null,
-            streamConnected
-          )
-        },
-      },
-      {
-        ...activeRunOptions,
-        ...(initialActiveRun ? { initialData: initialActiveRun } : {}),
-        refetchInterval: (
-          query: Query<
-            ConversationActiveRunResponse,
-            Error,
-            ConversationActiveRunResponse,
-            typeof activeRunQueryKey
-          >
-        ) =>
-          conversationActiveRunRefetchInterval(
-            query.state.data,
-            query.state.error,
-            streamConnected
-          ),
-      },
-    ],
-  })
-  const activeRun = streamActiveRun ?? activeRunQuery.data.active_run
-  const latestRun = activeRunQuery.data.latest_run
+  const recovery = useConversationRecovery(conversationId, streamConnected, initialActiveRun)
+  const { messagesQuery, activeRunQuery, approvalStateQuery } = recovery
+  const messages = messagesQuery.data?.messages ?? EMPTY_CONVERSATION_MESSAGES.messages
+  const activeRun = resolveConversationActiveRun(
+    activeRunQuery.data?.active_run,
+    streamActiveRun,
+    streamConnected
+  )
+  const latestRun = activeRunQuery.data?.latest_run ?? null
   const runInterruption = conversationRunInterruptionOutcome(activeRun, latestRun)
   const transcriptRun = activeRun ?? (runInterruption ? latestRun : null)
   const [agentQuery, modelCatalogQuery] = useSuspenseQueries({
     queries: [agentQueryOptions(conversation.active_agent_id ?? ""), modelCatalogQueryOptions()],
   })
   const activeRunId = activeRun?.id ?? null
-  const activeRunStatus = activeRun?.status ?? null
-  const shouldLoadApprovalState = activeRunStatus === "awaiting_approval"
-  const approvalStateQuery = useAgentRunApprovalStateQuery(
-    activeRunId ?? "",
-    shouldLoadApprovalState,
-    activeRunQuery.data.approval_revision
-  )
   const {
     pendingApprovals,
     pendingDelegations,
@@ -180,15 +130,16 @@ function ConversationDetail({
     visibleStreamApprovals,
   } = useConversationRunState({
     activeRun,
+    latestRun,
     conversationId,
-    messages: messagesQuery.data.messages,
+    messages,
     recoveredApprovals: approvalStateQuery.data?.approvals ?? [],
     recoveredDelegations: approvalStateQuery.data?.delegations ?? [],
     stream,
     submittingApprovalRunId,
   })
   const approvalRevision =
-    activeRunQuery.data.approval_revision ??
+    activeRunQuery.data?.approval_revision ??
     (stream.runId === activeRunId ? stream.approvalRevision : null) ??
     approvalStateQuery.data?.approval_revision ??
     null
@@ -197,14 +148,16 @@ function ConversationDetail({
     : stream.runId === activeRunId
       ? stream.approvalRevision
       : null
-  const approvalReady = approvalBatchIsReady({
-    currentRevision: approvalRevision,
-    proposalRevision,
-    hasRecoveredBatch:
-      approvalStateQuery.data?.run_id === activeRunId &&
-      approvalStateQuery.data.approvals.length > 0,
-    streamBatchComplete: stream.runId === activeRunId && stream.approvalBatchComplete,
-  })
+  const approvalReady =
+    !recovery.approvalUnavailable &&
+    approvalBatchIsReady({
+      currentRevision: approvalRevision,
+      proposalRevision,
+      hasRecoveredBatch:
+        approvalStateQuery.data?.run_id === activeRunId &&
+        approvalStateQuery.data.approvals.length > 0,
+      streamBatchComplete: stream.runId === activeRunId && stream.approvalBatchComplete,
+    })
   const assistantLabel = conversationAgentLabel(conversation, "Agent")
   const assistantAgentId = activeRun?.agent_id ?? conversation.active_agent_id ?? "unassigned-agent"
   const assistantAgentMetadata =
@@ -215,7 +168,7 @@ function ConversationDetail({
         approvals: pendingApprovals,
         assistantAgentId,
         conversationId,
-        messages: messagesQuery.data.messages,
+        messages,
         pendingDelegations,
         pendingUserMessages,
         pendingWorkflow:
@@ -250,7 +203,7 @@ function ConversationDetail({
       conversation.source,
       assistantAgentId,
       conversationId,
-      messagesQuery.data.messages,
+      messages,
       pendingApprovals,
       pendingDelegations,
       pendingUserMessages,
@@ -267,7 +220,7 @@ function ConversationDetail({
   const pendingMessageCount = timeline.rows.filter((row) => row.kind === "pending-message").length
   const { handleScroll, isAwayFromBottom, scrollRef, scrollToBottom } = useConversationAutoScroll({
     approvalCount: pendingApprovals.length,
-    messageCount: messagesQuery.data.messages.length,
+    messageCount: messages.length,
     pendingMessageCount,
     streamMessages,
     streamToolCalls,
@@ -278,7 +231,10 @@ function ConversationDetail({
     unread: conversation.unread,
   })
 
-  const composerDisabledReason = getConversationComposerDisabledReason(activeRun)
+  const composerDisabledReason =
+    recovery.error || !activeRunQuery.data
+      ? "Wait for the conversation to refresh before sending a message."
+      : getConversationComposerDisabledReason(activeRun)
   const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
   const isResumingRun = activeRunId !== null && submittingApprovalRunId === activeRunId
   const isReadOnlyTranscript = conversation.source === "delegated"
@@ -298,25 +254,14 @@ function ConversationDetail({
     const runId = activeRun.id
     setSubmittingApprovalRunId(runId)
     try {
-      await stream.resumeRun({
-        runId,
-        payload: { decisions, ...(revision ? { approval_revision: revision } : {}) },
-      })
-      await queryClient.invalidateQueries({
-        queryKey: conversationsQueryKeys.approvalState(runId),
-      })
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: activeRunQueryKey }),
-          queryClient.invalidateQueries({
-            queryKey: conversationsQueryKeys.approvalState(runId),
+      await reconcileApprovalSubmission(
+        () =>
+          stream.resumeRun({
+            runId,
+            payload: { decisions, ...(revision ? { approval_revision: revision } : {}) },
           }),
-        ])
-      }
-      const conflictMessage = approvalConflictMessage(error)
-      if (conflictMessage) throw new Error(conflictMessage, { cause: error })
-      throw error
+        recovery.refresh
+      )
     } finally {
       setSubmittingApprovalRunId((currentRunId) => (currentRunId === runId ? null : currentRunId))
     }
@@ -336,18 +281,43 @@ function ConversationDetail({
       <div className="relative min-h-0 flex-1">
         <div ref={scrollRef} className="h-full overflow-y-auto" onScroll={handleScroll}>
           <div className="mx-auto w-full max-w-4xl px-6 py-6 pb-8">
-            <MessageList
-              approvalError={approvalError}
-              runInterruption={runInterruption}
-              assistantAgentMetadata={assistantAgentMetadata}
-              assistantLabel={assistantLabel}
-              conversationId={conversationId}
-              isApprovalLoading={approvalStateQuery.isLoading}
-              isApprovalSubmitting={isResumingRun}
-              onApprovalSubmit={handleApprovalSubmit}
-              streamError={streamError}
-              timeline={timeline}
-            />
+            {recovery.error || recovery.refreshing || recovery.paused ? (
+              <Alert role="status" className="mb-4">
+                <AlertDescription>
+                  {recovery.paused
+                    ? "Waiting for a connection…"
+                    : recovery.refreshing
+                      ? "Refreshing the conversation…"
+                      : conversationRecoveryMessage(recovery.error)}
+                </AlertDescription>
+                <AlertAction>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={recovery.refreshing || recovery.paused}
+                    onClick={() => {
+                      void recovery.refresh().catch(() => undefined)
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </AlertAction>
+              </Alert>
+            ) : null}
+            {messagesQuery.data || shouldRenderStream ? (
+              <MessageList
+                approvalError={approvalError}
+                runInterruption={runInterruption}
+                assistantAgentMetadata={assistantAgentMetadata}
+                assistantLabel={assistantLabel}
+                conversationId={conversationId}
+                isApprovalLoading={approvalStateQuery.isLoading}
+                isApprovalSubmitting={isResumingRun}
+                onApprovalSubmit={handleApprovalSubmit}
+                streamError={streamError}
+                timeline={timeline}
+              />
+            ) : null}
           </div>
         </div>
         {showScrollToBottom ? (
@@ -370,7 +340,7 @@ function ConversationDetail({
           <div className="mx-auto flex w-full max-w-4xl items-center gap-2 px-6 py-3 text-sm">
             <LockKeyholeIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="text-muted-foreground">Read-only delegated transcript</span>
-            {activeRunQuery.data.root_conversation_id ? (
+            {activeRunQuery.data?.root_conversation_id ? (
               <Link
                 to="/conversations/$conversationId"
                 params={{ conversationId: activeRunQuery.data.root_conversation_id }}

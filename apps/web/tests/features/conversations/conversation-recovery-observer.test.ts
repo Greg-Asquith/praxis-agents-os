@@ -1,10 +1,20 @@
-import { environmentManager, QueryObserver } from "@tanstack/react-query"
+import {
+  environmentManager,
+  focusManager,
+  onlineManager,
+  QueryObserver,
+} from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createQueryClient } from "@/app/query-client"
 import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
-import { conversationActiveRunRefetchInterval } from "@/features/conversations/conversation-heal-polling"
+import {
+  conversationActiveRunRefetchInterval,
+  createConversationRecoveryCounter,
+  isConversationReadRecoverable,
+} from "@/features/conversations/conversation-heal-polling"
 import type { AgentRun, ConversationActiveRunResponse } from "@/features/conversations/types"
+import { ApiError } from "@/lib/api/errors"
 import { apiRequest } from "@/lib/api/client"
 import type * as ApiClient from "@/lib/api/client"
 import { setActiveUserId, setActiveWorkspaceSlug } from "@/lib/workspace"
@@ -61,6 +71,8 @@ describe("conversation recovery through a query observer", () => {
     setActiveWorkspaceSlug("workspace-1")
     client = createQueryClient()
     client.mount()
+    onlineManager.setOnline(true)
+    focusManager.setFocused(true)
   })
 
   afterEach(() => {
@@ -71,15 +83,28 @@ describe("conversation recovery through a query observer", () => {
     environmentManager.setIsServer(() => wasServer)
     setActiveUserId(null)
     setActiveWorkspaceSlug(null)
+    onlineManager.setOnline(true)
+    focusManager.setFocused(true)
     vi.resetAllMocks()
     vi.useRealTimers()
   })
 
   function observe(streamConnected = false) {
+    const count = createConversationRecoveryCounter()
     const observer = new QueryObserver(client, {
       ...conversationActiveRunQueryOptions("conversation-1"),
+      refetchOnWindowFocus: (query) =>
+        query.state.error === null || isConversationReadRecoverable(query.state.error),
+      refetchOnReconnect: (query) =>
+        query.state.error === null || isConversationReadRecoverable(query.state.error),
       refetchInterval: (query) =>
-        conversationActiveRunRefetchInterval(query.state.data, query.state.error, streamConnected),
+        conversationActiveRunRefetchInterval(
+          query.state.data,
+          query.state.error,
+          streamConnected,
+          Date.now(),
+          count(query.state)
+        ),
     })
     unsubscribe = observer.subscribe(vi.fn())
     return observer
@@ -90,6 +115,9 @@ describe("conversation recovery through a query observer", () => {
     async (status) => {
       vi.mocked(apiRequest)
         .mockResolvedValueOnce(response("running"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+        .mockRejectedValueOnce(new TypeError("Failed to fetch"))
         .mockResolvedValueOnce(response(status))
       const observer = observe()
       await vi.advanceTimersByTimeAsync(0)
@@ -97,14 +125,20 @@ describe("conversation recovery through a query observer", () => {
 
       await vi.advanceTimersByTimeAsync(3_999)
       expect(apiRequest).toHaveBeenCalledTimes(1)
-      await vi.advanceTimersByTimeAsync(1)
+      await vi.advanceTimersByTimeAsync(3_001)
+      expect(observer.getCurrentResult().isError).toBe(true)
+      expect(observer.getCurrentResult().data?.active_run?.status).toBe("running")
+      await vi.advanceTimersByTimeAsync(4_000)
       expect(observer.getCurrentResult().data).toEqual(response(status))
       expect(
         client.getQueryData(conversationActiveRunQueryOptions("conversation-1").queryKey)
       ).toEqual(response(status))
-      expect(apiRequest).toHaveBeenNthCalledWith(2, "/conversations/conversation-1/active-run")
+      expect(vi.mocked(apiRequest).mock.calls[1]?.[0]).toBe(
+        "/conversations/conversation-1/active-run"
+      )
+      expect(vi.mocked(apiRequest).mock.calls[1]?.[1]?.signal).toBeInstanceOf(AbortSignal)
       await vi.advanceTimersByTimeAsync(60_000)
-      expect(apiRequest).toHaveBeenCalledTimes(2)
+      expect(apiRequest).toHaveBeenCalledTimes(5)
     }
   )
 
@@ -126,5 +160,111 @@ describe("conversation recovery through a query observer", () => {
     expect(apiRequest).toHaveBeenCalledTimes(2)
     client.clear()
     expect(vi.getTimerCount()).toBe(0)
+  })
+  it.each([503, 429, "network"] as const)(
+    "recovers after exhausted %s retries with capped delays and resets after success",
+    async (kind) => {
+      const error =
+        kind === "network"
+          ? new TypeError("Failed to fetch")
+          : new ApiError({ status: kind, message: "Unavailable", problem: null })
+      vi.mocked(apiRequest).mockRejectedValue(error)
+      const observer = observe()
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(apiRequest).toHaveBeenCalledTimes(3)
+      expect(observer.getCurrentResult().isError).toBe(true)
+      for (const [index, delay] of [4_000, 8_000, 16_000, 30_000, 30_000].entries()) {
+        const before = 3 * (index + 1)
+        await vi.advanceTimersByTimeAsync(delay - 1)
+        expect(apiRequest).toHaveBeenCalledTimes(before)
+        await vi.advanceTimersByTimeAsync(3_001)
+        expect(apiRequest).toHaveBeenCalledTimes(before + 3)
+      }
+      vi.mocked(apiRequest).mockResolvedValue(response("running"))
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(observer.getCurrentResult().isError).toBe(false)
+      const count = vi.mocked(apiRequest).mock.calls.length
+      await vi.advanceTimersByTimeAsync(3_999)
+      expect(apiRequest).toHaveBeenCalledTimes(count)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(apiRequest).toHaveBeenCalledTimes(count + 1)
+      vi.mocked(apiRequest).mockRejectedValue(error)
+      await vi.advanceTimersByTimeAsync(7_000)
+      const failedCount = vi.mocked(apiRequest).mock.calls.length
+      await vi.advanceTimersByTimeAsync(4_000)
+      expect(apiRequest).toHaveBeenCalledTimes(failedCount + 1)
+    }
+  )
+
+  it.each([401, 403, 404, "abort"] as const)("stops automatic reads for %s", async (kind) => {
+    const error =
+      kind === "abort"
+        ? new DOMException("Cancelled", "AbortError")
+        : new ApiError({ status: kind, message: "Unavailable", problem: null })
+    vi.mocked(apiRequest).mockRejectedValue(error)
+    const observer = observe()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(apiRequest).toHaveBeenCalledTimes(1)
+    expect(observer.getCurrentResult().error).toBe(error)
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+    onlineManager.setOnline(false)
+    onlineManager.setOnline(true)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(apiRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([true, false])(
+    "refreshes parked approvals after focus and reconnect with expiry enabled=%s",
+    async (expiry) => {
+      const parked = {
+        ...response("awaiting_approval"),
+        approval_revision: "first",
+        approval_expires_at: expiry ? "2026-09-15T12:00:00Z" : null,
+      }
+      vi.mocked(apiRequest).mockResolvedValue(parked)
+      const observer = observe()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(apiRequest).toHaveBeenCalledTimes(1)
+      focusManager.setFocused(false)
+      vi.mocked(apiRequest).mockResolvedValue({ ...parked, approval_revision: "second" })
+      focusManager.setFocused(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(observer.getCurrentResult().data?.approval_revision).toBe("second")
+      onlineManager.setOnline(false)
+      await vi.advanceTimersByTimeAsync(60_000)
+      vi.mocked(apiRequest).mockResolvedValue(response("completed"))
+      onlineManager.setOnline(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(observer.getCurrentResult().data?.latest_run?.status).toBe("completed")
+      expect(apiRequest).toHaveBeenCalledTimes(3)
+    }
+  )
+
+  it("recovers a failure at the approval deadline while retaining the parked run", async () => {
+    const parked = { ...response("awaiting_approval"), approval_expires_at: "2026-09-08T12:00:10Z" }
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce(parked)
+      .mockRejectedValue(new TypeError("Failed to fetch"))
+    const observer = observe()
+    await vi.advanceTimersByTimeAsync(18_000)
+    expect(observer.getCurrentResult().data).toEqual(parked)
+    expect(observer.getCurrentResult().isError).toBe(true)
+    vi.mocked(apiRequest).mockResolvedValue(response("failed"))
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(observer.getCurrentResult().data?.latest_run?.status).toBe("failed")
+    expect(observer.getCurrentResult().isError).toBe(false)
+  })
+  it("waits while offline and resumes an initial read on reconnect", async () => {
+    onlineManager.setOnline(false)
+    vi.mocked(apiRequest).mockResolvedValue(response("completed"))
+    const observer = observe()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(observer.getCurrentResult().isPaused).toBe(true)
+    expect(apiRequest).not.toHaveBeenCalled()
+    onlineManager.setOnline(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(observer.getCurrentResult().data).toEqual(response("completed"))
+    expect(apiRequest).toHaveBeenCalledOnce()
   })
 })

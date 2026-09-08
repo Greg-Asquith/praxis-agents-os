@@ -15,6 +15,7 @@ const MODEL_PROVIDER_NOT_CONFIGURED = "model_provider_not_configured"
 
 type UseConversationRunStateParams = {
   activeRun: AgentRun | null
+  latestRun?: AgentRun | null
   conversationId: string
   messages: ConversationMessage[]
   recoveredApprovals: PendingToolApproval[]
@@ -25,6 +26,7 @@ type UseConversationRunStateParams = {
 
 export function useConversationRunState({
   activeRun,
+  latestRun,
   conversationId,
   messages,
   recoveredApprovals,
@@ -37,6 +39,7 @@ export function useConversationRunState({
     conversationId: streamConversationId,
     error: streamErrorValue,
     isStreaming: streamIsStreaming,
+    isConnected: streamIsConnected,
     messages: rawStreamMessages,
     reset: resetStream,
     runId: streamRunId,
@@ -56,7 +59,10 @@ export function useConversationRunState({
     () => hasPersistedRunResponse(messages, streamRunId),
     [messages, streamRunId]
   )
+  const durableRunSettled =
+    !streamIsConnected && activeRun === null && latestRun?.id === streamRunId
   const shouldRenderStream = shouldRenderConversationStream({
+    durableRunSettled,
     activeRun,
     conversationId,
     hasPersistedStreamResponse,
@@ -102,7 +108,7 @@ export function useConversationRunState({
 
   // Reconcile shared stream state after server persistence or an approval transition settles it.
   useEffect(() => {
-    if (streamConversationId !== conversationId) {
+    if (streamConversationId !== conversationId || streamIsConnected) {
       return
     }
 
@@ -112,7 +118,8 @@ export function useConversationRunState({
       submittingApprovalRunId !== activeRunId &&
       streamRunId === activeRunId &&
       recoveredApprovals.length > 0
-    const streamMatchesPersistedSettledRun = activeRunId === null && hasPersistedStreamResponse
+    const streamMatchesPersistedSettledRun =
+      activeRunId === null && (hasPersistedStreamResponse || durableRunSettled)
 
     if (!streamMatchesPendingApproval && !streamMatchesPersistedSettledRun) {
       return
@@ -131,9 +138,11 @@ export function useConversationRunState({
     activeRunStatus,
     conversationId,
     hasPersistedStreamResponse,
+    durableRunSettled,
     streamApprovalCount,
     streamConversationId,
     streamIsStreaming,
+    streamIsConnected,
     streamRunId,
     streamToolCallCount,
     rawStreamMessages.length,
@@ -233,18 +242,20 @@ export function hasPersistedRunResponse(
 
 export function shouldRenderConversationStream({
   activeRun,
+  durableRunSettled = false,
   conversationId,
   hasPersistedStreamResponse,
   streamConversationId,
   submittingApprovalRunId,
 }: {
   activeRun: { id: string; status: string } | null
+  durableRunSettled?: boolean
   conversationId: string
   hasPersistedStreamResponse: boolean
   streamConversationId: string | null
   submittingApprovalRunId: string | null
 }) {
-  if (streamConversationId !== conversationId) {
+  if (durableRunSettled || streamConversationId !== conversationId) {
     return false
   }
 

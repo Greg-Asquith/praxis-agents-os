@@ -201,7 +201,9 @@ validation keeps the heartbeat interval below the lease TTL.
 
 ## Frontend recovery loop
 
-`src/features/conversations/conversation-heal-polling.ts`:
+The [frontend recovery contract](../implementation/agent-runs.md#frontend-stream-and-recovery)
+defines coordinated reads, bounded retries, approval freshness, and tab recovery.
+The implementation uses the following behaviour:
 
 - After error/stop/disconnect, poll persisted messages with backoff and swap the
   saved server transcript into local state once it lands.

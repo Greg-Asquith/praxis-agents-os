@@ -102,6 +102,34 @@ The following contracts apply in this area:
   heal reads use a four-second interval only while the tab has no connected
   stream for that conversation.
 
+Recovery reads the active run first, then its current approval projection and
+messages through workspace-scoped query caches. It publishes the recovered
+status after those reads succeed and their approval revisions match. A revision
+change between reads retries the sequence. Concurrent refreshes share the
+in-flight query. Disconnected stream state yields to durable approvals and terminal
+outcomes; a connected stream retains precedence.
+
+Network failures, HTTP 429, and server errors retain two bounded query retries.
+After those retries exhaust, recovery waits four, eight, 16, then at most 30
+seconds between read sequences. A successful sequence resets the delay. The
+active-run query owns retries, so dependent reads do not multiply them. Session,
+access, and missing-resource errors stop automatic recovery. Intentional
+cancellation stops the request. Queries respect tab visibility and online state.
+Healthy parked approvals wait for their expiry deadline, with conversation-local
+focus and reconnect refresh even when expiry is disabled. Global query defaults
+remain unchanged.
+
+The route mounts before status and transcript reads, so an initial failure can
+recover on the page. The transcript retains its last known content during an
+outage and exposes a **Retry** action. Recovery never resends a turn or an approval submission.
+After an uncertain approval response or conflict, the submission stays blocked
+until the coordinated reads settle. Unavailable projections remain read-only.
+An unchanged, freshly recovered proposal permits another explicit decision;
+a different revision clears decisions and remounts its editors. Conflicts also
+clear retained decisions. An unrelated transcript refetch does not disable a
+valid approval projection. A continuously focused parked tab can remain stale
+until refresh or submission; the server rejects a stale revision.
+
 ## Schedule completion controls
 
 Schedule completion contracts remain opt-in behind the review step's Advanced

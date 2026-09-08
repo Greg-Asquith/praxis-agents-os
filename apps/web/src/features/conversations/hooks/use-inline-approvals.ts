@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react"
 
+import { ApiError } from "@/lib/api/errors"
 import type { ApprovalDecision } from "@/components/tool-ui/approval-card"
 import type { ApprovalDecisionResolver } from "@/features/conversations/approval-decision-context"
 import {
@@ -66,6 +67,7 @@ export function useInlineApprovals({
   async function submit(decisionMap: ApprovalDecisionMap, toolCallId: string) {
     if (
       readOnly ||
+      isSubmitting ||
       !enabled ||
       ambiguous ||
       currentScope.current !== scope ||
@@ -93,6 +95,13 @@ export function useInlineApprovals({
       if (currentScope.current === scope) setDecisions({})
     } catch (submitError) {
       if (currentScope.current !== scope) return
+      if (
+        submitError instanceof Error &&
+        submitError.cause instanceof ApiError &&
+        submitError.cause.status === 409
+      ) {
+        setDecisions({})
+      }
       setFormError(submitError instanceof Error ? submitError.message : "Approval submit failed.")
       setFormErrorToolCallId(toolCallId)
     } finally {

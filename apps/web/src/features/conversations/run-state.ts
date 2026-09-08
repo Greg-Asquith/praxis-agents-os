@@ -18,3 +18,11 @@ export function getConversationComposerDisabledReason(activeRun: AgentRun | null
 
   return null
 }
+
+export function resolveConversationActiveRun(
+  durableRun: AgentRun | null | undefined,
+  streamRun: AgentRun | null | undefined,
+  streamConnected: boolean
+) {
+  return streamConnected ? (streamRun ?? durableRun ?? null) : (durableRun ?? null)
+}
