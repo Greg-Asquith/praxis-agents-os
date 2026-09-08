@@ -12,11 +12,15 @@ from pydantic_ai import DeferredToolRequests, DeferredToolResults
 from pydantic_ai.messages import ModelMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import (
+    configure_async_db_session,
+    get_ai_usage_async_db_session_factory,
+    set_session_tenant_context,
+)
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
-    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
 )
@@ -38,6 +42,7 @@ from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.stream_protocol import DoneEvent, ErrorEvent, RunStatusEvent
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 from services.ai_usage.domain import AIUsageEventData
+from services.ai_usage.record_in_transaction import record_ai_usage_in_transaction
 
 from .errors import public_run_error
 from .types import ExecuteRunResult
@@ -130,11 +135,11 @@ async def finalize_suspended_run(
         eager_tool_return_ids=eager_tool_return_ids,
         usage_event=usage_event,
     )
-    await emit_approval_required_events(event_sink, deferred_tool_requests)
-    await event_sink.emit(
-        RunStatusEvent(status=RUN_STATUS_AWAITING_APPROVAL),
-    )
-    await event_sink.emit(DoneEvent(status=RUN_STATUS_AWAITING_APPROVAL))
+    if suspended_run.status == RUN_STATUS_AWAITING_APPROVAL:
+        await emit_approval_required_events(event_sink, deferred_tool_requests)
+    else:
+        deferred_tool_requests = None
+    await emit_final_events(event_sink, suspended_run)
     return ExecuteRunResult(
         run=suspended_run,
         output=deferred_tool_requests,
@@ -177,23 +182,11 @@ async def finalize_successful_run(
         eager_tool_return_ids=eager_tool_return_ids,
         usage_event=usage_event,
     )
-    if final_run.status == RUN_STATUS_COMPLETED:
-        await event_sink.emit(RunStatusEvent(status=RUN_STATUS_COMPLETED))
-        await event_sink.emit(DoneEvent(status=RUN_STATUS_COMPLETED))
-    else:
-        await event_sink.emit(RunStatusEvent(status=final_run.status))
-        if final_run.status == RUN_STATUS_FAILED:
-            await event_sink.emit(
-                ErrorEvent(
-                    code=final_run.error_code or RUN_STATUS_FAILED,
-                    message=final_run.error_message or "Agent run failed",
-                ),
-            )
-        await event_sink.emit(DoneEvent(status=final_run.status))
+    await emit_final_events(event_sink, final_run)
 
     return ExecuteRunResult(
         run=final_run,
-        output=terminal_result.output,
+        output=terminal_result.output if final_run.status == RUN_STATUS_COMPLETED else None,
         new_message_count=new_message_count,
     )
 
@@ -206,7 +199,7 @@ async def emit_failure_events(
     run_id: UUID,
     exc: Exception,
     metering: AgentRunMeteringContext | None = None,
-) -> None:
+) -> AgentRun | None:
     public_error = public_run_error(exc)
     logger.error(
         "Agent run execution failed",
@@ -218,7 +211,6 @@ async def emit_failure_events(
         },
     )
     await db.rollback()
-    terminal_status = RUN_STATUS_FAILED
     if started:
         failed_run = await persist_failed_run(
             db,
@@ -229,21 +221,17 @@ async def emit_failure_events(
             metering=metering,
         )
         if failed_run is not None:
-            terminal_status = failed_run.status
-            await event_sink.emit(RunStatusEvent(status=failed_run.status))
-            if failed_run.status == RUN_STATUS_FAILED:
-                await event_sink.emit(
-                    ErrorEvent(code=public_error.code, message=public_error.message),
-                )
+            await emit_final_events(event_sink, failed_run)
+            return failed_run
     else:
         await event_sink.emit(
             ErrorEvent(code=public_error.code, message=public_error.message),
         )
-    await event_sink.emit(DoneEvent(status=terminal_status))
+    await event_sink.emit(DoneEvent(status=RUN_STATUS_FAILED))
+    return None
 
 
 async def finalize_cancelled_run(
-    db: AsyncSession,
     *,
     event_sink: EventSink,
     run_id: UUID,
@@ -251,21 +239,36 @@ async def finalize_cancelled_run(
     user_id: UUID,
     metering: AgentRunMeteringContext | None = None,
 ) -> None:
-    """Persist and emit cancelled terminal state during cancellation unwind."""
+    """Settles cancellation using an isolated persistence session."""
+    cancelled_run = await persist_cancelled_run(
+        run_id,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        metering=metering,
+    )
+    if cancelled_run is None:
+        raise RuntimeError("Cancellation settlement did not complete")
     with suppress(Exception):
-        await db.rollback()
+        await emit_final_events(event_sink, cancelled_run)
 
-    status = RUN_STATUS_CANCELLED
-    with suppress(Exception):
-        cancelled_run = await persist_cancelled_run(
-            run_id,
-            workspace_id=workspace_id,
-            user_id=user_id,
-            metering=metering,
+
+async def emit_final_events(event_sink: EventSink, run: AgentRun) -> None:
+    """Projects final events from the committed run verdict."""
+    await event_sink.emit(RunStatusEvent(status=run.status))
+    if run.status == RUN_STATUS_FAILED:
+        await event_sink.emit(
+            ErrorEvent(
+                code=run.error_code or RUN_STATUS_FAILED,
+                message=run.error_message or "Agent run failed",
+            )
         )
-        if cancelled_run is not None:
-            status = str(cancelled_run.status)
+    await event_sink.emit(DoneEvent(status=run.status))
 
-    with suppress(BaseException):
-        await event_sink.emit(RunStatusEvent(status=status))
-        await event_sink.emit(DoneEvent(status=status))
+
+async def finalize_interrupted_usage(event: AIUsageEventData) -> None:
+    """Settles shutdown usage without changing the run's lifecycle verdict."""
+    async with get_ai_usage_async_db_session_factory()() as db:
+        await configure_async_db_session(db)
+        await set_session_tenant_context(db, workspace_id=event.workspace_id, user_id=event.user_id)
+        await record_ai_usage_in_transaction(db, event)
+        await db.commit()

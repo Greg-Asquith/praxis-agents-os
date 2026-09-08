@@ -142,6 +142,7 @@ async def resume_approved_delegate_run(
                 or "Unknown agent",
             )
 
+        target_name = target.name
         suspended_state = load_suspended_run_state(child_run)
         heartbeat_task = asyncio.create_task(
             heartbeat(
@@ -168,9 +169,12 @@ async def resume_approved_delegate_run(
             message_history=suspended_state.message_history,
             deferred_tool_results=child_deferred_results,
             usage=ctx.usage,
+            parent_metering=ctx.deps.metering,
         )
 
-        if isinstance(child_result.output, DeferredToolRequests):
+        if child_result.run.status == RUN_STATUS_AWAITING_APPROVAL and isinstance(
+            child_result.output, DeferredToolRequests
+        ):
             raise_delegate_approval_required(
                 agent=target,
                 run_id=child_result.run.id,
@@ -178,9 +182,9 @@ async def resume_approved_delegate_run(
                 deferred_tool_requests=child_result.output,
             )
         return completed_or_failed_result(
-            agent=target,
+            agent_name=target_name,
             run=child_result.run,
-            conversation_id=child_conversation.id,
+            conversation_id=child_result.run.conversation_id,
             output=child_result.output,
         )
     except ApprovalRequired:

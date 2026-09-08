@@ -93,3 +93,78 @@ async def test_heartbeat_cancel_detection_dedupes_existing_cancel(
     assert status_read is False
     with suppress(asyncio.CancelledError):
         await target
+
+
+@pytest.mark.parametrize("repeat_cancel", [False, True])
+async def test_finalisation_first_wait_is_bounded_and_joins_task(repeat_cancel):
+    from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
+
+    entered = asyncio.Event()
+    exited = asyncio.Event()
+
+    async def blocked_checkout():
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            exited.set()
+
+    task = asyncio.create_task(bounded_finalisation(blocked_checkout(), max_wait=0.02))
+    try:
+        await entered.wait()
+        if repeat_cancel:
+            task.cancel("shutdown")
+            await asyncio.sleep(0)
+            task.cancel("shutdown again")
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=0.5)
+        else:
+            assert not await asyncio.wait_for(task, timeout=0.5)
+        assert exited.is_set()
+        assert not [
+            task for task in asyncio.all_tasks() if task.get_name() == "agent-run-finalisation"
+        ]
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_finalisation_database_error_propagates_without_live_task():
+    from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
+
+    async def failed_checkout():
+        raise RuntimeError("checkout failed")
+
+    with pytest.raises(RuntimeError, match="checkout failed"):
+        await bounded_finalisation(failed_checkout(), max_wait=0.02)
+    assert not [task for task in asyncio.all_tasks() if task.get_name() == "agent-run-finalisation"]
+
+
+async def test_resistant_cleanup_retains_its_owned_resources_under_supervision():
+    from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
+
+    release = asyncio.Event()
+    closed = asyncio.Event()
+    owned_task = None
+
+    async def isolated_operation():
+        nonlocal owned_task
+        owned_task = asyncio.current_task()
+        try:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await release.wait()
+        finally:
+            closed.set()
+
+    try:
+        assert not await bounded_finalisation(isolated_operation(), max_wait=0.01)
+        assert owned_task is not None and not owned_task.done()
+        assert not closed.is_set()
+    finally:
+        release.set()
+        if owned_task is not None:
+            await asyncio.wait_for(owned_task, timeout=1)
+    assert closed.is_set()
+    assert not [task for task in asyncio.all_tasks() if task.get_name() == "agent-run-finalisation"]

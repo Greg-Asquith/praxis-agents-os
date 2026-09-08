@@ -1,7 +1,6 @@
 """Database durability, isolation, and append-only recording tests."""
 
 import asyncio
-from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -114,7 +113,6 @@ async def test_concurrent_terminal_finalization_records_one_event(
 ) -> None:
     context = await build_scenario_agent(committed_db_session_factory)
     metering = AgentRunMeteringContext(
-        invocation_started_at=datetime.now(UTC),
         baseline={
             "input_tokens": 0,
             "cache_read_tokens": 0,
@@ -153,3 +151,25 @@ async def test_concurrent_terminal_finalization_records_one_event(
         ).all()
         assert len(events) == 1
         assert events[0].requests == 1
+
+
+async def test_event_identity_deduplicates_late_settlement_and_rejects_mismatch(db_session, caplog):
+    from dataclasses import replace
+
+    workspace = build_workspace(name="Invocation", slug=f"invocation-{uuid4().hex}")
+    db_session.add(workspace)
+    await db_session.flush()
+    event = _event(workspace.id, event_id=uuid4())
+    later = replace(event, event_id=uuid4())
+    assert await record_ai_usage_in_transaction(db_session, event)
+    assert await record_ai_usage_in_transaction(db_session, later)
+    assert await record_ai_usage_in_transaction(db_session, event)
+    assert not await record_ai_usage_in_transaction(db_session, replace(event, input_tokens=999))
+    assert "payload mismatch" in caplog.text
+    rows = (
+        await db_session.scalars(
+            sa.select(AIUsageEvent).where(AIUsageEvent.workspace_id == workspace.id)
+        )
+    ).all()
+    assert len(rows) == 2
+    assert sum(row.input_tokens for row in rows) == 24

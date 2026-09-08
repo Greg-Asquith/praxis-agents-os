@@ -17,7 +17,7 @@ from core.database import (
     set_session_tenant_context,
 )
 from models.conversation import CONVERSATION_SOURCE_DELEGATED, Conversation
-from services.agent_runs.domain import RUN_TRIGGER_DELEGATED
+from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.approvals import (
     raise_delegate_approval_required,
@@ -171,9 +171,12 @@ async def delegate_to_agent(
             sink=NullSink(run_id=child_run.id, conversation_id=child_conversation.id),
             owner_instance_id=owner_id,
             usage=ctx.usage,
+            parent_metering=ctx.deps.metering,
         )
 
-        if isinstance(child_result.output, DeferredToolRequests):
+        if child_result.run.status == RUN_STATUS_AWAITING_APPROVAL and isinstance(
+            child_result.output, DeferredToolRequests
+        ):
             raise_delegate_approval_required(
                 agent=target,
                 run_id=child_result.run.id,
@@ -181,9 +184,9 @@ async def delegate_to_agent(
                 deferred_tool_requests=child_result.output,
             )
         return completed_or_failed_result(
-            agent=target,
+            agent_name=target_name,
             run=child_result.run,
-            conversation_id=child_conversation.id,
+            conversation_id=child_result.run.conversation_id,
             output=child_result.output,
         )
     except ApprovalRequired:

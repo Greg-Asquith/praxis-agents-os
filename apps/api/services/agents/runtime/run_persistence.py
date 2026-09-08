@@ -72,7 +72,7 @@ async def persist_suspended_run(
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
     usage_event: AIUsageEventData | None = None,
-) -> tuple[AgentRun, int, DeferredToolRequests]:
+) -> tuple[AgentRun, int, DeferredToolRequests | None]:
     """Store messages and suspend a running run for human tool approval."""
     run, conversation, _agent = await load_run_context(
         db,
@@ -82,8 +82,17 @@ async def persist_suspended_run(
         lock_run=True,
     )
     if is_terminal(run.status):
-        await db.commit()
-        return run, 0, deferred_tool_requests
+        final_run, count = await persist_successful_run(
+            db,
+            conversation_id=conversation_id,
+            run_id=run_id,
+            terminal_result=terminal_result,
+            client_message_id=client_message_id,
+            skip_initial_user_prompt=skip_initial_user_prompt,
+            eager_tool_return_ids=eager_tool_return_ids,
+            usage_event=usage_event,
+        )
+        return final_run, count, None
     if run.status != RUN_STATUS_RUNNING:
         raise ConflictError(
             "Agent run is no longer running",
@@ -236,12 +245,12 @@ async def persist_failed_run(
     if run is None:
         await db.commit()
         return None
+    await record_agent_run_fallback(db, run=run, metering=metering)
     if is_terminal(run.status):
         await db.commit()
         return run
 
     run.metadata_json = clear_suspended_run_metadata(run)
-    await record_agent_run_fallback(db, run=run, metering=metering)
     await fail_agent_run(
         db,
         run,
@@ -280,12 +289,12 @@ async def persist_cancelled_run(
             if run is None:
                 await db.commit()
                 return None
+            await record_agent_run_fallback(db, run=run, metering=metering)
             if is_terminal(run.status):
                 await db.commit()
                 return run
 
             run.metadata_json = clear_suspended_run_metadata(run)
-            await record_agent_run_fallback(db, run=run, metering=metering)
             await cancel_agent_run(db, run, outcome=RUN_OUTCOME_CANCELLED)
             await db.commit()
             return run

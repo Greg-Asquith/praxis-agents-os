@@ -155,11 +155,17 @@ that need conditional approval raise `ApprovalRequired(...)`.
 When a tool needs approval, Pydantic AI returns `DeferredToolRequests`. At that
 point `execute_run`:
 
-1. emits `tool.approval_required`,
-2. writes the Pydantic AI message history plus the pending deferred tool requests
-   to `agent_runs.metadata["approval_state"]` as a versioned JSON snapshot,
-3. sets the run status to `awaiting_approval` and returns without keeping a
-   long-lived process open.
+1. Persists message history and usage. If no terminal verdict wins, it saves
+   history and pending deferred requests in the versioned
+   `agent_runs.metadata_json["approval_state"]` snapshot and commits
+   `awaiting_approval`.
+2. Inspects the committed run row. Only a durable `awaiting_approval` result
+   emits `tool.approval_required` and returns actionable deferred requests.
+3. Emits final status from the committed verdict and returns without keeping
+   a long-lived process open.
+
+For deadline and cancellation handling, see
+[Finalisation and interruption](../implementation/agent-runs.md#finalisation-and-interruption).
 
 Resume is a fresh entry: `POST /agent-runs/{id}/resume` with the decision re-enters
 `execute_run`, which rehydrates from the run's approval-state snapshot and continues

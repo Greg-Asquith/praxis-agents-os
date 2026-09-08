@@ -101,7 +101,7 @@ export function DelegationToolRow({
     return null
   }
 
-  const targetLabel = delegate.agentName ?? "Delegate agent"
+  const targetLabel = delegate.agentName ?? "Delegate to Agent"
   const presentation = presentationFor(activity.name)
   const toolLabel = presentation?.label ?? activity.name
   if (approvalDecision) {

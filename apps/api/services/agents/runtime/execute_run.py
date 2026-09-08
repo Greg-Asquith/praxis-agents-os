@@ -15,6 +15,7 @@ from services.agent_runs.domain import RUN_STATUS_PENDING
 from services.agents.runtime.execute.execute_run import execute_run as execute_run_impl
 from services.agents.runtime.execute.types import ExecuteRunResult
 from services.agents.runtime.sinks import EventSink
+from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 
 
 async def execute_run(
@@ -32,6 +33,7 @@ async def execute_run(
     message_history: Sequence[ModelMessage] | None = None,
     deferred_tool_results: DeferredToolResults | None = None,
     usage: RunUsage | None = None,
+    parent_metering: AgentRunMeteringContext | None = None,
 ) -> ExecuteRunResult:
     """Drive one agent turn to completion or approval suspension.
 
@@ -57,6 +59,7 @@ async def execute_run(
         message_history=message_history,
         deferred_tool_results=deferred_tool_results,
         usage=usage,
+        parent_metering=parent_metering,
     )
 
 

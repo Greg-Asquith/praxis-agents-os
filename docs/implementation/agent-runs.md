@@ -123,3 +123,32 @@ The following contracts apply in this area:
 - In shared workspaces, the Context Group picker hides resources from personal
   connections. Standalone context selection may still show those resources in
   conversations and schedules; do not reuse the group filter for that picker.
+
+## Finalisation and interruption
+
+The committed run row controls final status, error events, and delegated
+results. Completion, suspension, failure, and cancellation preserve an earlier
+terminal verdict and its completion evidence. A suspension that loses this
+race retains execution messages and usage but returns no actionable approval
+requests. Delegation propagates approvals only when both the committed status
+and deferred output describe an approval wait. If a resumed delegate becomes
+unavailable, the locked child row still controls failure results. A completed
+child remains completed, but unavailable-target output is not returned.
+
+Finalisation has a three-second wait bound. Failure settlement has the same
+bound. Cancellation during execution or failure settlement follows the same
+interruption path and preserves the original cancellation signal.
+During interruption, the execution task rolls back its own session
+within a three-second bound, then starts isolated settlement. The isolated
+task has three seconds to finish and three seconds to cancel and join.
+Repeated cancellation does not restart these deadlines. Cleanup that resists
+cancellation remains explicitly supervised and owns its session until it exits;
+it cannot use the execution task's session. Python cancellation still
+propagates. Process shutdown settles usage without recording a human stop.
+
+Persistence precedes final stream events. A closed or detached stream does
+not prevent settlement. Exhausted accounting persistence produces bounded
+operational evidence containing the run, invocation, provider, model, and
+usage counters. Total
+database failure can leave accounting incomplete and does not trigger effect
+replay.

@@ -120,7 +120,7 @@ async def test_failed_run_records_completed_partial_request(
     )
     assert event.purpose == "agent_run"
     assert event.requests == 2
-    assert event.details == {"usage_source": "accumulator_delta"}
+    assert event.details["usage_source"] == "accumulator_delta"
 
 
 async def test_failed_approval_resume_excludes_persisted_baseline(
@@ -159,3 +159,32 @@ async def test_failed_approval_resume_excludes_persisted_baseline(
         run_id=context.run_id,
     )
     assert [event.requests for event in events] == [1, 1]
+
+
+@pytest.mark.parametrize("sink_state", ["closed", "detached"])
+async def test_unavailable_stream_does_not_prevent_usage_settlement(
+    committed_db_session_factory, sink_state
+):
+    from services.agents.runtime.execute_run import execute_run
+    from services.agents.runtime.sinks import StreamSink
+
+    context = await build_scenario_agent(committed_db_session_factory)
+    sink = StreamSink(run_id=context.run_id, conversation_id=context.conversation_id)
+    if sink_state == "closed":
+        await sink.close()
+    else:
+        sink.detach()
+    async with committed_db_session_factory() as db:
+        result = await execute_run(
+            db,
+            conversation_id=context.conversation_id,
+            run_id=context.run_id,
+            user_prompt="Reply.",
+            model=scripted_model(turns=["Done."]),
+            sink=sink,
+        )
+    assert result.run.status == "completed"
+    [event] = await _events(
+        committed_db_session_factory, workspace_id=context.workspace_id, run_id=context.run_id
+    )
+    assert event.requests == 1
