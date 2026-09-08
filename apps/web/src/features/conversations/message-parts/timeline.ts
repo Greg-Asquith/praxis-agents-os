@@ -9,6 +9,7 @@ import {
   delegationDetailsForToolActivity,
 } from "@/features/conversations/message-parts/delegation"
 import {
+  codeModeScriptFromPendingWorkflow,
   parseConversationMessages,
   type LiveToolResult,
 } from "@/features/conversations/message-parts/parse"
@@ -54,13 +55,21 @@ export type ConversationTimelineInput = {
   messages: ConversationMessage[]
   pendingDelegations: PendingDelegatedApproval[]
   pendingUserMessages: PendingUserMessage[]
+  pendingWorkflows?: PendingWorkflowState[]
+  approvalRevision?: string | null
+  readOnly?: boolean
   pendingWorkflow: PendingWorkflowState | null
   stream: ConversationTimelineStream
   transcriptRun: Pick<AgentRun, "id" | "status"> | null
 }
 
 export type ConversationTimeline = {
-  approval: { requests: PendingToolApproval[]; runId: string } | null
+  approval: {
+    requests: PendingToolApproval[]
+    runId: string
+    revision?: string | null
+    readOnly?: boolean
+  } | null
   assistantAgentId: string
   liveActivity: {
     isStreaming: boolean
@@ -80,6 +89,9 @@ export function projectConversationTimeline({
   pendingDelegations,
   pendingUserMessages,
   pendingWorkflow,
+  pendingWorkflows,
+  approvalRevision,
+  readOnly,
   stream,
   transcriptRun,
 }: ConversationTimelineInput): ConversationTimeline {
@@ -90,13 +102,16 @@ export function projectConversationTimeline({
       if (toolCall.status === "awaiting_approval") {
         continue
       }
-      liveResultsByCallIdentity.set(toolActivityIdentity(stream.runId, toolCall.tool_call_id), {
-        ...(toolCall.decisionReason === undefined
-          ? {}
-          : { decisionReason: toolCall.decisionReason }),
-        result: toolCall.result,
-        status: toolCall.status,
-      })
+      liveResultsByCallIdentity.set(
+        toolActivityIdentity(toolCall.owner_run_id ?? stream.runId, toolCall.tool_call_id),
+        {
+          ...(toolCall.decisionReason === undefined
+            ? {}
+            : { decisionReason: toolCall.decisionReason }),
+          result: toolCall.result,
+          status: toolCall.status,
+        }
+      )
     }
   }
 
@@ -106,7 +121,8 @@ export function projectConversationTimeline({
     pendingDelegations,
     liveResultsByCallIdentity,
     pendingWorkflow,
-    approvals
+    approvals,
+    pendingWorkflows
   )
   const transcriptToolIds = new Set(
     parsedMessages.flatMap((message) =>
@@ -130,7 +146,10 @@ export function projectConversationTimeline({
       if (item.kind === "text") {
         return [{ kind: "text", message: item.message }]
       }
-      const identity = toolActivityIdentity(stream.runId, item.toolCall.tool_call_id)
+      const identity = toolActivityIdentity(
+        item.toolCall.owner_run_id ?? stream.runId,
+        item.toolCall.tool_call_id
+      )
       if (transcriptToolIds.has(identity)) {
         return []
       }
@@ -151,10 +170,55 @@ export function projectConversationTimeline({
     })
   const approval =
     transcriptRun?.status === "awaiting_approval"
-      ? { requests: approvals, runId: transcriptRun.id }
+      ? {
+          requests: approvals,
+          runId: transcriptRun.id,
+          revision: approvalRevision ?? null,
+          readOnly: readOnly ?? false,
+        }
       : null
+  const workflowActivities = (pendingWorkflows ?? [])
+    .filter(
+      (workflow) =>
+        !parsedMessages.some((message) =>
+          message.toolActivities.some(
+            (activity) =>
+              activity.script &&
+              activity.agentRunId === (workflow.owner_run_id ?? transcriptRun?.id) &&
+              activity.id === workflow.outer_tool_call_id
+          )
+        )
+    )
+    .map((workflow): ToolActivity => {
+      const script = codeModeScriptFromPendingWorkflow(workflow, workflow.owner_run_id ?? null)
+      const delegation = workflow.delegation ?? workflow.pending.delegation
+      return {
+        id: workflow.outer_tool_call_id,
+        agentRunId: workflow.owner_run_id ?? null,
+        rootRunId: transcriptRun?.id ?? null,
+        kind: "approval",
+        name: "run_workflow",
+        status: "awaiting_approval",
+        ...(delegation ? { delegate: delegationDetailsForPendingApproval(delegation) } : {}),
+        script: {
+          ...script,
+          children: script.children.map((child) => ({
+            ...child,
+            rootRunId: transcriptRun?.id ?? null,
+          })),
+        },
+      }
+    })
   const orphanApprovals = approval
-    ? projectOrphanApprovals(parsedMessages, liveToolActivities, approval.requests, approval.runId)
+    ? [
+        ...workflowActivities,
+        ...projectOrphanApprovals(
+          parsedMessages,
+          [...liveToolActivities, ...workflowActivities],
+          approval.requests,
+          approval.runId
+        ),
+      ]
     : []
   const visiblePendingUserMessages = pendingMessagesForConversation(
     pendingUserMessages,
@@ -201,7 +265,13 @@ function projectOrphanApprovals(
   )
   return approvals
     .filter(
-      (approval) => !renderedAwaitingIds.has(toolActivityIdentity(runId, approval.tool_call_id))
+      (approval) =>
+        !renderedAwaitingIds.has(
+          toolActivityIdentity(
+            approval.owner_run_id ?? approval.delegation?.child_run_id ?? runId,
+            approval.tool_call_id
+          )
+        )
     )
     .map((approval) => orphanApprovalActivity(approval, runId))
 }
@@ -210,7 +280,9 @@ function orphanApprovalActivity(approval: PendingToolApproval, agentRunId: strin
   const args = normalizeToolArgs(approval.args)
   const activity: ToolActivity = {
     id: approval.tool_call_id,
-    agentRunId,
+    agentRunId: approval.owner_run_id ?? approval.delegation?.child_run_id ?? agentRunId,
+    rootRunId: agentRunId,
+    ...(approval.approval_id ? { approvalId: approval.approval_id } : {}),
     kind: "approval",
     status: "awaiting_approval",
     name: approval.name,

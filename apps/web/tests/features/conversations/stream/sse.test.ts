@@ -408,3 +408,37 @@ describe("parseSseStream", () => {
     )
   })
 })
+
+it("accepts additive approval identities while retaining native IDs and ignoring unrelated optional fields", async () => {
+  const events = await collectEvents([
+    eventFrame("tool.approval_required", {
+      ...envelope,
+      owner_run_id: "child",
+      root_run_id: "run-1",
+      approval_id: "opaque",
+      approval_revision: "round-1",
+      tool_call_id: "native",
+      name: "write_file",
+      args: {},
+      future_field: { unused: true },
+    }),
+  ])
+  expect(events[0]?.data).toMatchObject({
+    owner_run_id: "child",
+    root_run_id: "run-1",
+    approval_id: "opaque",
+    approval_revision: "round-1",
+    tool_call_id: "native",
+  })
+  await expect(
+    collectEvents([
+      eventFrame("tool.approval_required", {
+        ...envelope,
+        tool_call_id: "native",
+        name: "write_file",
+        args: {},
+        approval_id: 42,
+      }),
+    ])
+  ).rejects.toThrow("approval_id")
+})

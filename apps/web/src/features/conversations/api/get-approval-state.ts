@@ -10,17 +10,21 @@ async function getAgentRunApprovalState(runId: string) {
   return apiRequest<AgentRunApprovalStateResponse>(`/agent-runs/${runId}/approval-state`)
 }
 
-function agentRunApprovalStateQueryOptions(runId: string) {
+function agentRunApprovalStateQueryOptions(runId: string, revision?: string | null) {
   return queryOptions({
-    queryKey: conversationsQueryKeys.approvalState(runId),
+    queryKey: [...conversationsQueryKeys.approvalState(runId), revision ?? null],
     queryFn: () => getAgentRunApprovalState(runId),
     staleTime: 5_000,
   })
 }
 
-export function useAgentRunApprovalStateQuery(runId: string, enabled: boolean) {
+export function useAgentRunApprovalStateQuery(
+  runId: string,
+  enabled: boolean,
+  revision?: string | null
+) {
   return useQuery({
-    ...agentRunApprovalStateQueryOptions(runId),
+    ...agentRunApprovalStateQueryOptions(runId, revision),
     enabled,
   })
 }

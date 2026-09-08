@@ -1,5 +1,7 @@
 // apps/web/src/features/conversations/components/code-mode-row.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
+
 import { use, useEffect, useMemo, useRef, useState } from "react"
 import { Workflow } from "lucide-react"
 
@@ -28,7 +30,7 @@ export function CodeModeRow({
   const contentRef = useRef<HTMLDivElement>(null)
   const renderToolCallRow = use(ToolCallRowRendererContext)
   const pendingChild = script?.children.find((child) => child.status === "awaiting_approval")
-  const pendingChildId = pendingChild?.id ?? null
+  const pendingChildId = pendingChild?.approvalId ?? pendingChild?.id ?? null
   const visibleChildren = useMemo(() => {
     if (!script) {
       return []
@@ -87,7 +89,12 @@ export function CodeModeRow({
     <ToolResultCard
       ariaLabel={pendingChild ? "Workflow review needed" : workflowAriaLabel(activity, childCount)}
       defaultOpen={defaultOpen || Boolean(pendingChild)}
-      details={[{ label: "Summary", value: reason }]}
+      details={[
+        ...(activity.delegate?.agentName
+          ? [{ label: "Agent", value: activity.delegate.agentName }]
+          : []),
+        { label: "Summary", value: reason },
+      ]}
       heading={<CodeModeHeading />}
       key={pendingChildId ?? `settled:${activity.status}`}
       trailing={<WorkflowStatus activity={activity} pending={Boolean(pendingChild)} />}
@@ -99,7 +106,7 @@ export function CodeModeRow({
             {visibleChildren.map((child) => (
               <li
                 className="[contain-intrinsic-size:auto_3rem] [content-visibility:auto]"
-                key={child.id}
+                key={approvalActivityIdentity(child)}
               >
                 {renderToolCallRow?.({ activity: child, compact: true, live })}
               </li>

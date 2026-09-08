@@ -405,3 +405,68 @@ function transcriptActivities(timeline: ConversationTimeline) {
     return row.message.toolActivities
   })
 }
+
+it("renders multiple child workflows with independently owned reviewable leaves after reload", () => {
+  const workflows = ["child-a", "child-b"].map((owner) => ({
+    owner_run_id: owner,
+    outer_tool_call_id: "workflow",
+    code: "await write_file(name='report.txt')",
+    reason: "Save report",
+    status: "suspended" as const,
+    nested_trace: [
+      {
+        tool_call_id: "read",
+        tool_name: "read_file",
+        summary: "Read report",
+        status: "succeeded" as const,
+        result_excerpt: null,
+        presentation_result: { content: "complete report" },
+        position: 1,
+      },
+    ],
+    trace_truncated: false,
+    recovery: null,
+    pending: {
+      ...approval("nested"),
+      name: "write_file",
+      approval_id: `approval-${owner}`,
+      owner_run_id: owner,
+      parent_tool_call_id: "workflow",
+      derived_from_untrusted: true,
+      delegation: {
+        parent_tool_call_id: `delegate-${owner}`,
+        child_run_id: owner,
+        child_agent_id: `agent-${owner}`,
+        child_agent_name: owner,
+        child_conversation_id: `conversation-${owner}`,
+        pending_approval_count: 1,
+      },
+    },
+  }))
+  const timeline = projectConversationTimeline(
+    input({
+      transcriptRun: { id: "root", status: "awaiting_approval" },
+      approvals: workflows.map((workflow) => workflow.pending),
+      pendingWorkflows: workflows,
+    })
+  )
+  expect(timeline.orphanApprovals).toHaveLength(2)
+  expect(timeline.orphanApprovals.map((activity) => activity.delegate?.agentName)).toEqual([
+    "child-a",
+    "child-b",
+  ])
+  for (const [index, owner] of ["child-a", "child-b"].entries()) {
+    expect(timeline.orphanApprovals[index]?.script?.children.at(-1)).toMatchObject({
+      id: "nested",
+      agentRunId: owner,
+      rootRunId: "root",
+      approvalId: `approval-${owner}`,
+      name: "write_file",
+      args: { value: "input" },
+      derivedFromUntrusted: true,
+    })
+  }
+  expect(timeline.orphanApprovals[0]?.script?.children[0]?.result).toEqual({
+    content: "complete report",
+  })
+})

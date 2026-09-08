@@ -20,7 +20,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_core import to_jsonable_python
 
-from services.agent_runs.schemas import PendingDelegatedApprovalRead
+from services.agent_runs.schemas import AgentRunApprovalStateResponse, PendingDelegatedApprovalRead
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY,
     DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
@@ -51,6 +51,25 @@ _APPROVAL_DISPLAY_ERROR = (
     "Approval details are unavailable. Ask the agent to prepare this action again."
 )
 logger = logging.getLogger(__name__)
+
+
+def approval_events_for_projection(
+    projection: AgentRunApprovalStateResponse,
+) -> list[ToolApprovalRequiredEvent]:
+    """Builds stream approval payloads from the same reviewed leaves as reload."""
+    return [
+        ToolApprovalRequiredEvent.model_validate(
+            {
+                **approval.model_dump(mode="json", exclude_none=True),
+                **(
+                    {"approval_revision": projection.approval_revision}
+                    if projection.approval_revision is not None
+                    else {}
+                ),
+            }
+        )
+        for approval in projection.approvals
+    ]
 
 
 def is_deferred_tool_resume_event(

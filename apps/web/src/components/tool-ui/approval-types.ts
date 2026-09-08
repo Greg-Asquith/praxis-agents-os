@@ -13,6 +13,7 @@ export type ApprovalDecision =
   | { decision: "denied"; edits: EditedValues; message: string }
 
 export type ToolApprovalDecisionControls = {
+  formKey?: string
   decision: ApprovalDecision
   disabled?: boolean
   error: string | null

@@ -6,6 +6,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID, uuid4
 
 from pydantic import TypeAdapter
 from pydantic_ai import DeferredToolRequests
@@ -15,6 +16,10 @@ from pydantic_core import to_jsonable_python
 from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
+from services.agents.runtime.approval_identity import (
+    APPROVAL_BATCH_KEY,
+    validate_approval_identity_metadata,
+)
 
 APPROVAL_STATE_METADATA_KEY = "approval_state"
 APPROVAL_STATE_VERSION = 1
@@ -29,6 +34,7 @@ class SuspendedRunState:
     message_history: list[ModelMessage]
     deferred_tool_requests: DeferredToolRequests
     pending_tool_call_ids: list[str]
+    approval_batch_id: UUID | None = None
 
 
 def build_suspended_run_metadata(
@@ -42,6 +48,7 @@ def build_suspended_run_metadata(
     metadata = dict(run.metadata_json or {})
     metadata[APPROVAL_STATE_METADATA_KEY] = {
         "version": APPROVAL_STATE_VERSION,
+        APPROVAL_BATCH_KEY: str(uuid4()),
         "run_id": str(run.id),
         "conversation_id": str(conversation.id),
         "agent_id": str(run.agent_id),
@@ -108,6 +115,8 @@ def load_suspended_run_state(run: AgentRun) -> SuspendedRunState:
             },
         )
 
+    batch_id = validate_approval_identity_metadata(raw)
+
     try:
         message_history = list(ModelMessagesTypeAdapter.validate_python(raw["message_history"]))
         deferred_tool_requests = _DEFERRED_REQUESTS_ADAPTER.validate_python(
@@ -137,6 +146,7 @@ def load_suspended_run_state(run: AgentRun) -> SuspendedRunState:
         message_history=message_history,
         deferred_tool_requests=deferred_tool_requests,
         pending_tool_call_ids=pending_ids,
+        approval_batch_id=batch_id,
     )
 
 

@@ -17,6 +17,7 @@ ResumeDecision = Literal["approved", "denied"]
 
 class AgentRunResumeDecision(BaseModel):
     tool_call_id: str = Field(min_length=1, max_length=256)
+    approval_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     decision: ResumeDecision
     message: str | None = Field(default=None, max_length=1000)
     override_args: dict[str, Any] | None = None
@@ -43,6 +44,9 @@ class AgentRunResumeDecision(BaseModel):
 
 class AgentRunResumeRequest(BaseModel):
     decisions: list[AgentRunResumeDecision] = Field(min_length=1)
+    approval_revision: str | None = Field(
+        default=None, min_length=1, max_length=256, pattern=r"^\S+$"
+    )
 
 
 class PendingDelegatedApprovalRead(BaseModel):
@@ -55,6 +59,10 @@ class PendingDelegatedApprovalRead(BaseModel):
 
 
 class PendingToolApprovalRead(BaseModel):
+    approval_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    owner_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    root_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    parent_tool_call_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
     tool_call_id: str
     name: str
     args: Any
@@ -70,6 +78,9 @@ class NestedTraceEntryRead(BaseModel):
     summary: str
     status: Literal["succeeded", "failed", "pending", "denied"]
     result_excerpt: str | None = None
+    presentation_result: Any | None = Field(default=None, exclude_if=lambda value: value is None)
+    started_at: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    duration_ms: int | None = Field(default=None, ge=0, exclude_if=lambda value: value is None)
     position: int = Field(ge=1)
 
 
@@ -78,6 +89,11 @@ class PendingWorkflowToolApprovalRead(PendingToolApprovalRead):
 
 
 class PendingWorkflowStateRead(BaseModel):
+    owner_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    root_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    delegation: PendingDelegatedApprovalRead | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     outer_tool_call_id: str
     code: str
     reason: str | None = None
@@ -89,6 +105,12 @@ class PendingWorkflowStateRead(BaseModel):
 
 
 class AgentRunApprovalStateResponse(BaseModel):
+    approval_revision: str | None = Field(
+        default=None, min_length=1, max_length=256, exclude_if=lambda value: value is None
+    )
+    workflows: list[PendingWorkflowStateRead] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     run_id: UUID
     conversation_id: UUID
     approvals: list[PendingToolApprovalRead]

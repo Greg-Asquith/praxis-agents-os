@@ -1,17 +1,82 @@
 """Approval-only presentation metadata contracts."""
 
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart
 
-from services.agents.runtime.approval_events import add_approval_display_args
+from services.agent_runs.schemas import AgentRunApprovalStateResponse, PendingToolApprovalRead
+from services.agents.runtime.approval_events import (
+    add_approval_display_args,
+    approval_events_for_projection,
+    emit_approval_required_events,
+)
 from services.agents.runtime.code_mode.approval import build_code_mode_approval_metadata
+from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.staged_tool_content import (
     tool_args_for_display,
     tool_replay_args_for_editing,
 )
+
+
+async def test_production_approval_emitter_retains_legacy_payload() -> None:
+    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
+    await emit_approval_required_events(
+        sink,
+        DeferredToolRequests(
+            approvals=[ToolCallPart("external_write", {"amount": "12.50"}, "native")]
+        ),
+    )
+    assert len(sink.events) == 1
+    event = sink.events[0]
+    assert event.event == "tool.approval_required"
+    assert event.data == {
+        "run_id": str(sink.run_id),
+        "conversation_id": str(sink.conversation_id),
+        "seq": 1,
+        "tool_call_id": "native",
+        "name": "external_write",
+        "args": {"amount": "12.50"},
+    }
+
+
+def test_projected_events_preserve_leaf_identity_and_server_proposal() -> None:
+    root_id = uuid4()
+    approvals = [
+        PendingToolApprovalRead(
+            approval_id=uuid4(),
+            owner_run_id=uuid4(),
+            root_run_id=root_id,
+            tool_call_id="shared-native-call",
+            parent_tool_call_id="shared-outer-call",
+            name="external_write",
+            args={"amount": "12.50", "_currency_code": "GBP"},
+            replay_args={"amount": "12.50"},
+            derived_from_untrusted=True,
+            taint_sources=[{"source_kind": "tool", "source_ref": "source"}],
+        )
+        for _ in range(2)
+    ]
+    projection = AgentRunApprovalStateResponse(
+        run_id=root_id,
+        conversation_id=uuid4(),
+        approval_revision="a" * 64,
+        approvals=approvals,
+    )
+
+    events = approval_events_for_projection(projection)
+
+    assert events[0].approval_id != events[1].approval_id
+    assert events[0].owner_run_id != events[1].owner_run_id
+    for event, approval in zip(events, approvals, strict=True):
+        assert event.serialize_payload() == {
+            **approval.model_dump(mode="json", exclude_none=True),
+            "approval_revision": projection.approval_revision,
+        }
+        assert event.tool_call_id == "shared-native-call"
+        assert event.parent_tool_call_id == "shared-outer-call"
 
 
 @pytest.mark.parametrize("nested", [False, True])

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { ApprovalField } from "@/components/tool-ui/approval-card"
 import {
+  approvalRevisionIsReady,
   DEFAULT_APPROVAL_DECISION,
   buildResumeDecisions,
   shouldSubmitDecisions,
@@ -626,4 +627,61 @@ describe("approval decision helpers", () => {
       },
     ])
   })
+})
+
+describe("approval leaf identity", () => {
+  const siblings: PendingToolApproval[] = ["child-a", "child-b"].map((owner) => ({
+    approval_id: `approval-${owner}`,
+    owner_run_id: owner,
+    tool_call_id: "same-native-id",
+    name: "write_file",
+    args: { name: `${owner}.txt` },
+  }))
+
+  it("keeps sibling decisions and edited arguments independent without rewriting native IDs", () => {
+    expect(
+      buildResumeDecisions(siblings, {
+        "approval-child-a": { decision: "approved", message: "", edits: { name: "edited.txt" } },
+        "approval-child-b": { decision: "denied", message: "Do not write", edits: {} },
+      })
+    ).toEqual([
+      {
+        approval_id: "approval-child-a",
+        tool_call_id: "same-native-id",
+        decision: "approved",
+        override_args: { name: "edited.txt" },
+      },
+      {
+        approval_id: "approval-child-b",
+        tool_call_id: "same-native-id",
+        decision: "denied",
+        message: "Do not write",
+      },
+    ])
+  })
+
+  it("cannot reuse decisions from a previous suspension", () => {
+    expect(
+      buildResumeDecisions(siblings, {
+        "previous-approval-child-a": { decision: "approved", message: "", edits: {} },
+        "previous-approval-child-b": { decision: "approved", message: "", edits: {} },
+      })
+    ).toContain("every tool request")
+  })
+
+  it("rejects ambiguous consent from legacy native IDs", () => {
+    const legacy = siblings.map(({ tool_call_id, name, args }) => ({ tool_call_id, name, args }))
+    expect(
+      buildResumeDecisions(legacy, {
+        "same-native-id": { decision: "approved", message: "", edits: {} },
+      })
+    ).toContain("cannot be reviewed separately")
+  })
+})
+
+it("keeps stale recovered or streamed proposals unavailable until their revision matches", () => {
+  expect(approvalRevisionIsReady("new-round", "old-round")).toBe(false)
+  expect(approvalRevisionIsReady("new-round", undefined)).toBe(false)
+  expect(approvalRevisionIsReady("new-round", "new-round")).toBe(true)
+  expect(approvalRevisionIsReady(null, undefined)).toBe(true)
 })

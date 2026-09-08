@@ -45,6 +45,10 @@ type StreamEnvelope = {
   run_id: string
   conversation_id: string
   seq: number
+  root_run_id?: string
+  owner_run_id?: string
+  approval_revision?: string
+  approval_id?: string
 }
 
 export function parseStreamEvent(eventName: StreamEventName, value: unknown): StreamEvent {
@@ -276,6 +280,7 @@ function parseEnvelope(eventName: StreamEventName, data: Record<string, unknown>
       data["conversation_id"]
     ),
     seq: requiredPositiveInteger(eventName, "data.seq", data["seq"]),
+    ...optionalIdentity(eventName, data),
   }
 }
 
@@ -610,4 +615,19 @@ function optionalField(
 
 function invalidField(eventName: StreamEventName, field: string, expectation: string): never {
   throw new Error(`Invalid SSE event "${eventName}": field "${field}" ${expectation}.`)
+}
+
+function optionalIdentity(eventName: StreamEventName, data: Record<string, unknown>) {
+  const result: {
+    root_run_id?: string
+    owner_run_id?: string
+    approval_id?: string
+    approval_revision?: string
+  } = {}
+  for (const key of ["root_run_id", "owner_run_id", "approval_id", "approval_revision"] as const) {
+    if (Object.hasOwn(data, key) && data[key] !== null) {
+      result[key] = requiredNonEmptyString(eventName, `data.${key}`, data[key])
+    }
+  }
+  return result
 }

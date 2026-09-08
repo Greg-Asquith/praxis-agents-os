@@ -20,6 +20,7 @@ from models.ai_usage_event import AIUsageEvent
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
 from services.agent_runs.schemas import AgentRunResumeDecision
+from services.agents.runtime.approval_projection import build_approval_graph, project_approval_graph
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.code_mode.state import load_code_mode_state
@@ -195,6 +196,16 @@ async def test_child_approval_then_parent_resume(
         )
         assert child_run.status == "awaiting_approval"
         assert load_suspended_run_state(child_run).pending_tool_call_ids == ["child-write"]
+        projection = project_approval_graph(
+            build_approval_graph(result.run, {child_run.id: child_run})
+        )
+        [pending] = projection.approvals
+        assert pending.owner_run_id == child_run.id
+        assert pending.root_run_id == result.run.id
+        assert pending.tool_call_id == "child-write"
+        assert pending.approval_id is not None
+        assert load_suspended_run_state(child_run).approval_batch_id is not None
+        assert "approval_id" not in approvals[0]
     if revocation == "depth":
         monkeypatch.setattr(settings, "AGENT_MAX_DELEGATION_DEPTH", 0)
     elif revocation == "permission":
@@ -301,6 +312,14 @@ async def test_top_level_workflow_approval_restores_interpreter_and_completes(
     assert state.run_id == str(context.run_id)
     assert state.nested_call_id == "workflow-call:1"
     assert state.executed_effects == ()
+    projection = project_approval_graph(build_approval_graph(suspended.run, {}))
+    [pending] = projection.approvals
+    assert pending.tool_call_id == state.nested_call_id
+    assert pending.parent_tool_call_id == "workflow-call"
+    assert pending.owner_run_id == context.run_id
+    assert pending.args == {"value": "retained"}
+    assert projection.workflow == projection.workflows[0]
+    assert "snapshot_b64" not in projection.model_dump_json()
     await close_code_mode_executor()
     resumed = await resume_scenario(
         committed_db_session_factory,

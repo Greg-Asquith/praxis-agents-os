@@ -1,5 +1,6 @@
 // apps/web/src/integrations/airtable/presenters/write.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
@@ -55,7 +56,7 @@ function airtableWritePresenter(config: AirtableWriteConfig): ToolRowPresenter {
         const fields = ui?.arg_fields ?? []
         return (
           <ToolApprovalDecisionCard
-            activityId={activity.id}
+            activityId={approvalActivityIdentity(activity)}
             approveLabel={config.approveLabel}
             args={activity.args}
             controls={approvalDecision}
@@ -141,7 +142,7 @@ function writeDenied(
 ) {
   return (
     <DeclinedFanOut
-      activityId={activity.id}
+      activityId={approvalActivityIdentity(activity)}
       ariaLabel={`Declined Airtable record ${config.action}`}
       contextLabel="Base"
       defaultOpen={defaultOpen}

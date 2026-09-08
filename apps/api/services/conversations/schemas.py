@@ -104,6 +104,11 @@ class ConversationMessagesResponse(BaseModel):
 
 
 class ConversationActiveRunResponse(BaseModel):
+    approval_revision: str | None = Field(
+        default=None, min_length=1, max_length=256, exclude_if=lambda value: value is None
+    )
+    root_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    root_conversation_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
     active_run: AgentRunRead | None
     latest_run: AgentRunRead | None
     approval_expires_at: datetime | None

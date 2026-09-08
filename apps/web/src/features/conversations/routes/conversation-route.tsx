@@ -1,7 +1,7 @@
 // apps/web/src/features/conversations/routes/conversation-route.tsx
 
 import { useMemo, useState } from "react"
-import { useParams } from "@tanstack/react-router"
+import { Link, useParams } from "@tanstack/react-router"
 import {
   useQuery,
   useQueryClient,
@@ -14,6 +14,7 @@ import { ArrowDownIcon, LockKeyholeIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { agentQueryOptions } from "@/features/agents/api/get-agent"
+import { approvalBatchIsReady } from "@/features/conversations/approval-decisions"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { MessageList } from "@/features/conversations/components/message-list"
@@ -36,7 +37,10 @@ import {
 } from "@/features/conversations/format"
 import { projectConversationTimeline } from "@/features/conversations/message-parts/timeline"
 import { getConversationComposerDisabledReason } from "@/features/conversations/run-state"
-import { conversationRunInterruptionOutcome } from "@/features/conversations/run-error-copy"
+import {
+  approvalConflictMessage,
+  conversationRunInterruptionOutcome,
+} from "@/features/conversations/run-error-copy"
 import {
   EMPTY_CONVERSATION_MESSAGES,
   streamActiveRunFromState,
@@ -163,7 +167,8 @@ function ConversationDetail({
   const shouldLoadApprovalState = activeRunStatus === "awaiting_approval"
   const approvalStateQuery = useAgentRunApprovalStateQuery(
     activeRunId ?? "",
-    shouldLoadApprovalState
+    shouldLoadApprovalState,
+    activeRunQuery.data.approval_revision
   )
   const {
     pendingApprovals,
@@ -182,6 +187,24 @@ function ConversationDetail({
     stream,
     submittingApprovalRunId,
   })
+  const approvalRevision =
+    activeRunQuery.data.approval_revision ??
+    (stream.runId === activeRunId ? stream.approvalRevision : null) ??
+    approvalStateQuery.data?.approval_revision ??
+    null
+  const proposalRevision = approvalStateQuery.data?.approvals.length
+    ? approvalStateQuery.data.approval_revision
+    : stream.runId === activeRunId
+      ? stream.approvalRevision
+      : null
+  const approvalReady = approvalBatchIsReady({
+    currentRevision: approvalRevision,
+    proposalRevision,
+    hasRecoveredBatch:
+      approvalStateQuery.data?.run_id === activeRunId &&
+      approvalStateQuery.data.approvals.length > 0,
+    streamBatchComplete: stream.runId === activeRunId && stream.approvalBatchComplete,
+  })
   const assistantLabel = conversationAgentLabel(conversation, "Agent")
   const assistantAgentId = activeRun?.agent_id ?? conversation.active_agent_id ?? "unassigned-agent"
   const assistantAgentMetadata =
@@ -195,7 +218,18 @@ function ConversationDetail({
         messages: messagesQuery.data.messages,
         pendingDelegations,
         pendingUserMessages,
-        pendingWorkflow: approvalStateQuery.data?.workflow ?? null,
+        pendingWorkflow:
+          approvalStateQuery.data?.workflow ??
+          approvalStateQuery.data?.workflows?.find(
+            (workflow) => workflow.owner_run_id === activeRunId
+          ) ??
+          null,
+        pendingWorkflows: approvalStateQuery.data?.workflows ?? [],
+        approvalRevision,
+        readOnly:
+          conversation.source === "delegated" ||
+          Boolean(activeRun?.parent_run_id) ||
+          !approvalReady,
         stream: {
           approvals: visibleStreamApprovals,
           conversationId: shouldRenderStream ? stream.conversationId : null,
@@ -208,6 +242,12 @@ function ConversationDetail({
       }),
     [
       approvalStateQuery.data?.workflow,
+      approvalStateQuery.data?.workflows,
+      approvalRevision,
+      approvalReady,
+      activeRunId,
+      activeRun?.parent_run_id,
+      conversation.source,
       assistantAgentId,
       conversationId,
       messagesQuery.data.messages,
@@ -244,7 +284,13 @@ function ConversationDetail({
   const isReadOnlyTranscript = conversation.source === "delegated"
   const showScrollToBottom = shouldRenderStream && stream.isStreaming && isAwayFromBottom
 
-  async function handleApprovalSubmit(decisions: AgentRunResumeDecision[]) {
+  async function handleApprovalSubmit(decisions: AgentRunResumeDecision[], revision?: string) {
+    if (isReadOnlyTranscript || activeRun?.parent_run_id) {
+      throw new Error("Review these requests in the main conversation.")
+    }
+    if (!approvalReady || revision !== (approvalRevision ?? undefined)) {
+      throw new Error("These requests have changed. Refresh and review them again.")
+    }
     if (!activeRun) {
       return
     }
@@ -254,7 +300,7 @@ function ConversationDetail({
     try {
       await stream.resumeRun({
         runId,
-        payload: { decisions },
+        payload: { decisions, ...(revision ? { approval_revision: revision } : {}) },
       })
       await queryClient.invalidateQueries({
         queryKey: conversationsQueryKeys.approvalState(runId),
@@ -268,6 +314,8 @@ function ConversationDetail({
           }),
         ])
       }
+      const conflictMessage = approvalConflictMessage(error)
+      if (conflictMessage) throw new Error(conflictMessage, { cause: error })
       throw error
     } finally {
       setSubmittingApprovalRunId((currentRunId) => (currentRunId === runId ? null : currentRunId))
@@ -322,6 +370,14 @@ function ConversationDetail({
           <div className="mx-auto flex w-full max-w-4xl items-center gap-2 px-6 py-3 text-sm">
             <LockKeyholeIcon className="text-muted-foreground size-4 shrink-0" />
             <span className="text-muted-foreground">Read-only delegated transcript</span>
+            {activeRunQuery.data.root_conversation_id ? (
+              <Link
+                to="/conversations/$conversationId"
+                params={{ conversationId: activeRunQuery.data.root_conversation_id }}
+              >
+                Open main conversation
+              </Link>
+            ) : null}
           </div>
         </footer>
       ) : (

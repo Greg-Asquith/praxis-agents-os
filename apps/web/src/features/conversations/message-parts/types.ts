@@ -36,6 +36,9 @@ export type CodeModeScriptActivity = {
 }
 
 export type ToolActivity = {
+  approvalId?: string
+  rootRunId?: string | null
+  parentToolCallId?: string
   id: string
   agentRunId?: string | null
   kind: ToolActivityKind

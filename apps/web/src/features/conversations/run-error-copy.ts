@@ -1,5 +1,6 @@
 // apps/web/src/features/conversations/run-error-copy.ts
 
+import { ApiError } from "@/lib/api/errors"
 import type { AgentRun } from "@/features/conversations/types"
 
 const APPROVAL_EXPIRED = "approval_expired"
@@ -87,4 +88,12 @@ function completedActions(completion: Record<string, unknown> | null): {
     }
   }
   return { actions, truncated: effects.length > MAX_COMPLETED_ACTIONS }
+}
+
+export function approvalConflictMessage(error: unknown): string | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null
+  if (error.problem?.["code"] === "delegated_run_requires_root_approval") {
+    return "Review these requests in the main conversation. Open the main conversation link to continue."
+  }
+  return "These requests have changed. Refresh and review them again."
 }

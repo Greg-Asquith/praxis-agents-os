@@ -1,5 +1,6 @@
 // apps/web/src/integrations/gmail/presenters/send.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
@@ -23,7 +24,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
       const fields = ui?.arg_fields ?? []
       return (
         <ToolApprovalDecisionCard
-          activityId={activity.id}
+          activityId={approvalActivityIdentity(activity)}
           approveLabel="Approve & Send"
           args={activity.args}
           controls={approvalDecision}
@@ -95,7 +96,7 @@ export const gmailSendPresenter: ToolRowPresenter = {
 function sendDeclined(activity: ToolActivity, description: string, defaultOpen: boolean) {
   return (
     <DeclinedFanOut
-      activityId={activity.id}
+      activityId={approvalActivityIdentity(activity)}
       ariaLabel="Declined Gmail Message"
       contextLabel="Mailbox"
       defaultOpen={defaultOpen}

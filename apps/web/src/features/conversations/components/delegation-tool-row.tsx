@@ -1,5 +1,7 @@
 // apps/web/src/features/conversations/components/delegation-tool-row.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
+
 import { Link } from "@tanstack/react-router"
 import { BotIcon, ExternalLinkIcon, UsersIcon } from "lucide-react"
 
@@ -109,7 +111,7 @@ export function DelegationToolRow({
     const fields = presentation?.ui.arg_fields ?? []
     return (
       <ToolApprovalDecisionCard
-        activityId={activity.id}
+        activityId={approvalActivityIdentity(activity)}
         approveLabel={isDelegatedToolApproval ? "Approve" : "Approve & Delegate"}
         args={activity.args}
         controls={approvalDecision}
