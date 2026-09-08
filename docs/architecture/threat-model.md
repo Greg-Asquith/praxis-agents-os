@@ -152,6 +152,19 @@ bound lists, strings, attachment downloads, and converted Markdown. Attachment
 bytes enter the shared document converter only after kind, type, and size
 checks. The complete tool result has a 768 KiB ceiling.
 
+Outlook write results frame provider web links as `outlook_message` nodes.
+Send-draft review data remains application-only presentation evidence, with
+HTML sanitised in the shared preview frame. A resumed send uses the retained
+snapshot bound to its run and call, then checks the live draft version and
+reviewed fields before submission. Graph provides no documented atomic
+version check for this action, so concurrent edits after the check remain a
+provider limitation.
+Reply and forward drafts keep the provider's quoted HTML inside the Graph
+write path. That HTML never becomes model context or approval arguments.
+Only the approved outbound text passes through the shared HTML sanitiser.
+Missing or unbounded quoted HTML prevents sending. Each write requires one
+selected mailbox, governed approval, pending intent, and terminal evidence.
+
 `tests/integrations/test_fetched_content_enclosure.py` parameterises the shared
 hostile email fixture over both Outlook source kinds. Outlook operation tests
 verify provider fields retain their nodes. The named graded cases are

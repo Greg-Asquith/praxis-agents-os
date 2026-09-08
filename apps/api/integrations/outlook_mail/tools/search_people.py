@@ -64,7 +64,10 @@ async def outlook_mail_search_people(
 DEFINITION = RuntimeToolDefinition(
     name="outlook_mail_search_people",
     function=outlook_mail_search_people,
-    description="Search Outlook people in the selected mailboxes with bounded results.",
+    description=(
+        "Finds people by name in the selected Outlook mailboxes. Returns up to 25 people per "
+        "mailbox, including email addresses, job titles, and departments."
+    ),
     provider="outlook_mail",
     label="Search Outlook people",
     code_eligible=True,

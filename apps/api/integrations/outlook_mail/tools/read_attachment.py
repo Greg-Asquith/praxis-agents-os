@@ -74,7 +74,11 @@ async def outlook_mail_read_attachment(
 DEFINITION = RuntimeToolDefinition(
     name="outlook_mail_read_attachment",
     function=outlook_mail_read_attachment,
-    description="Read attachment in Outlook as bounded text.",
+    description=(
+        "Extracts text from a supported Outlook file attachment using its attachment reference. "
+        "Returns up to 64 KiB of Markdown. Images, embedded messages, and linked attachments are "
+        "unsupported."
+    ),
     provider="outlook_mail",
     label="Read attachment in Outlook",
     code_eligible=True,

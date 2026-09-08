@@ -40,7 +40,8 @@ export function FanOutShell({
 }) {
   const succeeded = entries.filter((entry) => entry.status === "success").length
   const allSucceeded = succeeded === entries.length
-  const allFailed = succeeded === 0
+  const unconfirmed = entries.some(isUnconfirmed)
+  const allFailed = succeeded === 0 && !unconfirmed
 
   return (
     <div className="grid min-w-0 gap-3">
@@ -48,11 +49,13 @@ export function FanOutShell({
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <Badge variant={allSucceeded ? "success" : allFailed ? "destructive" : "warning"}>
             {allSucceeded ? <CircleCheckIcon /> : <AlertCircleIcon />}
-            {allFailed
-              ? "Tool failed"
-              : allSucceeded
-                ? "Tool ran successfully"
-                : "Tool succeeded"}{" "}
+            {unconfirmed
+              ? "Success confirmed"
+              : allFailed
+                ? "Tool failed"
+                : allSucceeded
+                  ? "Tool ran successfully"
+                  : "Tool succeeded"}{" "}
             on {String(allFailed ? entries.length : succeeded)}/{String(entries.length)} connections
           </Badge>
         </div>
@@ -174,6 +177,7 @@ function FanOutCard({
     formatContextValue
   )
   const declined = entry.status === "denied"
+  const unconfirmed = isUnconfirmed(entry)
 
   return (
     <ToolResultCard
@@ -183,15 +187,33 @@ function FanOutCard({
       heading={heading ?? formattedDisplayName}
       trailing={
         <Badge
-          variant={entry.status === "success" ? "success" : declined ? "secondary" : "destructive"}
+          variant={
+            entry.status === "success"
+              ? "success"
+              : declined
+                ? "secondary"
+                : unconfirmed
+                  ? "warning"
+                  : "destructive"
+          }
         >
-          {entry.status === "success" ? "Done" : declined ? "Declined" : "Failed"}
+          {entry.status === "success"
+            ? "Done"
+            : declined
+              ? "Declined"
+              : unconfirmed
+                ? "Unconfirmed"
+                : "Failed"}
         </Badge>
       }
     >
       {children}
     </ToolResultCard>
   )
+}
+
+function isUnconfirmed(entry: FanOutEntry) {
+  return entry.status === "unconfirmed" || entry.errorCode === "unverified_mutation"
 }
 
 function fanOutDetails(

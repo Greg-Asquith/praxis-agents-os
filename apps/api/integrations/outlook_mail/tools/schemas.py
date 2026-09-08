@@ -1,6 +1,6 @@
 # apps/api/integrations/outlook_mail/tools/schemas.py
 
-"""Typed Outlook read result contracts."""
+"""Typed Outlook tool result contracts."""
 
 from typing import Literal
 
@@ -136,3 +136,39 @@ class AttachmentOutput(IntegrationFanOutOutput):
 
 class PeopleOutput(IntegrationFanOutOutput):
     results: list[PeopleEntry]
+
+
+class WriteData(_StrictModel):
+    message: OutlookMessageReference | None
+    web_link: UntrustedText | None
+    outcome: Literal["applied", "failed", "unverified"]
+    error_code: str | None = None
+    detail: str | None = None
+
+
+class SendEntry(IntegrationFanOutEntry):
+    data: WriteData | None = None
+
+
+class SendOutput(IntegrationFanOutOutput):
+    results: list[SendEntry]
+
+
+class ReplyOutput(SendOutput):
+    pass
+
+
+class ForwardOutput(SendOutput):
+    pass
+
+
+class DraftOutput(SendOutput):
+    pass
+
+
+class MoveOutput(SendOutput):
+    pass
+
+
+class UpdateOutput(SendOutput):
+    pass

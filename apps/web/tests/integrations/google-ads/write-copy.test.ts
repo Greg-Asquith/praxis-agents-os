@@ -208,7 +208,7 @@ describe("Google Ads registered write copy", () => {
       [markup(name, "awaiting_approval"), copy.waitingLabel],
       [markup(name, "denied"), denied],
       [markup(name, "failed"), copy.failedDescription],
-      [markup(name, "unknown"), copy.failedDescription],
+      [markup(name, "unknown"), copy.resultFailure],
       [markup(name, "completed", null), copy.resultFailure],
       [markup(name, "completed", { results: [entry("success", {})] }), copy.malformedDescription],
       [
@@ -224,6 +224,8 @@ describe("Google Ads registered write copy", () => {
     }
     for (const [html] of states.slice(5)) {
       expect(html).toContain("Check Google Ads before taking further action.")
+      expect(html).toContain(">Unconfirmed<")
+      expect(html).not.toContain(">Failed<")
     }
     expect(markup(name, "completed", { results: [] })).toContain(escape(copy.emptyLabel))
   })

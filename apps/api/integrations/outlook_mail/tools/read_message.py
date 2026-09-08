@@ -87,7 +87,10 @@ async def outlook_mail_read_message(
 DEFINITION = RuntimeToolDefinition(
     name="outlook_mail_read_message",
     function=outlook_mail_read_message,
-    description="Read message in Outlook as bounded text.",
+    description=(
+        "Reads an Outlook email using its message reference. Returns the message body, sender, "
+        "recipients, and attachment details, with up to 50,000 body characters."
+    ),
     provider="outlook_mail",
     label="Read message in Outlook",
     code_eligible=True,

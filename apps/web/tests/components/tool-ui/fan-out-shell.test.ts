@@ -152,6 +152,29 @@ describe("FanOutShell", () => {
     expect(html).toContain("text-destructive")
   })
 
+  it("keeps unverified entries and an all-unconfirmed summary distinct from failures", () => {
+    const entries = fanOutEntries({
+      results: ["One", "Two"].map((name) => ({
+        provider_key: "outlook_mail",
+        display_name: name,
+        external_id: name,
+        status: "error",
+        data: null,
+        error_code: "unverified_mutation",
+      })),
+    })
+    const html = renderToStaticMarkup(
+      createElement(FanOutShell, {
+        entries: entries ?? [],
+        children: () => null,
+      })
+    )
+    expect(html).toContain("Success confirmed on 0/2 connections")
+    expect(html.match(/>Unconfirmed</g)).toHaveLength(2)
+    expect(html).not.toContain("Tool failed")
+    expect(html).not.toContain(">Failed<")
+  })
+
   it("formats context labels without changing the entry passed to result content", () => {
     const entries = fanOutEntries({
       results: [

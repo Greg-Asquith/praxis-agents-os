@@ -2,13 +2,15 @@
 
 """Bounds and provenance for Outlook provider content."""
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import quote
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationFailureDisposition, IntegrationValidationError
 from services.agents.runtime.untrusted import UntrustedNode
+from services.integrations.http import IntegrationRequestPolicy
 
 MESSAGE_SELECT = (
     "id,subject,from,toRecipients,receivedDateTime,isRead,hasAttachments,"
@@ -102,3 +104,54 @@ def body_text(value: object) -> tuple[str, bool]:
         parser.feed(content)
         content = "".join(parser.parts)
     return content[:MAX_BODY_CHARS], len(content) > MAX_BODY_CHARS
+
+
+@dataclass
+class MailWriteState:
+    """Retains confirmed effects if a later request fails or is cancelled."""
+
+    message_id: str | None = None
+    web_link: str | None = None
+    step: str = "draft"
+    applied_steps: list[str] = field(default_factory=list)
+
+    def created(self, payload: object) -> None:
+        message_id = payload.get("id") if isinstance(payload, dict) else None
+        if not isinstance(message_id, str) or not 1 <= len(message_id) <= 512:
+            raise IntegrationValidationError(
+                "Outlook did not return the message reference.",
+                provider_key="outlook_mail",
+                operation=self.step,
+                failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
+                error_code="invalid_message_response",
+            )
+        self.message_id = message_id
+        self.web_link = text(payload.get("webLink"), 2_000) or None
+        self.applied_steps.append(self.step)
+
+
+def graph_recipients(addresses: list[str]) -> list[dict]:
+    return [{"emailAddress": {"address": value}} for value in addresses]
+
+
+async def reject_draft_attachments(client, *, message_id: str, operation: str) -> None:
+    """Rejects attachments and incomplete attachment collections before sending."""
+    # hasAttachments excludes inline attachments, so inspect the collection too.
+    attachments = await client.get(
+        f"{message_path(message_id)}/attachments",
+        operation=operation,
+        policy=IntegrationRequestPolicy.READ,
+        params={"$select": "id", "$top": 1},
+    )
+    if (
+        not isinstance(attachments, dict)
+        or attachments.get("value") != []
+        or "@odata.nextLink" in attachments
+    ):
+        raise IntegrationValidationError(
+            "Send drafts with attachments in Outlook.",
+            provider_key="outlook_mail",
+            operation=operation,
+            failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
+            error_code="draft_attachments_unsupported",
+        )

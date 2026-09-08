@@ -18,41 +18,16 @@ from integrations.outlook_mail.tools.search_messages import outlook_mail_search_
 from integrations.outlook_mail.tools.utils import bounded_output
 from services.agents.runtime.code_mode.stubs import render_tool_stub
 from services.agents.runtime.tools.contract import validate_definition
-from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
+from services.integrations.context.domain import ResolvedActiveContext
 from services.integrations.context.results import IntegrationContextResult
+from tests.integrations.outlook_mail.support import context, entry
 
 
-def entry(mailbox_id="mailbox"):
-    return ResolvedContextEntry(
-        integration_resource_id=uuid4(),
-        provider_key="outlook_mail",
-        resource_type="outlook_mailbox",
-        external_id=mailbox_id,
-        display_name="dana@example.com",
-        connection_id=uuid4(),
-        connection_label="Outlook",
-        connection_status="active",
-        write_allowed=True,
-        permissions_metadata={"time_zone": "GMT Standard Time"},
-    )
-
-
-def context(*entries, tool_name):
-    return SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=entries),
-            db=object(),
-            user=object(),
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4(), name="Mail agent"),
-            run=SimpleNamespace(id=uuid4(), user_id=uuid4()),
-        ),
-        tool_name=tool_name,
-        tool_call_id="call-1",
-    )
-
-
-@pytest.mark.parametrize("definition", TOOL_DEFINITIONS, ids=lambda definition: definition.name)
+@pytest.mark.parametrize(
+    "definition",
+    [item for item in TOOL_DEFINITIONS if item.effect == "read"],
+    ids=lambda definition: definition.name,
+)
 def test_read_contracts_and_code_mode_stubs(definition):
     validate_definition(definition)
     assert definition.name in render_tool_stub(definition)

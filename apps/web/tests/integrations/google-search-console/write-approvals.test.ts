@@ -147,10 +147,10 @@ describe("Search Console sitemap write presenter", () => {
       "Waiting for sitemap submission approval"
     )
     expect(renderPresenter(activity("unknown", ARGS))).toContain(
-      "No sitemap submission was confirmed"
+      "couldn&#x27;t verify the sitemap submissions"
     )
     expect(renderPresenter(resultActivity({ results: [entry({ invalid: true })] }))).toContain(
-      "Failed"
+      "Unconfirmed"
     )
     const mixed = renderPresenter(
       resultActivity({

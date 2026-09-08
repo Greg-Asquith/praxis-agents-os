@@ -15,7 +15,7 @@ Use these focused references for provider behaviour:
 - [Google Analytics](google-analytics.md): property discovery and reporting.
 - [Google Search Console](google-search-console.md): site routing and indexing writes.
 - [Notion](notion.md): personal grants, bounded reads, and approved writes.
-- [Microsoft Graph](microsoft-graph.md): Entra connections, discovery, and Outlook reads.
+- [Microsoft Graph](microsoft-graph.md): Entra connections, discovery, and Outlook tools.
 
 For Gmail and Airtable, follow the shared contracts here and the provider
 packages under `apps/api/integrations/` and `apps/web/src/integrations/`.
@@ -122,13 +122,23 @@ Follow this layout for new providers.
 
 ## Shared write presenters
 
-Google Ads and Search Console write presenters configure
+Google Ads, Search Console, and Outlook Mail write presenters configure
 `src/integrations/write-presenter.tsx`. This shared seam owns approval merging,
 validation precedence, provenance, lifecycle states, and fan-out rendering.
 Provider adapters own branding, copy, parsers, summaries, and outcome views.
-Detailed unverified evidence requires the explicit `renderUnverifiedOutcome`
-callback; Search Console supplies it, while Google Ads keeps its failure view.
-Do not copy the state machine into provider packages.
+Outcome and failure renderers receive the parsed arguments so cards can show
+what was approved. Failure renderers also receive whether a failure is confirmed
+or the outcome is unconfirmed. Missing, malformed, and unknown write results
+show an Unconfirmed badge; confirmed failures and denials remain distinct.
+Unverified fan-out entries retain an Unconfirmed badge even without usable data.
+Detailed unverified evidence requires the explicit
+`renderUnverifiedOutcome` callback; Search Console and Outlook Mail supply it,
+while Google Ads keeps its failure view. A provider that reports a failed
+outcome inside a successful entry supplies `settledFailure` so that entry
+renders as a failed card. A provider that accepts unverified evidence inside a
+successful entry supplies `settledUnverified` so the outer badge and detailed
+view both remain unconfirmed. Do not copy the state machine into provider
+packages.
 Edited budget assignments refresh campaign and source-budget evidence through
 the conversation-scoped entity lookup. The shared approval refresh query keeps
 approval unavailable until the selected routes are verified, isolates stale

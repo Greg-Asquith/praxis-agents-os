@@ -16,6 +16,12 @@ import type {
   EditedValue,
   EditedValues,
 } from "@/components/tool-ui/edited-values"
+import {
+  editableScalarOrListValue,
+  isEditedScalar,
+  isScalarOrListField,
+  isStringList,
+} from "@/components/tool-ui/field-edit-values"
 import { resolveToolField, type ToolFieldFormat } from "@/components/tool-ui/field-resolution"
 import {
   fieldLabelClass,
@@ -121,7 +127,8 @@ export function ApprovalRequestFields({
           : originalValue === null
             ? ""
             : (decision.edits[field.key] ?? originalValue)
-        const isEmptySecondary = field.secondary && isEmptyEditedValue(value)
+        const isEmptySecondary =
+          field.secondary && field.format !== "boolean" && isEmptyEditedValue(value)
         const isRevealed = revealedFields.has(field.key)
 
         if (decision.decision !== "pending") {
@@ -254,10 +261,9 @@ export function ApprovalRequestFields({
                   </SelectGroup>
                 </SelectContent>
               </Select>
-            ) : field.format === "list" &&
-              Array.isArray(value) &&
-              value.every((item): item is string => typeof item === "string") ? (
+            ) : field.format === "list" && isStringList(value) ? (
               <ListFieldInput
+                ariaLabel={field.label}
                 disabled={disabled}
                 id={id}
                 onChange={(nextValue) => {
@@ -407,20 +413,7 @@ function fieldSpanClass(format: ToolFieldFormat): string | undefined {
 
 function editableValue(field: ApprovalField, value: unknown): EditedValue | null {
   const { format } = field
-  if (["text", "multiline", "markdown", "html", "datetime"].includes(format)) {
-    return typeof value === "string" ? value : null
-  }
-  if (format === "boolean") {
-    return typeof value === "boolean" ? value : null
-  }
-  if (format === "number") {
-    return typeof value === "number" && Number.isFinite(value) ? value : null
-  }
-  if (format === "list") {
-    return Array.isArray(value) && value.every((item) => typeof item === "string")
-      ? [...value]
-      : null
-  }
+  if (isScalarOrListField(field)) return editableScalarOrListValue(field, value)
   if (format === "keyvalue" && isRecord(value)) {
     return Object.fromEntries(
       Object.entries(value).filter((entry): entry is [string, string | number | boolean] =>
@@ -462,14 +455,6 @@ function isEmptyEditedValue(value: unknown): boolean {
     return value.length === 0
   }
   return value !== null && typeof value === "object" && Object.keys(value).length === 0
-}
-
-function isEditedScalar(value: unknown): value is string | number | boolean {
-  return (
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    (typeof value === "number" && Number.isFinite(value))
-  )
 }
 
 function isEditedKeyValue(value: unknown): value is EditedKeyValue {

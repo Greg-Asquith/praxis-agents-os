@@ -72,7 +72,10 @@ async def outlook_mail_search_messages(
 DEFINITION = RuntimeToolDefinition(
     name="outlook_mail_search_messages",
     function=outlook_mail_search_messages,
-    description="Search Outlook messages in the selected mailboxes with bounded results.",
+    description=(
+        "Searches a folder in each selected Outlook mailbox, with an optional query and unread "
+        "filter. Returns up to 25 messages per mailbox. Defaults to the inbox."
+    ),
     provider="outlook_mail",
     label="Search Outlook messages",
     code_eligible=True,

@@ -1,6 +1,13 @@
 // apps/web/src/features/conversations/approval-decisions.ts
 
 import type { ApprovalDecision, ApprovalField } from "@/components/tool-ui/approval-card"
+import {
+  INVALID_EDIT,
+  NO_CHANGE,
+  isEditedScalar,
+  mergeListEdit,
+  mergeScalarEdit,
+} from "@/components/tool-ui/field-edit-values"
 import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
 import type {
   EditedKeyValue,
@@ -121,7 +128,11 @@ function buildMergedArgs(
 
   const displayArgs = normalizeToolArgs(display)
   const replayArgs = normalizeToolArgs(replay)
-  if (!isRecord(displayArgs) || !isRecord(replayArgs)) {
+  if (
+    !isRecord(displayArgs) ||
+    !isRecord(replayArgs) ||
+    editEntries.some(([key]) => key.startsWith("_"))
+  ) {
     return "This request can no longer be edited. Refresh and try again."
   }
 
@@ -141,9 +152,6 @@ function buildMergedArgs(
 
   return changedEntries.length > 0 ? { ...replayArgs, ...Object.fromEntries(changedEntries) } : null
 }
-
-const NO_CHANGE = Symbol("no-change")
-const INVALID_EDIT = Symbol("invalid-edit")
 
 function mergeEditedValue(original: unknown, edit: EditedValue, field?: ApprovalField): unknown {
   if (field?.format === "records") {
@@ -172,47 +180,14 @@ function mergeEditedValue(original: unknown, edit: EditedValue, field?: Approval
     return structurallyEqual(edit, original) ? NO_CHANGE : edit
   }
 
-  if (typeof edit === "string") {
-    if (typeof original !== "string") {
-      return INVALID_EDIT
-    }
-    const trimmedEdit = edit.trim()
-    const trimmedOriginal = original.trim()
-    return trimmedEdit === trimmedOriginal || (!trimmedEdit && trimmedOriginal)
-      ? NO_CHANGE
-      : trimmedEdit
+  if (typeof edit === "string" || typeof edit === "boolean" || typeof edit === "number") {
+    return mergeScalarEdit(original, edit, field)
   }
+  if (Array.isArray(edit)) return mergeListEdit(original, edit, field)
+  return mergeKeyValueEdit(original, edit)
+}
 
-  if (typeof edit === "boolean") {
-    if (typeof original !== "boolean") {
-      return INVALID_EDIT
-    }
-    return edit === original ? NO_CHANGE : edit
-  }
-
-  if (typeof edit === "number") {
-    if (
-      typeof original !== "number" ||
-      !Number.isFinite(original) ||
-      !Number.isFinite(edit) ||
-      (Number.isInteger(original) && !Number.isInteger(edit))
-    ) {
-      return INVALID_EDIT
-    }
-    return Object.is(edit, original) ? NO_CHANGE : edit
-  }
-
-  if (Array.isArray(edit)) {
-    if (
-      !Array.isArray(original) ||
-      !original.every((item) => typeof item === "string") ||
-      !edit.every((item) => typeof item === "string")
-    ) {
-      return INVALID_EDIT
-    }
-    return structurallyEqual(edit, original) ? NO_CHANGE : edit
-  }
-
+function mergeKeyValueEdit(original: unknown, edit: EditedValue): unknown {
   if (!isRecord(original) || !isEditedKeyValue(edit)) {
     return INVALID_EDIT
   }
@@ -244,14 +219,6 @@ function isEditedKeyValue(value: EditedValue): value is EditedKeyValue {
 
 function isEditedRecords(value: EditedValue): value is EditedRecords {
   return recordRowsValidity(value, undefined, 1).isRecords
-}
-
-function isEditedScalar(value: unknown): value is string | number | boolean {
-  return (
-    typeof value === "string" ||
-    typeof value === "boolean" ||
-    (typeof value === "number" && Number.isFinite(value))
-  )
 }
 
 function isEntityReference(value: unknown): value is Record<string, unknown> {

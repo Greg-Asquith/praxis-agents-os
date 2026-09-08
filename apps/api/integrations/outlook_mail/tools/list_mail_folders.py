@@ -87,7 +87,10 @@ async def outlook_mail_list_folders(ctx: RunContext[RuntimeDeps]) -> dict:
 DEFINITION = RuntimeToolDefinition(
     name="outlook_mail_list_folders",
     function=outlook_mail_list_folders,
-    description="List up to 200 top-level folders in each selected Outlook mailbox.",
+    description=(
+        "Lists up to 200 top-level folders in each selected Outlook mailbox, including message "
+        "and unread counts."
+    ),
     provider="outlook_mail",
     label="List Outlook folders",
     code_eligible=True,

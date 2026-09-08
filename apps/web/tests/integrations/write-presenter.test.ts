@@ -231,7 +231,7 @@ describe("integration write presenter", () => {
     ["running", "Changing Original"],
     ["awaiting_approval", "Waiting for project approval"],
     ["failed", "No change confirmed"],
-    ["unknown", "No change confirmed"],
+    ["unknown", "Missing project results"],
   ] as const)("renders configured %s state", (status, copy) => {
     const html = render(props(status))
     expect(html).toContain("Example: Change project")
@@ -328,6 +328,45 @@ describe("integration write presenter", () => {
     expect(html).toContain("Project 123")
   })
 
+  it("passes uncertainty separately from confirmed failures to provider renderers", () => {
+    const renderFailure = vi.fn(() => "Fallback")
+    const config = { ...variant, renderFailure }
+    render(props("unknown"), config)
+    expect(renderFailure).toHaveBeenLastCalledWith(
+      { name: "Original" },
+      "Missing project results",
+      null,
+      "unconfirmed"
+    )
+    render(props("failed"), config)
+    expect(renderFailure).toHaveBeenLastCalledWith(
+      { name: "Original" },
+      "No change confirmed",
+      null,
+      "failed"
+    )
+    const context = props()
+    context.activity.result = {
+      results: [entry(42), entry(null, { status: "error", error_code: "unverified_mutation" })],
+    }
+    const html = render(context, config)
+    expect(renderFailure).toHaveBeenNthCalledWith(
+      3,
+      { name: "Original" },
+      "Invalid project evidence",
+      null,
+      "unconfirmed"
+    )
+    expect(renderFailure).toHaveBeenLastCalledWith(
+      { name: "Original" },
+      "Check the project before retrying",
+      null,
+      "unconfirmed"
+    )
+    expect(html).not.toContain("Tool failed")
+    expect(html).not.toContain(">Failed<")
+  })
+
   it("uses custom failure rendering for fallback and settled errors", () => {
     const config = {
       ...variant,
@@ -340,6 +379,49 @@ describe("integration write presenter", () => {
       results: [entry(null, { status: "error", error_message: "Unavailable" })],
     }
     expect(render(context, config)).toContain("Target Original: Unavailable")
+  })
+
+  it("passes parsed arguments to outcome renderers", () => {
+    const renderOutcome = vi.fn((result: string, args: Args | null): ReactNode =>
+      createElement("span", null, "Outcome: ", result, " for ", args?.name)
+    )
+    const context = props()
+    context.activity.result = {
+      results: [
+        entry("Applied"),
+        entry("Ambiguous", { status: "error", error_code: "unverified_mutation" }),
+      ],
+    }
+    const html = render(context, {
+      ...variant,
+      renderOutcome,
+      renderUnverifiedOutcome: renderOutcome,
+    })
+    expect(html).toContain("Outcome: Applied for Original")
+    expect(html).toContain("Outcome: Ambiguous for Original")
+    expect(renderOutcome).toHaveBeenCalledTimes(2)
+  })
+
+  it("renders provider-reported failures inside successful entries as failed cards", () => {
+    const renderFailure = vi.fn(
+      (args: Args | null, description: string, result: string | null): ReactNode =>
+        createElement("span", null, "Failure ", args?.name, ": ", description, " (", result, ")")
+    )
+    const context = props()
+    context.activity.result = { results: [entry("Rejected"), entry("Applied")] }
+    const html = render(context, {
+      ...variant,
+      renderFailure,
+      settledFailure: (result) => (result === "Rejected" ? "Provider rejected it" : null),
+    })
+    expect(html).toContain("Failure Original: Provider rejected it (Rejected)")
+    expect(html).toContain("Outcome: Applied")
+    expect(html).toContain("1/2 connections")
+    expect(html).toContain(">Failed<")
+    expect(renderFailure).toHaveBeenCalledTimes(1)
+    expect(render(props("failed"), { ...variant, renderFailure })).toContain(
+      "Failure Original: No change confirmed ()"
+    )
   })
 
   it("retains presenter keys, own-name matching, and approval routing", () => {
