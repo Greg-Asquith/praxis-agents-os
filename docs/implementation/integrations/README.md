@@ -15,7 +15,7 @@ Use these focused references for provider behaviour:
 - [Google Analytics](google-analytics.md): property discovery and reporting.
 - [Google Search Console](google-search-console.md): site routing and indexing writes.
 - [Notion](notion.md): personal grants, bounded reads, and approved writes.
-- [Microsoft Graph](microsoft-graph.md): Entra connections and resource discovery.
+- [Microsoft Graph](microsoft-graph.md): Entra connections, discovery, and Outlook reads.
 
 For Gmail and Airtable, follow the shared contracts here and the provider
 packages under `apps/api/integrations/` and `apps/web/src/integrations/`.
@@ -56,6 +56,11 @@ The following contracts apply in this area:
   output-model-compatible per-item ambiguity evidence through
   `unverified_result`, the error entry retains that data without changing its
   unverified status.
+  Public failure entries and operation audits preserve server-authored
+  `IntegrationError.error_code` values matching `[a-z][a-z0-9_]{0,63}`.
+  Uncoded or invalid codes use the exception class name. Ambiguous failures
+  always use `unverified_mutation`. Provider response bodies must not supply
+  recovery codes.
   Provider reads needed to build pending evidence belong in the runner's
   preparation callback so their latency, retries, and failures remain part of
   the same audited operation. The pending row is written after preparation and

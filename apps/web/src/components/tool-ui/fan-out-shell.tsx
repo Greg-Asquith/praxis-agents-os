@@ -32,7 +32,7 @@ export function FanOutShell({
   details?: FanOutDetail[]
   entries: FanOutEntry[]
   emptyLabel?: string
-  externalLabel?: string
+  externalLabel?: string | null
   formatContextValue?: (value: string) => string
   heading?: ReactNode
   renderDeclined?: (entry: FanOutEntry, index: number) => ReactNode
@@ -111,7 +111,7 @@ export function DeclinedFanOut({
   description: string
   details?: FanOutDetail[]
   displayName: string
-  externalLabel: string
+  externalLabel: string | null
   formatContextValue?: (value: string) => string
   heading: ReactNode
   providerKey: string
@@ -161,7 +161,7 @@ function FanOutCard({
   defaultOpen: boolean
   details: FanOutDetail[]
   entry: FanOutEntry
-  externalLabel: string
+  externalLabel: string | null
   formatContextValue: (value: string) => string
   heading?: ReactNode
 }) {
@@ -198,7 +198,7 @@ function fanOutDetails(
   entry: FanOutEntry,
   details: FanOutDetail[],
   contextLabel: string,
-  externalLabel: string,
+  externalLabel: string | null,
   formatContextValue: (value: string) => string
 ): FanOutDetail[] {
   const account =
@@ -207,7 +207,7 @@ function fanOutDetails(
       : null
   return [
     { label: contextLabel, value: formatContextValue(entry.displayName) },
-    ...(account ? [{ label: externalLabel, value: account }] : []),
+    ...(account && externalLabel ? [{ label: externalLabel, value: account }] : []),
     ...details,
   ]
 }

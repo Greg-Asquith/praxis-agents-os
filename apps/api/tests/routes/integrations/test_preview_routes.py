@@ -3,6 +3,7 @@
 """Gmail message preview route coverage: scoping, sanitization, bounds, audit."""
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -57,6 +58,59 @@ def _stub_preview(monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any]) -> N
         return payload
 
     monkeypatch.setattr(preview_message_module, "preview_message", fake_preview_message)
+
+
+async def test_outlook_preview_accepts_immutable_id_and_sanitizes_html(
+    db_session, db_async_client, integration_identity, monkeypatch
+):
+    from integrations.outlook_mail import PROVIDER
+    from services.integrations.microsoft_graph import MicrosoftGraphClient
+    from services.integrations.plugin import PROVIDER_PLUGINS
+
+    monkeypatch.setitem(PROVIDER_PLUGINS, "outlook_mail", PROVIDER)
+
+    credential = build_external_credential(provider_key="outlook_mail")
+    connection = build_integration_connection(
+        credential=credential,
+        user=integration_identity["user"],
+        owner_user_id=integration_identity["user"].id,
+        status="active",
+    )
+    db_session.add_all([credential, connection])
+    await db_session.commit()
+    get = AsyncMock(
+        return_value={
+            "subject": "Invoice",
+            "body": {"contentType": "html", "content": HOSTILE_HTML},
+        }
+    )
+    monkeypatch.setattr(MicrosoftGraphClient, "get", get)
+    reference = "A" * 180 + "+/=="
+    response = await db_async_client.get(
+        f"/api/v1/integrations/connections/{connection.id}/previews/outlook_message",
+        params={"ref": reference},
+        headers=integration_identity["headers"],
+    )
+    assert response.status_code == 200, response.text
+    assert "<script" not in response.json()["content"]
+    assert "javascript:" not in response.json()["content"]
+    assert get.call_args.args[0].endswith("%2B%2F%3D%3D")
+
+
+@pytest.mark.parametrize("reference", ["message=", "A" * 129])
+async def test_gmail_keeps_its_reference_restrictions(
+    db_session, db_async_client, integration_identity, monkeypatch, reference
+):
+    connection = await _gmail_connection(db_session, integration_identity)
+    fetch = AsyncMock()
+    monkeypatch.setattr(preview_message_module, "preview_message", fetch)
+    response = await db_async_client.get(
+        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
+        params={"ref": reference},
+        headers=integration_identity["headers"],
+    )
+    assert response.status_code == 400
+    fetch.assert_not_awaited()
 
 
 async def test_preview_sanitizes_html_and_returns_meta(

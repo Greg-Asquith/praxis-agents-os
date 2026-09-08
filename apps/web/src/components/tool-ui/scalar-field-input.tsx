@@ -27,6 +27,7 @@ export function ScalarFieldInput(
     return (
       <Checkbox
         checked={value}
+        className="order-first"
         disabled={disabled}
         id={id}
         onCheckedChange={onChange}

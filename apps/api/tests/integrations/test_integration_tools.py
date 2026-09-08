@@ -25,6 +25,7 @@ from integrations.google_search_console.tools import (
     TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
 )
 from integrations.notion.tools import TOOL_DEFINITIONS as NOTION_TOOL_DEFINITIONS
+from integrations.outlook_mail.tools import TOOL_DEFINITIONS as OUTLOOK_MAIL_TOOL_DEFINITIONS
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -56,9 +57,15 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
             *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
             *NOTION_TOOL_DEFINITIONS,
+            *OUTLOOK_MAIL_TOOL_DEFINITIONS,
         )
     }
     expected = {
+        "outlook_mail_search_messages": ("read", "internal", "auto", False),
+        "outlook_mail_read_message": ("read", "internal", "auto", False),
+        "outlook_mail_list_folders": ("read", "internal", "auto", False),
+        "outlook_mail_read_attachment": ("read", "internal", "auto", False),
+        "outlook_mail_search_people": ("read", "internal", "auto", False),
         "gmail_search_messages": ("read", "internal", "auto", False),
         "gmail_read_message": ("read", "internal", "auto", False),
         "gmail_send_message": ("write", "external", "approval", True),
@@ -165,6 +172,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
         *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
         *NOTION_TOOL_DEFINITIONS,
+        *OUTLOOK_MAIL_TOOL_DEFINITIONS,
     )
 
     for definition in definitions:

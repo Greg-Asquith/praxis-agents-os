@@ -7,6 +7,7 @@ import { BigQueryToolHeading } from "@/integrations/bigquery/components/tool-hea
 import { GmailToolHeading } from "@/integrations/gmail/components/tool-heading"
 import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
 import { GoogleAnalyticsToolHeading } from "@/integrations/google_analytics/components/tool-heading"
+import { OutlookToolHeading } from "@/integrations/outlook_mail/components/tool-heading"
 
 describe("integration tool headings", () => {
   it.each([
@@ -18,6 +19,7 @@ describe("integration tool headings", () => {
       "Google Analytics",
       createElement(GoogleAnalyticsToolHeading, null, "Loading Google Analytics"),
     ],
+    ["Outlook", createElement(OutlookToolHeading, null, "Loading Outlook")],
   ])("keeps %s headings compact outside a result-card header", (_provider, heading) => {
     const html = render(heading)
 

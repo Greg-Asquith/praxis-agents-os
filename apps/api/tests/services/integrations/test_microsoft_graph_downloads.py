@@ -9,6 +9,8 @@ import pytest
 
 from core.exceptions.integration import (
     IntegrationAuthError,
+    IntegrationDownloadTooLargeError,
+    IntegrationFailureDisposition,
     IntegrationNotFoundError,
     IntegrationPermissionError,
     IntegrationTimeoutError,
@@ -106,8 +108,9 @@ async def test_download_bounds_stream_and_declared_length(length):
         client = MicrosoftGraphClient(
             fixed_access_token("secret"), provider_key="outlook_mail", client=transport
         )
-        with pytest.raises(IntegrationValidationError, match="size limit"):
+        with pytest.raises(IntegrationDownloadTooLargeError, match="size limit") as caught:
             await client.get_graph_bytes(PATH, operation="attachment", max_bytes=4)
+    assert caught.value.failure_disposition is IntegrationFailureDisposition.REJECTED
     assert stream.closed
     assert len(requests) == 1
 

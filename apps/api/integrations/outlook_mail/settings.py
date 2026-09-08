@@ -2,7 +2,7 @@
 
 """Outlook Mail-owned runtime configuration."""
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,7 @@ class OutlookMailSettings(BaseSettings):
     OUTLOOK_MAIL_OAUTH_CLIENT_ID: str = ""
     OUTLOOK_MAIL_OAUTH_CLIENT_SECRET: SecretStr = SecretStr("")
     OUTLOOK_MAIL_OAUTH_TENANT: str = ""
+    OUTLOOK_MAIL_ATTACHMENT_MAX_BYTES: int = Field(default=26_214_400, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=".env",

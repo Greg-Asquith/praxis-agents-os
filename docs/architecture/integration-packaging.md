@@ -626,8 +626,12 @@ path; revisit only if a real provider cannot use it.
 Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft
 Graph seam. Each provider has an isolated Entra application, settings,
 manifest, discovery implementation, and lazy web module. These foundation
-packages expose connections and resources; provider tools ship in their
-service-specific follow-up slices.
+packages expose connections and resources. Outlook Mail contributes five
+bounded read tools, scoped message and attachment resolvers, and an
+`outlook_message` preview. Mail writes, Calendar tools, and SharePoint tools
+remain pending. Gmail and Outlook share the provider-neutral preview query
+and content loader in `components/tool-ui/`; provider wrappers own metadata
+chips and message presentation.
 
 BigQuery demonstrates the checklist end to end. Its package under
 `integrations/bigquery/` contributes a workspace-owned service-account

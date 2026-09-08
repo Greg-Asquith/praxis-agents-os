@@ -861,3 +861,48 @@ def test_external_write_definition_requires_write_binding(synthetic_provider) ->
                 integration_binding=READ_BINDING,
             )
         )
+
+
+@pytest.mark.parametrize("code", [None, "safe_reason", "bad code", "x" * 65, "private\nbody"])
+@pytest.mark.parametrize("ambiguous", [False, True])
+async def test_shared_failure_projection_agrees_for_public_and_audit(
+    synthetic_provider, monkeypatch, code, ambiguous
+):
+    entry = _entry()
+    audit = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    error = IntegrationConnectionError(
+        "The provider request failed.",
+        error_code=code,
+        original_error=ValueError("private provider body"),
+        failure_disposition=IntegrationFailureDisposition.AMBIGUOUS
+        if ambiguous
+        else IntegrationFailureDisposition.REJECTED,
+    )
+    ctx = _ctx(entry, WRITE_TOOL)
+
+    async def execute():
+        raise error
+
+    async def operation(selected):
+        return await run_audited_integration_operation(
+            ctx,
+            selected,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(selected),
+        )
+
+    [result] = await run_context_fan_out(ctx, binding=WRITE_BINDING, operation=operation)
+    expected = (
+        "unverified_mutation"
+        if ambiguous
+        else "safe_reason"
+        if code == "safe_reason"
+        else "IntegrationConnectionError"
+    )
+    assert result.error_code == audit.call_args.kwargs["error_code"] == expected
+    assert "private provider body" not in str(result) + str(audit.call_args)

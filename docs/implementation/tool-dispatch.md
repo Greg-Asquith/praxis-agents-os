@@ -42,6 +42,11 @@ The following contracts apply in this area:
   only that resource. Never serialise integration-resource or connection UUIDs
   in a scoped reference, bypass active-context resolution, or fan an entity ID
   out across compatible accounts.
+- Presentation argument fields must name top-level input arguments; registration
+  rejects any other key. A tool whose only parameter is a reference model must
+  annotate it with a `Field` description, because Pydantic AI otherwise unwraps
+  that parameter and the model sends its fields without the wrapper key that
+  approvals and presenters read.
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorised immediately before resume.
@@ -100,6 +105,9 @@ The following contracts apply in this area:
   and keep provider field names out of shared tool UI. Use the shared Base UI
   combobox for editable targets, preserve structured reference values, and fail
   closed as “Target unavailable” rather than exposing a raw ID.
+- A failed approval submit keeps the error on the card and offers Decline
+  beside Try Again. Decline reopens the request, so the operator can decline
+  it or go back, correct the fields, and approve again.
 - Editable record approvals use the server-declared `min_rows` and column
   `required` constraints. An omitted secondary records field stays optional.
   Keep editor feedback, approval gating, and decision merge on the shared
@@ -111,7 +119,8 @@ The following contracts apply in this area:
 Editable date-time fields use the shared input with `type="datetime-local"`
 and `step={60}`. Preserve the raw value, including supplied seconds, and remove
 an edit when the input is cleared. Boolean fields use the shared labelled
-checkbox and submit the boolean itself. Unchanged booleans produce no override.
+checkbox in a horizontal field and submit the boolean itself. Unchanged
+booleans produce no override.
 Both formats use compact grid cells. Decided cards display local date-time
 components verbatim, including supplied seconds, independently of the browser
 time zone. Timestamps with an offset or `Z` retain instant-style formatting.

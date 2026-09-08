@@ -510,6 +510,15 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
             raise RuntimeError("Runtime tool result presentation fields cannot be secondary")
     schema = definition.serialized_input_schema()
     properties = set(schema.get("properties", {})) if isinstance(schema, dict) else set()
+    # Pydantic AI unwraps a lone model-typed parameter, which silently drops its wrapper key.
+    missing_keys = sorted(
+        field.key for field in presentation.arg_fields if field.key not in properties
+    )
+    if missing_keys:
+        raise RuntimeError(
+            "Runtime tool presentation arg fields must name input arguments: "
+            f"{', '.join(missing_keys)}"
+        )
     for field in presentation.arg_fields:
         unknown_dependencies = set(field.depends_on).difference(properties)
         if unknown_dependencies:

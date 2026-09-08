@@ -5,12 +5,17 @@
 import asyncio
 import base64
 import hashlib
+import re
 from typing import Final
 
 from cryptography.fernet import Fernet, MultiFernet
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import IntegrationAuthError
+from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationError,
+    IntegrationFailureDisposition,
+)
 from core.settings import settings
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
@@ -144,3 +149,13 @@ async def record_integration_audit(
     else:
         kwargs["status"] = AuditStatus.SUCCESS
     await safe_record_operation_audit_event(db, **kwargs)
+
+
+def integration_failure_code(exc: BaseException) -> str:
+    """Returns the shared public and audit code for an integration failure."""
+    if getattr(exc, "failure_disposition", None) is IntegrationFailureDisposition.AMBIGUOUS:
+        return "unverified_mutation"
+    code = exc.error_code if isinstance(exc, IntegrationError) else None
+    if isinstance(code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code):
+        return code
+    return exc.__class__.__name__

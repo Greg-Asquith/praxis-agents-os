@@ -1,10 +1,9 @@
 // apps/web/src/integrations/gmail/components/message-preview.tsx
 
 import { use, type ReactNode } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { MailsIcon, TagIcon } from "lucide-react"
 
-import { HtmlContentFrame } from "@/components/tool-ui/html-content-frame"
+import { ProviderContentPreview } from "@/components/tool-ui/provider-content-preview"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -24,32 +23,13 @@ export function GmailMessageView({
   messageId: string
 }) {
   const conversationId = use(ToolConversationContext)
-  const preview = useQuery(gmailMessagePreviewQueryOptions(conversationId, mailboxId, messageId))
-
-  // The tool result's plain text renders instantly; the fetched full email
-  // replaces it when it arrives, and stays the fallback if the fetch fails.
-  if (preview.isPending) {
-    return <>{fallback}</>
-  }
-  if (preview.isError) {
-    return <>{errorFallback ?? fallback}</>
-  }
-
   return (
-    <div className="grid min-w-0 gap-2">
-      <MessageMetaChips meta={preview.data.meta} />
-      {preview.data.content_type === "html" ? (
-        <HtmlContentFrame
-          className="h-120"
-          html={preview.data.content}
-          title={preview.data.meta.subject?.trim() ? preview.data.meta.subject : "Email message"}
-        />
-      ) : (
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {preview.data.content || "No message content."}
-        </p>
-      )}
-    </div>
+    <ProviderContentPreview
+      query={gmailMessagePreviewQueryOptions(conversationId, mailboxId, messageId)}
+      fallback={fallback}
+      errorFallback={errorFallback}
+      renderMeta={(meta) => <MessageMetaChips meta={meta} />}
+    />
   )
 }
 

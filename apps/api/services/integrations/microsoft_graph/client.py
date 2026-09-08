@@ -16,6 +16,7 @@ import httpx2
 
 from core.exceptions.integration import (
     IntegrationAuthError,
+    IntegrationDownloadTooLargeError,
     IntegrationFailureDisposition,
     IntegrationValidationError,
 )
@@ -466,8 +467,8 @@ class MicrosoftGraphClient:
             ),
         )
 
-    def _size_error(self, operation: str) -> IntegrationValidationError:
-        return IntegrationValidationError(
+    def _size_error(self, operation: str) -> IntegrationDownloadTooLargeError:
+        return IntegrationDownloadTooLargeError(
             "Microsoft Graph download exceeds the size limit",
             provider_key=self._provider_key,
             operation=operation,

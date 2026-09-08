@@ -133,6 +133,13 @@ export function ToolApprovalDecisionCard({
             setIsDeclining(false)
           }}
           onDecline={() => {
+            if (controls.error && isDecided) {
+              controls.onDecisionChange({
+                decision: "pending",
+                edits: controls.decision.edits,
+                message: "",
+              })
+            }
             setIsDeclining(true)
           }}
           onDeclineConfirm={() => {
@@ -333,9 +340,14 @@ function ApprovalFooter({
         role="group"
       >
         {controls.error ? (
-          <Button disabled={disabled} onClick={controls.onRetry} size="sm" type="button">
-            Try Again
-          </Button>
+          <>
+            <Button disabled={disabled} onClick={onDecline} size="sm" type="button" variant="ghost">
+              Decline
+            </Button>
+            <Button disabled={disabled} onClick={controls.onRetry} size="sm" type="button">
+              Try Again
+            </Button>
+          </>
         ) : decision === "pending" && isDeclining ? (
           <>
             <Button disabled={disabled} onClick={onBack} size="sm" type="button" variant="ghost">

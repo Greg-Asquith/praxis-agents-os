@@ -17,7 +17,7 @@ router = APIRouter(dependencies=[Depends(require_read)])
 async def get_preview(
     connection_id: Annotated[UUID, Path()],
     kind: Annotated[str, Path(pattern=r"^[a-z][a-z0-9_]*$")],
-    ref: Annotated[str, Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")],
+    ref: Annotated[str, Query(min_length=1, max_length=512, pattern=r"^[A-Za-z0-9_+/=-]+$")],
     db: AsyncDbSessionDep,
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,

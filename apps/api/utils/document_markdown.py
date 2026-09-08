@@ -5,11 +5,13 @@
 import asyncio
 from pathlib import PurePosixPath
 
+from core.exceptions.general import AppValidationError
 from services.assets.utils import normalize_content_type
+from services.files.contract import contract_for_content_type
 from services.storage.paths import safe_filename
 
 TRUNCATION_MARKER = "\n\n[Truncated: document exceeds the converted size limit.]"
-_TEXT_CONTENT_TYPES = frozenset({"application/json", "text/plain", "text/markdown"})
+_TEXT_CONTENT_TYPES = frozenset({"application/json", "text/plain", "text/markdown", "text/csv"})
 _HTML_CONTENT_TYPES = frozenset({"text/html", "application/xhtml+xml"})
 _CONTENT_TYPE_EXTENSIONS = {
     "application/pdf": ".pdf",
@@ -31,6 +33,15 @@ class DocumentConversionError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
+
+
+def document_content_type(content_type: str) -> str | None:
+    """Returns the normalised type for a supported text or ingestible document."""
+    try:
+        entry = contract_for_content_type(content_type)
+    except AppValidationError:
+        return None
+    return entry.content_type if entry.editable or entry.ingestible else None
 
 
 async def convert_document_to_markdown(

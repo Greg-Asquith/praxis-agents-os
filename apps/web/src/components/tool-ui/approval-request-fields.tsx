@@ -182,6 +182,7 @@ export function ApprovalRequestFields({
           <Field
             className={cn("gap-1", fieldSpanClass(field.format))}
             data-disabled={disabled}
+            orientation={field.format === "boolean" ? "horizontal" : "vertical"}
             key={field.key}
           >
             <div className="flex items-center justify-between gap-2">

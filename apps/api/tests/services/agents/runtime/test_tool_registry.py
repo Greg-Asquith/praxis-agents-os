@@ -4,11 +4,11 @@
 
 import ast
 from pathlib import Path
-from typing import get_args, get_type_hints
+from typing import Annotated, get_args, get_type_hints
 from uuid import uuid4
 
 import pytest
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
@@ -127,6 +127,14 @@ def _noop() -> str:
     return "ok"
 
 
+def _value_tool(value: object) -> str:
+    return str(value)
+
+
+def _rows_tool(rows: list[dict[str, object]]) -> str:
+    return str(len(rows))
+
+
 def _external_scope(_args: dict[str, object]) -> ToolEffectScope:
     return TOOL_EFFECT_SCOPE_EXTERNAL
 
@@ -149,7 +157,9 @@ def test_long_running_tools_have_no_outer_execution_deadline(tool_name: str) -> 
     assert definition.timeout is None
 
 
-def _scoped_campaign(campaign: GoogleAdsCampaignReference) -> str:
+def _scoped_campaign(
+    campaign: Annotated[GoogleAdsCampaignReference, Field(description="Campaign reference.")],
+) -> str:
     return campaign.external_id
 
 
@@ -392,6 +402,53 @@ def test_validate_definition_accepts_egress_invariants(
     definition: RuntimeToolDefinition,
 ) -> None:
     validate_definition(definition)
+
+
+class _TargetReference(BaseModel):
+    target_id: str
+
+
+async def _read_target(target: _TargetReference) -> str:
+    return target.target_id
+
+
+async def _read_described_target(
+    target: Annotated[_TargetReference, Field(description="Target reference.")],
+) -> str:
+    return target.target_id
+
+
+def _target_presentation() -> ToolPresentation:
+    return ToolPresentation(
+        arg_fields=(
+            ToolFieldPresentation(
+                key="target", label="Target", format="entity", entity_kind="target"
+            ),
+        )
+    )
+
+
+def test_validate_definition_rejects_arg_fields_missing_from_input_schema() -> None:
+    # Pydantic AI unwraps a lone model parameter, so `target` vanishes from the schema.
+    definition = RuntimeToolDefinition(
+        name="read_target",
+        function=_read_target,
+        description="Read a target.",
+        presentation=_target_presentation(),
+    )
+    with pytest.raises(RuntimeError, match="must name input arguments: target"):
+        validate_definition(definition)
+
+
+def test_validate_definition_accepts_described_reference_parameter() -> None:
+    definition = RuntimeToolDefinition(
+        name="read_target",
+        function=_read_described_target,
+        description="Read a target.",
+        presentation=_target_presentation(),
+    )
+    validate_definition(definition)
+    assert set(definition.serialized_input_schema()["properties"]) == {"target"}
 
 
 def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
@@ -796,7 +853,7 @@ def test_validate_definition_accepts_rich_result_fields() -> None:
 def test_validate_definition_accepts_every_editable_field_format(format: str) -> None:
     definition = RuntimeToolDefinition(
         name="editable_field",
-        function=_noop,
+        function=_value_tool,
         description="Supports typed argument editing.",
         presentation=ToolPresentation(
             arg_fields=(
@@ -816,7 +873,7 @@ def test_validate_definition_accepts_every_editable_field_format(format: str) ->
 def test_validate_definition_accepts_editable_records_columns() -> None:
     definition = RuntimeToolDefinition(
         name="editable_records",
-        function=_noop,
+        function=_rows_tool,
         description="Supports declared record rows.",
         presentation=ToolPresentation(
             arg_fields=(

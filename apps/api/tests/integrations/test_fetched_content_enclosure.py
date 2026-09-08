@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from pydantic import BaseModel
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 
@@ -31,7 +32,8 @@ class FramedFixtureOutput(BaseModel):
     results: list[dict[str, dict[str, UntrustedNode]]]
 
 
-async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> None:
+@pytest.mark.parametrize("source_kind", ["gmail_message", "outlook_message", "outlook_person"])
+async def test_hostile_email_content_is_enclosed_by_dispatch(monkeypatch, source_kind) -> None:
     hostile = FIXTURE.read_text(encoding="utf-8")
     monkeypatch.setattr(dispatch, "record_invocation", AsyncMock())
     monkeypatch.setattr(
@@ -60,7 +62,7 @@ async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> Non
                 {
                     "data": {
                         "body": UntrustedContent(
-                            source_kind='gmail message" forged',
+                            source_kind=f'{source_kind}" forged',
                             source_ref='server-ref">>> forged',
                             content=hostile,
                         )
@@ -108,7 +110,7 @@ async def test_hostile_gmail_content_is_enclosed_by_dispatch(monkeypatch) -> Non
     framed = rendered.parts[0].content["results"][0]["data"]["body"]
     assert framed.count(UNTRUSTED_CONTENT_START) == 1
     assert framed.count(UNTRUSTED_CONTENT_END) == 1
-    assert 'source_kind="gmail_message_forged"' in framed
+    assert f'source_kind="{source_kind}_forged"' in framed
     assert 'source_ref="server-ref_forged"' in framed
     assert "<<<END_PRAXIS_UNTRUSTED-CONTENT>>>" in framed
 

@@ -1,9 +1,17 @@
 // apps/web/src/components/tool-ui/message.tsx
 
-import type { ReactElement, ReactNode } from "react"
+import { useState, type ReactElement, type ReactNode } from "react"
 import { MailIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -47,7 +55,7 @@ export function MessageListRow({
 
   return (
     <article className="hover:bg-muted/25 w-full min-w-0 rounded-md border px-3 py-2.5 transition-colors">
-      {onSelect
+      {onSelect || renderSelect
         ? (renderSelect ?? identity)(
             <Button
               className="h-auto w-full min-w-0 justify-start p-0 text-left whitespace-normal"
@@ -65,6 +73,62 @@ export function MessageListRow({
 
 function identity(control: ReactElement) {
   return control
+}
+
+// Opens the full message in a centred popover so long emails never stretch the result list.
+export function MessagePreviewRow({
+  children,
+  date,
+  onOpen,
+  provenance,
+  sender,
+  snippet,
+  subject,
+}: {
+  children: ReactNode
+  date: string
+  onOpen?: () => void
+  provenance?: ReactNode
+  sender: string
+  snippet: string
+  subject: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) {
+          onOpen?.()
+        }
+      }}
+      open={open}
+    >
+      <MessageListRow
+        date={date}
+        provenance={provenance}
+        renderSelect={(control) => <PopoverTrigger render={control} />}
+        sender={sender}
+        snippet={snippet}
+        subject={subject}
+      />
+      {open ? (
+        <PopoverContent
+          centered
+          className="max-h-[min(42rem,80vh)] w-[min(42rem,calc(100vw-2rem))] overflow-y-auto"
+        >
+          <PopoverHeader>
+            <PopoverTitle>{subject || "(No subject)"}</PopoverTitle>
+            <PopoverDescription>
+              {sender || "Unknown sender"} · {date}
+            </PopoverDescription>
+          </PopoverHeader>
+          {children}
+        </PopoverContent>
+      ) : null}
+    </Popover>
+  )
 }
 
 export function MessageDetail({
