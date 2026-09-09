@@ -1,6 +1,5 @@
 """Tests for parked agent-run approval expiry."""
 
-import asyncio
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -443,11 +442,13 @@ async def test_existing_reconcile_finalizes_expired_scheduled_approval(
     assert schedule.is_active is False
 
 
+@pytest.mark.parametrize("resume_first", [False, True])
 @pytest.mark.parametrize("competitor", ["resume", "expiry", "cancel"])
 async def test_resume_reservation_rejects_second_request_before_streaming(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     competitor: str,
+    resume_first: bool,
 ) -> None:
     async with committed_db_session_factory() as setup_db:
         parked = await _park_approval(
@@ -483,59 +484,59 @@ async def test_resume_reservation_rejects_second_request_before_streaming(
             )
         ],
     )
-    start_barrier = asyncio.Barrier(2)
+    from tests.support.execution import race_with_first_lock
 
-    async def resume_concurrently() -> str:
-        await start_barrier.wait()
-        async with committed_db_session_factory() as db:
-            try:
-                await resume_agent_run_stream(
-                    db,
-                    actor=parked.user,
-                    workspace=parked.workspace,
-                    run_id=parked.run.id,
-                    payload=payload,
-                )
-            except ConflictError:
-                await db.rollback()
-                return "conflict"
+    async def resume_concurrently(db) -> str:
+        try:
+            await resume_agent_run_stream(
+                db,
+                actor=parked.user,
+                workspace=parked.workspace,
+                run_id=parked.run.id,
+                payload=payload,
+            )
+        except ConflictError:
+            await db.rollback()
+            return "conflict"
         return "stream"
 
-    async def competing_mutation() -> str:
+    async def competing_mutation(db) -> str:
         if competitor == "resume":
-            return await resume_concurrently()
-        await start_barrier.wait()
-        async with committed_db_session_factory() as db:
-            if competitor == "expiry":
-                await sweep_expired_agent_run_approvals(db, expiry_days=7)
-            else:
-                from services.agent_runs.request_cancel import request_agent_run_cancellation
+            return await resume_concurrently(db)
+        if competitor == "expiry":
+            await sweep_expired_agent_run_approvals(db, expiry_days=7)
+        else:
+            from services.agent_runs.request_cancel import request_agent_run_cancellation
 
-                membership = await db.scalar(
-                    select(WorkspaceMembership).where(
-                        WorkspaceMembership.workspace_id == parked.workspace.id,
-                        WorkspaceMembership.user_id == parked.user.id,
-                    )
+            membership = await db.scalar(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == parked.workspace.id,
+                    WorkspaceMembership.user_id == parked.user.id,
                 )
-                await request_agent_run_cancellation(
-                    db,
-                    actor=parked.user,
-                    workspace=parked.workspace,
-                    membership=membership,
-                    run_id=parked.run.id,
-                )
-            await db.commit()
+            )
+            await request_agent_run_cancellation(
+                db,
+                actor=parked.user,
+                workspace=parked.workspace,
+                membership=membership,
+                run_id=parked.run.id,
+            )
         return competitor
 
     try:
-        results = await asyncio.gather(resume_concurrently(), competing_mutation())
+        results = await race_with_first_lock(
+            committed_db_session_factory,
+            run_id=parked.run.id,
+            operations=[resume_concurrently, competing_mutation],
+            first=0 if resume_first else 1,
+        )
         if competitor == "resume":
             assert sorted(results) == ["conflict", "stream"]
         elif competitor == "expiry":
             assert sorted(results) == ["conflict", "expiry"]
             assert not spawned
         else:
-            assert results[0] in {"stream", "conflict"}
+            assert results[0] == ("stream" if resume_first else "conflict")
             assert results[1] == "cancel"
         assert len(spawned) <= 1
         async with committed_db_session_factory() as verify_db:
@@ -731,11 +732,14 @@ async def test_recovery_retains_bounded_effects_from_damaged_workflow(
     assert "code_mode_state" not in (parked.run.metadata_json or {})
 
 
+@pytest.mark.parametrize("child_first", [False, True])
 async def test_child_completion_and_family_cancellation_have_one_terminal_winner(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
+    child_first: bool,
 ) -> None:
     from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
     from services.agent_runs.utils import transition_run_status
+    from tests.support.execution import race_with_first_lock
 
     async with committed_db_session_factory() as db:
         root = await _park_approval(db, now=datetime.now(UTC), age_days=1)
@@ -751,30 +755,28 @@ async def test_child_completion_and_family_cancellation_have_one_terminal_winner
         child.run.delegation_depth = 1
         await start_agent_run(db, child.run)
         await db.commit()
-    barrier = asyncio.Barrier(2)
 
-    async def complete_child() -> None:
-        await barrier.wait()
-        async with committed_db_session_factory() as db:
-            family = await lock_run_family(db, run_id=child.run.id)
-            stored = next(run for run in family if run.id == child.run.id)
-            if stored.status == "running":
-                await transition_run_status(db, stored, "completed")
-            await db.commit()
+    async def complete_child(db) -> None:
+        family = await lock_run_family(db, run_id=child.run.id)
+        stored = next(run for run in family if run.id == child.run.id)
+        if stored.status == "running":
+            await transition_run_status(db, stored, "completed")
 
-    async def cancel_family() -> None:
-        await barrier.wait()
-        async with committed_db_session_factory() as db:
-            await settle_run_family(db, run_id=root.run.id, status="cancelled")
-            await db.commit()
+    async def cancel_family(db) -> None:
+        await settle_run_family(db, run_id=root.run.id, status="cancelled")
 
     try:
-        await asyncio.gather(complete_child(), cancel_family())
+        await race_with_first_lock(
+            committed_db_session_factory,
+            run_id=root.run.id,
+            operations=[complete_child, cancel_family],
+            first=0 if child_first else 1,
+        )
         async with committed_db_session_factory() as db:
             stored_root = await db.get(AgentRun, root.run.id)
             stored_child = await db.get(AgentRun, child.run.id)
             assert stored_root.status == "cancelled"
-            assert stored_child.status in {"completed", "cancelled"}
+            assert stored_child.status == ("completed" if child_first else "cancelled")
             assert stored_child.outcome == (
                 "success" if stored_child.status == "completed" else "cancelled"
             )
@@ -798,3 +800,81 @@ async def test_child_completion_and_family_cancellation_have_one_terminal_winner
             await db.execute(delete(Workspace).where(Workspace.id == root.workspace.id))
             await db.execute(delete(User).where(User.id == root.user.id))
             await db.commit()
+
+
+async def test_staged_cleanup_worker_retries_without_losing_terminal_evidence(
+    committed_db_session_factory, local_storage_settings, monkeypatch
+):
+    from copy import deepcopy
+
+    from services.agent_runs.settle_run_family import settle_run_family
+    from services.storage.factory import get_storage_provider
+    from workers.job_runner import _execute_claimed_job
+
+    factory = committed_db_session_factory
+    async with factory() as db:
+        parked = await _park_approval(db, now=datetime.now(UTC), age_days=1, stage_write=True)
+        await db.commit()
+        assert not await db.scalar(
+            select(Job).where(
+                Job.kind == DELETE_STAGED_APPROVAL_CONTENT_KIND, Job.subject_id == parked.run.id
+            )
+        )
+        await settle_run_family(
+            db, run_id=parked.run.id, error_code="agent_run_resume_requires_recovery"
+        )
+        await db.commit()
+        job = await db.scalar(
+            select(Job).where(
+                Job.kind == DELETE_STAGED_APPROVAL_CONTENT_KIND, Job.subject_id == parked.run.id
+            )
+        )
+        job_id = job.id
+        evidence = deepcopy(parked.run.completion_json)
+        assert parked.run.status == "failed"
+        assert evidence["recovery"]["actions"]
+
+    provider = get_storage_provider()
+    delete_object = provider.delete_object
+    attempts = 0
+
+    async def failing_delete(ref):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("Synthetic storage interruption")
+        return await delete_object(ref)
+
+    monkeypatch.setattr(provider, "delete_object", failing_delete)
+    for attempt in (1, 2):
+        async with factory() as db:
+            job = await db.get(Job, job_id)
+            assert job.status == "pending"
+            if attempt == 2:
+                assert job.last_error_code is not None
+                assert job.run_after > job.updated_at
+                assert (
+                    await resolve_staged_write_content(
+                        workspace_id=parked.workspace.id,
+                        run_id=parked.run.id,
+                        content_ref=parked.content_ref,
+                    )
+                    == "private staged content"
+                )
+            # Enter the worker at its claimed-job boundary without claiming other queues.
+            job.status = "running"
+            job.locked_by = "cleanup-rehearsal"
+            job.locked_at = datetime.now(UTC)
+            job.lock_expires_at = datetime.now(UTC) + timedelta(seconds=90)
+            job.attempts = attempt
+            await db.commit()
+        await _execute_claimed_job(job_id, owner_instance_id="cleanup-rehearsal")
+        async with factory() as db:
+            assert (await db.get(AgentRun, parked.run.id)).completion_json == evidence
+    async with factory() as db:
+        assert (await db.get(Job, job_id)).status == "succeeded"
+    assert attempts == 2
+    with pytest.raises(StorageNotFoundError):
+        await resolve_staged_write_content(
+            workspace_id=parked.workspace.id, run_id=parked.run.id, content_ref=parked.content_ref
+        )

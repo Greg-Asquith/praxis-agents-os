@@ -511,3 +511,13 @@ conversation, approval, agent, schedule, tool-catalog, and audit surfaces.
 Code-mode orchestration is described in [`code-mode.md`](code-mode.md): it
 builds on raw `pydantic-monty`, not Pydantic AI Harness, which remains a
 design reference only.
+
+
+## Runtime replacement boundary
+
+Execution owners and durable approval reservations require compatible API and
+worker versions. An old process can overwrite a new owner's lease, so a rolling
+replacement is not a safe default for these metadata changes. Stop old API
+instances and worker executions before admitting replacement invocations.
+Preserve parked interpreter state and staged approval content during the pause.
+Client-first payload compatibility does not remove this execution boundary.

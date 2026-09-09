@@ -28,6 +28,7 @@ from services.jobs.handlers.sweep_abandoned_agent_runs import (
     sweep_abandoned_agent_runs,
 )
 from tests.factories import build_conversation
+from tests.support.execution import race_with_first_lock
 from tests.support.scenario import build_scenario_agent
 
 
@@ -217,7 +218,10 @@ async def test_parent_failure_races_child_creation(committed_db_session_factory,
         assert (await db.get(AgentRun, child_id)).status == "failed"
 
 
-async def test_reaper_cancel_and_finalise_preserve_one_family_verdict(committed_db_session_factory):
+@pytest.mark.parametrize("first", ["reap", "cancel", "finalise"])
+async def test_reaper_cancel_and_finalise_preserve_one_family_verdict(
+    committed_db_session_factory, first
+):
     context = await build_scenario_agent(committed_db_session_factory)
     async with committed_db_session_factory() as db:
         root = await db.get(AgentRun, context.run_id)
@@ -243,31 +247,31 @@ async def test_reaper_cancel_and_finalise_preserve_one_family_verdict(committed_
         child_id = child.id
         root.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         await db.commit()
-    ready = asyncio.Barrier(3)
 
-    async def settle(operation):
-        async with committed_db_session_factory() as db:
-            await ready.wait()
-            if operation == "reap":
-                await reap_abandoned_runs(db, run_id=context.run_id)
-            elif operation == "cancel":
-                await settle_run_family(db, run_id=context.run_id, status="cancelled")
-            else:
-                await persist_successful_run(
-                    db,
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                    terminal_result=SimpleNamespace(new_messages=list, usage=RunUsage()),
-                    client_message_id=None,
-                )
-            await db.commit()
+    async def reap(db):
+        await reap_abandoned_runs(db, run_id=context.run_id)
 
-    await asyncio.wait_for(
-        asyncio.gather(*(settle(op) for op in ("reap", "cancel", "finalise"))), timeout=5
+    async def cancel(db):
+        await settle_run_family(db, run_id=context.run_id, status="cancelled")
+
+    async def finalise(db):
+        await persist_successful_run(
+            db,
+            run_id=context.run_id,
+            conversation_id=context.conversation_id,
+            terminal_result=SimpleNamespace(new_messages=list, usage=RunUsage()),
+            client_message_id=None,
+        )
+
+    await race_with_first_lock(
+        committed_db_session_factory,
+        run_id=context.run_id,
+        operations=[reap, cancel, finalise],
+        first=["reap", "cancel", "finalise"].index(first),
     )
     async with committed_db_session_factory() as db:
         root = await db.get(AgentRun, context.run_id)
         child = await db.get(AgentRun, child_id)
-        assert root.status in {"failed", "cancelled"}
+        assert root.status == ("cancelled" if first == "cancel" else "failed")
         assert child.status == root.status
         assert root.lease_expires_at is None and child.lease_expires_at is None

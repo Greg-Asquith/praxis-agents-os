@@ -137,11 +137,13 @@ _REGISTERED_PROVIDER_LIST = format_provider_list(_REGISTERED_PROVIDERS)
     provider="native",
     label="Run Code",
     description=(
-        "Do heavy computation or create new spreadsheets, presentations, documents, charts, "
+        "Do heavy computation or create and edit spreadsheets, presentations, documents, charts, "
         "and other files in an isolated provider sandbox. Anthropic and OpenAI can inspect and "
         "edit selected workspace documents directly; Google receives bounded text or derived "
         "Markdown for read-only computation. New files are grouped in this conversation's folder "
-        "unless you name another folder. Available providers: " + _REGISTERED_PROVIDER_CSV + "."
+        "unless you name another folder. Write an incredibly detailed brief with all required information "
+        "and context, the agent completing the task has no access to previous messages in the conversation."
+        "Available providers: " + _REGISTERED_PROVIDER_CSV + "."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,

@@ -286,3 +286,24 @@ first, its safe evidence remains available when the root subsequently stops.
 Standalone workflow recovery retains the existing Code Mode failure contract.
 If delegation permission or depth is revoked while approval is pending, the
 accepted continuation stops before another model request or specialist action.
+
+
+## Legacy approval recovery during upgrades
+
+A legacy approval can resume after a client refresh when its saved proposal and
+owning context remain verifiable. Saved Monty 0.0.21 interpreter state preserves
+completed effects across repeated approval rounds. Staged file content remains
+owned by the suspended run. Unsupported versions, ambiguous native histories,
+and stale revisions cannot authorise execution.
+
+The old acceptance path persisted running state but held approved decisions only
+in memory. If that execution is interrupted, a retained approval without a
+reservation requires blocked recovery. Family settlement preserves completed
+and uncertain action references before clearing executable state. Cancellation
+keeps its cancelled outcome and retains the same evidence. Existing standalone
+Code Mode recovery keeps its specific failure contract.
+
+A coordinated backend and worker replacement is required for ownership and
+approval metadata changes. The tolerant client can load old server payloads;
+that wire compatibility does not make old lease-renewal code safe to run beside
+new owners. Stop all old executions before any replacement process starts.

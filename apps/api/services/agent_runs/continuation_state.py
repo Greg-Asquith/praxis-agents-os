@@ -11,6 +11,7 @@ from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
 from models.agent_run import AgentRun
 from services.agent_runs.schemas import AgentRunResumeRequest
 from services.agents.runtime.approval_identity import (
+    APPROVAL_BATCH_KEY,
     MAX_PROJECTION_LEAVES,
     invalid_approval_state,
     proposal_digest,
@@ -18,6 +19,19 @@ from services.agents.runtime.approval_identity import (
 
 CONTINUATION_KEY = "approval_continuation"
 DEFERRED_RESULTS_ADAPTER = TypeAdapter(DeferredToolResults)
+
+
+def has_unreserved_approval_execution(run: AgentRun) -> bool:
+    """Identifies interrupted legacy acceptance whose decisions were only in memory."""
+    metadata = run.metadata_json or {}
+    state = metadata.get("approval_state")
+    return (
+        run.status == "running"
+        and isinstance(state, dict)
+        and state.get("version") == 1
+        and APPROVAL_BATCH_KEY not in state
+        and CONTINUATION_KEY not in metadata
+    )
 
 
 class ApprovalContinuation(BaseModel):

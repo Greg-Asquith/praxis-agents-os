@@ -91,3 +91,71 @@ async def test_child_resume_is_rejected_before_decisions_or_effects(
             assert child.metadata_json == before
             assert root.metadata_json == root_before
         assert effects.calls == []
+
+
+@pytest.mark.parametrize("generation", ["legacy", "current"])
+async def test_resume_http_contract_reserves_once_and_returns_stream_version(
+    committed_db_session_factory, async_client, monkeypatch, generation
+):
+    from uuid import uuid4
+
+    from services.agent_runs.get_approval_state import get_agent_run_approval_state
+    from services.agents.runtime.run_manager import run_task_registry
+    from services.agents.runtime.stream_protocol import (
+        STREAM_PROTOCOL_VERSION,
+        STREAM_VERSION_HEADER,
+    )
+    from tests.support.approval_fixtures import restore_approval_fixture
+
+    factory = committed_db_session_factory
+    queued = []
+
+    def disconnect(_id, coroutine, *, sink, **_kwargs):
+        queued.append(coroutine)
+        coroutine.close()
+        sink.detach()
+
+    monkeypatch.setattr(run_task_registry, "spawn", disconnect)
+    with scenario_effects(name="scenario_release_write") as effects:
+        context = await restore_approval_fixture(factory, "direct")
+        async with factory() as db:
+            actor = await db.get(User, context.user_id)
+            workspace = await db.get(Workspace, context.workspace_id)
+            root = await db.get(AgentRun, context.run_id)
+            if generation == "current":
+                metadata = deepcopy(root.metadata_json)
+                metadata["approval_state"]["approval_batch_id"] = str(uuid4())
+                root.metadata_json = metadata
+            session = await session_manager.create_session(db, str(actor.id))
+            await db.commit()
+            projection = await get_agent_run_approval_state(
+                db, actor=actor, workspace=workspace, run_id=root.id
+            )
+            headers = {**bearer_headers(session["session_token"]), "X-Workspace": workspace.slug}
+        payload = {"decisions": [{"tool_call_id": "write", "decision": "approved"}]}
+        url = f"/api/v1/agent-runs/{context.run_id}/resume"
+        if generation == "current":
+            stale = await async_client.post(url, headers=headers, json=payload)
+            assert stale.status_code == 409
+            assert stale.json()["error_code"] == "approval_refresh_required"
+            assert queued == []
+            payload["approval_revision"] = projection.approval_revision
+            payload["decisions"][0]["approval_id"] = str(projection.approvals[0].approval_id)
+        accepted = await async_client.post(url, headers=headers, json=payload)
+        assert accepted.status_code == 200
+        assert accepted.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION
+        repeated = await async_client.post(url, headers=headers, json=payload)
+        assert repeated.status_code == 409
+        assert repeated.json()["code"] == "approval_already_reserved"
+        assert repeated.json()["decisions_accepted"] is True
+        conflicting = deepcopy(payload)
+        conflicting["decisions"][0]["decision"] = "denied"
+        rejected = await async_client.post(url, headers=headers, json=conflicting)
+        assert rejected.status_code == 409
+        assert rejected.json()["code"] == "approval_decisions_conflict"
+        assert rejected.json()["decisions_accepted"] is False
+        assert len(queued) == 1
+        assert effects.calls == []
+        async with factory() as db:
+            root = await db.get(AgentRun, context.run_id)
+            assert root.metadata_json["approval_continuation"]["phase"] == "reserved"

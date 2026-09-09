@@ -294,3 +294,16 @@ _(enforced)_ are `[default — confirm at review]`.
 | Integration discovery terminal failure                    | ✓ _(enforced)_  | connecting user _(enforced)_                    |
 | Job pipeline failure — only after final retry exhausted   | ✓ _(enforced)_  | initiator (`initiated_by_user_id`) _(enforced)_ |
 | Every tool invocation, successful runs, routine refreshes | — (audit only)  | —                                               |
+
+
+## Approval upgrade and rollback boundary
+
+Legacy approvals authorise only verifiable saved proposals. Interrupted legacy
+acceptance has no durable decision reservation, so recovery retains completed
+and uncertain evidence and blocks replay. A fresh reviewed action needs fresh
+consent; replay is not a recovery mechanism.
+
+After new owner, approval-batch, reservation, or effective-budget metadata is
+written, an old backend is not a compatible rollback target. Stop admission and
+execution before a reviewed metadata-compatible repair. Keep saved approvals
+and effect evidence intact. A tolerant client may remain deployed.

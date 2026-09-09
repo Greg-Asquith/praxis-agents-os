@@ -34,9 +34,9 @@ class ScenarioEffects:
 
 
 @contextmanager
-def scenario_effects() -> Iterator[ScenarioEffects]:
+def scenario_effects(*, name: str | None = None) -> Iterator[ScenarioEffects]:
     """Records real dispatch invocations without contacting an external provider."""
-    effects = ScenarioEffects()
+    effects = ScenarioEffects(name=name) if name else ScenarioEffects()
 
     @runtime_tool(
         name=effects.name,
