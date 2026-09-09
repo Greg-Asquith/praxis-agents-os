@@ -7,6 +7,14 @@ import importlib
 from dataclasses import replace
 
 import pytest
+from pydantic_ai import ToolFailed, capture_run_messages
+from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    RetryPromptPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -15,6 +23,7 @@ from models.agent_run import AgentRun
 from models.ai_usage_event import AIUsageEvent
 from services.agent_runs import cancel_agent_run
 from services.agents.runtime.cancellation import request_agent_run_task_cancel
+from services.agents.runtime.persistence import load_message_history
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from tests.support.delegation import scenario_effects
@@ -23,6 +32,7 @@ from tests.support.scenario import (
     ToolCall,
     ToolTurn,
     build_scenario_agent,
+    next_scenario_run,
     run_scenario,
     scripted_model,
 )
@@ -125,13 +135,43 @@ async def test_terminal_winner_controls_finalisation(
     )
 
 
+@pytest.mark.parametrize("later_turn", [False, True])
 async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
+    later_turn: bool,
 ) -> None:
     context = await build_scenario_agent(
-        committed_db_session_factory, tool_names=["scenario_cancel_tool"]
+        committed_db_session_factory,
+        tool_names=["scenario_cancel_tool", "scenario_external_write"],
     )
+    effects = []
+
+    async def external_write(value: str = "ok") -> dict[str, bool]:
+        effects.append(value)
+        return {"ok": True}
+
+    write_definition = RUNTIME_TOOL_CATALOG["scenario_external_write"]
+    monkeypatch.setitem(
+        RUNTIME_TOOL_CATALOG,
+        write_definition.name,
+        replace(write_definition, function=external_write),
+    )
+    if later_turn:
+        previous = await run_scenario(
+            committed_db_session_factory,
+            context,
+            model=scripted_model(
+                turns=[
+                    ToolTurn(
+                        (ToolCall("scenario_external_write", {"value": "saved"}, "saved-effect"),)
+                    ),
+                    "Saved.",
+                ]
+            ),
+        )
+        assert previous.run.status == "completed"
+        context = await next_scenario_run(committed_db_session_factory, context)
     sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
     barrier = ScenarioBarrier()
     invocations = 0
@@ -146,24 +186,37 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
     monkeypatch.setitem(
         RUNTIME_TOOL_CATALOG, definition.name, replace(definition, function=waiting_tool)
     )
-    async with barrier.running(
-        run_scenario(
-            committed_db_session_factory,
-            context,
-            model=scripted_model(
-                turns=[
-                    ToolTurn((ToolCall("scenario_cancel_tool", {}, "cancel-call"),)),
-                ]
-            ),
-            sink=sink,
-        )
-    ) as task:
-        await asyncio.wait_for(barrier.reached.wait(), timeout=2)
-        assert invocations == 1
-        request_agent_run_task_cancel(task, run_id=context.run_id)
+    with capture_run_messages() as captured:
+        async with barrier.running(
+            run_scenario(
+                committed_db_session_factory,
+                context,
+                model=scripted_model(
+                    turns=[
+                        ToolTurn((ToolCall("scenario_cancel_tool", {}, "cancel-call"),)),
+                    ]
+                ),
+                sink=sink,
+            )
+        ) as task:
+            await asyncio.wait_for(barrier.reached.wait(), timeout=2)
+            assert invocations == 1
+            request_agent_run_task_cancel(task, run_id=context.run_id)
 
-        with pytest.raises(asyncio.CancelledError):
-            await task
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    assert isinstance(captured[-1], ModelRequest)
+    assert captured[-1].state == "interrupted"
+    assert any(
+        isinstance(part, ToolCallPart) and part.tool_call_id == "cancel-call"
+        for message in captured
+        for part in message.parts
+    )
+    assert (
+        ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(captured))
+        == captured
+    )
 
     async with committed_db_session_factory() as db:
         await set_session_tenant_context(db, workspace_id=context.workspace_id)
@@ -181,6 +234,45 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
         ("done", "cancelled"),
     ]
     assert all(event.event != "error" for event in sink.events)
+    async with committed_db_session_factory() as db:
+        history = await load_message_history(db, conversation_id=context.conversation_id)
+    assert (
+        ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(history))
+        == history
+    )
+    calls = [
+        part.tool_call_id
+        for message in history
+        for part in message.parts
+        if isinstance(part, ToolCallPart)
+    ]
+    returns = [
+        part.tool_call_id
+        for message in history
+        for part in message.parts
+        if isinstance(part, ToolReturnPart | RetryPromptPart)
+    ]
+    assert set(calls) <= set(returns)
+    if later_turn:
+        assert calls.count("saved-effect") == returns.count("saved-effect") == 1
+    subsequent = await next_scenario_run(committed_db_session_factory, context)
+    seen_requests = []
+    result = await run_scenario(
+        committed_db_session_factory,
+        subsequent,
+        model=scripted_model(turns=["Continued."], seen_requests=seen_requests),
+    )
+    assert result.run.status == "completed"
+    assert result.output == "Continued."
+    assert invocations == 1
+    assert effects == (["saved"] if later_turn else [])
+    assert len(seen_requests) == 1
+    async with committed_db_session_factory() as db:
+        events = (
+            await db.scalars(select(AIUsageEvent).where(AIUsageEvent.run_id == context.run_id))
+        ).all()
+    assert len(events) == 1
+    assert events[0].requests == 1
 
 
 @pytest.mark.parametrize("revocation", ["cancelled", "failed", "owner", "database"])
@@ -478,3 +570,136 @@ async def test_cancellation_during_failure_settlement(
         )
         assert row.id == payload.event_id
         assert row.requests == payload.requests
+
+
+async def test_failed_first_tool_returns_valid_history_without_automatic_replay(
+    committed_db_session_factory, monkeypatch
+):
+    context = await build_scenario_agent(
+        committed_db_session_factory, tool_names=["scenario_cancel_tool"]
+    )
+    invocations = 0
+
+    async def failed_tool(ctx):
+        nonlocal invocations
+        invocations += 1
+        raise ToolFailed("The external service declined the request.")
+
+    definition = RUNTIME_TOOL_CATALOG["scenario_cancel_tool"]
+    monkeypatch.setitem(
+        RUNTIME_TOOL_CATALOG, definition.name, replace(definition, function=failed_tool)
+    )
+    result = await run_scenario(
+        committed_db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn((ToolCall("scenario_cancel_tool", {}, "failed-first"),)),
+                "The request failed.",
+            ]
+        ),
+    )
+    assert result.run.status == "completed"
+    [failed] = result.tool_returns("scenario_cancel_tool")
+    assert failed["tool_call_id"] == "failed-first"
+    assert failed["outcome"] == "failed"
+    async with committed_db_session_factory() as db:
+        history = await load_message_history(db, conversation_id=context.conversation_id)
+    assert (
+        ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(history))
+        == history
+    )
+    subsequent = await next_scenario_run(committed_db_session_factory, context)
+    continued = await run_scenario(
+        committed_db_session_factory, subsequent, model=scripted_model(turns=["Continued."])
+    )
+    assert continued.run.status == "completed"
+    assert invocations == 1
+    async with committed_db_session_factory() as db:
+        events = (
+            await db.scalars(select(AIUsageEvent).where(AIUsageEvent.run_id == context.run_id))
+        ).all()
+    assert len(events) == 1
+    assert events[0].requests == 2
+
+
+async def test_runtime_hooks_process_history_and_check_permission_before_effects(
+    committed_db_session_factory, monkeypatch
+):
+    from pydantic_ai.models.function import FunctionModel
+
+    from services.agents.runtime import capabilities
+    from services.agents.runtime.history import HistoryTrimmer
+
+    order = []
+    original_trim = HistoryTrimmer.__call__
+    original_model_permission = capabilities.check_execution_permission
+    original_tool_permission = dispatch_module.check_execution_permission
+    original_render = capabilities.render_untrusted_frames
+    original_dispatch = capabilities.dispatch_tool_execution
+
+    def trim(self, messages):
+        order.append("history")
+        return original_trim(self, messages)
+
+    async def model_permission(deps):
+        order.append("model-permission")
+        await original_model_permission(deps)
+
+    async def tool_permission(deps):
+        order.append("tool-permission")
+        await original_tool_permission(deps)
+
+    def render(messages):
+        order.append("frame")
+        return original_render(messages)
+
+    async def dispatch(*args, **kwargs):
+        order.append("dispatch")
+        return await original_dispatch(*args, **kwargs)
+
+    async def external_write(value: str = "ok") -> dict[str, bool]:
+        order.append("effect")
+        return {"ok": True}
+
+    monkeypatch.setattr(HistoryTrimmer, "__call__", trim)
+    monkeypatch.setattr(capabilities, "check_execution_permission", model_permission)
+    monkeypatch.setattr(dispatch_module, "check_execution_permission", tool_permission)
+    monkeypatch.setattr(capabilities, "render_untrusted_frames", render)
+    monkeypatch.setattr(capabilities, "dispatch_tool_execution", dispatch)
+    definition = RUNTIME_TOOL_CATALOG["scenario_external_write"]
+    monkeypatch.setitem(
+        RUNTIME_TOOL_CATALOG, definition.name, replace(definition, function=external_write)
+    )
+    context = await build_scenario_agent(
+        committed_db_session_factory, tool_names=["scenario_external_write"]
+    )
+    script = scripted_model(
+        turns=[
+            ToolTurn((ToolCall("scenario_external_write", {"value": "saved"}, "ordered-effect"),)),
+            "Saved.",
+        ]
+    )
+
+    async def stream(messages, info):
+        order.append("model")
+        async for chunk in script.stream_function(messages, info):
+            yield chunk
+
+    result = await run_scenario(
+        committed_db_session_factory, context, model=FunctionModel(stream_function=stream)
+    )
+    assert result.run.status == "completed"
+    assert order == [
+        "history",
+        "model-permission",
+        "frame",
+        "model",
+        "dispatch",
+        "tool-permission",
+        "effect",
+        "history",
+        "model-permission",
+        "frame",
+        "model",
+    ]

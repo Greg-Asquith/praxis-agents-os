@@ -24,7 +24,7 @@ from services.storage.factory import get_storage_provider
 
 logger = logging.getLogger(__name__)
 
-SKILL_CAPABILITY_PREFIX = "skill:"
+SKILL_CAPABILITY_PREFIX = "skill-"
 SKILL_DOCUMENTS_CAPABILITY_ID = "skills-documents"
 READ_SKILL_DOCUMENT_TOOL_NAME = "read_skill_document"
 

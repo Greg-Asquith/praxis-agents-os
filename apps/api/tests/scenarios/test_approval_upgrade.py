@@ -1,5 +1,6 @@
 """Qualifies historical consent and interpreter state across runtime replacement."""
 
+from contextlib import nullcontext
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 
@@ -15,6 +16,7 @@ from services.agent_runs.reap_abandoned import reap_abandoned_runs
 from services.agent_runs.resume_run_stream import resume_agent_run_stream
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
+from services.agents.runtime.code_mode.state import CodeModeResumeRequiresRecoveryError
 from services.agents.runtime.run_manager import run_task_registry
 from tests.support.approval_fixtures import restore_approval_fixture
 from tests.support.delegation import resume_scenario, scenario_effects
@@ -22,8 +24,9 @@ from tests.support.scenario import scripted_model
 
 
 @pytest.mark.parametrize("fixture", ["direct", "workflow", "workflow-second", "delegated"])
+@pytest.mark.parametrize("decision", ["approved", "denied"])
 async def test_saved_v1_approvals_resume_without_repeating_completed_effects(
-    committed_db_session_factory, monkeypatch, fixture
+    committed_db_session_factory, monkeypatch, fixture, decision
 ):
     factory = committed_db_session_factory
     with scenario_effects(name="scenario_release_write") as effects:
@@ -31,6 +34,8 @@ async def test_saved_v1_approvals_resume_without_repeating_completed_effects(
         model = scripted_model(turns=["Specialist finished.", "Finished."])
         monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
         identities = []
+        requires_recovery = fixture == "workflow-second" and decision == "denied"
+        expected_status = "failed" if requires_recovery else "completed"
         try:
             for _ in range(2):
                 async with factory() as db:
@@ -43,28 +48,45 @@ async def test_saved_v1_approvals_resume_without_repeating_completed_effects(
                     [leaf] = projection.approvals
                     identities.append(leaf.approval_id)
                 await close_code_mode_executor()
-                result = await resume_scenario(
-                    factory,
-                    context,
-                    model=model,
-                    decisions=[
-                        AgentRunResumeDecision(
-                            tool_call_id=leaf.tool_call_id,
-                            approval_id=leaf.approval_id,
-                            decision="approved",
-                        )
-                    ],
-                )
-                if result.run.status == "completed":
+                with (
+                    pytest.raises(CodeModeResumeRequiresRecoveryError)
+                    if requires_recovery
+                    else nullcontext()
+                ):
+                    await resume_scenario(
+                        factory,
+                        context,
+                        model=model,
+                        decisions=[
+                            AgentRunResumeDecision(
+                                tool_call_id=leaf.tool_call_id,
+                                approval_id=leaf.approval_id,
+                                decision=decision,
+                            )
+                        ],
+                    )
+                async with factory() as db:
+                    resumed_run = await db.get(AgentRun, context.run_id)
+                if resumed_run.status == expected_status:
                     break
-                assert result.run.status == "awaiting_approval"
-            assert result.run.status == "completed"
+                assert resumed_run.status == "awaiting_approval"
+            assert resumed_run.status == expected_status
+            if requires_recovery:
+                assert resumed_run.outcome == "blocked"
+                assert resumed_run.error_code == "agent_run_resume_requires_recovery"
+                assert {
+                    action["tool_call_id"]
+                    for action in resumed_run.completion_json["recovery"]["actions"]
+                    if action["status"] == "completed"
+                } == {"workflow:1"}
             expected = (
                 ["second"]
                 if fixture == "workflow-second"
                 else (["first"] if fixture == "direct" else ["first", "second"])
             )
-            assert [value for _, value in effects.calls] == expected
+            assert [value for _, value in effects.calls] == (
+                expected if decision == "approved" else []
+            )
             assert len(set(identities)) == len(identities)
             async with factory() as db:
                 runs = list(
@@ -75,14 +97,16 @@ async def test_saved_v1_approvals_resume_without_repeating_completed_effects(
                         )
                     )
                 )
-                assert all(run.status == "completed" for run in runs)
+                assert all(run.status == expected_status for run in runs)
                 assert all("approval_state" not in run.metadata_json for run in runs)
                 owner = (
                     next(run for run in runs if run.parent_run_id)
                     if fixture == "delegated"
                     else runs[0]
                 )
-                assert {run_id for run_id, _ in effects.calls} == {owner.id}
+                assert {run_id for run_id, _ in effects.calls} == (
+                    {owner.id} if decision == "approved" else set()
+                )
         finally:
             await close_code_mode_executor()
 

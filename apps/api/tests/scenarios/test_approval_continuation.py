@@ -3,7 +3,10 @@
 """Durable approval acceptance and worker handoff through the public service."""
 
 import asyncio
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+from importlib import import_module
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import select
@@ -19,6 +22,7 @@ from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agent_runs.resume_run_stream import resume_agent_run_stream
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agents.runtime.run_manager import run_task_registry
+from tests.support.approval_fixtures import restore_approval_fixture
 from tests.support.delegation import scenario_effects
 from tests.support.scenario import (
     ToolCall,
@@ -294,3 +298,101 @@ async def test_unavailable_child_stops_public_resume_without_replacement(
                 "awaiting_approval" if child_status == "missing" else child_status
             )
         assert effects.calls == []
+
+
+@pytest.mark.parametrize("target", ["direct", "workflow-second", "delegated", "nested-decision"])
+@pytest.mark.parametrize(
+    "invalid",
+    ["approved", 1, None, {}, {"override_args": {"value": "unreviewed"}}],
+    ids=["string", "number", "null", "empty-object", "untagged-object"],
+)
+async def test_corrupt_saved_decisions_settle_without_replaying_effects(
+    committed_db_session_factory, monkeypatch, target, invalid
+):
+    from services.agents.runtime.code_mode.executor import close_code_mode_executor
+
+    factory = committed_db_session_factory
+    fixture = "workflow-second" if target == "nested-decision" else target
+    delegation = import_module("services.agents.runtime.delegation.resume_approved_delegate_run")
+    adapter = Mock(wraps=delegation._DEFERRED_TOOL_RESULTS_ADAPTER)
+    monkeypatch.setattr(delegation, "_DEFERRED_TOOL_RESULTS_ADAPTER", adapter)
+    queued = []
+    monkeypatch.setattr(
+        run_task_registry, "spawn", lambda _id, coroutine, **_kwargs: queued.append(coroutine)
+    )
+    with scenario_effects(name="scenario_release_write") as effects:
+        context = await restore_approval_fixture(factory, fixture)
+        model = scripted_model(turns=["Finished."])
+        monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+        try:
+            async with factory() as db:
+                actor = await db.get(User, context.user_id)
+                workspace = await db.get(Workspace, context.workspace_id)
+                projection = await get_agent_run_approval_state(
+                    db, actor=actor, workspace=workspace, run_id=context.run_id
+                )
+                [leaf] = projection.approvals
+                payload = AgentRunResumeRequest(
+                    approval_revision=projection.approval_revision,
+                    decisions=[
+                        AgentRunResumeDecision(
+                            approval_id=leaf.approval_id,
+                            tool_call_id=leaf.tool_call_id,
+                            decision="approved",
+                        )
+                    ],
+                )
+                await resume_agent_run_stream(
+                    db, actor=actor, workspace=workspace, run_id=context.run_id, payload=payload
+                )
+            async with factory() as db:
+                root = await db.get(AgentRun, context.run_id)
+                metadata = deepcopy(root.metadata_json)
+                results = metadata[CONTINUATION_KEY]["deferred_tool_results"]
+                if target == "delegated":
+                    [delegate] = results["metadata"].values()
+                    results = delegate["child_deferred_tool_results"]
+                if target == "nested-decision":
+                    [workflow] = results["metadata"].values()
+                    workflow["code_mode_decision"] = invalid
+                else:
+                    [call_id] = results["approvals"]
+                    results["approvals"][call_id] = invalid
+                root.metadata_json = metadata
+                await db.commit()
+            await close_code_mode_executor()
+            assert len(queued) == 1
+            await queued[0]
+            if target == "delegated":
+                adapter.validate_python.assert_called_once_with(results)
+            else:
+                adapter.validate_python.assert_not_called()
+            async with factory() as db:
+                root = await db.get(AgentRun, context.run_id)
+                assert root.status == "failed"
+                assert root.outcome == "blocked"
+                assert root.error_code == "agent_run_resume_requires_recovery"
+                assert CONTINUATION_KEY not in (root.metadata_json or {})
+                evidence = deepcopy(root.completion_json)
+                if fixture == "workflow-second":
+                    assert any(
+                        action["tool_call_id"] == "workflow:1" and action["status"] == "completed"
+                        for action in evidence["recovery"]["actions"]
+                    )
+                children = list(
+                    await db.scalars(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+                )
+                assert all(child.status == "failed" for child in children)
+                with pytest.raises(ConflictError):
+                    await resume_agent_run_stream(
+                        db, actor=actor, workspace=workspace, run_id=context.run_id, payload=payload
+                    )
+                await db.rollback()
+            async with factory() as db:
+                assert (await db.get(AgentRun, context.run_id)).completion_json == evidence
+            assert len(queued) == 1
+            assert effects.calls == []
+        finally:
+            for coroutine in queued:
+                coroutine.close()
+            await close_code_mode_executor()

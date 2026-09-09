@@ -83,6 +83,15 @@ with its unread body intact. SDKs translate that final response into their
 provider error types. Do not replace it with SDK defaults or add a second
 retry owner. Rerun adapter request-count tests for future SDK upgrades.
 
+## Content-filter failures
+
+Azure Chat Completions uses the shared OpenAI adapter. Pydantic AI 2.42.0
+maps an HTTP 400 `content_filter` response to a filtered result for ordinary
+requests. Its streaming path instead raises an internal `TypeError` while
+handling that result. Praxis settles the run as failed with its generic safe
+error, without exposing the provider body or retrying the action. A specific
+streamed filter outcome remains unavailable with this SDK version.
+
 ## Frontend provider labels
 
 Agent provider labels read the catalogue transport and append "via Google Cloud"

@@ -6,6 +6,21 @@ or conversation recovery. For the execution design, see
 [streaming ownership](../architecture/agent-turn-streaming.md).
 Backend paths are relative to `apps/api/`; frontend paths to `apps/web/`.
 
+## Skill history
+
+Assigned skills use deferred instruction capabilities with `skill-UUID` IDs.
+Migration `core_0052` converts historical `skill:UUID` IDs in typed capability-load
+calls in conversation messages and saved approval histories, including delegated
+runs. It preserves call IDs, message metadata, decisions, and interpreter state.
+Ordinary tool results and prompt content are unchanged and cannot restore a
+loaded skill. Reading a skill document requires its assigned capability to be
+loaded. Runtime history loading performs no compatibility conversion.
+
+Stop old API and worker processes before applying this migration, then start
+the upgraded processes after it succeeds. A restored pre-upgrade database must
+run migrations before use. Downgrading the migration restores the historical
+prefix and requires the same stopped-process boundary.
+
 ## Run lifecycle and context
 
 The following contracts apply in this area:

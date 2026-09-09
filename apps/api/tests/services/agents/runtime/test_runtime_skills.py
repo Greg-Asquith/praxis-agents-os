@@ -3,26 +3,37 @@
 """Tests for deferred runtime skill capabilities."""
 
 import json
+import runpy
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from pydantic_ai import ModelRetry, RunContext
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import (
+    LoadCapabilityCallPart,
+    LoadCapabilityReturnPart,
+    ModelMessage,
+    RetryPromptPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_maintenance_async_db_session_factory
 from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
-from models.conversation import Conversation
+from models.conversation import Conversation, ConversationMessage
 from models.skills import Skill, SkillScope
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_STATUS_COMPLETED
@@ -130,31 +141,56 @@ async def test_build_skill_capabilities_assembles_catalog_and_document_tool() ->
     assert document_capability.tools[0].name == READ_SKILL_DOCUMENT_TOOL_NAME
 
 
+@pytest.mark.parametrize("legacy_history", [False, True])
 async def test_execute_run_records_skill_activation(
     db_session: AsyncSession,
+    local_storage_settings: None,
+    legacy_history: bool,
 ) -> None:
     context = await _create_runtime_skill_context(db_session)
     skill = await db_session.get(Skill, context.skill_id)
     assert skill is not None
     capability_id = skill_capability_id(skill)
+    markdown_key = (
+        f"workspaces/{context.workspace_id}/skills/{skill.id}/docs/quick_start/converted.md"
+    )
+    skill.documentation_refs = {
+        "quick_start": _manifest_entry(markdown=markdown_key, filename="Guide.md")
+    }
+    await db_session.flush()
+    await get_storage_provider().put_object(
+        make_storage_object_ref(StorageBucket.PRIVATE, markdown_key),
+        b"# Guide\nUse the approved workflow.",
+        content_type="text/markdown",
+    )
     sink = CollectingSink(
         run_id=context.run_id,
         conversation_id=context.conversation_id,
     )
 
-    state = {"loaded": False}
+    requests = []
+    call_number = 0
+    document_args = {"skill": skill.name, "document": "quick_start"}
+    turns = [
+        (READ_SKILL_DOCUMENT_TOOL_NAME, document_args),
+        ("load_capability", {"id": capability_id}),
+        (READ_SKILL_DOCUMENT_TOOL_NAME, document_args),
+    ]
 
     async def stream(
         _messages: list[ModelMessage],
         _info: AgentInfo,
     ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
-        if not state["loaded"]:
-            state["loaded"] = True
+        nonlocal call_number
+        requests.append((list(_messages), _info))
+        if len(requests) <= len(turns):
+            name, args = turns[len(requests) - 1]
+            call_number += 1
             yield {
                 0: DeltaToolCall(
-                    name="load_capability",
-                    json_args=json.dumps({"id": capability_id}),
-                    tool_call_id="load-skill-call",
+                    name=name,
+                    json_args=json.dumps(args),
+                    tool_call_id=f"skill-{call_number}",
                 )
             }
             return
@@ -181,6 +217,195 @@ async def test_execute_run_records_skill_activation(
 
     await db_session.refresh(skill)
     assert skill.last_used_at is not None
+    assert len(requests) == 4
+    assert skill.instructions not in (requests[0][1].instructions or "")
+    [loaded] = [
+        part
+        for message in requests[2][0]
+        for part in message.parts
+        if isinstance(part, LoadCapabilityReturnPart)
+    ]
+    assert skill.instructions in loaded.instructions
+    retries = [
+        part
+        for message in requests[1][0]
+        for part in message.parts
+        if isinstance(part, RetryPromptPart)
+    ]
+    assert any("Call load_capability" in str(part.content) for part in retries)
+    returns = [
+        part
+        for message in requests[3][0]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == READ_SKILL_DOCUMENT_TOOL_NAME
+    ]
+    assert len(returns) == 1
+    assert "Use the approved workflow." in str(returns[0].content)
+
+    if legacy_history:
+        rows = (
+            await db_session.scalars(
+                select(ConversationMessage).where(
+                    ConversationMessage.conversation_id == context.conversation_id
+                )
+            )
+        ).all()
+        for row in rows:
+            parts = json.loads(json.dumps(row.parts))
+            for part in parts.get("parts", []):
+                if (
+                    part.get("tool_kind") == "capability-load"
+                    and part.get("part_kind") == "tool-call"
+                ):
+                    part["args"] = {"id": f"skill:{skill.id}"}
+                    row.parts = parts
+        await db_session.commit()
+        await _migrate_skill_ids(db_session, "upgrade")
+        await db_session.commit()
+        for row in rows:
+            await db_session.refresh(row)
+
+    next_run = await create_agent_run(
+        db_session,
+        conversation_id=context.conversation_id,
+        agent_id=context.agent_id,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        trigger="interactive",
+    )
+    requests.clear()
+    turns[:] = [(READ_SKILL_DOCUMENT_TOOL_NAME, document_args)]
+    continued = await execute_run(
+        db_session,
+        conversation_id=context.conversation_id,
+        run_id=next_run.id,
+        user_prompt="Use the skill again.",
+        model=FunctionModel(stream_function=stream, model_name="skill-reload-model"),
+    )
+    assert continued.run.status == RUN_STATUS_COMPLETED
+    assert len(requests) == 2
+    [restored] = [
+        part
+        for message in requests[0][0]
+        for part in message.parts
+        if isinstance(part, LoadCapabilityReturnPart)
+    ]
+    assert restored.instructions == loaded.instructions
+    returns = [part for part in requests[1][0][-1].parts if isinstance(part, ToolReturnPart)]
+    assert any("Use the approved workflow." in str(part.content) for part in returns)
+
+
+async def test_skill_id_migration_preserves_other_history_and_approval_state(
+    db_session: AsyncSession,
+) -> None:
+    context = await _create_runtime_skill_context(db_session)
+    legacy_id = f"skill:{context.skill_id}"
+    other_id = f"skill:{uuid4()}"
+    calls = [
+        LoadCapabilityCallPart(args=args, tool_call_id=f"load-{index}")
+        for index, args in enumerate([{"id": legacy_id}, json.dumps({"id": other_id})])
+    ]
+    response = {
+        "kind": "response",
+        "metadata": {"id": legacy_id},
+        "parts": [
+            {
+                "part_kind": call.part_kind,
+                "tool_kind": call.tool_kind,
+                "tool_name": call.tool_name,
+                "tool_call_id": call.tool_call_id,
+                "args": call.args,
+            }
+            for call in calls
+        ],
+    }
+    response["parts"].extend(
+        [
+            {"part_kind": "text", "content": legacy_id},
+            {"part_kind": "tool-call", "tool_name": "ordinary", "args": {"id": legacy_id}},
+            {
+                "part_kind": "tool-return",
+                "tool_kind": "capability-load",
+                "content": {"id": legacy_id},
+            },
+        ]
+        + [
+            {"part_kind": "tool-call", "tool_kind": "capability-load", "args": args}
+            for args in ["not-json", "[]", {"id": "skill:not-a-uuid"}, {"id": None}]
+        ]
+    )
+    request = {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": legacy_id}]}
+    history = [response, request]
+    metadata = {
+        "approval_state": {
+            "message_history": history,
+        },
+        "approval_continuation": {
+            "deferred_tool_results": {
+                "approvals": {"write": True},
+                "metadata": {"write": {"id": legacy_id}},
+            },
+        },
+        "code_mode_state": {"snapshot_b64": "c25hcHNob3Q=", "code": f"print({legacy_id!r})"},
+        "id": legacy_id,
+    }
+    message = ConversationMessage(
+        conversation_id=context.conversation_id,
+        workspace_id=context.workspace_id,
+        role="assistant",
+        parts=response,
+        metadata_json={"id": legacy_id},
+        sequence=1,
+    )
+    run = await db_session.get(AgentRun, context.run_id)
+    assert run is not None
+    run.status = "completed"
+    run.metadata_json = metadata
+    await db_session.flush()
+    delegated_run = AgentRun(
+        conversation_id=context.conversation_id,
+        agent_id=context.agent_id,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        parent_run_id=run.id,
+        delegation_depth=1,
+        trigger="delegated",
+        status="awaiting_approval",
+        metadata_json=metadata,
+    )
+    db_session.add_all([message, delegated_run])
+    await db_session.flush()
+
+    await _migrate_skill_ids(db_session, "upgrade")
+    await db_session.refresh(message)
+    await db_session.refresh(run)
+    await db_session.refresh(delegated_run)
+
+    migrated = message.parts
+    assert migrated["parts"][0]["args"] == {"id": f"skill-{context.skill_id}"}
+    assert json.loads(migrated["parts"][1]["args"]) == {"id": other_id.replace(":", "-")}
+    assert migrated["parts"][0]["tool_call_id"] == "load-0"
+    assert migrated["parts"][2:] == response["parts"][2:]
+    assert migrated["metadata"] == response["metadata"]
+    assert message.metadata_json == {"id": legacy_id}
+    expected_metadata = {
+        **metadata,
+        "approval_state": {**metadata["approval_state"], "message_history": [migrated, request]},
+    }
+    assert run.metadata_json == delegated_run.metadata_json == expected_metadata
+
+    await _migrate_skill_ids(db_session, "upgrade")
+    await db_session.refresh(message)
+    await db_session.refresh(run)
+    assert message.parts == migrated
+    assert run.metadata_json == expected_metadata
+
+    await _migrate_skill_ids(db_session, "downgrade")
+    await db_session.refresh(message)
+    await db_session.refresh(run)
+    await db_session.refresh(delegated_run)
+    assert message.parts == response
+    assert run.metadata_json == delegated_run.metadata_json == metadata
 
 
 async def test_read_skill_document_requires_loaded_capability() -> None:
@@ -477,3 +702,18 @@ def _manifest_entry(
         "error": None if status == "ready" else "Document could not be converted",
         "updated_at": datetime.now(UTC).isoformat(),
     }
+
+
+async def _migrate_skill_ids(db: AsyncSession, direction: str) -> None:
+    migration = runpy.run_path(
+        str(
+            Path(__file__).parents[4] / "alembic/versions/core/0052_migrate_skill_capability_ids.py"
+        )
+    )
+
+    def migrate(connection):
+        with Operations.context(MigrationContext.configure(connection)):
+            migration[direction]()
+
+    connection = await db.connection()
+    await connection.run_sync(migrate)
