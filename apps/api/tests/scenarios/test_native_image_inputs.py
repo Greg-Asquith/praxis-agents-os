@@ -27,6 +27,7 @@ from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision
+from tests.support.google_native import mock_google_native
 from tests.support.openai_images import image_request
 from tests.support.scenario import (
     ToolCall,
@@ -301,3 +302,70 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
     assert file_audit.details["source"] == (
         "native_image_editing" if is_edit else "native_video_to_image"
     )
+
+
+async def test_vertex_edit_gif_fails_before_provider_dispatch(
+    db_session_factory, monkeypatch, image_input_storage
+):
+    _enable_google(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "image-test")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "global")
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    context = await build_scenario_agent(
+        db_session_factory, tool_names=["edit_image"], tool_policies={"edit_image": "auto"}
+    )
+    source, revision = await _persist_source(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="source.gif",
+        category=FileCategory.IMAGE,
+        content_type="image/gif",
+        extension=".gif",
+        content=b"GIF89a",
+    )
+    reference = FileReference(entity_id=source.id, label=source.name).model_dump(mode="json")
+    async with mock_google_native(monkeypatch, vertex=True) as requests:
+        result = await run_scenario(
+            db_session_factory,
+            context,
+            model=scripted_model(
+                turns=[
+                    ToolTurn(
+                        (
+                            ToolCall(
+                                "edit_image",
+                                {
+                                    "prompt": "Add a fox",
+                                    "file_ids": [reference],
+                                    "model_provider": "google",
+                                },
+                                "vertex-gif",
+                            ),
+                        )
+                    ),
+                    "Convert the source image to PNG, JPEG, or WebP.",
+                ]
+            ),
+        )
+    assert requests == []
+    assert result.run.status == "completed"
+    [audit] = [row for row in result.audit_rows if row.tool_name == "edit_image"]
+    assert audit.status == "failure"
+    assert "Convert the source image" in str([message.parts for message in result.messages])
+    async with db_session_factory() as db:
+        assert (
+            await db.scalars(select(File.id).where(File.workspace_id == context.workspace_id))
+        ).all() == [source.id]
+        saved = await db.get_one(File, source.id)
+        assert saved.current_revision_id == revision.id
+        assert (
+            await db.scalar(
+                select(AIUsageEvent.id).where(
+                    AIUsageEvent.run_id == context.run_id,
+                    AIUsageEvent.purpose == "image_generation",
+                )
+            )
+            is None
+        )

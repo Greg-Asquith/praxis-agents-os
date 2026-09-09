@@ -22,6 +22,11 @@ process-owned Google client per project, location, and retry policy.
 Flash-Lite use `eu`, Gemini 3.1 Pro uses `global`, and embeddings retain
 `global`. Explicit locations must appear in the Gemini model's supported
 locations. Clients use the SDK's multi-region hostname for `eu` and `us`.
+The image-only `gemini-3.1-flash-image` model uses `global` for `auto`
+and accepts explicit `global`, `eu`, or `us`. Its location validation lives
+in the Vertex client module without adding it to ordinary agent choices.
+Image availability and execution both reject unsupported locations before
+client construction. A direct Google API key does not override Vertex routing.
 Existing explicit `global` settings remain global; select `auto` to adopt
 the catalogue defaults. `ANTHROPIC_VERTEX_AI`
 selects a process-owned `AsyncAnthropicVertex` client with Application

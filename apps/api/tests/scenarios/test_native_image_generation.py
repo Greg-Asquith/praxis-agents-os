@@ -1,5 +1,6 @@
 """Governed native image-generation scenarios through the production runtime."""
 
+import asyncio
 import base64
 import json
 from collections.abc import Iterator
@@ -23,6 +24,7 @@ from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.tools.native import image_generation as image_generation_tools
 from services.files.utils import private_ref_from_key
 from services.storage.factory import get_storage_provider
+from tests.support.google_native import google_image_response, mock_google_native
 from tests.support.openai_images import image_request, image_response, mock_openai_images
 from tests.support.scenario import (
     ToolCall,
@@ -54,6 +56,79 @@ def _enable_google(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("google-test"))
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
+
+
+async def test_vertex_image_approval_uses_real_adapter_and_persists_once(
+    db_session_factory, monkeypatch, image_storage
+):
+    from tests.support.google_native import mock_google_native
+
+    _enable_google(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "image-test")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
+    async with mock_google_native(monkeypatch, vertex=True) as requests:
+        context = await build_scenario_agent(
+            db_session_factory,
+            tool_names=["generate_image"],
+            tool_policies={"generate_image": "approval"},
+        )
+        model = scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            "generate_image",
+                            {
+                                "prompt": "A fox",
+                                "model_provider": "google",
+                            },
+                            "vertex-image",
+                        ),
+                    )
+                ),
+                "The image was saved.",
+            ]
+        )
+        suspended = await run_scenario(db_session_factory, context, model=model)
+        state = load_suspended_run_state(suspended.run)
+        assert requests == []
+        resumed = await run_scenario(
+            db_session_factory,
+            context,
+            model=model,
+            prompt=None,
+            expected_status=RUN_STATUS_AWAITING_APPROVAL,
+            message_history=state.message_history,
+            deferred_tool_results=DeferredToolResults(
+                approvals={
+                    state.pending_tool_call_ids[0]: ToolApproved(),
+                }
+            ),
+        )
+    assert resumed.run.status == "completed"
+    [request] = requests
+    assert request.url.host == "aiplatform.googleapis.com"
+    assert "/projects/image-test/locations/global/" in request.url.path
+    assert request.headers["authorization"] == "Bearer test-adc"
+    async with db_session_factory() as db:
+        files = (
+            await db.scalars(
+                select(File).where(
+                    File.workspace_id == context.workspace_id,
+                )
+            )
+        ).all()
+        assert len(files) == 1
+        [usage] = (
+            await db.scalars(
+                select(AIUsageEvent).where(
+                    AIUsageEvent.run_id == context.run_id,
+                    AIUsageEvent.purpose == "image_generation",
+                )
+            )
+        ).all()
+        assert (usage.requests, usage.input_tokens, usage.output_tokens) == (1, 10, 20)
 
 
 @pytest.mark.parametrize("provider", ["google", "openai"])
@@ -543,3 +618,130 @@ async def test_image_failures_publish_no_successful_reference(
         else:
             [event] = usage
             assert (event.requests, event.input_tokens, event.output_tokens) == (1, 10, 20)
+
+
+@pytest.mark.parametrize("vertex", [False, True])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "rejection",
+        "rate_limit",
+        "timeout",
+        "malformed",
+        "malformed_json",
+        "invalid_base64",
+        "refusal",
+        "storage",
+        "cancellation",
+    ],
+)
+async def test_google_image_failure_preserves_outcome_and_usage(
+    db_session_factory, monkeypatch, image_storage, failure, vertex
+):
+    _enable_google(monkeypatch)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "global")
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 0.01)
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["generate_image"],
+        tool_policies={"generate_image": "auto"},
+    )
+    body = google_image_response()
+    if failure == "malformed":
+        body["candidates"][0]["content"]["parts"] = [{"text": "No image"}]
+    elif failure == "invalid_base64":
+        body["candidates"][0]["content"]["parts"][0]["inlineData"]["data"] = "invalid base64"
+    elif failure == "refusal":
+        body["candidates"][0]["content"]["parts"] = []
+        body["candidates"][0]["finishReason"] = "SAFETY"
+    elif failure == "storage":
+
+        async def fail_storage(*args, **kwargs):
+            raise OSError("Storage unavailable")
+
+        monkeypatch.setattr(get_storage_provider(), "put_object", fail_storage)
+
+    def respond(request):
+        if failure == "malformed_json":
+            return httpx.Response(
+                200, text="{private provider detail", headers={"content-type": "application/json"}
+            )
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private provider detail", request=request)
+        if failure == "cancellation":
+            raise asyncio.CancelledError()
+        if failure in {"rejection", "rate_limit"}:
+            code = 403 if failure == "rejection" else 429
+            return httpx.Response(
+                code,
+                json={
+                    "error": {
+                        "code": code,
+                        "message": "private provider detail",
+                        "status": "PERMISSION_DENIED" if code == 403 else "RESOURCE_EXHAUSTED",
+                    }
+                },
+            )
+        return httpx.Response(200, json=body)
+
+    async with mock_google_native(monkeypatch, respond, vertex=vertex) as requests:
+
+        async def run():
+            return await run_scenario(
+                db_session_factory,
+                context,
+                model=scripted_model(
+                    turns=[
+                        ToolTurn(
+                            (
+                                ToolCall(
+                                    "generate_image",
+                                    {"prompt": "A fox", "model_provider": "google"},
+                                    "google-image-failure",
+                                ),
+                            )
+                        ),
+                        "No image was saved.",
+                    ]
+                ),
+            )
+
+        if failure in {"storage", "cancellation"}:
+            with pytest.raises(OSError if failure == "storage" else asyncio.CancelledError):
+                await run()
+        else:
+            result = await run()
+            assert result.run.status == "completed"
+            [audit] = [row for row in result.audit_rows if row.tool_name == "generate_image"]
+            assert audit.status == "failure"
+            assert audit.details["outcome"] == "failed"
+            assert "private provider detail" not in json.dumps(audit.details)
+            history = json.dumps([message.parts for message in result.messages])
+            assert "private provider detail" not in history
+            if failure == "refusal":
+                assert "Revise the prompt and try again" in history
+            elif failure == "invalid_base64":
+                assert "The image provider could not complete the request" in history
+    assert len(requests) == (2 if failure in {"rate_limit", "timeout"} else 1)
+    async with db_session_factory() as db:
+        assert (
+            await db.scalar(select(File.id).where(File.workspace_id == context.workspace_id))
+            is None
+        )
+        [usage] = (
+            await db.scalars(
+                select(AIUsageEvent).where(
+                    AIUsageEvent.run_id == context.run_id,
+                    AIUsageEvent.purpose == "image_generation",
+                )
+            )
+        ).all()
+        assert usage.model == "gemini-3.1-flash-image"
+        assert usage.requests == 1
+        if failure in {"storage", "malformed", "refusal"}:
+            assert (usage.input_tokens, usage.output_tokens) == (10, 20)
+        else:
+            # Invalid wire responses expose no parsed usage through the SDK.
+            assert (usage.input_tokens, usage.output_tokens) == (0, 0)

@@ -6,10 +6,20 @@ outputs, classification, or image generation. Backend paths are relative to
 [governance and isolation policy](../architecture/governance.md) for provider
 isolation evidence and the re-probe policy.
 
+## Web search
+
+Selecting Google without a model override uses `gemini-3.8-flash` for
+`web_search`. Omitting both provider and model retains the eligible agent model.
+Search results include the executed query, answer, and provider sources in the
+model-visible tool return, including queries edited during approval. Tool
+guidance tells the agent to resolve relative dates against the conversation
+date and answer once the evidence is sufficient. This guidance does not enforce
+a hard limit on repeated searches.
+
 ## URL fetching
 
 Native URL fetching uses the governed `fetch_url` helper-tool path for
-direct Anthropic and Google only. Anthropic's Vertex transport does not
+direct Anthropic and Google (direct or Vertex). Anthropic's Vertex transport does not
 support native web fetch. `NATIVE_WEB_FETCH_MAX_STEPS` bounds helper model
 requests, `NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS` is passed to the provider,
 and comma-separated `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` is enforced before
@@ -19,6 +29,12 @@ Keep the full URL editable and visible under the default approval policy;
 never enable the local fetch fallback.
 
 ## Code execution and document outputs
+
+Selecting Google without a model override uses `gemini-3.8-flash` for
+`run_code`. Omitting both provider and model retains the eligible agent model.
+The helper uses the shared Google model factory, including Vertex credentials
+and routing when `GOOGLE_VERTEX_AI=true`. The native `codeExecution` tool is
+included in that model request; there is no separate direct-API fallback.
 
 Provider-native `run_code` is a separate helper-model tool for heavy
 computation, create-from-text document generation, and declared append-only
@@ -138,6 +154,35 @@ configured provider. Changing provider preserves a supported ratio and
 replaces an unsupported ratio with the first available choice. An explicit
 model selection also follows the provider. Editing has no aspect-ratio
 argument.
+
+Google generation, editing, and video input use `gemini-3.1-flash-image`
+through the same provider factory as chat. Vertex requires an explicit project
+and Application Default Credentials. `GOOGLE_VERTEX_LOCATION=auto` retains
+the image model's `global` default. Explicit `global`, `eu`, and `us` are
+supported. Other locations make Google image actions unavailable and fail
+with configuration guidance at execution. No direct-API fallback occurs.
+Vertex inline source images are limited to 7 MB each, in addition to the
+combined workspace input limit. Convert GIF sources to PNG, JPEG, or WebP
+before Vertex editing. These requirements follow the
+[Google image model specification](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-1-flash-image),
+reviewed on 9 September 2026.
+
+Google image helpers do not regenerate an image after output validation fails.
+Provider errors return safe tool failures, moderation refusals request a revised
+prompt, and cancellation propagates. The invocation meter retains attempted
+requests and available response tokens on failure. A successful provider response
+does not establish a workspace File until storage succeeds.
+Malformed JSON or invalid base64 can fail inside the Google SDK before it
+exposes response usage. Those invocations retain the attempted request with
+unavailable token counters. The helper does not replay them to recover usage.
+
+Offline adapter tests cover every native family by transport, including Google
+Vertex credentials, regions, media, grounding, and response parsing. Anthropic
+Vertex retains search and classification, while fetch and code execution remain
+excluded. Vertex partner models remain outside native helper provider sets.
+Live qualification on the upgraded SDKs and renewed code-execution capability,
+file-output, DNS, and HTTPS isolation probes remain pending. Mocked adapter
+responses do not establish project access or sandbox isolation.
 
 ## Code output and file navigation
 

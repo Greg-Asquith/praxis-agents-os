@@ -29,6 +29,26 @@ _anthropic_clients: dict[tuple[str, str, int, float], AsyncAnthropicVertex] = {}
 _clients_lock = Lock()
 
 
+def google_vertex_location(model: str | None = None) -> str:
+    """Resolve a supported location without constructing a provider client."""
+    if model == "gemini-3.1-flash-image":
+        # Image-only models are not ordinary agent choices.
+        default_location, supported_locations = "eu", ("global", "us", "eu")
+    else:
+        info = get_model(PROVIDER_GOOGLE, model) if model is not None else None
+        default_location = info.vertex_default_location if info is not None else "global"
+        supported_locations = info.vertex_supported_locations if info is not None else ()
+    location = settings.GOOGLE_VERTEX_LOCATION
+    if location == "auto":
+        location = default_location
+    if not location or (model is not None and location not in supported_locations):
+        raise ModelConfigurationError(
+            f"Unsupported Vertex AI location '{location}' for Google model '{model}'.",
+            details={"provider": PROVIDER_GOOGLE, "model": model, "location": location},
+        )
+    return location
+
+
 def get_google_vertex_client(model: str | None = None) -> Client:
     """Returns the process-owned Vertex client for the active configuration."""
     project = vertex_project()
@@ -37,17 +57,7 @@ def get_google_vertex_client(model: str | None = None) -> Client:
             "Vertex AI requires a project (GOOGLE_VERTEX_PROJECT or GCP_PROJECT_ID).",
             details={"provider": PROVIDER_GOOGLE},
         )
-
-    info = get_model(PROVIDER_GOOGLE, model) if model is not None else None
-    location = settings.GOOGLE_VERTEX_LOCATION
-    if location == "auto":
-        # Embeddings are outside the model catalog and retain their global default.
-        location = info.vertex_default_location if info is not None else "global"
-    if not location or (info is not None and location not in info.vertex_supported_locations):
-        raise ModelConfigurationError(
-            f"Unsupported Vertex AI location '{location}' for Google model '{model}'.",
-            details={"provider": PROVIDER_GOOGLE, "model": model, "location": location},
-        )
+    location = google_vertex_location(model)
 
     client_key = (
         project,

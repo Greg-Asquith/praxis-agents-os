@@ -8,11 +8,14 @@ normalised BinaryImage output. Provider credentials resolve explicitly.
 """
 
 from collections.abc import Sequence
+from json import JSONDecodeError
 from typing import Annotated, Literal, get_args
 
-from pydantic import BaseModel, Field
-from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
+import httpx2
+from pydantic import BaseModel, Field, ValidationError
+from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext, capture_run_messages
 from pydantic_ai.capabilities import ImageGeneration
+from pydantic_ai.exceptions import ModelAPIError, ToolFailed, UnexpectedModelBehavior
 from pydantic_ai.messages import (
     BinaryContent,
     BinaryImage,
@@ -28,6 +31,7 @@ from services.agents.models import build_model
 from services.agents.models.domain import (
     PROVIDER_GOOGLE,
     PROVIDER_OPENAI,
+    ModelConfigurationError,
     ResolvedModel,
 )
 from services.agents.models.resolution import (
@@ -35,7 +39,8 @@ from services.agents.models.resolution import (
     format_provider_list,
     require_configured_provider,
 )
-from services.agents.models.utils import is_provider_configured
+from services.agents.models.utils import is_provider_configured, vertex_project
+from services.agents.models.vertex_clients import google_vertex_location
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools import (
@@ -94,8 +99,19 @@ def configured_native_image_providers() -> tuple[str, ...]:
     """Return configured native-image providers in stable order."""
     return configured_helper_providers(
         SUPPORTED_NATIVE_IMAGE_PROVIDERS,
-        is_configured=is_provider_configured,
+        is_configured=_is_native_image_provider_configured,
     )
+
+
+def _is_native_image_provider_configured(provider: str) -> bool:
+    if not is_provider_configured(provider):
+        return False
+    if provider == PROVIDER_GOOGLE and settings.GOOGLE_VERTEX_AI:
+        try:
+            google_vertex_location(DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE])
+        except ModelConfigurationError:
+            return False
+    return True
 
 
 _REGISTERED_NATIVE_IMAGE_PROVIDERS = configured_native_image_providers()
@@ -282,6 +298,19 @@ def resolve_image_generation_model(
 ) -> ResolvedModel:
     """Resolve the supported image model for the selected provider and action."""
     requested_provider = model_provider.strip().lower()
+    if requested_provider == PROVIDER_GOOGLE and settings.GOOGLE_VERTEX_AI:
+        if not vertex_project():
+            raise ModelRetry(
+                "Google Vertex image actions require a project. "
+                "Set GOOGLE_VERTEX_PROJECT or GCP_PROJECT_ID."
+            )
+        try:
+            google_vertex_location(DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE])
+        except ModelConfigurationError as exc:
+            raise ModelRetry(
+                "Google image actions require a supported Vertex location. "
+                "Set GOOGLE_VERTEX_LOCATION to auto, global, eu, or us."
+            ) from exc
     require_configured_provider(
         requested_provider,
         configured=configured_native_image_providers(),
@@ -334,6 +363,18 @@ async def run_native_image_generation(
             input_media=input_media,
             output_format=output_format or "png",
         )
+    if settings.GOOGLE_VERTEX_AI and any(media.media_type == "image/gif" for media in input_media):
+        raise ModelRetry(
+            "Google Vertex image editing does not accept GIF files. "
+            "Convert the source image to PNG, JPEG, or WebP and try again."
+        )
+    if settings.GOOGLE_VERTEX_AI and any(
+        media.is_image and len(media.data) > 7_000_000 for media in input_media
+    ):
+        raise ModelRetry(
+            "Google Vertex image editing accepts at most 7 MB per source image. "
+            "Resize the source image and try again."
+        )
     capability = ImageGeneration(
         native=True,
         local=False,
@@ -355,6 +396,7 @@ async def run_native_image_generation(
             )
         ),
         output_type=BinaryImage,
+        retries=0,
         capabilities=[capability],
     )
     task = (
@@ -378,11 +420,32 @@ async def run_native_image_generation(
     }
 
     async def call(usage: RunUsage):
-        return await helper.run(
-            user_content,
-            usage_limits=UsageLimits(request_limit=model_spec.max_steps),
-            usage=usage,
-        )
+        with capture_run_messages() as messages:
+            try:
+                return await helper.run(
+                    user_content,
+                    usage_limits=UsageLimits(request_limit=model_spec.max_steps),
+                    usage=usage,
+                )
+            except (
+                ModelAPIError,
+                UnexpectedModelBehavior,
+                httpx2.TransportError,
+                JSONDecodeError,
+                ValidationError,
+            ) as exc:
+                if _was_content_policy_refusal(messages):
+                    raise ModelRetry(
+                        "The image provider declined this prompt under its content policy. "
+                        "Revise the prompt and try again."
+                    ) from exc
+                raise ToolFailed(
+                    "The image provider could not complete the request. "
+                    "Try again or choose another provider."
+                ) from exc
+            finally:
+                # Pydantic AI counts completed responses; retain attempted requests too.
+                usage.requests = max(usage.requests, 1)
 
     result = await run_metered_helper(
         AIUsageEventData(

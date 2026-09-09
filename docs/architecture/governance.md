@@ -97,6 +97,9 @@ per-agent `tool_policies`. The following rules define the policy:
   evidence is an operator-maintained verification record, not runtime package
   metadata or an application availability gate. _(enforced except manual
   re-probe discipline)_
+  The Google helper default is `gemini-3.8-flash`. The dated 3.7 probe does
+  not qualify 3.8; renewed capability, file-output, DNS, and HTTPS probes
+  remain pending.
   A 2026-08-17 Plan 157 bridge probe on those same pinned versions confirmed
   that Anthropic and OpenAI accepted an unchanged XLSX upload, mounted the real
   workbook at `/files/input/OPAQUE_ID/input.xlsx` and

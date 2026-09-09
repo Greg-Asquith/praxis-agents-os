@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterator
 from uuid import UUID, uuid4
 
+import httpx2 as httpx
 import pytest
 from pydantic import SecretStr
 from pydantic_ai import DeferredToolResults, ToolApproved
@@ -18,6 +19,7 @@ from services.agents.runtime.tools.native import run_code as run_code_tools
 from services.files.append_file_revision import append_file_revision
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.revision_actor import FileRevisionActor
+from tests.support.google_native import mock_google_native
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -26,6 +28,72 @@ from tests.support.scenario import (
     scripted_model,
 )
 from tests.support.storage import reset_storage_provider_cache
+
+
+async def test_google_code_default_uses_vertex_native_execution(
+    db_session_factory, monkeypatch, run_code_storage
+):
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "code-test")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
+
+    def respond(request):
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "role": "model",
+                            "parts": [
+                                {"executableCode": {"language": "PYTHON", "code": "print(2 + 2)"}},
+                                {"codeExecutionResult": {"outcome": "OUTCOME_OK", "output": "4\n"}},
+                                {"text": "The result is 4."},
+                            ],
+                        },
+                        "finishReason": "STOP",
+                    }
+                ],
+                "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5},
+                "modelVersion": "gemini-3.8-flash",
+            },
+        )
+
+    async with mock_google_native(monkeypatch, respond, vertex=True) as requests:
+        context = await build_scenario_agent(
+            db_session_factory,
+            tool_names=["run_code"],
+            tool_policies={"run_code": "auto"},
+        )
+        model = scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            "run_code",
+                            {"task": "Calculate 2 + 2", "model_provider": "google"},
+                            "vertex-code",
+                        ),
+                    )
+                ),
+                "The computation completed.",
+            ]
+        )
+        result = await run_scenario(db_session_factory, context, model=model)
+
+    assert result.run.status == "completed"
+    [request] = requests
+    assert request.url.host == "aiplatform.eu.rep.googleapis.com"
+    assert (
+        "/projects/code-test/locations/eu/publishers/google/models/gemini-3.8-flash:generateContent"
+        in request.url.path
+    )
+    assert request.headers["authorization"] == "Bearer test-adc"
+    assert "x-goog-api-key" not in request.headers
+    assert json.loads(request.content)["tools"] == [{"codeExecution": {}}]
+    assert any(
+        row.tool_name == "code_execution" and row.status == "success" for row in result.audit_rows
+    )
 
 
 @pytest.fixture

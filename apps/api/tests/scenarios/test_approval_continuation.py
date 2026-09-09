@@ -396,3 +396,158 @@ async def test_corrupt_saved_decisions_settle_without_replaying_effects(
             for coroutine in queued:
                 coroutine.close()
             await close_code_mode_executor()
+
+
+@pytest.mark.parametrize("continuation", ["completed", "interrupted", "configuration_changed"])
+async def test_vertex_image_public_resume_never_replays_accepted_effects(
+    committed_db_session_factory, monkeypatch, tmp_path, continuation
+):
+    from core.settings import settings
+    from models.files import File, FileRevision
+    from services.agent_runs.reap_abandoned import reap_abandoned_runs
+    from tests.support.google_native import mock_google_native
+    from tests.support.storage import reset_storage_provider_cache
+
+    interrupted = continuation == "interrupted"
+    expected_images = int(continuation == "completed")
+    factory = committed_db_session_factory
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "image-test")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
+    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
+    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
+    reset_storage_provider_cache()
+    queued = []
+    monkeypatch.setattr(
+        run_task_registry, "spawn", lambda _id, coroutine, **_kwargs: queued.append(coroutine)
+    )
+    try:
+        async with mock_google_native(monkeypatch, vertex=True) as requests:
+            context = await build_scenario_agent(
+                factory,
+                tool_names=["generate_image"],
+                tool_policies={"generate_image": "approval"},
+            )
+            model = scripted_model(
+                turns=[
+                    ToolTurn(
+                        (
+                            ToolCall(
+                                "generate_image",
+                                {
+                                    "prompt": "A fox",
+                                    "model_provider": "google",
+                                },
+                                "approved-image",
+                            ),
+                        )
+                    ),
+                    "The image was saved.",
+                ]
+            )
+            monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+            parked = await run_scenario(factory, context, model=model)
+            assert parked.run.status == "awaiting_approval"
+            assert requests == []
+            async with factory() as db:
+                actor = await db.get(User, context.user_id)
+                workspace = await db.get(Workspace, context.workspace_id)
+                projection = await get_agent_run_approval_state(
+                    db, actor=actor, workspace=workspace, run_id=context.run_id
+                )
+                payload = AgentRunResumeRequest(
+                    approval_revision=projection.approval_revision,
+                    decisions=[
+                        AgentRunResumeDecision(
+                            tool_call_id="approved-image",
+                            approval_id=projection.approvals[0].approval_id,
+                            decision="approved",
+                        )
+                    ],
+                )
+                await resume_agent_run_stream(
+                    db, actor=actor, workspace=workspace, run_id=context.run_id, payload=payload
+                )
+            async with factory() as db:
+                with pytest.raises(ConflictError):
+                    await get_agent_run_approval_state(
+                        db, actor=actor, workspace=workspace, run_id=context.run_id
+                    )
+                with pytest.raises(ConflictError) as error:
+                    await resume_agent_run_stream(
+                        db, actor=actor, workspace=workspace, run_id=context.run_id, payload=payload
+                    )
+                assert error.value.details["code"] == "approval_already_reserved"
+            assert len(queued) == 1
+            assert requests == []
+            if interrupted:
+                queued[0].close()
+                async with factory() as db:
+                    run = await db.get(AgentRun, context.run_id)
+                    run.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+                    await db.commit()
+                async with factory() as db:
+                    await reap_abandoned_runs(db, conversation_id=context.conversation_id)
+                    await db.commit()
+            else:
+                if continuation == "configuration_changed":
+                    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "europe-west4")
+                await queued[0]
+            async with factory() as db:
+                run = await db.get(AgentRun, context.run_id)
+                if interrupted:
+                    assert run.outcome == "blocked"
+                    assert run.error_code == "agent_run_resume_requires_recovery"
+                    [action] = run.completion_json["recovery"]["actions"]
+                    assert action["tool_call_id"] == "approved-image"
+                    assert action["status"] == "uncertain"
+                else:
+                    assert run.status == "completed"
+                if continuation == "configuration_changed":
+                    audits = list(
+                        await db.scalars(
+                            select(AuditEvent).where(
+                                AuditEvent.workspace_id == context.workspace_id,
+                                AuditEvent.details["run_id"].astext == str(context.run_id),
+                                AuditEvent.tool_name == "generate_image",
+                            )
+                        )
+                    )
+                    assert any(row.details.get("outcome") == "failed" for row in audits)
+                    assert not any(row.details.get("outcome") == "completed" for row in audits)
+                evidence = deepcopy(run.completion_json)
+                with pytest.raises(ConflictError):
+                    await get_agent_run_approval_state(
+                        db, actor=actor, workspace=workspace, run_id=context.run_id
+                    )
+                with pytest.raises(ConflictError):
+                    await resume_agent_run_stream(
+                        db, actor=actor, workspace=workspace, run_id=context.run_id, payload=payload
+                    )
+                await db.rollback()
+            async with factory() as db:
+                assert (await db.get(AgentRun, context.run_id)).completion_json == evidence
+                files = list(
+                    await db.scalars(
+                        select(File).where(
+                            File.workspace_id == context.workspace_id,
+                        )
+                    )
+                )
+                revisions = list(
+                    await db.scalars(
+                        select(FileRevision).where(
+                            FileRevision.workspace_id == context.workspace_id,
+                        )
+                    )
+                )
+                assert len(files) == len(revisions) == expected_images
+            assert len(requests) == expected_images
+            assert len(queued) == 1
+            if requests:
+                assert requests[0].url.host == "aiplatform.googleapis.com"
+                assert requests[0].headers["authorization"] == "Bearer test-adc"
+    finally:
+        for coroutine in queued:
+            coroutine.close()
+        reset_storage_provider_cache()

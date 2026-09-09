@@ -93,8 +93,8 @@ SUPPORTED_NATIVE_RUN_CODE_PROVIDERS = (
 
 DEFAULT_NATIVE_RUN_CODE_MODELS = {
     PROVIDER_ANTHROPIC: "claude-sonnet-5",
-    PROVIDER_GOOGLE: "gemini-3.7-flash",
-    PROVIDER_OPENAI: "gpt-5.6-luna",
+    PROVIDER_GOOGLE: "gemini-3.8-flash",
+    PROVIDER_OPENAI: "gpt-5.6-terra",
 }
 RUN_CODE_HELPER_INSTRUCTIONS = """\
 Use the native code-execution sandbox to complete the operator's task. The
