@@ -27,7 +27,9 @@ Follow these backend conventions:
   those exception types instead of ad-hoc `HTTPException`.
 - Maintain the middleware ordering notes in `apps/api/main.py` when adding or
   moving middleware. The comment there is authoritative.
-- The runtime HTTP dependency is `httpx2`; plain `httpx` is dev-only.
+- Application HTTP clients use `httpx2`. Keep plain `httpx` imports in tests
+  that require them; upstream packages can retain it transitively. See the
+  model-provider reference for the Pydantic AI retries dependency.
 
 ## Security and execution boundaries
 

@@ -16,7 +16,11 @@ from services.agents.models.domain import (
     ModelConfigurationError,
 )
 from services.agents.models.registry import get_model
-from services.agents.models.utils import retrying_http_client, vertex_project
+from services.agents.models.utils import (
+    close_retrying_http_client,
+    retrying_http_client,
+    vertex_project,
+)
 from services.agents.models.vertex_mistral_client import close_vertex_mistral_clients
 from services.agents.models.vertex_openai_client import close_vertex_openai_client
 
@@ -101,7 +105,7 @@ def get_anthropic_vertex_client() -> AsyncAnthropicVertex:
 
 
 async def close_vertex_clients() -> None:
-    """Closes and forgets every process-owned Vertex client."""
+    """Closes and forgets the Vertex clients and their shared provider transport."""
     with _clients_lock:
         clients = tuple(_clients.values())
         _clients.clear()
@@ -112,6 +116,7 @@ async def close_vertex_clients() -> None:
     close_operations = [client.aio.aclose for client in clients]
     close_operations.extend(client.close for client in anthropic_clients)
     close_operations.extend((close_vertex_openai_client, close_vertex_mistral_clients))
+    close_operations.append(close_retrying_http_client)
     for close in close_operations:
         try:
             await close()

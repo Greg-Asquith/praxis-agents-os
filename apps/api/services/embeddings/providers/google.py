@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Sequence
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 from google.genai import Client, errors, types
 
 from core.settings import settings

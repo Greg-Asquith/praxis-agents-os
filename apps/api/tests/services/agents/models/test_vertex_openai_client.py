@@ -7,7 +7,7 @@ from threading import get_ident
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import httpx
+import httpx2 as httpx
 import pytest
 import sqlalchemy as sa
 from google.auth.exceptions import RefreshError

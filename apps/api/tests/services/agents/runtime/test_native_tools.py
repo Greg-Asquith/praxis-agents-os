@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import cast
 from uuid import UUID, uuid4
 
-import httpx
+import httpx2 as httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 from pydantic_ai import ModelRetry, RunContext, ToolFailed
@@ -1059,7 +1059,7 @@ async def test_run_code_partial_upload_failure_is_contained_and_cleaned_up(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
 ) -> None:
-    import httpx
+    import httpx2 as httpx
     from anthropic import APIConnectionError as AnthropicConnectionError
     from openai import APIConnectionError as OpenAIConnectionError
 

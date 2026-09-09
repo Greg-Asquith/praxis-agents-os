@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from email.parser import BytesParser
 from email.policy import default
 
-import httpx
+import httpx2 as httpx
 
 from services.agents.models.utils import _build_retrying_http_client
 from services.agents.runtime.tools.native import openai_images

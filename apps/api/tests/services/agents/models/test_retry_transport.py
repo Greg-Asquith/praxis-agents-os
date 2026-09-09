@@ -2,7 +2,10 @@
 
 """Provider HTTP retry transport behavior."""
 
-import httpx
+import asyncio
+from unittest.mock import AsyncMock
+
+import httpx2 as httpx
 import pytest
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 
@@ -250,3 +253,102 @@ async def test_exhausted_stream_response_is_readable(monkeypatch):
         assert not streams[1].closed
         assert await response.aread() == b'{"error":"provider detail"}'
     assert all(stream.closed for stream in streams)
+
+
+@pytest.mark.parametrize("retry_after", ["86400", "Wed, 09 Sep 2099 12:00:00 GMT", "invalid"])
+async def test_retry_waits_are_bounded(monkeypatch, retry_after):
+    import services.agents.models.utils as utils
+
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 0.25)
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_TOTAL_WAIT_CAP_SECONDS", 0.5)
+    sleep = AsyncMock()
+    retrying = utils.AsyncRetrying
+    monkeypatch.setattr(utils, "AsyncRetrying", lambda **kw: retrying(sleep=sleep, **kw))
+    calls = 0
+
+    def respond(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, headers={"Retry-After": retry_after})
+
+    async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
+        response = await client.get("https://provider.example/test")
+    assert response.status_code == 429
+    assert calls == 3
+    assert [call.args[0] for call in sleep.await_args_list] == [
+        0.25 if retry_after == "invalid" else 0.5
+    ] * 2
+
+
+async def test_cancellation_during_backoff_does_not_retry(monkeypatch):
+    import services.agents.models.utils as utils
+
+    _fast_retry_settings(monkeypatch, attempts=3)
+    sleeping = asyncio.Event()
+    retrying = utils.AsyncRetrying
+
+    async def sleep(_delay):
+        sleeping.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(utils, "AsyncRetrying", lambda **kw: retrying(sleep=sleep, **kw))
+    responses = []
+
+    def respond(request):
+        response = httpx.Response(503)
+        responses.append(response)
+        return response
+
+    async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
+        task = asyncio.create_task(client.get("https://provider.example/test"))
+        await asyncio.wait_for(sleeping.wait(), timeout=3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert len(responses) == 1
+    assert responses[0].is_closed
+
+
+@pytest.mark.parametrize("vertex", [False, True])
+async def test_shared_transport_shutdown_and_reacquisition(monkeypatch, vertex):
+    import services.agents.models.utils as utils
+    from services.agents.models.vertex_clients import (
+        close_vertex_clients,
+        get_anthropic_vertex_client,
+    )
+
+    await close_vertex_clients()
+    build = utils._build_retrying_http_client
+    transports = []
+
+    def build_client():
+        transport = httpx.MockTransport(lambda _: httpx.Response(200))
+        transport.aclose = AsyncMock(wraps=transport.aclose)
+        transports.append(transport)
+        return build(transport)
+
+    monkeypatch.setattr(utils, "_build_retrying_http_client", build_client)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
+    first = utils.retrying_http_client()
+    try:
+        assert utils.retrying_http_client() is first
+        if vertex:
+            sdk = get_anthropic_vertex_client()
+            assert sdk._client is first
+            assert get_anthropic_vertex_client() is sdk
+            monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_LOCATION", "us")
+            assert get_anthropic_vertex_client()._client is first
+        await close_vertex_clients()
+        await close_vertex_clients()
+        assert first.is_closed
+        transports[0].aclose.assert_awaited_once_with()
+        assert len(transports) == 1
+        second = utils.retrying_http_client()
+        assert second is not first
+        assert not second.is_closed
+        assert (await second.get("https://provider.example/test")).status_code == 200
+    finally:
+        await close_vertex_clients()
+    for transport in transports:
+        transport.aclose.assert_awaited_once_with()

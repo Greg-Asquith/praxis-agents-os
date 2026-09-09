@@ -10,7 +10,9 @@ LLM providers live in `services/agents/models/`. The catalogue in
 `factory.py` builds pydantic-ai models per provider. Resolve credentials
 only through the `provider_api_key` seam. Never rely on implicit env
 pickup. Direct providers share the retrying HTTP client
-(`retrying_http_client()`).
+(`retrying_http_client()`), which uses HTTPX2. OpenAI image calls and direct
+embedding adapters use the same transport. Vertex partner authentication and
+endpoint-bound Mistral clients also use HTTPX2.
 
 ### Google Vertex and Anthropic Vertex
 
@@ -27,7 +29,10 @@ Default Credentials and `ANTHROPIC_VERTEX_LOCATION` (default `global`). Both
 use `GOOGLE_VERTEX_PROJECT`, falling back to `GCP_PROJECT_ID`. Vertex model
 IDs come from the catalogue's `vertex_model`; entries without one stay
 unavailable. Every API, worker, and eval process calls `close_vertex_clients`
-during shutdown. Anthropic prompt-cache defaults and catalogue attribution
+during shutdown. That shutdown also closes and clears the shared provider
+HTTP client, including processes that only use direct providers. Repeated
+shutdown does not create clients; subsequent acquisition creates an open
+client. Anthropic prompt-cache defaults and catalogue attribution
 remain unchanged across transports. Each Claude model requires Model Garden
 enablement and a supported location.
 ### Vertex partner models
@@ -63,6 +68,20 @@ the configured wait limits. Exhausted HTTP responses reach the SDK intact,
 including their status and body; connection failures remain connection
 failures. Run failures persist and emit the same safe `model_rate_limited`
 message for HTTP 429, without provider bodies or project details.
+
+The API locks Pydantic AI, slim, evals, and graph to 2.42.0, with OpenAI
+3.10.0, Anthropic 1.4.0, and Google Gen AI 2.22.0. The manifest retains minimum
+version ranges. It explicitly selects Pydantic AI's `retries` extra and
+Tenacity because the transport imports their retry APIs. The 2.42 retries
+module still imports legacy HTTPX for upstream deprecated transports, so that
+package remains a transitive runtime dependency. Application provider clients
+have no legacy HTTPX exception. Framework tests can retain legacy HTTPX where
+required. Monty remains 0.0.21.
+
+The local retry wrapper remains necessary to return an exhausted response
+with its unread body intact. SDKs translate that final response into their
+provider error types. Do not replace it with SDK defaults or add a second
+retry owner. Rerun adapter request-count tests for future SDK upgrades.
 
 ## Frontend provider labels
 

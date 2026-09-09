@@ -10,7 +10,7 @@ import importlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2 as httpx
 import pytest
 from anthropic import AsyncAnthropic, AsyncAnthropicVertex
 from pydantic import SecretStr

@@ -5,7 +5,7 @@ import json
 from dataclasses import replace
 from types import SimpleNamespace
 
-import httpx
+import httpx2 as httpx
 import pytest
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent, NativeOutput

@@ -10,9 +10,7 @@ secret-manager branches are wired, swap the body here without touching callers.
 
 from functools import lru_cache
 
-# OpenAI, Anthropic, and Google provider SDKs currently enforce the original
-# httpx AsyncClient type at runtime and reject httpx2 clients.
-import httpx
+import httpx2 as httpx
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 from pydantic_ai.retries import wait_retry_after
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -93,6 +91,15 @@ def _build_retrying_http_client(
 def retrying_http_client() -> httpx.AsyncClient:
     """Shared async client that retries transient provider failures."""
     return _build_retrying_http_client()
+
+
+async def close_retrying_http_client() -> None:
+    """Closes and forgets the shared client without creating one during shutdown."""
+    if retrying_http_client.cache_info().currsize:
+        client = retrying_http_client()
+        retrying_http_client.cache_clear()
+        if not client.is_closed:
+            await client.aclose()
 
 
 def provider_api_key(provider: str) -> str:

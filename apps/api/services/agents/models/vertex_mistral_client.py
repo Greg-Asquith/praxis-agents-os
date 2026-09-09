@@ -5,7 +5,7 @@
 import json
 from threading import Lock
 
-import httpx
+import httpx2 as httpx
 
 from core.settings import settings
 from services.agents.models.utils import _build_retrying_http_client

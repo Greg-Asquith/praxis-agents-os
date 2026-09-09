@@ -4,7 +4,7 @@ import base64
 import json
 from collections.abc import Iterator
 
-import httpx
+import httpx2 as httpx
 import pytest
 from pydantic import SecretStr
 from pydantic_ai import DeferredToolResults, ModelRetry, ToolApproved

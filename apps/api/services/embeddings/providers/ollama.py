@@ -5,7 +5,7 @@
 from collections.abc import Sequence
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 
 from core.settings import settings
 from services.agents.models import retrying_http_client

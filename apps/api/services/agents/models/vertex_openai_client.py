@@ -8,7 +8,7 @@ from functools import lru_cache
 from threading import Lock
 
 import google.auth
-import httpx
+import httpx2 as httpx
 from google.auth.credentials import Credentials
 from google.auth.transport.requests import Request
 
