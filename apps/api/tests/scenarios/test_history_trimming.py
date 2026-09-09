@@ -7,6 +7,7 @@ import importlib
 import pytest
 from pydantic_ai import DeferredToolRequests, DeferredToolResults, ToolApproved
 from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     ToolCallPart,
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
+from models.conversation import ConversationMessage
 from models.conversation_summary import ConversationSummary
 from models.jobs import Job
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
@@ -178,6 +180,7 @@ async def test_approval_resume_reuses_the_exact_watermark_summary(
         await db.commit()
 
     context = await next_scenario_run(db_session_factory, context)
+    suspended_requests = []
     suspended = await run_scenario(
         db_session_factory,
         context,
@@ -192,7 +195,8 @@ async def test_approval_resume_reuses_the_exact_watermark_summary(
                         ),
                     )
                 )
-            ]
+            ],
+            seen_requests=suspended_requests,
         ),
         prompt="Add the numbers.",
     )
@@ -202,6 +206,16 @@ async def test_approval_resume_reuses_the_exact_watermark_summary(
         run = await db.get(AgentRun, context.run_id)
         assert run is not None
         suspended_state = load_suspended_run_state(run)
+        summary = await db.scalar(
+            select(ConversationSummary).where(
+                ConversationSummary.conversation_id == context.conversation_id,
+            )
+        )
+        assert summary is not None
+        saved_watermark = summary.watermark_key
+        boundary = await db.get(ConversationMessage, saved_watermark)
+        assert boundary is not None
+        saved_boundary = ModelMessagesTypeAdapter.validate_python([boundary.parts])[0]
 
     resumed_requests = []
     resumed = await run_scenario(
@@ -215,7 +229,12 @@ async def test_approval_resume_reuses_the_exact_watermark_summary(
     )
 
     assert resumed.run.status == "completed"
-    assert "Stable summary before approval." in _automatic_summary_text(resumed_requests[0][0])
+    for messages in (suspended_requests[0][0], resumed_requests[0][0]):
+        assert _boundary_texts(messages)[0] == "turn 4"
+        assert messages[0].parts[0] == saved_boundary.parts[0]
+        assert _automatic_summary_text(messages) == (
+            AUTOMATIC_SUMMARY_PREFIX + "Stable summary before approval."
+        )
 
 
 async def test_summary_enqueue_failure_does_not_change_completed_run(

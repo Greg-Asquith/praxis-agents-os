@@ -21,6 +21,20 @@ the upgraded processes after it succeeds. A restored pre-upgrade database must
 run migrations before use. Downgrading the migration restores the historical
 prefix and requires the same stopped-process boundary.
 
+## Context pressure and history retention
+
+Runtime setup estimates loaded history and assembled instructions against the
+configured model window once per turn. Stable user-turn watermarks select the
+matching stored summary. Deferred skill-load pairs survive trimming and reload.
+Disabling compaction retains the full history.
+
+Pydantic AI 2.42's `RunContext.context_window_used` does not drive compaction.
+It describes the last response, can remain high after trimming, and can refer
+to another model or window. It also excludes subsequent prompt and tool-result
+additions. The character estimate remains approximate and is not recomputed
+for every model request within a turn. Observed-pressure adoption is rejected;
+the existing estimator, configured windows, and summary lifecycle remain.
+
 ## Run lifecycle and context
 
 The following contracts apply in this area:

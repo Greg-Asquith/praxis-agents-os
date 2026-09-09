@@ -3,10 +3,11 @@
 """Tests for cache-stable runtime history trimming and compaction."""
 
 from dataclasses import replace
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from pydantic_ai import Agent as PydanticAgent
+from pydantic_ai import Agent as PydanticAgent, RunContext
 from pydantic_ai.capabilities import ProcessHistory
 from pydantic_ai.messages import (
     LoadCapabilityCallPart,
@@ -21,9 +22,11 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import RequestUsage, RunUsage
 
 from core.settings import settings
 from models.agent import Agent
+from services.agents.runtime import history as history_module
 from services.agents.runtime.history import (
     AUTOMATIC_SUMMARY_PREFIX,
     PERSISTED_MESSAGE_ID_METADATA_KEY,
@@ -42,6 +45,7 @@ from services.agents.runtime.prompt import (
     UNTRUSTED_CONTENT_INSTRUCTIONS,
 )
 from services.agents.runtime.tools import build_runtime_tools
+from utils.tokens import estimate_tokens
 
 pytestmark = pytest.mark.asyncio
 
@@ -310,6 +314,218 @@ async def test_cache_sensitive_static_prefix_inputs_are_deterministic() -> None:
     assert [tool.name for tool in build_runtime_tools(agent)] == [
         tool.name for tool in build_runtime_tools(agent)
     ]
+
+
+@pytest.mark.parametrize(
+    ("case", "tokens", "window", "addition", "expected_pressure", "expected_ratio"),
+    [
+        ("first-request", 0, 100_000, 0, False, None),
+        ("unknown-usage", 0, 100_000, 0, False, None),
+        ("unknown-window", 60_001, None, 0, False, None),
+        ("below-threshold", 59_999, 100_000, 0, False, 0.59999),
+        ("at-threshold", 60_000, 100_000, 0, False, 0.6),
+        ("above-threshold", 60_001, 100_000, 0, True, 0.60001),
+        ("large-prompt", 10, 100_000, 250_000, True, 0.0001),
+        ("large-tool-return", 10, 100_000, 250_000, True, 0.0001),
+        ("different-model", 60_001, 100_000, 0, True, 0.60001),
+        ("changed-window", 60_001, 50_000, 0, True, 1.20002),
+        ("azure-override", 60_001, 1_000_000, 0, False, 0.060001),
+    ],
+)
+async def test_observed_pressure_comparison(
+    case: str,
+    tokens: int,
+    window: int | None,
+    addition: int,
+    expected_pressure: bool,
+    expected_ratio: float | None,
+    monkeypatch: pytest.MonkeyPatch,
+    record_property,
+) -> None:
+    history = _history(3)
+    if case == "first-request":
+        history = []
+    elif case == "large-tool-return":
+        history.extend(
+            [
+                ModelResponse(parts=[ToolCallPart("lookup", {}, "lookup-1")]),
+                ModelRequest(parts=[ToolReturnPart("lookup", "x" * addition, "lookup-1")]),
+            ]
+        )
+    response = next((m for m in reversed(history) if isinstance(m, ModelResponse)), None)
+    if response is not None:
+        response.usage = RequestUsage(input_tokens=tokens)
+        response.model_name = "previous-model" if case == "different-model" else "comparison"
+    history.append(
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    "x" * addition if case == "large-prompt" else "Continue",
+                )
+            ],
+            run_id="current",
+        )
+    )
+    timestamp = datetime(2026, 9, 9, tzinfo=UTC)
+    history = [
+        replace(
+            m,
+            timestamp=timestamp,
+            parts=[
+                replace(p, timestamp=timestamp) if hasattr(p, "timestamp") else p for p in m.parts
+            ],
+        )
+        for m in history
+    ]
+    model = FunctionModel(
+        lambda _messages, _info: ModelResponse(parts=[TextPart("ok")]),
+        model_name="comparison",
+        profile={"context_window": window},
+    )
+    ctx = RunContext(deps=None, model=model, usage=RunUsage(), messages=history)
+    observed = ctx.context_window_used
+    assert observed == expected_ratio
+    configured_window = 100_000 if case == "azure-override" else (window or 100_000)
+    estimates = []
+
+    def capture_estimate(text: str, *, chars_per_token: float) -> int:
+        estimate = estimate_tokens(text, chars_per_token=chars_per_token)
+        estimates.append(estimate)
+        return estimate
+
+    monkeypatch.setattr(history_module, "estimate_tokens", capture_estimate)
+    estimated = history_exceeds_context_budget(
+        history,
+        system_prompt="system",
+        context_window=configured_window,
+        chars_per_token=4.0,
+        context_fraction=0.6,
+    )
+    combined = estimated or (observed is not None and observed > 0.6)
+    assert estimated == (addition > 0)
+    assert combined == expected_pressure
+    keys = tuple(uuid4() for _ in range(3)) if response is not None else ()
+    boundaries = []
+    for pressure in (estimated, combined):
+        trimmed = trim_history(history, max_turns=4, keep_turns=2, token_pressure=pressure)
+        watermark = trim_watermark_key(
+            history,
+            max_turns=4,
+            keep_turns=2,
+            token_pressure=pressure,
+            boundary_keys=keys,
+        )
+        assert watermark == (keys[2] if pressure else None)
+        boundary = _boundary_texts(trimmed)[0]
+        assert boundary == ("turn 2" if pressure else ("turn 0" if keys else "Continue"))
+        boundaries.append(boundary)
+        if case == "large-tool-return":
+            assert _tool_call_ids(trimmed) == _tool_return_ids(trimmed) == {"lookup-1"}
+    record_property(
+        "comparison",
+        {
+            "configured_window": configured_window,
+            "profile_window": window,
+            "estimated_input": estimates[0],
+            "observed_ratio": observed,
+            "addition_characters": addition,
+            "current_boundary": boundaries[0],
+            "combined_boundary": boundaries[1],
+        },
+    )
+
+
+async def test_observed_pressure_remains_high_after_summary_and_skill_preserving_trim() -> None:
+    history = _history_with_capability_loads(dropped_ids=["skill-a"])
+    history[-1].usage = RequestUsage(input_tokens=80_000)
+    history[-1].model_name = "comparison"
+    history.append(ModelRequest(parts=[UserPromptPart("Continue")], run_id="current"))
+    model = FunctionModel(
+        lambda _messages, _info: ModelResponse(parts=[TextPart("ok")]),
+        model_name="comparison",
+        profile={"context_window": 100_000},
+    )
+    trimmed = trim_history(history, max_turns=40, keep_turns=20, summary="Earlier decisions.")
+    reloaded = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(trimmed))
+    ctx = RunContext(deps=None, model=model, usage=RunUsage(), messages=reloaded)
+    assert ctx.context_window_used == 0.8
+    assert not history_exceeds_context_budget(
+        reloaded,
+        system_prompt="system",
+        context_window=100_000,
+        chars_per_token=4.0,
+        context_fraction=0.6,
+    )
+    retained = trim_history(reloaded, max_turns=40, keep_turns=20)
+    combined = trim_history(
+        reloaded,
+        max_turns=40,
+        keep_turns=20,
+        token_pressure=True,
+        summary="Earlier decisions.",
+    )
+    assert _boundary_texts(retained)[0] == "turn 20"
+    assert _boundary_texts(combined)[0] == "turn 39"
+    for messages in (retained, combined):
+        assert _load_capability_call_ids(messages) == ["load-skill-a"]
+        assert _tool_return_ids(messages) == {"load-skill-a"}
+        assert sum(AUTOMATIC_SUMMARY_PREFIX in text for text in _boundary_texts(messages)) == 1
+
+
+async def test_context_hook_observes_each_response_but_not_the_next_tool_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "AGENT_HISTORY_MAX_TURNS", 4)
+    monkeypatch.setattr(settings, "AGENT_HISTORY_KEEP_TURNS", 2)
+    trimmer = history_trimmer()
+    observations = []
+    requests = []
+
+    def observe(ctx: RunContext[None], messages: list[ModelMessage]) -> list[ModelMessage]:
+        estimated = history_exceeds_context_budget(
+            messages,
+            system_prompt="system",
+            context_window=100_000,
+            chars_per_token=4.0,
+            context_fraction=0.6,
+        )
+        observations.append((ctx.context_window_used, estimated))
+        return trimmer(messages)
+
+    def respond(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        requests.append(messages)
+        if len(requests) < 3:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart("lookup", {"large": len(requests) == 2}, f"lookup-{len(requests)}")
+                ],
+                usage=RequestUsage(input_tokens=80_000 if len(requests) == 1 else 10),
+            )
+        return ModelResponse(parts=[TextPart("done")])
+
+    agent = PydanticAgent(
+        FunctionModel(respond, profile={"context_window": 100_000}),
+        name="observed-context-comparison",
+        capabilities=[ProcessHistory(observe)],
+    )
+
+    @agent.tool_plain
+    def lookup(large: bool) -> str:
+        return "x" * (250_000 if large else 1)
+
+    result = await agent.run("Continue", message_history=_history(3))
+    assert result.output == "done"
+    assert observations == [(None, False), (0.8, False), (0.0001, True)]
+    assert trimmer.watermark_key is None
+    assert [_boundary_texts(messages)[0] for messages in requests] == ["turn 0"] * 3
+    assert (
+        _tool_call_ids(requests[-1])
+        == _tool_return_ids(requests[-1])
+        == {
+            "lookup-1",
+            "lookup-2",
+        }
+    )
 
 
 def _history(turn_count: int, *, tool_turn: int | None = None) -> list[ModelMessage]:

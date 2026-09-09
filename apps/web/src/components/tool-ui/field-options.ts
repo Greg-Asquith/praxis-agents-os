@@ -13,7 +13,9 @@ export function availableFieldOptions(
   if (typeof parentValue === "string" && parentValue) {
     return field.options_by_value?.[parentValue] ?? []
   }
-  const parentOptions = fields.find((candidate) => candidate.key === field.options_by_field)?.options
+  const parentOptions = fields.find(
+    (candidate) => candidate.key === field.options_by_field
+  )?.options
   if (!parentOptions?.length) return []
   return field.options.filter((option) =>
     parentOptions.every((value) => field.options_by_value?.[value]?.includes(option))
