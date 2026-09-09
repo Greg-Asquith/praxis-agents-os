@@ -176,7 +176,14 @@ beforeAll(async () => {
   await loadIntegrationUiModules(["outlook_mail"])
 })
 
-describe.each([false, true])("saved-draft approval lifecycle (nested: %s)", (nested) => {
+const approvalCases = [
+  [false, null],
+  [true, null],
+  [false, "c".repeat(64)],
+  [true, "c".repeat(64)],
+] as const
+
+describe.each(approvalCases)("saved-draft approval (%s, %s)", (nested, revision) => {
   it.each(["text", "html"])(
     "projects the complete read-only %s review and submits only its call identity",
     async (bodyType) => {
@@ -191,12 +198,15 @@ describe.each([false, true])("saved-draft approval lifecycle (nested: %s)", (nes
       function ApprovalProbe() {
         const { resolveApprovalControls } = useInlineApprovals({
           activeRunId: "active-run",
+          approvalRevision: revision,
           approvals: [approval],
           enabled: true,
           isSubmitting: false,
           onSubmit: submit,
         })
-        expect(resolveApprovalControls({ ...activity, agentRunId: "old-run" })).toBeNull()
+        expect(
+          resolveApprovalControls({ ...activity, agentRunId: "old-run", rootRunId: "old-run" })
+        ).toBeNull()
         const bound = resolveApprovalControls(activity)
         if (!bound) throw new Error("Missing approval controls")
         return renderCustomToolCallRow({
@@ -215,9 +225,10 @@ describe.each([false, true])("saved-draft approval lifecycle (nested: %s)", (nes
       expect(html.includes("sandbox=")).toBe(bodyType === "html")
       click("Approve & Send")
       await vi.waitFor(() => {
-        expect(submit).toHaveBeenCalledExactlyOnceWith([
-          { tool_call_id: approval.tool_call_id, decision: "approved", override_args: null },
-        ])
+        expect(submit).toHaveBeenCalledExactlyOnceWith(
+          [{ tool_call_id: approval.tool_call_id, decision: "approved", override_args: null }],
+          revision ?? undefined
+        )
       })
       expect(approval.replay_args).toEqual({ message })
       expect(JSON.stringify(submit.mock.calls)).not.toContain("_draft")
@@ -233,6 +244,7 @@ describe.each([false, true])("saved-draft approval lifecycle (nested: %s)", (nes
     function ApprovalProbe() {
       const resolver = useInlineApprovals({
         activeRunId: "active-run",
+        approvalRevision: revision,
         approvals: [approval],
         enabled: true,
         isSubmitting: false,
@@ -244,9 +256,10 @@ describe.each([false, true])("saved-draft approval lifecycle (nested: %s)", (nes
     renderToStaticMarkup(createElement(ApprovalProbe))
     bound.onDecisionChange({ decision: "denied", edits: {}, message: "Keep this draft" })
     await vi.waitFor(() => {
-      expect(submit).toHaveBeenCalledExactlyOnceWith([
-        { tool_call_id: approval.tool_call_id, decision: "denied", message: "Keep this draft" },
-      ])
+      expect(submit).toHaveBeenCalledExactlyOnceWith(
+        [{ tool_call_id: approval.tool_call_id, decision: "denied", message: "Keep this draft" }],
+        revision ?? undefined
+      )
     })
     const html = render(
       activity,
@@ -265,6 +278,7 @@ describe.each([false, true])("saved-draft approval lifecycle (nested: %s)", (nes
     function ApprovalProbe() {
       const resolver = useInlineApprovals({
         activeRunId: "active-run",
+        approvalRevision: revision,
         approvals: [approval],
         enabled: true,
         isSubmitting: false,
@@ -277,9 +291,10 @@ describe.each([false, true])("saved-draft approval lifecycle (nested: %s)", (nes
     render(activity, bound)
     click("Approve & Send")
     await vi.waitFor(() => {
-      expect(submit).toHaveBeenCalledExactlyOnceWith([
-        { tool_call_id: approval.tool_call_id, decision: "approved", override_args: null },
-      ])
+      expect(submit).toHaveBeenCalledExactlyOnceWith(
+        [{ tool_call_id: approval.tool_call_id, decision: "approved", override_args: null }],
+        revision ?? undefined
+      )
     })
     await expect(submit.mock.results[0]?.value).rejects.toBe(error)
     const onDecisionChange = vi.fn()

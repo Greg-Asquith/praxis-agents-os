@@ -108,8 +108,8 @@ describe("positive keyword removal presenter", () => {
     expect(html).toContain("Shoes 20")
     expect(html).toContain("Shoes 21")
     expect(html).toContain("333")
-    expect(html.replace(/<[^>]*>/g, "")).toContain("Account 333 · Exact")
-    expect(html.replace(/<[^>]*>/g, "")).not.toContain("Account 333 · EXACT")
+    expect(html).toContain("Account 333 · Exact")
+    expect(html).not.toContain("Account 333 · EXACT")
   })
 
   it("shows exact per-row outcomes and before/requested/after states", () => {

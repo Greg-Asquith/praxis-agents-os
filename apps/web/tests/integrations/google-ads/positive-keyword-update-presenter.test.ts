@@ -245,9 +245,8 @@ describe("Google Ads positive keyword update presenter", () => {
     expect(html).toContain(">Requested<")
     expect(html).not.toContain("→")
     const failed = renderResult({ failed: [resultRow("failed", before, requested)] })
-    expect(
-      (failed.match(/<td[\s\S]*?<\/td>/g) ?? []).map((cell) => cell.replace(/<[^>]*>/g, ""))
-    ).toContain("Unverified")
+    const cells = failed.match(/<td[\s\S]*?<\/td>/g) ?? []
+    expect(cells.some((cell) => cell.includes(">Unverified<"))).toBe(true)
   })
 
   it.each(["utm_source=my-campaign", "MiXeD_{lpurl}", "ENABLED", "PAUSED"])(

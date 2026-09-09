@@ -236,11 +236,9 @@ describe.each(cases)("$name result evidence", (test) => {
         : test.skipped === "not_found"
           ? "Not found"
           : "Already existed"
-    const stats = renderToStaticMarkup(createElement("div", null, table.header)).replace(
-      /<[^>]*>/g,
-      ""
-    )
-    expect(stats).toBe(
+    const stats = renderToStaticMarkup(createElement("div", null, table.header))
+    const statValues = [...stats.matchAll(/>([^<>]+)<\/div>/g)].map((match) => match[1])
+    expect(statValues.join("")).toBe(
       `${appliedLabel}${truncated ? "3" : "1"}${test.skipped ? `${skippedLabel}0` : ""}Failed0${test.name.includes("negative_keywords") ? "" : "Unverified0"}`
     )
     expect(exported.rows[0]?.[exported.headers.indexOf(test.column)]).toBe(test.label)
@@ -290,11 +288,9 @@ describe("budget requested and confirmed values", () => {
         [previousValue, requestedValue, "Unconfirmed"],
         [previousValue, requestedValue, "Unconfirmed"],
       ])
-      const cells = (html.match(/<td[\s\S]*?<\/td>/g) ?? []).map((cell) =>
-        cell.replace(/<[^>]*>/g, "")
-      )
-      expect(cells.filter((cell) => cell === "Unconfirmed")).toHaveLength(2)
-      expect(cells.filter((cell) => cell === requestedValue)).toHaveLength(6)
+      const cells = html.match(/<td[\s\S]*?<\/td>/g) ?? []
+      expect(cells.filter((cell) => cell.includes(">Unconfirmed<"))).toHaveLength(2)
+      expect(cells.filter((cell) => cell.includes(`>${requestedValue}<`))).toHaveLength(6)
       const csv = tableToCsv(exported)
       expect(csv).toContain("Before,Requested,After")
       expect(csv.match(/Unconfirmed/g)).toHaveLength(2)

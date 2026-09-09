@@ -53,11 +53,9 @@ describe("Google Ads scoped negative keyword outcomes", () => {
         expect(html).toContain(
           "Showing a representative sample. Complete evidence is in the Audit Log."
         )
-        const cells = (html.match(/<td[\s\S]*?<\/td>/g) ?? []).map((cell) =>
-          cell.replace(/<[^>]*>/g, "")
-        )
-        expect(cells.filter((cell) => cell === "2")).toHaveLength(1)
-        expect(cells.filter((cell) => cell === "1")).toHaveLength(2)
+        const cells = html.match(/<td[\s\S]*?<\/td>/g) ?? []
+        expect(cells.filter((cell) => cell.includes(">2<"))).toHaveLength(1)
+        expect(cells.filter((cell) => cell.includes(">1<"))).toHaveLength(2)
       }
     }
   )

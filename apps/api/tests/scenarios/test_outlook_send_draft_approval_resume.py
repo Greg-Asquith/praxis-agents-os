@@ -6,14 +6,9 @@ from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import select
 
 from integrations.outlook_mail.references import OutlookMessageReference
 from integrations.outlook_mail.tools.send_draft import DEFINITION
-from models.agent_run import AgentRun
-from models.user import User
-from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.resume_run_stream import _build_deferred_tool_results
 from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
@@ -21,6 +16,7 @@ from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, buil
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.outlook_mail.support import draft_payload, entry
+from tests.support.delegation import resume_scenario
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -102,39 +98,17 @@ async def test_existing_draft_resume_preserves_reviewed_message(
     if decision == "changed":
         payload["changeKey"] = "edited-in-outlook"
         payload["body"]["content"] = "<p>Unreviewed change</p>"
-    async with db_session_factory() as db:
-        actor = await db.get(User, context.user_id)
-        workspace = await db.get(Workspace, context.workspace_id)
-        run = await db.get(AgentRun, context.run_id)
-        membership = await db.scalar(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == context.workspace_id,
-                WorkspaceMembership.user_id == context.user_id,
-            )
-        )
-        deferred = await _build_deferred_tool_results(
-            db,
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            run=run,
-            suspended_state=state,
-            decisions=[
-                AgentRunResumeDecision(
-                    tool_call_id="workflow:1" if nested else "draft",
-                    decision="denied" if decision == "denied" else "approved",
-                    override_args=None,
-                )
-            ],
-        )
-    completed = await run_scenario(
+    completed = await resume_scenario(
         db_session_factory,
         context,
         model=model,
-        prompt=None,
-        expected_status="awaiting_approval",
-        message_history=state.message_history,
-        deferred_tool_results=deferred,
+        decisions=[
+            AgentRunResumeDecision(
+                tool_call_id="workflow:1" if nested else "draft",
+                decision="denied" if decision == "denied" else "approved",
+                override_args=None,
+            )
+        ],
     )
     assert completed.run.status == "completed"
     operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
