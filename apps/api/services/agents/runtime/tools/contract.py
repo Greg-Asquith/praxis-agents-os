@@ -181,6 +181,8 @@ class ToolFieldPresentation:
     placeholder: str = ""
     options: tuple[str, ...] = ()
     secondary: bool = False
+    options_by_field: str | None = None
+    options_by_value: dict[str, tuple[str, ...]] = dataclass_field(default_factory=dict)
     entity_kind: str | None = None
     depends_on: tuple[str, ...] = ()
     columns: tuple[ToolFieldColumn, ...] = ()
@@ -520,7 +522,10 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
             f"{', '.join(missing_keys)}"
         )
     for field in presentation.arg_fields:
-        unknown_dependencies = set(field.depends_on).difference(properties)
+        dependencies = set(field.depends_on)
+        if field.options_by_field is not None:
+            dependencies.add(field.options_by_field)
+        unknown_dependencies = dependencies.difference(properties)
         if unknown_dependencies:
             raise RuntimeError(
                 "Runtime tool presentation field dependencies must name input arguments: "
@@ -555,6 +560,18 @@ def _validate_presentation_field_options(field: ToolFieldPresentation) -> None:
         raise RuntimeError("Runtime tool presentation field options must not be blank")
     if len(normalized_options) != len(set(normalized_options)):
         raise RuntimeError("Runtime tool presentation field options must be unique")
+
+    if bool(field.options_by_field) != bool(field.options_by_value):
+        raise RuntimeError("Conditional field options require a controlling field and values")
+    if field.options_by_value and not field.options:
+        raise RuntimeError("Conditional field options require declared options")
+    for value, options in field.options_by_value.items():
+        if not value.strip() or not options or len(options) != len(set(options)):
+            raise RuntimeError(
+                "Conditional field options require non-blank keys and unique options"
+            )
+        if not set(options).issubset(field.options):
+            raise RuntimeError("Conditional field options must be a subset of declared options")
 
 
 def _validate_presentation_record_shape(field: ToolFieldPresentation) -> None:

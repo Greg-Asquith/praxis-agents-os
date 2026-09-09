@@ -462,3 +462,12 @@ async def db_async_client(
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
+
+
+@pytest.fixture
+async def openai_image_requests(monkeypatch):
+    """Capture direct image requests while returning an offline PNG and usage."""
+    from tests.support.openai_images import mock_openai_images
+
+    async with mock_openai_images(monkeypatch) as requests:
+        yield requests

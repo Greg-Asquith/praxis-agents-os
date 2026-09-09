@@ -1963,3 +1963,95 @@ def test_always_allowed_tool_is_mounted_when_workspace_disabled() -> None:
 
     [completion_tool] = [tool for tool in tools if tool.name == REPORT_COMPLETION_TOOL_NAME]
     assert completion_tool.requires_approval is False
+
+
+@pytest.mark.parametrize("tool_name", ["generate_image", "edit_image"])
+def test_image_presentations_offer_both_providers(tool_name: str) -> None:
+    definition = get_runtime_tool_definition(tool_name)
+    fields = {field.key: field for field in definition.presentation.arg_fields}
+
+    assert fields["model_provider"].editable
+    assert fields["model_provider"].options == ("google", "openai")
+
+
+def test_image_aspect_ratio_presentation_serializes_provider_options() -> None:
+    from services.agents.runtime.tools.native.image_generation import (
+        OPENAI_IMAGE_ASPECT_RATIOS,
+        SUPPORTED_IMAGE_ASPECT_RATIOS,
+    )
+
+    definition = get_runtime_tool_definition("generate_image")
+    serialized = ToolPresentationRead.from_presentation(definition.presentation)
+    fields = {field.key: field.model_dump(mode="json") for field in serialized.arg_fields}
+
+    assert fields["aspect_ratio"]["options_by_field"] == "model_provider"
+    assert fields["aspect_ratio"]["options_by_value"] == {
+        "google": list(SUPPORTED_IMAGE_ASPECT_RATIOS),
+        "openai": list(OPENAI_IMAGE_ASPECT_RATIOS),
+    }
+    assert "options_by_field" not in fields["prompt"]
+    assert "options_by_value" not in fields["prompt"]
+
+
+@pytest.mark.parametrize(
+    ("options_by_field", "options_by_value", "error"),
+    [
+        ("provider", {}, "require a controlling field and values"),
+        (None, {"google": ("1:1",)}, "require a controlling field and values"),
+        ("provider", {"google": ("16:9",)}, "must be a subset"),
+        ("provider", {"google": ("1:1", "1:1")}, "unique options"),
+        ("unknown", {"google": ("1:1",)}, "dependencies must name input arguments"),
+    ],
+)
+def test_conditional_options_reject_invalid_declarations(
+    options_by_field: str | None,
+    options_by_value: dict[str, tuple[str, ...]],
+    error: str,
+) -> None:
+    def generate(ratio: str, provider: str) -> str:
+        return ratio
+
+    definition = RuntimeToolDefinition(
+        name="conditional_options",
+        function=generate,
+        description="Generate an image.",
+        presentation=ToolPresentation(
+            arg_fields=(
+                ToolFieldPresentation(
+                    key="ratio",
+                    label="Ratio",
+                    editable=True,
+                    options=("1:1", "2:3"),
+                    options_by_field=options_by_field,
+                    options_by_value=options_by_value,
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match=error):
+        validate_definition(definition)
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "openai_model"),
+    [
+        ("generate_image", "gpt-image-2.5-flare"),
+        ("edit_image", "gpt-image-2.5-sunburst"),
+    ],
+)
+def test_image_model_presentation_tracks_selected_provider(
+    tool_name: str, openai_model: str
+) -> None:
+    definition = get_runtime_tool_definition(tool_name)
+    serialized = ToolPresentationRead.from_presentation(definition.presentation)
+    model_field = next(field for field in serialized.arg_fields if field.key == "model")
+
+    assert model_field.editable
+    assert model_field.secondary
+    assert model_field.options == ["gemini-3.1-flash-image", openai_model]
+    assert model_field.options_by_field == "model_provider"
+    assert model_field.options_by_value == {
+        "google": ["gemini-3.1-flash-image"],
+        "openai": [openai_model],
+    }

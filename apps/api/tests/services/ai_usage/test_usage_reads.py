@@ -265,6 +265,54 @@ async def test_summary_adds_gpt_image_output_cost_and_exposes_incomplete_metadat
     assert summary.pricing_coverage.unpriced_image_generations == 1
 
 
+@pytest.mark.parametrize(
+    ("action", "image_model"),
+    [("generate", "gpt-image-2.5-flare"), ("edit", "gpt-image-2.5-sunburst")],
+)
+@pytest.mark.parametrize("direct", [False, True])
+async def test_summary_discloses_unpriced_direct_and_historical_2_5_images(
+    db_session: AsyncSession, action: str, image_model: str, direct: bool
+) -> None:
+    workspace = build_workspace(slug=f"image-25-cost-{uuid4().hex}")
+    db_session.add(workspace)
+    await db_session.flush()
+    occurred_at = datetime(2026, 9, 9, 12, tzinfo=UTC)
+    db_session.add_all(
+        [
+            _event(
+                workspace.id,
+                occurred_at,
+                purpose="image_generation",
+                provider="openai",
+                model=image_model if direct else "gpt-5.6-luna",
+                input_tokens=10,
+                output_tokens=2,
+                details={
+                    "action": action,
+                    "image_model": image_model,
+                    **metadata,
+                },
+            )
+            for metadata in ({"image_quality": "medium", "image_size": "1024x1024"}, {})
+        ]
+    )
+    await db_session.flush()
+
+    summary = await get_usage_summary(
+        db_session,
+        workspace_id=workspace.id,
+        from_=datetime(2026, 9, 9, tzinfo=UTC),
+        to=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+
+    assert summary.totals.estimated_cost_usd == (Decimal(0) if direct else Decimal("0.0000088"))
+    assert summary.pricing_coverage.priced_tokens == (0 if direct else 24)
+    assert summary.pricing_coverage.unpriced_tokens == (24 if direct else 0)
+    assert summary.models[0].model == (image_model if direct else "gpt-5.6-luna")
+    assert summary.pricing_coverage.priced_image_generations == 0
+    assert summary.pricing_coverage.unpriced_image_generations == 2
+
+
 @pytest.mark.asyncio
 async def test_summary_adds_gemini_flash_image_output_cost(
     db_session: AsyncSession,

@@ -126,6 +126,14 @@ still matches the provider before sending.
 
 ## Scalar approval editors
 
+Editable string fields with declared options remain selectable when their
+argument is absent or null. Rendering the picker preserves that original
+value until an option is selected. Fields can declare `options_by_field`
+and `options_by_value` to restrict choices using another argument. The
+frontend filters these choices against the effective approval arguments,
+replaces an incompatible selection when the controlling argument changes,
+and blocks approval while a supplied value remains incompatible.
+
 Editable date-time fields use the shared input with `type="datetime-local"`
 and `step={60}`. Preserve the raw value, including supplied seconds, and remove
 an edit when the input is cleared. Boolean fields use the shared labelled

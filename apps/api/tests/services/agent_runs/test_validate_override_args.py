@@ -680,3 +680,29 @@ async def test_scalar_approval_requires_only_primary_values(
     else:
         with pytest.raises(AppValidationError):
             await validate()
+
+
+@pytest.mark.parametrize("provider_args", [{}, {"model_provider": None}])
+async def test_image_edit_provider_override_accepts_omitted_or_null_value(
+    monkeypatch, provider_args: dict[str, object]
+) -> None:
+    canonicalize_entities = AsyncMock()
+    monkeypatch.setattr(
+        "services.agent_runs.validate_override_args._canonicalize_entity_fields",
+        canonicalize_entities,
+    )
+    original = {"prompt": "Make the image brighter", "file_ids": [], **provider_args}
+    override = {**original, "model_provider": "openai"}
+
+    result = await validate_and_canonicalize_override_args(
+        AsyncMock(),
+        actor=SimpleNamespace(),
+        workspace=SimpleNamespace(),
+        membership=SimpleNamespace(),
+        run=SimpleNamespace(conversation_id=uuid4()),
+        tool_call=_call("edit_image", original),
+        override_args=override,
+    )
+
+    assert result == override
+    canonicalize_entities.assert_awaited_once()

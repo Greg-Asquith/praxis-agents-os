@@ -1,17 +1,9 @@
 # apps/api/services/agents/runtime/tools/native/image_editing.py
 
-"""Governed image editing through OpenAI and Google helper models.
+"""Governed image editing through OpenAI Images and Google's native helper.
 
-Pydantic AI 2.20.0 maps an input ``BinaryContent`` image into OpenAI
-Responses ``input_image`` content and Google inline data. OpenAI receives
-``ImageGeneration(action='edit')``; Google's image configuration ignores the
-action and conditions generation on the inline image and prompt. Both paths
-return image bytes through the same normalized ``ModelResponse.images`` seam
-used by ``generate_image``. Explicit provider safety responses retain the
-shared content-policy retry mapping.
-
-OpenAI accepts one source image; Google preserves ordered multi-image input.
-Google can return image-only JPEG output even when PNG is requested, so
+OpenAI receives one source image and the unchanged prompt directly. Google
+preserves ordered multi-image input and can return JPEG when PNG is requested;
 persistence detects the actual bytes.
 """
 
@@ -37,7 +29,7 @@ from services.agents.runtime.tools import (
 from services.agents.runtime.tools.media_inputs import load_workspace_media_inputs
 from services.agents.runtime.tools.native.image_generation import (
     _REGISTERED_NATIVE_IMAGE_PROVIDERS,
-    DEFAULT_OPENAI_IMAGE_MODEL,
+    DEFAULT_NATIVE_IMAGE_EDIT_MODELS,
     NativeImageProvider,
     configured_native_image_providers,
     resolve_image_generation_model,
@@ -83,7 +75,7 @@ class EditImageOutput(BaseModel):
     description=(
         "Edit one current workspace image revision and save the result to workspace Files. "
         "The UI displays the saved image automatically; do not construct Markdown, data, or "
-        "attachment URLs for it. The helper provider can be selected from the configured "
+        "attachment URLs for it. The provider can be selected from the configured "
         f"image providers: {_REGISTERED_EDIT_IMAGE_PROVIDER_LIST}."
     ),
     effect=TOOL_EFFECT_WRITE,
@@ -124,6 +116,18 @@ class EditImageOutput(BaseModel):
                 editable=True,
                 options=_REGISTERED_NATIVE_IMAGE_PROVIDERS,
             ),
+            ToolFieldPresentation(
+                key="model",
+                label="Image Model",
+                editable=True,
+                secondary=True,
+                options=tuple(DEFAULT_NATIVE_IMAGE_EDIT_MODELS.values()),
+                options_by_field="model_provider",
+                options_by_value={
+                    provider: (model,)
+                    for provider, model in DEFAULT_NATIVE_IMAGE_EDIT_MODELS.items()
+                },
+            ),
         ),
         result_fields=(
             ToolFieldPresentation(
@@ -159,14 +163,12 @@ async def edit_image(
         ]
         | None,
         Field(
-            description=(
-                "Optional image helper provider. Omit unless there is a reason to choose one."
-            )
+            description=("Optional image provider. Omit unless there is a reason to choose one.")
         ),
     ] = None,
     model: Annotated[
         str | None,
-        Field(description="Optional helper model id. Omit to use the provider default."),
+        Field(description="Optional image model id. Omit to use the provider default."),
     ] = None,
 ) -> EditImageOutput:
     """Edit one governed workspace image and persist the result."""
@@ -179,6 +181,8 @@ async def edit_image(
         model_provider=model_provider,
         model=model,
     )
+    if model_spec.provider == PROVIDER_OPENAI:
+        normalized_prompt = prompt
     if model_spec.provider == PROVIDER_OPENAI and len(file_ids) != 1:
         raise ModelRetry("OpenAI edit_image currently requires exactly one source image.")
     input_media = await load_workspace_media_inputs(
@@ -236,11 +240,7 @@ async def edit_image(
         media_type=stored.content_type,
         model_provider=model_spec.provider,
         model=model_spec.model,
-        image_model=(
-            DEFAULT_OPENAI_IMAGE_MODEL
-            if model_spec.provider == PROVIDER_OPENAI
-            else model_spec.model
-        ),
+        image_model=model_spec.model,
     )
 
 
@@ -250,7 +250,7 @@ def resolve_image_editing_model(
     model_provider: str | None = None,
     model: str | None = None,
 ) -> ResolvedModel:
-    """Resolve a configured OpenAI or Google image-editing helper model."""
+    """Resolve a configured OpenAI or Google image-editing model."""
     requested_provider = normalize_optional_text(model_provider)
     requested_model = normalize_optional_text(model)
     if requested_provider is None:
@@ -264,4 +264,5 @@ def resolve_image_editing_model(
     return resolve_image_generation_model(
         model_provider=requested_provider,
         model=requested_model,
+        action="edit",
     )

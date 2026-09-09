@@ -11,9 +11,10 @@ from types import SimpleNamespace
 from typing import cast
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import ModelRetry, RunContext, ToolFailed
 from pydantic_ai.messages import (
     BinaryContent,
     BinaryImage,
@@ -92,6 +93,12 @@ from services.audit_events import AuditResourceType, AuditStatus
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.revision_actor import FileRevisionActor
 from tests.factories import build_user, build_workspace
+from tests.support.openai_images import (
+    IMAGE_BYTES,
+    image_request,
+    image_response,
+    mock_openai_images,
+)
 from tests.support.storage import reset_storage_provider_cache
 
 _HOSTILE_RUN_CODE = Path("tests/fixtures/prompt_injection/hostile_run_code.csv").read_bytes()
@@ -2616,32 +2623,193 @@ def test_generate_image_uses_latest_provider_model_defaults(
     )
 
     assert google.model == "gemini-3.1-flash-image"
-    assert openai.model == "gpt-5.6-luna"
-    assert image_generation_tools.DEFAULT_OPENAI_IMAGE_MODEL == "gpt-image-2"
+    assert openai.model == "gpt-image-2.5-flare"
+    edit = image_generation_tools.resolve_image_generation_model(
+        model_provider="openai", action="edit"
+    )
+    assert edit.model == "gpt-image-2.5-sunburst"
 
 
-def test_image_generation_captures_output_metadata_for_cost_estimates() -> None:
-    details = {"action": "generate", "image_model": "gpt-image-2"}
-    messages = [
-        ModelResponse(
-            parts=[
-                NativeToolReturnPart(
-                    tool_name="image_generation",
-                    tool_call_id="image-1",
-                    content={"status": "completed", "quality": "Medium", "size": "1024x1024"},
-                )
-            ]
+@pytest.fixture
+def image_usage_events(monkeypatch):
+    events = []
+
+    async def record(event):
+        events.append(event)
+        return True
+
+    monkeypatch.setattr("services.ai_usage.run_metered_helper.record_ai_usage_durable", record)
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+    return events
+
+
+@pytest.mark.parametrize("action", ["generate", "edit"])
+@pytest.mark.parametrize(
+    ("aspect_ratio", "size"),
+    [(None, "auto"), ("1:1", "1024x1024"), ("2:3", "1024x1536"), ("3:2", "1536x1024")],
+)
+async def test_openai_images_receive_exact_prompt_without_helper(
+    monkeypatch, image_usage_events, action, aspect_ratio, size
+):
+    prompt = '  Keep "EXACT wording".\nDo not paraphrase. 🦊  '
+    spec = image_generation_tools.resolve_image_generation_model(
+        model_provider="openai", action=action
+    )
+    async with mock_openai_images(monkeypatch) as requests:
+        result = await image_generation_tools.run_native_image_generation(
+            deps=_metering_deps(),
+            prompt=prompt,
+            model_spec=spec,
+            aspect_ratio=aspect_ratio,
+            action=action,
+            input_media=(BinaryContent(data=IMAGE_BYTES, media_type="image/png"),)
+            if action == "edit"
+            else (),
         )
-    ]
-
-    image_generation_tools._capture_image_output_metering(details, messages)
-
-    assert details == {
-        "action": "generate",
-        "image_model": "gpt-image-2",
+    [request] = requests
+    assert request.url.path == (
+        "/v1/images/edits" if action == "edit" else "/v1/images/generations"
+    )
+    body = image_request(request)
+    model = "gpt-image-2.5-sunburst" if action == "edit" else "gpt-image-2.5-flare"
+    assert body["model"] == model
+    assert body["prompt"] == prompt
+    assert str(body["n"]) == "1"
+    assert body["size"] == size
+    assert body["output_format"] == "png"
+    assert "tools" not in body
+    if action == "edit":
+        assert body["image"] == IMAGE_BYTES
+    else:
+        assert body["moderation"] == "auto"
+    assert result.data == IMAGE_BYTES
+    assert result.media_type == "image/png"
+    [event] = image_usage_events
+    assert (event.model, event.requests, event.input_tokens, event.output_tokens) == (
+        model,
+        1,
+        10,
+        20,
+    )
+    assert event.details == {
+        "action": action,
+        "image_model": model,
+        "usage_source": "images_api",
         "image_quality": "medium",
         "image_size": "1024x1024",
+        "input_text_tokens": 6,
+        "input_image_tokens": 4,
+        "output_text_tokens": 0,
+        "output_image_tokens": 20,
     }
+
+
+@pytest.mark.parametrize("action", ["generate", "edit"])
+@pytest.mark.parametrize("failure", ["refusal", "auth", "rate_limit", "connection", "cancelled"])
+async def test_openai_image_errors_are_safe_metered_and_transport_owned(
+    monkeypatch, image_usage_events, action, failure
+):
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 2)
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 0.001)
+    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_TOTAL_WAIT_CAP_SECONDS", 0.001)
+
+    def respond(request):
+        if failure == "connection":
+            raise httpx.ConnectError("private connection detail", request=request)
+        if failure == "cancelled":
+            raise asyncio.CancelledError()
+        return httpx.Response(
+            {"refusal": 400, "auth": 403, "rate_limit": 429}[failure],
+            json={
+                "error": {
+                    "message": "private provider detail",
+                    "code": "moderation_blocked" if failure == "refusal" else "provider_error",
+                }
+            },
+        )
+
+    exception = (
+        asyncio.CancelledError
+        if failure == "cancelled"
+        else ModelRetry
+        if failure == "refusal"
+        else ToolFailed
+    )
+    async with mock_openai_images(monkeypatch, respond) as requests:
+        with pytest.raises(exception) as caught:
+            await image_generation_tools.run_native_image_generation(
+                deps=_metering_deps(),
+                prompt="A fox",
+                aspect_ratio=None,
+                action=action,
+                model_spec=image_generation_tools.resolve_image_generation_model(
+                    model_provider="openai", action=action
+                ),
+                input_media=(BinaryContent(data=IMAGE_BYTES, media_type="image/png"),)
+                if action == "edit"
+                else (),
+            )
+    assert "private" not in str(caught.value)
+    assert len(requests) == (2 if failure in {"rate_limit", "connection"} else 1)
+    [event] = image_usage_events
+    assert event.requests == 1
+    assert event.input_tokens == event.output_tokens == 0
+    assert "gpt-image-2.5" in event.model
+
+
+@pytest.mark.parametrize(
+    "response_kind", ["missing", "multiple", "invalid", "url", "oversize", "no_usage"]
+)
+async def test_openai_image_response_validation_retains_usage(
+    monkeypatch, image_usage_events, response_kind
+):
+    body = image_response()
+    if response_kind == "missing":
+        body["data"] = []
+    elif response_kind == "multiple":
+        body["data"] *= 2
+    elif response_kind == "invalid":
+        body["data"] = [{"b64_json": "not base64"}]
+    elif response_kind == "url":
+        body["data"] = [{"url": "https://untrusted.example/image.png"}]
+    elif response_kind == "oversize":
+        monkeypatch.setattr(settings, "MAX_FILE_SIZE_IMAGE", 1)
+    else:
+        body.pop("usage")
+    async with mock_openai_images(
+        monkeypatch, lambda _: httpx.Response(200, json=body)
+    ) as requests:
+
+        async def generate():
+            return await image_generation_tools.run_native_image_generation(
+                deps=_metering_deps(),
+                prompt="A fox",
+                aspect_ratio=None,
+                model_spec=image_generation_tools.resolve_image_generation_model(
+                    model_provider="openai"
+                ),
+            )
+
+        if response_kind == "no_usage":
+            assert (await generate()).data == IMAGE_BYTES
+        else:
+            with pytest.raises(ModelRetry):
+                await generate()
+    assert len(requests) == 1
+    [event] = image_usage_events
+    assert event.input_tokens == (0 if response_kind == "no_usage" else 10)
+    assert event.requests == 1
+
+
+@pytest.mark.parametrize("action", ["generate", "edit"])
+def test_openai_image_model_override_rejects_helper_models(monkeypatch, action):
+    _set_native_provider_keys(monkeypatch, openai="sk-openai-test")
+    with pytest.raises(ModelRetry, match="Omit model"):
+        image_generation_tools.resolve_image_generation_model(
+            model_provider="openai",
+            model="gpt-5.6-luna",
+            action=action,
+        )
 
 
 def test_generate_image_availability_follows_supported_provider_keys(
@@ -2678,7 +2846,7 @@ def test_generate_image_availability_supports_google_vertex_ai(
     assert "generate_image" in {tool.name for tool in build_runtime_tools(agent)}
 
 
-@pytest.mark.parametrize("provider", [PROVIDER_GOOGLE, PROVIDER_OPENAI])
+@pytest.mark.parametrize("provider", [PROVIDER_GOOGLE])
 @pytest.mark.asyncio
 async def test_native_image_generation_probe_extracts_normalized_provider_image(
     monkeypatch: pytest.MonkeyPatch,
@@ -2726,11 +2894,11 @@ async def test_native_image_generation_probe_extracts_normalized_provider_image(
     assert capability.native.output_format is None
     assert capability.native.aspect_ratio == "3:2"
     assert capability.native.moderation == "auto"
-    assert capability.native.model == ("gpt-image-2" if provider == PROVIDER_OPENAI else None)
+    assert capability.native.model is None
     assert result is image
 
 
-@pytest.mark.parametrize("provider", [PROVIDER_GOOGLE, PROVIDER_OPENAI])
+@pytest.mark.parametrize("provider", [PROVIDER_GOOGLE])
 async def test_native_image_editing_probe_sends_input_image_and_edit_action(
     monkeypatch: pytest.MonkeyPatch,
     provider: str,
@@ -2779,6 +2947,7 @@ async def test_native_image_editing_probe_sends_input_image_and_edit_action(
     )
 
     [capability] = captured["capabilities"]
+    assert capability.native.model is None
     assert capability.native.action == "edit"
     assert capability.native.output_format == "png"
     assert "untrusted content" in captured["instructions"]
@@ -2961,14 +3130,21 @@ async def test_native_image_generation_rejects_google_only_ratio_for_openai() ->
 
 
 @pytest.mark.parametrize(
-    "response",
+    ("response", "error"),
     [
-        ModelResponse(parts=[], finish_reason="content_filter", provider_name=PROVIDER_OPENAI),
-        ModelResponse(
-            parts=[],
-            finish_reason="content_filter",
-            provider_name=PROVIDER_GOOGLE,
-            provider_details={"block_reason": "SAFETY"},
+        (ModelResponse(parts=[], provider_name=PROVIDER_GOOGLE), "without returning an image"),
+        (
+            ModelResponse(parts=[], finish_reason="content_filter", provider_name=PROVIDER_GOOGLE),
+            "declined this prompt under its content policy",
+        ),
+        (
+            ModelResponse(
+                parts=[],
+                finish_reason="content_filter",
+                provider_name=PROVIDER_GOOGLE,
+                provider_details={"block_reason": "SAFETY"},
+            ),
+            "declined this prompt under its content policy",
         ),
     ],
 )
@@ -2976,6 +3152,7 @@ async def test_native_image_generation_rejects_google_only_ratio_for_openai() ->
 async def test_native_image_generation_probe_maps_content_policy_refusals(
     monkeypatch: pytest.MonkeyPatch,
     response: ModelResponse,
+    error: str,
 ) -> None:
     class FakeResult:
         @staticmethod
@@ -2992,14 +3169,14 @@ async def test_native_image_generation_probe_maps_content_policy_refusals(
     monkeypatch.setattr(image_generation_tools, "PydanticAgent", FakeHelper)
     monkeypatch.setattr(image_generation_tools, "build_model", lambda spec: spec)
     spec = ResolvedModel(
-        provider=response.provider_name or PROVIDER_OPENAI,
+        provider=response.provider_name or PROVIDER_GOOGLE,
         model="probe-model",
         transport_model="probe-model",
         settings={},
         max_steps=3,
     )
 
-    with pytest.raises(ModelRetry, match="declined this prompt under its content policy"):
+    with pytest.raises(ModelRetry, match=error):
         await image_generation_tools.run_native_image_generation(
             deps=_metering_deps(),
             prompt="blocked prompt",

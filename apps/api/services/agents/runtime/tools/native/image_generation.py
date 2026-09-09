@@ -1,25 +1,13 @@
 # apps/api/services/agents/runtime/tools/native/image_generation.py
 
-"""Audited provider-native image generation through configured helper models.
+"""Governed image generation through OpenAI Images and Google's native helper.
 
-Pydantic AI 2.20.0 normalizes OpenAI Responses image-generation output and
-Google inline image output as ``FilePart(BinaryImage)`` values on the helper
-result messages. The helper accepts ``BinaryImage`` as its output so Google
-image-only responses do not trigger a spurious text retry. OpenAI
-content-policy refusals arrive with
-``finish_reason='content_filter'`` and refusal provider details; Google safety
-blocks use the same finish reason plus block-reason provider details. Praxis
-maps only those explicit refusal shapes to content-policy outcome language and
-keeps transport or missing-image failures distinct.
-
-The OpenAI helper uses the current GPT-5.6 Luna Responses model with the current
-``gpt-image-2`` image model. Google uses ``gemini-3.1-flash-image`` directly.
-The registered schema snapshots configured providers at process start;
-credential changes require an API and worker restart to refresh its choices.
+OpenAI receives the supplied prompt directly, with Flare for generation and
+Sunburst for editing. Google retains its Pydantic AI image capability and
+normalised BinaryImage output. Provider credentials resolve explicitly.
 """
 
 from collections.abc import Sequence
-from dataclasses import replace
 from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, Field
@@ -30,7 +18,6 @@ from pydantic_ai.messages import (
     BinaryImage,
     ModelMessage,
     ModelResponse,
-    NativeToolReturnPart,
 )
 from pydantic_ai.native_tools import ImageAspectRatio
 from pydantic_ai.usage import RunUsage, UsageLimits
@@ -47,7 +34,6 @@ from services.agents.models.resolution import (
     configured_helper_providers,
     format_provider_list,
     require_configured_provider,
-    require_helper_model,
 )
 from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
@@ -60,6 +46,7 @@ from services.agents.runtime.tools import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.agents.runtime.tools.native.openai_images import run_openai_image
 from services.agents.runtime.tools.registry import runtime_tool
 from services.ai_usage.domain import PURPOSE_IMAGE_GENERATION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
@@ -73,9 +60,12 @@ SUPPORTED_IMAGE_ASPECT_RATIOS: tuple[ImageAspectRatio, ...] = get_args(ImageAspe
 OPENAI_IMAGE_ASPECT_RATIOS: tuple[ImageAspectRatio, ...] = ("1:1", "2:3", "3:2")
 DEFAULT_NATIVE_IMAGE_MODELS = {
     PROVIDER_GOOGLE: "gemini-3.1-flash-image",
-    PROVIDER_OPENAI: "gpt-5.6-luna",
+    PROVIDER_OPENAI: "gpt-image-2.5-flare",
 }
-DEFAULT_OPENAI_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_NATIVE_IMAGE_EDIT_MODELS = {
+    **DEFAULT_NATIVE_IMAGE_MODELS,
+    PROVIDER_OPENAI: "gpt-image-2.5-sunburst",
+}
 DEFAULT_GOOGLE_IMAGE_QUALITY = "standard"
 DEFAULT_GOOGLE_IMAGE_SIZE = "1k"
 
@@ -136,9 +126,9 @@ class GenerateImageOutput(BaseModel):
     label="Generate Image",
     code_eligible=False,
     description=(
-        "Generate one new image and save it to workspace Files using a provider-native helper "
+        "Generate one new image and save it to workspace Files using an image "
         "model. The UI displays the saved image automatically; do not construct Markdown, data, "
-        "or attachment URLs for it. Image editing is not supported. The helper provider can be "
+        "or attachment URLs for it. Image editing is not supported. The provider can be "
         f"selected from the available native image providers: {_REGISTERED_NATIVE_IMAGE_PROVIDER_CSV}."
     ),
     effect=TOOL_EFFECT_WRITE,
@@ -172,6 +162,11 @@ class GenerateImageOutput(BaseModel):
                 label="Aspect Ratio",
                 editable=True,
                 options=SUPPORTED_IMAGE_ASPECT_RATIOS,
+                options_by_field="model_provider",
+                options_by_value={
+                    PROVIDER_GOOGLE: SUPPORTED_IMAGE_ASPECT_RATIOS,
+                    PROVIDER_OPENAI: OPENAI_IMAGE_ASPECT_RATIOS,
+                },
                 secondary=True,
             ),
             ToolFieldPresentation(
@@ -179,6 +174,17 @@ class GenerateImageOutput(BaseModel):
                 label="Image Provider",
                 editable=True,
                 options=_REGISTERED_NATIVE_IMAGE_PROVIDERS,
+            ),
+            ToolFieldPresentation(
+                key="model",
+                label="Image Model",
+                editable=True,
+                secondary=True,
+                options=tuple(DEFAULT_NATIVE_IMAGE_MODELS.values()),
+                options_by_field="model_provider",
+                options_by_value={
+                    provider: (model,) for provider, model in DEFAULT_NATIVE_IMAGE_MODELS.items()
+                },
             ),
         ),
         result_fields=(
@@ -217,12 +223,7 @@ async def generate_image(
     ] = None,
     model: Annotated[
         str | None,
-        Field(
-            description=(
-                "Optional helper model id for model_provider. Omit to use the provider's "
-                "current native-image default."
-            )
-        ),
+        Field(description=("Optional image model id. Omit to use the provider's default.")),
     ] = None,
 ) -> GenerateImageOutput:
     """Generate one image and persist it as a workspace File."""
@@ -231,6 +232,8 @@ async def generate_image(
         raise ModelRetry("generate_image requires a non-empty prompt.")
 
     model_spec = resolve_image_generation_model(model_provider=model_provider, model=model)
+    if model_spec.provider == PROVIDER_OPENAI:
+        normalized_prompt = prompt
     image = await run_native_image_generation(
         deps=ctx.deps,
         prompt=normalized_prompt,
@@ -251,9 +254,6 @@ async def generate_image(
     except AppValidationError as exc:
         raise ModelRetry(exc.message) from exc
 
-    image_model = (
-        DEFAULT_OPENAI_IMAGE_MODEL if model_spec.provider == PROVIDER_OPENAI else model_spec.model
-    )
     return GenerateImageOutput(
         prompt=normalized_prompt,
         name=stored.name,
@@ -270,7 +270,7 @@ async def generate_image(
         media_type=stored.content_type,
         model_provider=model_spec.provider,
         model=model_spec.model,
-        image_model=image_model,
+        image_model=model_spec.model,
     )
 
 
@@ -278,38 +278,26 @@ def resolve_image_generation_model(
     *,
     model_provider: str,
     model: str | None = None,
+    action: Literal["generate", "edit"] = "generate",
 ) -> ResolvedModel:
-    """Resolve a provider-supported native-image helper model."""
+    """Resolve the supported image model for the selected provider and action."""
     requested_provider = model_provider.strip().lower()
-    requested_model = normalize_optional_text(model)
     require_configured_provider(
         requested_provider,
         configured=configured_native_image_providers(),
         supported=SUPPORTED_NATIVE_IMAGE_PROVIDERS,
-        tool_name="generate_image",
+        tool_name="edit_image" if action == "edit" else "generate_image",
     )
-    if requested_provider == PROVIDER_GOOGLE:
-        google_model = requested_model or DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE]
-        if google_model != DEFAULT_NATIVE_IMAGE_MODELS[PROVIDER_GOOGLE]:
-            raise ModelRetry(
-                "Google generate_image currently supports gemini-3.1-flash-image. "
-                "Omit model to use it."
-            )
-        return ResolvedModel(
-            provider=requested_provider,
-            model=google_model,
-            transport_model=google_model,
-            settings={},
-            max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
-        )
-    return replace(
-        require_helper_model(
-            provider=requested_provider,
-            model=requested_model,
-            supported=SUPPORTED_NATIVE_IMAGE_PROVIDERS,
-            defaults=DEFAULT_NATIVE_IMAGE_MODELS,
-            tool_name="generate_image",
-        ),
+    defaults = DEFAULT_NATIVE_IMAGE_EDIT_MODELS if action == "edit" else DEFAULT_NATIVE_IMAGE_MODELS
+    default = defaults[requested_provider]
+    requested_model = normalize_optional_text(model)
+    if requested_model is not None and requested_model != default:
+        raise ModelRetry(f"This image action supports {default}. Omit model to use it.")
+    return ResolvedModel(
+        provider=requested_provider,
+        model=default,
+        transport_model=default,
+        settings={},
         max_steps=settings.NATIVE_IMAGE_GENERATION_MAX_STEPS,
     )
 
@@ -324,7 +312,7 @@ async def run_native_image_generation(
     input_media: Sequence[BinaryContent] = (),
     output_format: Literal["png", "webp", "jpeg"] | None = None,
 ) -> BinaryImage:
-    """Run the short-lived native helper and return its single image."""
+    """Generate one image through the selected provider."""
     if action == "edit" and not input_media:
         raise ModelRetry("Image editing requires an input image.")
     if (
@@ -336,6 +324,16 @@ async def run_native_image_generation(
             "OpenAI image generation supports aspect ratios 1:1, 2:3, and 3:2. "
             "Choose one of those values, omit aspect_ratio, or use Google."
         )
+    if model_spec.provider == PROVIDER_OPENAI:
+        return await run_openai_image(
+            deps=deps,
+            prompt=prompt,
+            model=model_spec.model,
+            action=action,
+            aspect_ratio=aspect_ratio,
+            input_media=input_media,
+            output_format=output_format or "png",
+        )
     capability = ImageGeneration(
         native=True,
         local=False,
@@ -343,9 +341,6 @@ async def run_native_image_generation(
         moderation="auto",
         output_format=output_format,
         aspect_ratio=aspect_ratio,
-        image_model=(
-            DEFAULT_OPENAI_IMAGE_MODEL if model_spec.provider == PROVIDER_OPENAI else None
-        ),
     )
     helper = PydanticAgent(
         build_model(model_spec),
@@ -375,24 +370,19 @@ async def run_native_image_generation(
     if input_media:
         user_content = [user_content, *input_media]
 
-    metering_details = {"action": action}
-    if model_spec.provider == PROVIDER_OPENAI:
-        metering_details["image_model"] = DEFAULT_OPENAI_IMAGE_MODEL
-    elif model_spec.provider == PROVIDER_GOOGLE:
-        metering_details.update(
-            image_model=model_spec.model,
-            image_quality=DEFAULT_GOOGLE_IMAGE_QUALITY,
-            image_size=DEFAULT_GOOGLE_IMAGE_SIZE,
-        )
+    metering_details = {
+        "action": action,
+        "image_model": model_spec.model,
+        "image_quality": DEFAULT_GOOGLE_IMAGE_QUALITY,
+        "image_size": DEFAULT_GOOGLE_IMAGE_SIZE,
+    }
 
     async def call(usage: RunUsage):
-        result = await helper.run(
+        return await helper.run(
             user_content,
             usage_limits=UsageLimits(request_limit=model_spec.max_steps),
             usage=usage,
         )
-        _capture_image_output_metering(metering_details, result.all_messages())
-        return result
 
     result = await run_metered_helper(
         AIUsageEventData(
@@ -429,26 +419,6 @@ async def run_native_image_generation(
     raise ModelRetry(
         "The image provider completed without returning an image. Try again or choose another provider."
     )
-
-
-def _capture_image_output_metering(
-    details: dict[str, str],
-    messages: list[ModelMessage],
-) -> None:
-    """Retain provider-returned metadata needed for image output estimates."""
-    for message in messages:
-        if not isinstance(message, ModelResponse):
-            continue
-        for part in message.parts:
-            if not isinstance(part, NativeToolReturnPart) or part.tool_name != "image_generation":
-                continue
-            content = part.content
-            if not isinstance(content, dict) or content.get("status") != "completed":
-                continue
-            for source, target in (("quality", "image_quality"), ("size", "image_size")):
-                value = content.get(source)
-                if isinstance(value, str) and value:
-                    details[target] = value.lower()
 
 
 def _was_content_policy_refusal(messages: list[ModelMessage]) -> bool:

@@ -35,6 +35,8 @@ export type ToolUiField = {
   editable: boolean
   placeholder: string
   options: string[]
+  options_by_field?: string | null
+  options_by_value?: Record<string, string[]>
   secondary: boolean
   entity_kind?: string | null
   depends_on?: string[]

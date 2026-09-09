@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.settings import settings
+from models.ai_usage_event import AIUsageEvent
 from models.audit_event import AuditEvent
 from models.files import File, FileRevision
 from models.workspace import Workspace
@@ -26,6 +27,7 @@ from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision
+from tests.support.openai_images import image_request
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -175,20 +177,32 @@ async def test_input_media_tool_approval_resumes_with_edited_prompt(
     }
 
 
-@pytest.mark.parametrize("tool_name", ["edit_image", "generate_image_from_video"])
+@pytest.mark.parametrize(
+    ("tool_name", "provider", "image_model"),
+    [
+        ("edit_image", "google", "gemini-3.1-flash-image"),
+        ("edit_image", "openai", "gpt-image-2.5-sunburst"),
+        ("generate_image_from_video", "google", "gemini-3.1-flash-image"),
+    ],
+)
 async def test_input_media_tool_auto_path_persists_source_provenance(
     db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     image_input_storage: None,
     tool_name: str,
+    provider: str,
+    image_model: str,
+    openai_image_requests,
 ) -> None:
     _enable_google(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
 
     async def fake_generate(**_kwargs) -> BinaryImage:
         return BinaryImage(data=_ONE_PIXEL_PNG, media_type="image/png")
 
     tool_module = image_editing_tools if tool_name == "edit_image" else video_to_image_tools
-    monkeypatch.setattr(tool_module, "run_native_image_generation", fake_generate)
+    if provider == "google":
+        monkeypatch.setattr(tool_module, "run_native_image_generation", fake_generate)
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[tool_name],
@@ -206,7 +220,7 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
         content=b"source-image" if is_edit else b"source-video",
     )
     source_files = [(source, source_revision)]
-    if is_edit:
+    if is_edit and provider == "google":
         second_source = await _persist_source(
             db_session_factory,
             workspace_id=context.workspace_id,
@@ -223,9 +237,9 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
         for file, _revision in source_files
     ]
     args = (
-        {"prompt": "Approved prompt", "file_ids": references, "model_provider": "google"}
+        {"prompt": "  Approved prompt  ", "file_ids": references, "model_provider": provider}
         if is_edit
-        else {"prompt": "Approved prompt", "file_id": references[0]}
+        else {"prompt": "  Approved prompt  ", "file_id": references[0]}
     )
     result = await run_scenario(
         db_session_factory,
@@ -234,7 +248,29 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
     )
 
     assert result.run.status == "completed"
+    [returned] = result.tool_returns(tool_name)
+    assert returned["content"]["image_model" if is_edit else "model"] == image_model
+    if provider == "openai":
+        [request] = openai_image_requests
+        body = image_request(request)
+        assert body["prompt"] == "  Approved prompt  "
+        assert body["image"] == b"source-image"
     async with db_session_factory() as db:
+        if provider == "openai":
+            [usage] = (
+                await db.scalars(
+                    select(AIUsageEvent).where(
+                        AIUsageEvent.run_id == context.run_id,
+                        AIUsageEvent.purpose == "image_generation",
+                    )
+                )
+            ).all()
+            assert (usage.model, usage.input_tokens, usage.output_tokens, usage.requests) == (
+                image_model,
+                10,
+                20,
+                1,
+            )
         generated = list(
             (
                 await db.scalars(

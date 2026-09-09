@@ -94,7 +94,7 @@ The following contracts apply in this area:
 
 Native image generation uses the governed `generate_image` helper-tool path
 for Google and OpenAI only. `NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
-helper run. The tool generates exactly one image, preserves provider-returned
+Google helper run. The tool generates exactly one image, preserves provider-returned
 PNG, WebP, or JPEG bytes in an audited workspace File, and defaults to
 approval. `edit_image` uses the current revision of a workspace image with
 OpenAI or Google and limits combined raw source bytes with
@@ -103,6 +103,29 @@ OpenAI or Google and limits combined raw source bytes with
 than `NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES` (18 MiB by default). Both
 input-media tools preserve the source file and revision ids in their result
 and generated-file audit evidence.
+
+OpenAI calls the Images API directly: `gpt-image-2.5-flare` for generation
+and `gpt-image-2.5-sunburst` for editing. The approved prompt reaches the API
+unchanged, including whitespace, without a helper model or added instructions.
+The optional `model` argument must match the action's image model; helper IDs
+such as `gpt-5.6-luna` are rejected with guidance to omit the override.
+Requests, file-tool results, and usage rows name the actual image model.
+
+OpenAI retains its three aspect ratios (`1:1`, `2:3`, and `3:2`), automatic
+size when omitted, PNG output, and single edit source. The shared provider
+transport owns retries; SDK retries are disabled. Known moderation blocks
+produce a prompt-revision outcome; other provider errors produce safe tool
+failures. Cancellation propagates. Google retains its Pydantic AI helper.
+Paid live verification of the direct 2.5 calls remains pending before release.
+
+Image approvals show an editable **Image Provider** picker, including when
+the agent omits the provider. The picker lists configured providers.
+Generation's **Aspect Ratio** choices follow the selected provider. Without
+an explicit provider, the list contains only ratios supported by every
+configured provider. Changing provider preserves a supported ratio and
+replaces an unsupported ratio with the first available choice. An explicit
+model selection also follows the provider. Editing has no aspect-ratio
+argument.
 
 ## Code output and file navigation
 

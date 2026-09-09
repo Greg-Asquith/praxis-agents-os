@@ -167,7 +167,7 @@ class AgentRunSettingsMixin:
     NATIVE_IMAGE_GENERATION_MAX_STEPS: int = Field(
         default=3,
         gt=0,
-        description="Maximum helper-model requests for one native image generation call.",
+        description="Maximum Google helper-model requests for one native image generation call.",
     )
     NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES: int = Field(
         default=64 * 1024 * 1024,

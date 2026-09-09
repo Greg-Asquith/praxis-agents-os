@@ -29,6 +29,10 @@ class ToolFieldPresentationRead(BaseModel):
     placeholder: str
     options: list[str]
     secondary: bool
+    options_by_field: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    options_by_value: dict[str, list[str]] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     entity_kind: str | None
     depends_on: list[str]
     columns: list[ToolFieldColumnRead] = Field(
@@ -66,6 +70,10 @@ class ToolPresentationRead(BaseModel):
                     editable=field.editable,
                     placeholder=field.placeholder,
                     options=list(field.options),
+                    options_by_field=field.options_by_field,
+                    options_by_value={
+                        value: list(options) for value, options in field.options_by_value.items()
+                    },
                     secondary=field.secondary,
                     entity_kind=field.entity_kind,
                     depends_on=list(field.depends_on),
@@ -95,6 +103,10 @@ class ToolPresentationRead(BaseModel):
                     editable=field.editable,
                     placeholder=field.placeholder,
                     options=list(field.options),
+                    options_by_field=field.options_by_field,
+                    options_by_value={
+                        value: list(options) for value, options in field.options_by_value.items()
+                    },
                     secondary=field.secondary,
                     entity_kind=field.entity_kind,
                     depends_on=list(field.depends_on),

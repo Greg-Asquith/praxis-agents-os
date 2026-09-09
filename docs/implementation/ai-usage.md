@@ -24,6 +24,16 @@ The following contracts apply in this area:
   3.1 Flash Image output estimates are added to, not substituted for, mainline
   helper-model token cost. Unavailable image-model input remains disclosed
   rather than guessed.
+- Direct GPT Image 2.5 requests record one invocation under Flare or Sunburst,
+  with no Luna token charge. Returned input/output totals and bounded
+  text/image modality details are retained. Missing usage stays unknown;
+  attempted requests still record an invocation. Image costs remain unpriced
+  because generic ledger rates cannot distinguish text and image input or
+  their cached subsets. These calls increment `unpriced_image_generations`,
+  displayed as **Incomplete image outputs**, and returned tokens count as
+  unpriced. Historical Responses helper rows retain their helper-token costs;
+  historical GPT Image 2 output estimates remain unchanged. Modality-aware
+  image pricing is pending.
 - Platform usage reads are confined to `services/ai_usage/platform_queries.py`,
   use the sanctioned maintenance session, and set each transaction read-only
   before its first query. The `/platform-usage` router is super-admin-only;

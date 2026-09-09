@@ -5,6 +5,7 @@ import { CheckIcon, WrenchIcon } from "lucide-react"
 
 import { ApprovalRequestFields } from "@/components/tool-ui/approval-request-fields"
 import { approvalDisplayError } from "@/components/tool-ui/approval-args"
+import { fieldOptionsError } from "@/components/tool-ui/field-options"
 import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
 import { ApprovalStaticField } from "@/components/tool-ui/approval-static-field"
 import type {
@@ -72,7 +73,10 @@ export function ToolApprovalDecisionCard({
   const [denialMessage, setDenialMessage] = useState("")
   const [invalidEntityFields, setInvalidEntityFields] = useState<Set<string>>(() => new Set())
   const disabled = controls.disabled ?? false
-  const effectiveValidationError = validationError ?? approvalDisplayError(args)
+  const effectiveValidationError =
+    validationError ??
+    approvalDisplayError(args) ??
+    (isRecord(args) ? fieldOptionsError(fields, { ...args, ...controls.decision.edits }) : null)
   const isDecided = controls.decision.decision !== "pending"
   const recordArgs = isRecord(args) ? args : null
   const hasInvalidRecordFields = fields.some((field) => {

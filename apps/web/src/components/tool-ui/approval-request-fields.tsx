@@ -34,6 +34,10 @@ import { ListFieldInput } from "@/components/tool-ui/list-field-input"
 import { RecordsFieldInput } from "@/components/tool-ui/records-field-input"
 import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
 import { ScalarFieldInput } from "@/components/tool-ui/scalar-field-input"
+import {
+  availableFieldOptions,
+  reconcileFieldOptionEdits,
+} from "@/components/tool-ui/field-options"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -107,16 +111,22 @@ export function ApprovalRequestFields({
       return next
     })
     onEditsChange(
-      Object.fromEntries(
-        Object.entries({ ...decision.edits, [key]: nextValue }).filter(
-          ([candidateKey]) => !dependentKeys.has(candidateKey)
-        )
+      reconcileFieldOptionEdits(
+        fields,
+        args,
+        Object.fromEntries(
+          Object.entries({ ...decision.edits, [key]: nextValue }).filter(
+            ([candidateKey]) => !dependentKeys.has(candidateKey)
+          )
+        ),
+        key
       )
     )
   }
   return (
     <div className="grid min-w-0 gap-3 sm:grid-flow-dense sm:grid-cols-2">
       {fields.map((field) => {
+        const options = availableFieldOptions(field, lockedRecord, fields)
         const rawValue = args[field.key]
         const originalValue = editableValue(field, rawValue)
         const editable = field.editable && originalValue !== null
@@ -236,20 +246,20 @@ export function ApprovalRequestFields({
               />
             ) : field.options.length > 0 && typeof value === "string" ? (
               <Select<string>
-                disabled={disabled}
+                disabled={disabled || options.length === 0}
                 onValueChange={(nextValue) => {
                   if (nextValue !== null) {
                     applyFieldEdit(field.key, nextValue)
                   }
                 }}
-                value={value}
+                value={options.includes(value) ? value : null}
               >
                 <SelectTrigger className={cn(fieldWellClass, "h-8")} id={id} ref={focusRef}>
-                  <SelectValue />
+                  <SelectValue placeholder={field.placeholder || "Choose an option"} />
                 </SelectTrigger>
                 <SelectContent align="start">
                   <SelectGroup>
-                    {field.options.map((option) => (
+                    {options.map((option) => (
                       <SelectItem
                         key={option}
                         label={titleCaseToken(option, option)}

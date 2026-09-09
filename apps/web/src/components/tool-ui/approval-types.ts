@@ -31,6 +31,8 @@ export type ApprovalField = {
   label: string
   min_rows: number
   options: string[]
+  options_by_field?: string | null
+  options_by_value?: Record<string, string[]>
   placeholder: string
   secondary: boolean
   entity_kind?: string | null

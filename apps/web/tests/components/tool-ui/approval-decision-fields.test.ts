@@ -27,6 +27,12 @@ import { formatDateTime } from "@/lib/format"
 
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Select } from "@/components/ui/select"
+
+vi.mock("@/components/ui/select", async (importOriginal) => {
+  const original = await importOriginal<{ Select: typeof Select }>()
+  return { ...original, Select: vi.fn(original.Select) }
+})
 
 vi.mock("@/components/ui/input", async (importOriginal) => {
   const original = await importOriginal<{ Input: typeof Input }>()
@@ -39,6 +45,97 @@ vi.mock("@/components/ui/checkbox", async (importOriginal) => {
 })
 
 describe("ApprovalRequestFields", () => {
+  it.each([undefined, null, "google"])("keeps the provider picker editable for %j", (provider) => {
+    vi.mocked(Select).mockClear()
+    const onEditsChange = vi.fn()
+    const fields: ApprovalField[] = [
+      {
+        ...approvalField("model_provider", "Image Provider", "text"),
+        editable: true,
+        options: ["google", "openai"],
+      },
+    ]
+    const args = provider === undefined ? {} : { model_provider: provider }
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "image",
+        args,
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields,
+        onEditsChange,
+      })
+    )
+    expect(html).toContain('role="combobox"')
+    expect(html).toContain('for="image-model_provider-edit"')
+    expect(onEditsChange).not.toHaveBeenCalled()
+    const props = vi.mocked(Select).mock.calls[0]?.[0]
+    props?.onValueChange?.("openai", {
+      reason: "none",
+      event: new Event("change"),
+      cancel: () => undefined,
+      allowPropagation: () => undefined,
+      isCanceled: false,
+      isPropagationAllowed: false,
+      trigger: undefined,
+    })
+    expect(onEditsChange).toHaveBeenCalledWith({ model_provider: "openai" })
+    expect(
+      buildResumeDecisions(
+        [{ tool_call_id: "image", name: "edit_image", args }],
+        { image: { decision: "approved", edits: { model_provider: "openai" }, message: "" } },
+        () => fields
+      )
+    ).toEqual([
+      { tool_call_id: "image", decision: "approved", override_args: { model_provider: "openai" } },
+    ])
+  })
+
+  it("replaces an unsupported aspect ratio when the provider changes", () => {
+    vi.mocked(Select).mockClear()
+    const onEditsChange = vi.fn()
+    const fields: ApprovalField[] = [
+      {
+        ...approvalField("model_provider", "Image Provider", "text"),
+        editable: true,
+        options: ["google", "openai"],
+      },
+      {
+        ...approvalField("aspect_ratio", "Aspect Ratio", "text"),
+        editable: true,
+        options: ["1:1", "16:9"],
+        options_by_field: "model_provider",
+        options_by_value: { google: ["1:1", "16:9"], openai: ["1:1"] },
+      },
+    ]
+    renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "image",
+        args: { model_provider: "google", aspect_ratio: "16:9" },
+        decision: { decision: "pending", edits: { prompt: "A red panda" }, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields,
+        onEditsChange,
+      })
+    )
+    vi.mocked(Select).mock.calls[0]?.[0].onValueChange?.("openai", {
+      reason: "none",
+      event: new Event("change"),
+      cancel: () => undefined,
+      allowPropagation: () => undefined,
+      isCanceled: false,
+      isPropagationAllowed: false,
+      trigger: undefined,
+    })
+    expect(onEditsChange).toHaveBeenCalledWith({
+      prompt: "A red panda",
+      model_provider: "openai",
+      aspect_ratio: "1:1",
+    })
+  })
+
   it.each(["2026-09-08T09:30", "2026-09-08T09:30:45"])(
     "preserves the local date-time %s and submits raw edits",
     (original) => {

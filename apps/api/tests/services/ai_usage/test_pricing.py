@@ -157,6 +157,13 @@ def test_gemini_flash_image_uses_standard_1k_output_price() -> None:
     assert price.usd_per_image == Decimal("0.067")
 
 
+@pytest.mark.parametrize("model", ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])
+@pytest.mark.parametrize("quality", ["low", "medium", "high"])
+@pytest.mark.parametrize("size", ["1024x1024", "1024x1536", "1536x1024"])
+def test_gpt_image_2_5_does_not_reuse_historical_output_estimates(model, quality, size):
+    assert find_image_output_price("openai", model, quality, size, date(2026, 9, 9)) is None
+
+
 @pytest.mark.parametrize(
     ("model", "input_rate", "output_rate"),
     [("llama-4-maverick", "0.35", "1.15"), ("llama-4-scout", "0.25", "0.70")],
