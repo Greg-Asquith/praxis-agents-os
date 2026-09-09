@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { createAppRouter } from "@/app/router"
 import { currentUserQueryKey } from "@/features/auth/api/get-current-user"
@@ -15,6 +15,23 @@ describe("conversation route pending behavior", () => {
     expect(router.routesById["/app"].options.pendingComponent).toBeDefined()
     expect(router.routesByPath["/integrations"]).toBeDefined()
     expect(router.routesByPath["/context"]).toBeDefined()
+  })
+
+  it("leaves recoverable transcript reads to the mounted conversation", async () => {
+    const queryClient = new QueryClient()
+    const read = vi
+      .spyOn(queryClient, "ensureQueryData")
+      .mockResolvedValue({ active_agent_id: null })
+    const router = createAppRouter(queryClient)
+    const loader = router.routesByPath["/conversations/$conversationId"].options.loader
+    if (typeof loader !== "function") throw new Error("Expected a conversation loader")
+    await Reflect.apply(loader, undefined, [
+      { context: { queryClient }, params: { conversationId: "conversation" } },
+    ])
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(read.mock.calls.flatMap(([options]) => options.queryKey)).not.toContain("active-run")
+    expect(read.mock.calls.flatMap(([options]) => options.queryKey)).not.toContain("messages")
+    queryClient.clear()
   })
 
   it("defers homepage data reads until the active workspace provider renders", () => {

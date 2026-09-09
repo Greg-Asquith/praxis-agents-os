@@ -10,10 +10,11 @@ import pytest
 
 from core.settings import settings
 from services.agents.runtime import heartbeat as heartbeat_module, run_manager as run_manager_module
-from services.agents.runtime.run_manager import QueuedRunLease, RunTaskRegistry
+from services.agents.runtime.run_manager import RunTaskRegistry
 from services.agents.runtime.sinks import CollectingSink, StreamSink
 from services.agents.runtime.stream_protocol import DoneEvent, RunStatusEvent
 from services.conversations.create_turn_stream import SSE_KEEPALIVE_FRAME, _drain_sse_sink
+from tests.support.execution import build_execution_control
 
 pytestmark = pytest.mark.asyncio
 
@@ -131,12 +132,14 @@ async def test_run_task_registry_renews_lease_while_turn_is_queued(
     user_id = uuid4()
 
     async def fake_heartbeat(**kwargs) -> None:
-        assert kwargs["workspace_id"] == workspace_id
-        assert kwargs["user_id"] == user_id
+        assert kwargs["execution_control"].workspace_id == workspace_id
+        assert kwargs["execution_control"].user_id == user_id
         assert kwargs["renew_immediately"] is True
         heartbeat_started.set()
-        await kwargs["stop"].wait()
-        heartbeat_stopped.set()
+        try:
+            await kwargs["stop"].wait()
+        finally:
+            heartbeat_stopped.set()
 
     monkeypatch.setattr(run_manager_module, "heartbeat_agent_run_lease", fake_heartbeat)
 
@@ -147,7 +150,9 @@ async def test_run_task_registry_renews_lease_while_turn_is_queued(
         queued_sink.run_id,
         asyncio.sleep(0),
         sink=queued_sink,
-        queued_lease=QueuedRunLease(workspace_id=workspace_id, user_id=user_id),
+        execution_control=build_execution_control(
+            run_id=queued_sink.run_id, workspace_id=workspace_id, user_id=user_id
+        ),
     )
 
     await asyncio.wait_for(heartbeat_started.wait(), timeout=1)
@@ -255,10 +260,7 @@ async def test_heartbeat_failure_logs_error_with_pool_status(
 
     with caplog.at_level(logging.ERROR, logger=heartbeat_module.logger.name):
         await heartbeat_module.heartbeat_agent_run_lease(
-            run_id=uuid4(),
-            workspace_id=uuid4(),
-            user_id=uuid4(),
-            owner_instance_id="test-worker",
+            execution_control=build_execution_control(),
             stop=stop,
         )
 
@@ -286,10 +288,7 @@ async def test_heartbeat_can_renew_queued_run_immediately(
     monkeypatch.setattr(heartbeat_module, "renew_agent_run_lease_once", renew_once)
 
     await heartbeat_module.heartbeat_agent_run_lease(
-        run_id=uuid4(),
-        workspace_id=uuid4(),
-        user_id=uuid4(),
-        owner_instance_id="test-worker",
+        execution_control=build_execution_control(),
         stop=stop,
         renew_immediately=True,
     )

@@ -15,7 +15,6 @@ from models.agent_run import AgentRun
 from models.jobs import Job
 from services.agent_runs.staged_content_cleanup import (
     DELETE_STAGED_APPROVAL_CONTENT_KIND,
-    enqueue_staged_approval_content_cleanup,
 )
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.registry import job_handler
@@ -87,13 +86,12 @@ async def sweep_expired_agent_run_approvals(
     batch_size: int = DEFAULT_APPROVAL_SWEEP_BATCH_SIZE,
 ) -> SweepExpiredApprovalsResult:
     """Fail one locked batch of approval waits older than the configured TTL."""
-    from core.exceptions.general import ConflictError
-    from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
-    from services.agent_runs.fail import fail_agent_run
-    from services.agents.runtime.approval_state import (
-        clear_suspended_run_metadata,
-        load_suspended_run_state,
+    from services.agent_runs.approval_expiry import (
+        approval_family_deadline,
+        has_live_approval_reservation,
     )
+    from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+    from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
 
     configured_days = (
         settings.AGENT_RUN_APPROVAL_EXPIRY_DAYS if expiry_days is None else expiry_days
@@ -108,42 +106,58 @@ async def sweep_expired_agent_run_approvals(
     now_utc = normalize_utc_datetime(now, field="now") or datetime.now(UTC)
     cutoff = now_utc - timedelta(days=configured_days)
     expired_run_ids: list[UUID] = []
-    while len(expired_run_ids) < batch_size:
+    visited: set[UUID] = set()
+    while len(visited) < batch_size:
         run = await db.scalar(
             select(AgentRun)
             .where(
                 AgentRun.deleted == False,  # noqa: E712
                 AgentRun.status == RUN_STATUS_AWAITING_APPROVAL,
                 AgentRun.updated_at <= cutoff,
+                AgentRun.id.not_in(visited),
             )
             .order_by(AgentRun.updated_at, AgentRun.id)
             .limit(1)
-            .with_for_update(skip_locked=True, of=AgentRun)
             .execution_options(populate_existing=True)
         )
         if run is None:
             break
 
-        try:
-            load_suspended_run_state(run)
-        except ConflictError:
-            logger.warning(
-                "Expiring agent run with invalid suspended approval state",
-                extra={"run_id": str(run.id)},
-                exc_info=True,
-            )
-        await enqueue_staged_approval_content_cleanup(db, run=run)
-        run.metadata_json = clear_suspended_run_metadata(run)
-        await fail_agent_run(
-            db,
-            run,
-            error_code=APPROVAL_EXPIRED_ERROR_CODE,
-            error_message=(
+        visited.add(run.id)
+        family = await lock_run_family(db, run_id=run.id)
+        if not family:
+            await db.commit()
+            continue
+        root = family[0]
+        visited.update(item.id for item in family)
+        if has_live_approval_reservation(root, family=family, now=now_utc):
+            await db.commit()
+            continue
+        reservation = (root.metadata_json or {}).get("approval_continuation")
+        deadline = approval_family_deadline(family, expiry_days=configured_days)
+        if reservation is not None and root.status == "running":
+            code = "agent_run_resume_requires_recovery"
+            message = "The approved work stopped before its result could be confirmed."
+        elif (
+            root.status == RUN_STATUS_AWAITING_APPROVAL
+            and deadline is not None
+            and deadline <= now_utc
+        ):
+            code = APPROVAL_EXPIRED_ERROR_CODE
+            message = (
                 f"This approval expired after {configured_days} days, so the action wasn't taken. "
                 "Send a new message to try again."
-            ),
+            )
+        else:
+            await db.commit()
+            continue
+        changed = await settle_run_family(
+            db,
+            run_id=root.id,
+            error_code=code,
+            error_message=message,
         )
-        expired_run_ids.append(run.id)
+        expired_run_ids.extend(item.id for item in changed)
         await db.commit()
 
     return SweepExpiredApprovalsResult(expired_run_ids=expired_run_ids)

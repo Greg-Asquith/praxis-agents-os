@@ -18,7 +18,9 @@ from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.sinks import EventSink
 
 if TYPE_CHECKING:
+    from services.agents.runtime.execution_control import ExecutionControl
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
+    from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
     from services.integrations.context.domain import ResolvedActiveContext
 
 
@@ -35,6 +37,8 @@ class RuntimeDeps:
     run: AgentRun
     sink: EventSink
     envelope: RunEnvelope
+    execution_control: ExecutionControl | None = None
+    metering: AgentRunMeteringContext | None = None
     delegation_depth: int = 0
     active_context: ResolvedActiveContext | None = None
     workspace_tool_definitions: tuple[RuntimeToolDefinition, ...] = ()

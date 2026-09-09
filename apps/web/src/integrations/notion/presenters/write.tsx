@@ -1,5 +1,6 @@
 // apps/web/src/integrations/notion/presenters/write.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { FanOutEntry } from "@/components/tool-ui/fan-out"
@@ -66,7 +67,7 @@ export const notionWritePresenter: ToolRowPresenter = {
       const fields = ui?.arg_fields ?? []
       return (
         <ToolApprovalDecisionCard
-          activityId={activity.id}
+          activityId={approvalActivityIdentity(activity)}
           approveLabel={ui?.approve_label ?? config.approveLabel}
           args={activity.args}
           controls={approvalDecision}
@@ -154,7 +155,7 @@ function writeDenied(
 ) {
   return (
     <DeclinedFanOut
-      activityId={activity.id}
+      activityId={approvalActivityIdentity(activity)}
       ariaLabel={`Declined ${config.title}`}
       contextLabel="Workspace"
       defaultOpen={defaultOpen}

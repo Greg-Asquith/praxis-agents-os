@@ -140,3 +140,19 @@ components verbatim, including supplied seconds, independently of the browser
 time zone. Timestamps with an offset or `Z` retain instant-style formatting.
 Tools that need a time zone declare a separate text field. Date-only fields and
 a time-zone picker remain follow-ups for a tool that needs them.
+
+## Approval proposal identity
+
+Stream events and approval reloads use one bounded graph projection. Each
+approval identifies its owning run, root run, and suspension batch separately
+from the native tool-call ID. Identical native IDs in sibling runs remain
+separate decisions. Display fields never replace executable arguments.
+The pending approvals list names the actual direct or nested actions,
+including actions prepared by specialists.
+
+Approval decisions compile against each leaf's owning context. The direct
+path validates canonical effective arguments. The nested workflow path binds
+the nested call and effective-argument digest to Code Mode decision metadata;
+approving the outer workflow only carries that one nested decision. Delegation
+carries the child's compiled `DeferredToolResults` in the existing parent-call
+metadata. It grants no permission for later nested writes.

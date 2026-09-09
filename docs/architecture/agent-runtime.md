@@ -155,11 +155,17 @@ that need conditional approval raise `ApprovalRequired(...)`.
 When a tool needs approval, Pydantic AI returns `DeferredToolRequests`. At that
 point `execute_run`:
 
-1. emits `tool.approval_required`,
-2. writes the Pydantic AI message history plus the pending deferred tool requests
-   to `agent_runs.metadata["approval_state"]` as a versioned JSON snapshot,
-3. sets the run status to `awaiting_approval` and returns without keeping a
-   long-lived process open.
+1. Persists message history and usage. If no terminal verdict wins, it saves
+   history and pending deferred requests in the versioned
+   `agent_runs.metadata_json["approval_state"]` snapshot and commits
+   `awaiting_approval`.
+2. Inspects the committed run row. Only a durable `awaiting_approval` result
+   emits `tool.approval_required` and returns actionable deferred requests.
+3. Emits final status from the committed verdict and returns without keeping
+   a long-lived process open.
+
+For deadline and cancellation handling, see
+[Finalisation and interruption](../implementation/agent-runs.md#finalisation-and-interruption).
 
 Resume is a fresh entry: `POST /agent-runs/{id}/resume` with the decision re-enters
 `execute_run`, which rehydrates from the run's approval-state snapshot and continues
@@ -505,3 +511,13 @@ conversation, approval, agent, schedule, tool-catalog, and audit surfaces.
 Code-mode orchestration is described in [`code-mode.md`](code-mode.md): it
 builds on raw `pydantic-monty`, not Pydantic AI Harness, which remains a
 design reference only.
+
+
+## Runtime replacement boundary
+
+Execution owners and durable approval reservations require compatible API and
+worker versions. An old process can overwrite a new owner's lease, so a rolling
+replacement is not a safe default for these metadata changes. Stop old API
+instances and worker executions before admitting replacement invocations.
+Preserve parked interpreter state and staged approval content during the pause.
+Client-first payload compatibility does not remove this execution boundary.

@@ -1,10 +1,13 @@
 // apps/web/src/features/conversations/hooks/use-inline-approvals.ts
 
-import { useMemo, useRef, useState } from "react"
+import { useLayoutEffect, useMemo, useRef, useState } from "react"
 
+import { ApiError } from "@/lib/api/errors"
 import type { ApprovalDecision } from "@/components/tool-ui/approval-card"
 import type { ApprovalDecisionResolver } from "@/features/conversations/approval-decision-context"
 import {
+  approvalDecisionKey,
+  hasAmbiguousApprovals,
   buildResumeDecisions,
   DEFAULT_APPROVAL_DECISION,
   shouldSubmitDecisions,
@@ -17,35 +20,59 @@ import type { ToolPresentationEntry } from "@/features/tools/types"
 const NO_PRESENTATION = () => null
 
 type UseInlineApprovalsParams = {
+  approvalRevision?: string | null
+  readOnly?: boolean
   activeRunId: string | null
   approvals: PendingToolApproval[]
   enabled: boolean
   isSubmitting: boolean
-  onSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
+  onSubmit: (decisions: AgentRunResumeDecision[], revision?: string) => Promise<void>
   presentationFor?: (name: string) => ToolPresentationEntry | null
 }
 
 export function useInlineApprovals({
   activeRunId,
+  approvalRevision,
+  readOnly = false,
   approvals,
   enabled,
   isSubmitting,
   onSubmit,
   presentationFor = NO_PRESENTATION,
 }: UseInlineApprovalsParams) {
+  const scope = JSON.stringify([activeRunId, approvalRevision])
+  const [previousScope, setPreviousScope] = useState(scope)
   const [decisions, setDecisions] = useState<ApprovalDecisionMap>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrorToolCallId, setFormErrorToolCallId] = useState<string | null>(null)
   const [submittingToolCallId, setSubmittingToolCallId] = useState<string | null>(null)
+  if (previousScope !== scope) {
+    setPreviousScope(scope)
+    setDecisions({})
+    setFormError(null)
+    setFormErrorToolCallId(null)
+  }
+  const currentScope = useRef(scope)
+  useLayoutEffect(() => {
+    currentScope.current = scope
+  }, [scope])
   const submissionInFlight = useRef(false)
+  const ambiguous = hasAmbiguousApprovals(approvals)
   const approvalsById = useMemo(
-    () => new Map(approvals.map((approval) => [approval.tool_call_id, approval])),
+    () => new Map(approvals.map((approval) => [approvalDecisionKey(approval), approval])),
     [approvals]
   )
   const summary = summarizeApprovalDecisions(approvals, decisions)
 
   async function submit(decisionMap: ApprovalDecisionMap, toolCallId: string) {
-    if (submissionInFlight.current) {
+    if (
+      readOnly ||
+      isSubmitting ||
+      !enabled ||
+      ambiguous ||
+      currentScope.current !== scope ||
+      submissionInFlight.current
+    ) {
       return
     }
     setFormError(null)
@@ -64,9 +91,17 @@ export function useInlineApprovals({
     submissionInFlight.current = true
     setSubmittingToolCallId(toolCallId)
     try {
-      await onSubmit(payload)
-      setDecisions({})
+      await onSubmit(payload, approvalRevision ?? undefined)
+      if (currentScope.current === scope) setDecisions({})
     } catch (submitError) {
+      if (currentScope.current !== scope) return
+      if (
+        submitError instanceof Error &&
+        submitError.cause instanceof ApiError &&
+        submitError.cause.status === 409
+      ) {
+        setDecisions({})
+      }
       setFormError(submitError instanceof Error ? submitError.message : "Approval submit failed.")
       setFormErrorToolCallId(toolCallId)
     } finally {
@@ -76,6 +111,7 @@ export function useInlineApprovals({
   }
 
   function handleDecisionChange(toolCallId: string, next: ApprovalDecision) {
+    if (readOnly || !enabled || ambiguous || currentScope.current !== scope) return
     setFormError(null)
     const previous = decisions[toolCallId] ?? DEFAULT_APPROVAL_DECISION
     const nextDecisions = { ...decisions, [toolCallId]: next }
@@ -89,29 +125,39 @@ export function useInlineApprovals({
   }
 
   const resolveApprovalControls: ApprovalDecisionResolver = (activity) => {
-    if (!enabled || activity.status !== "awaiting_approval") {
+    if (readOnly || !enabled || activity.status !== "awaiting_approval") {
       return null
     }
-    if (activity.agentRunId !== activeRunId || !approvalsById.has(activity.id)) {
+    if ((activity.rootRunId ?? activity.agentRunId) !== activeRunId) return null
+    const key = activity.approvalId ?? activity.id
+    const approval = approvalsById.get(key)
+    if (!approval || (approval.owner_run_id && approval.owner_run_id !== activity.agentRunId))
       return null
-    }
 
     return {
-      decision: decisions[activity.id] ?? DEFAULT_APPROVAL_DECISION,
-      disabled: isSubmitting || submittingToolCallId !== null,
-      error: formErrorToolCallId === activity.id ? formError : null,
+      formKey: JSON.stringify([activeRunId, approvalRevision, key]),
+      decision: decisions[key] ?? DEFAULT_APPROVAL_DECISION,
+      disabled: ambiguous || isSubmitting || submittingToolCallId !== null,
+      error: ambiguous
+        ? "These requests cannot be reviewed separately. Refresh the conversation before approving."
+        : formErrorToolCallId === key
+          ? formError
+          : null,
       pendingCount: summary.pending,
-      submitting: submittingToolCallId === activity.id,
+      submitting: submittingToolCallId === key,
       onDecisionChange: (next) => {
-        handleDecisionChange(activity.id, next)
+        handleDecisionChange(key, next)
       },
       onRetry: () => {
-        void submit(decisions, activity.id)
+        void submit(decisions, key)
       },
     }
   }
 
   return {
     resolveApprovalControls,
+    unavailableReason: ambiguous
+      ? "These requests cannot be reviewed separately. Refresh the conversation before approving."
+      : null,
   }
 }

@@ -77,6 +77,7 @@ class AIUsageEventData:
     run_id: UUID | None = None
     conversation_id: UUID | None = None
     details: dict[str, Any] | None = None
+    event_id: UUID | None = None
 
     def __post_init__(self) -> None:
         if self.purpose not in AI_USAGE_PURPOSES:

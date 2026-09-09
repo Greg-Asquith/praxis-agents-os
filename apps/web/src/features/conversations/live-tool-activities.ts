@@ -6,7 +6,10 @@ import {
   mergeDelegationDetails,
 } from "@/features/conversations/message-parts/delegation"
 import type { ToolActivity } from "@/features/conversations/message-parts/types"
-import { normalizeToolArgs } from "@/features/conversations/message-parts/utils"
+import {
+  toolActivityIdentity,
+  normalizeToolArgs,
+} from "@/features/conversations/message-parts/utils"
 import { LOAD_CAPABILITY_TOOL_NAME } from "@/features/conversations/skills/skill-activation"
 import {
   selectChildToolCalls,
@@ -30,7 +33,9 @@ export function buildLiveToolActivities(
         : undefined)
     const activity: ToolActivity = {
       id: toolCall.tool_call_id,
-      agentRunId,
+      agentRunId: toolCall.owner_run_id ?? agentRunId,
+      ...(toolCall.owner_run_id ? { rootRunId: agentRunId } : {}),
+      ...(toolCall.approval_id ? { approvalId: toolCall.approval_id } : {}),
       kind: toolCall.status === "awaiting_approval" ? "approval" : "call",
       status: toolCall.status,
       name: toolCall.name,
@@ -45,12 +50,19 @@ export function buildLiveToolActivities(
     }
     return activity
   })
-  const activityIndexesById = new Map(activities.map((activity, index) => [activity.id, index]))
+  const activityIndexesById = new Map(
+    activities.map((activity, index) => [
+      toolActivityIdentity(activity.agentRunId, activity.id),
+      index,
+    ])
+  )
 
   for (const delegation of approvals
     .map((approval) => approval.delegation)
     .filter((value): value is PendingDelegatedApproval => Boolean(value))) {
-    const existingIndex = activityIndexesById.get(delegation.parent_tool_call_id)
+    const existingIndex = activityIndexesById.get(
+      toolActivityIdentity(agentRunId, delegation.parent_tool_call_id)
+    )
     if (existingIndex === undefined) {
       activities.push({
         id: delegation.parent_tool_call_id,
@@ -60,7 +72,10 @@ export function buildLiveToolActivities(
         name: "delegate_to_agent",
         delegate: delegationDetailsForPendingApproval(delegation),
       })
-      activityIndexesById.set(delegation.parent_tool_call_id, activities.length - 1)
+      activityIndexesById.set(
+        toolActivityIdentity(agentRunId, delegation.parent_tool_call_id),
+        activities.length - 1
+      )
       continue
     }
 
@@ -79,13 +94,22 @@ export function buildLiveToolActivities(
   }
 
   for (const approval of approvals) {
-    const existingIndex = activityIndexesById.get(approval.tool_call_id)
+    const existingIndex = activityIndexesById.get(
+      toolActivityIdentity(
+        approval.owner_run_id ?? approval.delegation?.child_run_id ?? agentRunId,
+        approval.tool_call_id
+      )
+    )
     if (existingIndex !== undefined) {
       const existing = activities[existingIndex]
       if (existing?.status === "awaiting_approval") {
         const args = normalizeToolArgs(approval.args)
         activities[existingIndex] = {
           ...existing,
+          ...(approval.delegation
+            ? { delegate: delegationDetailsForPendingApproval(approval.delegation, approval.args) }
+            : {}),
+          ...(approval.approval_id ? { approvalId: approval.approval_id } : {}),
           args,
           ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
           ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
@@ -96,7 +120,9 @@ export function buildLiveToolActivities(
     const args = normalizeToolArgs(approval.args)
     const activity: ToolActivity = {
       id: approval.tool_call_id,
-      agentRunId,
+      agentRunId: approval.owner_run_id ?? approval.delegation?.child_run_id ?? agentRunId,
+      rootRunId: agentRunId,
+      ...(approval.approval_id ? { approvalId: approval.approval_id } : {}),
       kind: "approval",
       status: "awaiting_approval",
       name: approval.name,
@@ -104,31 +130,42 @@ export function buildLiveToolActivities(
       ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
       ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
     }
-    const delegate = delegationDetailsForToolActivity(approval.name, args)
+    const delegate = approval.delegation
+      ? delegationDetailsForPendingApproval(approval.delegation, args)
+      : delegationDetailsForToolActivity(approval.name, args)
     if (delegate) {
       activity.delegate = delegate
     }
     activities.push(activity)
-    activityIndexesById.set(activity.id, activities.length - 1)
+    activityIndexesById.set(
+      toolActivityIdentity(activity.agentRunId, activity.id),
+      activities.length - 1
+    )
   }
 
   for (const toolCall of toolCalls) {
     if (toolCall.parentToolCallId || toolCall.name !== "run_workflow") {
       continue
     }
-    const parentIndex = activityIndexesById.get(toolCall.tool_call_id)
+    const parentIndex = activityIndexesById.get(
+      toolActivityIdentity(toolCall.owner_run_id ?? agentRunId, toolCall.tool_call_id)
+    )
     const parent = parentIndex === undefined ? undefined : activities[parentIndex]
     if (parentIndex === undefined || !parent) {
       continue
     }
     const args = isRecord(toolCall.args) ? toolCall.args : null
-    const children = selectChildToolCalls(toolCalls, toolCall.tool_call_id).flatMap(
-      (candidate): ToolActivity[] => {
-        const childIndex = activityIndexesById.get(candidate.tool_call_id)
-        const child = childIndex === undefined ? undefined : activities[childIndex]
-        return child ? [codeModeTraceProjection(child)] : []
-      }
-    )
+    const children = selectChildToolCalls(
+      toolCalls,
+      toolCall.tool_call_id,
+      toolCall.owner_run_id
+    ).flatMap((candidate): ToolActivity[] => {
+      const childIndex = activityIndexesById.get(
+        toolActivityIdentity(candidate.owner_run_id ?? agentRunId, candidate.tool_call_id)
+      )
+      const child = childIndex === undefined ? undefined : activities[childIndex]
+      return child ? [codeModeTraceProjection(child)] : []
+    })
     activities[parentIndex] = {
       ...parent,
       outcome:
@@ -155,6 +192,8 @@ function codeModeTraceProjection(activity: ToolActivity): ToolActivity {
   const resultExcerpt = error ?? boundedCodeModeExcerpt(activity.result)
   return {
     id: activity.id,
+    ...(activity.agentRunId == null ? {} : { agentRunId: activity.agentRunId }),
+    ...(activity.rootRunId === undefined ? {} : { rootRunId: activity.rootRunId }),
     kind: "result",
     name: activity.name,
     status: activity.status,

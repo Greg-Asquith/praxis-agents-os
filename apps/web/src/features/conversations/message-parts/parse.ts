@@ -56,7 +56,8 @@ export function parseConversationMessages(
   pendingDelegations: PendingDelegatedApproval[] = [],
   liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>,
   pendingWorkflow?: PendingWorkflowState | null,
-  pendingApprovals: PendingToolApproval[] = []
+  pendingApprovals: PendingToolApproval[] = [],
+  pendingWorkflows: PendingWorkflowState[] = []
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
@@ -64,7 +65,13 @@ export function parseConversationMessages(
     pendingDelegations.map((delegation) => [delegation.parent_tool_call_id, delegation])
   )
   const pendingApprovalsByCallId = new Map(
-    pendingApprovals.map((approval) => [approval.tool_call_id, approval])
+    pendingApprovals.map((approval) => [
+      toolActivityIdentity(
+        approval.owner_run_id ?? approval.delegation?.child_run_id ?? activeRun?.id,
+        approval.tool_call_id
+      ),
+      approval,
+    ])
   )
 
   const runAwaitsApproval = activeRun?.status === "awaiting_approval"
@@ -93,14 +100,20 @@ export function parseConversationMessages(
         const activityWithDelegate = activityDelegate
           ? { ...activity, delegate: activityDelegate }
           : activity
+        const matchingWorkflow =
+          pendingWorkflows.find(
+            (workflow) =>
+              (workflow.owner_run_id ?? activeRun?.id) === activity.agentRunId &&
+              workflow.outer_tool_call_id === activity.id
+          ) ?? pendingWorkflow
         const activityWithPendingWorkflow =
-          pendingWorkflow &&
+          matchingWorkflow &&
           belongsToActiveRun &&
-          activity.id === pendingWorkflow.outer_tool_call_id
+          activity.id === matchingWorkflow.outer_tool_call_id
             ? {
                 ...activityWithDelegate,
                 script: codeModeScriptFromPendingWorkflow(
-                  pendingWorkflow,
+                  matchingWorkflow,
                   activity.agentRunId ?? null,
                   liveResultsByCallIdentity
                 ),
@@ -154,10 +167,18 @@ export function parseConversationMessages(
           }
         }
         if (belongsToActiveRun && runAwaitsApproval) {
-          const pendingApproval = pendingApprovalsByCallId.get(activity.id)
+          const pendingApproval = pendingApprovalsByCallId.get(
+            toolActivityIdentity(activity.agentRunId, activity.id)
+          )
           return {
             ...activityWithPendingWorkflow,
-            ...(pendingApproval ? { args: normalizeToolArgs(pendingApproval.args) } : {}),
+            ...(pendingApproval
+              ? {
+                  args: normalizeToolArgs(pendingApproval.args),
+                  approvalId: pendingApproval.approval_id,
+                  rootRunId: activeRun.id,
+                }
+              : {}),
             kind: "approval" as const,
             status: "awaiting_approval" as const,
           }
@@ -322,7 +343,11 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       const toolKind = stringValue(part["tool_kind"])
       const partMetadata = isRecord(part["metadata"]) ? part["metadata"] : null
       const hasPublicResult = partMetadata !== null && Object.hasOwn(partMetadata, "public_result")
-      const script = codeModeScriptFromMetadata(partMetadata, statusFromOutcome(outcome))
+      const script = codeModeScriptFromMetadata(
+        partMetadata,
+        statusFromOutcome(outcome),
+        agentRunId
+      )
       const activity: ToolActivity = {
         id: toolCallId,
         agentRunId,
@@ -395,7 +420,8 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
 
 function codeModeScriptFromMetadata(
   metadata: Record<string, unknown> | null,
-  status: ToolActivityStatus = "completed"
+  status: ToolActivityStatus = "completed",
+  agentRunId: string | null = null
 ): CodeModeScriptActivity | null {
   if (!metadata) {
     return null
@@ -421,6 +447,7 @@ function codeModeScriptFromMetadata(
     return [
       {
         id,
+        ...(agentRunId ? { agentRunId } : {}),
         kind: traceStatus === "awaiting_approval" ? "approval" : "result",
         name,
         status: traceStatus,
@@ -450,7 +477,7 @@ function codeModeScriptFromMetadata(
   }
 }
 
-function codeModeScriptFromPendingWorkflow(
+export function codeModeScriptFromPendingWorkflow(
   workflow: PendingWorkflowState,
   agentRunId: string | null,
   liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>
@@ -461,16 +488,19 @@ function codeModeScriptFromPendingWorkflow(
     kind: entry.status === "pending" ? "approval" : "result",
     name: entry.tool_name,
     status: codeModeTraceStatus(entry.status),
-    ...(entry.result_excerpt === null
-      ? {}
-      : {
-          result: traceExcerptResult(entry.result_excerpt),
-          resultExcerpt: entry.result_excerpt,
-        }),
+    ...(entry.presentation_result !== undefined && entry.presentation_result !== null
+      ? { result: entry.presentation_result }
+      : entry.result_excerpt === null
+        ? {}
+        : {
+            result: traceExcerptResult(entry.result_excerpt),
+            resultExcerpt: entry.result_excerpt,
+          }),
   }))
   const pendingIndex = children.findIndex((child) => child.id === workflow.pending.tool_call_id)
   const pendingFields = {
     args: normalizeToolArgs(workflow.pending.args),
+    ...(workflow.pending.approval_id ? { approvalId: workflow.pending.approval_id } : {}),
     ...(workflow.pending.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
     ...(workflow.pending.taint_sources === undefined
       ? {}

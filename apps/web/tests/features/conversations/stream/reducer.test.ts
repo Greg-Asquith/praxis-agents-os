@@ -238,7 +238,8 @@ describe("agentStreamReducer", () => {
     ])
 
     expect(state.status).toBe("awaiting_approval")
-    expect(state.approvals["tool-1"]).toEqual({
+    expect(Object.values(state.approvals)[0]).toEqual({
+      owner_run_id: "run-2",
       tool_call_id: "tool-1",
       name: "send_email",
       args: { to: "user@example.com" },
@@ -246,7 +247,8 @@ describe("agentStreamReducer", () => {
       delegation,
       status: "pending",
     })
-    expect(state.toolCalls["tool-1"]).toEqual({
+    expect(Object.values(state.toolCalls)[0]).toEqual({
+      owner_run_id: "run-2",
       tool_call_id: "tool-1",
       name: "send_email",
       args: { to: "user@example.com" },
@@ -639,4 +641,35 @@ describe("agentStreamReducer", () => {
       message: "Provider failed.",
     })
   })
+})
+
+it("retains distinct owner calls and opaque approvals with colliding native IDs", () => {
+  const state = reduceEvents(
+    ["child-a", "child-b", "run-1"].map((owner, index) => ({
+      event: "tool.approval_required" as const,
+      data: {
+        ...eventWithSeq(index + 1),
+        owner_run_id: owner,
+        approval_id: `approval-${owner}`,
+        approval_revision: "round-1",
+        tool_call_id: "same",
+        name: "write_file",
+        args: { name: owner },
+      },
+    }))
+  )
+  expect(Object.values(state.toolCalls).map((call) => call.owner_run_id)).toEqual([
+    "child-a",
+    "child-b",
+    "run-1",
+  ])
+  expect(Object.keys(state.approvals)).toEqual([
+    "approval-child-a",
+    "approval-child-b",
+    "approval-run-1",
+  ])
+  expect(Object.values(state.approvals).every((approval) => approval.tool_call_id === "same")).toBe(
+    true
+  )
+  expect(state.approvalRevision).toBe("round-1")
 })

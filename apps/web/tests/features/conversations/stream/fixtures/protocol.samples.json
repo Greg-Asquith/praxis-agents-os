@@ -125,6 +125,8 @@
   },
   {
     "data": {
+      "approval_id": "22222222-2222-4222-8222-222222222222",
+      "approval_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "args": {
         "query": "sample"
       },
@@ -139,10 +141,12 @@
       },
       "derived_from_untrusted": true,
       "name": "sample_tool",
+      "owner_run_id": "11111111-1111-4111-8111-111111111111",
       "parent_tool_call_id": "workflow-call",
       "replay_args": {
         "query": "sample"
       },
+      "root_run_id": "11111111-1111-4111-8111-111111111111",
       "run_id": "11111111-1111-4111-8111-111111111111",
       "seq": 9,
       "taint_sources": [

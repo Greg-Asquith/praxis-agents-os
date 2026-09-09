@@ -20,15 +20,12 @@ from pydantic_ai.messages import (
 )
 from pydantic_core import to_jsonable_python
 
-from services.agent_runs.schemas import PendingDelegatedApprovalRead
+from services.agent_runs.schemas import AgentRunApprovalStateResponse, PendingDelegatedApprovalRead
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY,
     DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
     DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY,
     DELEGATED_APPROVAL_CHILD_RUN_ID_KEY,
-    DELEGATED_APPROVAL_KIND,
-    DELEGATED_APPROVAL_KIND_KEY,
-    DELEGATED_APPROVAL_PENDING_APPROVALS_KEY,
 )
 from services.agents.runtime.code_mode.approval import code_mode_nested_call
 from services.agents.runtime.context import RuntimeDeps
@@ -38,7 +35,6 @@ from services.agents.runtime.events import (
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.staged_tool_content import (
     tool_args_for_display,
-    tool_replay_args_for_editing,
 )
 from services.agents.runtime.stream_protocol import (
     ToolApprovalRequiredEvent,
@@ -51,6 +47,25 @@ _APPROVAL_DISPLAY_ERROR = (
     "Approval details are unavailable. Ask the agent to prepare this action again."
 )
 logger = logging.getLogger(__name__)
+
+
+def approval_events_for_projection(
+    projection: AgentRunApprovalStateResponse,
+) -> list[ToolApprovalRequiredEvent]:
+    """Builds stream approval payloads from the same reviewed leaves as reload."""
+    return [
+        ToolApprovalRequiredEvent.model_validate(
+            {
+                **approval.model_dump(mode="json", exclude_none=True),
+                **(
+                    {"approval_revision": projection.approval_revision}
+                    if projection.approval_revision is not None
+                    else {}
+                ),
+            }
+        )
+        for approval in projection.approvals
+    ]
 
 
 def is_deferred_tool_resume_event(
@@ -108,131 +123,6 @@ async def emit_live_deferred_tool_event(
         ),
     )
     return part.tool_call_id
-
-
-async def emit_approval_required_events(
-    sink: EventSink,
-    deferred_tool_requests: DeferredToolRequests,
-) -> None:
-    """Emit pending tool approvals to the client."""
-    for approval in deferred_tool_requests.approvals:
-        metadata = deferred_tool_requests.metadata.get(approval.tool_call_id)
-        delegated_approvals = _delegated_pending_approvals(
-            metadata,
-            parent_tool_call_id=approval.tool_call_id,
-        )
-        if delegated_approvals is not None:
-            for delegated_approval in delegated_approvals:
-                await sink.emit(delegated_approval)
-            continue
-
-        nested_call = code_mode_nested_call(metadata)
-        if nested_call is not None:
-            replay_args = tool_replay_args_for_editing(
-                tool_name=nested_call.tool_name,
-                args=nested_call.args,
-                metadata=metadata,
-            )
-            await sink.emit(
-                ToolApprovalRequiredEvent(
-                    tool_call_id=nested_call.tool_call_id,
-                    parent_tool_call_id=approval.tool_call_id,
-                    name=nested_call.tool_name,
-                    args=to_jsonable_python(
-                        tool_args_for_display(
-                            tool_name=nested_call.tool_name,
-                            args=nested_call.args,
-                            metadata=metadata,
-                        )
-                    ),
-                    **(
-                        {"replay_args": to_jsonable_python(replay_args)}
-                        if replay_args is not None
-                        else {}
-                    ),
-                    **(
-                        {
-                            "derived_from_untrusted": True,
-                            "taint_sources": metadata.get("taint_sources", []),
-                        }
-                        if isinstance(metadata, dict)
-                        and metadata.get("derived_from_untrusted") is True
-                        else {}
-                    ),
-                ),
-            )
-            continue
-
-        replay_args = tool_replay_args_for_editing(
-            tool_name=approval.tool_name,
-            args=approval.args,
-            metadata=metadata,
-        )
-        await sink.emit(
-            ToolApprovalRequiredEvent(
-                tool_call_id=approval.tool_call_id,
-                name=approval.tool_name,
-                args=to_jsonable_python(
-                    tool_args_for_display(
-                        tool_name=approval.tool_name,
-                        args=approval.args,
-                        metadata=metadata,
-                    )
-                ),
-                **(
-                    {"replay_args": to_jsonable_python(replay_args)}
-                    if replay_args is not None
-                    else {}
-                ),
-            ),
-        )
-
-
-def _delegated_pending_approvals(
-    metadata: dict[str, Any] | None,
-    *,
-    parent_tool_call_id: str,
-) -> list[ToolApprovalRequiredEvent] | None:
-    if not isinstance(metadata, dict):
-        return None
-    if metadata.get(DELEGATED_APPROVAL_KIND_KEY) != DELEGATED_APPROVAL_KIND:
-        return None
-    pending_approvals = metadata.get(DELEGATED_APPROVAL_PENDING_APPROVALS_KEY)
-    if not isinstance(pending_approvals, list):
-        return None
-
-    delegation = _delegated_approval_projection(
-        metadata,
-        parent_tool_call_id=parent_tool_call_id,
-        pending_approval_count=len(pending_approvals),
-    )
-    approvals: list[ToolApprovalRequiredEvent] = []
-    for pending_approval in pending_approvals:
-        if not isinstance(pending_approval, dict):
-            return None
-        tool_call_id = pending_approval.get("tool_call_id")
-        name = pending_approval.get("name")
-        if not isinstance(tool_call_id, str) or not isinstance(name, str):
-            return None
-        replay_args = pending_approval.get("replay_args")
-        approvals.append(
-            ToolApprovalRequiredEvent(
-                tool_call_id=tool_call_id,
-                name=name,
-                args=tool_args_for_display(
-                    tool_name=name,
-                    args=pending_approval.get("args"),
-                    metadata=(
-                        pending_approval.get("metadata")
-                        if isinstance(pending_approval.get("metadata"), dict)
-                        else None
-                    ),
-                ),
-                **({"replay_args": replay_args} if replay_args is not None else {}),
-                delegation=delegation,
-            )
-        )
-    return approvals
 
 
 async def add_approval_display_args(

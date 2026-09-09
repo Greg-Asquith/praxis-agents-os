@@ -45,8 +45,10 @@ from services.agent_schedules.runs import (
     mark_run_terminal_failure_and_disable_schedule,
 )
 from services.agents.models import close_vertex_clients
+from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
+from services.agents.runtime.execute.finalize import CANCEL_FINALIZE_TIMEOUT
 from services.agents.runtime.execute_run import execute_run
-from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
+from services.agents.runtime.execution_control import InterruptionReason
 from services.agents.runtime.sinks import NullSink
 from services.runtime_catalogs import assemble_runtime_catalogs
 from workers.concurrency import run_worker_batch, worker_run_slot
@@ -118,26 +120,18 @@ async def _execute_claimed_schedule_run(
     if prepared is None or not prepared.should_execute:
         return
 
+    owner_instance_id = prepared.owner_instance_id
     conversation_id, agent_run_id, _user_prompt = _execution_values(prepared)
-
-    heartbeat_stop = asyncio.Event()
-    execution_task = asyncio.current_task()
-    heartbeat_task = asyncio.create_task(
-        heartbeat_agent_run_lease(
-            run_id=agent_run_id,
-            workspace_id=prepared.workspace_id,
-            user_id=prepared.user_id,
-            owner_instance_id=owner_instance_id,
-            stop=heartbeat_stop,
-            cancel_target=execution_task,
-        ),
-        name=f"scheduled-agent-run-heartbeat:{agent_run_id}",
-    )
 
     try:
         await _execute_prepared(prepared, owner_instance_id=owner_instance_id, model=model)
-    except asyncio.CancelledError:
-        if not await _agent_run_was_cancelled(
+    except asyncio.CancelledError as exc:
+        owned_stop = bool(exc.args) and exc.args[0] in {
+            InterruptionReason.LEASE_LOST,
+            InterruptionReason.PARENT_TERMINATED,
+            InterruptionReason.DURATION_EXPIRED,
+        }
+        if not owned_stop and not await _agent_run_was_cancelled(
             agent_run_id,
             workspace_id=prepared.workspace_id,
             user_id=prepared.user_id,
@@ -162,13 +156,9 @@ async def _execute_claimed_schedule_run(
                 "conversation_id": str(conversation_id),
             },
         )
-    finally:
-        heartbeat_stop.set()
-        heartbeat_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await heartbeat_task
 
-    await _finalize(prepared)
+    finally:
+        await bounded_finalisation(_finalize(prepared), max_wait=CANCEL_FINALIZE_TIMEOUT)
 
 
 async def run_forever(
@@ -364,13 +354,20 @@ async def _execute_prepared(
 
     session_factory = get_async_db_session_factory()
     async with session_factory() as db:
-        await configure_async_db_session(db)
-        await set_session_tenant_context(
-            db,
-            workspace_id=prepared.workspace_id,
-            user_id=prepared.user_id,
-        )
         try:
+            from services.agents.runtime.execute.setup import admitted_setup
+
+            async with admitted_setup(
+                db,
+                control=prepared.execution_control,
+                sink=NullSink(run_id=agent_run_id, conversation_id=conversation_id),
+            ):
+                await set_session_tenant_context(
+                    db,
+                    workspace_id=prepared.workspace_id,
+                    user_id=prepared.user_id,
+                )
+                await configure_async_db_session(db)
             await execute_run(
                 db,
                 conversation_id=conversation_id,
@@ -383,6 +380,7 @@ async def _execute_prepared(
                 model=model,
                 owner_instance_id=owner_instance_id,
                 expected_status=RUN_STATUS_PENDING,
+                execution_control=prepared.execution_control,
             )
         except Exception:
             await db.rollback()

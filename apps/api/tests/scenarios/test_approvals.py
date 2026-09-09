@@ -19,9 +19,8 @@ from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_FAILED
-from services.agent_runs.resume_run_stream import _approval_result_for_decision
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agent_runs.utils import denial_message_for_model
+from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.runtime.approval_state import (
     APPROVAL_STATE_METADATA_KEY,
     load_suspended_run_state,
@@ -139,19 +138,17 @@ async def test_scalar_approval_validates_before_resumed_execution(
     async with db_session_factory() as db:
 
         async def validate(value):
-            return await _approval_result_for_decision(
+            canonical = await validate_and_canonicalize_override_args(
                 db,
                 actor=None,
                 workspace=None,
                 membership=None,
                 run=suspended.run,
                 tool_call=ToolCallPart(definition.name, {"value": original}, "scalar-call"),
-                decision=AgentRunResumeDecision(
-                    tool_call_id="scalar-call",
-                    decision="approved",
-                    override_args={"value": value},
-                ),
+                override_args={"value": value},
             )
+
+            return ToolApproved(override_args=canonical)
 
         with pytest.raises(AppValidationError):
             await validate(invalid)

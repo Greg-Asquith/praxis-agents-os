@@ -2,9 +2,9 @@
 
 """Prepare one claimed schedule run for runtime execution."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from models.agent_run import AgentRun
 from models.conversation import CONVERSATION_SOURCE_SCHEDULED, Conversation
 from models.integration_context import ActiveContextSelection
 from services.agent_runs import create_agent_run, link_schedule_run
+from services.agent_runs.claim_execution import claim_agent_run_execution
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules.runs import (
     RUN_STATUS_CLAIMED,
@@ -28,6 +29,7 @@ from services.agents.runtime.completion_contract import (
     completion_contract_from_execution_params,
     serialized_completion_contract,
 )
+from services.agents.runtime.execution_control import ExecutionControl, execution_control_for_run
 from services.conversations.naming import fallback_conversation_title
 from services.integrations.context.schemas import ActiveContextTargets
 from services.workspaces.utils import get_active_membership
@@ -45,6 +47,8 @@ class PreparedScheduleRunExecution:
     conversation_id: UUID | None
     agent_run_id: UUID | None
     user_prompt: str | None
+    owner_instance_id: str = field(default_factory=lambda: str(uuid4()))
+    execution_control: ExecutionControl | None = None
 
     @property
     def should_execute(self) -> bool:
@@ -136,6 +140,8 @@ async def prepare_schedule_run_execution(
         schedule_run=schedule_run,
         conversation=conversation,
     )
+    owner_instance_id = str(uuid4())
+    await claim_agent_run_execution(db, run, owner_instance_id=owner_instance_id, now=now_utc)
     schedule_run.status = RUN_STATUS_RUNNING
     schedule_run.accepted_at = now_utc
     schedule_run.claim_expires_at = None
@@ -150,6 +156,8 @@ async def prepare_schedule_run_execution(
         conversation_id=conversation.id,
         agent_run_id=run.id,
         user_prompt=prompt,
+        owner_instance_id=owner_instance_id,
+        execution_control=execution_control_for_run(run),
     )
 
 

@@ -312,6 +312,19 @@ machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
 
 ## Deploy a change
 
+For execution-owner or durable approval metadata changes, use a reviewed
+maintenance window before the ordinary deployment sequence. Stop all old API
+instances and worker executions, preserve parked approvals, and replace both
+with compatible versions before restoring admission. The helper replaces
+services sequentially and does not manage that pause. A zero traffic allocation
+alone does not prove old instances stopped.
+
+After new owner, reservation, batch, or effective-budget metadata is written,
+the previous backend revision is not a safe rollback target. Use a reviewed
+metadata-compatible repair build with admission stopped. Preserve approval and
+effect evidence. The generic traffic rollback commands below apply only when
+the previous revision is compatible with persisted metadata.
+
 - [ ] If the change adds a Vertex partner model or changes the Vertex project,
       complete [model enablement](#enable-serverless-partner-models) for that
       model and project, then verify inference after deployment.

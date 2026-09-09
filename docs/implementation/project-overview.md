@@ -78,4 +78,3 @@ Knowledge Base chunks and agent memories use `HALFVEC` embeddings with HNSW
 indexes provisioned by migrations. Keep
 public behaviour explicit. If a capability is not wired end to end, document
 it as pending instead of implying it works.
-

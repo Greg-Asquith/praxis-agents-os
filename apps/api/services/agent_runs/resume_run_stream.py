@@ -2,41 +2,34 @@
 
 """Resume a suspended agent run and stream the continuation."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
-from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
-from pydantic_ai.messages import ToolCallPart
-from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
+from core.exceptions.general import ConflictError, NotFoundError
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
+from services.agent_runs.continuation_state import (
+    CONTINUATION_KEY,
+    load_approval_continuation,
+    resume_request_digest,
+)
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_RUNNING
-from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
-from services.agent_runs.start_with_lease import start_agent_run_with_lease
-from services.agent_runs.utils import (
-    denial_message_for_model,
-    load_delegated_child_run_for_approval,
-)
-from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
-from services.agents.delegation_approval import (
-    DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY,
-)
+from services.agent_runs.require_root_approval import require_root_approval
+from services.agent_runs.schemas import AgentRunResumeRequest
+from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
 from services.agents.runtime import streaming as runtime_streaming
-from services.agents.runtime.approval_state import (
-    SuspendedRunState,
-    load_suspended_run_state,
-)
 from services.agents.runtime.events import (
     STREAM_PROTOCOL_VERSION,
     STREAM_VERSION_HEADER,
 )
-from services.agents.runtime.run_manager import QueuedRunLease, run_task_registry
+from services.agents.runtime.execution_control import execution_control_for_run
+from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.sinks import StreamSink
 from services.agents.runtime.stream_protocol import RunStatusEvent
 from services.audit_events.utils import request_audit_context
@@ -52,6 +45,11 @@ async def resume_agent_run_stream(
     request: Request | None = None,
 ) -> StreamingResponse:
     """Validate human approval decisions and stream the resumed run."""
+    from services.agent_runs.compile_approval_decisions import compile_approval_decisions
+    from services.agent_runs.load_approval_graph import load_approval_graph
+    from services.agent_runs.reserve_approval_continuation import reserve_approval_continuation
+    from services.agents.runtime.approval_projection import project_approval_graph
+
     run = await db.scalar(
         select(AgentRun)
         .where(
@@ -60,7 +58,6 @@ async def resume_agent_run_stream(
             AgentRun.user_id == actor.id,
             AgentRun.deleted == False,  # noqa: E712
         )
-        .with_for_update(of=AgentRun)
         .execution_options(populate_existing=True)
     )
     if run is None:
@@ -69,6 +66,23 @@ async def resume_agent_run_stream(
             resource_type="agent_run",
             resource_id=str(run_id),
         )
+    await require_root_approval(db, run=run, actor=actor, workspace=workspace)
+    family = await lock_run_family(db, run_id=run_id)
+    if not family:
+        raise ConflictError("Parent run is no longer active", conflicting_resource="agent_run")
+    if CONTINUATION_KEY in (run.metadata_json or {}):
+        reservation = load_approval_continuation(run)
+        identical = reservation.request_digest == resume_request_digest(payload)
+        raise ConflictError(
+            "This approval has already been reserved. Refresh the conversation.",
+            conflicting_resource="agent_run",
+            details={
+                "code": "approval_already_reserved" if identical else "approval_decisions_conflict",
+                "root_run_id": str(run.id),
+                "root_conversation_id": str(run.conversation_id),
+                "decisions_accepted": identical,
+            },
+        )
     if run.status != RUN_STATUS_AWAITING_APPROVAL:
         raise ConflictError(
             "Agent run is not awaiting approval",
@@ -76,7 +90,6 @@ async def resume_agent_run_stream(
             details={"run_id": str(run.id), "run_status": run.status},
         )
 
-    suspended_state = load_suspended_run_state(run)
     membership = await db.scalar(
         select(WorkspaceMembership).where(
             WorkspaceMembership.workspace_id == workspace.id,
@@ -85,23 +98,70 @@ async def resume_agent_run_stream(
     )
     if membership is None:
         raise NotFoundError("Workspace membership not found", resource_type="workspace_membership")
-    deferred_tool_results = await _build_deferred_tool_results(
+    from services.agent_runs.approval_expiry import approval_family_deadline
+
+    deadline = approval_family_deadline(family)
+    if deadline is not None and deadline <= datetime.now(UTC):
+        await settle_run_family(
+            db,
+            run_id=run.id,
+            error_code="approval_expired",
+            error_message="These approvals expired before they were accepted.",
+        )
+        await db.commit()
+        raise ConflictError(
+            "These approvals have expired. Refresh the conversation.",
+            conflicting_resource="agent_run",
+            details={"code": "approval_expired"},
+        )
+    try:
+        graph = await load_approval_graph(db, actor=actor, workspace=workspace, run_id=run.id)
+        projection = project_approval_graph(graph)
+    except ConflictError as exc:
+        if str(exc) != "Saved workflow state is invalid" and not str(exc).startswith(
+            "Delegated approval child is "
+        ):
+            raise
+        await settle_run_family(
+            db,
+            run_id=run.id,
+            error_code="agent_run_resume_requires_recovery",
+            error_message="Review the previous actions before continuing this conversation.",
+        )
+        await db.commit()
+        raise ConflictError(
+            "The saved approvals need review before this conversation can continue.",
+            conflicting_resource="agent_run",
+            details={"code": "agent_run_resume_requires_recovery", "root_run_id": str(run.id)},
+        ) from exc
+    runs = {member.id: member for member in family}
+    deferred_tool_results = await compile_approval_decisions(
         db,
         actor=actor,
         workspace=workspace,
         membership=membership,
+        graph=graph,
+        runs=runs,
+        payload=payload,
+    )
+    reservation = await reserve_approval_continuation(
+        db,
         run=run,
-        suspended_state=suspended_state,
-        decisions=payload.decisions,
+        graph=graph,
+        runs=runs,
+        payload=payload,
+        revision=projection.approval_revision,
+        results=deferred_tool_results,
     )
     if request is not None:
         run.metadata_json = {
             **(run.metadata_json or {}),
             "audit_context": request_audit_context(request),
         }
-    await start_agent_run_with_lease(db, run)
+    owner_instance_id = str(reservation.owner_instance_id)
     await db.commit()
 
+    execution_control = execution_control_for_run(run)
     sink = StreamSink(run_id=run.id, conversation_id=run.conversation_id)
     await sink.emit(RunStatusEvent(status=run.status))
     from services.agents.runtime.worker import run_resume_worker
@@ -109,17 +169,17 @@ async def resume_agent_run_stream(
     run_task_registry.spawn(
         run.id,
         run_resume_worker(
+            owner_instance_id=owner_instance_id,
+            execution_control=execution_control,
             run_id=run.id,
             conversation_id=run.conversation_id,
             workspace_id=workspace.id,
             user_id=actor.id,
-            message_history=suspended_state.message_history,
-            deferred_tool_results=deferred_tool_results,
             sink=sink,
             expected_status=RUN_STATUS_RUNNING,
         ),
         sink=sink,
-        queued_lease=QueuedRunLease(workspace_id=workspace.id, user_id=actor.id),
+        execution_control=execution_control,
     )
 
     return StreamingResponse(
@@ -132,192 +192,3 @@ async def resume_agent_run_stream(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-async def _build_deferred_tool_results(
-    db: AsyncSession,
-    *,
-    actor: User,
-    workspace: Workspace,
-    membership: WorkspaceMembership,
-    run: AgentRun,
-    suspended_state: SuspendedRunState,
-    decisions: list[AgentRunResumeDecision],
-) -> DeferredToolResults:
-    from services.agents.runtime.code_mode.approval import (
-        build_code_mode_decision_metadata,
-        code_mode_nested_call,
-    )
-
-    by_id: dict[str, AgentRunResumeDecision] = {}
-    duplicate_ids = []
-    for decision in decisions:
-        if decision.tool_call_id in by_id:
-            duplicate_ids.append(decision.tool_call_id)
-        by_id[decision.tool_call_id] = decision
-
-    if duplicate_ids:
-        raise AppValidationError(
-            "Resume decisions contain duplicate tool_call_id values",
-            field="decisions",
-            details={"duplicate_tool_call_ids": duplicate_ids},
-        )
-
-    direct_pending_tool_call_ids: list[str] = []
-    delegated_child_states: dict[
-        str,
-        tuple[dict[str, object], AgentRun, SuspendedRunState],
-    ] = {}
-    code_mode_states: dict[str, tuple[dict[str, object], ToolCallPart]] = {}
-    direct_calls = {
-        approval.tool_call_id: approval
-        for approval in suspended_state.deferred_tool_requests.approvals
-    }
-
-    for approval in suspended_state.deferred_tool_requests.approvals:
-        metadata = suspended_state.deferred_tool_requests.metadata.get(approval.tool_call_id)
-        nested_call = code_mode_nested_call(metadata)
-        if nested_call is not None and isinstance(metadata, dict):
-            code_mode_states[approval.tool_call_id] = (metadata, nested_call)
-            continue
-        child_run = await load_delegated_child_run_for_approval(
-            db,
-            parent_run=run,
-            metadata=metadata,
-        )
-        if child_run is None:
-            direct_pending_tool_call_ids.append(approval.tool_call_id)
-            continue
-
-        if not isinstance(metadata, dict):
-            direct_pending_tool_call_ids.append(approval.tool_call_id)
-            continue
-        delegated_child_states[approval.tool_call_id] = (
-            metadata,
-            child_run,
-            load_suspended_run_state(child_run),
-        )
-
-    expected = set(direct_pending_tool_call_ids)
-    expected.update(call.tool_call_id for _metadata, call in code_mode_states.values())
-    for _metadata, _child_run, child_state in delegated_child_states.values():
-        expected.update(child_state.pending_tool_call_ids)
-
-    received = set(by_id)
-    if received != expected:
-        raise AppValidationError(
-            "Resume decisions must cover exactly the pending approvals",
-            field="decisions",
-            details={
-                "missing_tool_call_ids": sorted(expected - received),
-                "unexpected_tool_call_ids": sorted(received - expected),
-            },
-        )
-
-    approvals = {}
-    metadata_by_parent_tool_call_id: dict[str, dict[str, object]] = {}
-    for tool_call_id in direct_pending_tool_call_ids:
-        decision = by_id[tool_call_id]
-        approvals[tool_call_id] = await _approval_result_for_decision(
-            db,
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            run=run,
-            tool_call=direct_calls[tool_call_id],
-            decision=decision,
-        )
-        if decision.decision == "denied":
-            metadata_by_parent_tool_call_id[tool_call_id] = {"reason": decision.message}
-
-    for outer_tool_call_id, (approval_metadata, nested_call) in code_mode_states.items():
-        from services.agents.runtime.dispatch import digest_args
-
-        decision = by_id[nested_call.tool_call_id]
-        canonical_override = None
-        if decision.decision == "approved":
-            canonical_override = await validate_and_canonicalize_override_args(
-                db,
-                actor=actor,
-                workspace=workspace,
-                membership=membership,
-                run=run,
-                tool_call=nested_call,
-                override_args=decision.override_args,
-            )
-        original_args = nested_call.args_as_dict()
-        effective_args = canonical_override if canonical_override is not None else original_args
-        args_sha256, _args_bytes = digest_args(effective_args)
-        approvals[outer_tool_call_id] = ToolApproved()
-        metadata_by_parent_tool_call_id[outer_tool_call_id] = build_code_mode_decision_metadata(
-            approval_metadata=approval_metadata,
-            decision=decision.decision,
-            effective_args=effective_args,
-            args_sha256=args_sha256,
-            message=(
-                denial_message_for_model(decision.message)
-                if decision.decision == "denied"
-                else None
-            ),
-            reason=decision.message if decision.decision == "denied" else None,
-        )
-
-    for parent_tool_call_id, (
-        parent_metadata,
-        child_run,
-        child_state,
-    ) in delegated_child_states.items():
-        child_calls = {
-            approval.tool_call_id: approval
-            for approval in child_state.deferred_tool_requests.approvals
-        }
-        child_approvals = {}
-        child_metadata: dict[str, dict[str, object]] = {}
-        for child_tool_call_id in child_state.pending_tool_call_ids:
-            decision = by_id[child_tool_call_id]
-            child_approvals[child_tool_call_id] = await _approval_result_for_decision(
-                db,
-                actor=actor,
-                workspace=workspace,
-                membership=membership,
-                run=child_run,
-                tool_call=child_calls[child_tool_call_id],
-                decision=decision,
-            )
-            if decision.decision == "denied":
-                child_metadata[child_tool_call_id] = {"reason": decision.message}
-        child_results = DeferredToolResults(approvals=child_approvals, metadata=child_metadata)
-        approvals[parent_tool_call_id] = ToolApproved()
-        metadata_by_parent_tool_call_id[parent_tool_call_id] = {
-            **parent_metadata,
-            DELEGATED_APPROVAL_CHILD_DEFERRED_TOOL_RESULTS_KEY: to_jsonable_python(child_results),
-        }
-
-    return DeferredToolResults(
-        approvals=approvals,
-        metadata=metadata_by_parent_tool_call_id,
-    )
-
-
-async def _approval_result_for_decision(
-    db: AsyncSession,
-    *,
-    actor: User,
-    workspace: Workspace,
-    membership: WorkspaceMembership,
-    run: AgentRun,
-    tool_call: object,
-    decision: AgentRunResumeDecision,
-) -> ToolApproved | ToolDenied:
-    if decision.decision == "approved":
-        override_args = await validate_and_canonicalize_override_args(
-            db,
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            run=run,
-            tool_call=tool_call,
-            override_args=decision.override_args,
-        )
-        return ToolApproved(override_args=override_args)
-    return ToolDenied(denial_message_for_model(decision.message))

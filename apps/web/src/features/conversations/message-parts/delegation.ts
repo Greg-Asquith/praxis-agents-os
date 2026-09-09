@@ -24,11 +24,12 @@ export function delegationDetailsForToolActivity(
   const pendingApprovals = resultRecord?.["pending_approvals"]
   const pendingApprovalCount = Array.isArray(pendingApprovals) ? pendingApprovals.length : 0
   const task = optionalString(argRecord?.["task"])
+  const target = agentReference(argRecord?.["agent_id"])
 
   return {
     status: delegationStatus(resultRecord?.["status"]) ?? "running",
-    agentId: optionalString(resultRecord?.["agent_id"]) ?? optionalString(argRecord?.["agent_id"]),
-    agentName: optionalString(resultRecord?.["agent_name"]),
+    agentId: optionalString(resultRecord?.["agent_id"]) ?? target.id,
+    agentName: optionalString(resultRecord?.["agent_name"]) ?? target.name,
     taskPreview: task === null ? null : truncateText(task, DELEGATION_TASK_PREVIEW_LIMIT),
     output: optionalString(resultRecord?.["output"]),
     error: optionalString(resultRecord?.["error"]),
@@ -84,6 +85,18 @@ export function mergeDelegationDetails(
     pendingApprovalCount: resultDelegate.pendingApprovalCount,
     truncated: resultDelegate.truncated,
   }
+}
+
+// The model passes the target as a server-resolved reference carrying the
+// agent's id and display label, so both are known before the child run replies.
+function agentReference(value: unknown): { id: string | null; name: string | null } {
+  if (typeof value === "string") {
+    return { id: value, name: null }
+  }
+  if (!isRecord(value) || value["entity_kind"] !== "agent") {
+    return { id: null, name: null }
+  }
+  return { id: optionalString(value["entity_id"]), name: optionalString(value["label"]) }
 }
 
 function delegationStatus(value: unknown): DelegationToolActivity["status"] | null {

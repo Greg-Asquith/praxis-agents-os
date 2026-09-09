@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import {
   approvalExpiryOutcome,
+  approvalConflictMessage,
   conversationApprovalExpiryOutcome,
   runInterruptionOutcome,
 } from "@/features/conversations/run-error-copy"
+import { ApiError } from "@/lib/api/errors"
 import type { AgentRun } from "@/features/conversations/types"
 
 function failedRun(errorCode: string): AgentRun {
@@ -86,5 +88,90 @@ describe("approvalExpiryOutcome", () => {
     }
     expect(runInterruptionOutcome(truncated)?.completedActions).toHaveLength(25)
     expect(runInterruptionOutcome(truncated)?.actionsTruncated).toBe(true)
+  })
+})
+
+describe("root continuation recovery", () => {
+  it("retains action evidence after cancellation without changing the stopped outcome", () => {
+    const run = failedRun("run_cancelled")
+    run.status = "cancelled"
+    run.outcome = "cancelled"
+    run.completion_json = {
+      recovery: {
+        actions: [
+          {
+            owner_run_id: "root",
+            tool_call_id: "write",
+            tool_name: "write_file",
+            status: "uncertain",
+          },
+        ],
+      },
+    }
+    expect(runInterruptionOutcome(run)).toMatchObject({
+      kind: "run_recovery",
+      title: "Stopped actions need review",
+      uncertainActions: [{ id: "root:write", toolName: "write_file" }],
+    })
+    run.completion_json = null
+    expect(runInterruptionOutcome(run)).toBeNull()
+  })
+  it("separates completed and uncertain actions and retains safe child links", () => {
+    const run = failedRun("agent_run_resume_requires_recovery")
+    const child = "11111111-1111-4111-8111-111111111111"
+    run.completion_json = {
+      recovery: {
+        actions: [
+          {
+            owner_run_id: "child-a",
+            tool_call_id: "same",
+            tool_name: "write_file",
+            status: "completed",
+          },
+          {
+            owner_run_id: "child-b",
+            tool_call_id: "same",
+            tool_name: "send_email",
+            status: "uncertain",
+          },
+          { owner_run_id: "child-c", tool_call_id: "same", tool_name: "hidden", status: "unknown" },
+        ],
+        children: [{ conversation_id: child }, { conversation_id: "javascript:alert(1)" }],
+        truncated: true,
+      },
+    }
+    const outcome = runInterruptionOutcome(run)
+    expect(outcome?.kind).toBe("run_recovery")
+    expect(outcome?.completedActions).toEqual([{ id: "child-a:same", toolName: "write_file" }])
+    expect(outcome?.uncertainActions).toEqual([{ id: "child-b:same", toolName: "send_email" }])
+    expect(outcome?.childConversations).toEqual([child])
+    expect(outcome?.actionsTruncated).toBe(true)
+  })
+  it("bounds evidence and tolerates malformed saved recovery data", () => {
+    const run = failedRun("agent_run_resume_requires_recovery")
+    run.completion_json = { recovery: "invalid" }
+    expect(runInterruptionOutcome(run)?.completedActions).toEqual([])
+    run.completion_json = {
+      recovery: {
+        actions: Array.from({ length: 30 }, (_, index) => ({
+          owner_run_id: "root",
+          tool_call_id: String(index),
+          tool_name: "write_file",
+          status: "uncertain",
+        })),
+      },
+    }
+    expect(runInterruptionOutcome(run)?.uncertainActions).toHaveLength(25)
+    expect(runInterruptionOutcome(run)?.actionsTruncated).toBe(true)
+  })
+})
+
+describe("approval reservation conflicts", () => {
+  it.each([
+    ["approval_already_reserved", "Your decisions were already accepted."],
+    ["approval_decisions_conflict", "Your latest changes were not applied."],
+  ])("distinguishes %s without asking for another submission", (code, message) => {
+    const error = new ApiError({ status: 409, message: "Conflict", problem: { code } })
+    expect(approvalConflictMessage(error)).toContain(message)
   })
 })

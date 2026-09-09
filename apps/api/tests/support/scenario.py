@@ -8,9 +8,11 @@ AgentInfo)`` once per model request; yielding ``DeltaToolCall`` values drives
 real tool execution and the next declared turn follows tool results or resume.
 """
 
+import asyncio
 import json
-from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import AsyncIterator, Coroutine, Mapping, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -55,6 +57,28 @@ class ToolTurn:
 type ScriptedTurn = str | ToolTurn
 
 
+@dataclass
+class ScenarioBarrier:
+    reached: asyncio.Event = field(default_factory=asyncio.Event)
+    release: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def pause(self) -> None:
+        self.reached.set()
+        await self.release.wait()
+
+    @asynccontextmanager
+    async def running[T](self, coroutine: Coroutine[Any, Any, T]) -> AsyncIterator[asyncio.Task[T]]:
+        """Runs a controlled task and joins it even when an assertion fails."""
+        task = asyncio.create_task(coroutine)
+        try:
+            yield task
+        finally:
+            self.release.set()
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
 @dataclass(frozen=True)
 class ScenarioContext:
     user_id: UUID
@@ -88,6 +112,16 @@ class ScenarioResult:
                 if name is None or value.get("tool_name") == name:
                     calls.append(value)
         return calls
+
+    def tool_returns(self, name: str) -> list[dict[str, Any]]:
+        return [
+            value
+            for message in self.messages
+            for value in _walk_json(message.parts)
+            if isinstance(value, dict)
+            and value.get("part_kind") == "tool-return"
+            and value.get("tool_name") == name
+        ]
 
 
 async def build_scenario_agent(
@@ -177,7 +211,7 @@ async def add_scenario_delegate(
         )
         db.add(child)
         await db.flush()
-        parent.allowed_agent_ids = [str(child.id)]
+        parent.allowed_agent_ids = [*(parent.allowed_agent_ids or []), str(child.id)]
         await db.commit()
         return child
 
@@ -248,6 +282,7 @@ async def run_scenario(
     usage: RunUsage | None = None,
     attachment_file_ids: Sequence[UUID] = (),
     sink: CollectingSink | None = None,
+    owner_instance_id: str | None = None,
 ) -> ScenarioResult:
     """Execute one real runtime turn and collect its durable evidence."""
     event_sink = sink or CollectingSink(
@@ -264,6 +299,7 @@ async def run_scenario(
             sink=event_sink,
             model=model,
             expected_status=expected_status,
+            owner_instance_id=owner_instance_id,
             message_history=message_history,
             deferred_tool_results=deferred_tool_results,
             usage=usage,

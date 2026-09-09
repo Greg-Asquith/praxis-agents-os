@@ -20,9 +20,7 @@ import { validateOAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
 import { loadOAuthLinkCallback } from "@/features/auth/routes/oauth-link-callback-loader"
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
-import { conversationActiveRunQueryOptions } from "@/features/conversations/api/get-active-run"
 import { conversationQueryOptions } from "@/features/conversations/api/get-conversation"
-import { conversationMessagesQueryOptions } from "@/features/conversations/api/list-messages"
 import { loadIntegrationOAuthCallback } from "@/features/integrations/routes/oauth-callback-loader"
 import { validateIntegrationsSearch } from "@/features/integrations/search"
 import { contextGroupsQueryOptions } from "@/features/integrations/api/list-context-groups"
@@ -205,8 +203,6 @@ const conversationRoute = createRoute({
       conversationQueryOptions(params.conversationId)
     )
     await Promise.all([
-      context.queryClient.ensureQueryData(conversationMessagesQueryOptions(params.conversationId)),
-      context.queryClient.ensureQueryData(conversationActiveRunQueryOptions(params.conversationId)),
       context.queryClient.ensureQueryData(modelCatalogQueryOptions()),
       ...(conversation.active_agent_id
         ? [context.queryClient.ensureQueryData(agentQueryOptions(conversation.active_agent_id))]

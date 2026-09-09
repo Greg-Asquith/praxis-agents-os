@@ -696,6 +696,20 @@
       },
       "additionalProperties": false,
       "properties": {
+        "approval_revision": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Revision"
+        },
         "conversation_id": {
           "minLength": 1,
           "type": "string"
@@ -789,6 +803,33 @@
       },
       "additionalProperties": false,
       "properties": {
+        "approval_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Id"
+        },
+        "approval_revision": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Revision"
+        },
         "args": {
           "title": "Args"
         },
@@ -824,6 +865,19 @@
           "title": "Name",
           "type": "string"
         },
+        "owner_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Run Id"
+        },
         "parent_tool_call_id": {
           "anyOf": [
             {
@@ -840,6 +894,19 @@
         "replay_args": {
           "default": null,
           "title": "Replay Args"
+        },
+        "root_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root Run Id"
         },
         "run_id": {
           "minLength": 1,
@@ -896,6 +963,19 @@
           "title": "Name",
           "type": "string"
         },
+        "owner_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Run Id"
+        },
         "parent_tool_call_id": {
           "anyOf": [
             {
@@ -908,6 +988,19 @@
           ],
           "default": null,
           "title": "Parent Tool Call Id"
+        },
+        "root_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root Run Id"
         },
         "run_id": {
           "minLength": 1,
@@ -965,6 +1058,19 @@
           "default": null,
           "title": "Outcome"
         },
+        "owner_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Run Id"
+        },
         "parent_tool_call_id": {
           "anyOf": [
             {
@@ -992,6 +1098,19 @@
         },
         "result": {
           "title": "Result"
+        },
+        "root_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root Run Id"
         },
         "run_id": {
           "minLength": 1,
@@ -1058,6 +1177,32 @@
           ],
           "default": null,
           "title": "Output Excerpt"
+        },
+        "owner_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner Run Id"
+        },
+        "root_run_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Root Run Id"
         },
         "run_id": {
           "minLength": 1,

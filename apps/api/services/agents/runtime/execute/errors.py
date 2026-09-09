@@ -11,6 +11,8 @@ from pydantic_ai.exceptions import ModelHTTPError
 
 from core.exceptions.general import ConflictError
 from services.agents.models.domain import ModelConfigurationError
+from services.agents.runtime.execution_control import ExecutionInterruptedError, InterruptionReason
+from services.agents.runtime.usage_limits import BudgetLimitExceeded
 
 DEFAULT_RUN_ERROR_CODE = "agent_run_failed"
 DEFAULT_RUN_ERROR_MESSAGE = "The agent run failed unexpectedly."
@@ -37,13 +39,32 @@ _BUDGET_KINDS = {
     "output_tokens_limit": "output_tokens",
     "total_tokens_limit": "total_tokens",
     "tool_calls_limit": "tool_calls",
+    "per_request_input_tokens_limit": "per_request_input_tokens",
+    "cost_limit": "cost",
 }
 
 
 def public_run_error(exc: Exception) -> PublicRunError:
     """Return the explicit public mapping for an execute-run exception."""
+    from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
     from services.agents.runtime.code_mode.state import CodeModeResumeRequiresRecoveryError
 
+    if isinstance(exc, AgentRunResumeRequiresRecoveryError):
+        return PublicRunError(
+            code="agent_run_resume_requires_recovery",
+            message=str(exc),
+            completion_json=exc.completion_json,
+        )
+
+    if isinstance(exc, ExecutionInterruptedError):
+        messages = {
+            InterruptionReason.DURATION_EXPIRED: "The agent run reached its time limit.",
+            InterruptionReason.LEASE_LOST: "The agent run stopped because execution ownership could not be confirmed.",
+            InterruptionReason.PARENT_TERMINATED: "The specialist stopped because its parent run ended.",
+            InterruptionReason.PROCESS_SHUTDOWN: "The agent run stopped during service shutdown.",
+            InterruptionReason.REQUESTED_CANCELLATION: "The agent run was stopped.",
+        }
+        return PublicRunError(code=exc.reason.value, message=messages[exc.reason])
     if isinstance(exc, ModelConfigurationError):
         return PublicRunError(
             code=str(getattr(exc, "error_code", "model_configuration_error")),
@@ -89,6 +110,15 @@ def public_run_error(exc: Exception) -> PublicRunError:
 
 def _tripped_budget(exc: UsageLimitExceeded) -> dict[str, str | int] | None:
     """Extract only allowlisted framework limit metadata from the exception."""
+    if isinstance(exc, BudgetLimitExceeded):
+        kind = _BUDGET_KINDS.get(exc.kind)
+        if kind is None:
+            return None
+        return {
+            "kind": kind,
+            "limit": exc.limit if isinstance(exc.limit, int) else str(exc.limit),
+            "scope": "inherited" if exc.inherited else "local",
+        }
     match = _USAGE_LIMIT_PATTERN.search(str(exc))
     if match is None:
         return None

@@ -1,5 +1,7 @@
 // apps/web/src/features/conversations/components/approval-decision-block.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
+
 import type { ReactNode } from "react"
 
 import {
@@ -41,7 +43,7 @@ export function ApprovalDecisionBlock({
 }) {
   return (
     <ToolApprovalDecisionCard
-      activityId={activity.id}
+      activityId={approvalActivityIdentity(activity)}
       approveLabel={approveLabel}
       args={activity.args}
       controls={controls}

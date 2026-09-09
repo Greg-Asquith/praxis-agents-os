@@ -119,7 +119,14 @@ export function AssistantLiveActivityRow({
         part.kind === "text" ? (
           <LiveMessageDraft key={`text:${part.message.id}`} message={part.message} />
         ) : supersededTodoIds.has(part.activity.id) ? null : (
-          <ToolCallRow key={`tool:${part.activity.id}`} activity={part.activity} live />
+          <ToolCallRow
+            key={
+              part.activity.approvalId ??
+              JSON.stringify([part.activity.agentRunId, part.activity.id])
+            }
+            activity={part.activity}
+            live
+          />
         )
       )}
       {messages.length === 0 && timeline.length === 0 ? (

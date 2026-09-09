@@ -49,7 +49,7 @@ export function ToolResultCard({
     >
       <header
         className={cn(
-          "flex min-w-0 shrink-0 items-center gap-2 p-1",
+          "flex min-h-12 min-w-0 shrink-0 items-center gap-2 p-1",
           expandable && open && "border-b"
         )}
       >

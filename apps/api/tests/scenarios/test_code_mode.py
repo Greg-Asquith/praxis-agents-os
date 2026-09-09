@@ -13,7 +13,7 @@ from pydantic_ai import DeferredToolResults, Tool, ToolApproved, ToolReturn
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from core.exceptions.general import AppValidationError, ConflictError
+from core.exceptions.general import ConflictError
 from core.settings import settings
 from integrations.google_ads.references import GoogleAdsSharedSetReference
 from models.agent import Agent
@@ -25,7 +25,6 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agent_runs.resume_run_stream import (
-    _build_deferred_tool_results,
     resume_agent_run_stream,
 )
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
@@ -60,6 +59,7 @@ from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_START, Untrusted
 from services.files.utils import private_ref_from_key
 from services.storage.errors import StorageNotFoundError
 from services.storage.factory import get_storage_provider
+from tests.support.approvals import compile_scenario_decisions
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -513,7 +513,7 @@ async def test_nested_decision_mapping_targets_nested_id_and_validates_override(
         tool_names=[definition.name],
         code_mode_enabled=True,
     )
-    suspended = await run_scenario(
+    await run_scenario(
         db_session_factory,
         context,
         model=scripted_model(
@@ -530,7 +530,6 @@ async def test_nested_decision_mapping_targets_nested_id_and_validates_override(
             ]
         ),
     )
-    state = load_suspended_run_state(suspended.run)
     async with db_session_factory() as db:
         actor = await db.get(User, context.user_id)
         workspace = await db.get(Workspace, context.workspace_id)
@@ -543,13 +542,12 @@ async def test_nested_decision_mapping_targets_nested_id_and_validates_override(
         )
         assert actor is not None and workspace is not None and run is not None
         assert membership is not None
-        mapped = await _build_deferred_tool_results(
+        mapped = await compile_scenario_decisions(
             db,
             actor=actor,
             workspace=workspace,
             membership=membership,
             run=run,
-            suspended_state=state,
             decisions=[
                 AgentRunResumeDecision(
                     tool_call_id="workflow-call:1",
@@ -558,14 +556,13 @@ async def test_nested_decision_mapping_targets_nested_id_and_validates_override(
                 )
             ],
         )
-        with pytest.raises(AppValidationError, match="exactly the pending approvals"):
-            await _build_deferred_tool_results(
+        with pytest.raises(ConflictError, match="pending approvals changed"):
+            await compile_scenario_decisions(
                 db,
                 actor=actor,
                 workspace=workspace,
                 membership=membership,
                 run=run,
-                suspended_state=state,
                 decisions=[AgentRunResumeDecision(tool_call_id="stale", decision="approved")],
             )
 
@@ -842,13 +839,12 @@ async def test_batch_override_executes_and_audits_only_the_edited_rows(
         )
         assert actor is not None and workspace is not None and run is not None
         assert membership is not None
-        deferred_results = await _build_deferred_tool_results(
+        deferred_results = await compile_scenario_decisions(
             db,
             actor=actor,
             workspace=workspace,
             membership=membership,
             run=run,
-            suspended_state=state,
             decisions=[
                 AgentRunResumeDecision(
                     tool_call_id="workflow-call:1",
@@ -954,9 +950,9 @@ async def test_concurrent_duplicate_nested_resume_request_starts_one_continuatio
     assert actor is not None and workspace is not None
     spawned = 0
 
-    def discard_worker(_run_id, coroutine, *, sink=None, queued_lease=None) -> None:
+    def discard_worker(_run_id, coroutine, *, sink=None, execution_control=None) -> None:
         nonlocal spawned
-        del sink, queued_lease
+        del sink, execution_control
         spawned += 1
         coroutine.close()
 
@@ -964,6 +960,12 @@ async def test_concurrent_duplicate_nested_resume_request_starts_one_continuatio
     payload = AgentRunResumeRequest(
         decisions=[AgentRunResumeDecision(tool_call_id="workflow-call:1", decision="approved")]
     )
+    async with committed_db_session_factory() as db:
+        projection = await get_agent_run_approval_state(
+            db, actor=actor, workspace=workspace, run_id=context.run_id
+        )
+        payload.approval_revision = projection.approval_revision
+        payload.decisions[0].approval_id = projection.approvals[0].approval_id
 
     barrier = asyncio.Barrier(2)
 
@@ -1397,15 +1399,13 @@ async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result
         actor = await db.get(User, context.user_id)
         workspace = await db.get(Workspace, context.workspace_id)
         assert actor is not None and workspace is not None
-        approval_state = await get_agent_run_approval_state(
-            db,
-            actor=actor,
-            workspace=workspace,
-            run_id=context.run_id,
-        )
-
-    assert approval_state.workflow is None
-    assert approval_state.approvals[0].tool_call_id == "workflow-call:1"
+        with pytest.raises(ConflictError, match="Saved workflow state is invalid"):
+            await get_agent_run_approval_state(
+                db,
+                actor=actor,
+                workspace=workspace,
+                run_id=context.run_id,
+            )
 
     completed = await _resume_code_mode_scenario(
         db_session_factory,
@@ -1582,7 +1582,7 @@ async def test_nested_denial_resumes_workflow_and_audits_nested_call(
     )
 
 
-async def test_malformed_durable_trace_keeps_pending_approval_route_available(
+async def test_malformed_durable_trace_blocks_unverifiable_approval_reads(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:
@@ -1623,15 +1623,14 @@ async def test_malformed_durable_trace_keeps_pending_approval_route_available(
         run.metadata_json = metadata
         await db.flush()
 
-        response = await get_agent_run_approval_state(
-            db,
-            actor=actor,
-            workspace=workspace,
-            run_id=context.run_id,
-        )
+        with pytest.raises(ConflictError, match="Saved workflow state is invalid"):
+            await get_agent_run_approval_state(
+                db,
+                actor=actor,
+                workspace=workspace,
+                run_id=context.run_id,
+            )
 
-    assert len(response.approvals) == 1
-    assert response.workflow is None
     assert suspended.run.status == "awaiting_approval"
 
 

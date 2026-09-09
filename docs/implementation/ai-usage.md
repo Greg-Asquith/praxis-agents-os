@@ -11,12 +11,11 @@ The following contracts apply in this area:
   but may not update or delete. Its exact cardinality is one row per logical
   agent-run invocation (including each approval resume), helper invocation, or
   embedding API batch; `requests` sums provider requests within that row.
-  Successful/suspended agent usage is transactional with the terminal or parked
-  transition. Failure/cancellation fallback and helper/embedding usage are
-  best-effort durable writes through the separate bounded runtime-role AI usage
-  pool, so metering cannot consume the normal pool's overflow capacity. Usage
-  details must remain bounded, and the ledger must not become a budget or
-  admission-enforcement mechanism.
+  Agent usage is transactional with lifecycle settlement, including when
+  another actor already recorded the terminal verdict. Helper, embedding, and
+  shutdown-only usage use the separate bounded runtime-role AI usage pool.
+  Usage details must remain bounded, and the ledger must not become a budget
+  or admission-enforcement mechanism.
 - Workspace usage reads use the ordinary tenant runtime session, retain an
   explicit workspace predicate, and price UTC-day buckets before wider folds.
   The `/usage` router is owner/admin-only. Costs are read-time estimates from
@@ -30,3 +29,27 @@ The following contracts apply in this area:
   before its first query. The `/platform-usage` router is super-admin-only;
   it exposes aggregate usage and workspace/user/model/purpose attribution but
   never workspace content. RLS remains unchanged.
+
+
+## Invocation settlement
+
+Each execution and approval continuation receives a server-owned invocation
+UUID before execution. Its agent usage event ID derives from the run ID,
+invocation ID, and purpose. Repeated insertion of a matching event is a no-op.
+A conflicting payload records bounded mismatch evidence and never updates
+the existing ledger row. Other callers retain their generated event IDs.
+
+Delegated invocations share the cumulative provider usage object. Each child
+captures its entry baseline and freezes its final delta before awaiting
+finalisation. It adds that interval once to its parent's fixed-size in-memory
+aggregate. Each invocation freezes its own delta less child intervals, so
+attribution does not depend on whether a child ledger transaction commits.
+Normal and interrupted settlement use the same frozen payload and event ID.
+Approval continuations capture a fresh baseline and identity.
+
+Finalisation writes are bounded and best-effort. Missing child usage stays
+attributed to that child even if its insert fails; the parent's model is never
+charged for that interval. Exhausted persistence logs the run, invocation, provider, model, and
+counters as accounting-incomplete evidence. A later insertion of the same
+payload remains idempotent. Total database failure can leave ledger gaps;
+the runtime does not replay external effects to reconstruct accounting.

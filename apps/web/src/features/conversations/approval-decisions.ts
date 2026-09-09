@@ -49,10 +49,13 @@ export function buildResumeDecisions(
   decisions: ApprovalDecisionMap,
   fieldsForTool: (toolName: string) => ApprovalField[] | undefined = () => undefined
 ): AgentRunResumeDecision[] | string {
+  if (hasAmbiguousApprovals(approvals)) {
+    return "These requests cannot be reviewed separately. Refresh the conversation before approving."
+  }
   const payload: AgentRunResumeDecision[] = []
 
   for (const approval of approvals) {
-    const decision = decisions[approval.tool_call_id]
+    const decision = decisions[approvalDecisionKey(approval)]
     const effectiveDecision = decision ?? DEFAULT_APPROVAL_DECISION
 
     if (effectiveDecision.decision === "pending") {
@@ -64,6 +67,7 @@ export function buildResumeDecisions(
         decision: "denied",
         message: normalizeOptionalText(effectiveDecision.message),
         tool_call_id: approval.tool_call_id,
+        ...(approval.approval_id ? { approval_id: approval.approval_id } : {}),
       })
       continue
     }
@@ -82,6 +86,7 @@ export function buildResumeDecisions(
       decision: "approved",
       override_args: mergedArgs,
       tool_call_id: approval.tool_call_id,
+      ...(approval.approval_id ? { approval_id: approval.approval_id } : {}),
     })
   }
 
@@ -97,7 +102,7 @@ export function summarizeApprovalDecisions(
   let denied = 0
 
   for (const approval of approvals) {
-    const decision = decisions[approval.tool_call_id] ?? DEFAULT_APPROVAL_DECISION
+    const decision = decisions[approvalDecisionKey(approval)] ?? DEFAULT_APPROVAL_DECISION
     if (decision.decision === "approved") {
       approved += 1
     } else if (decision.decision === "denied") {
@@ -249,4 +254,37 @@ function structurallyEqual(left: unknown, right: unknown): boolean {
     )
   }
   return false
+}
+
+export function approvalDecisionKey(approval: PendingToolApproval): string {
+  return approval.approval_id ?? approval.tool_call_id
+}
+
+export function hasAmbiguousApprovals(approvals: PendingToolApproval[]): boolean {
+  const keys = approvals.map(approvalDecisionKey)
+  return new Set(keys).size !== keys.length
+}
+
+export function approvalRevisionIsReady(
+  currentRevision: string | null | undefined,
+  proposalRevision: string | null | undefined
+): boolean {
+  return currentRevision == null || currentRevision === proposalRevision
+}
+
+export function approvalBatchIsReady({
+  currentRevision,
+  proposalRevision,
+  hasRecoveredBatch,
+  streamBatchComplete,
+}: {
+  currentRevision: string | null | undefined
+  proposalRevision: string | null | undefined
+  hasRecoveredBatch: boolean
+  streamBatchComplete: boolean
+}): boolean {
+  return (
+    (hasRecoveredBatch || streamBatchComplete) &&
+    approvalRevisionIsReady(currentRevision, proposalRevision)
+  )
 }

@@ -27,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { countApprovalPolicyTools } from "@/features/agents/agent-metrics"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
 import { AgentStatusBadges } from "@/features/agents/components/agent-status-badges"
@@ -34,6 +35,7 @@ import { formatAgentModelType } from "@/features/agents/components/agent-model-l
 import type { Agent } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import { formatDateTime, pluralize } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 const columnHelper = createAppColumnHelper<Agent>()
 
@@ -58,11 +60,19 @@ export function AgentsTable({
                 name={row.original.name}
               />
               <div className="flex min-w-0 flex-col gap-1">
-                <span className="font-medium">{row.original.name}</span>
+                <span className="truncate font-medium">{row.original.name}</span>
                 {row.original.description ? (
-                  <span className="text-muted-foreground max-w-md truncate text-xs">
-                    {row.original.description}
-                  </span>
+                  <Tooltip>
+                    <TooltipTrigger
+                      className="text-muted-foreground block truncate text-left text-xs"
+                      render={<button type="button" />}
+                    >
+                      {row.original.description}
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-md wrap-anywhere whitespace-normal">
+                      {row.original.description}
+                    </TooltipContent>
+                  </Tooltip>
                 ) : null}
               </div>
             </div>
@@ -147,7 +157,7 @@ export function AgentsTable({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <ResponsiveList>
         {agents.map((agent) => (
           <AgentMobileRow key={agent.id} agent={agent} modelCatalog={modelCatalog} />
@@ -155,7 +165,9 @@ export function AgentsTable({
       </ResponsiveList>
 
       <table.AppTable>
-        <AgentsDesktopTable />
+        <TooltipProvider>
+          <AgentsDesktopTable />
+        </TooltipProvider>
       </table.AppTable>
     </div>
   )
@@ -165,7 +177,7 @@ function AgentsDesktopTable() {
   const table = useTableContext<Agent>()
 
   return (
-    <div className="hidden md:block">
+    <div className="hidden min-w-0 md:block">
       <Table>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
@@ -202,7 +214,12 @@ function AgentHeaderCell() {
 function AgentBodyCell() {
   const cell = useCellContext()
   return (
-    <TableCell className={cell.column.id === "actions" ? "text-right" : undefined}>
+    <TableCell
+      className={cn(
+        cell.column.id === "name" && "w-full max-w-0 min-w-64",
+        cell.column.id === "actions" && "text-right"
+      )}
+    >
       <cell.FlexRender />
     </TableCell>
   )

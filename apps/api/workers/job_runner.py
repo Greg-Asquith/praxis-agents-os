@@ -56,6 +56,9 @@ async def run_once(
 ) -> int:
     """Reclaim stale work, claim due jobs, and execute one claimed batch."""
     # These modules register handlers, so process entry points assemble before importing them.
+    from services.jobs.handlers.sweep_abandoned_agent_runs import (
+        ensure_abandoned_agent_run_sweep_job,
+    )
     from services.jobs.handlers.sweep_deleted_files import ensure_files_sweep_job
     from services.jobs.handlers.sweep_expired_agent_run_approvals import (
         ensure_agent_run_approval_sweep_job,
@@ -89,6 +92,7 @@ async def run_once(
         await ensure_files_sweep_job(db)
         await ensure_artifact_shares_sweep_job(db)
         await ensure_agent_run_approval_sweep_job(db)
+        await ensure_abandoned_agent_run_sweep_job(db)
         await ensure_audit_event_sweep_job(db)
         await ensure_security_event_sweep_job(db)
         await ensure_scratch_sweep_job(db)

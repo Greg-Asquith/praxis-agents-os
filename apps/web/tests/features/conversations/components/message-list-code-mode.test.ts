@@ -230,3 +230,95 @@ function message(
     updated_at: timestamp,
   }
 }
+
+it("preserves owner identity and specialist labels in live workflow approval leaves", () => {
+  const owner = "child-run"
+  const delegation = {
+    parent_tool_call_id: "delegate",
+    child_run_id: owner,
+    child_agent_id: "specialist",
+    child_agent_name: "Researcher",
+    child_conversation_id: "child-conversation",
+    pending_approval_count: 1,
+  }
+  const [leaf] = buildLiveToolActivities(
+    [
+      {
+        owner_run_id: owner,
+        tool_call_id: "native",
+        name: "write_file",
+        args: {},
+        result: null,
+        status: "awaiting_approval",
+        timelineSequence: 1,
+      },
+    ],
+    [
+      {
+        owner_run_id: owner,
+        approval_id: "opaque",
+        tool_call_id: "native",
+        name: "write_file",
+        args: { name: "report.txt" },
+        delegation,
+        status: "pending",
+      },
+    ],
+    "root"
+  )
+  expect(leaf).toMatchObject({
+    agentRunId: owner,
+    rootRunId: "root",
+    approvalId: "opaque",
+    delegate: { agentName: "Researcher" },
+    args: { name: "report.txt" },
+  })
+})
+
+it("retains completed and uncertain saved effects with their owning run after reload", () => {
+  const messages = replayMessages().map((message) => ({
+    ...message,
+    metadata: { ...message.metadata, agent_run_id: "owner" },
+  }))
+  const [parsed] = parseConversationMessages(messages)
+  expect(parsed?.toolActivities[0]?.script?.children[0]).toMatchObject({
+    agentRunId: "owner",
+    status: "completed",
+  })
+  const firstMessage = messages[0]
+  if (!firstMessage) throw new Error("Missing saved workflow fixture")
+  const uncertain: ConversationMessage = {
+    ...firstMessage,
+    id: "uncertain",
+    role: "tool",
+    parts: {
+      parts: [
+        {
+          part_kind: "tool-return",
+          tool_call_id: "workflow",
+          tool_name: "run_workflow",
+          outcome: "failed",
+          content: {},
+          metadata: {
+            code_mode_trace: {
+              calls: [
+                {
+                  tool_call_id: "effect",
+                  tool_name: "write_file",
+                  status: "uncertain",
+                  presentation_result: { detail: "Confirmation unavailable" },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  }
+  const recovered = parseConversationMessages([uncertain])
+  expect(recovered[0]?.toolActivities[0]?.script?.children[0]).toMatchObject({
+    agentRunId: "owner",
+    status: "unknown",
+    result: { detail: "Confirmation unavailable" },
+  })
+})

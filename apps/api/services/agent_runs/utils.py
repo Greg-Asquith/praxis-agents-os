@@ -30,11 +30,6 @@ from services.agent_runs.domain import (
     RunOutcome,
     can_transition,
 )
-from services.agents.delegation_approval import (
-    DELEGATED_APPROVAL_CHILD_RUN_ID_KEY,
-    DELEGATED_APPROVAL_KIND,
-    DELEGATED_APPROVAL_KIND_KEY,
-)
 from services.agents.runtime.approval_state import clear_suspended_run_metadata
 from services.agents.runtime.completion_contract import validate_completion_json
 
@@ -42,6 +37,8 @@ MAX_ERROR_MESSAGE_LENGTH = 1000
 BLOCKED_ERROR_CODES = frozenset(
     {
         "approval_expired",
+        "agent_run_resume_requires_recovery",
+        "delegation_requires_recovery",
         "code_mode_resume_requires_recovery",
         "schedule_execution_abandoned",
     }
@@ -147,6 +144,9 @@ async def transition_run_status(
         run.error_code = error_code
         run.error_message = sanitize_error_message(error_message)
     if target in TERMINAL_RUN_STATUSES:
+        reservation = (run.metadata_json or {}).get("approval_continuation")
+        if isinstance(reservation, dict):
+            await _audit_approval_completion(db, run, reservation, target, resolved_outcome)
         run.metadata_json = clear_suspended_run_metadata(run)
         run.outcome = resolved_outcome
         run.completion_json = validated_completion_json
@@ -219,38 +219,6 @@ async def validate_run_context(
         )
 
 
-async def load_delegated_child_run_for_approval(
-    db: AsyncSession,
-    *,
-    parent_run: AgentRun,
-    metadata: dict[str, object] | None,
-    lock: bool = False,
-) -> AgentRun | None:
-    """Load a suspended delegated child run referenced by parent approval metadata."""
-    if not isinstance(metadata, dict):
-        return None
-    if metadata.get(DELEGATED_APPROVAL_KIND_KEY) != DELEGATED_APPROVAL_KIND:
-        return None
-
-    try:
-        child_run_id = UUID(str(metadata[DELEGATED_APPROVAL_CHILD_RUN_ID_KEY]))
-    except (KeyError, TypeError, ValueError):
-        return None
-
-    statement = select(AgentRun).where(
-        AgentRun.id == child_run_id,
-        AgentRun.parent_run_id == parent_run.id,
-        AgentRun.workspace_id == parent_run.workspace_id,
-        AgentRun.user_id == parent_run.user_id,
-        AgentRun.status == RUN_STATUS_AWAITING_APPROVAL,
-        AgentRun.deleted == False,  # noqa: E712
-    )
-    if lock:
-        statement = statement.with_for_update()
-
-    return await db.scalar(statement)
-
-
 def validate_schedule_run_link(schedule_run: AgentScheduleRun, run: AgentRun) -> None:
     """Ensure a scheduler claim row and generic run describe the same execution."""
     mismatches: dict[str, UUID | str] = {}
@@ -283,3 +251,35 @@ def validate_schedule_run_link(schedule_run: AgentScheduleRun, run: AgentRun) ->
             conflicting_resource="agent_schedule_run",
             details=_stringify_details(mismatches),
         )
+
+
+async def _audit_approval_completion(
+    db: AsyncSession,
+    run: AgentRun,
+    reservation: dict[str, Any],
+    status: str,
+    outcome: RunOutcome | None,
+) -> None:
+    from services.audit_events.enums import AuditAction, AuditActorType, AuditResourceType
+    from services.audit_events.operations import safe_record_operation_audit_event
+
+    generation = reservation.get("generation")
+    try:
+        generation = str(UUID(str(generation)))
+    except (ValueError, TypeError):
+        generation = None
+    await safe_record_operation_audit_event(
+        db,
+        workspace_id=run.workspace_id,
+        action=AuditAction.UPDATE,
+        resource_type=AuditResourceType.AGENT_RUN,
+        resource_id=run.id,
+        actor_type=AuditActorType.SERVICE,
+        requested_by_user_id=run.user_id,
+        details={
+            "operation": "approval_execution_completed",
+            "generation": generation,
+            "status": status,
+            "outcome": outcome,
+        },
+    )

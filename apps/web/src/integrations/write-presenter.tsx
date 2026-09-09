@@ -1,5 +1,6 @@
 // apps/web/src/integrations/write-presenter.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 import type { ReactNode } from "react"
 import { RefreshedWriteApproval } from "@/integrations/refreshed-write-approval"
 import type { ApprovalDisplayRefresh } from "@/integrations/approval-display-query"
@@ -235,7 +236,7 @@ function renderApproval<Args, Result>(
   if (args === null) {
     return (
       <ToolApprovalDecisionCard
-        activityId={activity.id}
+        activityId={approvalActivityIdentity(activity)}
         approveLabel={variant.approval.approveLabel}
         args={activity.args}
         controls={approvalDecision}
@@ -281,7 +282,7 @@ function renderApproval<Args, Result>(
   const renderFields = variant.approval.renderFields !== false
   return (
     <ToolApprovalDecisionCard
-      activityId={activity.id}
+      activityId={approvalActivityIdentity(activity)}
       approveLabel={variant.approval.approveLabel}
       args={activity.args}
       controls={approvalDecision}

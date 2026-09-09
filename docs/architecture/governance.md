@@ -171,6 +171,27 @@ per-agent `tool_policies`. The following rules define the policy:
   parent's side-effect grant and delegation cap at child-run creation.
   _(enforced)_
 
+### Root-owned approval continuations
+
+The main run owns approval mutations for its specialist runs. Consent names
+one current proposal revision and exactly one decision for every leaf action.
+Repeated native tool-call IDs in different runs do not share consent. Legacy
+consent is accepted only when it maps unambiguously to the same direct action.
+
+Accepted decisions are durable before execution starts. One execution owner
+claims the reservation, and a repeated submission cannot execute it again.
+A different repeated submission is a conflict, not acceptance of its changes.
+Approval, cancellation, and expiry coordinate under the same root-first locks.
+Reserved child batches wait for the parent to claim them and do not expire
+independently while the valid parent reservation remains active.
+
+A missing or terminal specialist cannot become a replacement approval or a
+new specialist invocation. Uncertain approved effects stop the family with a
+blocked outcome. Recovery retains bounded completed and uncertain action
+references and specialist transcript links before removing executable state.
+Operators review that evidence before giving another instruction. The system
+does not automatically replay accepted effects after a crash.
+
 ## 3. Retention and deletion
 
 Two rules govern deletion:
@@ -215,6 +236,14 @@ enforcement**. Values not marked _(enforced)_ are
 | Per-run token/step caps | runtime `UsageLimits` + `max_steps`; unattended schedules may tighten request and total-token limits through schedule completion contracts _(enforced)_                                                                                               |
 | Artifact-share creation | 10/hour/workspace _(enforced)_                                                                                                                                                                                                                        |
 | Integration API retries | `Retry-After`-aware, bounded attempts _(enforced)_                                                                                                                                                                                                    |
+
+Delegation uses a shared cumulative usage counter and the intersection of parent,
+child, and saved run ceilings. Approval continuations can tighten saved ceilings
+but cannot widen them. A parent budget failure ends the root with
+`budget_exhausted`; a stricter specialist-only ceiling can stop that specialist.
+Request limits count model requests, so an already-approved action from the last
+permitted request can settle. Token limits use observed usage and can overshoot
+during a streamed response; they are not monetary guarantees. _(enforced)_
 
 ## 5. Secrets operating model
 
@@ -265,3 +294,16 @@ _(enforced)_ are `[default — confirm at review]`.
 | Integration discovery terminal failure                    | ✓ _(enforced)_  | connecting user _(enforced)_                    |
 | Job pipeline failure — only after final retry exhausted   | ✓ _(enforced)_  | initiator (`initiated_by_user_id`) _(enforced)_ |
 | Every tool invocation, successful runs, routine refreshes | — (audit only)  | —                                               |
+
+
+## Approval upgrade and rollback boundary
+
+Legacy approvals authorise only verifiable saved proposals. Interrupted legacy
+acceptance has no durable decision reservation, so recovery retains completed
+and uncertain evidence and blocks replay. A fresh reviewed action needs fresh
+consent; replay is not a recovery mechanism.
+
+After new owner, approval-batch, reservation, or effective-budget metadata is
+written, an old backend is not a compatible rollback target. Stop admission and
+execution before a reviewed metadata-compatible repair. Keep saved approvals
+and effect evidence intact. A tolerant client may remain deployed.

@@ -19,6 +19,7 @@ from models.files import File, FileFolder, FileReference
 from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
+from services.agent_runs.settle_run_family import lock_run_family
 from services.skills.utils import visible_skill_filter
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,8 @@ async def load_run_context(
         AgentRun.deleted == False,  # noqa: E712
     )
     if lock_run:
-        run_stmt = run_stmt.with_for_update()
+        await lock_run_family(db, run_id=run_id)
+        run_stmt = run_stmt.execution_options(populate_existing=True)
     if populate_existing:
         run_stmt = run_stmt.execution_options(populate_existing=True)
     run = await db.scalar(run_stmt)

@@ -1,5 +1,8 @@
 // apps/web/src/features/conversations/components/message-list.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
+
+import { Link } from "@tanstack/react-router"
 import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -33,7 +36,7 @@ type MessageListProps = {
   isApprovalLoading: boolean
   isApprovalSubmitting: boolean
   streamError?: string | null
-  onApprovalSubmit: (decisions: AgentRunResumeDecision[]) => Promise<void>
+  onApprovalSubmit: (decisions: AgentRunResumeDecision[], revision?: string) => Promise<void>
 }
 
 export function MessageList({
@@ -52,12 +55,15 @@ export function MessageList({
   const presentationFor = useToolPresentations()
   const inlineApprovals = useInlineApprovals({
     activeRunId: timeline.approval?.runId ?? null,
+    approvalRevision: timeline.approval?.revision ?? null,
+    readOnly: timeline.approval?.readOnly ?? false,
     approvals: timeline.approval?.requests ?? [],
     enabled: timeline.approval !== null,
     isSubmitting: isApprovalSubmitting,
     onSubmit: onApprovalSubmit,
     presentationFor,
   })
+  const approvalErrorMessage = approvalError ?? inlineApprovals.unavailableReason
   const hasInlineApprovals =
     timeline.approval !== null &&
     (timeline.approval.requests.length > 0 || isApprovalLoading || Boolean(approvalError))
@@ -111,16 +117,16 @@ export function MessageList({
               label={assistantLabel}
             >
               {timeline.orphanApprovals.map((activity) => (
-                <ToolCallRow activity={activity} key={activity.id} />
+                <ToolCallRow activity={activity} key={approvalActivityIdentity(activity)} />
               ))}
             </AssistantMessageShell>
           )}
 
-          {timeline.approval && approvalError && (
+          {timeline.approval && approvalErrorMessage && (
             <div className="pl-10">
               <Alert variant="destructive">
                 <AlertTitle>Approval state unavailable</AlertTitle>
-                <AlertDescription>{approvalError}</AlertDescription>
+                <AlertDescription>{approvalErrorMessage}</AlertDescription>
               </Alert>
             </div>
           )}
@@ -145,11 +151,31 @@ export function MessageList({
                           <li key={action.id}>{toolLabel(action.toolName)}</li>
                         ))}
                       </ul>
-                      {runInterruption.actionsTruncated ? (
-                        <p className="mt-1">More completed actions are recorded in the run.</p>
-                      ) : null}
                     </div>
                   ) : null}
+                  {runInterruption.uncertainActions?.length ? (
+                    <div className="mt-2">
+                      <p className="font-medium">Actions with an uncertain result</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                        {runInterruption.uncertainActions.map((action) => (
+                          <li key={action.id}>{toolLabel(action.toolName)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {runInterruption.actionsTruncated ? (
+                    <p className="mt-1">More actions are recorded in the run transcripts.</p>
+                  ) : null}
+                  {runInterruption.childConversations?.map((childId, index) => (
+                    <Link
+                      key={childId}
+                      to="/conversations/$conversationId"
+                      params={{ conversationId: childId }}
+                      className="mt-1 block underline"
+                    >
+                      Review specialist conversation {index + 1}
+                    </Link>
+                  ))}
                 </AlertDescription>
               </Alert>
             </div>

@@ -96,15 +96,16 @@ async def test_get_approval_state_returns_safe_pending_tool_details(
     db_session: AsyncSession,
     approval_context: ApprovalStateContext,
 ) -> None:
+    sink = CollectingSink(
+        run_id=approval_context.run_id,
+        conversation_id=approval_context.conversation_id,
+    )
     result = await execute_run(
         db_session,
         conversation_id=approval_context.conversation_id,
         run_id=approval_context.run_id,
         user_prompt="Add two numbers",
-        sink=CollectingSink(
-            run_id=approval_context.run_id,
-            conversation_id=approval_context.conversation_id,
-        ),
+        sink=sink,
         model=TestModel(call_tools=["test_add_numbers"]),
     )
     assert isinstance(result.output, DeferredToolRequests)
@@ -124,6 +125,14 @@ async def test_get_approval_state_returns_safe_pending_tool_details(
     assert approval.name == "test_add_numbers"
     assert approval.args == {"a": 0, "b": 0}
     assert "message_history" not in response.model_dump()
+    saved = await db_session.get(AgentRun, approval_context.run_id)
+    assert saved.metadata_json["approval_state"]["approval_revision"] == response.approval_revision
+    streamed = [event.data for event in sink.events if event.event == "tool.approval_required"]
+    assert len(streamed) == 1
+    assert streamed[0]["approval_revision"] == response.approval_revision
+    assert streamed[0]["approval_id"] == str(approval.approval_id)
+    assert streamed[0]["owner_run_id"] == str(approval.owner_run_id)
+    assert streamed[0]["args"] == approval.args
 
 
 async def test_get_approval_state_rejects_completed_run(

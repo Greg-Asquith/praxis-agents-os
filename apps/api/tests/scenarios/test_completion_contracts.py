@@ -221,5 +221,5 @@ async def test_scheduled_token_budget_records_the_tripped_budget(
     assert run.error_code == "usage_limit_exceeded"
     assert run.completion_json == {
         "error_code": "usage_limit_exceeded",
-        "tripped_budget": {"kind": "total_tokens", "limit": 1},
+        "tripped_budget": {"kind": "total_tokens", "limit": 1, "scope": "local"},
     }

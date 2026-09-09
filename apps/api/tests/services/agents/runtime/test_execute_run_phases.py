@@ -285,6 +285,7 @@ async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
             workspace_id: UUID,
             user_id: UUID,
             metering=None,
+            owner_instance_id=None,
         ):
             await asyncio.sleep(0.05)
             return await real_persist_cancelled_run(
@@ -292,6 +293,7 @@ async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
                 workspace_id=workspace_id,
                 user_id=user_id,
                 metering=metering,
+                owner_instance_id=owner_instance_id,
             )
 
         async def slow_stream(
@@ -400,7 +402,7 @@ async def test_cancelled_run_does_not_read_expired_context_after_failed_flush(
     assert sink.closed
 
 
-async def test_unmarked_task_cancellation_does_not_persist_cancelled_run(
+async def test_shutdown_records_failure_without_claiming_human_cancellation(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     async with committed_db_session_factory() as db:
@@ -420,7 +422,7 @@ async def test_unmarked_task_cancellation_does_not_persist_cancelled_run(
                 db,
                 conversation_id=context.conversation_id,
                 run_id=context.run_id,
-                user_prompt="Worker shutdown should not cancel the run",
+                user_prompt="Record a truthful shutdown outcome",
                 sink=sink,
                 model=FunctionModel(
                     stream_function=slow_stream,
@@ -439,7 +441,8 @@ async def test_unmarked_task_cancellation_does_not_persist_cancelled_run(
     async with committed_db_session_factory() as db:
         stored_run = await db.get(AgentRun, context.run_id)
         assert stored_run is not None
-        assert stored_run.status == RUN_STATUS_RUNNING
+        assert stored_run.status == RUN_STATUS_FAILED
+        assert stored_run.error_code == "run_process_shutdown"
 
         messages = (
             await db.scalars(
@@ -453,9 +456,10 @@ async def test_unmarked_task_cancellation_does_not_persist_cancelled_run(
         ("user", "generic-cancel-client")
     ]
     assert [event.data["status"] for event in sink.events if event.event == EVENT_RUN_STATUS] == [
-        RUN_STATUS_RUNNING
+        RUN_STATUS_RUNNING,
+        RUN_STATUS_FAILED,
     ]
-    assert EVENT_DONE not in [event.event for event in sink.events]
+    assert EVENT_DONE in [event.event for event in sink.events]
     assert sink.closed
 
 

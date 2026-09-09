@@ -9,7 +9,6 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from pydantic_ai.messages import ModelResponse
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -330,18 +329,6 @@ def subtract_usage(current: RunUsage, baseline: RunUsage) -> dict[str, int]:
     current_values = usage_values(current)
     baseline_values = usage_values(baseline)
     return {name: max(0, value - baseline_values[name]) for name, value in current_values.items()}
-
-
-def sum_response_usage(messages: list[object]) -> dict[str, int]:
-    total = dict.fromkeys(usage_values(RunUsage()), 0)
-    for message in messages:
-        if not isinstance(message, ModelResponse):
-            continue
-        response_values = usage_values(message.usage)
-        response_values["requests"] = 1
-        for name, value in response_values.items():
-            total[name] += value
-    return total
 
 
 def add_event(db: AsyncSession, event: AIUsageEventData) -> None:

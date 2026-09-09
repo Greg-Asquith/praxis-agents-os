@@ -1,3 +1,5 @@
+import { CancelledError } from "@tanstack/react-query"
+import { ApiError } from "@/lib/api/errors"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -5,6 +7,7 @@ import {
   CONVERSATION_HEAL_POLL_INTERVAL_MS,
   conversationActiveRunRefetchInterval,
   conversationHealPollInterval,
+  conversationRecoveryMessage,
 } from "@/features/conversations/conversation-heal-polling"
 import type { AgentRun, ConversationActiveRunResponse } from "@/features/conversations/types"
 
@@ -58,7 +61,7 @@ describe("conversation heal polling", () => {
     }
   )
 
-  it("stops after the query layer exhausts retries", () => {
+  it("does not retry an unclassified programming error", () => {
     expect(conversationHealPollInterval("running", new Error("API unavailable"), false)).toBe(false)
   })
 
@@ -97,5 +100,20 @@ describe("conversation heal polling", () => {
     expect(conversationActiveRunRefetchInterval(activeRunResponse("running"), null, true)).toBe(
       false
     )
+  })
+  it("does not retry a query cancellation", () => {
+    expect(conversationHealPollInterval("running", new CancelledError(), false)).toBe(false)
+  })
+
+  it.each([
+    [401, "Your session has ended"],
+    [403, "no longer have access"],
+    [404, "no longer available"],
+  ] as const)("explains the terminal %s state", (status, message) => {
+    expect(
+      conversationRecoveryMessage(
+        new ApiError({ status, message: "Internal detail", problem: null })
+      )
+    ).toContain(message)
   })
 })

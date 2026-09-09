@@ -33,6 +33,10 @@ type StreamEnvelope = {
   run_id: string
   conversation_id: string
   seq: number
+  root_run_id?: string
+  owner_run_id?: string
+  approval_revision?: string
+  approval_id?: string
 }
 
 export type MessageChannel = "text" | "thinking"

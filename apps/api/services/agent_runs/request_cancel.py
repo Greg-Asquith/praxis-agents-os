@@ -13,11 +13,9 @@ from core.exceptions.general import ConflictError, NotFoundError
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.cancel import cancel_agent_run
-from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, is_terminal
+from services.agent_runs.domain import RUN_STATUS_CANCELLED, is_terminal
 from services.agent_runs.schemas import AgentRunCancelResponse, AgentRunRead
-from services.agent_runs.utils import load_delegated_child_run_for_approval
-from services.agents.runtime.approval_state import load_suspended_run_state
+from services.agent_runs.settle_run_family import lock_run_family, settle_run_family
 from services.agents.runtime.run_manager import run_task_registry
 from services.audit_events import AuditAction, AuditResourceType, record_workspace_audit_event
 from services.workspaces.utils import MANAGER_ROLES
@@ -34,13 +32,11 @@ async def request_agent_run_cancellation(
 ) -> AgentRunCancelResponse:
     """Cancel a non-terminal run if the actor owns it or manages the workspace."""
     run = await db.scalar(
-        select(AgentRun)
-        .where(
+        select(AgentRun).where(
             AgentRun.id == run_id,
             AgentRun.workspace_id == workspace.id,
             AgentRun.deleted == False,  # noqa: E712
         )
-        .with_for_update()
     )
     if run is None:
         raise NotFoundError(
@@ -60,6 +56,7 @@ async def request_agent_run_cancellation(
             },
         )
 
+    await lock_run_family(db, run_id=run_id)
     if is_terminal(run.status):
         raise ConflictError(
             "Agent run is already terminal",
@@ -68,8 +65,9 @@ async def request_agent_run_cancellation(
         )
 
     previous_status = run.status
-    cancelled_child_run_ids = await _cancel_delegated_child_approval_runs(db, parent_run=run)
-    cancelled_run = await cancel_agent_run(db, run)
+    changed = await settle_run_family(db, run_id=run_id, status=RUN_STATUS_CANCELLED)
+    cancelled_child_run_ids = [child.id for child in changed if child.id != run_id]
+    cancelled_run = run
     await db.refresh(cancelled_run)
     run_read = AgentRunRead.from_run(cancelled_run)
     audit_details = {
@@ -102,35 +100,3 @@ async def request_agent_run_cancellation(
         run=run_read,
         local_cancel_delivered=local_cancel_delivered,
     )
-
-
-async def _cancel_delegated_child_approval_runs(
-    db: AsyncSession,
-    *,
-    parent_run: AgentRun,
-) -> list[UUID]:
-    if parent_run.status != RUN_STATUS_AWAITING_APPROVAL:
-        return []
-
-    try:
-        suspended_state = load_suspended_run_state(parent_run)
-    except ConflictError:
-        return []
-
-    cancelled_child_run_ids: list[UUID] = []
-    seen_child_run_ids: set[UUID] = set()
-    for metadata in suspended_state.deferred_tool_requests.metadata.values():
-        child_run = await load_delegated_child_run_for_approval(
-            db,
-            parent_run=parent_run,
-            metadata=metadata,
-            lock=True,
-        )
-        if child_run is None or child_run.id in seen_child_run_ids:
-            continue
-
-        await cancel_agent_run(db, child_run)
-        cancelled_child_run_ids.append(child_run.id)
-        seen_child_run_ids.add(child_run.id)
-
-    return cancelled_child_run_ids

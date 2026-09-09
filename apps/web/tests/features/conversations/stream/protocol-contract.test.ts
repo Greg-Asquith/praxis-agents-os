@@ -6,6 +6,7 @@ import {
   STREAM_VERSION_HEADER,
   isStreamEventName,
 } from "@/features/conversations/stream/protocol"
+import legacySamples from "./fixtures/protocol.legacy.samples.json"
 import protocolSamples from "./fixtures/protocol.samples.json"
 import protocolSchema from "./fixtures/protocol.schema.json"
 import {
@@ -24,6 +25,18 @@ type Mutation = {
 }
 
 describe("agent stream protocol contract", () => {
+  it("accepts saved pre-batch backend payloads before server activation", () => {
+    for (const sample of legacySamples) {
+      if (!isStreamEventName(sample.event)) {
+        throw new Error(`Unknown legacy event ${sample.event}.`)
+      }
+      expect(parseStreamEvent(sample.event, sample.data)).toBeDefined()
+    }
+    const approval = legacySamples.find((sample) => sample.event === "tool.approval_required")
+    expect(approval?.data).not.toHaveProperty("approval_id")
+    expect(approval?.data).not.toHaveProperty("approval_revision")
+  })
+
   it("matches the backend version, event names, and enums", () => {
     expect(STREAM_PROTOCOL_VERSION).toBe(protocolSchema.version)
     expect(STREAM_VERSION_HEADER).toBe(protocolSchema.header)

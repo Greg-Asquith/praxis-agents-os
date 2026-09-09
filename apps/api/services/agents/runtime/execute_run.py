@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.agent_runs.domain import RUN_STATUS_PENDING
 from services.agents.runtime.execute.execute_run import execute_run as execute_run_impl
 from services.agents.runtime.execute.types import ExecuteRunResult
+from services.agents.runtime.execution_control import ExecutionControl
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.usage_limits import EffectiveUsageLimits
+from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 
 
 async def execute_run(
@@ -32,6 +35,10 @@ async def execute_run(
     message_history: Sequence[ModelMessage] | None = None,
     deferred_tool_results: DeferredToolResults | None = None,
     usage: RunUsage | None = None,
+    inherited_usage_limits: EffectiveUsageLimits | None = None,
+    parent_metering: AgentRunMeteringContext | None = None,
+    execution_control: ExecutionControl | None = None,
+    root_execution: ExecutionControl | None = None,
 ) -> ExecuteRunResult:
     """Drive one agent turn to completion or approval suspension.
 
@@ -57,6 +64,10 @@ async def execute_run(
         message_history=message_history,
         deferred_tool_results=deferred_tool_results,
         usage=usage,
+        inherited_usage_limits=inherited_usage_limits,
+        parent_metering=parent_metering,
+        execution_control=execution_control,
+        root_execution=root_execution,
     )
 
 

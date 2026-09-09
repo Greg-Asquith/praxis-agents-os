@@ -2,8 +2,11 @@
 
 """Prepare database state, prompt content, and runtime deps for execute_run."""
 
+import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -39,6 +42,7 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation import list_visible_delegate_agents
 from services.agents.runtime.dispatch import record_denied_approval_audit_events
 from services.agents.runtime.envelope import build_run_envelope
+from services.agents.runtime.execution_control import ExecutionControl
 from services.agents.runtime.history import (
     HistoryCompaction,
     history_exceeds_context_budget,
@@ -55,6 +59,13 @@ from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
+from services.agents.runtime.usage_limits import (
+    EFFECTIVE_USAGE_LIMITS_KEY,
+    EffectiveUsageLimits,
+    RuntimeUsageLimits,
+    SavedUsageLimits,
+    intersect_usage_limits,
+)
 from services.conversation_summaries.load_history_summary import load_history_summary
 from services.files import build_attachment_user_content, resolve_chat_attachments
 from services.integrations.context import resolve_active_context
@@ -65,6 +76,57 @@ from services.tools import get_disabled_tools
 from .types import BuiltRuntimeAgent, PreparedRuntime
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def admitted_setup(
+    db: AsyncSession, *, control: ExecutionControl | None, sink: EventSink
+) -> AsyncIterator[None]:
+    """Bounds worker session setup with the admitted continuation's deadline."""
+    from services.agents.runtime.execution_control import (
+        ExecutionInterruptedError,
+        ExecutionPhase,
+        InterruptionReason,
+    )
+
+    from .finalize import CANCEL_FINALIZE_TIMEOUT
+    from .settle_failure import settle_failure
+    from .settle_interruption import settle_interruption
+
+    try:
+        async with asyncio.timeout_at(control.deadline if control else None):
+            yield
+    except asyncio.CancelledError as exc:
+        if control is not None:
+            await settle_interruption(
+                db,
+                exc=exc,
+                event_sink=sink,
+                run_id=control.run_id,
+                workspace_id=control.workspace_id,
+                user_id=control.user_id,
+                execution_control=control,
+                metering=None,
+                max_wait=CANCEL_FINALIZE_TIMEOUT,
+            )
+        raise
+    except Exception as exc:
+        if control is not None:
+            if isinstance(exc, TimeoutError):
+                control.interrupt(InterruptionReason.DURATION_EXPIRED)
+                exc = ExecutionInterruptedError(control.reason)
+            control.phase = ExecutionPhase.FINALISING
+            await settle_failure(
+                db,
+                event_sink=sink,
+                started=True,
+                run_id=control.run_id,
+                exc=exc,
+                metering=None,
+                owner_instance_id=control.owner_instance_id,
+                max_wait=CANCEL_FINALIZE_TIMEOUT,
+            )
+        raise
 
 
 def validate_execution_preconditions(
@@ -127,6 +189,7 @@ async def prepare_runtime(
     deferred_tool_results: DeferredToolResults | None,
     skills: Sequence[Skill],
     available_files: Sequence[AvailableFile],
+    inherited_usage_limits: EffectiveUsageLimits | None = None,
 ) -> PreparedRuntime:
     user, workspace, membership = await load_actor_context(db, run)
     conversation_context_block = render_conversation_context_block(
@@ -195,6 +258,7 @@ async def prepare_runtime(
         available_files=available_files,
         active_context=active_context,
         workspace_definitions=workspace_definitions,
+        inherited_usage_limits=inherited_usage_limits,
     )
     deps = RuntimeDeps(
         db=db,
@@ -270,6 +334,7 @@ async def build_agent_for_run(
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     workspace_definitions: Sequence[RuntimeToolDefinition],
+    inherited_usage_limits: EffectiveUsageLimits | None = None,
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
     delegate_agents = (
@@ -319,6 +384,22 @@ async def build_agent_for_run(
         workspace_definitions=workspace_definitions,
         history_compaction=history_compaction,
     )
+    metadata = dict(run.metadata_json or {})
+    saved = (
+        SavedUsageLimits.model_validate(metadata[EFFECTIVE_USAGE_LIMITS_KEY]).limits
+        if EFFECTIVE_USAGE_LIMITS_KEY in metadata
+        else None
+    )
+    effective = intersect_usage_limits(
+        EffectiveUsageLimits.from_sdk(runtime_agent.usage_limits), saved, inherited_usage_limits
+    )
+    runtime_agent = replace(
+        runtime_agent, usage_limits=RuntimeUsageLimits(effective, inherited_usage_limits)
+    )
+    metadata[EFFECTIVE_USAGE_LIMITS_KEY] = SavedUsageLimits(limits=effective).model_dump(
+        mode="json"
+    )
+    run.metadata_json = metadata
     _record_skipped_runtime_tools(run, skipped_tool_names)
     run.model_name = runtime_agent.resolved_model.qualified_id
 

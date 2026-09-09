@@ -1,8 +1,11 @@
 // apps/web/src/features/conversations/components/tool-call-row.tsx
 
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
+
 import { Component, use, type ErrorInfo, type ReactNode } from "react"
 import { WrenchIcon } from "lucide-react"
 
+import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
@@ -50,6 +53,11 @@ export function ToolCallRow({
   defaultOpen = false,
   live = false,
 }: ToolCallRowProps) {
+  const conversationId = use(ToolConversationContext)
+  const ownerConversationId =
+    activity.delegate && activity.agentRunId === activity.delegate.runId
+      ? activity.delegate.conversationId
+      : null
   const presentationFor = useToolPresentations()
   const approvalDecision = use(ApprovalDecisionContext)(activity) ?? undefined
   const entry = presentationFor(activity.name)
@@ -206,7 +214,14 @@ export function ToolCallRow({
   ) : (
     defaultRow
   )
-  return <ToolCallRowRendererContext value={renderToolCallRow}>{row}</ToolCallRowRendererContext>
+  return (
+    <ToolConversationContext
+      key={approvalDecision?.formKey ?? approvalActivityIdentity(activity)}
+      value={ownerConversationId ?? conversationId}
+    >
+      <ToolCallRowRendererContext value={renderToolCallRow}>{row}</ToolCallRowRendererContext>
+    </ToolConversationContext>
+  )
 }
 
 function displayResultExcerpt(value: string | undefined): string | null {
