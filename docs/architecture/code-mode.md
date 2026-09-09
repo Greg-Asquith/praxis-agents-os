@@ -66,6 +66,40 @@ context at the nested dispatch boundary. Missing scopes fail closed.
 A tool whose schema falls outside the supported stub subset stays directly
 mounted (with a logged warning) rather than receiving a lossy stub.
 
+### Signature renderer ownership
+
+Praxis retains `code_mode/stubs.py` as the schema renderer. The public
+Pydantic AI 2.42.0 `FunctionSignature` API does not preserve the complete
+catalogue contract. Its tagged implementation is documented in the
+[upstream signature source](https://github.com/pydantic/pydantic-ai/blob/v2.42.0/pydantic_ai_slim/pydantic_ai/function_signature.py).
+
+The comparison establishes these adoption blockers:
+
+- Recursive non-object definitions expand to `Any` at recursive branches.
+  This loses the named recursive value types used by report outputs.
+- Conflicting input and output definitions within one function receive the
+  same prefixed name. Rendering emits two different classes under that name
+  and can leave output references pointing to an undefined unprefixed name.
+- A required property with a schema default becomes optional. An optional
+  non-nullable property without a default gains `None` in its type.
+- Unsupported keywords are ignored instead of causing direct-tool fallback.
+  Keyword fields such as Outlook's `from` produce invalid class syntax.
+
+Upstream preserves the ordinary schema matrix, enum references, dictionaries,
+and discriminated unions, and adds parameter descriptions. Those benefits do
+not justify a second type renderer to repair the lost semantics. No public
+renderer is used in production. The strict Praxis adapter continues to own
+schema rejection, shared definitions, output conflict names, async keyword-only
+signatures, and deterministic catalogue assembly. Fields named with Python
+keywords use functional `TypedDict` syntax, preserving their exact wire names.
+
+The 62 eligible first-party definitions compile individually and together.
+The combined catalogue passes the pinned Monty 0.0.21 type checker. Tests also
+consume a keyword-named output and reject an invalid operation on its declared
+type. Upstream compiles 60 of those definitions individually; Outlook message
+read and search fail on `from`. Future schema or provider additions must rerun
+the complete catalogue matrix before renderer adoption is reconsidered.
+
 ### 2. The script runs in a Monty sandbox
 
 The bridge (`code_mode/bridge.py`) executes the script through a process-local

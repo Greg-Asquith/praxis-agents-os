@@ -36,6 +36,19 @@ nested-value and provider product bounds remain authoritative. Keep the
 workflow's model-facing final-result bound materially tighter than the
 nested value bound so a faulty reduction cannot flood every later request.
 
+## Signature rendering
+
+`services/agents/runtime/code_mode/stubs.py` owns signature rendering and its
+strict schema adapter. Pydantic AI 2.42.0's public renderer is not adopted:
+recursive value types, input/output collisions, and required/default semantics
+lose information. See the architecture's
+[renderer decision](../architecture/code-mode.md#signature-renderer-ownership).
+Unsupported schemas remain directly mounted. Shared types retain one name,
+conflicting output types receive output-specific names, and Python keyword
+fields use functional `TypedDict` syntax without changing their wire names.
+The complete eligible catalogue must compile and pass the pinned Monty type
+checker when schemas or providers change.
+
 ## Transcript presentation
 
 Code-mode workflows render as one collapsed outer row whose children recurse

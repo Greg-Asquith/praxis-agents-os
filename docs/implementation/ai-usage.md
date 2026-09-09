@@ -43,6 +43,15 @@ The following contracts apply in this area:
 
 ## Invocation settlement
 
+Image tools retain their existing invocation meters. Pydantic AI 2.42's
+direct image adapters return usage only after accepting image output. Empty
+OpenAI responses and empty or content-filtered Google responses can contain
+usage that the adapters discard when raising. Switching to result-only
+metering loses those counters. Retain the OpenAI SDK adapter and Google
+Agent helper until the public direct API exposes failed-response usage.
+Do not replay image requests to recover accounting or add `result.cost()`
+to the ledger. Image pricing and historical price records remain unchanged.
+
 Each execution and approval continuation receives a server-owned invocation
 UUID before execution. Its agent usage event ID derives from the run ID,
 invocation ID, and purpose. Repeated insertion of a matching event is a no-op.

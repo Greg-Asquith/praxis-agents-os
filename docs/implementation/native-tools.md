@@ -118,6 +118,18 @@ produce a prompt-revision outcome; other provider errors produce safe tool
 failures. Cancellation propagates. Google retains its Pydantic AI helper.
 Paid live verification of the direct 2.5 calls remains pending before release.
 
+Pydantic AI 2.42's `ImageGenerator` is not used by these tools. Its OpenAI
+adapter decodes every returned base64 image before application byte or count
+checks. The retained OpenAI adapter checks encoded length before decoding
+and records usage before validating outputs. The direct OpenAI and Google
+adapters can raise for empty, malformed, or filtered outputs without exposing
+returned usage to the invocation meter. Google therefore retains its metered
+Agent helper for generation and editing. Its video helper also remains:
+the direct API accepts image references, but rejects `BinaryContent` video
+inputs before requesting the provider. Mocked contract tests cover direct
+Google and Vertex image references separately. These results do not qualify
+live provider availability.
+
 Image approvals show an editable **Image Provider** picker, including when
 the agent omits the provider. The picker lists configured providers.
 Generation's **Aspect Ratio** choices follow the selected provider. Without

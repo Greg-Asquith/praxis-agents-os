@@ -8,6 +8,8 @@ from typing import Literal
 
 import pytest
 from pydantic import BaseModel, create_model
+from pydantic_ai.function_signature import FunctionSignature
+from pydantic_monty import AsyncMonty, MontyTypingError
 
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
@@ -295,7 +297,7 @@ def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids(
     assert "connection_id" not in rendered
 
 
-def test_every_first_party_eligible_schema_renders() -> None:
+async def test_every_first_party_eligible_schema_renders() -> None:
     definitions = {
         definition.name: definition
         for definition in (
@@ -330,6 +332,126 @@ def test_every_first_party_eligible_schema_renders() -> None:
     assert "base_id: str" in rendered
     assert "integration_resource_id" not in rendered
     assert "connection_id" not in rendered
+    entries = tuple((definition, definition.default_policy) for definition in definitions.values())
+    assert (
+        CodeModeCatalog.build(entries).stub_text == CodeModeCatalog.build(entries[::-1]).stub_text
+    )
+    compile(rendered, "catalogue.pyi", "exec")
+    async with (
+        AsyncMonty() as pool,
+        pool.checkout(type_check=True, type_check_stubs=rendered) as session,
+    ):
+        assert await session.feed_run("1") == 1
+
+
+async def test_keyword_output_fields_compile_and_are_consumable_in_monty() -> None:
+    output = create_model("MessageOutput", **{"from": (str, ...)})
+
+    async def read_message() -> dict[str, str]:
+        return {"from": "sender@example.com"}
+
+    definition = RuntimeToolDefinition(
+        name="read_message",
+        function=read_message,
+        description="Reads a message sender.",
+        code_eligible=True,
+        output_model=output,
+    )
+    rendered = render_tool_stub(definition)
+    compile(rendered, "message.pyi", "exec")
+    async with (
+        AsyncMonty() as pool,
+        pool.checkout(type_check=True, type_check_stubs=rendered) as session,
+    ):
+        assert (
+            await session.feed_run(
+                'message = await read_message()\nmessage["from"].upper()',
+                external_lookup={"read_message": read_message},
+            )
+            == "SENDER@EXAMPLE.COM"
+        )
+    async with (
+        AsyncMonty() as pool,
+        pool.checkout(type_check=True, type_check_stubs=rendered) as session,
+    ):
+        with pytest.raises(MontyTypingError):
+            await session.feed_run('message = await read_message()\nmessage["from"] + 1')
+
+
+def test_public_renderer_loses_recursive_non_object_types() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"value": {"$ref": "#/$defs/RecursiveValue"}},
+        "required": ["value"],
+        "$defs": {
+            "RecursiveValue": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"type": "array", "items": {"$ref": "#/$defs/RecursiveValue"}},
+                ]
+            }
+        },
+    }
+    signature = FunctionSignature.from_schema(name="recursive", parameters_schema=schema)
+    assert str(signature.params["value"].type) == "int | list[Any]"
+
+    definition = RuntimeToolDefinition(
+        name="recursive",
+        function=lambda value: value,
+        description="Reads recursive values.",
+        code_eligible=True,
+    )
+    object.__setattr__(definition, "_serialized_input_schema", schema)
+    object.__setattr__(definition, "_input_schema_cached", True)
+    assert "RecursiveValue = int | list['RecursiveValue']" in render_tool_stub(definition)
+
+
+def test_public_renderer_conflates_input_and_output_name_collisions() -> None:
+    input_shape = create_model("SharedShape", value=(str, ...))
+    output_shape = create_model("SharedShape", value=(int, ...))
+    parameters = create_model("Parameters", value=(input_shape, ...))
+    output = create_model("Output", value=(output_shape, ...))
+    signature = FunctionSignature.from_schema(
+        name="collision",
+        parameters_schema=parameters.model_json_schema(),
+        return_schema=output.model_json_schema(mode="serialization"),
+    )
+    conflicts = FunctionSignature.get_conflicting_type_names([signature])
+    definitions = FunctionSignature.render_type_definitions([signature], conflicts)
+    rendered = "\n".join(definitions)
+    assert rendered.count("class collision_SharedShape(TypedDict):") == 2
+    assert "value: str" in rendered
+    assert "value: int" in rendered
+    assert "value: SharedShape" in rendered
+    definition = RuntimeToolDefinition(
+        name="collision",
+        function=lambda value: value,
+        description="Reads a shared input and returns a distinct output.",
+        code_eligible=True,
+        output_model=output,
+    )
+    object.__setattr__(definition, "_serialized_input_schema", parameters.model_json_schema())
+    object.__setattr__(definition, "_input_schema_cached", True)
+    retained = render_tool_stub(definition)
+    assert "class SharedShape(TypedDict):\n    value: str" in retained
+    assert "class OutputSharedShape(TypedDict):\n    value: int" in retained
+    assert "value: OutputSharedShape" in retained
+
+
+def test_public_renderer_changes_required_defaults_and_optional_nullability() -> None:
+    signature = FunctionSignature.from_schema(
+        name="defaults",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "optional": {"type": "string"},
+                "required": {"type": "integer", "default": 3},
+            },
+            "required": ["required"],
+        },
+    )
+    assert str(signature.params["optional"]) == "optional: str | None = None"
+    assert str(signature.params["required"]) == "required: int = 3"
 
 
 def test_classifier_is_rendered_in_the_code_mode_stub_catalog() -> None:

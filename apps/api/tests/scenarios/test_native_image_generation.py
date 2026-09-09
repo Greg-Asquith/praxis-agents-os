@@ -3,25 +3,27 @@
 import base64
 import json
 from collections.abc import Iterator
+from uuid import uuid4
 
 import httpx2 as httpx
 import pytest
 from pydantic import SecretStr
-from pydantic_ai import DeferredToolResults, ModelRetry, ToolApproved
+from pydantic_ai import DeferredToolResults, ModelRetry, ToolApproved, ToolDenied
 from pydantic_ai.messages import BinaryImage
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.settings import settings
 from models.ai_usage_event import AIUsageEvent
 from models.audit_event import AuditEvent
 from models.files import File, FileReference, FileRevision
+from models.workspace import WorkspaceMembership, WorkspaceRole
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.tools.native import image_generation as image_generation_tools
 from services.files.utils import private_ref_from_key
 from services.storage.factory import get_storage_provider
-from tests.support.openai_images import image_request, mock_openai_images
+from tests.support.openai_images import image_request, image_response, mock_openai_images
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -384,3 +386,160 @@ async def test_direct_image_provider_failure_is_contained_and_audited(
         ).all()
         assert usage.model == "gpt-image-2.5-flare"
         assert usage.requests == 1
+
+
+@pytest.mark.parametrize("verdict", ["denied", "revoked"])
+async def test_image_approval_rejection_makes_no_provider_request(
+    db_session_factory, monkeypatch, image_storage, verdict
+):
+    _enable_google(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["generate_image"],
+        tool_policies={"generate_image": "approval"},
+    )
+    model = scripted_model(
+        turns=[
+            ToolTurn(
+                (
+                    ToolCall(
+                        "generate_image",
+                        {"prompt": "A fox", "model_provider": "openai"},
+                        "image-approval",
+                    ),
+                )
+            ),
+            "No image was generated.",
+        ]
+    )
+    async with mock_openai_images(monkeypatch) as requests:
+        suspended = await run_scenario(db_session_factory, context, model=model)
+        state = load_suspended_run_state(suspended.run)
+        if verdict == "revoked":
+            async with db_session_factory() as db:
+                await db.execute(
+                    update(WorkspaceMembership)
+                    .where(
+                        WorkspaceMembership.workspace_id == context.workspace_id,
+                        WorkspaceMembership.user_id == context.user_id,
+                    )
+                    .values(role=WorkspaceRole.READ_ONLY)
+                )
+                await db.commit()
+        resumed = await run_scenario(
+            db_session_factory,
+            context,
+            model=model,
+            prompt=None,
+            expected_status=RUN_STATUS_AWAITING_APPROVAL,
+            message_history=state.message_history,
+            deferred_tool_results=DeferredToolResults(
+                approvals={
+                    state.pending_tool_call_ids[0]: ToolDenied("Declined")
+                    if verdict == "denied"
+                    else ToolApproved()
+                }
+            ),
+        )
+    assert requests == []
+    assert not any(
+        row.details.get("outcome") == "completed"
+        for row in resumed.audit_rows
+        if row.tool_name == "generate_image"
+    )
+    async with db_session_factory() as db:
+        assert (
+            await db.scalar(select(File.id).where(File.workspace_id == context.workspace_id))
+            is None
+        )
+        assert (
+            await db.scalar(
+                select(AIUsageEvent.id).where(
+                    AIUsageEvent.run_id == context.run_id,
+                    AIUsageEvent.purpose == "image_generation",
+                )
+            )
+            is None
+        )
+
+
+@pytest.mark.parametrize(
+    "failure", ["empty", "multiple", "malformed", "oversize", "storage", "missing_reference"]
+)
+async def test_image_failures_publish_no_successful_reference(
+    db_session_factory, monkeypatch, image_storage, failure
+):
+    _enable_google(monkeypatch)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
+    tool = "edit_image" if failure == "missing_reference" else "generate_image"
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=[tool],
+        tool_policies={tool: "auto"},
+    )
+    body = image_response()
+    if failure == "empty":
+        body["data"] = []
+    elif failure == "multiple":
+        body["data"] *= 2
+    elif failure == "malformed":
+        body["data"] = [{"b64_json": "invalid base64"}]
+    elif failure == "oversize":
+        monkeypatch.setattr(settings, "MAX_FILE_SIZE_IMAGE", 1)
+    elif failure == "storage":
+
+        async def fail_storage(*args, **kwargs):
+            raise OSError("Storage unavailable")
+
+        monkeypatch.setattr(get_storage_provider(), "put_object", fail_storage)
+    args = {"prompt": "A fox", "model_provider": "openai"}
+    if failure == "missing_reference":
+        args["file_ids"] = [str(uuid4())]
+    async with mock_openai_images(
+        monkeypatch, lambda _: httpx.Response(200, json=body)
+    ) as requests:
+
+        async def run():
+            return await run_scenario(
+                db_session_factory,
+                context,
+                model=scripted_model(
+                    turns=[
+                        ToolTurn((ToolCall(tool, args, "image-failure"),)),
+                        "No image was saved.",
+                    ]
+                ),
+            )
+
+        if failure == "storage":
+            with pytest.raises(OSError, match="Storage unavailable"):
+                await run()
+        else:
+            result = await run()
+            assert not any(
+                row.details.get("outcome") == "completed"
+                for row in result.audit_rows
+                if row.tool_name == tool
+            )
+    assert len(requests) == (0 if failure == "missing_reference" else 1)
+    async with db_session_factory() as db:
+        assert (
+            await db.scalar(
+                select(FileReference.id).where(FileReference.workspace_id == context.workspace_id)
+            )
+            is None
+        )
+        usage = (
+            await db.scalars(
+                select(AIUsageEvent).where(
+                    AIUsageEvent.run_id == context.run_id,
+                    AIUsageEvent.purpose == "image_generation",
+                )
+            )
+        ).all()
+        if failure == "missing_reference":
+            assert usage == []
+        else:
+            [event] = usage
+            assert (event.requests, event.input_tokens, event.output_tokens) == (1, 10, 20)

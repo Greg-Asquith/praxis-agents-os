@@ -3,7 +3,9 @@
 """Tests for provider-native runtime tool catalog entries."""
 
 import asyncio
+import base64
 import hashlib
+import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,8 +15,14 @@ from uuid import UUID, uuid4
 
 import httpx2 as httpx
 import pytest
+from google.auth.credentials import AnonymousCredentials
+from google.genai import Client as GoogleClient
+from google.genai.types import HttpOptions, HttpRetryOptions
 from pydantic import SecretStr, ValidationError
-from pydantic_ai import ModelRetry, RunContext, ToolFailed
+from pydantic_ai import ImageGenerator, ModelRetry, RunContext, ToolFailed
+from pydantic_ai.exceptions import ContentFilterError, UnexpectedModelBehavior, UserError
+from pydantic_ai.images.google import GoogleImageGenerationModel
+from pydantic_ai.images.openai import OpenAIImageGenerationModel
 from pydantic_ai.messages import (
     BinaryContent,
     BinaryImage,
@@ -28,6 +36,8 @@ from pydantic_ai.messages import (
     ToolReturnPart,
 )
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.usage import RunUsage
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -50,7 +60,7 @@ from services.agents.models.domain import (
     PROVIDER_OPENAI,
     ResolvedModel,
 )
-from services.agents.models.utils import has_provider_api_key
+from services.agents.models.utils import _build_retrying_http_client, has_provider_api_key
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import (
     digest_args,
@@ -4063,3 +4073,230 @@ async def _delete_committed_native_context(
         await db.execute(delete(User).where(User.id == context.user_id))
         await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))
         await db.commit()
+
+
+@pytest.mark.parametrize("action", ["generate", "edit"])
+@pytest.mark.parametrize("output_format", ["png", "webp", "jpeg"])
+@pytest.mark.parametrize("size", ["auto", "1024x1024", "1024x1536", "1536x1024"])
+async def test_direct_openai_image_api_request_parity(monkeypatch, action, output_format, size):
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=image_response())
+
+    model = "gpt-image-2.5-sunburst" if action == "edit" else "gpt-image-2.5-flare"
+    prompt = '  Keep "EXACT wording".\nDo not paraphrase. 🦊  '
+    async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
+        provider = OpenAIProvider(
+            api_key="test-key", base_url="https://images.example/v1", http_client=client
+        )
+        provider.client.max_retries = 0
+        result = await ImageGenerator(
+            OpenAIImageGenerationModel(model, provider=provider), instrument=False
+        ).generate(
+            prompt,
+            images=[BinaryImage(data=IMAGE_BYTES, media_type="image/png")]
+            if action == "edit"
+            else None,
+            settings={
+                "openai_n": 1,
+                "openai_size": size,
+                "openai_output_format": output_format,
+                **({"openai_moderation": "auto"} if action == "generate" else {}),
+            },
+        )
+    [request] = requests
+    body = image_request(request)
+    assert request.url.host == "images.example"
+    assert request.url.path == (
+        "/v1/images/edits" if action == "edit" else "/v1/images/generations"
+    )
+    assert body["prompt"] == prompt
+    assert body["model"] == model
+    assert str(body["n"]) == "1"
+    assert body["size"] == size
+    assert body["output_format"] == output_format
+    if action == "edit":
+        assert body["image[]"] == IMAGE_BYTES
+    else:
+        assert body["moderation"] == "auto"
+    assert len(result.images) == 1
+    assert result.image.data == IMAGE_BYTES
+    assert result.model_name == model
+    assert (result.usage.input_tokens, result.usage.output_tokens) == (10, 20)
+    assert result.usage.details["input_text_tokens"] == 6
+    assert result.usage.details["input_image_tokens"] == 4
+    assert result.usage.details["output_image_tokens"] == 20
+    assert result.provider_details["quality"] == "medium"
+    assert result.provider_details["size"] == "1024x1024"
+
+
+@pytest.mark.parametrize("failure", ["empty", "invalid", "oversize", "multiple", "filtered"])
+async def test_direct_openai_image_api_retained_contract_gaps(monkeypatch, failure):
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)
+    body = image_response()
+    if failure == "empty":
+        body["data"] = []
+    elif failure == "invalid":
+        body["data"] = [{"b64_json": "not base64"}]
+    elif failure == "multiple":
+        body["data"] *= 2
+    elif failure == "filtered":
+        body = {"error": {"code": "moderation_blocked", "message": "Blocked"}}
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_IMAGE", 1)
+    decoded_lengths = []
+    decode = base64.b64decode
+
+    def observe_decode(value, *args, **kwargs):
+        decoded_lengths.append(len(value))
+        return decode(value, *args, **kwargs)
+
+    monkeypatch.setattr(base64, "b64decode", observe_decode)
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(400 if failure == "filtered" else 200, json=body)
+
+    async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
+        provider = OpenAIProvider(api_key="test-key", http_client=client)
+        provider.client.max_retries = 0
+        generator = ImageGenerator(
+            OpenAIImageGenerationModel("gpt-image-2.5-flare", provider=provider),
+            instrument=False,
+        )
+        if failure in {"empty", "invalid", "filtered"}:
+            with pytest.raises(
+                ContentFilterError if failure == "filtered" else UnexpectedModelBehavior
+            ) as caught:
+                await generator.generate("A fox", settings={"openai_n": 1})
+            assert not hasattr(caught.value, "usage")
+            assert "b64_json" not in str(caught.value)
+        else:
+            result = await generator.generate("A fox", settings={"openai_n": 1})
+            assert len(result.images) == (2 if failure == "multiple" else 1)
+            assert len(result.image.data) > settings.MAX_FILE_SIZE_IMAGE
+            assert decoded_lengths == [len(body["data"][0]["b64_json"])] * len(result.images)
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("vertex", [False, True], ids=["direct", "vertex"])
+@pytest.mark.parametrize("action", ["generate", "edit", "video"])
+@pytest.mark.parametrize("failure", [None, "empty", "filtered"])
+async def test_direct_google_image_api_parity_and_failed_usage_gap(
+    monkeypatch, vertex, action, failure
+):
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", True)
+    requests = []
+    response = {
+        "modelVersion": "gemini-3.1-flash-image",
+        "candidates": [
+            {
+                "content": {
+                    "role": "model",
+                    "parts": [
+                        {
+                            "inlineData": {
+                                "mimeType": "image/png",
+                                "data": base64.b64encode(IMAGE_BYTES).decode(),
+                            }
+                        }
+                    ],
+                },
+                "finishReason": "STOP",
+            }
+        ],
+        "usageMetadata": {
+            "promptTokenCount": 10,
+            "candidatesTokenCount": 20,
+            "totalTokenCount": 30,
+            "promptTokensDetails": [
+                {"modality": "TEXT", "tokenCount": 6},
+                {"modality": "IMAGE", "tokenCount": 4},
+            ],
+            "candidatesTokensDetails": [{"modality": "IMAGE", "tokenCount": 20}],
+        },
+    }
+    if failure:
+        response["candidates"][0]["content"]["parts"] = []
+        response["candidates"][0]["finishReason"] = "SAFETY" if failure == "filtered" else "STOP"
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json=response)
+
+    async with _build_retrying_http_client(httpx.MockTransport(respond)) as client:
+        if vertex:
+            credentials = AnonymousCredentials()
+            credentials.token = "test-token"
+            google_client = GoogleClient(
+                vertexai=True,
+                project="image-probe",
+                location="global",
+                credentials=credentials,
+                http_options=HttpOptions(
+                    httpx_async_client=client, retry_options=HttpRetryOptions(attempts=1)
+                ),
+            )
+            provider = GoogleProvider(client=google_client)
+        else:
+            provider = GoogleProvider(
+                api_key="test-key",
+                http_client=client,
+                retry_options=HttpRetryOptions(attempts=1),
+            )
+        generator = ImageGenerator(
+            GoogleImageGenerationModel("gemini-3.1-flash-image", provider=provider),
+            instrument=False,
+        )
+        sources = (
+            [BinaryContent(data=b"video", media_type="video/mp4")]
+            if action == "video"
+            else [BinaryImage(data=IMAGE_BYTES, media_type="image/png")] * 2
+            if action == "edit"
+            else None
+        )
+        try:
+            if action == "video" or failure:
+                expected = (
+                    UserError
+                    if action == "video"
+                    else ContentFilterError
+                    if failure == "filtered"
+                    else UnexpectedModelBehavior
+                )
+                with pytest.raises(expected) as caught:
+                    await generator.generate("  A fox\n", images=sources)
+                assert not hasattr(caught.value, "usage")
+            else:
+                result = await generator.generate(
+                    "  A fox\n", images=sources, settings={"aspect_ratio": "3:2"}
+                )
+                assert len(result.images) == 1
+                assert result.image.data == IMAGE_BYTES
+                assert result.model_name == "gemini-3.1-flash-image"
+                assert (result.usage.input_tokens, result.usage.output_tokens) == (10, 20)
+        finally:
+            await provider.client.aio.aclose()
+            provider.client.close()
+    if action == "video":
+        assert requests == []
+        return
+    [request] = requests
+    body = json.loads(request.content)
+    parts = body["contents"][0]["parts"]
+    assert parts[0]["text"] == "  A fox\n"
+    assert "gemini-3.1-flash-image:generateContent" in request.url.path
+    if vertex:
+        assert "/projects/image-probe/locations/global/" in request.url.path
+    if action == "edit":
+        assert len(parts) == 3
+        assert all(
+            base64.urlsafe_b64decode(part["inlineData"]["data"]) == IMAGE_BYTES
+            for part in parts[1:]
+        )
+    if failure is None:
+        assert body["generationConfig"]["imageConfig"]["aspectRatio"] == "3:2"
+    assert body["generationConfig"]["responseModalities"] == ["IMAGE"]

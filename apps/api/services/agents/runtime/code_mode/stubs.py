@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import keyword
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -414,6 +415,7 @@ class _SchemaRenderer:
         )
         properties = _mapping(schema.get("properties", {}), key=f"{name}.properties")
         required = _required_keys(schema, properties)
+        functional = any(keyword.iskeyword(field_name) for field_name in properties)
         self._visiting.add(name)
         try:
             fields: list[str] = []
@@ -428,11 +430,19 @@ class _SchemaRenderer:
                 )
                 if field_name not in required:
                     field_type = f"NotRequired[{field_type}]"
-                fields.append(f"    {field_name}: {field_type}")
+                fields.append(
+                    f"    {field_name!r}: {field_type},"
+                    if functional
+                    else f"    {field_name}: {field_type}"
+                )
         finally:
             self._visiting.remove(name)
         body = "\n".join(fields) if fields else "    pass"
-        self._rendered_aliases[name] = f"class {name}(TypedDict):\n{body}"
+        self._rendered_aliases[name] = (
+            f"{name} = TypedDict({name!r}, {{\n{body}\n}})"
+            if functional
+            else f"class {name}(TypedDict):\n{body}"
+        )
 
 
 def _validate_root_schema(name: str, schema: Mapping[str, Any]) -> None:
