@@ -28,7 +28,7 @@ Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 
 | Operation                                                                                       | read_only | member | admin | owner |
 | ----------------------------------------------------------------------------------------------- | --------- | ------ | ----- | ----- |
-| View agents/conversations/schedules/skills/files/KB/artifacts                                   | ✓         | ✓      | ✓     | ✓     |
+| View agents/schedules/skills/files/KB/artifacts                                   | ✓         | ✓      | ✓     | ✓     |
 | Create/edit agents, skills _(enforced: EDITOR)_                                                 | —         | ✓      | ✓     | ✓     |
 | Create schedules _(enforced: `agent_schedules/authorisation.py`)_                               | —         | ✓      | ✓     | ✓     |
 | Mutate others' schedules _(enforced: owner-or-admin)_                                           | —         | —      | ✓     | ✓     |
@@ -48,6 +48,13 @@ Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 | View audit log _(enforced: MANAGER)_                                                            | —         | —      | ✓     | ✓     |
 | View security events _(enforced: super-admin only — `security_events` has no workspace column)_ | —         | —      | —     | —     |
 | Configure agent tool policies _(enforced: EDITOR via agents)_                                   | —         | ✓      | ✓     | ✓     |
+
+Conversation reads require chat ownership or an explicit workspace share.
+All active members can read shared root chats. Only the chat owner can enable
+sharing. Workspace owners and admins can revoke an existing share. Execution
+ownership, approvals, credentials, and delegated transcripts retain their
+existing boundaries. See the [workspace chat-sharing decision](workspace-chat-sharing.md).
+_(enforced)_
 
 Context Groups inherit the active workspace's scope. In a shared workspace,
 group members must come from connections owned by that same workspace. In a

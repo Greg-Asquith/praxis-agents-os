@@ -45,8 +45,8 @@ export function OutlookMessageRow({ message }: { message: OutlookMessage }) {
       <OutlookMessageView
         mailboxId={message.mailboxId}
         errorFallback={
-          <p className="text-destructive py-4 text-center text-sm">
-            This message preview could not be loaded.
+          <p className="text-muted-foreground py-4 text-center text-sm">
+            This message preview is unavailable.
           </p>
         }
         fallback={<MessageDetailSkeleton label="Loading message preview…" />}

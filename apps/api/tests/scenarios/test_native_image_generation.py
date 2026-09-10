@@ -108,8 +108,8 @@ async def test_vertex_image_approval_uses_real_adapter_and_persists_once(
         )
     assert resumed.run.status == "completed"
     [request] = requests
-    assert request.url.host == "aiplatform.googleapis.com"
-    assert "/projects/image-test/locations/global/" in request.url.path
+    assert request.url.host == "aiplatform.eu.rep.googleapis.com"
+    assert "/projects/image-test/locations/eu/" in request.url.path
     assert request.headers["authorization"] == "Bearer test-adc"
     async with db_session_factory() as db:
         files = (

@@ -43,7 +43,9 @@ copy, and CSV export. Folder counts remain numeric. Outlook result headers
 include the provider icon and mailbox names without opaque mailbox identifiers.
 Search rows open the full message in the shared `MessagePreviewRow` popover,
 and the read view replaces the plain body with the fetched message, matching
-Gmail. Both use the shared `provider-content-preview.tsx` loader. Gmail retains
+Gmail. Both use the shared `provider-content-preview.tsx` loader.
+Shared chat search previews show an unavailable state without provider requests;
+completed reads retain the saved message body. Gmail retains
 its metadata chips and query keys through that same loader. HTML previews use
 engine sanitisation and the script-less sandboxed frame.
 

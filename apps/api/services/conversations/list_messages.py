@@ -11,7 +11,11 @@ from models.conversation import ConversationMessage
 from models.user import User
 from models.workspace import Workspace
 from services.conversations.schemas import ConversationMessageRead, ConversationMessagesResponse
-from services.conversations.utils import get_conversation_for_actor
+from services.conversations.shared_projection import (
+    load_completed_tool_calls,
+    project_shared_message,
+)
+from services.conversations.utils import get_conversation_for_read
 
 
 async def list_conversation_messages(
@@ -24,7 +28,7 @@ async def list_conversation_messages(
     before_sequence: int | None = None,
 ) -> ConversationMessagesResponse:
     """Return a latest-first page of persisted transcript messages ordered by sequence."""
-    conversation = await get_conversation_for_actor(
+    conversation, _membership = await get_conversation_for_read(
         db,
         actor=actor,
         workspace=workspace,
@@ -68,8 +72,20 @@ async def list_conversation_messages(
             )
         ) is not None
 
+    viewer = conversation.user_id != actor.id
+    if viewer:
+        completed_calls = await load_completed_tool_calls(
+            db, conversation=conversation, messages=messages
+        )
+        message_reads = [
+            project_shared_message(message, completed_calls=completed_calls) for message in messages
+        ]
+    else:
+        message_reads = [ConversationMessageRead.from_message(message) for message in messages]
+
     return ConversationMessagesResponse(
-        messages=[ConversationMessageRead.from_message(message) for message in messages],
+        access="viewer" if viewer else "owner",
+        messages=message_reads,
         total=total or 0,
         has_more=has_more,
     )

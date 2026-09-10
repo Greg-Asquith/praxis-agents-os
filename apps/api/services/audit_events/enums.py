@@ -52,6 +52,7 @@ class AuditResourceType(StrEnum):
     APPLICATION_ENCRYPTION = "application_encryption"
     KB_DOCUMENT = "kb_document"
     MEMORY = "memory"
+    CONVERSATION_SHARING = "conversation_sharing"
     ARTIFACT_SHARE = "artifact_share"
 
 

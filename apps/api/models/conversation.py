@@ -72,6 +72,12 @@ class Conversation(BaseModel):
         nullable=True,
     )
 
+    visibility = Column(
+        String(16), nullable=False, default="private", server_default=text("'private'")
+    )
+    shared_at = Column(DateTime(timezone=True), nullable=True)
+    shared_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
     last_message_at = Column(DateTime(timezone=True), nullable=True)
     active_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
     agent_slug = Column(String(128), nullable=True, index=True)
@@ -95,6 +101,13 @@ class Conversation(BaseModel):
     )
 
     __table_args__ = (
+        CheckConstraint(
+            "visibility IN ('private', 'workspace')", name="conversations_visibility_check"
+        ),
+        CheckConstraint(
+            "source != 'delegated' OR visibility = 'private'",
+            name="conversations_child_private_check",
+        ),
         CheckConstraint("status IN ('active', 'archived')", name="conversations_status_check"),
         CheckConstraint(
             "source IN ("
@@ -129,6 +142,16 @@ class Conversation(BaseModel):
             postgresql_where=text("schedule_run_id IS NOT NULL"),
         ),
         Index("ix_conversations_source_agent", "source", "agent_slug"),
+        Index(
+            "ix_conversations_workspace_shared",
+            "workspace_id",
+            text("coalesce(last_message_at, created_at) DESC"),
+            text("created_at DESC"),
+            text("id DESC"),
+            postgresql_where=text(
+                "visibility = 'workspace' AND deleted = false AND source != 'delegated'"
+            ),
+        ),
     )
 
 

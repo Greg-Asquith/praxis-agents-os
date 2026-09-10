@@ -693,7 +693,7 @@ describe("parseConversationMessages", () => {
           tool_call_id: "tool-call-1",
           tool_kind: "capability-load",
           tool_name: "load_capability",
-          args: '{"id":"skill:skill-1"}',
+          args: '{"id":"skill-skill-1"}',
         },
         {
           part_kind: "tool-return",
@@ -714,7 +714,7 @@ describe("parseConversationMessages", () => {
         kind: "call",
         status: "completed",
         name: "load_capability",
-        args: { id: "skill:skill-1" },
+        args: { id: "skill-skill-1" },
         outcome: "success",
         result: { loaded: true },
         toolKind: "capability-load",
@@ -1079,5 +1079,35 @@ describe("parseConversationMessages", () => {
         status: "completed",
       },
     ])
+  })
+})
+
+it("uses completed saved arguments without a loaded call and preserves owner approval precedence", () => {
+  const saved = message(
+    "result",
+    "tool",
+    5,
+    [
+      {
+        part_kind: "tool-return",
+        tool_call_id: "send",
+        tool_name: "gmail_send_message",
+        args: { to: "approved@example.com" },
+        content: { sent: true },
+      },
+    ],
+    { agent_run_id: "run" }
+  )
+  expect(parseConversationMessages([saved])[0]?.toolActivities[0]?.args).toEqual({
+    to: "approved@example.com",
+  })
+  saved.metadata = {
+    agent_run_id: "run",
+    approval_results: {
+      send: { decision: "approved", effective_args: { to: "owner@example.com" } },
+    },
+  }
+  expect(parseConversationMessages([saved])[0]?.toolActivities[0]?.args).toEqual({
+    to: "owner@example.com",
   })
 })

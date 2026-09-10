@@ -13,7 +13,33 @@ from models.conversation import Conversation
 type ConversationSource = Literal["direct", "scheduled", "delegated", "event"]
 
 
+class ConversationCapabilities(BaseModel):
+    can_reply: bool = False
+    can_manage_sharing: bool = False
+    can_stop_sharing: bool = False
+
+
+class SharedConversationRead(BaseModel):
+    access: Literal["viewer"] = "viewer"
+    id: UUID
+    workspace_id: UUID
+    title: str | None
+    source: ConversationSource
+    visibility: Literal["private", "workspace"]
+    owner_name: str | None
+    agent_name: str | None
+    last_message_at: datetime | None
+    active_run_status: str | None
+    created_at: datetime
+    updated_at: datetime
+    capabilities: ConversationCapabilities
+
+
 class ConversationRead(BaseModel):
+    access: Literal["owner"] = "owner"
+    visibility: Literal["private", "workspace"] = "private"
+    owner_name: str | None = None
+    capabilities: ConversationCapabilities = Field(default_factory=ConversationCapabilities)
     id: UUID
     user_id: UUID
     workspace_id: UUID
@@ -46,6 +72,8 @@ class ConversationRead(BaseModel):
         conversation: Conversation,
         *,
         agent_name: str | None,
+        capabilities: ConversationCapabilities | None = None,
+        owner_name: str | None = None,
         active_run_id: UUID | None,
         active_run_status: str | None,
     ) -> "ConversationRead":
@@ -55,6 +83,8 @@ class ConversationRead(BaseModel):
         return read_model.model_copy(
             update={
                 "agent_name": agent_name,
+                "owner_name": owner_name,
+                "capabilities": capabilities or read_model.capabilities,
                 "active_run_id": active_run_id,
                 "active_run_status": active_run_status,
                 "needs_approval": active_run_status == RUN_STATUS_AWAITING_APPROVAL,

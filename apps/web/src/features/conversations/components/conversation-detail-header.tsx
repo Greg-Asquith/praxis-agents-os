@@ -2,6 +2,7 @@
 
 import { CalendarClockIcon, CornerDownRightIcon, WebhookIcon } from "lucide-react"
 
+import { ConversationSharingDialog } from "@/features/conversations/components/conversation-sharing-dialog"
 import { Badge } from "@/components/ui/badge"
 import { ConversationBadges } from "@/features/conversations/components/conversation-badges"
 import { conversationScheduleContext } from "@/features/conversations/format"
@@ -51,6 +52,13 @@ export function ConversationDetailHeader({
           ) : null}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {conversation.visibility === "workspace" ? (
+            <Badge variant="secondary">Shared with workspace</Badge>
+          ) : null}
+          {conversation.capabilities?.can_manage_sharing ||
+          conversation.capabilities?.can_stop_sharing ? (
+            <ConversationSharingDialog conversation={conversation} />
+          ) : null}
           <ConversationBadges
             className="gap-1"
             conversation={conversation}

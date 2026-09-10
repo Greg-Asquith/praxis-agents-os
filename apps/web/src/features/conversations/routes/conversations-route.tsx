@@ -1,9 +1,12 @@
 // apps/web/src/features/conversations/routes/conversations-route.tsx
 
-import { useMemo } from "react"
+import { Suspense, useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 import { MessageSquarePlusIcon, MessageSquareTextIcon } from "lucide-react"
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { SharedConversationList } from "@/features/conversations/components/shared-conversation-list"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { PageHeader } from "@/components/shell/page-header"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -12,6 +15,7 @@ import { ConversationList } from "@/features/conversations/components/conversati
 import { sortConversations } from "@/features/conversations/sort"
 
 export function ConversationsRoute() {
+  const { workspace } = useActiveWorkspace()
   const { data: conversationsData } = useConversationsQuery({ limit: 100 })
   const conversations = useMemo(
     () => sortConversations(conversationsData.conversations),
@@ -34,15 +38,32 @@ export function ConversationsRoute() {
         title="Conversations"
       />
 
-      {hasConversations ? (
-        <ConversationList
-          className="lg:grid-cols-2"
-          conversations={conversations}
-          selectedConversationId={null}
-        />
-      ) : (
-        <ConversationEmptyState />
-      )}
+      <Tabs defaultValue="mine">
+        {!workspace.is_personal ? (
+          <TabsList>
+            <TabsTrigger value="mine">My Conversations</TabsTrigger>
+            <TabsTrigger value="shared">Shared</TabsTrigger>
+          </TabsList>
+        ) : null}
+        <TabsContent value="mine">
+          {hasConversations ? (
+            <ConversationList
+              className="lg:grid-cols-2"
+              conversations={conversations}
+              selectedConversationId={null}
+            />
+          ) : (
+            <ConversationEmptyState />
+          )}
+        </TabsContent>
+        {!workspace.is_personal ? (
+          <TabsContent value="shared">
+            <Suspense fallback={<p role="status">Loading shared conversations</p>}>
+              <SharedConversationList key={workspace.id} />
+            </Suspense>
+          </TabsContent>
+        ) : null}
+      </Tabs>
     </div>
   )
 }

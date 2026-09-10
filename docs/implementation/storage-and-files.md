@@ -70,3 +70,14 @@ download action: clicking it mints a fresh signed URL through the Files API.
 If the ID belongs to an artifact instead, the link opens that artifact's
 management page after the Files API reports that no file exists.
 Other internal and external Markdown links retain their normal behaviour.
+
+## Files in shared chats
+
+Workspace chat sharing publishes saved display content without granting file,
+Artifact, or provider permissions. Shared transcripts keep stable File and
+Artifact references and obtain downloads through the existing access checks.
+They do not persist additional signed URLs or fetch through the chat owner's
+personal connections. Missing content shows an unavailable state.
+
+Stopping chat sharing does not revoke independent workspace file access,
+downloaded copies, or previously issued download URLs.

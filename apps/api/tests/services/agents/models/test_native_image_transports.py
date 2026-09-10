@@ -38,7 +38,7 @@ async def test_vertex_image_model_uses_supported_location_without_chat_entry(mon
         assert model.provider.client._api_client.vertexai is True
         assert model.provider.client._api_client.project == "image-test"
         assert model.provider.client._api_client.location == (
-            "global" if location == "auto" else location
+            "eu" if location == "auto" else location
         )
     finally:
         await close_vertex_clients()
@@ -92,7 +92,7 @@ async def test_google_image_adapter_preserves_media_and_transport(
     body = json.loads(request.content)
     assert request.url.path.endswith("/gemini-3.1-flash-image:generateContent")
     if vertex:
-        effective_location = "global" if location == "auto" else location
+        effective_location = "eu" if location == "auto" else location
         assert f"/projects/image-test/locations/{effective_location}/" in request.url.path
         assert request.headers["authorization"] == "Bearer test-adc"
         assert "x-goog-api-key" not in request.headers

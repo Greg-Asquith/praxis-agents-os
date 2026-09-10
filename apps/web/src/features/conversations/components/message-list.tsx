@@ -8,7 +8,10 @@ import { MessageSquareTextIcon } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ToolApprovalLoadingCard } from "@/components/tool-ui/approval-card"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
-import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
+import {
+  SharedTranscriptContext,
+  ToolConversationContext,
+} from "@/components/tool-ui/tool-conversation-context"
 import { AssistantMessageShell } from "@/features/conversations/components/message-shell"
 import {
   AssistantLiveActivityRow,
@@ -26,20 +29,40 @@ import type {
   ConversationTimelineRow,
 } from "@/features/conversations/message-parts/timeline"
 
-type MessageListProps = {
-  conversationId: string
+type TranscriptProps = {
   timeline: ConversationTimeline
-  approvalError: string | null
-  runInterruption: RunInterruptionOutcome | null
   assistantAgentMetadata: Record<string, unknown> | null
   assistantLabel: string
+}
+
+type MessageListProps = TranscriptProps & {
+  conversationId: string
+  approvalError: string | null
+  runInterruption: RunInterruptionOutcome | null
   isApprovalLoading: boolean
   isApprovalSubmitting: boolean
   streamError?: string | null
   onApprovalSubmit: (decisions: AgentRunResumeDecision[], revision?: string) => Promise<void>
 }
 
-export function MessageList({
+export function MessageList(
+  props: (MessageListProps & { shared?: false }) | (TranscriptProps & { shared: true })
+) {
+  if (props.shared) {
+    return (
+      <SharedTranscriptContext value>
+        <ToolConversationContext value={null}>
+          <div className="flex min-w-0 flex-col gap-7">
+            <TranscriptRows {...props} />
+          </div>
+        </ToolConversationContext>
+      </SharedTranscriptContext>
+    )
+  }
+  return <InteractiveMessageList {...props} />
+}
+
+function InteractiveMessageList({
   conversationId,
   timeline,
   approvalError,
@@ -88,15 +111,11 @@ export function MessageList({
     <ToolConversationContext value={conversationId}>
       <ApprovalDecisionContext value={inlineApprovals.resolveApprovalControls}>
         <div className="flex min-w-0 flex-col gap-7">
-          {timeline.rows.map((item) => (
-            <TranscriptRenderItem
-              key={item.id}
-              assistantAgentId={timeline.assistantAgentId}
-              assistantAgentMetadata={assistantAgentMetadata}
-              assistantLabel={assistantLabel}
-              item={item}
-            />
-          ))}
+          <TranscriptRows
+            timeline={timeline}
+            assistantAgentMetadata={assistantAgentMetadata}
+            assistantLabel={assistantLabel}
+          />
 
           {timeline.liveActivity ? (
             <AssistantLiveActivityRow
@@ -193,6 +212,18 @@ export function MessageList({
       </ApprovalDecisionContext>
     </ToolConversationContext>
   )
+}
+
+function TranscriptRows({ timeline, assistantAgentMetadata, assistantLabel }: TranscriptProps) {
+  return timeline.rows.map((item) => (
+    <TranscriptRenderItem
+      key={item.id}
+      assistantAgentId={timeline.assistantAgentId}
+      assistantAgentMetadata={assistantAgentMetadata}
+      assistantLabel={assistantLabel}
+      item={item}
+    />
+  ))
 }
 
 function TranscriptRenderItem({

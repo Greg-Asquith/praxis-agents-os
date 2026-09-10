@@ -21,6 +21,8 @@ export function shouldRedirectHomeForWorkspaceSwitch(
     return true
   }
 
+  if (pathname.startsWith("/shared-chats/")) return true
+
   const segments = pathname.split("/").filter(Boolean)
   if (segments.length !== 2) {
     return false

@@ -22,7 +22,7 @@ process-owned Google client per project, location, and retry policy.
 Flash-Lite use `eu`, Gemini 3.1 Pro uses `global`, and embeddings retain
 `global`. Explicit locations must appear in the Gemini model's supported
 locations. Clients use the SDK's multi-region hostname for `eu` and `us`.
-The image-only `gemini-3.1-flash-image` model uses `global` for `auto`
+The image-only `gemini-3.1-flash-image` model uses `eu` for `auto`
 and accepts explicit `global`, `eu`, or `us`. Its location validation lives
 in the Vertex client module without adding it to ordinary agent choices.
 Image availability and execution both reject unsupported locations before

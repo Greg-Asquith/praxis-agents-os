@@ -106,7 +106,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             key={workspace.slug}
             className={cn(
               "relative min-h-0 min-w-0 flex-1",
-              pathname !== "/conversations" && pathname.startsWith("/conversations/")
+              pathname.startsWith("/conversations/") || pathname.startsWith("/shared-chats/")
                 ? "overflow-hidden"
                 : "overflow-y-auto px-6 py-5 md:px-8 md:py-6"
             )}

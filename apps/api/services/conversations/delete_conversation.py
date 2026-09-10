@@ -25,6 +25,7 @@ async def delete_conversation(
         actor=actor,
         workspace=workspace,
         conversation_id=conversation_id,
+        lock=True,
     )
     await reap_abandoned_runs(db, conversation_id=conversation.id)
     active_run = await get_active_run_for_conversation(db, conversation_id=conversation.id)

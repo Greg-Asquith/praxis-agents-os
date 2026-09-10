@@ -31,7 +31,10 @@ from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRe
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.approval import build_code_mode_decision_metadata
 from services.agents.runtime.code_mode.executor import MontyExecutor, close_code_mode_executor
-from services.agents.runtime.code_mode.state import CodeModeResumeRequiresRecoveryError
+from services.agents.runtime.code_mode.state import (
+    CODE_MODE_STATE_METADATA_KEY,
+    CodeModeResumeRequiresRecoveryError,
+)
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.dispatch import digest_args
 from services.agents.runtime.run_manager import run_task_registry
@@ -56,6 +59,7 @@ from services.agents.runtime.tools.contract import (
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, build_runtime_tools
 from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_START, UntrustedContent
+from services.conversations.shared_projection import project_shared_message
 from services.files.utils import private_ref_from_key
 from services.storage.errors import StorageNotFoundError
 from services.storage.factory import get_storage_provider
@@ -2449,3 +2453,66 @@ async def test_google_ads_keyword_removal_requires_approval_and_retains_two_grou
     transcript = json.dumps([message.parts for message in completed.messages])
     assert "presentation_result" in transcript
     assert "REMOVED" in transcript
+
+
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+async def test_shared_projection_after_real_nested_suspension_and_resume(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    code_mode_scenario_tools: dict[str, Any],
+    decision: str,
+) -> None:
+    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=[definition.name],
+        code_mode_enabled=True,
+    )
+    model = scripted_model(
+        turns=[
+            ToolTurn(
+                (
+                    ToolCall(
+                        RUN_WORKFLOW_TOOL_NAME,
+                        {
+                            "code": "try:\n    await scenario_code_forced_write(value='REVIEWED_VALUE')\nexcept PermissionError:\n    pass"
+                        },
+                        "workflow-call",
+                    ),
+                )
+            ),
+            "The workflow finished.",
+        ]
+    )
+    suspended = await run_scenario(db_session_factory, context, model=model)
+    assert suspended.run.status == "awaiting_approval"
+    trace = suspended.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["nested_trace"]
+    assert trace[-1]["status"] == "pending"
+    assert suspended.tool_returns(RUN_WORKFLOW_TOOL_NAME) == []
+    suspended_display = [
+        project_shared_message(row).model_dump_json() for row in suspended.messages
+    ]
+    assert "REVIEWED_VALUE" not in "".join(suspended_display)
+    assert "code_mode_trace" not in "".join(suspended_display)
+
+    settled = await _resume_code_mode_scenario(
+        db_session_factory,
+        context,
+        suspended=suspended,
+        model=model,
+        decision=decision,
+        message="Operator declined" if decision == "denied" else None,
+    )
+    assert settled.run.status == "completed"
+    children = [
+        child
+        for row in settled.messages
+        for part in project_shared_message(row).parts["parts"]
+        for child in part.get("metadata", {}).get("code_mode_trace", {}).get("calls", [])
+    ]
+    assert len(children) == 1
+    assert children[0]["status"] == ("succeeded" if decision == "approved" else "denied")
+    assert "args" not in children[0]
+    assert "parent_tool_call_id" not in children[0]
+    assert code_mode_scenario_tools["effects"] == (
+        ["REVIEWED_VALUE"] if decision == "approved" else []
+    )

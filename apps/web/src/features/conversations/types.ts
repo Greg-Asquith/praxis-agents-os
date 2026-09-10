@@ -11,7 +11,17 @@ export type RunOutcome =
 type ConversationSource = "direct" | "scheduled" | "delegated" | "event"
 type AgentRunTrigger = "interactive" | "scheduled" | "delegated" | "event"
 
+type ConversationCapabilities = {
+  can_reply: boolean
+  can_manage_sharing: boolean
+  can_stop_sharing: boolean
+}
+
 export type Conversation = {
+  access?: "owner"
+  visibility?: "private" | "workspace"
+  owner_name?: string | null
+  capabilities?: ConversationCapabilities
   id: string
   user_id: string
   workspace_id: string
@@ -203,3 +213,22 @@ export type PendingApprovalsListResponse = {
   items: PendingApprovalRun[]
   total: number
 }
+
+export type SharedConversation = Pick<
+  Conversation,
+  | "id"
+  | "workspace_id"
+  | "title"
+  | "source"
+  | "agent_name"
+  | "created_at"
+  | "updated_at"
+  | "last_message_at"
+  | "active_run_status"
+> & {
+  access: "viewer"
+  visibility: "private" | "workspace"
+  owner_name: string | null
+  capabilities: ConversationCapabilities
+}
+export type ConversationDetail = Conversation | SharedConversation

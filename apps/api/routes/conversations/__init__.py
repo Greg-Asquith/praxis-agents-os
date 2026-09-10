@@ -12,8 +12,10 @@ from routes.conversations.get_conversation import router as get_conversation_rou
 from routes.conversations.list_conversations import router as list_conversations_router
 from routes.conversations.list_messages import router as list_messages_router
 from routes.conversations.mark_read import router as mark_read_router
+from routes.conversations.update_sharing import router as update_sharing_router
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
+router.include_router(update_sharing_router)
 router.include_router(list_conversations_router)
 router.include_router(create_conversation_router)
 router.include_router(get_conversation_router)

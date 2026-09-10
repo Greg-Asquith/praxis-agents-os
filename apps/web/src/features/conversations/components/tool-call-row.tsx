@@ -5,7 +5,10 @@ import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 import { Component, use, type ErrorInfo, type ReactNode } from "react"
 import { WrenchIcon } from "lucide-react"
 
-import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
+import {
+  SharedTranscriptContext,
+  ToolConversationContext,
+} from "@/components/tool-ui/tool-conversation-context"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
@@ -47,19 +50,27 @@ import { normalizeOptionalText } from "@/lib/format"
 
 type ToolCallRowProps = ToolCallRowRenderProps
 
-export function ToolCallRow({
+export function ToolCallRow(props: ToolCallRowProps) {
+  const shared = use(SharedTranscriptContext)
+  if (shared && props.activity.status === "awaiting_approval") return null
+  return <VisibleToolCallRow {...props} />
+}
+
+function VisibleToolCallRow({
   activity,
   compact = false,
   defaultOpen = false,
   live = false,
 }: ToolCallRowProps) {
+  const shared = use(SharedTranscriptContext)
   const conversationId = use(ToolConversationContext)
   const ownerConversationId =
     activity.delegate && activity.agentRunId === activity.delegate.runId
       ? activity.delegate.conversationId
       : null
   const presentationFor = useToolPresentations()
-  const approvalDecision = use(ApprovalDecisionContext)(activity) ?? undefined
+  const resolveApproval = use(ApprovalDecisionContext)
+  const approvalDecision = shared ? undefined : (resolveApproval(activity) ?? undefined)
   const entry = presentationFor(activity.name)
   const providerKey = entry?.provider ?? providerKeyForToolName(activity.name)
   useIntegrationUiModule(providerKey)
@@ -217,7 +228,7 @@ export function ToolCallRow({
   return (
     <ToolConversationContext
       key={approvalDecision?.formKey ?? approvalActivityIdentity(activity)}
-      value={ownerConversationId ?? conversationId}
+      value={shared ? null : (ownerConversationId ?? conversationId)}
     >
       <ToolCallRowRendererContext value={renderToolCallRow}>{row}</ToolCallRowRendererContext>
     </ToolConversationContext>

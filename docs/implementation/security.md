@@ -84,3 +84,18 @@ contract. Pending intent must not imply an outcome. Terminal summaries use
 one intent-count line with status badges; concrete effect counts stay in the
 evidence contract and item detail instead of creating a second operator-facing
 summary. Humanise machine tokens such as reason codes before display.
+
+## Conversation audience
+
+Private conversations remain owner-readable, including for workspace managers.
+Explicit workspace sharing permits active members to read an eligible root
+chat through a safe display projection. Sharing never grants execution,
+approval, integration, or delegated-child access. Personal-workspace sharing
+is rejected. Owner departure does not transfer ownership or remove an existing
+share; membership removal prevents further reads.
+
+Share and revoke transitions require normal authentication and CSRF protection.
+They lock the conversation and use the strict audit writer in the same
+transaction. Audit failure rolls back the visibility change. Routine audit
+operations retain their existing best-effort behaviour. Confirmed viewer access
+loss clears cached content. See the [sharing decision](../architecture/workspace-chat-sharing.md).

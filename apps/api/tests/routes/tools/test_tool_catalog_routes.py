@@ -65,7 +65,13 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
         "description": (
             "Search the web with a provider-native helper model. The helper model "
             "provider and model can be selected per call from the available native "
-            "search providers: anthropic, google, openai."
+            "search providers: anthropic, google, openai. "
+            "Use the conversation's current date to resolve relative dates such as 'this year'; "
+            "preserve any year explicitly requested by the user. The result includes the query "
+            "actually executed, which may reflect edits made during approval. Use that query "
+            "and its answer and sources when deciding what to do next. Once the results answer "
+            "the user's question, respond with the answer. Search again only to resolve a "
+            "specific missing fact or conflicting evidence."
         ),
         "kind": "function",
         "effect": "read",

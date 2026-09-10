@@ -1,10 +1,19 @@
 // apps/web/tests/integrations/outlook_mail/preview-interaction.tsx
 
+import type { ReactNode } from "react"
+import { GmailSearchMessageRow } from "@/integrations/gmail/components/search-message-row"
+import { gmailReadPresenter } from "@/integrations/gmail/presenters/read"
 import { createRoot } from "react-dom/client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 
-import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
-import { OutlookMessageRow } from "@/integrations/outlook_mail/components/message"
+import {
+  SharedTranscriptContext,
+  ToolConversationContext,
+} from "@/components/tool-ui/tool-conversation-context"
+import {
+  OutlookMessageBody,
+  OutlookMessageRow,
+} from "@/integrations/outlook_mail/components/message"
 import { GmailMessageView } from "@/integrations/gmail/components/message-preview"
 import { setActiveWorkspaceSlug } from "@/lib/workspace"
 import "@/index.css"
@@ -120,6 +129,136 @@ async function mount(conversation = "conversation", mailboxId = "mailbox", gmail
   )
   await until(() => container.querySelector(`[data-mount="${marker}"]`) !== null, "mount")
 }
+async function mountShared(content: ReactNode) {
+  mounts += 1
+  const marker = String(mounts)
+  root.render(
+    <QueryClientProvider client={queryClient}>
+      <SharedTranscriptContext value={true}>
+        <ToolConversationContext value={null}>
+          <div key={marker} data-mount={marker}>
+            {content}
+          </div>
+        </ToolConversationContext>
+      </SharedTranscriptContext>
+    </QueryClientProvider>
+  )
+  await until(() => container.querySelector(`[data-mount="${marker}"]`) !== null, "shared mount")
+}
+
+async function sharedSearchChecks() {
+  const initialRequests = countRequests()
+  for (const provider of ["outlook", "gmail"]) {
+    await mountShared(
+      provider === "outlook" ? (
+        <OutlookMessageRow message={message} />
+      ) : (
+        <GmailSearchMessageRow
+          mailboxId="mailbox"
+          message={{
+            date: message.receivedAt,
+            messageId: "gmail-message",
+            sender: message.sender,
+            snippet: message.preview,
+            subject: message.subject,
+          }}
+        />
+      )
+    )
+    assert(countRequests() === initialRequests, "Closed shared search rows make no requests")
+    await toggle()
+    await until(
+      () => pageText().includes("This message preview is unavailable"),
+      `${provider} unavailable preview`
+    )
+    assert(
+      !pageText().includes("Loading message preview"),
+      "Shared Outlook rows do not stay loading"
+    )
+    assert(!pageText().includes("Loading full message"), "Shared Gmail rows do not stay loading")
+    assert(
+      countRequests() === initialRequests,
+      "Opening shared search rows makes no provider requests"
+    )
+    const button = container.querySelector("button")
+    assert(button, "The shared message row has a closing control")
+    button.click()
+    await until(
+      () => !pageText().includes("This message preview is unavailable"),
+      "shared preview close"
+    )
+    await toggle()
+    await until(
+      () => pageText().includes("This message preview is unavailable"),
+      "shared preview reopen"
+    )
+    assert(
+      countRequests() === initialRequests,
+      "Reopening shared search rows makes no provider requests"
+    )
+  }
+}
+
+async function sharedReadChecks() {
+  const initialRequests = countRequests()
+  await mountShared(
+    <OutlookMessageBody
+      message={{
+        ...message,
+        to: "team@example.com",
+        body: "Saved Outlook body",
+        truncated: false,
+        attachments: [],
+      }}
+    />
+  )
+  await until(() => pageText().includes("Saved Outlook body"), "saved Outlook body")
+  assert(
+    !pageText().includes("This message preview is unavailable"),
+    "Completed Outlook reads keep saved content"
+  )
+  assert(countRequests() === initialRequests, "Saved Outlook reads make no provider requests")
+  await mountShared(
+    gmailReadPresenter.render({
+      compact: false,
+      defaultOpen: true,
+      live: false,
+      providerKey: "gmail",
+      activity: {
+        id: "saved-gmail",
+        kind: "result",
+        name: "gmail_read_message",
+        status: "completed",
+        result: {
+          results: [
+            {
+              provider_key: "gmail",
+              display_name: "Mailbox",
+              external_id: "mailbox",
+              status: "success",
+              data: {
+                message_id: "gmail-message",
+                sender: message.sender,
+                subject: message.subject,
+                to: "team@example.com",
+                date: message.receivedAt,
+                body: "Saved Gmail body",
+                truncated: false,
+              },
+            },
+          ],
+        },
+      },
+    })
+  )
+  await until(() => pageText().includes("Saved Gmail body"), "saved Gmail body")
+  assert(
+    !pageText().includes("This message preview is unavailable"),
+    "Completed Gmail reads keep saved content"
+  )
+  assert(countRequests() === initialRequests, "Saved Gmail reads make no provider requests")
+}
+
 async function run() {
   setActiveWorkspaceSlug("workspace-a")
   await mount()
@@ -155,10 +294,7 @@ async function run() {
   fail()
   await requestCount(3)
   fail()
-  await until(
-    () => pageText().includes("This message preview could not be loaded"),
-    "the error state"
-  )
+  await until(() => pageText().includes("This message preview is unavailable"), "the error state")
 
   await mount("other-conversation")
   await toggle()
@@ -197,8 +333,10 @@ async function run() {
     "the Gmail query error"
   )
   assert(container.textContent.includes("Gmail fallback"), "Gmail preserves its error fallback")
+  await sharedSearchChecks()
+  await sharedReadChecks()
   status.textContent =
-    "PASS: opening, loading, success, failure, cached reopening, context isolation, sandbox, and Gmail metadata/fallback"
+    "PASS: owner preview opening, loading, success, failure, cached reopening, context isolation, sandbox, Gmail metadata, shared Gmail/Outlook unavailable search rows, saved read bodies, and no shared provider requests"
 }
 run()
   .catch((error: unknown) => {

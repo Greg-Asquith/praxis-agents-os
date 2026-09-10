@@ -288,7 +288,44 @@ function parseConversation(eventName: StreamEventName, value: unknown): Conversa
   const field = "data.conversation"
   const conversation = requiredRecord(eventName, field, value)
 
+  const capabilities =
+    conversation["capabilities"] === undefined
+      ? null
+      : requiredRecord(eventName, `${field}.capabilities`, conversation["capabilities"])
   return {
+    access: "owner",
+    visibility:
+      conversation["visibility"] === undefined
+        ? "private"
+        : requiredEnum(
+            eventName,
+            `${field}.visibility`,
+            conversation["visibility"],
+            new Set(["private", "workspace"] as const),
+            "a supported visibility"
+          ),
+    owner_name: optionalNullableString(eventName, conversation, "owner_name") ?? null,
+    ...(capabilities
+      ? {
+          capabilities: {
+            can_reply: requiredBoolean(
+              eventName,
+              `${field}.capabilities.can_reply`,
+              capabilities["can_reply"]
+            ),
+            can_manage_sharing: requiredBoolean(
+              eventName,
+              `${field}.capabilities.can_manage_sharing`,
+              capabilities["can_manage_sharing"]
+            ),
+            can_stop_sharing: requiredBoolean(
+              eventName,
+              `${field}.capabilities.can_stop_sharing`,
+              capabilities["can_stop_sharing"]
+            ),
+          },
+        }
+      : {}),
     id: requiredNonEmptyString(eventName, `${field}.id`, conversation["id"]),
     user_id: requiredNonEmptyString(eventName, `${field}.user_id`, conversation["user_id"]),
     workspace_id: requiredNonEmptyString(

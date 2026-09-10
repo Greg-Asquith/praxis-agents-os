@@ -506,7 +506,7 @@ describe("skill tool rows", () => {
     const html = render(
       createElement(SkillActivationRow, {
         activity: activity({
-          args: { id: "skill:skill-1" },
+          args: { id: "skill-skill-1" },
           name: "load_capability",
           toolKind: "capability-load",
         }),

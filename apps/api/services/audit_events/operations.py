@@ -29,7 +29,7 @@ from utils.json_safe import json_safe_details
 logger = logging.getLogger(__name__)
 
 
-async def _record_operation_audit_event(
+async def record_operation_audit_event(
     db: AsyncSession,
     *,
     workspace_id: UUID | str | None,
@@ -54,8 +54,8 @@ async def _record_operation_audit_event(
     ``summary`` overrides the generic actor/action/target line when the
     action alone would misdescribe the outcome.
 
-    Private: callers use :func:`safe_record_operation_audit_event` so an audit
-    write failure can never roll back the work being recorded.
+    Sharing transitions use this strict writer so visibility and audit commit
+    together. Routine operations use the savepoint-protected safe writer.
     """
 
     request_context = request_audit_context(request)
@@ -94,15 +94,14 @@ async def safe_record_operation_audit_event(db: AsyncSession, **kwargs: Any) -> 
     """Record an audit event in a savepoint so a failure never rolls back the
     caller's already-successful work; the audit loss is logged instead.
 
-    This is the only supported way to write an audit event: auditing must never
-    stop the thing it audits from happening.
+    Use the strict writer when a permission transition requires durable evidence.
     """
     if kwargs.get("workspace_id") is None and not db.info.get(SESSION_MAINTENANCE_KEY):
         try:
             session_factory = get_maintenance_async_db_session_factory()
             async with session_factory() as maintenance_db:
                 await configure_async_db_session(maintenance_db)
-                await _record_operation_audit_event(maintenance_db, **kwargs)
+                await record_operation_audit_event(maintenance_db, **kwargs)
                 await maintenance_db.commit()
         except Exception:
             logger.error(
@@ -113,7 +112,7 @@ async def safe_record_operation_audit_event(db: AsyncSession, **kwargs: Any) -> 
 
     try:
         async with db.begin_nested():
-            await _record_operation_audit_event(db, **kwargs)
+            await record_operation_audit_event(db, **kwargs)
     except Exception:
         logger.error("Failed to record audit event; primary operation preserved", exc_info=True)
 

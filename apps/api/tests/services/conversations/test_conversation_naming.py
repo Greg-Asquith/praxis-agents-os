@@ -12,13 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.conversation import Conversation
 from services.agents.runtime.events import EVENT_CONVERSATION_UPDATED
 from services.agents.runtime.sinks import CollectingSink
+from services.conversations.get_conversation import get_conversation
+from services.conversations.list_conversations import list_conversations
+from services.conversations.mark_read import mark_conversation_read
 from services.conversations.naming import (
     ConversationTitle,
     _persist_title_update,
     fallback_conversation_title,
     generate_conversation_title,
 )
-from tests.factories import build_user, build_workspace
+from tests.factories import build_user, build_workspace, build_workspace_membership
 
 
 @pytest.fixture(autouse=True)
@@ -100,18 +103,33 @@ def test_fallback_conversation_title_is_deterministic_and_bounded() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "personal,source,visibility",
+    [
+        (False, "direct", "private"),
+        (False, "direct", "workspace"),
+        (True, "direct", "private"),
+        (False, "delegated", "private"),
+    ],
+)
 async def test_persist_title_update_refreshes_conversation_before_emit(
     db_session: AsyncSession,
+    personal: bool,
+    source: str,
+    visibility: str,
 ) -> None:
     user = build_user(email=f"title-{uuid4().hex}@example.com")
-    workspace = build_workspace(slug=f"title-{uuid4().hex[:8]}")
+    workspace = build_workspace(slug=f"title-{uuid4().hex[:8]}", is_personal=personal)
+    membership = build_workspace_membership(workspace_id=workspace.id, user_id=user.id)
     conversation = Conversation(
         user_id=user.id,
         workspace_id=workspace.id,
         created_by=user.id,
         title="Fallback title",
+        source=source,
+        visibility=visibility,
     )
-    db_session.add_all([user, workspace, conversation])
+    db_session.add_all([user, workspace, membership, conversation])
     await db_session.commit()
 
     sink = CollectingSink(run_id=uuid4(), conversation_id=conversation.id)
@@ -133,3 +151,22 @@ async def test_persist_title_update_refreshes_conversation_before_emit(
     assert event.event == EVENT_CONVERSATION_UPDATED
     assert event.data["conversation"]["title"] == "Generated title"
     assert event.data["conversation"]["updated_at"] is not None
+
+    expected = {
+        "can_reply": source != "delegated",
+        "can_manage_sharing": not personal and source != "delegated",
+        "can_stop_sharing": visibility == "workspace",
+    }
+    assert event.data["conversation"]["capabilities"] == expected
+    detail = await get_conversation(
+        db_session, actor=user, workspace=workspace, conversation_id=conversation.id
+    )
+    marked = await mark_conversation_read(
+        db_session, actor=user, workspace=workspace, conversation_id=conversation.id
+    )
+    assert detail.capabilities.model_dump() == marked.capabilities.model_dump() == expected
+    if source != "delegated":
+        listing = await list_conversations(
+            db_session, actor=user, workspace=workspace, limit=10, offset=0
+        )
+        assert listing.conversations[0].capabilities.model_dump() == expected

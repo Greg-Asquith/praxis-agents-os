@@ -121,6 +121,9 @@ async def test_prepare_claimed_run_creates_conversation_and_agent_run(
     conversation = await db_session.get(Conversation, prepared.conversation_id)
     assert conversation is not None
     assert conversation.source == "scheduled"
+    assert conversation.visibility == "private"
+    assert conversation.shared_at is None
+    assert conversation.shared_by_user_id is None
     assert conversation.schedule_id == schedule.id
     assert conversation.schedule_run_id == schedule_run.id
     assert conversation.active_agent_id == agent.id

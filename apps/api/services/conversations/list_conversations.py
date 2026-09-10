@@ -2,6 +2,8 @@
 
 """List conversations visible to the authenticated user in a workspace."""
 
+from typing import Literal
+
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +18,12 @@ from services.agent_runs.domain import (
     RUN_STATUS_RUNNING,
 )
 from services.conversations.schemas import ConversationRead, ConversationsListResponse
+from services.conversations.utils import (
+    conversation_capabilities,
+    shared_conversation_predicate,
+    shared_conversation_read,
+)
+from services.workspaces.utils import READ_ROLES, require_workspace_role
 from utils.pagination import paginate
 
 ACTIVE_RUN_STATUSES = frozenset(
@@ -30,13 +38,19 @@ async def list_conversations(
     workspace: Workspace,
     limit: int,
     offset: int,
+    scope: Literal["mine", "workspace_shared"] = "mine",
 ) -> ConversationsListResponse:
+    _, membership = await require_workspace_role(
+        db, actor=actor, workspace_id=workspace.id, allowed_roles=READ_ROLES
+    )
     filters = (
         Conversation.workspace_id == workspace.id,
         Conversation.user_id == actor.id,
         Conversation.deleted == False,  # noqa: E712
         Conversation.source != CONVERSATION_SOURCE_DELEGATED,
     )
+    if scope == "workspace_shared":
+        filters = (shared_conversation_predicate(workspace),)
     active_runs = (
         select(
             AgentRun.id.label("active_run_id"),
@@ -51,6 +65,7 @@ async def list_conversations(
             .label("active_run_rank"),
         )
         .where(
+            AgentRun.workspace_id == workspace.id,
             AgentRun.deleted == False,  # noqa: E712
             AgentRun.status.in_(ACTIVE_RUN_STATUSES),
         )
@@ -62,6 +77,7 @@ async def list_conversations(
             Agent.name.label("agent_name"),
             active_runs.c.active_run_id,
             active_runs.c.active_run_status,
+            User.display_name,
         )
         .outerjoin(
             Agent,
@@ -77,6 +93,7 @@ async def list_conversations(
                 active_runs.c.active_run_rank == 1,
             ),
         )
+        .outerjoin(User, and_(User.id == Conversation.user_id, User.deleted.is_(False)))
         .where(*filters)
     )
     rows, total = await paginate(
@@ -84,19 +101,34 @@ async def list_conversations(
         stmt,
         desc(func.coalesce(Conversation.last_message_at, Conversation.created_at)),
         Conversation.created_at.desc(),
+        Conversation.id.desc(),
         limit=limit,
         offset=offset,
         scalars=False,
     )
     return ConversationsListResponse(
         conversations=[
-            ConversationRead.from_projection(
+            shared_conversation_read(
+                conversation,
+                owner_name=owner_name,
+                agent_name=agent_name,
+                active_run_status=active_run_status,
+                capabilities=conversation_capabilities(
+                    conversation, actor=actor, workspace=workspace, membership=membership
+                ),
+            )
+            if scope == "workspace_shared"
+            else ConversationRead.from_projection(
                 conversation,
                 agent_name=agent_name,
                 active_run_id=active_run_id,
                 active_run_status=active_run_status,
+                owner_name=owner_name,
+                capabilities=conversation_capabilities(
+                    conversation, actor=actor, workspace=workspace, membership=membership
+                ),
             )
-            for conversation, agent_name, active_run_id, active_run_status in rows
+            for conversation, agent_name, active_run_id, active_run_status, owner_name in rows
         ],
         total=total or 0,
         limit=limit,

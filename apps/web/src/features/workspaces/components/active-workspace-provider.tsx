@@ -66,12 +66,14 @@ export function ActiveWorkspaceProvider({ children }: { children: ReactNode }) {
   setActiveWorkspaceSlug(activeWorkspace?.slug ?? null)
 
   const setWorkspaceBySlug = useCallback(
-    (slug: string) => {
+    (slug: string, options = { persist: true }) => {
       const nextWorkspace = workspaces.find((workspace) => workspace.slug === slug)
       setActiveSlug(slug)
       if (!nextWorkspace) {
         return
       }
+
+      if (!options.persist) return
 
       storeSlug(slug)
       void updateCurrentUser({ default_workspace_id: nextWorkspace.id }).catch(() => undefined)

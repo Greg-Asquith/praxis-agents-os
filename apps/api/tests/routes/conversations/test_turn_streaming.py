@@ -295,6 +295,7 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert body.index(f"event: {EVENT_CONVERSATION_CREATED}") < body.index(
         f"event: {EVENT_RUN_STATUS}"
     )
+    assert '"can_manage_sharing":true' in body
     assert '"title":"Plan the launch"' in body
     assert '"title":"Launch planning"' in body
     assert f'"active_agent_id":"{agent.id}"' in body
@@ -310,6 +311,9 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         .order_by(Conversation.created_at.desc())
     )
     assert created_conversation is not None
+    assert created_conversation.visibility == "private"
+    assert created_conversation.shared_at is None
+    assert created_conversation.shared_by_user_id is None
     assert created_conversation.agent_slug == agent.slug
     assert created_conversation.metadata_json == {
         "title": {"source": "model", "model": "function:title"}

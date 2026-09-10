@@ -2,7 +2,7 @@
 
 """Route for listing conversations."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 
@@ -20,6 +20,7 @@ async def list_conversations(
     workspace_context: CurrentWorkspaceDep,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    scope: Annotated[Literal["mine", "workspace_shared"], Query()] = "mine",
 ) -> ConversationsListResponse:
     workspace, _membership = workspace_context
     return await list_conversations_service(
@@ -28,4 +29,5 @@ async def list_conversations(
         workspace=workspace,
         limit=limit,
         offset=offset,
+        scope=scope,
     )

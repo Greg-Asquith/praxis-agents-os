@@ -336,3 +336,33 @@ A coordinated backend and worker replacement is required for ownership and
 approval metadata changes. The tolerant client can load old server payloads;
 that wire compatibility does not make old lease-renewal code safe to run beside
 new owners. Stop all old executions before any replacement process starts.
+
+## Workspace chat sharing
+
+Chats default to private. Owners can share team-workspace root chats through
+`PUT /conversations/{id}/sharing`. `scope=workspace_shared` selects shared
+conversation discovery; the omitted scope remains owner-only. Detail and
+message responses distinguish owner and viewer access. Viewer responses omit
+execution state and expose server-derived sharing and reply capabilities.
+Owner creation and title-update stream events, detail and list reads, and
+mark-read responses derive capabilities from the same ownership and workspace
+membership rules. Older payloads without capabilities retain safe defaults.
+
+The viewer mounts before owner recovery and passes filtered saved messages to
+the ordinary transcript and tool components in read-only mode. It has no
+approval controls or message composer. It does not mark the owner's chat read or use active-run, approval,
+context, or model-catalogue reads. Saved updates appear on refresh, focus, and
+reconnect. Shared links use immutable workspace IDs and resolve membership
+before conversation prefetch. See the [sharing decision](../architecture/workspace-chat-sharing.md).
+
+
+Shared discovery uses workspace-scoped pages with **Previous** and **Next**
+controls. The viewer first loads a bounded page of recent saved messages.
+**Load earlier messages** retrieves earlier pages, including pages whose
+display content is hidden. An earlier-page failure retains the visible
+transcript and provides **Retry earlier messages**. Refresh updates the loaded
+pages. Legacy conversation links redirect viewers to the canonical shared page,
+which uses the ordinary detail query and one paginated message query. Confirmed
+access loss clears viewer detail and every loaded page. Observed queries keep
+empty terminal values to prevent rerender fetch loops. Network failures retain
+saved content with a refresh error notice.

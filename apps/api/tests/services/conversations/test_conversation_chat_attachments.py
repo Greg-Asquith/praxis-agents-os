@@ -21,7 +21,13 @@ from services.conversations.schemas import ConversationCreateRequest, Conversati
 from services.files.contract import contract_for_content_type
 from services.files.utils import private_ref_from_key, revision_object_key, sha256_hex
 from services.storage.factory import get_storage_provider
-from tests.factories import build_file, build_file_revision, build_user, build_workspace
+from tests.factories import (
+    build_file,
+    build_file_revision,
+    build_user,
+    build_workspace,
+    build_workspace_membership,
+)
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
@@ -227,7 +233,8 @@ async def _persist_workspace_agent(db: AsyncSession):
         model_provider="openai",
         model="gpt-5.4-mini",
     )
-    db.add_all([actor, workspace, agent])
+    membership = build_workspace_membership(workspace_id=workspace.id, user_id=actor.id)
+    db.add_all([actor, workspace, agent, membership])
     await db.flush()
     return actor, workspace, agent
 

@@ -38,6 +38,7 @@ These documents cover product use and additional architectural decisions.
 Check each architecture note's implementation status before treating a design
 as available product behaviour:
 
+- [Share a chat with your workspace](guides/share-chats.md)
 - [Skills, files, knowledge, and memories](guides/skills-files-knowledge-memories.md)
 - [Microsoft Entra app registration](guides/microsoft-entra-app-registration.md)
 - [Inbound integration events](architecture/integration-events.md)

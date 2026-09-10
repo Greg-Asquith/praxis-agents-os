@@ -3,14 +3,14 @@
 """Pydantic contracts for conversation routes."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.conversation import ConversationMessage
 from services.agent_runs.schemas import AgentRunRead
-from services.conversation_read_contract import ConversationRead
+from services.conversation_read_contract import ConversationRead, SharedConversationRead
 from services.integrations.context.schemas import ActiveContextTargets
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
@@ -98,6 +98,7 @@ class ConversationMessageRead(BaseModel):
 
 
 class ConversationMessagesResponse(BaseModel):
+    access: Literal["owner", "viewer"] = "owner"
     messages: list[ConversationMessageRead]
     total: int
     has_more: bool = False
@@ -115,4 +116,10 @@ class ConversationActiveRunResponse(BaseModel):
 
 
 class ConversationsListResponse(OffsetPage):
-    conversations: list[ConversationRead]
+    conversations: list[ConversationRead | SharedConversationRead]
+
+
+class ConversationSharingRequest(BaseModel):
+    visibility: Literal["private", "workspace"]
+
+    model_config = ConfigDict(extra="forbid")

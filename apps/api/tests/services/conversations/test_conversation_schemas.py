@@ -22,6 +22,7 @@ def test_conversation_read_validates_metadata_from_orm_attribute() -> None:
         metadata_json={"title_source": "generated"},
         unread=False,
         source="direct",
+        visibility="private",
         created_at=now,
         updated_at=now,
     )
@@ -29,6 +30,13 @@ def test_conversation_read_validates_metadata_from_orm_attribute() -> None:
     read_model = ConversationRead.from_conversation(conversation)
 
     assert read_model.metadata_json == {"title_source": "generated"}
+    assert read_model.capabilities.model_dump() == {
+        "can_reply": False,
+        "can_manage_sharing": False,
+        "can_stop_sharing": False,
+    }
+    legacy_payload = read_model.model_dump(exclude={"capabilities", "access", "visibility"})
+    assert ConversationRead.model_validate(legacy_payload).capabilities == read_model.capabilities
     assert read_model.agent_name is None
     assert read_model.active_run_id is None
     assert read_model.active_run_status is None
@@ -48,6 +56,7 @@ def test_conversation_read_projection_sets_status_fields() -> None:
         status="active",
         unread=True,
         source="direct",
+        visibility="private",
         created_at=now,
         updated_at=now,
     )

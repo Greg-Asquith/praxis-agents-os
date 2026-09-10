@@ -61,7 +61,13 @@ export function ConversationRoute() {
     ...conversationQueryOptions(conversationId),
     ...(initialConversation ? { initialData: initialConversation } : {}),
   })
-  const conversation = streamConversation ?? listedConversation ?? conversationQuery.data
+  const detail = conversationQuery.data
+  if (!detail || detail.access === "viewer") return null
+  const conversation = {
+    ...(streamConversation ?? detail),
+    ...(detail.visibility ? { visibility: detail.visibility } : {}),
+    ...(detail.capabilities ? { capabilities: detail.capabilities } : {}),
+  }
 
   return (
     <ConversationDetail

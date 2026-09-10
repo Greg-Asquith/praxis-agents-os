@@ -4,7 +4,7 @@ import type { Skill } from "@/features/skills/types"
 import { isRecord } from "@/lib/guards"
 
 export const LOAD_CAPABILITY_TOOL_NAME = "load_capability"
-const SKILL_CAPABILITY_PREFIX = "skill:"
+const SKILL_CAPABILITY_PREFIX = "skill-"
 
 type SkillActivationDisplay = Pick<Skill, "human_name" | "id" | "name">
 

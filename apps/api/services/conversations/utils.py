@@ -8,17 +8,27 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from core.exceptions.general import ConflictError, NotFoundError
 from models.agent import Agent
 from models.agent_run import AgentRun
-from models.conversation import Conversation, ConversationMessage
+from models.conversation import CONVERSATION_SOURCE_DELEGATED, Conversation, ConversationMessage
 from models.user import User
-from models.workspace import Workspace
+from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.domain import TERMINAL_RUN_STATUSES
 from services.audit_events.utils import request_audit_context
+from services.conversation_read_contract import (
+    ConversationCapabilities,
+    SharedConversationRead,
+)
+from services.workspaces.utils import (
+    MANAGER_ROLES,
+    READ_ROLES,
+    require_workspace_role,
+)
 
 
 def build_interactive_run_metadata(
@@ -55,16 +65,18 @@ async def get_conversation_for_actor(
     actor: User,
     workspace: Workspace,
     conversation_id: UUID,
+    lock: bool = False,
 ) -> Conversation:
-    """Load a conversation visible to the current actor/workspace."""
-    conversation = await db.scalar(
-        select(Conversation).where(
-            Conversation.id == conversation_id,
-            Conversation.workspace_id == workspace.id,
-            Conversation.user_id == actor.id,
-            Conversation.deleted == False,  # noqa: E712
-        )
+    """Loads a conversation owned by the current actor."""
+    statement = select(Conversation).where(
+        Conversation.id == conversation_id,
+        Conversation.workspace_id == workspace.id,
+        Conversation.user_id == actor.id,
+        Conversation.deleted.is_(False),
     )
+    if lock:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    conversation = await db.scalar(statement)
     if conversation is None:
         raise NotFoundError(
             "Conversation not found",
@@ -167,4 +179,88 @@ async def get_message_by_client_message_id(
             ConversationMessage.client_message_id == client_message_id,
             ConversationMessage.deleted == False,  # noqa: E712
         )
+    )
+
+
+def shared_conversation_predicate(workspace: Workspace) -> ColumnElement[bool]:
+    """Selects live shared root chats in a team workspace."""
+    return and_(
+        Conversation.workspace_id == workspace.id,
+        Conversation.deleted.is_(False),
+        Conversation.visibility == "workspace",
+        Conversation.source != CONVERSATION_SOURCE_DELEGATED,
+        not workspace.is_personal,
+        workspace.status == "active",
+    )
+
+
+async def get_conversation_for_read(
+    db: AsyncSession,
+    *,
+    actor: User,
+    workspace: Workspace,
+    conversation_id: UUID,
+    lock: bool = False,
+) -> tuple[Conversation, WorkspaceMembership]:
+    """Authorises transcript reads without granting execution ownership."""
+    _, membership = await require_workspace_role(
+        db, actor=actor, workspace_id=workspace.id, allowed_roles=READ_ROLES
+    )
+    statement = select(Conversation).where(
+        Conversation.id == conversation_id,
+        Conversation.workspace_id == workspace.id,
+        Conversation.deleted.is_(False),
+        or_(Conversation.user_id == actor.id, shared_conversation_predicate(workspace)),
+    )
+    if lock:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    conversation = await db.scalar(statement)
+    if conversation is None or workspace.status != "active":
+        raise NotFoundError(
+            "Conversation not found", resource_type="conversation", resource_id=str(conversation_id)
+        )
+    return conversation, membership
+
+
+def conversation_capabilities(
+    conversation: Conversation,
+    *,
+    actor: User,
+    workspace: Workspace,
+    membership: WorkspaceMembership,
+) -> ConversationCapabilities:
+    """Derives sharing and reply controls from current ownership and membership."""
+    owner = conversation.user_id == actor.id
+    eligible = not workspace.is_personal and conversation.source != CONVERSATION_SOURCE_DELEGATED
+    return ConversationCapabilities(
+        can_reply=owner and conversation.source != CONVERSATION_SOURCE_DELEGATED,
+        can_manage_sharing=owner and eligible,
+        can_stop_sharing=eligible
+        and conversation.visibility == "workspace"
+        and (owner or membership.role in MANAGER_ROLES),
+    )
+
+
+def shared_conversation_read(
+    conversation: Conversation,
+    *,
+    owner_name: str | None,
+    agent_name: str | None,
+    active_run_status: str | None,
+    capabilities: ConversationCapabilities,
+) -> SharedConversationRead:
+    """Projects saved conversation labels without owner execution state."""
+    return SharedConversationRead(
+        id=conversation.id,
+        workspace_id=conversation.workspace_id,
+        title=conversation.title,
+        source=conversation.source,
+        visibility=conversation.visibility,
+        owner_name=owner_name,
+        agent_name=agent_name,
+        last_message_at=conversation.last_message_at,
+        active_run_status=active_run_status,
+        created_at=conversation.created_at,
+        updated_at=conversation.updated_at,
+        capabilities=capabilities,
     )

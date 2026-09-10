@@ -9,12 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import reap_abandoned_runs
+from services.conversations.get_conversation import get_conversation
 from services.conversations.schemas import ConversationRead
-from services.conversations.utils import (
-    get_active_run_for_conversation,
-    get_conversation_agent_name,
-    get_conversation_for_actor,
-)
+from services.conversations.utils import get_conversation_for_actor
 
 
 async def mark_conversation_read(
@@ -36,11 +33,6 @@ async def mark_conversation_read(
     await db.refresh(conversation)
 
     await reap_abandoned_runs(db, conversation_id=conversation.id)
-    active_run = await get_active_run_for_conversation(db, conversation_id=conversation.id)
-    agent_name = await get_conversation_agent_name(db, conversation=conversation)
-    return ConversationRead.from_projection(
-        conversation,
-        agent_name=agent_name,
-        active_run_id=active_run.id if active_run is not None else None,
-        active_run_status=active_run.status if active_run is not None else None,
+    return await get_conversation(
+        db, actor=actor, workspace=workspace, conversation_id=conversation.id
     )

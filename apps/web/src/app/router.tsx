@@ -202,6 +202,7 @@ const conversationRoute = createRoute({
     const conversation = await context.queryClient.ensureQueryData(
       conversationQueryOptions(params.conversationId)
     )
+    if (!conversation || conversation.access === "viewer") return
     await Promise.all([
       context.queryClient.ensureQueryData(modelCatalogQueryOptions()),
       ...(conversation.active_agent_id
@@ -212,6 +213,15 @@ const conversationRoute = createRoute({
   component: lazyRouteComponent(
     () => import("@/features/conversations/routes/conversation-route"),
     "ConversationRoute"
+  ),
+})
+
+const sharedChatRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/shared-chats/$workspaceId/$conversationId",
+  component: lazyRouteComponent(
+    () => import("@/features/conversations/routes/shared-chat-route"),
+    "SharedChatRoute"
   ),
 })
 
@@ -491,6 +501,7 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     contextRoute,
     conversationsRoute,
+    sharedChatRoute,
     conversationRuntimeRoute.addChildren([homeRoute, newConversationRoute, conversationRoute]),
     agentsRoute,
     newAgentRoute,

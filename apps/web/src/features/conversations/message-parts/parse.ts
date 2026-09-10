@@ -363,8 +363,12 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
       if (delegate) {
         activity.delegate = delegate
       }
-      if (approvalMetadata?.effectiveArgs !== undefined) {
-        activity.args = normalizeToolArgs(approvalMetadata.effectiveArgs)
+      const displayArgs =
+        approvalMetadata?.effectiveArgs !== undefined
+          ? approvalMetadata.effectiveArgs
+          : part["args"]
+      if (displayArgs !== undefined) {
+        activity.args = normalizeToolArgs(displayArgs)
       }
       if (approvalMetadata?.decision !== undefined) {
         activity.decision = approvalMetadata.decision

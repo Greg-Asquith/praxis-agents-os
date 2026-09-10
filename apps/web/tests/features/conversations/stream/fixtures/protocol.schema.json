@@ -51,8 +51,35 @@
   "events": {
     "conversation.created": {
       "$defs": {
+        "ConversationCapabilities": {
+          "properties": {
+            "can_manage_sharing": {
+              "default": false,
+              "title": "Can Manage Sharing",
+              "type": "boolean"
+            },
+            "can_reply": {
+              "default": false,
+              "title": "Can Reply",
+              "type": "boolean"
+            },
+            "can_stop_sharing": {
+              "default": false,
+              "title": "Can Stop Sharing",
+              "type": "boolean"
+            }
+          },
+          "title": "ConversationCapabilities",
+          "type": "object"
+        },
         "ConversationRead": {
           "properties": {
+            "access": {
+              "const": "owner",
+              "default": "owner",
+              "title": "Access",
+              "type": "string"
+            },
             "active_agent_id": {
               "anyOf": [
                 {
@@ -113,6 +140,9 @@
               ],
               "title": "Agent Slug"
             },
+            "capabilities": {
+              "$ref": "#/$defs/ConversationCapabilities"
+            },
             "created_at": {
               "format": "date-time",
               "title": "Created At",
@@ -168,6 +198,18 @@
               "title": "Needs Approval",
               "type": "boolean"
             },
+            "owner_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Owner Name"
+            },
             "source": {
               "$ref": "#/$defs/ConversationSource"
             },
@@ -198,6 +240,15 @@
             "user_id": {
               "format": "uuid",
               "title": "User Id",
+              "type": "string"
+            },
+            "visibility": {
+              "default": "private",
+              "enum": [
+                "private",
+                "workspace"
+              ],
+              "title": "Visibility",
               "type": "string"
             },
             "workspace_id": {
@@ -265,8 +316,35 @@
     },
     "conversation.updated": {
       "$defs": {
+        "ConversationCapabilities": {
+          "properties": {
+            "can_manage_sharing": {
+              "default": false,
+              "title": "Can Manage Sharing",
+              "type": "boolean"
+            },
+            "can_reply": {
+              "default": false,
+              "title": "Can Reply",
+              "type": "boolean"
+            },
+            "can_stop_sharing": {
+              "default": false,
+              "title": "Can Stop Sharing",
+              "type": "boolean"
+            }
+          },
+          "title": "ConversationCapabilities",
+          "type": "object"
+        },
         "ConversationRead": {
           "properties": {
+            "access": {
+              "const": "owner",
+              "default": "owner",
+              "title": "Access",
+              "type": "string"
+            },
             "active_agent_id": {
               "anyOf": [
                 {
@@ -327,6 +405,9 @@
               ],
               "title": "Agent Slug"
             },
+            "capabilities": {
+              "$ref": "#/$defs/ConversationCapabilities"
+            },
             "created_at": {
               "format": "date-time",
               "title": "Created At",
@@ -382,6 +463,18 @@
               "title": "Needs Approval",
               "type": "boolean"
             },
+            "owner_name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Owner Name"
+            },
             "source": {
               "$ref": "#/$defs/ConversationSource"
             },
@@ -412,6 +505,15 @@
             "user_id": {
               "format": "uuid",
               "title": "User Id",
+              "type": "string"
+            },
+            "visibility": {
+              "default": "private",
+              "enum": [
+                "private",
+                "workspace"
+              ],
+              "title": "Visibility",
               "type": "string"
             },
             "workspace_id": {

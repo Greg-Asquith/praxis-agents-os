@@ -18,6 +18,7 @@ export function ProviderContentPreview<Meta extends { subject?: string }>({
   renderMeta?: (meta: Meta) => ReactNode
 }) {
   const preview = useQuery(query)
+  if (query.enabled === false) return <>{errorFallback ?? fallback}</>
   if (preview.isPending) return <>{fallback}</>
   if (preview.isError) return <>{errorFallback ?? fallback}</>
 

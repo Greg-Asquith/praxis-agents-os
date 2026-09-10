@@ -23,11 +23,8 @@ from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.stream_protocol import ConversationUpdatedEvent
 from services.ai_usage.domain import PURPOSE_CONVERSATION_NAMING, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
-from services.conversations.schemas import ConversationRead
-from services.conversations.utils import (
-    get_active_run_for_conversation,
-    get_conversation_agent_name,
-)
+from services.conversations.get_conversation import get_conversation
+from services.workspaces.utils import get_user_or_raise, get_workspace_or_raise
 
 TITLE_MAX_LENGTH = 80
 
@@ -193,15 +190,12 @@ async def _persist_title_update(
     conversation.metadata_json = metadata
     await db.commit()
     await db.refresh(conversation)
-    agent_name = await get_conversation_agent_name(db, conversation=conversation)
-    active_run = await get_active_run_for_conversation(db, conversation_id=conversation.id)
+    actor = await get_user_or_raise(db, user_id=conversation.user_id)
+    workspace = await get_workspace_or_raise(db, workspace_id=conversation.workspace_id)
     await sink.emit(
         ConversationUpdatedEvent(
-            conversation=ConversationRead.from_projection(
-                conversation,
-                agent_name=agent_name,
-                active_run_id=active_run.id if active_run is not None else None,
-                active_run_status=active_run.status if active_run is not None else None,
+            conversation=await get_conversation(
+                db, actor=actor, workspace=workspace, conversation_id=conversation.id
             )
         ),
     )

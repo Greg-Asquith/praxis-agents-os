@@ -8,8 +8,8 @@ from uuid import UUID
 from fastapi import APIRouter, Path
 
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
+from services.conversation_read_contract import ConversationRead, SharedConversationRead
 from services.conversations import get_conversation as get_conversation_service
-from services.conversations.schemas import ConversationRead
 
 router = APIRouter()
 
@@ -20,7 +20,7 @@ async def get_conversation(
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
     conversation_id: Annotated[UUID, Path()],
-) -> ConversationRead:
+) -> ConversationRead | SharedConversationRead:
     workspace, _membership = workspace_context
     return await get_conversation_service(
         db,

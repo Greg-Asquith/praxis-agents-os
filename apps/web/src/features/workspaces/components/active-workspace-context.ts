@@ -7,7 +7,7 @@ import type { Workspace } from "@/features/workspaces/types"
 export type ActiveWorkspaceContextValue = {
   workspace: Workspace
   workspaces: Workspace[]
-  setWorkspaceBySlug: (slug: string) => void
+  setWorkspaceBySlug: (slug: string, options?: { persist: boolean }) => void
 }
 
 export const ActiveWorkspaceContext = createContext<ActiveWorkspaceContextValue | null>(null)

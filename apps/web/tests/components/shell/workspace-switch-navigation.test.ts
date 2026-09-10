@@ -5,6 +5,7 @@ import { shouldRedirectHomeForWorkspaceSwitch } from "@/components/shell/workspa
 describe("workspace switch navigation", () => {
   it.each([
     "/conversations/new",
+    "/shared-chats/workspace-1/conversation-1",
     "/conversations/conversation-1",
     "/agents/agent-1",
     "/artifacts/artifact-1",

@@ -6,6 +6,7 @@ import { use } from "react"
 import { Link } from "@tanstack/react-router"
 import { BotIcon, ExternalLinkIcon, UsersIcon } from "lucide-react"
 
+import { SharedTranscriptContext } from "@/components/tool-ui/tool-conversation-context"
 import {
   ToolApprovalDecisionCard,
   type ToolApprovalDecisionControls,
@@ -102,6 +103,7 @@ export function DelegationToolRow({
   defaultOpen,
   live = false,
 }: DelegationToolRowProps) {
+  const shared = use(SharedTranscriptContext)
   const presentationFor = useToolPresentations()
   const delegate = activity.delegate
   if (!delegate) {
@@ -167,7 +169,7 @@ export function DelegationToolRow({
               <span className="bg-primary size-1.5 animate-pulse rounded-full motion-reduce:animate-none" />
             ) : null}
           </div>
-          {delegate.conversationId && status !== "denied" ? (
+          {!shared && delegate.conversationId && status !== "denied" ? (
             <DelegationActivity
               conversationId={delegate.conversationId}
               live={status === "running"}
@@ -347,7 +349,8 @@ function DelegationIdentity({
 }
 
 function DelegateAgentIcon({ agentId, name }: { agentId: string; name: string }) {
-  const metadata = useAgentIdentityMetadata(agentId)
+  const shared = use(SharedTranscriptContext)
+  const metadata = useAgentIdentityMetadata(shared ? null : agentId)
 
   return (
     <AgentIdentityIcon agentId={agentId} decorative metadata={metadata} name={name} size="sm" />

@@ -337,6 +337,9 @@ async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(
             child_conversation = await db.get(Conversation, child_run.conversation_id)
             assert child_conversation is not None
             assert child_conversation.source == "delegated"
+            assert child_conversation.visibility == "private"
+            assert child_conversation.shared_at is None
+            assert child_conversation.shared_by_user_id is None
             assert child_conversation.active_agent_id == runtime_context.child_agent_id
             assert child_conversation.metadata_json["parent_run_id"] == str(runtime_context.run_id)
 
@@ -363,7 +366,6 @@ async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(
                 "assistant",
             ]
             assert [message.role for message in child_messages] == ["user", "assistant"]
-
             user = await db.get(User, runtime_context.user_id)
             workspace = await db.get(Workspace, runtime_context.workspace_id)
             assert user is not None

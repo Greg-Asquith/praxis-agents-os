@@ -33,6 +33,10 @@ const envelope = {
 }
 
 const conversation = {
+  access: "owner",
+  visibility: "private",
+  owner_name: null,
+  capabilities: { can_reply: true, can_manage_sharing: false, can_stop_sharing: false },
   id: "conversation-1",
   user_id: "user-1",
   workspace_id: "workspace-1",

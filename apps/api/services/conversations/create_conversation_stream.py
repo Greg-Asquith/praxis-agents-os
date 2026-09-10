@@ -36,13 +36,14 @@ from services.agents.runtime.stream_protocol import (
     StreamEventPayload,
 )
 from services.agents.runtime.worker import run_turn_worker
+from services.conversations.get_conversation import get_conversation
 from services.conversations.naming import (
     ConversationTitle,
     fallback_conversation_title,
     run_conversation_title_worker,
 )
 from services.conversations.prune_failed import prune_failed_empty_conversation_for_run
-from services.conversations.schemas import ConversationCreateRequest, ConversationRead
+from services.conversations.schemas import ConversationCreateRequest
 from services.conversations.utils import (
     build_interactive_run_metadata,
     get_assignable_agent_for_workspace,
@@ -137,16 +138,12 @@ async def create_conversation_stream(
 
     execution_control = execution_control_for_run(run)
     sink = StreamSink(run_id=run.id, conversation_id=conversation.id)
-    await sink.emit(
-        ConversationCreatedEvent(
-            conversation=ConversationRead.from_projection(
-                conversation,
-                agent_name=agent.name,
-                active_run_id=run.id,
-                active_run_status=run.status,
-            )
-        ),
+    read_model = await get_conversation(
+        db, actor=actor, workspace=workspace, conversation_id=conversation.id
     )
+    # Close membership reads before background execution starts.
+    await db.commit()
+    await sink.emit(ConversationCreatedEvent(conversation=read_model))
     await sink.emit(RunStatusEvent(status=run.status))
     run_task_registry.spawn(
         run.id,

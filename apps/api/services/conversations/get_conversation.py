@@ -4,16 +4,19 @@
 
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.agent import Agent
+from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace
-from services.conversations.schemas import ConversationRead
+from services.agent_runs.domain import TERMINAL_RUN_STATUSES
+from services.conversation_read_contract import ConversationRead, SharedConversationRead
 from services.conversations.utils import (
-    get_active_run_for_conversation,
-    get_conversation_for_actor,
+    conversation_capabilities,
+    get_conversation_agent_name,
+    get_conversation_for_read,
+    shared_conversation_read,
 )
 
 
@@ -23,28 +26,47 @@ async def get_conversation(
     actor: User,
     workspace: Workspace,
     conversation_id: UUID,
-) -> ConversationRead:
+) -> ConversationRead | SharedConversationRead:
     """Return a single conversation, including deliberate reads of agent-call children."""
-    conversation = await get_conversation_for_actor(
+    conversation, membership = await get_conversation_for_read(
         db,
         actor=actor,
         workspace=workspace,
         conversation_id=conversation_id,
     )
-    agent_name = None
-    if conversation.active_agent_id is not None:
-        agent_name = await db.scalar(
-            select(Agent.name).where(
-                and_(
-                    Agent.id == conversation.active_agent_id,
-                    Agent.workspace_id == workspace.id,
-                )
+    agent_name = await get_conversation_agent_name(db, conversation=conversation)
+    active_run = (
+        await db.execute(
+            select(AgentRun.id, AgentRun.status)
+            .where(
+                AgentRun.conversation_id == conversation.id,
+                AgentRun.workspace_id == workspace.id,
+                AgentRun.deleted.is_(False),
+                AgentRun.status.not_in(TERMINAL_RUN_STATUSES),
             )
+            .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+            .limit(1)
         )
-    active_run = await get_active_run_for_conversation(db, conversation_id=conversation.id)
+    ).first()
+    owner_name = await db.scalar(
+        select(User.display_name).where(User.id == conversation.user_id, User.deleted.is_(False))
+    )
+    capabilities = conversation_capabilities(
+        conversation, actor=actor, workspace=workspace, membership=membership
+    )
+    if conversation.user_id != actor.id:
+        return shared_conversation_read(
+            conversation,
+            owner_name=owner_name,
+            agent_name=agent_name,
+            active_run_status=active_run.status if active_run is not None else None,
+            capabilities=capabilities,
+        )
     return ConversationRead.from_projection(
         conversation,
         agent_name=agent_name,
         active_run_id=active_run.id if active_run is not None else None,
         active_run_status=active_run.status if active_run is not None else None,
+        owner_name=owner_name,
+        capabilities=capabilities,
     )

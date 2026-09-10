@@ -164,3 +164,21 @@ the nested call and effective-argument digest to Code Mode decision metadata;
 approving the outer workflow only carries that one nested decision. Delegation
 carries the child's compiled `DeferredToolResults` in the existing parent-call
 metadata. It grants no permission for later nested writes.
+
+## Shared transcript display
+
+Shared chats use the ordinary saved tool results, transcript parser, and tool
+presenters. Tools need no sharing-specific declarations. Completed results keep
+their existing payloads and `public_result` display metadata.
+
+The conversation read boundary removes system instructions, reasoning, and
+approval execution metadata. Calls without a saved result remain hidden,
+including calls awaiting approval. The shared renderer also hides activities
+marked `awaiting_approval`. It mounts no approval controls or message composer.
+
+Completed shared call and return parts carry the performed display arguments
+in `args`, resolved by run and call identity across message pages. Approval
+metadata, original proposals, and override history remain private. Nested
+workflow children with `pending` or `awaiting_approval` status are excluded.
+Suspended Code Mode traces live in private run metadata; the normal runtime
+persists the completed trace only after the workflow settles.

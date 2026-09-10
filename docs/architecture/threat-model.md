@@ -309,3 +309,19 @@ wrapped with `source_kind="code_mode_workflow"`. The bounded source list and
 overflow count remain operator-facing trace metadata. Durable approval state
 persists the same taint state across suspension before write stubs can enter
 the wrapped catalog.
+
+## 8. Shared conversation display
+
+Workspace sharing is a browser display surface, not a model-context channel.
+The owner's saved answer can deliberately expose personal-connection content
+to active workspace members. A dedicated service check and server-side display
+filter excludes model instructions and approval execution metadata before HTTP
+serialisation. Completed tool results retain their ordinary saved display
+payloads. Viewer rendering hides calls awaiting approval and suppresses child
+transcript navigation and retains independent File, Artifact, and provider
+permissions. A copied link grants no access by itself.
+
+Sharing changes commit their audit evidence atomically. Owner checks continue
+to guard mutations. Confirmed access loss clears viewer caches and retained
+content; revocation cannot recover responses already delivered to a browser.
+See the [workspace chat-sharing decision](workspace-chat-sharing.md).

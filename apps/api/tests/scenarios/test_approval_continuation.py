@@ -545,7 +545,8 @@ async def test_vertex_image_public_resume_never_replays_accepted_effects(
             assert len(requests) == expected_images
             assert len(queued) == 1
             if requests:
-                assert requests[0].url.host == "aiplatform.googleapis.com"
+                assert requests[0].url.host == "aiplatform.eu.rep.googleapis.com"
+                assert "/projects/image-test/locations/eu/" in requests[0].url.path
                 assert requests[0].headers["authorization"] == "Bearer test-adc"
     finally:
         for coroutine in queued:
