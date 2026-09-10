@@ -103,3 +103,16 @@ export function mergeEntityChoices(
 export function entityReferenceKey(choice: EntityChoice): string {
   return JSON.stringify(choice.identity)
 }
+
+// Provider lookups can take seconds, so load the default page before the operator opens the list.
+export function entitySearchEnabled({
+  disabled,
+  open,
+  search,
+}: {
+  disabled: boolean
+  open: boolean
+  search: string
+}): boolean {
+  return open || (!disabled && search === "")
+}

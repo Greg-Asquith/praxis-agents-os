@@ -21,6 +21,7 @@ import {
   entityReferenceHydrationQueryOptions,
   entityReferenceKey,
   entityReferenceSearchQueryOptions,
+  entitySearchEnabled,
   mergeEntityChoices,
 } from "@/components/tool-ui/entity-reference-queries"
 import type { ApprovalField } from "@/components/tool-ui/approval-types"
@@ -78,7 +79,7 @@ export function EntityFieldInput({
       search,
       toolName,
     }),
-    enabled: open,
+    enabled: entitySearchEnabled({ disabled, open, search }),
   })
   const choices = useMemo(
     () => mergeEntityChoices(hydration.data?.choices ?? [], results.data?.pages ?? []),
@@ -216,6 +217,19 @@ function ChoiceContent({
       <ComboboxEmpty>
         {results.isFetching ? "Searching…" : results.isError ? "Search unavailable" : "No matches"}
       </ComboboxEmpty>
+      {choices.length > 0 && results.isLoading ? (
+        <p
+          className="text-muted-foreground inline-flex items-center gap-1.5 px-2.5 py-2 text-xs"
+          role="status"
+        >
+          <LoaderCircleIcon className="size-3 animate-spin motion-reduce:animate-none" />
+          Loading more options…
+        </p>
+      ) : choices.length > 0 && results.isError ? (
+        <p className="text-muted-foreground px-2.5 py-2 text-xs" role="status">
+          Couldn&apos;t load more options.
+        </p>
+      ) : null}
       {results.hasNextPage ? (
         <Button
           className="mt-1 w-full"

@@ -122,7 +122,10 @@ The following contracts apply in this area:
   use the server-supplied canonical identity for provider-neutral comparison,
   and keep provider field names out of shared tool UI. Use the shared Base UI
   combobox for editable targets, preserve structured reference values, and fail
-  closed as “Target unavailable” rather than exposing a raw ID.
+  closed as “Target unavailable” rather than exposing a raw ID. Provider
+  searches can take seconds, so the field requests the default choice page as
+  soon as it mounts and shows a loading row under the proposed target until
+  the page arrives, instead of waiting for the operator to open the list.
 - A failed approval submit keeps the error on the card and offers Decline
   beside Try Again. Decline reopens the request, so the operator can decline
   it or go back, correct the fields, and approve again.

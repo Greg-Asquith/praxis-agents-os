@@ -7,6 +7,7 @@ import { EntityFieldInput } from "@/components/tool-ui/entity-field-input"
 import {
   entityReferenceHydrationQueryOptions,
   entityReferenceSearchQueryOptions,
+  entitySearchEnabled,
   mergeEntityChoices,
   type EntityReferenceHydration,
 } from "@/components/tool-ui/entity-reference-queries"
@@ -153,6 +154,13 @@ describe("EntityFieldInput", () => {
 
     expect(html).toContain('value="Testing 2"')
     expect(html).not.toContain("Target unavailable")
+  })
+
+  it("loads the default choices before the list opens and stops while submitting", () => {
+    expect(entitySearchEnabled({ disabled: false, open: false, search: "" })).toBe(true)
+    expect(entitySearchEnabled({ disabled: true, open: false, search: "" })).toBe(false)
+    expect(entitySearchEnabled({ disabled: false, open: false, search: "demo" })).toBe(false)
+    expect(entitySearchEnabled({ disabled: true, open: true, search: "demo" })).toBe(true)
   })
 
   it("merges paged choices by identity", () => {
