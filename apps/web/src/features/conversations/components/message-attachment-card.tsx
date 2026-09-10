@@ -153,10 +153,12 @@ function fileCardFromAttachment(attachment: MessageAttachment, file?: WorkspaceF
       fileId: file.id,
       name: file.name,
       sizeBytes: file.size_bytes,
+      scope: file.scope,
     }
   }
 
   return {
+    ...(attachment.scope ? { scope: attachment.scope } : {}),
     contentType: attachment.mediaType,
     fileId: attachment.fileId,
     name: attachment.name ?? attachment.mediaType,

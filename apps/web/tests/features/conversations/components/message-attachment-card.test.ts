@@ -17,6 +17,10 @@ const attachment: MessageAttachment = {
 const workspaceFile: WorkspaceFile = {
   id: "file-1",
   workspace_id: "workspace-1",
+  scope: "workspace",
+  is_published: false,
+  can_manage_platform: false,
+  published_revision_id: null,
   name: "August report.pptx",
   description: null,
   folder_id: null,
@@ -44,6 +48,31 @@ describe("MessageAttachmentCard", () => {
     expect(html).toContain("August report.pptx")
     expect(html).toContain("PowerPoint")
     expect(html).toContain(workspaceFile.content_type)
+  })
+
+  it("labels a fetched platform attachment", () => {
+    const queryClient = createQueryClient()
+    queryClient.setQueryData(fileQueryOptions(attachment.fileId).queryKey, {
+      ...workspaceFile,
+      scope: "platform",
+      workspace_id: null,
+      is_published: true,
+    })
+    expect(renderAttachment(queryClient)).toContain(">Platform<")
+  })
+
+  it("keeps the platform label for an attachment with known metadata", () => {
+    const html = renderToStaticMarkup(
+      createElement(QueryClientProvider, {
+        client: createQueryClient(),
+        children: createElement(MessageAttachmentCard, {
+          attachment: { ...attachment, name: "August report.pptx", scope: "platform" },
+        }),
+      })
+    )
+
+    expect(html).toContain("August report.pptx")
+    expect(html).toContain(">Platform<")
   })
 
   it("shows the persisted media type while file metadata is loading", () => {

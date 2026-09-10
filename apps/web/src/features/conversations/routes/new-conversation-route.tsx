@@ -1,6 +1,16 @@
 // apps/web/src/features/conversations/routes/new-conversation-route.tsx
 
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useRouterState } from "@tanstack/react-router"
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import type { Agent } from "@/features/agents/types"
+import type { ModelCatalogResponse } from "@/features/models/types"
+import type { WorkspaceFile } from "@/features/files/types"
+import { fileQueryOptions } from "@/features/files/api/get-file"
+import { canAttachFile } from "@/features/files/chat-attachment"
+import { attachmentFromWorkspaceFile } from "@/features/conversations/attachments"
 
 import { useAgentsQuery } from "@/features/agents/api/list-agents"
 import { AgentIdentityIcon } from "@/features/agents/components/agent-identity-icon"
@@ -16,7 +26,7 @@ const MAX_AGENT_ICONS = 5
 
 export function NewConversationRoute() {
   const search = useRouterState({
-    select: (state): { agent?: string } => state.location.search,
+    select: (state): { agent?: string; file?: string } => state.location.search,
   })
   const { data: agentsData } = useAgentsQuery({ includeInactive: false, limit: 100 })
   const { data: modelCatalog } = useModelCatalogQuery()
@@ -73,15 +83,69 @@ export function NewConversationRoute() {
       {activeAgents.length > 0 ? (
         <footer className="shrink-0">
           <div className="mx-auto w-full max-w-4xl px-4 pt-2 pb-4">
-            <ConversationComposer
-              mode="create"
+            <NewConversationComposer
+              key={search.file ?? "new"}
+              fileId={search.file}
+              initialAgentId={search.agent}
               agents={agentsData.agents}
-              {...(search.agent ? { initialAgentId: search.agent } : {})}
               modelCatalog={modelCatalog}
             />
           </div>
         </footer>
       ) : null}
     </div>
+  )
+}
+
+function NewConversationComposer({
+  fileId,
+  initialAgentId,
+  agents,
+  modelCatalog,
+}: {
+  fileId: string | undefined
+  initialAgentId: string | undefined
+  agents: Agent[]
+  modelCatalog: ModelCatalogResponse
+}) {
+  const [initialFile, setInitialFile] = useState<WorkspaceFile | null>(null)
+  const attachment = useQuery({
+    ...fileQueryOptions(fileId ?? ""),
+    enabled: Boolean(fileId) && initialFile === null,
+    staleTime: 0,
+    retry: false,
+  })
+
+  if (fileId && !initialFile) {
+    if (attachment.isPending || !attachment.isFetchedAfterMount) {
+      return (
+        <p role="status" className="text-muted-foreground text-sm">
+          Loading attachment…
+        </p>
+      )
+    }
+    if (attachment.isError || !canAttachFile(attachment.data)) {
+      return (
+        <Alert variant="destructive">
+          <AlertTitle>File cannot be attached</AlertTitle>
+          <AlertDescription>
+            Return to Files and choose an available document or image.
+          </AlertDescription>
+        </Alert>
+      )
+    }
+    // Once handed to the composer, its draft owns attachment removal and retry.
+    setInitialFile(attachment.data)
+    return null
+  }
+
+  return (
+    <ConversationComposer
+      mode="create"
+      agents={agents}
+      {...(initialAgentId ? { initialAgentId } : {})}
+      {...(initialFile ? { initialAttachment: attachmentFromWorkspaceFile(initialFile) } : {})}
+      modelCatalog={modelCatalog}
+    />
   )
 }

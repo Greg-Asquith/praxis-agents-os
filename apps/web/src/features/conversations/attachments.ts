@@ -14,6 +14,7 @@ const CHAT_ATTACHMENT_EXTENSIONS = Object.entries(WORKSPACE_FILE_MIME_TYPES)
   .map(([extension]) => `.${extension}`)
 
 export type MessageAttachment = {
+  scope?: "platform"
   fileId: string
   mediaType: string
   name: string | null
@@ -76,8 +77,9 @@ export function attachmentFromBinaryUserContentPart(value: unknown): MessageAtta
   }
 }
 
-function attachmentFromWorkspaceFile(file: WorkspaceFile): MessageAttachment {
+export function attachmentFromWorkspaceFile(file: WorkspaceFile): MessageAttachment {
   return {
+    ...(file.scope === "platform" ? { scope: "platform" as const } : {}),
     fileId: file.id,
     mediaType: file.content_type,
     name: file.name,

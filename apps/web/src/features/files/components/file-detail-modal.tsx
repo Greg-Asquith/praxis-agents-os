@@ -10,6 +10,11 @@ import {
   Trash2Icon,
 } from "lucide-react"
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { FileAttachButton } from "@/features/files/components/file-attach-button"
+import { CopyFileButton } from "@/features/files/components/copy-file-button"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { canEditWorkspace } from "@/features/workspaces/permissions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,6 +29,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useDeleteFileMutation } from "@/features/files/api/delete-file"
 import { fileQueryOptions } from "@/features/files/api/get-file"
+import { platformFileQueryOptions } from "@/features/files/api/platform-get-file"
+import { PlatformFileReview } from "@/features/files/components/platform-file-review"
 import { useRevisionContentQuery } from "@/features/files/api/get-revision-content"
 import { useFileRevisionsQuery } from "@/features/files/api/list-file-revisions"
 import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
@@ -34,6 +41,7 @@ import { RenameFileDialog } from "@/features/files/components/rename-file-dialog
 import { MoveFilesDialog } from "@/features/files/components/move-files-dialog"
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { fileCategoryLabel } from "@/features/files/format"
+import { isFileProcessing } from "@/features/files/processing"
 import type { FileFolder, WorkspaceFile } from "@/features/files/types"
 import { ApiError, getErrorMessage } from "@/lib/api/errors"
 import { formatBytes, formatDateTime } from "@/lib/format"
@@ -46,24 +54,86 @@ export function FileDetailModal({
   open,
   onOpenChange,
   folders = EMPTY_FOLDERS,
+  platformManagement = false,
 }: {
   fileId: string | null
   initialFile?: WorkspaceFile | null
   open: boolean
   onOpenChange: (open: boolean) => void
   folders?: FileFolder[]
+  platformManagement?: boolean
 }) {
   if (!open || !fileId) {
     return null
   }
 
+  if (platformManagement) {
+    return (
+      <PlatformFileDetailQuery
+        key={fileId}
+        fileId={fileId}
+        folders={folders}
+        onOpenChange={onOpenChange}
+      />
+    )
+  }
+
   return (
     <FileDetailQuery
+      key={fileId}
       fileId={fileId}
       folders={folders}
       initialFile={initialFile}
       onOpenChange={onOpenChange}
     />
+  )
+}
+
+function PlatformFileDetailQuery({
+  fileId,
+  folders,
+  onOpenChange,
+}: {
+  fileId: string
+  folders: FileFolder[]
+  onOpenChange: (open: boolean) => void
+}) {
+  const query = useQuery(platformFileQueryOptions(fileId))
+  if (query.error)
+    return (
+      <FileDetailErrorDialog
+        error={query.error}
+        onOpenChange={onOpenChange}
+        onRetry={() => {
+          void query.refetch()
+        }}
+      />
+    )
+  if (!query.data) return <FileDetailLoadingDialog onOpenChange={onOpenChange} />
+  const file = query.data
+  if (file.is_published && file.published_revision_id === file.current_revision_id) {
+    return (
+      <FileDetailQuery
+        fileId={file.id}
+        folders={folders}
+        initialFile={file}
+        onOpenChange={onOpenChange}
+      />
+    )
+  }
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] min-w-0 overflow-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="wrap-break-word">{file.name}</DialogTitle>
+          <DialogDescription>
+            {file.description ??
+              "Platform files are shared across every workspace on this deployment."}
+          </DialogDescription>
+        </DialogHeader>
+        <PlatformFileReview key={file.current_revision_id} file={file} />
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -78,9 +148,11 @@ function FileDetailQuery({
   initialFile: WorkspaceFile | null
   onOpenChange: (open: boolean) => void
 }) {
+  const [copiedFile, setCopiedFile] = useState<WorkspaceFile | null>(null)
+  const initialData = copiedFile ?? initialFile
   const fileQuery = useQuery({
-    ...fileQueryOptions(fileId),
-    ...(initialFile ? { initialData: initialFile } : {}),
+    ...fileQueryOptions(copiedFile?.id ?? fileId),
+    ...(initialData ? { initialData } : {}),
     refetchOnMount: "always",
     staleTime: 0,
   })
@@ -103,18 +175,32 @@ function FileDetailQuery({
     return <FileDetailLoadingDialog onOpenChange={onOpenChange} />
   }
 
-  return <FileDetailDialog file={fileQuery.data} folders={folders} onOpenChange={onOpenChange} />
+  return (
+    <FileDetailDialog
+      key={fileQuery.data.id}
+      file={fileQuery.data}
+      folders={folders}
+      onOpenChange={onOpenChange}
+      onCopied={setCopiedFile}
+    />
+  )
 }
 
 function FileDetailDialog({
+  onCopied,
   file,
   folders,
   onOpenChange,
 }: {
+  onCopied: (file: WorkspaceFile) => void
   file: WorkspaceFile
   folders: FileFolder[]
   onOpenChange: (open: boolean) => void
 }) {
+  const { workspace } = useActiveWorkspace()
+  const canEdit = canEditWorkspace(workspace.current_user_role)
+  const isPlatform = file.scope === "platform"
+  const canManage = canEdit && !isPlatform
   const deleteMutation = useDeleteFileMutation()
   const [error, setError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -156,6 +242,7 @@ function FileDetailDialog({
             <div className="flex min-w-0 flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{fileCategoryLabel(file.category)}</Badge>
+                {isPlatform ? <Badge variant="secondary">Platform</Badge> : null}
                 {file.processing_status !== "ready" ? (
                   <FileStatusBadge status={file.processing_status} />
                 ) : null}
@@ -165,18 +252,20 @@ function FileDetailDialog({
                   <DialogTitle className="min-w-0 flex-1 truncate text-xl" title={file.name}>
                     {file.name}
                   </DialogTitle>
-                  <Button
-                    aria-label={`Rename ${file.name}`}
-                    onClick={() => {
-                      setRenameDialogOpen(true)
-                    }}
-                    size="icon-sm"
-                    type="button"
-                    variant="ghost"
-                    className="shrink-0"
-                  >
-                    <PencilIcon />
-                  </Button>
+                  {canManage ? (
+                    <Button
+                      aria-label={`Rename ${file.name}`}
+                      onClick={() => {
+                        setRenameDialogOpen(true)
+                      }}
+                      size="icon-sm"
+                      type="button"
+                      variant="ghost"
+                      className="shrink-0"
+                    >
+                      <PencilIcon />
+                    </Button>
+                  ) : null}
                 </div>
                 <DialogDescription className="mt-2">
                   {fileCategoryLabel(file.category)} · {formatBytes(file.size_bytes)} · Updated{" "}
@@ -187,14 +276,25 @@ function FileDetailDialog({
                     {file.description}
                   </p>
                 ) : null}
-                <p className="text-muted-foreground mt-2 text-sm">
-                  Folder: {file.folder_name ?? "Root"}
-                </p>
+                {!isPlatform ? (
+                  <p className="text-muted-foreground mt-2 text-sm">
+                    Folder: {file.folder_name ?? "Root"}
+                  </p>
+                ) : null}
               </div>
             </div>
           </DialogHeader>
 
           <div className="min-h-0 max-w-full min-w-0 space-y-6 overflow-auto p-5">
+            {isPlatform ? (
+              <Alert>
+                <AlertTitle>Managed by platform admins</AlertTitle>
+                <AlertDescription>
+                  This file is available in every workspace. Make a workspace copy for independent
+                  changes. Copies receive no later platform updates.
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {error ? <p className="text-destructive text-sm">{error}</p> : null}
             <Suspense fallback={<PreviewSkeleton />}>
               <FilePreview file={file} />
@@ -212,27 +312,39 @@ function FileDetailDialog({
           </div>
 
           <DialogFooter className="m-0 min-w-0 flex-wrap rounded-none">
-            <Button
-              onClick={() => {
-                setMoveDialogOpen(true)
-              }}
-              type="button"
-              variant="outline"
-            >
-              <FolderInputIcon data-icon="inline-start" />
-              Move to…
-            </Button>
-            <Button
-              disabled={deleteMutation.isPending}
-              onClick={() => {
-                setDeleteDialogOpen(true)
-              }}
-              type="button"
-              variant="destructive"
-            >
-              <Trash2Icon data-icon="inline-start" />
-              {deleteMutation.isPending ? "Deleting" : "Delete"}
-            </Button>
+            <FileAttachButton file={file} />
+            {isPlatform && canEdit ? (
+              <CopyFileButton
+                key={`${file.id}:${file.current_revision_id}`}
+                file={file}
+                onCopied={onCopied}
+              />
+            ) : null}
+            {canManage ? (
+              <>
+                <Button
+                  onClick={() => {
+                    setMoveDialogOpen(true)
+                  }}
+                  type="button"
+                  variant="outline"
+                >
+                  <FolderInputIcon data-icon="inline-start" />
+                  Move to…
+                </Button>
+                <Button
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    setDeleteDialogOpen(true)
+                  }}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2Icon data-icon="inline-start" />
+                  {deleteMutation.isPending ? "Deleting" : "Delete"}
+                </Button>
+              </>
+            ) : null}
             <Button
               onClick={() => {
                 void handleOpen(true)
@@ -251,16 +363,19 @@ function FileDetailDialog({
               variant="outline"
             >
               <ExternalLinkIcon data-icon="inline-start" />
-              Open
+              View
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <RenameFileDialog file={renameDialogOpen ? file : null} onOpenChange={setRenameDialogOpen} />
+      <RenameFileDialog
+        file={canManage && renameDialogOpen ? file : null}
+        onOpenChange={setRenameDialogOpen}
+      />
       <MoveFilesDialog
         fileIds={[file.id]}
         folders={folders}
-        open={moveDialogOpen}
+        open={canManage && moveDialogOpen}
         onOpenChange={setMoveDialogOpen}
       />
       <ConfirmDialog
@@ -271,7 +386,7 @@ function FileDetailDialog({
         isPending={deleteMutation.isPending}
         onConfirm={handleDelete}
         onOpenChange={setDeleteDialogOpen}
-        open={deleteDialogOpen}
+        open={canManage && deleteDialogOpen}
         title="Delete file?"
       />
     </>
@@ -283,6 +398,10 @@ function FileDetailLoadingDialog({ onOpenChange }: { onOpenChange: (open: boolea
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogHeader className="border-b p-5 pr-12">
+          <DialogTitle className="sr-only">Loading file</DialogTitle>
+          <DialogDescription className="sr-only">
+            Loading file details and preview.
+          </DialogDescription>
           <Skeleton className="h-6 w-24" />
           <Skeleton className="mt-3 h-7 w-80 max-w-full" />
           <Skeleton className="mt-2 h-4 w-64 max-w-full" />
@@ -316,7 +435,7 @@ function FileDetailErrorDialog({
           </DialogTitle>
           <DialogDescription>
             {missing
-              ? "This file may have been deleted since the agent used it."
+              ? "This file may have been deleted or withdrawn from the platform."
               : getErrorMessage(error)}
           </DialogDescription>
         </DialogHeader>
@@ -379,7 +498,7 @@ function FileHistoryHeading({ file }: { file: WorkspaceFile }) {
 }
 
 function FilePreview({ file }: { file: WorkspaceFile }) {
-  if (file.processing_status === "pending" || file.processing_status === "processing") {
+  if (isFileProcessing(file.processing_status)) {
     return <p className="text-muted-foreground text-sm">The system is still preparing this file.</p>
   }
 
@@ -397,7 +516,7 @@ function FilePreview({ file }: { file: WorkspaceFile }) {
 
   return (
     <p className="text-muted-foreground text-sm">
-      Preview isn&apos;t available for this file type — use Open or Download.
+      Preview isn&apos;t available for this file type. Use View or Download.
     </p>
   )
 }
@@ -406,9 +525,7 @@ function SignedMediaPreview({ file }: { file: WorkspaceFile }) {
   const previewQuery = useQuery(filePreviewQueryOptions(file.id))
 
   if (previewQuery.isPending) {
-    return (
-      <div className="bg-muted/40 h-64 animate-pulse rounded-lg" aria-label="Loading preview" />
-    )
+    return <PreviewSkeleton />
   }
 
   if (previewQuery.isError) {
@@ -440,7 +557,7 @@ function SignedMediaPreview({ file }: { file: WorkspaceFile }) {
       type="application/pdf"
     >
       <p className="text-muted-foreground p-4 text-sm">
-        PDF preview isn&apos;t available — use Open or Download.
+        PDF preview isn&apos;t available. Use View or Download.
       </p>
     </object>
   )

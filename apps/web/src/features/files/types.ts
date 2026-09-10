@@ -12,11 +12,19 @@ export type FileSortField =
 
 export type FileSortDirection = "asc" | "desc"
 
+export type FileScope = "workspace" | "platform"
+
+export type FileScopeFilter = "all" | FileScope
+
 type FileRevisionKind = "create" | "edit" | "replace" | "restore" | "import"
 
 export type WorkspaceFile = {
   id: string
-  workspace_id: string
+  workspace_id: string | null
+  scope: FileScope
+  is_published: boolean
+  can_manage_platform: boolean
+  published_revision_id: string | null
   name: string
   description: string | null
   folder_id: string | null
@@ -112,7 +120,7 @@ export type FileDownloadRequest = {
 
 type SignedDownload = {
   ref: {
-    bucket: "public" | "private"
+    bucket: "public" | "private" | "platform_private"
     key: string
   }
   url: string

@@ -1,7 +1,7 @@
 // apps/web/src/features/storage/types.ts
 
 type StorageObjectRef = {
-  bucket: "public" | "private"
+  bucket: "public" | "private" | "platform_private"
   key: string
 }
 

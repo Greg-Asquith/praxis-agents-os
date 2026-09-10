@@ -1,22 +1,18 @@
 // apps/web/src/features/files/search.ts
 
-import type { FileSortDirection, FileSortField } from "@/features/files/types"
+import type { FileScopeFilter, FileSortDirection, FileSortField } from "@/features/files/types"
 import { isOneOf } from "@/lib/guards"
 
-const FILE_SORT_FIELDS = new Set<FileSortField>([
-  "created_at",
-  "extension",
-  "name",
-  "processing_status",
-  "size_bytes",
-  "updated_at",
-])
+export const FILE_SORT_FIELDS = new Set<FileSortField>(["name", "size_bytes", "updated_at"])
+const MAX_QUERY_LENGTH = 255
 
 export type FilesSearch = {
   direction?: FileSortDirection
   fileId?: string
   folder?: string
   page?: number
+  q?: string
+  scope?: FileScopeFilter
   sort?: FileSortField
 }
 
@@ -28,6 +24,16 @@ export function validateFilesSearch(search: Record<string, unknown>): FilesSearc
   }
   if (typeof search["folder"] === "string") {
     result.folder = search["folder"]
+  }
+
+  const query = typeof search["q"] === "string" ? search["q"].trim().slice(0, MAX_QUERY_LENGTH) : ""
+  if (query) {
+    result.q = query
+  }
+
+  const scope = search["scope"]
+  if (scope === "workspace" || scope === "platform") {
+    result.scope = scope
   }
 
   const page = Number(search["page"])

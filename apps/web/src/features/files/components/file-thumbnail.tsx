@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { FileTypeIcon } from "@/features/files/components/file-type-icon"
-import type { FileContractCategory, FileProcessingStatus } from "@/features/files/types"
+import type { FileContractCategory, FileProcessingStatus, FileScope } from "@/features/files/types"
 import { cn } from "@/lib/utils"
 
 type FileThumbnailProps = {
@@ -16,6 +16,8 @@ type FileThumbnailProps = {
     extension?: string
     name?: string
     processing_status?: FileProcessingStatus
+    scope?: FileScope
+    is_published?: boolean
   }
   size?: "sm" | "md"
 }
@@ -23,7 +25,11 @@ type FileThumbnailProps = {
 export function FileThumbnail({ file, size = "md" }: FileThumbnailProps) {
   const className = size === "sm" ? "size-9" : "size-10"
 
-  if (file.category === "image" && file.processing_status === "ready") {
+  if (
+    file.category === "image" &&
+    file.processing_status === "ready" &&
+    (file.scope !== "platform" || file.is_published)
+  ) {
     return (
       <ImageThumbnail
         className={className}

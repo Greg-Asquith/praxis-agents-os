@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/attachment-chip.tsx
 
 import { Loader2Icon, PaperclipIcon, XIcon } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { ComposerAttachment } from "./conversation-composer"
 import { formatBytes } from "@/lib/format"
@@ -20,6 +21,7 @@ export function AttachmentChip({
         <PaperclipIcon className="text-muted-foreground size-3.5" />
       )}
       <span className="min-w-0 truncate font-medium">{attachment.name}</span>
+      {attachment.scope === "platform" ? <Badge variant="secondary">Platform</Badge> : null}
       <span className="text-muted-foreground shrink-0">{formatBytes(attachment.sizeBytes)}</span>
       <Button
         aria-label={`Remove ${attachment.name}`}

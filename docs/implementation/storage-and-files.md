@@ -149,13 +149,25 @@ revision with a strict global audit event. A retry can recover promoted bytes
 after a database failure. Replacement revisions leave the published pointer
 unchanged. Platform Files have no folder and do not count towards workspace
 storage usage. Workspace confirmation also checks the persisted declared size.
+Platform replacements create a fresh revision even when the bytes match, so
+confirmation can restart failed processing and retain its publication intent.
 
 Ingestible platform revisions enqueue `files.extract_platform` with the
 initiating user's concurrency ownership. The handler verifies their live
 super-admin authority before maintenance access. Conversion reads bounded
 bytes outside the write transaction. A locked recheck of the parent, current
 revision, content hash, and publication state prevents stale, deleted, or
-withdrawn work from persisting. Extraction never publishes content.
+withdrawn work from persisting.
+
+Extraction publishes only when platform confirmation explicitly requests
+`publish_when_ready`. The request defaults to false and is unavailable on the
+workspace confirmation route. Ready text and media publish in the confirmation
+transaction. Documents retain the intent in their extraction job and publish
+the pinned revision only after successful extraction, even if the browser closes.
+The worker rechecks live super-admin authority and the parent revision under
+lock. Publication verifies source bytes and writes strict global audit evidence
+in the same transaction. Failed processing or audit leaves the draft unpublished.
+Withdrawal cancels pending publication intent under the same parent lock.
 
 Extraction uses a deterministic, create-only Markdown object. A retry validates
 existing bytes before adopting an output left by a failed database transaction.
@@ -211,8 +223,10 @@ publication fields. Deletion retains bytes for the existing cleanup worker.
 Content and preview requests accept an optional `revision_id`, check its parent
 and platform ownership, and authorise every fetch. They return no signed URL
 and use `Cache-Control: no-store`. Binary previews add `nosniff` and a restrictive
-sandbox Content Security Policy. Frontend preview rendering remains pending;
-it must use the existing sandboxed preview component. Downloaded bytes and
+sandbox Content Security Policy. Admin details use authenticated content reads,
+sandboxed HTML previews, and temporary media URLs that are revoked
+when the preview closes. Ingestible documents, including PDFs, use bounded stored
+Markdown in admin previews. Downloaded bytes and
 previously issued signed capabilities retain their existing recall limits.
 
 ## Published Files in workspaces
@@ -258,8 +272,49 @@ copy. Failed database writes can recover the same bytes on retry. Expired,
 unconsumed reservations retain cleanup ownership of the destination and copy
 stage; failed deletion retains the reservation for another pass.
 
-The Files management UI for platform publication, scope filters, and workspace
-copy actions remains pending.
+In **Files**, the scope tabs read **All**, the workspace name, and **Shared**.
+The filter applies before pagination and totals. At the workspace root, folders
+and files form one list sorted together by the chosen column (most recently
+updated first by default) and paged 10 rows at a time; folder views contain
+workspace Files only. Name sorting uses case-sensitive Unicode code-point order
+in both the API (`COLLATE "C"`) and the browser merge. Every tab shares the same
+columns; the selection column
+stays empty for shared files. Each row shows the type and description under the
+name. Search results also show the folder. Processing and failed states appear beside
+the name; ready files carry no status badge. **Search files** matches names
+across every folder, including in the **Shared** tab, and hides folder rows
+while a query is active. Selecting files reveals **Move to Folder…** and
+**Delete** for the selection, and the
+header checkbox selects every workspace file on the page. Dropping files
+anywhere on the page uploads them to the open folder or the root. **Shared**
+badges identify platform material. Published shared details offer **View**,
+**Download**, and **Make a workspace copy** for workspace editors. Copies open
+as independent local Files. Shared Files have no rename, delete, restore, or
+move action in the ordinary detail or table.
+
+For supported documents and images, **Add to chat** opens a new conversation with
+the File ready in the composer. Choose an agent and enter a message before
+sending. The route checks fresh File access before preparing the attachment;
+the normal send path pins the published revision when it accepts the File.
+Editable text, including HTML, supports attachments. Audio and video do not.
+
+Super admins upload directly through **Upload Files** in the **Shared** tab.
+The tab states that uploads become available in every workspace after processing.
+Confirmation opts into durable automatic publication. It does not require a
+separate review or Publish action. Super admins see pending and failed files
+through the paginated management list, with the same supported sort fields as
+the tenant list. Other members see published files only. Admin details show
+processing status and authenticated previews until publication, then expose the
+ordinary viewing, attachment, and workspace-copy actions.
+
+Workspace read-only membership does not remove super-admin upload authority.
+Read-only members can browse workspace folders and files, but have no upload,
+folder management, selection, rename, restore, or delete controls.
+Platform upload confirmation invalidates management and tenant File caches;
+processing queries poll until completion. Management queries remain separate
+from tenant File caches. The management API retains explicit draft creation,
+publication, and withdrawal for other callers. There is no separate management
+popover. Uploads outside the Shared tab retain workspace ownership.
 
 ## Runtime file references
 

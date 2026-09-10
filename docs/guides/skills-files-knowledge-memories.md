@@ -37,7 +37,24 @@ reports, and images. Attach a file to a conversation when you want an agent to
 read or change that document. Agents can also create files.
 
 Praxis saves each change as a separate revision. You can review earlier
-revisions and restore one when needed.
+revisions and restore workspace files when needed.
+
+Shared files are published by super admins for every workspace. In **Files**,
+use **All**, your workspace name, or **Shared** to choose which files appear,
+and **Search files** to find a file by name in any folder. Folders and files share
+one list, newest first. Workspace editors can drop files anywhere on the page
+to upload them. Open a shared file to view or download it. For a supported
+document or image,
+**Add to chat** opens a new chat with the file ready for your message.
+
+Workspace editors can select **Make a workspace copy** for independent changes.
+The copy receives no later platform updates. Super admins can use **Upload Files**
+in the **Shared** tab. Uploads become available in every workspace automatically
+after processing succeeds. The Shared tab shows processing files to super admins.
+Uploads in **All**, your workspace tab, or a folder stay in your workspace.
+
+Only super admins can withdraw a platform original through the management API.
+Withdrawal blocks future reads, but cannot recall downloaded content or local copies.
 
 Use a file when the task concerns a specific document. Examples include
 summarizing a PDF file, correcting a spreadsheet, or turning meeting notes into

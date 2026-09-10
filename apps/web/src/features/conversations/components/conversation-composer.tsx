@@ -67,6 +67,7 @@ type ConversationComposerProps =
       mode: "create"
       agents: Agent[]
       modelCatalog: ModelCatalogResponse
+      initialAttachment?: MessageAttachment
       initialAgentId?: string
       conversationId?: never
       disabledReason?: string | null
@@ -83,6 +84,7 @@ type ConversationComposerProps =
     }
 
 export type ComposerAttachment = {
+  scope?: "platform"
   localId: string
   fileId: string | null
   mediaType: string
@@ -112,7 +114,11 @@ export function ConversationComposer(props: ConversationComposerProps) {
   })
   const [activeContext, setActiveContext] = useState<ActiveContextSelectionValue[]>([])
   const [prompt, setPrompt] = useState("")
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>(() =>
+    props.mode === "create" && props.initialAttachment
+      ? [composerAttachmentFromUploaded(props.initialAttachment.fileId, props.initialAttachment)]
+      : []
+  )
   const [isDraggingFiles, setIsDraggingFiles] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -163,6 +169,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
     const readyAttachments = sentAttachments
       .filter((attachment) => attachment.status === "ready" && attachment.fileId)
       .map((attachment) => ({
+        ...(attachment.scope ? { scope: attachment.scope } : {}),
         fileId: attachment.fileId ?? "",
         mediaType: attachment.mediaType,
         name: attachment.name,
@@ -728,6 +735,7 @@ function composerAttachmentFromUploaded(
   attachment: MessageAttachment
 ): ComposerAttachment {
   return {
+    ...(attachment.scope ? { scope: attachment.scope } : {}),
     fileId: attachment.fileId,
     localId,
     mediaType: attachment.mediaType,

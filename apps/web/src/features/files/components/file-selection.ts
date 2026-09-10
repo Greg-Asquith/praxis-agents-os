@@ -12,6 +12,7 @@ export type FileSelectionAction =
   | { type: "move-success" }
   | { scope: string; type: "scope-change" }
   | { fileId: string; selected: boolean; type: "selection-change" }
+  | { fileIds: string[]; type: "selection-set" }
 
 export function initialFileSelectionState(scope: string): FileSelectionState {
   return { moveFileIds: [], scope, selectedIds: new Set() }
@@ -36,5 +37,7 @@ export function fileSelectionReducer(
       else selectedIds.delete(action.fileId)
       return { ...state, selectedIds }
     }
+    case "selection-set":
+      return { ...state, selectedIds: new Set(action.fileIds) }
   }
 }

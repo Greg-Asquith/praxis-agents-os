@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { DownloadIcon, ExternalLinkIcon } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
+import type { FileScope } from "@/features/files/types"
 import { Button } from "@/components/ui/button"
 import { FileTypeIcon } from "@/features/files/components/file-type-icon"
 import { openWorkspaceFile } from "@/features/files/file-actions"
@@ -15,6 +17,7 @@ export type FileCardFile = {
   contentType?: string
   fileId: string
   name: string
+  scope?: FileScope
   sizeBytes?: number
 }
 
@@ -45,8 +48,9 @@ export function FileCard({ file }: { file: FileCardFile }) {
         </div>
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{file.name}</p>
+          {file.scope === "platform" ? <Badge variant="secondary">Platform</Badge> : null}
           <p className="text-muted-foreground truncate text-xs">
-            {file.category ? fileCategoryLabel(file.category) : "Workspace file"}
+            {file.category ? fileCategoryLabel(file.category) : "File"}
             {file.contentType ? ` · ${file.contentType}` : ""}
             {typeof file.sizeBytes === "number" ? ` · ${formatBytes(file.sizeBytes)}` : ""}
           </p>

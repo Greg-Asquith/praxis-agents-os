@@ -15,6 +15,7 @@ import { fileRevisionKindLabel } from "@/features/files/format"
 import type { FileRevision, WorkspaceFile } from "@/features/files/types"
 import { workspaceMembershipsQueryOptions } from "@/features/workspaces/api/list-memberships"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { canEditWorkspace } from "@/features/workspaces/permissions"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatBytes, formatDateTime } from "@/lib/format"
 
@@ -27,6 +28,8 @@ export function FileRevisionsList({
   onRestored: () => void
   revisions: FileRevision[]
 }) {
+  const { workspace } = useActiveWorkspace()
+  const canRestore = file.scope !== "platform" && canEditWorkspace(workspace.current_user_role)
   const restoreMutation = useRestoreFileRevisionMutation()
   const [baseRevisionId, setBaseRevisionId] = useState<string | null>(
     revisions[1]?.id ?? revisions[0]?.id ?? null
@@ -47,7 +50,7 @@ export function FileRevisionsList({
   }
 
   async function confirmRestoreRevision() {
-    if (!revisionToRestore) {
+    if (!canRestore || !revisionToRestore) {
       return
     }
 
@@ -80,6 +83,7 @@ export function FileRevisionsList({
             actor={actorLabels(revision)}
             baseRevisionId={baseRevisionId}
             canCompare={canCompare}
+            canRestore={canRestore}
             setBaseRevisionId={setBaseRevisionId}
             setCompareRevisionId={setCompareRevisionId}
           />
@@ -103,7 +107,7 @@ export function FileRevisionsList({
             setRevisionToRestore(null)
           }
         }}
-        open={revisionToRestore !== null}
+        open={canRestore && revisionToRestore !== null}
         title="Restore this version?"
         variant="default"
       />
@@ -122,6 +126,7 @@ function RevisionRow({
   actor,
   baseRevisionId,
   canCompare,
+  canRestore,
   compareRevisionId,
   file,
   isRestoring,
@@ -133,6 +138,7 @@ function RevisionRow({
   actor: string
   baseRevisionId: string | null
   canCompare: boolean
+  canRestore: boolean
   compareRevisionId: string | null
   file: WorkspaceFile
   isRestoring: boolean
@@ -185,7 +191,7 @@ function RevisionRow({
               </Button>
             </>
           ) : null}
-          {!isCurrentRevision ? (
+          {!isCurrentRevision && canRestore ? (
             <Button
               disabled={isRestoring}
               onClick={() => {

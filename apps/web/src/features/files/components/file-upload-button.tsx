@@ -1,72 +1,39 @@
 // apps/web/src/features/files/components/file-upload-button.tsx
 
-import { useId, useRef, useState } from "react"
+import { useId, useRef } from "react"
 import { UploadIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { useConfirmFileUploadMutation } from "@/features/files/api/confirm-file-upload"
-import { useRequestFileUploadMutation } from "@/features/files/api/request-file-upload"
-import { uploadFileDirectly } from "@/lib/api/direct-upload"
-import { getErrorMessage } from "@/lib/api/errors"
-import { contentTypeForWorkspaceFile, workspaceFileAcceptValue } from "@/lib/file"
+import { useFileUpload } from "@/features/files/components/use-file-upload"
+import type { FileScope } from "@/features/files/types"
+import { workspaceFileAcceptValue } from "@/lib/file"
 
-export function FileUploadButton({ folderId = null }: { folderId?: string | null }) {
+export function FileUploadButton({
+  folderId = null,
+  scope = "workspace",
+}: {
+  folderId?: string | null
+  scope?: FileScope
+}) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const requestUploadMutation = useRequestFileUploadMutation()
-  const confirmUploadMutation = useConfirmFileUploadMutation()
-  const [error, setError] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const isUploading = requestUploadMutation.isPending || confirmUploadMutation.isPending
+  const { error, isUploading, message, uploadFiles } = useFileUpload({ folderId, scope })
 
   async function handleFiles(files: FileList | null) {
-    setError(null)
-    setMessage(null)
-    if (!files || files.length === 0) {
-      return
-    }
-
-    const uploadedNames: string[] = []
-    try {
-      for (const file of Array.from(files)) {
-        const result = await requestUploadMutation.mutateAsync({
-          content_type: contentTypeForWorkspaceFile(file),
-          filename: file.name,
-          size_bytes: file.size,
-          ...(folderId ? { allow_duplicate_content: true } : {}),
-        })
-        if (result.file) {
-          uploadedNames.push(result.file.name)
-          continue
-        }
-        if (!result.grant) {
-          throw new Error("Upload grant was not returned.")
-        }
-
-        await uploadFileDirectly(result.grant.upload, file, result.grant.max_size_bytes)
-        const confirmed = await confirmUploadMutation.mutateAsync({
-          uploadToken: result.grant.upload_token,
-          folderId,
-        })
-        uploadedNames.push(confirmed.name)
-      }
-      setMessage(`${uploadedNames.join(", ")} uploaded.`)
-    } catch (uploadError) {
-      setError(getErrorMessage(uploadError))
-    } finally {
-      if (inputRef.current) {
-        inputRef.current.value = ""
-      }
+    await uploadFiles(files)
+    if (inputRef.current) {
+      inputRef.current.value = ""
     }
   }
 
   return (
-    <div className="flex min-w-0 flex-col items-start gap-2 md:items-end">
+    <div className="flex max-w-full min-w-0 flex-col items-start gap-2 self-start md:items-end">
       <input
         accept={workspaceFileAcceptValue()}
         aria-label="Choose Files to Upload"
         className="sr-only"
+        disabled={isUploading}
         id={inputId}
         multiple
         name="files"
@@ -90,13 +57,18 @@ export function FileUploadButton({ folderId = null }: { folderId?: string | null
         {isUploading ? "Uploading" : "Upload Files"}
       </Button>
       {error ? (
-        <Alert className="max-w-sm" variant="destructive">
+        <Alert className="w-64 max-w-full wrap-anywhere" variant="destructive">
           <AlertTitle>Upload failed</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
       {message ? (
-        <p className="text-muted-foreground max-w-sm text-right text-xs">{message}</p>
+        <p
+          role="status"
+          className="text-muted-foreground max-w-40 text-xs wrap-anywhere md:text-right"
+        >
+          {message}
+        </p>
       ) : null}
     </div>
   )

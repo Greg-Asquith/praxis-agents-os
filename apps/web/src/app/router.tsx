@@ -175,9 +175,13 @@ const conversationRuntimeRoute = createRoute({
 const newConversationRoute = createRoute({
   getParentRoute: () => conversationRuntimeRoute,
   path: "/conversations/new",
-  validateSearch: (search): { agent?: string } => {
+  validateSearch: (search): { agent?: string; file?: string } => {
     const agent = search["agent"]
-    return typeof agent === "string" && UUID_PATTERN.test(agent) ? { agent } : {}
+    const file = search["file"]
+    return {
+      ...(typeof agent === "string" && UUID_PATTERN.test(agent) ? { agent } : {}),
+      ...(typeof file === "string" && UUID_PATTERN.test(file) ? { file } : {}),
+    }
   },
   pendingMs: Infinity,
   loader: async ({ context }) => {
