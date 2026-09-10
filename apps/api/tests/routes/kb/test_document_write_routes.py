@@ -167,6 +167,9 @@ async def test_member_can_search_preview_and_import_an_integration_source(
         captured["import"] = kwargs
         return KBDocumentRead(
             id=document_id,
+            scope="workspace",
+            workspace_id=workspace.id,
+            is_published=False,
             title="Team handbook",
             concept_id=None,
             source_type="integration",

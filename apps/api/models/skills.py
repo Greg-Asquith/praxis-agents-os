@@ -7,8 +7,6 @@ Skills are user-created instruction packages with compact discovery metadata,
 raw instructions, and requestable documentation references.
 """
 
-from enum import StrEnum
-
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -25,13 +23,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
 
 from models.base import BaseModel
-
-
-class SkillScope(StrEnum):
-    """Ownership boundary for a skill."""
-
-    WORKSPACE = "workspace"
-    PLATFORM = "platform"
+from utils.content import ContentScope
 
 
 class Skill(BaseModel):
@@ -55,7 +47,7 @@ class Skill(BaseModel):
 
     # Workspace skills belong to one workspace. Platform skills have no tenant owner.
     scope = Column(
-        String(16), nullable=False, default=SkillScope.WORKSPACE, server_default="workspace"
+        String(16), nullable=False, default=ContentScope.WORKSPACE, server_default="workspace"
     )
     workspace_id = Column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True

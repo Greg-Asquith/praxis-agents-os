@@ -10,8 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
+from core.dependencies import require_super_admin_user
 from core.exceptions.general import AppValidationError
-from models.skills import Skill, SkillScope
+from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
@@ -19,7 +20,6 @@ from services.audit_events.workspace_events import record_workspace_audit_event
 from services.skills.platform_utils import (
     get_platform_skill,
     record_platform_skill_audit_event,
-    require_platform_skill_admin,
 )
 from services.skills.schemas import SkillRead, SkillUpdateRequest
 from services.skills.utils import (
@@ -27,6 +27,7 @@ from services.skills.utils import (
     get_visible_skill,
     require_skill_write_access,
 )
+from utils.content import ContentScope
 
 
 async def update_skill(
@@ -40,8 +41,8 @@ async def update_skill(
     payload: SkillUpdateRequest,
 ) -> SkillRead:
     skill = await get_visible_skill(db, workspace=workspace, skill_id=skill_id)
-    if skill.scope == SkillScope.PLATFORM:
-        require_platform_skill_admin(actor)
+    if skill.scope == ContentScope.PLATFORM:
+        require_super_admin_user(actor)
         await db.commit()
         return await _update_platform_skill(
             request=request,
@@ -93,7 +94,7 @@ async def update_skill(
         )
         await db.refresh(skill)
 
-    return SkillRead.from_skill(skill)
+    return SkillRead.from_skill(skill, actor=actor)
 
 
 def _set_if_changed(skill: Skill, field_name: str, value: Any, changed_fields: list[str]) -> None:
@@ -153,4 +154,4 @@ async def _update_platform_skill(
                 details={"changed_fields": changed_fields},
             )
         await maintenance_db.refresh(skill)
-        return SkillRead.from_skill(skill)
+        return SkillRead.from_skill(skill, actor=actor)

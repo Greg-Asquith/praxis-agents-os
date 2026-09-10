@@ -6,10 +6,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
+from models.user import User
 from services.agents.runtime.untrusted import UntrustedNode
 from services.kb.domain import KB_DOCUMENT_TITLE_MAX_CHARS, KB_FRAMED_SOURCE_TYPES
+from utils.content import ContentScope, can_manage_platform_content
 from utils.pagination import OffsetPage
 
 if TYPE_CHECKING:
@@ -59,6 +61,10 @@ class KBDocumentRead(BaseModel):
     """Workspace-visible canonical knowledge-base document."""
 
     id: UUID
+    scope: ContentScope
+    workspace_id: UUID | None
+    is_published: bool
+    can_manage_platform: bool = False
     title: str
     concept_id: str | None
     source_type: str
@@ -79,10 +85,20 @@ class KBDocumentRead(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_document(cls, document: "KBDocument") -> "KBDocumentRead":
+    def from_document(
+        cls, document: "KBDocument", *, actor: User | None = None
+    ) -> "KBDocumentRead":
         """Serialize one canonical document model."""
         return cls(
             id=document.id,
+            scope=document.scope,
+            is_published=document.is_published,
+            can_manage_platform=can_manage_platform_content(
+                scope=document.scope,
+                deleted=document.deleted,
+                actor=actor,
+            ),
+            workspace_id=document.workspace_id,
             title=document.title,
             concept_id=document.concept_id,
             source_type=document.source_type,
@@ -119,6 +135,10 @@ class KBDocumentListItem(BaseModel):
     """Document metadata for the management list."""
 
     id: UUID
+    scope: ContentScope
+    workspace_id: UUID | None
+    is_published: bool
+    can_manage_platform: bool = False
     title: str
     source_type: str
     source_sync_status: str | None
@@ -133,9 +153,19 @@ class KBDocumentListItem(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_document(cls, document: "KBDocument") -> "KBDocumentListItem":
+    def from_document(
+        cls, document: "KBDocument", *, actor: User | None = None
+    ) -> "KBDocumentListItem":
         return cls(
             id=document.id,
+            scope=document.scope,
+            is_published=document.is_published,
+            can_manage_platform=can_manage_platform_content(
+                scope=document.scope,
+                deleted=document.deleted,
+                actor=actor,
+            ),
+            workspace_id=document.workspace_id,
             title=document.title,
             source_type=document.source_type,
             source_sync_status=document.source_sync_status,
@@ -192,6 +222,8 @@ class KBIntegrationDocumentCreateRequest(BaseModel):
 
 class KBDocumentUpdateRequest(BaseModel):
     """Editable fields for one knowledge document."""
+
+    model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, min_length=1, max_length=KB_DOCUMENT_TITLE_MAX_CHARS)
     content_md: str | None = Field(default=None, min_length=1)

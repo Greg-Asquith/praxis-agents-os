@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.skills import Skill
+from models.user import User
 from models.workspace import Workspace
 from services.skills.schemas import SkillRead, SkillsListResponse
 from services.skills.utils import visible_skill_filter
@@ -19,6 +20,7 @@ async def list_skills(
     limit: int,
     offset: int,
     include_inactive: bool,
+    actor: User | None = None,
 ) -> SkillsListResponse:
     filters = [
         visible_skill_filter(workspace),
@@ -36,7 +38,7 @@ async def list_skills(
     )
 
     return SkillsListResponse(
-        skills=[SkillRead.from_skill(skill) for skill in skills],
+        skills=[SkillRead.from_skill(skill, actor=actor) for skill in skills],
         total=total or 0,
         limit=limit,
         offset=offset,

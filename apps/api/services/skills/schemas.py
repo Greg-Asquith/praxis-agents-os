@@ -9,7 +9,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from models.skills import Skill, SkillScope
+from models.skills import Skill
+from models.user import User
+from utils.content import ContentScope, can_manage_platform_content
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -23,7 +25,8 @@ class SkillRead(BaseModel):
     human_name: str | None = None
     description: str
     instructions: str
-    scope: SkillScope
+    scope: ContentScope
+    can_manage_platform: bool = False
     workspace_id: UUID | None
     created_by: UUID
     documentation_refs: dict[str, Any] = Field(default_factory=dict)
@@ -39,8 +42,12 @@ class SkillRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     @classmethod
-    def from_skill(cls, skill: Skill) -> "SkillRead":
-        return cls.model_validate(skill)
+    def from_skill(cls, skill: Skill, *, actor: User | None = None) -> "SkillRead":
+        response = cls.model_validate(skill)
+        response.can_manage_platform = can_manage_platform_content(
+            scope=skill.scope, deleted=skill.deleted, actor=actor
+        )
+        return response
 
 
 class SkillsListResponse(OffsetPage):
@@ -55,7 +62,7 @@ class SkillCreateRequest(BaseModel):
     is_active: bool = True
     is_favorite: bool = False
     metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
-    scope: SkillScope = SkillScope.WORKSPACE
+    scope: ContentScope = ContentScope.WORKSPACE
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -92,7 +99,7 @@ class SkillUpdateRequest(BaseModel):
     is_favorite: bool | None = None
     metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     @field_validator("name")
     @classmethod

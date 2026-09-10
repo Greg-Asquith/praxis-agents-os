@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Path
 
-from core.dependencies import AsyncDbSessionDep, CurrentWorkspaceDep
+from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
 from services.skills import get_skill as get_skill_service
 from services.skills.schemas import SkillRead
 
@@ -17,8 +17,9 @@ router = APIRouter()
 @router.get("/{skill_id}")
 async def get_skill(
     db: AsyncDbSessionDep,
+    actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
     skill_id: Annotated[UUID, Path()],
 ) -> SkillRead:
     workspace, _membership = workspace_context
-    return await get_skill_service(db, workspace=workspace, skill_id=skill_id)
+    return await get_skill_service(db, workspace=workspace, actor=actor, skill_id=skill_id)

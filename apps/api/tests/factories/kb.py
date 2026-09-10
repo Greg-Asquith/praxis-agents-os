@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from models.kb import KBChunk, KBDocument
 from models.workspace import Workspace
+from utils.content import ContentScope
 
 
 def build_kb_document(
@@ -18,6 +19,8 @@ def build_kb_document(
     defaults = {
         "id": document_id or uuid4(),
         "workspace_id": workspace.id,
+        "scope": ContentScope.WORKSPACE,
+        "is_published": False,
         "title": "Test knowledge",
         "source_type": "manual",
         "status": "pending",

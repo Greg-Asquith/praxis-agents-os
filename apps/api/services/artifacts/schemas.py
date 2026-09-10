@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.agents.runtime.entity_references.domain import ArtifactReference
+from utils.content import ContentScope
 
 
 class ArtifactToolResult(BaseModel):
@@ -64,7 +65,11 @@ class ArtifactBaseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    workspace_id: UUID
+    scope: ContentScope
+    workspace_id: UUID | None
+    is_published: bool
+    can_manage_platform: bool = False
+    can_edit: bool = False
     agent_id: UUID | None
     conversation_id: UUID | None
     run_id: UUID | None
@@ -103,6 +108,8 @@ class ArtifactViewUrl(BaseModel):
 
 
 class ArtifactUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     content: str
     title: str | None = None
 

@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from models.artifacts import Artifact, ArtifactRevision
 from models.workspace import Workspace
 from services.artifacts.utils import artifact_revision_object_key
+from utils.content import ContentScope
 
 
 def build_artifact(
@@ -20,6 +21,8 @@ def build_artifact(
     defaults = {
         "id": selected_artifact_id,
         "workspace_id": workspace.id,
+        "scope": ContentScope.WORKSPACE,
+        "is_published": False,
         "current_version_id": current_version_id,
         "artifact_type": "html",
         "title": "Test artifact",

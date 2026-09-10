@@ -27,7 +27,7 @@ async def restore_version(
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
 ) -> ArtifactRead:
-    workspace, _membership = workspace_context
+    workspace, membership = workspace_context
     await restore_artifact_version(
         db,
         workspace=workspace,
@@ -35,4 +35,6 @@ async def restore_version(
         version_id=version_id,
         actor=actor,
     )
-    return await get_artifact(db, workspace_id=workspace.id, artifact_id=artifact_id)
+    return await get_artifact(
+        db, workspace_id=workspace.id, artifact_id=artifact_id, actor=actor, membership=membership
+    )

@@ -51,6 +51,7 @@ class AuditResourceType(StrEnum):
     SECRET_REFERENCE = "secret_reference"
     APPLICATION_ENCRYPTION = "application_encryption"
     KB_DOCUMENT = "kb_document"
+    ARTIFACT = "artifact"
     MEMORY = "memory"
     CONVERSATION_SHARING = "conversation_sharing"
     ARTIFACT_SHARE = "artifact_share"

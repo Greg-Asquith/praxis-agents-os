@@ -27,7 +27,7 @@ async def update_artifact(
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
 ) -> ArtifactRead:
-    workspace, _membership = workspace_context
+    workspace, membership = workspace_context
     await update_artifact_service(
         db,
         workspace=workspace,
@@ -36,4 +36,6 @@ async def update_artifact(
         title=payload.title,
         actor_user_id=actor.id,
     )
-    return await get_artifact(db, workspace_id=workspace.id, artifact_id=artifact_id)
+    return await get_artifact(
+        db, workspace_id=workspace.id, artifact_id=artifact_id, actor=actor, membership=membership
+    )

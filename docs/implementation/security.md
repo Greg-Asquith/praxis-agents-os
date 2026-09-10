@@ -99,3 +99,20 @@ They lock the conversation and use the strict audit writer in the same
 transaction. Audit failure rolls back the visibility change. Routine audit
 operations retain their existing best-effort behaviour. Confirmed viewer access
 loss clears cached content. See the [sharing decision](../architecture/workspace-chat-sharing.md).
+
+## Platform content audit contract
+
+`services/audit_events/platform_content_events.py` defines strict global events
+for Knowledge, Files, and Artifacts. They require a maintenance transaction and
+remain hidden from workspace audit queries. The writer records actor identity,
+resource identity, operation, revision IDs, and bounded changed-field names.
+Optional source workspace, resource, and revision IDs stay in the restricted
+event rather than the published resource response. Content, credentials, and
+signed URLs are not accepted detail fields.
+
+Lifecycle events require a configured super admin. The `publish_revision`
+Artifact event additionally admits an active workspace editor for the matching
+published Artifact, recording the editor as the actor. This represents a save
+that immediately publishes a new version to every workspace. Audit failures
+propagate so the caller's maintenance transaction rolls back. The corresponding
+platform mutation APIs are pending. Ordinary skill audit handling is unchanged.

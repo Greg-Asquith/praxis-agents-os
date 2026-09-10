@@ -176,6 +176,9 @@ async def test_read_document_caps_range(
         assert kwargs["user_id"] == user.id
         return KBDocumentRead(
             id=document_id,
+            scope="workspace",
+            workspace_id=workspace.id,
+            is_published=False,
             title="External policy",
             concept_id=None,
             source_type=KB_SOURCE_URL,
@@ -225,6 +228,9 @@ async def test_read_document_retries_for_invalid_range(
     async def fake_read(_db, **_kwargs):
         return KBDocumentRead(
             id=document_id,
+            scope="workspace",
+            workspace_id=uuid4(),
+            is_published=False,
             title="Manual note",
             concept_id=None,
             source_type=KB_SOURCE_MANUAL,

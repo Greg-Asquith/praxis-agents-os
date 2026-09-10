@@ -749,3 +749,22 @@ async def test_plain_artifact_is_sandboxed_and_downloadable(
         frame_ancestors=artifact_frame_ancestors()
     )
     assert response.headers["content-disposition"].startswith("attachment;")
+
+
+@pytest.mark.parametrize("role", list(WorkspaceRole))
+async def test_artifact_read_contract_exposes_editor_capability(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+    role: WorkspaceRole,
+) -> None:
+    headers, artifact, _revision_id, _token = await _seed(db_session, role=role)
+    detail = await db_async_client.get(f"/api/v1/artifacts/{artifact.id}", headers=headers)
+    listing = await db_async_client.get("/api/v1/artifacts/", headers=headers)
+    assert detail.status_code == listing.status_code == 200
+    for response in [detail.json(), listing.json()["items"][0]]:
+        assert response["scope"] == "workspace"
+        assert response["workspace_id"] == str(artifact.workspace_id)
+        assert response["is_published"] is False
+        assert response["can_manage_platform"] is False
+        assert response["can_edit"] == (role != WorkspaceRole.READ_ONLY)

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.user import User
 from models.workspace import Workspace
 from services.skills.schemas import SkillRead
 from services.skills.utils import get_visible_skill
@@ -16,6 +17,7 @@ async def get_skill(
     *,
     workspace: Workspace,
     skill_id: UUID,
+    actor: User | None = None,
 ) -> SkillRead:
     skill = await get_visible_skill(db, workspace=workspace, skill_id=skill_id)
-    return SkillRead.from_skill(skill)
+    return SkillRead.from_skill(skill, actor=actor)

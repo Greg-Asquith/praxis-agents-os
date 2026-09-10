@@ -9,7 +9,6 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
-from models.skills import SkillScope
 from services.skills.schemas import SkillCreateRequest, SkillUpdateRequest
 from tests.factories import (
     build_skill,
@@ -17,6 +16,7 @@ from tests.factories import (
     build_workspace,
     build_workspace_membership,
 )
+from utils.content import ContentScope
 
 pytestmark = pytest.mark.asyncio
 
@@ -37,7 +37,7 @@ def _platform_context(monkeypatch: pytest.MonkeyPatch):
     skill = build_skill(
         workspace=workspace,
         created_by=actor,
-        scope=SkillScope.PLATFORM,
+        scope=ContentScope.PLATFORM,
         workspace_id=None,
     )
     return actor, workspace, membership, skill
@@ -64,7 +64,7 @@ async def test_platform_create_stops_before_maintenance_write_when_request_commi
                 name="platform-guidance",
                 description="Shared guidance.",
                 instructions="Follow the shared workflow.",
-                scope=SkillScope.PLATFORM,
+                scope=ContentScope.PLATFORM,
             ),
         )
 

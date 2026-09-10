@@ -10,9 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import ConflictError, NotFoundError
-from models.skills import Skill, SkillScope
+from models.skills import Skill
 from models.workspace import Workspace, WorkspaceMembership
 from services.workspaces.utils import EDITOR_ROLES
+from utils.content import ContentScope
 
 SKILL_NAME_UNIQUE_CONSTRAINT = "uq_skills_workspace_name"
 PLATFORM_SKILL_NAME_UNIQUE_INDEX = "uq_skills_platform_name"
@@ -23,7 +24,7 @@ def visible_skill_filter(workspace: Workspace | UUID):
     workspace_id = workspace.id if isinstance(workspace, Workspace) else workspace
     return or_(
         Skill.workspace_id == workspace_id,
-        Skill.scope == SkillScope.PLATFORM,
+        Skill.scope == ContentScope.PLATFORM,
     )
 
 

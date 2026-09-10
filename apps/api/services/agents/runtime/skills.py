@@ -12,7 +12,7 @@ from pydantic_ai import ModelRetry, RunContext, Tool
 from pydantic_ai.capabilities import AgentCapability, Capability
 
 from models.agent_run import AgentRun
-from models.skills import Skill, SkillScope
+from models.skills import Skill
 from services.agents.runtime.context import RuntimeDeps
 from services.skills.documents.domain import SkillDocumentEntry
 from services.skills.documents.utils import (
@@ -21,6 +21,7 @@ from services.skills.documents.utils import (
 )
 from services.storage.errors import StorageNotFoundError
 from services.storage.factory import get_storage_provider
+from utils.content import ContentScope
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def record_skill_activation(
     for skill in skills:
         if skill_capability_id(skill) != capability_id:
             continue
-        if skill.scope == SkillScope.WORKSPACE:
+        if skill.scope == ContentScope.WORKSPACE:
             skill.last_used_at = datetime.now(UTC)
         logger.info(
             "Recorded runtime skill activation",

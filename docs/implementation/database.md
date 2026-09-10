@@ -73,6 +73,35 @@ Platform authoring, storage, retrieval, and operator interfaces are pending.
 These database structures alone do not make platform content available
 through the product.
 
+Domain-owned `visibility.py` helpers in `services/kb`, `services/files`, and
+`services/artifacts` define local and published platform reads. Missing workspace
+IDs deny all reads. Revision predicates require matching parent ownership and a
+publication marker; KB chunks inherit privacy and source-access checks from the
+parent. The KB SQL predicate is tested against the ORM predicate. Tenant read
+paths retain their workspace filters until storage and publication are ready.
+
+Parent response contracts expose `scope`, nullable `workspace_id`,
+`is_published`, and `can_manage_platform`. The management flag requires a live
+platform resource and a configured super-admin actor. Ordinary metadata,
+content, and revision update requests reject extra fields, including ownership
+and publication pointers. All four content types use `utils/content.py` for the `ContentScope` enum and
+platform management capability. Skills expose the same `can_manage_platform`
+field, derived for the requesting actor on create, update, list, and detail
+responses. Skill updates also reject ownership fields. Skills retain their
+existing visibility lifecycle without an `is_published` field. Skill services
+use the shared core super-admin check and maintenance context manager directly;
+their mutation authority and transaction behaviour are unchanged.
+
+Artifacts also expose `can_edit`, derived from the authenticated actor and
+workspace membership. Workspace owners, admins, and members can edit their
+workspace Artifacts. The platform contract grants those roles editing of
+published global Artifacts, with each saved version visible to every workspace
+immediately. Super admins retain draft management. That platform save path is
+pending; initial publication, withdrawal, and deletion remain super-admin
+operations. Direct tenant SQL writes stay workspace-only. The future editor
+service must recheck membership and the expected version before a deliberate
+maintenance transaction and commit the revision, publication, and audit together.
+
 ## Connection capacity
 
 The per-process connection and turn-concurrency settings are defined as

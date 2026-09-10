@@ -311,6 +311,7 @@ async def test_platform_skills_are_global_assignable_and_super_admin_managed(
     assert create_response.status_code == 201
     platform_skill = create_response.json()
     assert platform_skill["scope"] == "platform"
+    assert platform_skill["can_manage_platform"] is True
     assert platform_skill["workspace_id"] is None
     assert platform_skill["created_by"] == str(admin.id)
     assert platform_skill["documentation_refs"] == {}
@@ -319,6 +320,15 @@ async def test_platform_skills_are_global_assignable_and_super_admin_managed(
     list_response = await db_async_client.get("/api/v1/skills/", headers=member_headers)
     assert list_response.status_code == 200
     assert [row["id"] for row in list_response.json()["skills"]] == [platform_skill["id"]]
+    assert list_response.json()["skills"][0]["can_manage_platform"] is False
+    for headers, expected in [(admin_headers, True), (member_headers, False)]:
+        detail = await db_async_client.get(
+            f"/api/v1/skills/{platform_skill['id']}", headers=headers
+        )
+        assert detail.status_code == 200
+        assert detail.json()["can_manage_platform"] is expected
+        listed = await db_async_client.get("/api/v1/skills/", headers=headers)
+        assert listed.json()["skills"][0]["can_manage_platform"] is expected
 
     denied_update = await db_async_client.patch(
         f"/api/v1/skills/{platform_skill['id']}",
@@ -365,6 +375,7 @@ async def test_platform_skills_are_global_assignable_and_super_admin_managed(
         json={"description": "Updated global guidance.", "is_active": False},
     )
     assert update_response.status_code == 200
+    assert update_response.json()["can_manage_platform"] is True
     assert update_response.json()["description"] == "Updated global guidance."
     assert update_response.json()["is_active"] is False
 

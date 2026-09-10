@@ -8,8 +8,9 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from models.skills import Skill, SkillScope
+from models.skills import Skill
 from services.skills.schemas import SkillCreateRequest, SkillRead
+from utils.content import ContentScope
 
 
 @pytest.mark.parametrize(
@@ -57,7 +58,7 @@ def test_skill_read_validates_metadata_from_orm_attribute() -> None:
         human_name="Research",
         description="Research guidance",
         instructions="Use verified sources.",
-        scope=SkillScope.WORKSPACE,
+        scope=ContentScope.WORKSPACE,
         workspace_id=uuid4(),
         created_by=uuid4(),
         documentation_refs={"quick-start": {"markdown": "QUICKSTART.md"}},

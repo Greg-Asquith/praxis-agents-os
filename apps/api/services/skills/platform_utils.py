@@ -8,9 +8,8 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.dependencies import require_super_admin_user
 from core.exceptions.general import NotFoundError
-from models.skills import Skill, SkillScope
+from models.skills import Skill
 from models.user import User
 from services.audit_events import (
     AuditAction,
@@ -18,11 +17,7 @@ from services.audit_events import (
     AuditResourceType,
     safe_record_operation_audit_event,
 )
-
-
-def require_platform_skill_admin(actor: User) -> None:
-    """Require the deployment-wide super-admin role."""
-    require_super_admin_user(actor)
+from utils.content import ContentScope
 
 
 async def get_platform_skill(
@@ -33,7 +28,7 @@ async def get_platform_skill(
 ) -> Skill:
     statement = select(Skill).where(
         Skill.id == skill_id,
-        Skill.scope == SkillScope.PLATFORM,
+        Skill.scope == ContentScope.PLATFORM,
         Skill.deleted == False,  # noqa: E712
     )
     if lock_for_update:
@@ -68,6 +63,6 @@ async def record_platform_skill_audit_event(
         actor_id=actor.id,
         actor_display=actor.email,
         requested_by_user_id=actor.id,
-        details={"scope": SkillScope.PLATFORM.value, **details},
+        details={"scope": ContentScope.PLATFORM.value, **details},
         request=request,
     )

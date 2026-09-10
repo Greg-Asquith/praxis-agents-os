@@ -12,10 +12,34 @@ from core.exceptions.general import AppValidationError, NotFoundError
 from core.rate_limiting import build_rate_limit_error, rate_limiter
 from core.settings import settings
 from models.artifacts import Artifact, ArtifactRevision
+from models.user import User
+from models.workspace import WorkspaceMembership
 from services.artifacts.domain import CREATABLE_ARTIFACT_TYPES
 from services.artifacts.schemas import ArtifactRead, ArtifactSummaryRead, ArtifactVersionRead
 from services.storage.domain import StorageBucket, StorageObjectRef, make_storage_object_ref
+from services.workspaces.utils import EDITOR_ROLES
+from utils.content import can_manage_platform_content
 from utils.digests import sha256_hex
+
+
+def can_edit_artifact(
+    artifact: Artifact, *, actor: User | None, membership: WorkspaceMembership | None
+) -> bool:
+    """Checks authority to save a version, immediately publishing platform edits."""
+    if artifact.deleted or actor is None:
+        return False
+    if can_manage_platform_content(scope=artifact.scope, deleted=artifact.deleted, actor=actor):
+        return True
+    if (
+        membership is None
+        or membership.deleted
+        or membership.user_id != actor.id
+        or membership.role not in EDITOR_ROLES
+    ):
+        return False
+    if artifact.scope == "platform":
+        return artifact.workspace_id is None and artifact.is_published is True
+    return artifact.scope == "workspace" and artifact.workspace_id == membership.workspace_id
 
 
 @dataclass(frozen=True)
@@ -151,11 +175,25 @@ async def get_artifact_revision(
     return revision
 
 
-def artifact_to_summary(artifact: Artifact, *, version_count: int) -> ArtifactSummaryRead:
+def artifact_to_summary(
+    artifact: Artifact,
+    *,
+    version_count: int,
+    actor: User | None = None,
+    membership: WorkspaceMembership | None = None,
+) -> ArtifactSummaryRead:
     if artifact.current_version_id is None:
         raise RuntimeError("Artifact has no current revision")
     return ArtifactSummaryRead(
         id=artifact.id,
+        scope=artifact.scope,
+        is_published=artifact.is_published,
+        can_manage_platform=can_manage_platform_content(
+            scope=artifact.scope,
+            deleted=artifact.deleted,
+            actor=actor,
+        ),
+        can_edit=can_edit_artifact(artifact, actor=actor, membership=membership),
         workspace_id=artifact.workspace_id,
         agent_id=artifact.agent_id,
         conversation_id=artifact.conversation_id,
@@ -172,11 +210,22 @@ def artifact_to_summary(artifact: Artifact, *, version_count: int) -> ArtifactSu
 def artifact_to_read(
     artifact: Artifact,
     revisions: list[ArtifactRevision],
+    *,
+    actor: User | None = None,
+    membership: WorkspaceMembership | None = None,
 ) -> ArtifactRead:
     if artifact.current_version_id is None:
         raise RuntimeError("Artifact has no current revision")
     return ArtifactRead(
         id=artifact.id,
+        scope=artifact.scope,
+        is_published=artifact.is_published,
+        can_manage_platform=can_manage_platform_content(
+            scope=artifact.scope,
+            deleted=artifact.deleted,
+            actor=actor,
+        ),
+        can_edit=can_edit_artifact(artifact, actor=actor, membership=membership),
         workspace_id=artifact.workspace_id,
         agent_id=artifact.agent_id,
         conversation_id=artifact.conversation_id,

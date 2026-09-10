@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from core.dependencies import AsyncDbSessionDep, CurrentWorkspaceDep
+from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
 from services.artifacts import list_artifacts as list_artifacts_service
 from services.artifacts.schemas import ArtifactListResponse
 
@@ -17,6 +17,7 @@ router = APIRouter()
 @router.get("/")
 async def list_artifacts(
     db: AsyncDbSessionDep,
+    actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -25,10 +26,12 @@ async def list_artifacts(
     sort_by: Annotated[str, Query(max_length=32)] = "updated_at",
     sort_direction: Annotated[str, Query(max_length=4)] = "desc",
 ) -> ArtifactListResponse:
-    workspace, _membership = workspace_context
+    workspace, membership = workspace_context
     return await list_artifacts_service(
         db,
         workspace_id=workspace.id,
+        actor=actor,
+        membership=membership,
         limit=limit,
         offset=offset,
         conversation_id=conversation_id,

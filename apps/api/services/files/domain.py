@@ -7,9 +7,10 @@ from datetime import datetime
 from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from services.storage.domain import SignedDownload, SignedUpload
+from utils.content import ContentScope
 from utils.validation import normalize_optional_text
 
 _SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
@@ -17,6 +18,8 @@ _SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 
 class FileUploadRequest(BaseModel):
     """Client-declared metadata used to request a signed file upload."""
+
+    model_config = ConfigDict(extra="forbid")
 
     filename: str = Field(min_length=1, max_length=255)
     content_type: str = Field(min_length=1, max_length=128)
@@ -76,6 +79,8 @@ class FileUploadResult(BaseModel):
 class FileConfirmRequest(BaseModel):
     """Request body for confirming a direct-uploaded workspace file."""
 
+    model_config = ConfigDict(extra="forbid")
+
     upload_token: str = Field(min_length=1, max_length=4096)
     folder_id: UUID | None = None
 
@@ -91,12 +96,16 @@ class FileConfirmRequest(BaseModel):
 class FileEditRequest(BaseModel):
     """Text edit request for an editable file."""
 
+    model_config = ConfigDict(extra="forbid")
+
     content: str
     expected_current_revision_id: UUID
 
 
 class FileUpdateRequest(BaseModel):
     """Metadata update request for a workspace file."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=4096)
@@ -110,6 +119,8 @@ class FileUpdateRequest(BaseModel):
 
 class FileRestoreRequest(BaseModel):
     """Roll-forward restore request for a prior file revision."""
+
+    model_config = ConfigDict(extra="forbid")
 
     revision_id: UUID
     expected_current_revision_id: UUID
@@ -126,7 +137,10 @@ class FileRead(BaseModel):
     """API representation of a workspace file."""
 
     id: UUID
-    workspace_id: UUID
+    scope: ContentScope
+    workspace_id: UUID | None
+    is_published: bool
+    can_manage_platform: bool = False
     name: str
     description: str | None = None
     folder_id: UUID | None = None
@@ -211,6 +225,8 @@ class FileFolderListResponse(BaseModel):
 
 
 class FileMoveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     file_ids: list[UUID] = Field(min_length=1, max_length=100)
     folder_id: UUID | None = None
 

@@ -7,6 +7,7 @@ from models.files import File, FileReference, FileRevision, FileUpload
 from models.workspace import Workspace
 from services.files.contract import FileCategory
 from services.files.utils import revision_object_key
+from utils.content import ContentScope
 
 
 def build_file(
@@ -19,6 +20,8 @@ def build_file(
     defaults = {
         "id": file_id or uuid4(),
         "workspace_id": workspace.id,
+        "scope": ContentScope.WORKSPACE,
+        "is_published": False,
         "name": "example.pdf",
         "category": FileCategory.INGESTIBLE_DOCUMENT.value,
         "content_type": "application/pdf",
@@ -112,6 +115,7 @@ def build_file_upload(
     defaults = {
         "id": upload_id or uuid4(),
         "workspace_id": workspace.id,
+        "scope": ContentScope.WORKSPACE,
         "file_id": selected_file_id,
         "revision_id": selected_revision_id,
         "object_key": object_key

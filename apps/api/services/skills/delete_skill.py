@@ -8,7 +8,7 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
-from models.skills import SkillScope
+from core.dependencies import require_super_admin_user
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
@@ -16,12 +16,12 @@ from services.audit_events.workspace_events import record_workspace_audit_event
 from services.skills.platform_utils import (
     get_platform_skill,
     record_platform_skill_audit_event,
-    require_platform_skill_admin,
 )
 from services.skills.utils import (
     get_visible_skill,
     require_skill_write_access,
 )
+from utils.content import ContentScope
 
 
 async def delete_skill(
@@ -34,8 +34,8 @@ async def delete_skill(
     skill_id: UUID,
 ) -> None:
     skill = await get_visible_skill(db, workspace=workspace, skill_id=skill_id)
-    if skill.scope == SkillScope.PLATFORM:
-        require_platform_skill_admin(actor)
+    if skill.scope == ContentScope.PLATFORM:
+        require_super_admin_user(actor)
         await db.commit()
         await _delete_platform_skill(
             request=request,

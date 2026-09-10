@@ -7,18 +7,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
+from core.dependencies import require_super_admin_user
 from core.exceptions.general import AppValidationError
-from models.skills import Skill, SkillScope
+from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.skills.platform_utils import (
     record_platform_skill_audit_event,
-    require_platform_skill_admin,
 )
 from services.skills.schemas import SkillCreateRequest, SkillRead
 from services.skills.utils import classify_skill_integrity_error, require_skill_write_access
+from utils.content import ContentScope
 
 
 async def create_skill(
@@ -30,8 +31,8 @@ async def create_skill(
     membership: WorkspaceMembership,
     payload: SkillCreateRequest,
 ) -> SkillRead:
-    if payload.scope == SkillScope.PLATFORM:
-        require_platform_skill_admin(actor)
+    if payload.scope == ContentScope.PLATFORM:
+        require_super_admin_user(actor)
         if payload.is_favorite:
             raise AppValidationError(
                 "Platform skills cannot be marked as favorites",
@@ -49,7 +50,7 @@ async def create_skill(
         instructions=payload.instructions,
         workspace_id=workspace.id,
         created_by=actor.id,
-        scope=SkillScope.WORKSPACE,
+        scope=ContentScope.WORKSPACE,
         is_active=payload.is_active,
         is_favorite=payload.is_favorite,
         metadata_json=payload.metadata_json,
@@ -77,7 +78,7 @@ async def create_skill(
         details={"skill_name": skill.name},
     )
     await db.refresh(skill)
-    return SkillRead.from_skill(skill)
+    return SkillRead.from_skill(skill, actor=actor)
 
 
 async def _create_platform_skill(
@@ -92,7 +93,7 @@ async def _create_platform_skill(
         human_name=payload.human_name,
         description=payload.description,
         instructions=payload.instructions,
-        scope=SkillScope.PLATFORM,
+        scope=ContentScope.PLATFORM,
         workspace_id=None,
         created_by=actor.id,
         documentation_refs={},
@@ -119,4 +120,4 @@ async def _create_platform_skill(
             details={"skill_name": skill.name},
         )
         await maintenance_db.refresh(skill)
-        return SkillRead.from_skill(skill)
+        return SkillRead.from_skill(skill, actor=actor)

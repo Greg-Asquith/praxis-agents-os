@@ -8,6 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.artifacts import ArtifactRevision
+from models.user import User
+from models.workspace import WorkspaceMembership
 from services.artifacts.schemas import ArtifactRead
 from services.artifacts.utils import artifact_to_read, get_artifact_row
 
@@ -17,6 +19,8 @@ async def get_artifact(
     *,
     workspace_id: UUID,
     artifact_id: UUID,
+    actor: User | None = None,
+    membership: WorkspaceMembership | None = None,
 ) -> ArtifactRead:
     artifact = await get_artifact_row(
         db,
@@ -32,4 +36,4 @@ async def get_artifact(
             )
         ).all()
     )
-    return artifact_to_read(artifact, revisions)
+    return artifact_to_read(artifact, revisions, actor=actor, membership=membership)

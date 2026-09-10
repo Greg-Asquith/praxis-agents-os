@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import NotFoundError
 from models.files import File, FileFolder, FileRevision
+from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.files.domain import FileRead, FileRevisionRead
 from services.storage.domain import StorageBucket, make_storage_object_ref
@@ -18,6 +19,7 @@ from services.storage.factory import get_storage_provider
 from services.storage.paths import unique_object_key, validate_object_key
 from services.storage.provider import StorageProvider
 from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
+from utils.content import can_manage_platform_content
 from utils.digests import sha256_hex as sha256_hex, sha256_hex_stream as sha256_hex_stream
 
 logger = logging.getLogger(__name__)
@@ -231,12 +233,19 @@ async def get_file_folder_name(
     ).name
 
 
-def file_to_read(file: File, *, folder_name: str | None) -> FileRead:
+def file_to_read(file: File, *, folder_name: str | None, actor: User | None = None) -> FileRead:
     """Serialize a file model for API responses."""
     if file.current_revision_id is None:
         raise RuntimeError("Workspace file has no current revision")
     return FileRead(
         id=file.id,
+        scope=file.scope,
+        is_published=file.is_published,
+        can_manage_platform=can_manage_platform_content(
+            scope=file.scope,
+            deleted=file.deleted,
+            actor=actor,
+        ),
         workspace_id=file.workspace_id,
         name=file.name,
         description=file.description,

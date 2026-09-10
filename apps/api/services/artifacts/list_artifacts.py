@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from models.artifacts import Artifact, ArtifactRevision
+from models.user import User
+from models.workspace import WorkspaceMembership
 from services.artifacts.schemas import ArtifactListResponse
 from services.artifacts.utils import artifact_to_summary
 
@@ -23,6 +25,8 @@ async def list_artifacts(
     search: str | None = None,
     sort_by: str = "updated_at",
     sort_direction: str = "desc",
+    actor: User | None = None,
+    membership: WorkspaceMembership | None = None,
 ) -> ArtifactListResponse:
     filters = [
         Artifact.workspace_id == workspace_id,
@@ -77,7 +81,9 @@ async def list_artifacts(
     ).all()
     return ArtifactListResponse(
         items=[
-            artifact_to_summary(artifact, version_count=int(revision_count))
+            artifact_to_summary(
+                artifact, version_count=int(revision_count), actor=actor, membership=membership
+            )
             for artifact, revision_count in rows
         ],
         total=total,

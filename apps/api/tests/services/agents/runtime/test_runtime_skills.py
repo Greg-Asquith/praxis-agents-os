@@ -34,7 +34,7 @@ from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation, ConversationMessage
-from models.skills import Skill, SkillScope
+from models.skills import Skill
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_STATUS_COMPLETED
 from services.agents.runtime.events import EVENT_TOOL_CALL
@@ -57,6 +57,7 @@ from tests.factories import (
     build_workspace_membership,
 )
 from tests.support.storage import reset_storage_provider_cache
+from utils.content import ContentScope
 
 pytestmark = pytest.mark.asyncio
 
@@ -546,7 +547,7 @@ async def test_load_agent_skills_includes_platform_skills_in_configured_order(
         workspace=workspace,
         created_by=user,
         name="platform-guidance",
-        scope=SkillScope.PLATFORM,
+        scope=ContentScope.PLATFORM,
         workspace_id=None,
     )
     async with get_maintenance_async_db_session_factory()() as maintenance_db:
@@ -580,7 +581,7 @@ async def test_platform_skill_activation_does_not_mutate_global_usage_state() ->
     platform_skill = build_skill(
         workspace=workspace,
         created_by=user,
-        scope=SkillScope.PLATFORM,
+        scope=ContentScope.PLATFORM,
         workspace_id=None,
     )
     run = AgentRun(id=uuid4(), agent_id=uuid4())
