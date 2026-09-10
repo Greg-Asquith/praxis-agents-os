@@ -20,12 +20,14 @@ from routes.files.list_file_revisions import router as list_file_revisions_route
 from routes.files.list_files import router as list_files_router
 from routes.files.list_folders import router as list_folders_router
 from routes.files.move_files import router as move_files_router
+from routes.files.platform import router as platform_router
 from routes.files.purge_file import router as purge_file_router
 from routes.files.restore_file_revision import router as restore_file_revision_router
 from routes.files.update_file import router as update_file_router
 from routes.files.update_folder import router as update_folder_router
 
 router = APIRouter(prefix="/files", tags=["files"])
+router.include_router(platform_router)
 router.include_router(create_file_upload_router)
 router.include_router(confirm_file_upload_router)
 router.include_router(create_folder_router)

@@ -1,8 +1,9 @@
+# apps/api/tests/services/files/test_extract_platform_file_markdown.py
+
 """Platform extraction checks ownership and live revisions before storing output."""
 
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import timedelta
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from core.database import (
 from core.exceptions.auth import AuthorizationError
 from core.settings import settings
 from models.files import File, FileRevision
+from models.user import User
 from services.jobs.handlers import extract_platform_file_markdown as extraction
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
@@ -103,7 +105,7 @@ async def test_platform_extraction_stores_immutable_markdown_once(
     put.assert_not_awaited()
 
 
-@pytest.mark.parametrize("change", ["deleted", "withdrawn", "changed", "stale"])
+@pytest.mark.parametrize("change", ["deleted", "withdrawn", "stale"])
 async def test_platform_extraction_rechecks_parent_after_conversion(
     db_session_factory, local_storage, monkeypatch, change
 ):
@@ -123,8 +125,6 @@ async def test_platform_extraction_rechecks_parent_after_conversion(
                 parent.is_published = False
             elif change == "stale":
                 parent.current_revision_id = None
-            else:
-                parent.updated_at += timedelta(seconds=1)
         return await original_convert(*args, **kwargs)
 
     monkeypatch.setattr(extraction, "convert_document_to_markdown", change_parent)
@@ -322,3 +322,37 @@ async def test_workspace_extraction_refuses_platform_job_before_queries():
     )
     await extract_file_markdown(db, job)
     db.scalar.assert_not_awaited()
+
+
+async def test_metadata_edit_during_extraction_keeps_valid_output(
+    db_session_factory, local_storage, monkeypatch
+):
+    from services.files.domain import PlatformFileUpdateRequest
+    from services.files.platform.update_file import update_file
+    from tests.support.requests import build_test_request
+
+    file, revision, job = await _draft()
+    original_convert = extraction.convert_document_to_markdown
+
+    async def rename_parent(*args, **kwargs):
+        async with get_async_db_session_factory()() as db:
+            actor = await db.get(User, job.initiated_by_user_id)
+            await update_file(
+                db,
+                actor=actor,
+                request=build_test_request(),
+                file_id=file.id,
+                payload=PlatformFileUpdateRequest(
+                    name=f"renamed{file.extension}", description="Shared guidance"
+                ),
+            )
+        return await original_convert(*args, **kwargs)
+
+    monkeypatch.setattr(extraction, "convert_document_to_markdown", rename_parent)
+    await _run(job)
+    async with maintenance_async_db_session() as db:
+        parent = await db.get(File, file.id)
+        stored = await db.get(FileRevision, revision.id)
+        assert parent.name == f"renamed{file.extension}"
+        assert parent.processing_status == "ready"
+        assert stored.markdown_object_key is not None

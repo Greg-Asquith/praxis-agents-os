@@ -275,6 +275,9 @@ async def _confirm_upload(
     await db.flush()
 
     file.current_revision_id = revision.id
+    if file.scope == ContentScope.PLATFORM and not file.is_published:
+        # A fresh draft can process after withdrawal cancelled the previous revision.
+        file.published_revision_id = None
     file.revision_count = revision.revision_number
     file.category = entry.category.value
     file.content_type = revision.content_type

@@ -1,3 +1,5 @@
+<!-- docs/implementation/database.md -->
+
 # Database tenancy and migrations
 
 Read this before changing database roles, tenant sessions, protected tables,
@@ -70,9 +72,10 @@ explicitly remove platform rows through a maintenance procedure before
 downgrading. The migration never deletes platform content for you.
 
 Platform-private storage, upload services, extraction, and bounded maintenance
-jobs are implemented. Platform authoring routes, publication, retrieval, and
-operator interfaces remain pending. These foundations alone do not make
-platform content available through the product.
+jobs are implemented. Platform File management routes publish reviewed
+revisions through locked, strictly audited maintenance transactions. Tenant
+retrieval, operator interfaces, and Knowledge and Artifact management remain
+pending.
 
 Domain-owned `visibility.py` helpers in `services/kb`, `services/files`, and
 `services/artifacts` define local and published platform reads. Missing workspace

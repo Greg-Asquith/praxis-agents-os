@@ -39,7 +39,7 @@ async def extract_platform_file_markdown(db: AsyncSession, job: Job) -> None:
         file, revision = subject
         if revision.markdown_object_key:
             return
-        version = (file.updated_at, file.is_published, file.published_revision_id)
+        version = (file.is_published, file.published_revision_id)
         filename, content_type = file.name, revision.content_type
         object_key, size_bytes = revision.object_key, revision.size_bytes
 
@@ -134,7 +134,7 @@ async def _load_subject(
 
 def _same_version(subject: tuple[File, FileRevision], version: tuple) -> bool:
     file, _revision = subject
-    return (file.updated_at, file.is_published, file.published_revision_id) == version
+    return (file.is_published, file.published_revision_id) == version
 
 
 async def _persist_markdown(

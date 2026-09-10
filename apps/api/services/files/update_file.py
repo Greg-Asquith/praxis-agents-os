@@ -2,25 +2,23 @@
 
 """Update workspace file metadata."""
 
-from pathlib import PurePosixPath
 from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.domain import FileRead, FileUpdateRequest
 from services.files.utils import (
+    apply_file_metadata_update,
     file_to_read,
     get_file_for_workspace,
     get_folder_for_workspace,
     require_file_write_access,
 )
-from services.storage.paths import safe_filename
 
 
 async def update_file(
@@ -51,19 +49,13 @@ async def update_file(
         file_id=file_id,
         for_update=True,
     )
-    changed_fields: list[str] = []
+    changed_fields = apply_file_metadata_update(
+        file,
+        name=payload.name,
+        description=payload.description,
+        fields_set=payload.model_fields_set,
+    )
     folder_name: str | None = None
-    if "name" in payload.model_fields_set and payload.name is not None:
-        filename = safe_filename(payload.name)
-        suffix = PurePosixPath(filename).suffix.lower()
-        if suffix != file.extension:
-            raise AppValidationError("File rename must keep the existing extension", field="name")
-        if filename != file.name:
-            file.name = filename
-            changed_fields.append("name")
-    if "description" in payload.model_fields_set and payload.description != file.description:
-        file.description = payload.description
-        changed_fields.append("description")
     if "folder_id" in payload.model_fields_set and payload.folder_id != file.folder_id:
         from_folder_id = file.folder_id
         file.folder_id = payload.folder_id

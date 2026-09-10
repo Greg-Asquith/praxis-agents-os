@@ -1,3 +1,5 @@
+<!-- docs/implementation/storage-and-files.md -->
+
 # Storage and file contracts
 
 Read this before changing storage provisioning, uploads, file revisions,
@@ -131,15 +133,15 @@ CORS with the explicit application origin allowlist. Uploads use the signed
 API relay and its existing CORS policy.
 
 Provider contracts are verified with deterministic doubles. Live GCS, S3, and
-Azure verification remains pending. Platform publication and workspace
-consumption remain pending.
+Azure verification remains pending. Workspace consumption of platform Files
+remains pending.
 
 ## Platform upload and maintenance services
 
 The File upload and confirmation services accept an explicit platform scope
 from an authorised caller. They check super-admin authority before opening a
-maintenance transaction. The HTTP upload routes retain workspace scope;
-platform management routes and publication remain pending.
+maintenance transaction. The ordinary HTTP upload routes retain workspace
+scope. Explicit platform management routes use `/files/platform`.
 
 Platform grants bind the creator, unique staging key, storage class, persisted
 grant ID, and intended File revision. Confirmation checks the exact declared
@@ -168,6 +170,54 @@ Live platform Knowledge Base pins prevent purge. Each
 removing staging and unreferenced promoted objects. Provider deletion failures
 retain database evidence for retry. The workspace File and knowledge sweepers
 exclude platform rows. Neither platform job accepts tenant or user ownership.
+
+## Platform File management API
+
+Every `/files/platform` operation requires an authenticated active workspace
+membership and configured super-admin authority. Read-only workspace membership
+is sufficient for a super admin. Services check authority before committing the
+request transaction and opening maintenance access. Tenant File routes and
+agent tools retain their workspace ownership checks.
+
+The management API exposes these operations:
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `POST` | `/files/platform/uploads` | Upload grant for a draft or replacement selected by `file_id` |
+| `POST` | `/files/platform/uploads/confirm` | Confirmed immutable draft revision |
+| `GET` | `/files/platform/` | Bounded list of live drafts and published Files |
+| `GET` | `/files/platform/{file_id}` | Draft metadata and the published revision ID |
+| `PATCH` | `/files/platform/{file_id}` | Name and description update |
+| `GET` | `/files/platform/{file_id}/revisions` | Bounded revision history |
+| `POST` | `/files/platform/{file_id}/restore` | Independent draft revision referencing earlier immutable bytes |
+| `POST` | `/files/platform/{file_id}/publish` | Atomic publication of the reviewed current revision |
+| `POST` | `/files/platform/{file_id}/withdraw` | Removed publication visibility |
+| `DELETE` | `/files/platform/{file_id}` | Tombstone for the existing retention worker |
+| `GET` | `/files/platform/{file_id}/content` | Bounded text in a JSON response |
+| `GET` | `/files/platform/{file_id}/preview` | Bounded image, video, or PDF bytes |
+
+Publication requires `expected_current_revision_id` to match the locked parent,
+ready processing, and stored bytes matching the confirmed size and digest.
+The revision marker, published pointer, and strict global audit commit together.
+Audit failure rolls back the operation. Replacement uploads and restoration
+advance only the draft pointer. Withdrawal retains historical publication
+markers and hides all revisions through the parent visibility boundary.
+A replacement or restore after withdrawal clears the inactive published pointer
+so its fresh draft can process. Earlier publication markers remain intact.
+Extraction ignores metadata-only edits when checking the conversion snapshot;
+revision identity and publication state still guard persistence.
+Metadata edits preserve the extension and reject folder, ownership, and
+publication fields. Deletion retains bytes for the existing cleanup worker.
+
+Content and preview requests accept an optional `revision_id`, check its parent
+and platform ownership, and authorise every fetch. They return no signed URL
+and use `Cache-Control: no-store`. Binary previews add `nosniff` and a restrictive
+sandbox Content Security Policy. Frontend preview rendering remains pending;
+it must use the existing sandboxed preview component. Downloaded bytes and
+previously issued signed capabilities retain their existing recall limits.
+
+Tenant discovery, downloads, attachments, tools, local copies, and the Files
+management UI for platform content remain pending.
 
 ## Runtime file references
 

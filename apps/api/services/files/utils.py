@@ -3,8 +3,9 @@
 """Helpers specific to workspace file services."""
 
 import logging
+from pathlib import PurePosixPath
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +18,7 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.files.domain import FileRead, FileRevisionRead
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
-from services.storage.paths import validate_object_key
+from services.storage.paths import safe_filename, validate_object_key
 from services.storage.provider import StorageProvider
 from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
 from utils.content import ContentScope, can_manage_platform_content
@@ -246,6 +247,7 @@ def file_to_read(file: File, *, folder_name: str | None, actor: User | None = No
         id=file.id,
         scope=file.scope,
         is_published=file.is_published,
+        published_revision_id=file.published_revision_id,
         can_manage_platform=can_manage_platform_content(
             scope=file.scope,
             deleted=file.deleted,
@@ -331,3 +333,58 @@ def require_declared_upload_size(actual_size: int, upload: FileUpload) -> None:
         raise AppValidationError(
             "Uploaded file size does not match the declared size", field="size_bytes"
         )
+
+
+def apply_file_metadata_update(
+    file: File, *, name: str | None, description: str | None, fields_set: set[str]
+) -> list[str]:
+    """Updates metadata while preserving the file extension."""
+    changed_fields: list[str] = []
+    if "name" in fields_set and name is not None:
+        filename = safe_filename(name)
+        if PurePosixPath(filename).suffix.lower() != file.extension:
+            raise AppValidationError("File rename must keep the existing extension", field="name")
+        if filename != file.name:
+            file.name = filename
+            changed_fields.append("name")
+    if "description" in fields_set and description != file.description:
+        file.description = description
+        changed_fields.append("description")
+    return changed_fields
+
+
+async def append_restore_revision(
+    db: AsyncSession, *, file: File, source: FileRevision, actor: User
+) -> FileRevision:
+    """Appends an immutable restore revision after the caller locks and validates the parent."""
+    revision = FileRevision(
+        id=uuid4(),
+        file_id=file.id,
+        workspace_id=file.workspace_id,
+        scope=file.scope,
+        revision_number=file.revision_count + 1,
+        revision_kind="restore",
+        content_type=source.content_type,
+        extension=source.extension,
+        size_bytes=source.size_bytes,
+        content_hash=source.content_hash,
+        object_key=source.object_key,
+        created_by_user_id=actor.id,
+        restored_from_revision_id=source.id,
+    )
+    db.add(revision)
+    await db.flush()
+    file.current_revision_id = revision.id
+    if file.scope == ContentScope.PLATFORM and not file.is_published:
+        # A fresh draft can process after withdrawal cancelled the previous revision.
+        file.published_revision_id = None
+    file.revision_count = revision.revision_number
+    file.content_type = revision.content_type
+    file.extension = revision.extension
+    file.size_bytes = revision.size_bytes
+    file.content_hash = revision.content_hash
+    await set_processing_state_for_revision(
+        db, file=file, revision=revision, initiated_by_user_id=actor.id
+    )
+    await db.flush()
+    return revision

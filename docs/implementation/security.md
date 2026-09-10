@@ -1,3 +1,5 @@
+<!-- docs/implementation/security.md -->
+
 # Authentication, encryption, and audit
 
 Read this before changing authentication, invitations, encryption rotation,
@@ -115,6 +117,7 @@ Artifact event additionally admits an active workspace editor for the matching
 published Artifact, recording the editor as the actor. This represents a save
 that immediately publishes a new version to every workspace. Audit failures
 propagate so the caller's maintenance transaction rolls back. The corresponding
-platform mutation APIs are pending. Platform File confirmation services use
-this strict writer in the same maintenance transaction as draft creation or
-replacement and grant consumption. Ordinary skill audit handling is unchanged.
+Knowledge and Artifact mutation APIs are pending. Platform File management
+uses this strict writer for draft confirmation, metadata edits, restoration,
+publication, withdrawal, and deletion. Each event commits in the same maintenance
+transaction as its mutation. Ordinary skill audit handling is unchanged.

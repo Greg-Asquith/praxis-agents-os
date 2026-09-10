@@ -2,7 +2,7 @@
 
 """Restore a prior file revision by appending a roll-forward revision."""
 
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import Request
 from sqlalchemy import select
@@ -16,11 +16,11 @@ from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.domain import FileRead, FileRestoreRequest
 from services.files.utils import (
+    append_restore_revision,
     file_to_read,
     get_file_folder_name,
     get_file_for_workspace,
     require_file_write_access,
-    set_processing_state_for_revision,
 )
 
 
@@ -65,36 +65,7 @@ async def restore_file_revision(
             resource_id=str(payload.revision_id),
         )
 
-    revision = FileRevision(
-        id=uuid4(),
-        file_id=file.id,
-        workspace_id=workspace.id,
-        revision_number=file.revision_count + 1,
-        revision_kind="restore",
-        content_type=source.content_type,
-        extension=source.extension,
-        size_bytes=source.size_bytes,
-        content_hash=source.content_hash,
-        object_key=source.object_key,
-        created_by_user_id=actor.id,
-        restored_from_revision_id=source.id,
-    )
-    db.add(revision)
-    await db.flush()
-
-    file.current_revision_id = revision.id
-    file.revision_count = revision.revision_number
-    file.content_type = revision.content_type
-    file.extension = revision.extension
-    file.size_bytes = revision.size_bytes
-    file.content_hash = revision.content_hash
-    await set_processing_state_for_revision(
-        db,
-        file=file,
-        revision=revision,
-        initiated_by_user_id=actor.id,
-    )
-    await db.flush()
+    await append_restore_revision(db, file=file, source=source, actor=actor)
 
     await record_workspace_audit_event(
         db,

@@ -141,6 +141,7 @@ class FileRead(BaseModel):
     workspace_id: UUID | None
     is_published: bool
     can_manage_platform: bool = False
+    published_revision_id: UUID | None = None
     name: str
     description: str | None = None
     folder_id: UUID | None = None
@@ -272,3 +273,25 @@ class FilesProcessingSummary(BaseModel):
     ready: int
     error: int
     in_flight_jobs: int
+
+
+class PlatformFileUpdateRequest(BaseModel):
+    """Edits platform File metadata without changing ownership or publication."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=4096)
+
+    @field_validator("name", "description")
+    @classmethod
+    def normalize_optional_text_fields(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value)
+
+
+class PlatformFilePublishRequest(BaseModel):
+    """Pins publication to the draft reviewed by the administrator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_current_revision_id: UUID
