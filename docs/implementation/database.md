@@ -77,7 +77,8 @@ revisions through locked, strictly audited maintenance transactions. Knowledge
 management also uses explicit super-admin maintenance transactions for manual
 and pinned upload entries. Versioned ingestion stays unpublished until review.
 Combined Knowledge retrieval uses the shared scope and privacy predicates.
-Its platform operator controls and Artifact management remain pending.
+Artifact management uses the same explicit maintenance boundary for publication
+and live editor saves. Artifact tenant read-path integration remains pending.
 
 Domain-owned `visibility.py` helpers in `services/kb`, `services/files`, and
 `services/artifacts` define local and published platform reads. Missing workspace
@@ -105,11 +106,11 @@ Artifacts also expose `can_edit`, derived from the authenticated actor and
 workspace membership. Workspace owners, admins, and members can edit their
 workspace Artifacts. The platform contract grants those roles editing of
 published global Artifacts, with each saved version visible to every workspace
-immediately. Super admins retain draft management. That platform save path is
-pending; initial publication, withdrawal, and deletion remain super-admin
-operations. Direct tenant SQL writes stay workspace-only. The future editor
-service must recheck membership and the expected version before a deliberate
-maintenance transaction and commit the revision, publication, and audit together.
+immediately. Super admins retain draft management. The explicit platform save
+service rechecks and locks live authority and the expected version before saving.
+Initial publication, withdrawal, and deletion remain super-admin operations.
+Direct tenant SQL writes stay workspace-only.
+The immutable revision, publication pointers, and strict audit commit together.
 
 ## Platform usage ownership
 

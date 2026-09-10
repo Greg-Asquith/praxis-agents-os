@@ -2,7 +2,6 @@
 
 """Copy authorised, pinned content into independent private storage."""
 
-import hashlib
 from collections.abc import Awaitable, Callable
 
 from services.storage.domain import StorageBucket, StorageObjectRef, StoredObject
@@ -10,6 +9,7 @@ from services.storage.errors import StoragePreconditionError, StorageValidationE
 from services.storage.provider import StorageProvider
 from services.storage.utils import (
     await_copy_mutation,
+    copy_staging_ref,
     read_copy_content,
     validate_copy_destination,
 )
@@ -45,11 +45,8 @@ async def copy_object(
     ):
         raise StorageValidationError("Invalid private storage copy", operation="copy_object")
     workspace_id_for_ref(source)
-    destination_workspace = workspace_id_for_ref(destination)
+    stage = copy_staging_ref(destination)
     await authorise(source, destination)
-    prefix = f"workspaces/{destination_workspace}" if destination_workspace else "platform"
-    identity = hashlib.sha256(destination.uri.encode()).hexdigest()
-    stage = StorageObjectRef(bucket=destination.bucket, key=f"{prefix}/copy-staging/{identity}")
     try:
         existing = await validate_copy_destination(
             provider, destination, expected_size_bytes, expected_sha256, content_type

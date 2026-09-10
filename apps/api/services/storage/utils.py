@@ -10,10 +10,15 @@ from typing import Any
 
 from fastapi.responses import FileResponse, Response
 
-from services.storage.domain import StorageObjectRef, StoredObject
-from services.storage.errors import StorageNotFoundError, StoragePreconditionError
+from services.storage.domain import StorageBucket, StorageObjectRef, StoredObject
+from services.storage.errors import (
+    StorageNotFoundError,
+    StoragePreconditionError,
+    StorageValidationError,
+)
 from services.storage.provider import StorageProvider
 from services.storage.providers.local import LocalStorageProvider
+from services.storage.workspace_buckets import workspace_id_for_ref
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +149,18 @@ async def read_copy_content(
     if len(content) != expected_size or digest.hexdigest() != expected_sha256:
         raise StoragePreconditionError("Copy content changed", operation="copy_object")
     return bytes(content)
+
+
+def copy_staging_ref(destination: StorageObjectRef) -> StorageObjectRef:
+    """Returns the deterministic staging object for a private copy destination."""
+    if destination.bucket == StorageBucket.PUBLIC:
+        raise StorageValidationError(
+            "Copy staging requires private storage", operation="copy_object"
+        )
+    workspace_id = workspace_id_for_ref(destination)
+    prefix = f"workspaces/{workspace_id}" if workspace_id else "platform"
+    identity = hashlib.sha256(destination.uri.encode()).hexdigest()
+    return StorageObjectRef(bucket=destination.bucket, key=f"{prefix}/copy-staging/{identity}")
 
 
 async def validate_copy_destination(

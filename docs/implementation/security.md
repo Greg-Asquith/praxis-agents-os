@@ -120,7 +120,11 @@ propagate so the caller's maintenance transaction rolls back. Platform Knowledge
 management uses strict events for creation, updates, reprocessing, publication,
 withdrawal, and deletion. Its jobs revalidate active super-admin authority and
 the expected unpublished document version before saving results. Artifact
-mutation APIs remain pending. Platform File management
-uses this strict writer for draft confirmation, metadata edits, restoration,
-publication, withdrawal, and deletion. Each event commits in the same maintenance
-transaction as its mutation. Ordinary skill audit handling is unchanged.
+management APIs use live user and membership locks, parent locks, and expected
+version checks. Published edits and restores commit their immutable revision,
+publication pointers, and strict audit together. Draft lifecycle operations
+remain super-admin-only. Source provenance is restricted to the global audit.
+Platform File management uses this strict writer for draft confirmation,
+metadata edits, restoration, publication, withdrawal, and deletion. Each event
+commits in the same maintenance transaction as its mutation. Ordinary skill
+audit handling is unchanged.

@@ -9,7 +9,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.jobs import Job
-from services.jobs.domain import JOB_STATUS_FAILED, JOB_STATUS_PENDING, JOB_STATUS_RUNNING
+from services.artifacts.domain import CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND
+from services.jobs.domain import (
+    JOB_STATUS_CANCELLED,
+    JOB_STATUS_FAILED,
+    JOB_STATUS_PENDING,
+    JOB_STATUS_RUNNING,
+    JOB_STATUS_SUCCEEDED,
+)
 from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job, sweep_terminal_jobs
 from tests.factories import build_job
 
@@ -55,3 +62,24 @@ async def test_ensure_sweep_job_is_idempotent(db_session: AsyncSession) -> None:
     second = await ensure_sweep_job(db_session)
 
     assert second.id == first.id
+
+
+async def test_terminal_retention_preserves_unfinished_artifact_cleanup(
+    db_session: AsyncSession,
+) -> None:
+    cleanup_jobs = [
+        build_job(kind=CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND, status=status)
+        for status in (JOB_STATUS_FAILED, JOB_STATUS_CANCELLED, JOB_STATUS_SUCCEEDED)
+    ]
+    unrelated = build_job(kind="test.unrelated", status=JOB_STATUS_FAILED)
+    current = build_job(status=JOB_STATUS_RUNNING)
+    for job in [*cleanup_jobs, unrelated]:
+        job.finished_at = datetime.now(UTC) - timedelta(days=31)
+    db_session.add_all([*cleanup_jobs, unrelated, current])
+    await db_session.flush()
+
+    await sweep_terminal_jobs(db_session, current)
+
+    tested_ids = {job.id for job in [*cleanup_jobs, unrelated]}
+    remaining = set(await db_session.scalars(select(Job.id).where(Job.id.in_(tested_ids))))
+    assert remaining == {cleanup_jobs[0].id, cleanup_jobs[1].id}

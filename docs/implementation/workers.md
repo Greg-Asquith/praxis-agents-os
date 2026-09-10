@@ -66,3 +66,22 @@ edit, withdrawal, or deletion. Successful processing never publishes content.
 Retries retain the existing job leases and bounded attempts. See the
 [Knowledge source reference](knowledge-sources.md#platform-authoring-and-ingestion)
 for publication and pinned File retention.
+
+## Platform Artifact maintenance
+
+Startup ensures the unowned `platform.artifacts.sweep_deleted` job. Each pass
+purges at most 100 expired platform revisions and their copy stages, removing
+restored versions before their sources. It shares the private File retention
+period and sweep interval. Failed deletions retain database ownership for retry.
+
+Edit and restore requests independently reserve one
+`platform.artifacts.cleanup_object` system job before writing bytes. After a
+five-minute grace period, the handler locks the parent, waits for its transaction
+to finish, and removes the object only if its revision did not commit. A lost
+commit response cannot make the cleanup remove committed content. Both job kinds
+require explicit maintenance access and reject workspace or user concurrency
+ownership before storage work.
+
+Failed or cancelled orphan-cleanup jobs remain outside ordinary terminal-job
+retention. Their payload retains the object identity after automatic retries are
+exhausted. Successful cleanup jobs follow normal job retention.

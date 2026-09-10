@@ -2,7 +2,6 @@
 
 """Retention sweeper for deleted files and abandoned uploads."""
 
-import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -19,6 +18,7 @@ from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.registry import job_handler
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
+from services.storage.utils import copy_staging_ref
 
 SWEEP_DELETED_FILES_KIND = "files.sweep_deleted"
 _SWEEP_BATCH_SIZE = 100
@@ -149,13 +149,7 @@ async def _purge_expired_uploads(db: AsyncSession, *, now: datetime) -> None:
             await provider.delete_object(ref)
             if upload.object_key.startswith(f"workspaces/{upload.workspace_id}/files/"):
                 # Copy reservations retain the final key and its deterministic stage.
-                identity = hashlib.sha256(ref.uri.encode()).hexdigest()
-                await provider.delete_object(
-                    make_storage_object_ref(
-                        StorageBucket.PRIVATE,
-                        f"workspaces/{upload.workspace_id}/copy-staging/{identity}",
-                    )
-                )
+                await provider.delete_object(copy_staging_ref(ref))
         except Exception:
             logger.warning("Failed to clean expired file upload", exc_info=True)
             continue

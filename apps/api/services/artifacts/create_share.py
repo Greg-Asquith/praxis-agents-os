@@ -7,11 +7,12 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
-from models.artifacts import ArtifactShare
+from models.artifacts import Artifact, ArtifactShare
 from models.user import User
 from models.workspace import Workspace
 from services.artifacts.utils import check_workspace_share_rate_limit, get_artifact_row
@@ -31,6 +32,18 @@ async def create_artifact_share(
 ) -> tuple[ArtifactShare, str]:
     if not settings.ARTIFACT_SHARING_ENABLED:
         raise AppValidationError("Artifact sharing is not enabled")
+
+    platform_target = await db.scalar(
+        select(Artifact.id).where(
+            Artifact.id == artifact_id,
+            Artifact.scope == "platform",
+            Artifact.workspace_id.is_(None),
+        )
+    )
+    if platform_target is not None:
+        raise AppValidationError(
+            "Platform Artifacts cannot have anonymous shares. Make a workspace copy first."
+        )
 
     artifact = await get_artifact_row(
         db,

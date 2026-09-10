@@ -344,3 +344,20 @@ Sharing changes commit their audit evidence atomically. Owner checks continue
 to guard mutations. Confirmed access loss clears viewer caches and retained
 content; revocation cannot recover responses already delivered to a browser.
 See the [workspace chat-sharing decision](workspace-chat-sharing.md).
+
+## 9. Platform Artifact publication
+
+Platform Artifact management is an authenticated browser/API surface. A reviewed
+workspace version becomes a separate platform resource with no source history,
+private execution provenance, or anonymous share. Declared asset dependencies
+are rejected without fetching their targets. Inline scripts retain the existing
+Artifact sandbox and network-denying Content Security Policy; static validation
+does not establish JavaScript data-flow safety. Management previews return
+bounded JSON text with `private, no-store` and require sandboxed rendering.
+
+Workspace editors can publish a version of an already published Artifact.
+Live user, workspace, membership, and parent locks protect this deliberate
+exception to super-admin lifecycle authority. Expected-version checks reject
+stale saves, and strict global audit commits with publication. Tenant SQL and
+agent mutation paths retain workspace ownership. Platform Artifact runtime
+consumption and its adversarial model-context coverage remain pending.

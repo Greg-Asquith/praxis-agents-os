@@ -8,6 +8,7 @@ from core.settings import settings
 
 ARTIFACT_TYPES = frozenset({"html", "markdown", "mermaid", "csv", "image-ref"})
 CREATABLE_ARTIFACT_TYPES = frozenset({"html", "markdown", "mermaid", "csv"})
+CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND = "platform.artifacts.cleanup_object"
 ARTIFACT_EXTENSIONS = {
     "html": ".html",
     "markdown": ".md",

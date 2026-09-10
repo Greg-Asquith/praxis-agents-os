@@ -52,6 +52,7 @@ def _disable_periodic_enqueuers(monkeypatch: pytest.MonkeyPatch) -> None:
     for target in (
         "services.jobs.handlers.sweep_terminal_jobs.ensure_sweep_job",
         "services.jobs.handlers.sweep_platform_files.ensure_platform_files_sweep_jobs",
+        "services.jobs.handlers.sweep_platform_artifacts.ensure_platform_artifacts_sweep_job",
         "services.jobs.handlers.sweep_deleted_files.ensure_files_sweep_job",
         "services.jobs.handlers.sweep_expired_artifact_shares.ensure_artifact_shares_sweep_job",
         "services.jobs.handlers.sweep_expired_audit_events.ensure_audit_event_sweep_job",

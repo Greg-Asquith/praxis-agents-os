@@ -341,3 +341,84 @@ personal connections. Missing content shows an unavailable state.
 
 Stopping chat sharing does not revoke independent workspace file access,
 downloaded copies, or previously issued download URLs.
+
+## Platform Artifact management API
+
+The `/artifacts/platform` routes require an active workspace membership.
+Super admins publish a reviewed workspace version into a separate platform
+Artifact. Only the selected bytes are copied through the bounded private-storage
+copy operation. Source workspace, Artifact, and version IDs appear only in the
+restricted audit event. The published resource has no source history, agent,
+conversation, run, or anonymous share.
+
+The API exposes these operations:
+
+| Method | Path after `/artifacts/platform` | Result |
+| --- | --- | --- |
+| `POST` | `/from-workspace/{artifact_id}` | Independent published Artifact from the selected workspace version |
+| `GET` | `/` | Super-admin summaries with version counts and bounded pagination |
+| `GET` | `/{artifact_id}` | Super-admin detail with the latest 100 versions |
+| `GET` | `/{artifact_id}/content` | Authenticated, bounded version text with `private, no-store` |
+| `PATCH` | `/{artifact_id}` | Immutable edit, immediately published when the parent is published |
+| `POST` | `/{artifact_id}/restore` | Immutable restore under the same publication rule |
+| `POST` | `/{artifact_id}/publish` | Super-admin publication of the reviewed current version |
+| `POST` | `/{artifact_id}/withdraw` | Super-admin withdrawal of all versions from tenant visibility |
+| `DELETE` | `/{artifact_id}` | Super-admin tombstone for bounded retention cleanup |
+
+Initial publication accepts `version_id`, `expected_current_version_id`, and
+`request_id`. The selected version can be historical, but the reviewed current
+version must still match. Retain the request ID and payload when retrying.
+An unpublished destination and revision reserve the object identity before
+copying. Failed copies and publication audits leave this reservation available
+for retry or explicit deletion. Withdrawal requires an earlier publication;
+delete an unpublished reservation to cancel it. A retry cannot resurrect a
+withdrawn or deleted publication. Source and destination locks protect the copy
+and publication.
+
+Editing, restoration, and publication require `expected_current_version_id`.
+Owners, admins, and members can edit or restore a published platform Artifact
+through these explicit human management routes. Each save advances both version
+pointers, marks the immutable revision published, and writes strict global audit
+in the same transaction. Read-only members cannot save. Super admins can manage
+drafts even through a read-only workspace membership. Editing a withdrawn
+Artifact leaves it withdrawn until explicit publication.
+
+Services recheck and lock the active user, workspace, membership, and parent
+before saving. A conflicting version returns a review-required conflict.
+Editor save responses omit never-published versions and their restoration-source
+IDs. Tenant row-level security and agent mutation services remain workspace-only.
+The management content endpoint returns JSON text without a signed capability;
+clients must use the existing sandboxed preview. Tenant serving, discovery,
+runtime consumption, local copies, and the platform Artifact web UI remain
+pending.
+
+Publication accepts the existing text Artifact types and rejects declared linked
+assets in HTML, CSS, Markdown, and Mermaid. Embed supported raster images and
+fonts instead. The validator does not fetch links or prove arbitrary JavaScript
+data flow. Inline scripts retain the existing sandbox and Content Security Policy
+network boundary. CSV content remains inert text. Anonymous sharing rejects
+platform targets, including requests from super admins.
+
+Before writing edit or restore bytes, the service commits a
+`platform.artifacts.cleanup_object` reservation, then releases its maintenance
+connection. The save uses a separate transaction to recheck live authority and
+the expected version under lock. It locks the unclaimed reservation until commit
+or rollback. If cleanup has already started, the save returns a conflict before
+writing bytes. A save holds at most one maintenance connection at a time.
+
+After a five-minute grace period, cleanup locks the parent and removes that one
+object only when its revision did not commit. This retains cleanup ownership
+across rollback, process interruption, and an ambiguous commit response. Failed
+deletions use the generic job retry contract. Successful revisions retain their
+bytes.
+
+Worker startup ensures `platform.artifacts.sweep_deleted`. Each pass purges at
+most 100 revisions from expired platform tombstones, removing dependent restored
+versions first and preserving database records when storage deletion fails.
+It also removes each revision's deterministic copy stage. The sweep uses
+`FILES_DELETED_RETENTION_DAYS` and `FILES_SWEEP_INTERVAL_SECONDS`, shared with
+private File retention. Workspace artifacts remain outside this maintenance job.
+
+Failed or cancelled orphan-cleanup jobs remain outside ordinary terminal-job
+retention. Their payload retains the object identity after automatic retries are
+exhausted. Successful cleanup jobs follow normal job retention.

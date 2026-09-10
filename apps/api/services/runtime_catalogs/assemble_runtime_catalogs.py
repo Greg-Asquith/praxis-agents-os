@@ -40,6 +40,7 @@ def _assemble_runtime_catalogs() -> None:
     """Imports and registers every process-wide runtime contribution."""
     # Registration order lets provider validation resolve platform-owned job kinds.
     from services.jobs.handlers import (
+        cleanup_platform_artifact_object,
         converge_application_encryption,
         embed_kb_chunks,
         embed_memory,
@@ -61,6 +62,7 @@ def _assemble_runtime_catalogs() -> None:
         sweep_expired_memories,
         sweep_expired_scratch,
         sweep_expired_security_events,
+        sweep_platform_artifacts,
         sweep_platform_file_uploads,
         sweep_platform_files,
         sweep_rate_limit_attempts,
@@ -91,6 +93,8 @@ def _assemble_runtime_catalogs() -> None:
         sweep_expired_security_events,
         sweep_platform_file_uploads,
         sweep_platform_files,
+        sweep_platform_artifacts,
+        cleanup_platform_artifact_object,
         sweep_rate_limit_attempts,
         sweep_terminal_jobs,
     )
