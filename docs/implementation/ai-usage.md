@@ -5,6 +5,16 @@ Backend paths are relative to `apps/api/`.
 
 ## Ledger and read boundaries
 
+In **AI Usage**, select **Model pricing** to view the token rates used for
+cost estimates. The modal loads `GET /usage/model-pricing` on demand under
+the same owner/admin permissions as other workspace usage reads. It shows
+the latest rate effective today in UTC for each model, directly from the
+API pricing catalogue, in USD per million input, cache read, cache write,
+and output tokens. Historical and future rates are excluded from this view;
+past usage retains its effective-dated estimates. Image output charges are
+outside the token table. The table scrolls within the modal and keeps its
+column headings visible. Click **Close** or press **Escape** to dismiss it.
+
 The following contracts apply in this area:
 
 - `ai_usage_events` is runtime append-only: `praxis_app` may select and insert,
@@ -57,8 +67,14 @@ in one maintenance transaction, including known usage from partial failures.
 The caller's rollback cannot remove those costs. Workspace recording retains
 the bounded runtime metering pool and existing soft embedding-token budget.
 The shared helper meter accepts platform annotation only with an explicit
-maintenance session. Platform knowledge authoring and ingestion jobs remain
-pending.
+maintenance session. Platform Knowledge authoring queues separate actor-owned
+ingestion and embedding jobs that use this accounting path. Discarding stale
+processing output or rolling back document changes retains recorded provider
+usage. Annotation and embedding events attribute usage to the job's initiating
+administrator, including when another administrator reprocesses the document.
+The document retains its original creator. See
+[Knowledge sources](knowledge-sources.md#platform-authoring-and-ingestion)
+for the processing and publication contract.
 
 `PLATFORM_INGESTION_MONTHLY_CALL_BUDGET` defaults to 1,000 and accepts values
 from one to 1,000,000. Before each platform embedding batch or annotation helper

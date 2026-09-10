@@ -54,3 +54,15 @@ session and retain failed deletions for retry. Each pass handles at most 100
 revisions or 100 upload grants. Workspace retention jobs exclude platform rows.
 See the [storage reference](storage-and-files.md#platform-upload-and-maintenance-services)
 for upload, extraction, and retention boundaries.
+
+## Platform Knowledge processing
+
+`kb.platform_ingest_document` and `kb.platform_embed_chunks` use the initiating
+super admin's concurrency ownership. They reject workspace-owned, unowned, and
+malformed jobs before deliberate maintenance access. Each attempt rechecks the
+active actor and the document's expected ingestion version. Provider calls run
+outside document transactions; locked rechecks discard stale results after an
+edit, withdrawal, or deletion. Successful processing never publishes content.
+Retries retain the existing job leases and bounded attempts. See the
+[Knowledge source reference](knowledge-sources.md#platform-authoring-and-ingestion)
+for publication and pinned File retention.

@@ -88,6 +88,9 @@ async def test_usage_routes_require_workspace_manager(
         )
         assert summary.status_code == 200
         assert breakdown.status_code == 200
+        pricing = await db_async_client.get("/api/v1/usage/model-pricing", headers=headers)
+        assert pricing.status_code == 200
+        assert pricing.json()["models"]
 
     for headers in (member_headers, reader_headers):
         response = await db_async_client.get(
@@ -96,6 +99,8 @@ async def test_usage_routes_require_workspace_manager(
             params=params,
         )
         assert response.status_code == 403
+        pricing = await db_async_client.get("/api/v1/usage/model-pricing", headers=headers)
+        assert pricing.status_code == 403
 
 
 async def test_usage_summary_is_explicitly_workspace_scoped(

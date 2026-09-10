@@ -6,6 +6,8 @@ import re
 from bisect import bisect_left
 from dataclasses import dataclass
 
+from core.settings import settings
+from models.kb import KBChunk, KBDocument
 from services.kb.domain import ChunkDraft
 from utils.tokens import estimate_tokens_by_character_count as estimate_tokens
 
@@ -272,3 +274,29 @@ def chunk_markdown(
         previous_end = chunk_end
 
     return drafts
+
+
+def build_kb_chunks(document: KBDocument, markdown: str) -> list[KBChunk]:
+    """Builds bounded exact-substring chunks for either ownership scope."""
+    drafts = chunk_markdown(
+        markdown,
+        target_tokens=settings.KB_CHUNK_TARGET_TOKENS,
+        max_tokens=settings.KB_CHUNK_MAX_TOKENS,
+        overlap_tokens=settings.KB_CHUNK_OVERLAP_TOKENS,
+    )
+    # Pure-markup fragments would outrank real content, so they are never indexed.
+    drafts = [draft for draft in drafts if any(char.isalnum() for char in draft.content)]
+    return [
+        KBChunk(
+            document_id=document.id,
+            workspace_id=document.workspace_id,
+            scope=document.scope or "workspace",
+            chunk_index=chunk_index,
+            content=draft.content,
+            char_start=draft.char_start,
+            char_end=draft.char_end,
+            token_estimate=draft.token_estimate,
+            meta={"headings": list(draft.heading_path)},
+        )
+        for chunk_index, draft in enumerate(drafts)
+    ]

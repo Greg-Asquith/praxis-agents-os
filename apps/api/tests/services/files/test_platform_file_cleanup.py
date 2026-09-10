@@ -1,11 +1,12 @@
 """Platform retention protects live content and retries failed storage effects."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
@@ -279,3 +280,102 @@ async def test_platform_upload_cleanup_bounds_grants_and_ensures_jobs(
             ).all()
         )
         assert len(jobs) == 2
+
+
+async def test_platform_purge_rechecks_pin_committed_during_revision_lock_wait(
+    committed_db_session_factory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = AsyncMock()
+    monkeypatch.setattr(files_module, "get_storage_provider", lambda: provider)
+    async with maintenance_async_db_session() as db:
+        file, revision = await _file(db)
+        file_id, revision_id = file.id, revision.id
+    pin_id = uuid4()
+    job_id = uuid4()
+    sweep_started = asyncio.Event()
+    sweep_pid = None
+
+    async def sweep():
+        nonlocal sweep_pid
+        async with maintenance_async_db_session() as db:
+            sweep_pid = await db.scalar(text("SELECT pg_backend_pid()"))
+            sweep_started.set()
+            await files_module.sweep_platform_files(db, Job(id=job_id))
+
+    sweep_task = None
+    try:
+        async with asyncio.timeout(10):
+            async with maintenance_async_db_session() as pin_db:
+                await pin_db.scalar(
+                    select(FileRevision).where(FileRevision.id == revision_id).with_for_update()
+                )
+                pin_db.add(
+                    KBDocument(
+                        id=pin_id,
+                        scope="platform",
+                        title="Policy",
+                        source_type="upload",
+                        annotation_enabled=False,
+                        file_revision_id=revision_id,
+                    )
+                )
+                await pin_db.flush()
+                sweep_task = asyncio.create_task(sweep())
+                await sweep_started.wait()
+                async with maintenance_async_db_session() as observer:
+                    while not await observer.scalar(  # noqa: ASYNC110
+                        text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"),
+                        {"pid": sweep_pid},
+                    ):
+                        await asyncio.sleep(0.01)
+                assert not sweep_task.done()
+                provider.delete_object.assert_not_awaited()
+            await sweep_task
+        async with maintenance_async_db_session() as db:
+            assert await db.get(File, file_id) is not None
+            assert await db.get(FileRevision, revision_id) is not None
+            assert (await db.get(KBDocument, pin_id)).file_revision_id == revision_id
+        provider.delete_object.assert_not_awaited()
+    finally:
+        if sweep_task is not None:
+            if not sweep_task.done():
+                sweep_task.cancel()
+            await asyncio.gather(sweep_task, return_exceptions=True)
+        async with maintenance_async_db_session() as db:
+            await db.execute(delete(KBDocument).where(KBDocument.id == pin_id))
+            source = await db.get(File, file_id)
+            if source is not None:
+                source.current_revision_id = None
+                await db.flush()
+                await db.execute(delete(FileRevision).where(FileRevision.file_id == file_id))
+                await db.delete(source)
+            await db.execute(delete(Job).where(Job.content_hash == f"platform-files:{job_id}"))
+
+
+async def test_platform_purge_releases_deleted_knowledge_pin(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = AsyncMock()
+    monkeypatch.setattr(files_module, "get_storage_provider", lambda: provider)
+    async with maintenance_async_db_session() as db:
+        file, revision = await _file(db)
+        document = KBDocument(
+            scope="platform",
+            title="Deleted policy",
+            source_type="upload",
+            annotation_enabled=False,
+            file_revision_id=revision.id,
+            deleted=True,
+            deleted_at=datetime.now(UTC),
+        )
+        db.add(document)
+        await db.flush()
+        await files_module.sweep_platform_files(db, Job(id=uuid4()))
+        assert await db.get(File, file.id) is None
+        assert await db.get(FileRevision, revision.id) is None
+        await db.refresh(document)
+        assert document.file_revision_id is None
+        assert document.deleted is True
+        assert provider.delete_object.await_count == 2

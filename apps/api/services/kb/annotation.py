@@ -4,6 +4,7 @@
 
 import logging
 from collections.abc import Sequence
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
@@ -17,6 +18,7 @@ from services.agents.models import build_model, resolve_catalog_model
 from services.agents.models.domain import ResolvedModel
 from services.ai_usage.domain import PURPOSE_KB_ANNOTATION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
+from utils.content import ContentScope
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,9 @@ async def annotate_chunks(
     document: KBDocument,
     chunks: Sequence[KBChunk],
     model: Model | None = None,
+    platform_user_id: UUID | None = None,
 ) -> int:
-    """Annotate bounded chunks, degrading individual model failures."""
+    """Annotates bounded chunks and keeps platform failures retryable."""
     if not document.content_md:
         return 0
 
@@ -90,19 +93,27 @@ async def annotate_chunks(
             result = await run_metered_helper(
                 AIUsageEventData(
                     workspace_id=document.workspace_id,
+                    scope=ContentScope(document.scope or "workspace"),
                     provider=provider,
                     model=model_name,
                     purpose=PURPOSE_KB_ANNOTATION,
-                    user_id=document.created_by_user_id,
+                    user_id=(
+                        platform_user_id
+                        if document.scope == ContentScope.PLATFORM
+                        else document.created_by_user_id
+                    ),
                     details={"document_id": str(document.id), "chunk_id": str(chunk.id)},
                 ),
                 call,
+                db=db,
             )
             context_line = " ".join(result.output.context.split())
             chunk.context_line = context_line[: settings.KB_ANNOTATION_CONTEXT_MAX_CHARS].rstrip()
             if chunk.context_line:
                 annotated_count += 1
         except Exception:
+            if document.scope == ContentScope.PLATFORM:
+                raise
             logger.warning(
                 "Knowledge-base chunk annotation failed",
                 exc_info=True,

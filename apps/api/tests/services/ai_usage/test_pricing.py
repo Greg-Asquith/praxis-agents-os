@@ -6,8 +6,23 @@ from decimal import Decimal
 import pytest
 
 from services.agents.models.registry import list_models
+from services.ai_usage.get_model_pricing import get_model_pricing
 from services.ai_usage.pricing import find_image_output_price, find_price
 from services.embeddings.registry import list_embedding_models
+
+
+def test_pricing_catalogue_returns_one_effective_rate_per_model() -> None:
+    catalogue = get_model_pricing(date(2026, 9, 10))
+    keys = [(price.provider, price.model) for price in catalogue.models]
+    assert keys == sorted(set(keys))
+    assert all(price.effective_from <= catalogue.as_of for price in catalogue.models)
+    rates = {price.model: price for price in catalogue.models}
+    assert rates["claude-sonnet-5"].input_usd_per_mtok == Decimal("3")
+    assert rates["gemini-3.8-flash"].input_usd_per_mtok == Decimal("0.75")
+    assert rates["gpt-6-astra"].input_usd_per_mtok == Decimal("10")
+    payload = catalogue.model_dump(mode="json")
+    assert payload["as_of"] == "2026-09-10"
+    assert isinstance(payload["models"][0]["input_usd_per_mtok"], str)
 
 
 def test_effective_date_lookup_selects_latest_applicable_price() -> None:

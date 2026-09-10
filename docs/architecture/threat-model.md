@@ -117,6 +117,13 @@ A new channel means any new path that places attacker-influenced text in model
 context, whether directly, through storage, or after transformation. The change
 that adds one must append a row with both test layers before shipping.
 
+Platform Knowledge ingestion uses channel (e)'s shared annotation helper.
+Deployment-wide ownership does not make source instructions trusted. The helper
+has no function tools, and stale results after deletion or withdrawal cannot
+replace stored chunks. Platform ingestion tests exercise the hostile annotation
+fixture and verify that discarded output retains its platform usage record.
+Combined platform retrieval remains pending.
+
 **Google Ads exception (operator decision, 2026-07-23):** Google Ads tool
 results are ordinary typed tool data and do not use the provenance-node or
 model-frame path. This includes Google Ads Query Language (GAQL) report

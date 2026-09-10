@@ -167,6 +167,12 @@ agent consults via retrieval.
 - **Scope.** Workspace-wide — every agent searches the same KB. Private
   documents (`is_private`) are visible only to their creator, enforced in
   both the search SQL and document reads.
+- **Platform authoring.** Super admins create manual entries and entries
+  pinned to platform File revisions through explicit management routes.
+  Processing uses platform-owned usage and requires review before publication.
+  Editing or reprocessing requires withdrawal. Combined platform retrieval and
+  the Knowledge web interface remain pending. See the
+  [platform ingestion contract](../implementation/knowledge-sources.md#platform-authoring-and-ingestion).
 - **Relationship to Files.** Separate tables and UIs. Uploading a document to
   the KB through the web UI first creates a workspace File, then pins the KB
   document to that file revision; URL and manual KB documents have no File

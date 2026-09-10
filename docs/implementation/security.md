@@ -116,8 +116,11 @@ Lifecycle events require a configured super admin. The `publish_revision`
 Artifact event additionally admits an active workspace editor for the matching
 published Artifact, recording the editor as the actor. This represents a save
 that immediately publishes a new version to every workspace. Audit failures
-propagate so the caller's maintenance transaction rolls back. The corresponding
-Knowledge and Artifact mutation APIs are pending. Platform File management
+propagate so the caller's maintenance transaction rolls back. Platform Knowledge
+management uses strict events for creation, updates, reprocessing, publication,
+withdrawal, and deletion. Its jobs revalidate active super-admin authority and
+the expected unpublished document version before saving results. Artifact
+mutation APIs remain pending. Platform File management
 uses this strict writer for draft confirmation, metadata edits, restoration,
 publication, withdrawal, and deletion. Each event commits in the same maintenance
 transaction as its mutation. Ordinary skill audit handling is unchanged.

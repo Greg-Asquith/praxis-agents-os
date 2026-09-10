@@ -172,7 +172,7 @@ async def test_failed_changed_content_ingest_rebuilds_chunks_on_retry(
         raise RuntimeError("chunking failed")
 
     with monkeypatch.context() as patch:
-        patch.setattr("services.kb.ingest_document.chunk_markdown", fail_chunking)
+        patch.setattr("services.kb.chunking.chunk_markdown", fail_chunking)
         with pytest.raises(RuntimeError, match="chunking failed"):
             await ingest_kb_document(
                 db_session,

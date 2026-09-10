@@ -239,3 +239,43 @@ class KBDocumentUpdateRequest(BaseModel):
         ):
             raise ValueError("Knowledge document update fields cannot be null")
         return self
+
+
+class PlatformKBManualDocumentCreateRequest(BaseModel):
+    """Creates a platform-only manual draft."""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=KB_DOCUMENT_TITLE_MAX_CHARS)
+    content_md: str = Field(min_length=1)
+
+
+class PlatformKBFileDocumentCreateRequest(BaseModel):
+    """Pins a draft to an explicit platform File revision."""
+
+    model_config = ConfigDict(extra="forbid")
+    file_id: UUID
+    file_revision_id: UUID
+    title: str | None = Field(default=None, min_length=1, max_length=KB_DOCUMENT_TITLE_MAX_CHARS)
+
+
+class PlatformKBDocumentUpdateRequest(BaseModel):
+    """Editable platform document fields, excluding ownership and publication."""
+
+    model_config = ConfigDict(extra="forbid")
+    title: str | None = Field(default=None, min_length=1, max_length=KB_DOCUMENT_TITLE_MAX_CHARS)
+    content_md: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def require_update(self):
+        if not self.model_fields_set or any(
+            getattr(self, name) is None for name in self.model_fields_set
+        ):
+            raise ValueError("Provide at least one non-null update field")
+        return self
+
+
+class PlatformKBDocumentPublishRequest(BaseModel):
+    """Publishes the exact ingestion version reviewed by the super admin."""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_ingestion_version: str = Field(min_length=1, max_length=36)

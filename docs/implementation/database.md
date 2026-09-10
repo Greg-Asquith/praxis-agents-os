@@ -73,9 +73,11 @@ downgrading. The migration never deletes platform content for you.
 
 Platform-private storage, upload services, extraction, and bounded maintenance
 jobs are implemented. Platform File management routes publish reviewed
-revisions through locked, strictly audited maintenance transactions. Tenant
-retrieval, operator interfaces, and Knowledge and Artifact management remain
-pending.
+revisions through locked, strictly audited maintenance transactions. Knowledge
+management also uses explicit super-admin maintenance transactions for manual
+and pinned upload entries. Versioned ingestion stays unpublished until review.
+Combined Knowledge retrieval, its operator interface, and Artifact management
+remain pending.
 
 Domain-owned `visibility.py` helpers in `services/kb`, `services/files`, and
 `services/artifacts` define local and published platform reads. Missing workspace

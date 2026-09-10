@@ -4,6 +4,70 @@ Read this before changing integration imports, source refresh, or access-loss
 cleanup. See [agent context architecture](../architecture/agent-context.md)
 for the broader context model. Backend paths are relative to `apps/api/`.
 
+## Platform authoring and ingestion
+
+Super admins manage deployment-owned Knowledge through the explicit platform
+management API. Manual entries and uploads pinned to a platform File revision
+start unpublished. Platform sources cannot use workspace Files, private
+entries, conversations, URLs, or integration credentials. The server supplies
+provenance and applies the shared content limits, secret checks, and chunking.
+Exact-content deduplication includes ownership scope and never compares a
+platform entry with tenant-private content.
+
+All routes require an authenticated active workspace membership and configured
+super-admin authority. A super admin with read-only workspace membership can
+manage platform entries. The routes are:
+
+| Method | Path | Result |
+| --- | --- | --- |
+| `POST` | `/kb/platform/documents/` | Unpublished manual entry |
+| `POST` | `/kb/platform/documents/from-file` | Unpublished entry pinned by `file_id` and `file_revision_id` |
+| `GET` | `/kb/platform/documents/` | Bounded management list, including drafts |
+| `GET` | `/kb/platform/documents/{document_id}` | Authenticated content and processing state |
+| `PATCH` | `/kb/platform/documents/{document_id}` | Withdrawn entry updated and queued for processing |
+| `POST` | `/kb/platform/documents/{document_id}/reprocess` | Fresh ingestion of a withdrawn entry |
+| `POST` | `/kb/platform/documents/{document_id}/publish` | Reviewed entry published after an ingestion-version check |
+| `POST` | `/kb/platform/documents/{document_id}/withdraw` | Publication withdrawn and earlier work invalidated |
+| `DELETE` | `/kb/platform/documents/{document_id}` | Unpublished tombstone |
+
+Publication supplies `expected_ingestion_version` from the reviewed response's
+`meta.ingestion_version`. It requires a completed ingestion attempt, canonical
+content matching its hash, and the complete stored chunk count. Lifecycle
+mutations and their strict global audit events commit together. Tenant audit
+queries cannot read these events.
+
+Before editing or reprocessing a published entry, withdraw it. Processing and
+failure keep it withdrawn. Successful ingestion prepares canonical content and
+chunks for review; only an explicit super-admin publication makes it visible
+under the platform database policy. Combined workspace/platform retrieval and
+the Knowledge web interface remain pending.
+
+Platform ingestion and embedding use separate actor-owned jobs. Each job
+requires an active super admin and carries the expected ingestion version.
+Provider work runs outside the document write transaction. Before saving its
+result, the job locks and rechecks the document's version, deletion, and
+publication state. Edits, withdrawal, and deletion invalidate earlier work.
+Retries replace chunks atomically and fill only missing embeddings. Annotation
+uses the existing bounded untrusted-content helper without agent tools.
+Embedding writes recheck collection metadata under a short transaction lock
+so concurrent jobs cannot save vectors from incompatible models.
+If the initiating admin loses access during processing, another super admin can
+withdraw the entry to cancel that attempt, then reprocess it under their own
+authority.
+
+Platform annotation and indexing use the platform admission budget and durable
+usage ledger. Query embeddings remain workspace costs. Missing embeddings keep
+the existing lexical fallback contract; they do not indicate successful semantic
+indexing. `meta.embedding_status` distinguishes `pending`, `ready`, and `error`,
+with a bounded `meta.embedding_error` when indexing fails. Publication stops
+remaining embedding work for that entry. To retry after publication, withdraw
+and reprocess it. See [AI usage accounting](ai-usage.md) for admission and
+failure semantics.
+
+A live platform document retains its pinned File revision, including while the
+document is a draft or withdrawn. File retention skips pinned parents. Creating
+an upload entry locks the live File until the document transaction commits.
+
 ## Import and refresh lifecycle
 
 A provider-neutral Knowledge Base source contribution and the

@@ -11,6 +11,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import SESSION_MAINTENANCE_KEY
+from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from models.kb import KBDocument
@@ -19,6 +21,7 @@ from services.kb.domain import (
     KB_SOURCE_UPLOAD,
     KB_SOURCE_URL,
 )
+from utils.content import ContentScope
 
 
 @dataclass(frozen=True)
@@ -49,17 +52,24 @@ _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 async def lock_and_find_kb_duplicate(
     db: AsyncSession,
     *,
-    workspace_id: UUID,
+    workspace_id: UUID | None,
+    scope: ContentScope = ContentScope.WORKSPACE,
     content_hash: str,
     is_private: bool,
     existing_id: UUID | None = None,
 ) -> KBDocument | None:
     """Serialize an exact-content scope, then return its live duplicate."""
-    lock_material = f"{workspace_id}:{int(is_private)}:{content_hash}".encode()
+    if scope == ContentScope.PLATFORM:
+        if workspace_id is not None or is_private or not db.info.get(SESSION_MAINTENANCE_KEY):
+            raise AuthorizationError("Platform knowledge requires a maintenance session")
+    elif workspace_id is None:
+        raise AppValidationError("KB writes require a workspace", field="workspace_id")
+    lock_material = f"{scope}:{workspace_id}:{int(is_private)}:{content_hash}".encode()
     lock_key = int.from_bytes(sha256(lock_material).digest()[:8], "big", signed=True)
     await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
     filters = [
+        KBDocument.scope == scope,
         KBDocument.workspace_id == workspace_id,
         KBDocument.content_hash == content_hash,
         KBDocument.is_private == is_private,
@@ -185,8 +195,32 @@ def _require_bounded_content(*, title: str, content_md: str | None) -> None:
         )
 
 
+def enforce_platform_kb_write_policy(
+    db: AsyncSession,
+    *,
+    title: str,
+    content_md: str | None,
+    existing: KBDocument | None = None,
+    duplicate: KBDocument | None = None,
+) -> None:
+    """Applies shared content checks within the explicit platform write boundary."""
+    if not db.info.get(SESSION_MAINTENANCE_KEY):
+        raise AuthorizationError("Platform knowledge requires a maintenance session")
+    if existing is not None and (existing.scope != "platform" or existing.workspace_id is not None):
+        raise AppValidationError("Platform knowledge requires platform ownership")
+    _reject_secrets(title=title, content_md=content_md)
+    _require_bounded_content(title=title, content_md=content_md)
+    if duplicate is not None and duplicate.id != getattr(existing, "id", None):
+        raise ConflictError(
+            "An identical platform knowledge document already exists",
+            conflicting_resource=str(duplicate.id),
+            details={"document_id": str(duplicate.id)},
+        )
+
+
 __all__ = [
     "KBProvenance",
     "enforce_kb_write_policy",
+    "enforce_platform_kb_write_policy",
     "lock_and_find_kb_duplicate",
 ]
