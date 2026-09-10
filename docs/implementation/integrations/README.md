@@ -61,6 +61,12 @@ The following contracts apply in this area:
   Uncoded or invalid codes use the exception class name. Ambiguous failures
   always use `unverified_mutation`. Provider response bodies must not supply
   recovery codes.
+  A tool that runs one audited operation without the context fan-out lets
+  provider errors escape to dispatch. Dispatch returns rejected or undispatched
+  integration errors to the model as a retry instead of failing the run; keep
+  `user_message` values bounded and free of credentials for that reason, and
+  map errors the model can fix, such as an unknown resource name, to a specific
+  `ModelRetry` in the tool.
   Provider reads needed to build pending evidence belong in the runner's
   preparation callback so their latency, retries, and failures remain part of
   the same audited operation. The pending row is written after preparation and

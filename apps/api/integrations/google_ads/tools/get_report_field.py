@@ -7,6 +7,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from core.exceptions.integration import IntegrationNotFoundError
 from integrations.google_ads.client import GOOGLE_ADS_API_VERSION
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
@@ -58,13 +59,19 @@ async def google_ads_get_report_field(
         result = await get_report_field(client, field_name=normalized_name)
         return IntegrationAuditOutcome(result)
 
-    return await run_audited_integration_operation(
-        ctx,
-        entry,
-        tool_name="google_ads_get_report_field",
-        operation="get_report_field",
-        execute=execute,
-    )
+    try:
+        return await run_audited_integration_operation(
+            ctx,
+            entry,
+            tool_name="google_ads_get_report_field",
+            operation="get_report_field",
+            execute=execute,
+        )
+    except IntegrationNotFoundError as exc:
+        raise ModelRetry(
+            f"Google Ads has no report field named {normalized_name}. Use "
+            "google_ads_list_report_fields to find the exact resource, metric, or segment name."
+        ) from exc
 
 
 DEFINITION = RuntimeToolDefinition(

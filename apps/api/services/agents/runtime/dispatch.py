@@ -46,6 +46,11 @@ from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolRet
 from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 
+from core.exceptions.integration import (
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationUnverifiedMutationError,
+)
 from core.settings import settings
 from models.workspace import WorkspaceMembership
 from services.agents.runtime.cancellation import (
@@ -83,6 +88,7 @@ from services.audit_events.tool_events import (
     ToolAuditOutcome,
     record_tool_invocation_audit_event,
 )
+from services.integrations.context.utils import sanitize_context_error
 from services.workspaces.utils import EDITOR_ROLES
 from utils.json_safe import json_safe_value
 from utils.tokens import estimate_tokens
@@ -505,7 +511,11 @@ async def dispatch_tool_execution(
             error_code=exc.__class__.__name__,
             **taint_audit,
         )
-        raise
+        retry_message = model_visible_integration_failure(definition, tool_name, exc)
+        if retry_message is None:
+            raise
+        await _rollback_failed_tool_transaction(ctx.deps)
+        raise ModelRetry(retry_message) from exc
 
     if isinstance(result, ToolReturn):
         result.return_value = serialize_untrusted_content(result.return_value)
@@ -596,6 +606,32 @@ async def _active_workspace_role(deps: RuntimeDeps) -> str | None:
             WorkspaceMembership.user_id == deps.user.id,
             WorkspaceMembership.deleted.is_(False),
         )
+    )
+
+
+def model_visible_integration_failure(
+    definition: RuntimeToolDefinition | None,
+    tool_name: str,
+    exc: Exception,
+) -> str | None:
+    """Returns a retry message when a provider rejection is safe to hand back to the model.
+
+    A rejected or undispatched provider request has no external effect, so the
+    model can correct its request or report the failure instead of ending the
+    run. Ambiguous mutations keep failing the run so recovery evidence records them.
+    """
+    if not isinstance(exc, IntegrationError) or isinstance(exc, IntegrationUnverifiedMutationError):
+        return None
+    disposition = exc.failure_disposition
+    if disposition is IntegrationFailureDisposition.AMBIGUOUS:
+        return None
+    if definition is not None and definition.effect == TOOL_EFFECT_WRITE and disposition is None:
+        return None
+    detail = sanitize_context_error(exc.user_message)
+    return (
+        f"{tool_name} did not complete: {detail} "
+        "Correct the request if the message explains what was wrong. Otherwise tell the user "
+        "what could not be done instead of repeating the same call."
     )
 
 

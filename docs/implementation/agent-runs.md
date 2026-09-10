@@ -309,6 +309,18 @@ and specialist conversation references. It contains no executable snapshots,
 raw arguments, or provider payloads. Accepted continuations are not replayed
 automatically after a process failure.
 
+The reservation stays on the root until the run settles, so every failure in
+that window retains the evidence, but only some failures become recovery.
+Settlement rewrites a root failure to `agent_run_resume_requires_recovery`
+when the failure is an interruption (abandonment, lease loss, shutdown,
+duration expiry, parent termination, or an explicit recovery error) or when the
+evidence still lists an uncertain action, an unavailable specialist, or a
+truncated list. An ordinary failure after every approved effect has a completed
+or denied audit record keeps its own error code and error outcome, with the
+completed actions attached under `completion_json.recovery`. A provider
+rejection inside a later tool call never reaches settlement at all; dispatch
+returns it to the model as a retry (see tool dispatch).
+
 Cancellation retains this action evidence while keeping the cancelled outcome.
 Accepted denials do not appear as uncertain actions. If a specialist settles
 first, its safe evidence remains available when the root subsequently stops.

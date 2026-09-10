@@ -19,7 +19,7 @@ from pydantic_ai import (
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationNotFoundError, IntegrationValidationError
 from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.references import (
     GoogleAdsCampaignReference,
@@ -165,6 +165,30 @@ async def test_get_report_field_rejects_invalid_input_before_dispatch(
 
     client.assert_not_awaited()
     audit.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("tool", "argument", "expected"),
+    [
+        (google_ads_get_report_field, "campaign.nope", "has no report field named campaign.nope"),
+        (google_ads_list_report_fields, "nope", "has no report resource named nope"),
+    ],
+)
+async def test_report_field_tools_return_unknown_names_to_the_model(
+    monkeypatch, tool, argument, expected
+) -> None:
+    module = tool.__module__
+
+    async def missing(*_args, **_kwargs):
+        raise IntegrationNotFoundError(
+            "Integration resource was not found", provider_key="google_ads", operation="read"
+        )
+
+    monkeypatch.setattr(f"{module}.google_ads_client", AsyncMock())
+    monkeypatch.setattr(f"{module}.run_audited_integration_operation", missing)
+
+    with pytest.raises(ModelRetry, match=expected):
+        await tool(_read_ctx(_read_entry(), tool_name=tool.__name__), argument)
 
 
 async def test_report_field_tools_require_compatible_active_context() -> None:

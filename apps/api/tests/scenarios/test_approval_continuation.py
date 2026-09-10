@@ -7,11 +7,14 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
+from pydantic_ai.messages import RetryPromptPart
 from sqlalchemy import select
 
 from core.exceptions.general import ConflictError
+from core.exceptions.integration import IntegrationFailureDisposition, IntegrationNotFoundError
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
 from models.user import User
@@ -22,6 +25,7 @@ from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agent_runs.resume_run_stream import resume_agent_run_stream
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agents.runtime.run_manager import run_task_registry
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from tests.support.approval_fixtures import restore_approval_fixture
 from tests.support.delegation import scenario_effects
 from tests.support.scenario import (
@@ -149,6 +153,115 @@ async def test_accepted_decisions_survive_handoff_and_execute_once(
         finally:
             for coroutine in queued:
                 coroutine.close()
+
+
+@pytest.mark.parametrize("failure", ["provider_rejected", "unexpected"])
+async def test_failures_after_confirmed_approval_are_not_presented_as_uncertain(
+    committed_db_session_factory, monkeypatch, failure
+):
+    """A confirmed approved effect must not turn a later ordinary failure into recovery."""
+    factory = committed_db_session_factory
+    read_name = f"scenario_read_{uuid4().hex}"
+
+    @runtime_tool(
+        name=read_name,
+        provider="test",
+        description="Fail a read after the approved effect completed.",
+        configurable=False,
+    )
+    async def read(field: str) -> str:
+        if failure == "provider_rejected":
+            raise IntegrationNotFoundError(
+                f"The provider has no field named {field}.",
+                provider_key="test",
+                operation="read",
+                failure_disposition=IntegrationFailureDisposition.REJECTED,
+            )
+        raise RuntimeError("unexpected read failure")
+
+    try:
+        with scenario_effects() as effects:
+            context = await build_scenario_agent(
+                factory,
+                tool_names=[effects.name, read_name],
+                trigger="scheduled",
+                metadata={"envelope": {"side_effect_policy": "require_approval"}},
+            )
+            seen = []
+            model = scripted_model(
+                turns=[
+                    ToolTurn((ToolCall(effects.name, {"value": "approved once"}, "write"),)),
+                    ToolTurn((ToolCall(read_name, {"field": "missing"}, "read"),)),
+                    "Finished.",
+                ],
+                seen_requests=seen,
+            )
+            monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _r: model)
+            parked = await run_scenario(factory, context, model=model)
+            assert parked.run.status == "awaiting_approval"
+            queued = []
+            monkeypatch.setattr(
+                run_task_registry, "spawn", lambda _id, coroutine, **_kw: queued.append(coroutine)
+            )
+            async with factory() as db:
+                actor = await db.get(User, context.user_id)
+                workspace = await db.get(Workspace, context.workspace_id)
+                projection = await get_agent_run_approval_state(
+                    db, actor=actor, workspace=workspace, run_id=context.run_id
+                )
+                await resume_agent_run_stream(
+                    db,
+                    actor=actor,
+                    workspace=workspace,
+                    run_id=context.run_id,
+                    payload=AgentRunResumeRequest(
+                        approval_revision=projection.approval_revision,
+                        decisions=[
+                            AgentRunResumeDecision(
+                                tool_call_id="write",
+                                approval_id=projection.approvals[0].approval_id,
+                                decision="approved",
+                            )
+                        ],
+                    ),
+                )
+            await queued[0]
+            assert effects.calls == [(context.run_id, "approved once")]
+            async with factory() as db:
+                root = await db.get(AgentRun, context.run_id)
+                assert CONTINUATION_KEY not in (root.metadata_json or {})
+                read_audits = list(
+                    await db.scalars(
+                        select(AuditEvent).where(
+                            AuditEvent.workspace_id == context.workspace_id,
+                            AuditEvent.tool_name == read_name,
+                        )
+                    )
+                )
+                assert [row.details["outcome"] for row in read_audits] == ["failed"]
+                if failure == "provider_rejected":
+                    assert root.status == "completed"
+                    assert read_audits[0].details["error_code"] == "IntegrationNotFoundError"
+                    retries = [
+                        part
+                        for message in seen[-1][0]
+                        for part in message.parts
+                        if isinstance(part, RetryPromptPart)
+                    ]
+                    assert len(retries) == 1
+                    assert "has no field named missing" in str(retries[0].content)
+                    return
+                assert root.status == "failed"
+                assert root.error_code == "agent_run_failed"
+                assert root.outcome == "error"
+                assert root.completion_json["error_code"] == "agent_run_failed"
+                actions = root.completion_json["recovery"]["actions"]
+                assert {(action["tool_call_id"], action["status"]) for action in actions} >= {
+                    ("write", "completed")
+                }
+                assert not any(action["status"] == "uncertain" for action in actions)
+    finally:
+        RUNTIME_TOOL_CATALOG.pop(read_name, None)
 
 
 async def test_continuation_claim_is_consumed_before_execution(

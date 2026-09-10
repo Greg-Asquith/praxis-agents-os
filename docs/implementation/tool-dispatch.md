@@ -33,6 +33,16 @@ The following contracts apply in this area:
   output model, and enforces that serialised budget. Keep provider-side fields
   bounded by the tool's product limits and exclude credentials or other
   application-only metadata at the source.
+- Tool exceptions end the run unless dispatch can prove they had no external
+  effect. An `IntegrationError` whose failure disposition is rejected or not
+  dispatched, or any non-ambiguous integration error from a read tool, is
+  audited as a failed invocation and then raised to the model as a retry
+  carrying the sanitised `user_message`, so the model can correct its request
+  or report the failure. Ambiguous mutations and unverified-mutation errors
+  keep failing the run so recovery evidence records them. Write tools with no
+  disposition also fail the run. Tools should still raise a specific retry
+  where they can name the fix, as the Google Ads report-field tools do for
+  unknown field and resource names.
 - Opaque tool targets use the runtime entity-reference contract. Internal
   resolvers stay under `services/agents/runtime/entity_references`; concrete
   provider reference models and resolvers stay in their provider package and

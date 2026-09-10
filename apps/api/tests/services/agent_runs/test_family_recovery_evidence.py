@@ -10,8 +10,12 @@ from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_core import to_jsonable_python
 
 from models.agent_run import AgentRun
+from models.audit_event import AuditEvent
 from models.conversation import Conversation
-from services.agent_runs.build_family_recovery_evidence import build_family_recovery_evidence
+from services.agent_runs.build_family_recovery_evidence import (
+    build_family_recovery_evidence,
+    recovery_required,
+)
 from services.agent_runs.continuation_state import ApprovalContinuation, store_approval_continuation
 from services.agent_runs.settle_run_family import settle_run_family
 from services.agents.runtime.approval_state import (
@@ -241,3 +245,115 @@ async def test_terminal_family_retains_completed_and_uncertain_effects(
     assert "private" not in str(root.completion_json)
     assert "approval_continuation" not in (root.metadata_json or {})
     assert "approval_state" not in (child.metadata_json or {})
+
+
+def _confirmed_evidence(**overrides):
+    recovery = {
+        "actions": [{"tool_call_id": "approved", "status": "completed"}],
+        "truncated": False,
+        "unavailable_child_run_ids": [],
+        **overrides,
+    }
+    return {"error_code": "agent_run_resume_requires_recovery", "recovery": recovery}
+
+
+@pytest.mark.parametrize(
+    ("error_code", "evidence", "expected"),
+    [
+        ("agent_run_failed", _confirmed_evidence(), False),
+        ("model_rate_limited", _confirmed_evidence(), False),
+        (None, _confirmed_evidence(), True),
+        ("run_abandoned", _confirmed_evidence(), True),
+        ("run_lease_lost", _confirmed_evidence(), True),
+        ("run_process_shutdown", _confirmed_evidence(), True),
+        ("agent_run_resume_requires_recovery", _confirmed_evidence(), True),
+        (
+            "agent_run_failed",
+            _confirmed_evidence(actions=[{"tool_call_id": "approved", "status": "uncertain"}]),
+            True,
+        ),
+        ("agent_run_failed", _confirmed_evidence(truncated=True), True),
+        ("agent_run_failed", _confirmed_evidence(unavailable_child_run_ids=["child"]), True),
+        ("agent_run_failed", {"error_code": "agent_run_failed"}, True),
+    ],
+)
+async def test_recovery_required_only_for_interruptions_or_uncertain_effects(
+    error_code, evidence, expected
+):
+    assert recovery_required(error_code=error_code, evidence=evidence) is expected
+
+
+async def _confirm_approved_actions(db, *runs: AgentRun) -> None:
+    for run in runs:
+        db.add(
+            AuditEvent(
+                workspace_id=run.workspace_id,
+                action="execute",
+                resource_type="tool_call",
+                resource_id="approved",
+                status="success",
+                summary="approved write completed",
+                tool_name="write_file",
+                tool_provider="test",
+                actor_type="user",
+                actor_id=str(run.user_id),
+                actor_user_id=run.user_id,
+                requested_by_user_id=run.user_id,
+                details={"run_id": str(run.id), "outcome": "completed"},
+            )
+        )
+    await db.flush()
+
+
+async def test_ordinary_failure_after_confirmed_effects_keeps_its_own_verdict(recovery_family):
+    from services.agents.runtime.run_persistence import persist_failed_run
+
+    db, root, child = recovery_family
+    await _confirm_approved_actions(db, root, child)
+    await persist_failed_run(
+        db,
+        run_id=root.id,
+        error_code="agent_run_failed",
+        error_message="The agent run failed unexpectedly.",
+    )
+    await db.refresh(root)
+    await db.refresh(child)
+    assert root.error_code == "agent_run_failed"
+    assert root.outcome == "error"
+    assert root.error_message == "The agent run failed unexpectedly."
+    assert root.completion_json["error_code"] == "agent_run_failed"
+    actions = root.completion_json["recovery"]["actions"]
+    assert {(action["tool_call_id"], action["status"]) for action in actions} == {
+        ("approved", "completed")
+    }
+    assert "approval_continuation" not in (root.metadata_json or {})
+    assert child.status == "failed"
+    assert child.error_code == "run_parent_terminated"
+
+
+async def test_ordinary_failure_with_uncertain_effects_requires_recovery(recovery_family):
+    from services.agents.runtime.run_persistence import persist_failed_run
+
+    db, root, _child = recovery_family
+    await persist_failed_run(
+        db,
+        run_id=root.id,
+        error_code="agent_run_failed",
+        error_message="The agent run failed unexpectedly.",
+    )
+    await db.refresh(root)
+    assert root.error_code == "agent_run_resume_requires_recovery"
+    assert root.outcome == "blocked"
+    assert any(
+        action["status"] == "uncertain" for action in root.completion_json["recovery"]["actions"]
+    )
+
+
+async def test_interruption_after_confirmed_effects_still_requires_recovery(recovery_family):
+    db, root, child = recovery_family
+    await _confirm_approved_actions(db, root, child)
+    await settle_run_family(db, run_id=root.id, error_code="run_abandoned")
+    await db.refresh(root)
+    assert root.error_code == "agent_run_resume_requires_recovery"
+    assert root.outcome == "blocked"
+    assert root.completion_json["recovery"]["reason"] == "execution_interrupted"

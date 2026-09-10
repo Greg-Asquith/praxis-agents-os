@@ -69,17 +69,16 @@ async def settle_run_family(
     ):
         return []
     completion_json = None
+    legacy_execution = any(has_unreserved_approval_execution(run) for run in family)
     if (
         (status == RUN_STATUS_FAILED and error_code == "agent_run_resume_requires_recovery")
         or ((family[0].metadata_json or {}).get("approval_continuation") is not None)
-        or (
-            error_code != "code_mode_resume_requires_recovery"
-            and any(has_unreserved_approval_execution(run) for run in family)
-        )
+        or (error_code != "code_mode_resume_requires_recovery" and legacy_execution)
     ):
         from services.agent_runs.build_family_recovery_evidence import (
             RECOVERY_ERROR_CODE,
             build_family_recovery_evidence,
+            recovery_required,
         )
 
         completion_json = await build_family_recovery_evidence(db, family=family)
@@ -90,12 +89,19 @@ async def settle_run_family(
                 target.id == family[0].id
                 or error_code in {RECOVERY_ERROR_CODE, "code_mode_resume_requires_recovery"}
             )
+            and (
+                legacy_execution
+                or recovery_required(error_code=error_code, evidence=completion_json)
+            )
         ):
             error_code = RECOVERY_ERROR_CODE
             error_message = (
                 "The approved work stopped before its result could be confirmed. "
                 "Review completed and uncertain actions before starting more work."
             )
+        elif status == RUN_STATUS_FAILED:
+            # Confirmed effects stay reviewable without presenting an ordinary failure as uncertain.
+            completion_json["error_code"] = error_code or "agent_run_failed"
     changed = []
     for run in family:
         if run.id != run_id and run.parent_run_id != run_id:

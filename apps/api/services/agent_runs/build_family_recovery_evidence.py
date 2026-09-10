@@ -15,11 +15,45 @@ from models.audit_event import AuditEvent
 from services.agent_runs.continuation_state import denied_approval_calls
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.approval import code_mode_nested_call
+from services.agents.runtime.execution_control import InterruptionReason
 
 RECOVERY_ERROR_CODE = "agent_run_resume_requires_recovery"
 RecoveryReason = Literal["execution_interrupted", "child_unavailable", "workflow_state_unavailable"]
 MAX_RECOVERY_ACTIONS = 25
 MAX_RECOVERY_CHILDREN = 128
+# Failure codes that stop execution before the model can observe approved results.
+INTERRUPTION_ERROR_CODES = frozenset(
+    {
+        RECOVERY_ERROR_CODE,
+        "code_mode_resume_requires_recovery",
+        "delegation_requires_recovery",
+        "schedule_execution_abandoned",
+        "run_abandoned",
+        *(reason.value for reason in InterruptionReason),
+    }
+)
+
+
+def recovery_required(*, error_code: str | None, evidence: dict[str, Any]) -> bool:
+    """Decides whether a failure leaves approved effects in doubt.
+
+    An interruption always requires review because the model never received the
+    approved results. An ordinary failure requires review only when the evidence
+    still lists uncertain actions, references it cannot resolve, or was truncated.
+    """
+    if error_code is None or error_code in INTERRUPTION_ERROR_CODES:
+        return True
+    recovery = evidence.get("recovery")
+    if not isinstance(recovery, dict):
+        return True
+    if recovery.get("truncated") or recovery.get("unavailable_child_run_ids"):
+        return True
+    actions = recovery.get("actions")
+    if not isinstance(actions, list):
+        return True
+    return any(
+        isinstance(action, dict) and action.get("status") == "uncertain" for action in actions
+    )
 
 
 async def build_family_recovery_evidence(

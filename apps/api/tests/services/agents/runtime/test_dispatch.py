@@ -26,6 +26,12 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.database import set_session_tenant_context
+from core.exceptions.integration import (
+    IntegrationError,
+    IntegrationFailureDisposition,
+    IntegrationNotFoundError,
+    IntegrationUnverifiedMutationError,
+)
 from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
@@ -51,6 +57,7 @@ from services.agents.runtime.dispatch import (
     _tool_call_args_for_digest,
     _tool_provider,
     digest_args,
+    model_visible_integration_failure,
 )
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.execute_run import execute_run
@@ -106,6 +113,7 @@ def dispatch_test_tools():
         "dispatch_long_text",
         "dispatch_untrusted",
         "dispatch_write_ok",
+        "dispatch_provider_rejected",
     ]
     for name in names:
         RUNTIME_TOOL_CATALOG.pop(name, None)
@@ -242,6 +250,20 @@ def dispatch_test_tools():
     async def dispatch_write_ok(value: str) -> dict[str, bool]:
         counters["write_ok"] += 1
         return {"ok": bool(value)}
+
+    @runtime_tool(
+        name="dispatch_provider_rejected",
+        provider="test",
+        label="Dispatch provider rejected",
+        description="Raise a rejected provider read for dispatch tests.",
+    )
+    async def dispatch_provider_rejected(value: str) -> dict[str, bool]:
+        raise IntegrationNotFoundError(
+            f"The provider has no record named {value}.",
+            provider_key="test",
+            operation="read",
+            failure_disposition=IntegrationFailureDisposition.REJECTED,
+        )
 
     yield counters
 
@@ -558,6 +580,84 @@ async def test_tool_model_retry_records_failure_and_run_continues(
         assert event.details["error_code"] == "ToolRetryError"
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+async def test_rejected_provider_read_is_returned_to_the_model(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+    dispatch_test_tools,
+) -> None:
+    context = await _create_committed_runtime_context(
+        committed_db_session_factory,
+        tool_names=["dispatch_provider_rejected"],
+    )
+    seen_messages: list[ModelMessage] = []
+
+    try:
+        result = await _execute_single_tool(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_provider_rejected",
+            args={"value": "missing"},
+            final_text="reported the failure",
+            seen_messages=seen_messages,
+        )
+
+        assert result.output == "reported the failure"
+        retries = [
+            part
+            for message in seen_messages
+            for part in message.parts
+            if getattr(part, "part_kind", None) == "retry-prompt"
+        ]
+        assert len(retries) == 1
+        assert "has no record named missing" in str(retries[0].content)
+        assert "provider=" not in str(retries[0].content)
+        [event] = await _tool_audit_events(
+            committed_db_session_factory,
+            context,
+            tool_name="dispatch_provider_rejected",
+        )
+        assert event.status == "failure"
+        assert event.details["outcome"] == "failed"
+        assert event.details["error_code"] == "IntegrationNotFoundError"
+    finally:
+        await _delete_committed_runtime_context(committed_db_session_factory, context)
+
+
+def _integration_error(disposition: IntegrationFailureDisposition | None) -> IntegrationError:
+    return IntegrationError(
+        "Provider rejected the request.",
+        provider_key="test",
+        operation="op",
+        failure_disposition=disposition,
+    )
+
+
+@pytest.mark.parametrize(
+    ("effect", "exc", "expected"),
+    [
+        ("read", _integration_error(IntegrationFailureDisposition.REJECTED), True),
+        ("read", _integration_error(None), True),
+        ("read", _integration_error(IntegrationFailureDisposition.AMBIGUOUS), False),
+        ("read", IntegrationUnverifiedMutationError("Unverified"), False),
+        ("read", RuntimeError("unexpected"), False),
+        ("write", _integration_error(IntegrationFailureDisposition.REJECTED), True),
+        ("write", _integration_error(IntegrationFailureDisposition.NOT_DISPATCHED), True),
+        ("write", _integration_error(None), False),
+        ("write", _integration_error(IntegrationFailureDisposition.AMBIGUOUS), False),
+    ],
+)
+async def test_model_visible_integration_failure_only_covers_effect_free_rejections(
+    effect, exc, expected, dispatch_test_tools
+) -> None:
+    definition = RUNTIME_TOOL_CATALOG[
+        "dispatch_write_ok" if effect == "write" else "dispatch_secret"
+    ]
+    message = model_visible_integration_failure(definition, definition.name, exc)
+    assert (message is not None) is expected
+    if message is not None:
+        assert message.startswith(f"{definition.name} did not complete: Provider rejected")
+        assert "provider=" not in message
 
 
 async def test_output_contract_failures_record_mutation_risk(

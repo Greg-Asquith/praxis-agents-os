@@ -17,6 +17,11 @@ amount updates, assignment, and unused-budget removal. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
 
+The report-field discovery tools run one audited operation against the first
+selected account. An unknown field or resource name returns a Google Ads 404,
+which each tool maps to a `ModelRetry` naming the missing value and the tool to
+use for discovery, so the model corrects itself instead of ending the run.
+
 ### Keyword targets and evidence
 
 Positive-keyword creation and updates
