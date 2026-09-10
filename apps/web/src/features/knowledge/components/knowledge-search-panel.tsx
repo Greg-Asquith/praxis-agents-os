@@ -6,6 +6,7 @@ import { LoaderCircleIcon, LockIcon, SearchIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { EmptyState } from "@/components/ui/empty-state"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { useKnowledgeSearchQuery } from "@/features/knowledge/api/search-knowledge"
 import { SourceTypeBadge } from "@/features/knowledge/components/source-type-badge"
@@ -35,7 +36,7 @@ export function KnowledgeSearchPanel() {
           onChange={(event) => {
             setInput(event.currentTarget.value)
           }}
-          placeholder="Search your knowledge base…"
+          placeholder="Search workspace and shared knowledge…"
           type="search"
           value={input}
         />
@@ -84,6 +85,7 @@ export function KnowledgeSearchPanel() {
                   {result.title}
                 </Link>
                 <SourceTypeBadge sourceType={result.source_type} />
+                {result.scope === "platform" ? <Badge variant="secondary">Platform</Badge> : null}
                 {result.is_private ? (
                   <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
                     <LockIcon className="size-3" />

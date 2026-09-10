@@ -4,6 +4,8 @@ import { useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { LockIcon, PencilIcon, RefreshCwIcon, Trash2Icon } from "lucide-react"
 
+import { CopyDocumentButton } from "@/features/knowledge/components/copy-document-button"
+import { PlatformDocumentActions } from "@/features/knowledge/components/platform-document-actions"
 import { PageHeader } from "@/components/shell/page-header"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -30,9 +32,13 @@ import { formatDateTime } from "@/lib/format"
 
 export function DocumentDetailHeader({
   canMakePrivate,
+  canCopy = false,
+  canManagePlatform = false,
   canWrite,
   document,
 }: {
+  canCopy?: boolean
+  canManagePlatform?: boolean
   canMakePrivate: boolean
   canWrite: boolean
   document: KbDocumentDetail
@@ -64,7 +70,12 @@ export function DocumentDetailHeader({
     <div className="flex flex-col gap-4">
       <PageHeader
         actions={
-          canWrite ? (
+          document.scope === "platform" ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              {canCopy ? <CopyDocumentButton document={document} /> : null}
+              {canManagePlatform ? <PlatformDocumentActions document={document} /> : null}
+            </div>
+          ) : canWrite ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
               {document.source_type === "manual" ? (
                 <Button
@@ -121,7 +132,14 @@ export function DocumentDetailHeader({
             {refreshable && document.source_sync_status ? (
               <SourceSyncBadge status={document.source_sync_status} />
             ) : null}
-            {document.is_private ? (
+            {document.scope === "platform" ? (
+              <>
+                <Badge variant="secondary">Platform</Badge>
+                <Badge variant="outline">
+                  {document.is_published ? "Published" : "Unpublished"}
+                </Badge>
+              </>
+            ) : document.is_private ? (
               <Badge variant="outline">
                 <LockIcon data-icon="inline-start" />
                 Private
@@ -133,6 +151,16 @@ export function DocumentDetailHeader({
         }
         title={document.title}
       />
+      {document.scope === "platform" ? (
+        <p className="text-muted-foreground text-sm">
+          {document.is_published
+            ? "This knowledge is available in every workspace. Make a workspace copy for independent changes."
+            : "This document is unpublished. Review the processed content before making it available in every workspace."}
+          {canManagePlatform && document.is_published
+            ? " Withdraw it before editing or reprocessing."
+            : null}
+        </p>
+      ) : null}
       <dl className="text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 text-xs">
         <div>
           <dt className="text-foreground inline font-medium">Chunks: </dt>

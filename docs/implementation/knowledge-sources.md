@@ -40,8 +40,7 @@ Before editing or reprocessing a published entry, withdraw it. Processing and
 failure keep it withdrawn. Successful ingestion prepares canonical content and
 chunks for review; only an explicit super-admin publication makes it visible
 under the platform database policy. Published entries join workspace retrieval
-through the existing API and agent tools. Platform authoring controls, badges,
-and copy actions in the Knowledge web interface remain pending.
+through the existing API, agent tools, and Knowledge web interface.
 
 Platform ingestion and embedding use separate actor-owned jobs. Each job
 requires an active super admin and carries the expected ingestion version.
@@ -68,6 +67,41 @@ failure semantics.
 A live platform document retains its pinned File revision, including while the
 document is a draft or withdrawn. File retention skips pinned parents. Creating
 an upload entry locks the live File until the document transaction commits.
+
+## Platform Knowledge web interface
+
+The Knowledge Base follows Files with **All**, the workspace name, and
+**Shared** tabs. **Add Document** stays in the page header across these views.
+The server filters documents before counting and pagination.
+Search includes workspace and published platform knowledge together. Platform
+badges distinguish shared entries in lists, details, and search results. Source
+and privacy use consistent neutral badges in both table layouts. Ready platform
+entries show their publication state, and successful source sync does not repeat
+the ready status. Refresh failures remain visible.
+
+Super admins use **Shared** to add a manual entry or upload a document. They
+can manage drafts even with read-only workspace membership. URL and integration
+imports remain workspace-only. Uploads retain an unpublished platform File and
+pin its confirmed revision. For documents that need conversion, keep the upload
+dialog open while the upload automatically waits for processing and creates
+the Knowledge draft. No second submission is needed. Failed Knowledge
+creation retains that File for retry; choosing another document resets the
+upload. Processing errors and changed revisions block import.
+
+After ingestion, open the draft, review the content, and select **Publish**.
+The confirmation names the audience and retains the reviewed ingestion version
+if a background refresh updates the entry. Published entries require **Withdraw**
+before editing or reprocessing. Withdrawal can also cancel a pending attempt
+so another admin can reprocess it. Publication and lifecycle failures remain
+visible for retry. Platform and ordinary reads use separate workspace-and-user
+cache keys, and platform mutations invalidate cached Knowledge across workspaces.
+
+Ordinary members can read published platform entries. Workspace editors can
+select **Make a workspace copy**, which creates an independent manual entry
+from the readable canonical content. **Private** is selected by default; clearing
+it explains that everyone in the active workspace can read the copy. The copy
+opens as a workspace document and receives no subsequent platform updates.
+Read-only members have no copy or workspace editing actions.
 
 ## Published Knowledge reads
 

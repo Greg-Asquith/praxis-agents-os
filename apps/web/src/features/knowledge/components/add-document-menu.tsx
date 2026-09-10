@@ -16,6 +16,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -50,28 +51,11 @@ const DIALOG_COPY: Record<AddMode, { title: string; description: string }> = {
   },
 }
 
-export function AddDocumentMenu() {
-  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
-  const providersQuery = useQuery(integrationProvidersQueryOptions())
-  const connectionsQuery = useQuery(integrationConnectionsQueryOptions())
+export function AddDocumentMenu({ platform = false }: { platform?: boolean }) {
   const [mode, setMode] = useState<AddMode | null>(null)
   const [integrationOption, setIntegrationOption] = useState<KnowledgeSourceProviderOption | null>(
     null
   )
-  const integrationOptions = useMemo(
-    () =>
-      eligibleKnowledgeSourceProviders(
-        providersQuery.data ?? [],
-        connectionsQuery.data?.items ?? [],
-        user.id
-      ),
-    [connectionsQuery.data?.items, providersQuery.data, user.id]
-  )
-  const integrationCatalogError = providersQuery.isError || connectionsQuery.isError
-  const integrationCatalogLoading =
-    !integrationCatalogError &&
-    integrationOptions.length === 0 &&
-    (providersQuery.isPending || connectionsQuery.isPending)
   const copy = mode ? DIALOG_COPY[mode] : null
 
   return (
@@ -90,14 +74,16 @@ export function AddDocumentMenu() {
             <SquarePenIcon />
             Write Manually
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => {
-              setMode("url")
-            }}
-          >
-            <LinkIcon />
-            Add from URL
-          </DropdownMenuItem>
+          {!platform ? (
+            <DropdownMenuItem
+              onClick={() => {
+                setMode("url")
+              }}
+            >
+              <LinkIcon />
+              Add from URL
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem
             onClick={() => {
               setMode("upload")
@@ -106,36 +92,7 @@ export function AddDocumentMenu() {
             <FileUpIcon />
             Upload Document
           </DropdownMenuItem>
-          {integrationOptions.map((option) => (
-            <DropdownMenuItem
-              key={option.provider.provider_key}
-              onClick={() => {
-                setIntegrationOption(option)
-              }}
-            >
-              <ProviderMark providerKey={option.provider.provider_key} />
-              Import from {option.provider.display_name}
-            </DropdownMenuItem>
-          ))}
-          {integrationCatalogLoading || integrationCatalogError ? <DropdownMenuSeparator /> : null}
-          {integrationCatalogLoading ? (
-            <DropdownMenuLabel>Loading import options…</DropdownMenuLabel>
-          ) : null}
-          {integrationCatalogError ? (
-            <>
-              <DropdownMenuLabel className="text-destructive max-w-56 whitespace-normal">
-                Import options unavailable.
-              </DropdownMenuLabel>
-              <DropdownMenuItem
-                onClick={() => {
-                  void Promise.all([providersQuery.refetch(), connectionsQuery.refetch()])
-                }}
-              >
-                <RefreshCwIcon />
-                Try Again
-              </DropdownMenuItem>
-            </>
-          ) : null}
+          {!platform ? <IntegrationImportOptions onSelect={setIntegrationOption} /> : null}
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog
@@ -155,6 +112,7 @@ export function AddDocumentMenu() {
           ) : null}
           {mode === "manual" ? (
             <ManualDocumentForm
+              platform={platform}
               onSaved={() => {
                 setMode(null)
               }}
@@ -169,6 +127,7 @@ export function AddDocumentMenu() {
           ) : null}
           {mode === "upload" ? (
             <DocumentUploadButton
+              platform={platform}
               onSaved={() => {
                 setMode(null)
               }}
@@ -188,6 +147,66 @@ export function AddDocumentMenu() {
           open
           provider={integrationOption.provider}
         />
+      ) : null}
+    </>
+  )
+}
+
+function IntegrationImportOptions({
+  onSelect,
+}: {
+  onSelect: (option: KnowledgeSourceProviderOption) => void
+}) {
+  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const providersQuery = useQuery(integrationProvidersQueryOptions())
+  const connectionsQuery = useQuery(integrationConnectionsQueryOptions())
+  const integrationOptions = useMemo(
+    () =>
+      eligibleKnowledgeSourceProviders(
+        providersQuery.data ?? [],
+        connectionsQuery.data?.items ?? [],
+        user.id
+      ),
+    [connectionsQuery.data?.items, providersQuery.data, user.id]
+  )
+  const integrationCatalogError = providersQuery.isError || connectionsQuery.isError
+  const integrationCatalogLoading =
+    !integrationCatalogError &&
+    integrationOptions.length === 0 &&
+    (providersQuery.isPending || connectionsQuery.isPending)
+  return (
+    <>
+      {integrationOptions.map((option) => (
+        <DropdownMenuItem
+          key={option.provider.provider_key}
+          onClick={() => {
+            onSelect(option)
+          }}
+        >
+          <ProviderMark providerKey={option.provider.provider_key} />
+          Import from {option.provider.display_name}
+        </DropdownMenuItem>
+      ))}
+      {integrationCatalogLoading || integrationCatalogError ? <DropdownMenuSeparator /> : null}
+      {integrationCatalogLoading ? (
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Loading import options…</DropdownMenuLabel>
+        </DropdownMenuGroup>
+      ) : null}
+      {integrationCatalogError ? (
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-destructive max-w-56 whitespace-normal">
+            Import options unavailable.
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() => {
+              void Promise.all([providersQuery.refetch(), connectionsQuery.refetch()])
+            }}
+          >
+            <RefreshCwIcon />
+            Try Again
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
       ) : null}
     </>
   )

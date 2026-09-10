@@ -69,3 +69,24 @@ it("does not confirm or refresh caches after a failed transfer", async () => {
   expect(fetch).toHaveBeenCalledTimes(1)
   expect(invalidate).not.toHaveBeenCalled()
 })
+
+it("keeps Knowledge upload revisions unpublished for review", async () => {
+  const fetch = stubFetch((input) => {
+    const url = input instanceof Request ? input.url : input.toString()
+    return jsonResponse(
+      url.endsWith("/confirm")
+        ? { id: "file", current_revision_id: "revision", scope: "platform" }
+        : { grant: { upload: {}, upload_token: "token", max_size_bytes: 100 } }
+    )
+  })
+  const client = new QueryClient()
+  const uploaded = await client
+    .getMutationCache()
+    .build(client, platformUploadFileMutationOptions(client, false))
+    .execute(new File(["content"], "Guidance.txt"))
+  expect(uploaded.current_revision_id).toBe("revision")
+  expect(getJsonRequestBody(getFetchRequest(fetch, 1).init)).toEqual({
+    upload_token: "token",
+    publish_when_ready: false,
+  })
+})

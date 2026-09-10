@@ -20,9 +20,61 @@ describe("DocumentsTable", () => {
       document({ id: "manual-document", sourceType: "manual", syncStatus: null }),
     ])
 
-    expect(html.match(/>Synced</g)).toHaveLength(2)
+    expect(html).not.toContain(">Synced<")
+    expect(html.match(/>Ready</g)).toHaveLength(4)
     expect(html.match(/>Refresh</g)).toHaveLength(2)
     expect(html).not.toContain(">Reprocess<")
+  })
+  it("shows platform scope and publication in both layouts without workspace refresh actions", () => {
+    const shared = {
+      ...document({ id: "shared", sourceType: "manual", syncStatus: null }),
+      scope: "platform" as const,
+      workspace_id: null,
+      is_published: true,
+      can_manage_platform: true,
+      status: "error" as const,
+    }
+    const html = renderDocuments([shared])
+    expect(html.match(/>Platform</g)).toHaveLength(2)
+    expect(html.match(/>Published</g)).toHaveLength(2)
+    expect(html).not.toContain(">Reprocess<")
+    expect(html).not.toContain(">Refresh<")
+    const draft = renderDocuments([{ ...shared, is_published: false }])
+    expect(draft.match(/>Unpublished</g)).toHaveLength(2)
+  })
+
+  it("shows one successful status and consistent privacy badges in both layouts", () => {
+    const ready = document({ id: "ready", sourceType: "upload", syncStatus: null })
+    const html = renderDocuments([
+      { ...ready, scope: "platform", workspace_id: null, is_published: true },
+      { ...ready, id: "workspace" },
+      { ...ready, id: "private", is_private: true },
+    ])
+    expect(html.match(/>Published</g)).toHaveLength(2)
+    expect(html.match(/>Ready</g)).toHaveLength(4)
+    for (const label of ["Platform", "Workspace", "Private"]) {
+      expect(
+        html.match(
+          new RegExp(`data-variant="outline"[^>]*>(?:<svg[\\s\\S]*?</svg>)?${label}<`, "g")
+        )
+      ).toHaveLength(2)
+    }
+  })
+
+  it("keeps source refresh failures visible", () => {
+    const html = renderDocuments([
+      document({ id: "failed-sync", sourceType: "url", syncStatus: "error" }),
+    ])
+    expect(html.match(/>Refresh failed</g)).toHaveLength(2)
+  })
+
+  it("preserves workspace retry controls and hides them for read-only members", () => {
+    const failed = {
+      ...document({ id: "failed", sourceType: "manual", syncStatus: null }),
+      status: "error" as const,
+    }
+    expect(renderDocuments([failed]).match(/>Reprocess</g)).toHaveLength(2)
+    expect(renderDocuments([failed], false)).not.toContain(">Reprocess<")
   })
 })
 
@@ -36,6 +88,10 @@ function document({
   syncStatus: KbDocument["source_sync_status"]
 }): KbDocument {
   return {
+    scope: "workspace",
+    workspace_id: "workspace",
+    is_published: false,
+    can_manage_platform: false,
     chunk_count: 1,
     created_at: "2026-09-01T09:00:00Z",
     created_by_user_id: "user-1",
@@ -52,7 +108,7 @@ function document({
   }
 }
 
-function renderDocuments(documents: KbDocument[]) {
+function renderDocuments(documents: KbDocument[], canWrite = true) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -71,7 +127,7 @@ function renderDocuments(documents: KbDocument[]) {
       QueryClientProvider,
       { client: queryClient },
       createElement(RouterContextProvider, {
-        children: createElement(DocumentsTable, { canWrite: true, documents }),
+        children: createElement(DocumentsTable, { canWrite, documents }),
         router,
       })
     )

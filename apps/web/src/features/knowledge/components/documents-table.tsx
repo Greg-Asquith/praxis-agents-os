@@ -12,6 +12,7 @@ import {
   useTableContext,
 } from "@/components/data-table/table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
@@ -42,10 +43,12 @@ export function DocumentsTable({
   canWrite,
   documents,
   emptyAction,
+  platform = false,
 }: {
   canWrite: boolean
   documents: KbDocument[]
   emptyAction?: ReactNode
+  platform?: boolean
 }) {
   const mutation = useReprocessDocumentMutation()
   const [error, setError] = useState<string | null>(null)
@@ -72,6 +75,7 @@ export function DocumentsTable({
               <Link
                 className="truncate font-medium hover:underline"
                 params={{ documentId: row.original.id }}
+                search={row.original.scope === "platform" ? { platform: true } : {}}
                 to="/knowledge/$documentId"
               >
                 {row.original.title}
@@ -95,15 +99,7 @@ export function DocumentsTable({
         }),
         columnHelper.accessor("is_private", {
           header: ({ header }) => <header.ColumnHeader />,
-          cell: ({ getValue }) =>
-            getValue() ? (
-              <span className="inline-flex items-center gap-1 text-sm">
-                <LockIcon className="text-muted-foreground size-3.5" />
-                Private
-              </span>
-            ) : (
-              <span className="text-muted-foreground text-sm">Workspace</span>
-            ),
+          cell: ({ row }) => <PrivacyBadge document={row.original} />,
           meta: { label: "Privacy" },
         }),
         columnHelper.accessor("updated_at", {
@@ -115,7 +111,7 @@ export function DocumentsTable({
           id: "actions",
           header: ({ header }) => <header.ColumnHeader />,
           cell: ({ row }) =>
-            canWrite && canReprocessDocument(row.original) ? (
+            canWrite && row.original.scope !== "platform" && canReprocessDocument(row.original) ? (
               <Button
                 disabled={mutation.isPending}
                 onClick={() => void reprocess(row.original.id)}
@@ -138,7 +134,11 @@ export function DocumentsTable({
     return (
       <EmptyState
         action={emptyAction}
-        description="Add a document to give agents durable, searchable workspace knowledge."
+        description={
+          platform
+            ? "Knowledge shared with every workspace appears here."
+            : "Add a document to give agents searchable workspace knowledge."
+        }
         icon={<BookOpenIcon className="size-5" />}
         size="compact"
         title="No Knowledge Base documents yet"
@@ -223,10 +223,7 @@ function DocumentBodyCell() {
 function StatusCell({ document }: { document: KbDocument }) {
   return (
     <div className="flex max-w-xs flex-col items-start gap-1">
-      <DocumentStatusBadge status={document.status} />
-      {isRefreshableSource(document.source_type) && document.source_sync_status ? (
-        <SourceSyncBadge status={document.source_sync_status} />
-      ) : null}
+      <StatusBadges document={document} />
       {document.status === "error" ? (
         <span
           className="text-destructive line-clamp-2 text-xs"
@@ -261,15 +258,13 @@ function DocumentMobileRow({
         <Link
           className="min-w-0 truncate font-medium hover:underline"
           params={{ documentId: document.id }}
+          search={document.scope === "platform" ? { platform: true } : {}}
           to="/knowledge/$documentId"
         >
           {document.title}
         </Link>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <DocumentStatusBadge status={document.status} />
-          {isRefreshableSource(document.source_type) && document.source_sync_status ? (
-            <SourceSyncBadge status={document.source_sync_status} />
-          ) : null}
+          <StatusBadges document={document} />
         </div>
       </div>
       {document.status === "error" ? (
@@ -283,14 +278,14 @@ function DocumentMobileRow({
           <SourceTypeBadge sourceType={document.source_type} />
         </ResponsiveListMeta>
         <ResponsiveListMeta label="Privacy">
-          {document.is_private ? "Private" : "Workspace"}
+          <PrivacyBadge document={document} />
         </ResponsiveListMeta>
         <ResponsiveListMeta label="Chunks">{document.chunk_count}</ResponsiveListMeta>
         <ResponsiveListMeta label="Updated">
           {relativeDateTime(document.updated_at)}
         </ResponsiveListMeta>
       </dl>
-      {canWrite && canReprocessDocument(document) ? (
+      {canWrite && document.scope !== "platform" && canReprocessDocument(document) ? (
         <Button
           className="w-full"
           disabled={isPending}
@@ -303,5 +298,42 @@ function DocumentMobileRow({
         </Button>
       ) : null}
     </div>
+  )
+}
+
+function PrivacyBadge({ document }: { document: KbDocument }) {
+  return (
+    <Badge variant="outline">
+      {document.scope === "platform" ? (
+        "Platform"
+      ) : document.is_private ? (
+        <>
+          <LockIcon />
+          Private
+        </>
+      ) : (
+        "Workspace"
+      )}
+    </Badge>
+  )
+}
+
+function StatusBadges({ document }: { document: KbDocument }) {
+  const platform = document.scope === "platform"
+  const syncStatus = isRefreshableSource(document.source_type) ? document.source_sync_status : null
+  return (
+    <>
+      {platform && document.status === "ready" ? (
+        <Badge variant={document.is_published ? "success" : "secondary"}>
+          {document.is_published ? "Published" : "Unpublished"}
+        </Badge>
+      ) : (
+        <DocumentStatusBadge status={document.status} />
+      )}
+      {platform && document.status !== "ready" ? (
+        <Badge variant="secondary">{document.is_published ? "Published" : "Unpublished"}</Badge>
+      ) : null}
+      {syncStatus && syncStatus !== "ready" ? <SourceSyncBadge status={syncStatus} /> : null}
+    </>
   )
 }

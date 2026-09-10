@@ -1,16 +1,16 @@
-// apps/web/src/features/knowledge/api/get-document.ts
+// apps/web/src/features/knowledge/api/platform-get-document.ts
 
 import { queryOptions } from "@tanstack/react-query"
-
-import { knowledgeQueryKeys } from "@/features/knowledge/api/list-documents"
+import { platformKnowledgeQueryKeys } from "./platform-list-documents"
 import { hasActiveProcessing } from "@/features/knowledge/status"
 import type { KbDocumentDetail } from "@/features/knowledge/types"
 import { apiRequest } from "@/lib/api/client"
 
-export function documentQueryOptions(documentId: string) {
+export function platformDocumentQueryOptions(documentId: string) {
   return queryOptions({
-    queryKey: knowledgeQueryKeys.detail(documentId),
-    queryFn: () => apiRequest<KbDocumentDetail>(`/kb/documents/${documentId}`),
+    queryKey: platformKnowledgeQueryKeys.detail(documentId),
+    queryFn: () => apiRequest<KbDocumentDetail>(`/kb/platform/documents/${documentId}`),
+    staleTime: 0,
     refetchInterval: (query) =>
       query.state.data && hasActiveProcessing([query.state.data]) ? 5_000 : false,
   })

@@ -8,6 +8,8 @@ import { DialogClose, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { usePlatformCreateDocumentMutation } from "@/features/knowledge/api/platform-create-document"
+import { usePlatformUpdateDocumentMutation } from "@/features/knowledge/api/platform-update-document"
 import { useCreateDocumentMutation } from "@/features/knowledge/api/create-document"
 import { useUpdateDocumentMutation } from "@/features/knowledge/api/update-document"
 import {
@@ -22,17 +24,25 @@ import { formString, type FormValidationEntry } from "@/lib/forms"
 
 export function ManualDocumentForm({
   document = null,
+  platform = false,
   onSaved,
 }: {
   document?: KbDocumentDetail | null
+  platform?: boolean
   onSaved: () => void
 }) {
   const createMutation = useCreateDocumentMutation()
   const updateMutation = useUpdateDocumentMutation()
+  const platformCreate = usePlatformCreateDocumentMutation()
+  const platformUpdate = usePlatformUpdateDocumentMutation()
   const [isPrivate, setIsPrivate] = useState(document?.is_private ?? false)
   const [validationEntries, setValidationEntries] = useState<FormValidationEntry[]>([])
   const [error, setError] = useState<string | null>(null)
-  const isPending = createMutation.isPending || updateMutation.isPending
+  const isPending =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    platformCreate.isPending ||
+    platformUpdate.isPending
 
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -51,10 +61,12 @@ export function ManualDocumentForm({
     setValidationEntries([])
     try {
       if (document) {
-        await updateMutation.mutateAsync({
+        await (platform ? platformUpdate : updateMutation).mutateAsync({
           documentId: document.id,
           payload: { title: payload.title, content_md: payload.content_md },
         })
+      } else if (platform) {
+        await platformCreate.mutateAsync({ title: payload.title, content_md: payload.content_md })
       } else {
         await createMutation.mutateAsync(payload)
       }
@@ -91,7 +103,14 @@ export function ManualDocumentForm({
           name="content"
         />
       </div>
-      {!document ? <PrivacyField checked={isPrivate} onCheckedChange={setIsPrivate} /> : null}
+      {!document && !platform ? (
+        <PrivacyField checked={isPrivate} onCheckedChange={setIsPrivate} />
+      ) : null}
+      {platform ? (
+        <p className="text-muted-foreground text-sm">
+          Save a draft, then review and publish it to every workspace.
+        </p>
+      ) : null}
       <DialogFooter>
         <DialogClose render={<Button disabled={isPending} variant="outline" />}>Cancel</DialogClose>
         <Button disabled={isPending} type="submit">

@@ -60,10 +60,11 @@ Use a file when the task concerns a specific document. Examples include
 summarizing a PDF file, correcting a spreadsheet, or turning meeting notes into
 a proposal.
 
-## The Knowledge Base stores workspace knowledge
+## The Knowledge Base stores reference knowledge
 
-The Knowledge Base is a searchable reference library for your workspace. It
-can contain product details, policies, pricing, frequently asked questions,
+The Knowledge Base is a searchable reference library for your workspace and
+platform knowledge shared with every workspace. It can contain product
+details, policies, pricing, frequently asked questions,
 and client information.
 
 Every agent in the workspace can search shared entries when a task requires
@@ -73,6 +74,18 @@ the content in Praxis. Mark an entry as private when only you may access it.
 Use the Knowledge Base when agents need to find the information across many
 conversations. For example, add a refund policy so agents can use it when they
 answer customer questions.
+
+### Use shared knowledge
+
+In **Knowledge Base**, use **Shared** to find documents published for every
+workspace. **Platform** badges identify them in lists and search results.
+If you can edit workspace content, select **Make a workspace copy** to make
+independent changes. The copy defaults to **Private** and receives no future
+updates from the shared document.
+
+Super admins can add manual entries and upload documents in **Shared**. After
+processing, review the document and select **Publish** to make it available in
+every workspace. Withdraw a published document before editing it.
 
 ### Choose between a file and the Knowledge Base
 

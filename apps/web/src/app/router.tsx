@@ -1,5 +1,6 @@
 // apps/web/src/app/router.tsx
 
+import { validateKnowledgeSearch } from "@/features/knowledge/search"
 import type { QueryClient } from "@tanstack/react-query"
 import {
   createRootRouteWithContext,
@@ -343,6 +344,7 @@ const artifactDetailRoute = createRoute({
 const knowledgeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/knowledge",
+  validateSearch: validateKnowledgeSearch,
   component: lazyRouteComponent(
     () => import("@/features/knowledge/routes/knowledge-route"),
     "KnowledgeRoute"
@@ -352,6 +354,9 @@ const knowledgeRoute = createRoute({
 const knowledgeDocumentRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/knowledge/$documentId",
+  validateSearch: (search: Record<string, unknown>) => ({
+    ...(search["platform"] === true ? { platform: true } : {}),
+  }),
   component: lazyRouteComponent(
     () => import("@/features/knowledge/routes/document-detail-route"),
     "KnowledgeDocumentRoute"

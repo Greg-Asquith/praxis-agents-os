@@ -8,7 +8,10 @@ import { apiRequest } from "@/lib/api/client"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { contentTypeForWorkspaceFile } from "@/lib/file"
 
-export function platformUploadFileMutationOptions(queryClient: QueryClient) {
+export function platformUploadFileMutationOptions(
+  queryClient: QueryClient,
+  publishWhenReady = true
+) {
   const queryKey = platformFilesQueryKeys.workspace()
   return {
     mutationFn: async (file: File) => {
@@ -25,7 +28,7 @@ export function platformUploadFileMutationOptions(queryClient: QueryClient) {
       await uploadFileDirectly(result.grant.upload, file, result.grant.max_size_bytes)
       return apiRequest<WorkspaceFile>("/files/platform/uploads/confirm", {
         method: "POST",
-        body: { upload_token: result.grant.upload_token, publish_when_ready: true },
+        body: { upload_token: result.grant.upload_token, publish_when_ready: publishWhenReady },
       })
     },
     onSuccess: async () => {
@@ -37,6 +40,6 @@ export function platformUploadFileMutationOptions(queryClient: QueryClient) {
   }
 }
 
-export function usePlatformUploadFileMutation() {
-  return useMutation(platformUploadFileMutationOptions(useQueryClient()))
+export function usePlatformUploadFileMutation(publishWhenReady = true) {
+  return useMutation(platformUploadFileMutationOptions(useQueryClient(), publishWhenReady))
 }

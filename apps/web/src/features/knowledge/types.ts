@@ -9,6 +9,10 @@ export type KbContent = string | UntrustedNode
 
 export type KbDocument = {
   id: string
+  scope: "workspace" | "platform"
+  workspace_id: string | null
+  is_published: boolean
+  can_manage_platform: boolean
   title: string
   source_type: KbSourceType
   status: KbProcessingStatus
@@ -42,6 +46,7 @@ export type KbDocumentDetail = KbDocument & {
 type KbSearchResult = {
   id: string
   document_id: string
+  scope: "workspace" | "platform"
   chunk_index: number
   content: KbContent
   context_line: string | null
@@ -64,6 +69,7 @@ export type KbSearchResponse = {
 }
 
 export type ListKbDocumentsParams = {
+  scope?: "workspace" | "platform"
   limit?: number
   offset?: number
   sourceType?: KbSourceType
@@ -117,4 +123,20 @@ export type KbDocumentUpdateRequest = {
   title?: string
   content_md?: string
   is_private?: boolean
+}
+
+export type PlatformKbManualDocumentCreateRequest = {
+  title: string
+  content_md: string
+}
+
+export type PlatformKbFileDocumentCreateRequest = {
+  file_id: string
+  file_revision_id: string
+  title?: string
+}
+
+export type PlatformKbDocumentUpdateRequest = {
+  title?: string
+  content_md?: string
 }

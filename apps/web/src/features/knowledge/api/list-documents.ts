@@ -1,6 +1,6 @@
 // apps/web/src/features/knowledge/api/list-documents.ts
 
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
+import { queryOptions } from "@tanstack/react-query"
 
 import { hasActiveProcessing } from "@/features/knowledge/status"
 import type { KbDocumentsListResponse, ListKbDocumentsParams } from "@/features/knowledge/types"
@@ -28,6 +28,7 @@ async function listDocuments({
   offset = 0,
   sourceType,
   status,
+  scope,
 }: ListKbDocumentsParams = {}) {
   return apiRequest<KbDocumentsListResponse>("/kb/documents", {
     query: {
@@ -36,11 +37,12 @@ async function listDocuments({
       offset,
       source_type: sourceType,
       status,
+      scope,
     },
   })
 }
 
-function documentsQueryOptions(params: ListKbDocumentsParams = {}) {
+export function documentsQueryOptions(params: ListKbDocumentsParams = {}) {
   return queryOptions({
     queryKey: knowledgeQueryKeys.list(params),
     queryFn: () => listDocuments(params),
@@ -48,8 +50,4 @@ function documentsQueryOptions(params: ListKbDocumentsParams = {}) {
       query.state.data && hasActiveProcessing(query.state.data.documents) ? 5_000 : false,
     staleTime: 15_000,
   })
-}
-
-export function useDocumentsQuery(params: ListKbDocumentsParams = {}) {
-  return useSuspenseQuery(documentsQueryOptions(params))
 }
