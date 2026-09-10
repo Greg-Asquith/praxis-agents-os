@@ -1986,7 +1986,7 @@ async def test_run_code_input_gates_reject_out_of_scope_and_oversized_files(
         extension=".csv",
         actor=FileRevisionActor(user_id=user.id),
     )
-    with pytest.raises(ModelRetry, match="unavailable in this workspace"):
+    with pytest.raises(ModelRetry, match="File not found"):
         await run_code_tools.load_run_code_inputs(
             ctx(),
             [FileReference(entity_id=foreign.file.id, label="foreign.csv")],
@@ -2040,7 +2040,7 @@ async def test_run_code_input_gates_reject_out_of_scope_and_oversized_files(
 
     text.file.deleted = True
     await db_session.flush()
-    with pytest.raises(ModelRetry, match="unavailable in this workspace"):
+    with pytest.raises(ModelRetry, match="File not found"):
         await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
 
 

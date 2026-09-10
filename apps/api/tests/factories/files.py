@@ -53,17 +53,22 @@ def build_file_revision(
         "id": selected_revision_id,
         "file_id": file.id,
         "workspace_id": file.workspace_id,
+        "scope": file.scope,
         "revision_number": revision_number,
         "revision_kind": revision_kind,
         "content_type": file.content_type,
         "extension": file.extension,
         "size_bytes": file.size_bytes,
         "content_hash": file.content_hash,
-        "object_key": revision_object_key(
-            file.workspace_id,
-            file.id,
-            selected_revision_id,
-            file.extension,
+        "object_key": (
+            f"platform/files/{file.id}/{selected_revision_id}{file.extension}"
+            if file.scope == ContentScope.PLATFORM
+            else revision_object_key(
+                file.workspace_id,
+                file.id,
+                selected_revision_id,
+                file.extension,
+            )
         ),
         "created_by_user_id": created_by_user_id,
         "created_by_agent_id": created_by_agent_id,

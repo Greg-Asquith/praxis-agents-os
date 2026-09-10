@@ -214,7 +214,7 @@ async def run_code(
         Field(
             default=None,
             max_length=20,
-            description="Optional current workspace files to use as untrusted input data.",
+            description="Optional workspace or published platform files to use as untrusted input data.",
         ),
     ] = None,
     updates_file_id: Annotated[

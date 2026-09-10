@@ -2,6 +2,7 @@
 
 """Retention sweeper for deleted files and abandoned uploads."""
 
+import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -143,7 +144,21 @@ async def _purge_expired_uploads(db: AsyncSession, *, now: datetime) -> None:
 
     provider = get_storage_provider()
     for upload in uploads:
-        await best_effort_delete_file_object(upload.object_key, provider=provider)
+        ref = make_storage_object_ref(StorageBucket.PRIVATE, upload.object_key)
+        try:
+            await provider.delete_object(ref)
+            if upload.object_key.startswith(f"workspaces/{upload.workspace_id}/files/"):
+                # Copy reservations retain the final key and its deterministic stage.
+                identity = hashlib.sha256(ref.uri.encode()).hexdigest()
+                await provider.delete_object(
+                    make_storage_object_ref(
+                        StorageBucket.PRIVATE,
+                        f"workspaces/{upload.workspace_id}/copy-staging/{identity}",
+                    )
+                )
+        except Exception:
+            logger.warning("Failed to clean expired file upload", exc_info=True)
+            continue
         await db.delete(upload)
 
 

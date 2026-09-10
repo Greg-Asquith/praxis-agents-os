@@ -114,6 +114,7 @@ async def create_conversation_turn_stream(
             workspace_id=workspace.id,
             agent=agent,
             file_ids=payload.attachments,
+            conversation_id=conversation.id,
         )
         attachment_file_ids = [file.id for file in files]
         await create_conversation_file_references(

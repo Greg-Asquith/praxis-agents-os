@@ -4,7 +4,7 @@
 
 from models.files import File, FileRevision
 from services.assets.utils import normalize_content_type
-from services.files.utils import private_ref_from_key
+from services.files.utils import file_revision_ref
 from services.storage.factory import get_storage_provider
 from utils.document_markdown import convert_document_to_markdown, truncate_markdown
 
@@ -32,10 +32,10 @@ async def markdown_for_revision(
     """Return stored Markdown or convert the original revision bytes."""
     provider = get_storage_provider()
     if revision.markdown_object_key:
-        data = await provider.get_object(private_ref_from_key(revision.markdown_object_key))
+        data = await provider.get_object(file_revision_ref(revision, markdown=True))
         return truncate_markdown(data.decode("utf-8", errors="replace"), max_bytes=max_bytes)
 
-    data = await provider.get_object(private_ref_from_key(revision.object_key))
+    data = await provider.get_object(file_revision_ref(revision))
     return await convert_document_to_markdown(
         data,
         content_type=revision.content_type,

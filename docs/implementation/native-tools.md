@@ -43,7 +43,7 @@ write, defaults to approval, never nests with `run_workflow`, and is offered
 only for configured OpenAI, direct Anthropic, or Google providers. Anthropic
 on Vertex is excluded because the file bridge requires the Files API.
 Anthropic and
-OpenAI receive bounded current-revision bytes through the provider file
+OpenAI receive bounded authorised-revision bytes through the provider file
 bridge; Google receives bounded framed text or AnyDoc-derived Markdown.
 Generated text artifacts and governed Files persist directly. Retained File
 outputs land in one lazily created folder per conversation unless the tool
@@ -58,7 +58,13 @@ downloads stream into a buffer bounded by `NATIVE_RUN_CODE_MAX_OUTPUT_FILES`
 and `NATIVE_RUN_CODE_MAX_OUTPUT_BYTES`, provider-named outputs win hash
 dedup over synthetic inline names, and `NATIVE_RUN_CODE_TIMEOUT_SECONDS`
 bounds the whole invocation.
-Keep registry/orchestration in `native/run_code.py`, workspace-input transport
+
+Published platform Files are valid read inputs. Conversation references pin the
+published revision; otherwise reads select the published pointer. Withdrawal
+blocks subsequent input resolution. Editing a platform input requires an
+independent workspace copy, and generated Files retain workspace ownership.
+
+Keep registry/orchestration in `native/run_code.py`, File input transport
 and provider-file lifecycle in `native/run_code_file_bridge.py`, and bounded
 capture plus durable output persistence in `native/run_code_outputs.py`.
 Anthropic/OpenAI inputs upload once per invocation under deterministic,

@@ -28,7 +28,7 @@ from services.agents.runtime.tools.files.utils import (
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files.attachment_text import markdown_for_revision
 from services.files.contract import FileCategory
-from services.files.utils import private_ref_from_key
+from services.files.utils import file_revision_ref
 from services.storage.factory import get_storage_provider
 from utils.document_markdown import DocumentConversionError
 
@@ -39,7 +39,7 @@ from utils.document_markdown import DocumentConversionError
     label="Read File",
     code_eligible=True,
     description=(
-        "Inspect a workspace file by id. "
+        "Inspect a workspace or published platform file by id. "
         "Use content mode for inspection; use url mode only when the user needs a download."
     ),
     effect=TOOL_EFFECT_READ,
@@ -78,9 +78,8 @@ async def read_file(
 
     file, revision = await current_file_revision(ctx, internal_entity_id(file_id))
     if mode == "url":
-        provider = get_storage_provider()
-        download = await provider.create_signed_download(
-            private_ref_from_key(revision.object_key),
+        download = await get_storage_provider().create_signed_download(
+            file_revision_ref(revision),
             expires_in=timedelta(minutes=10),
             force_download=True,
             filename=file.name,
@@ -94,7 +93,7 @@ async def read_file(
         }
 
     if file.category == FileCategory.EDITABLE_TEXT.value:
-        data = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
+        data = await get_storage_provider().get_object(file_revision_ref(revision))
         return slice_text(
             data.decode("utf-8", errors="replace"),
             offset=offset,
@@ -136,7 +135,7 @@ async def read_file(
                 "Use mode='url' only if the user requested a download; a URL will not let this "
                 "model inspect the image."
             )
-        data = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
+        data = await get_storage_provider().get_object(file_revision_ref(revision))
         metadata = file_metadata(file, revision, source="image")
         return ToolReturn(
             return_value=[

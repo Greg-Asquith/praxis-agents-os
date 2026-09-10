@@ -5,7 +5,6 @@
 from uuid import UUID
 
 from pydantic_ai import ModelRetry, RunContext
-from sqlalchemy import select
 
 from core.exceptions.general import NotFoundError
 from core.settings import settings
@@ -13,7 +12,13 @@ from models.files import File, FileRevision
 from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
 from services.agents.runtime.context import RuntimeDeps
-from services.files.utils import get_file_for_workspace
+from services.files.utils import (
+    conversation_file_revision_id,
+    file_for_revision,
+    get_visible_file,
+    get_visible_file_revision,
+)
+from utils.content import ContentScope
 
 
 def content_limit(max_bytes: int | None) -> int:
@@ -33,28 +38,32 @@ async def current_file_revision(
     ctx: RunContext[RuntimeDeps],
     file_id: UUID | None,
 ) -> tuple[File, FileRevision]:
-    """Load a workspace file and its current revision for a runtime read."""
+    """Loads a visible file revision, retaining the conversation pin."""
     if file_id is None:
-        raise ModelRetry("file_id is required when reading a workspace file.")
+        raise ModelRetry("file_id is required when reading a file.")
     try:
-        file = await get_file_for_workspace(
+        file = await get_visible_file(
             ctx.deps.db,
-            workspace=ctx.deps.workspace,
+            workspace_id=ctx.deps.workspace.id,
             file_id=file_id,
         )
+        pin = None
+        if file.scope == ContentScope.PLATFORM:
+            pin = await conversation_file_revision_id(
+                ctx.deps.db,
+                workspace_id=ctx.deps.workspace.id,
+                conversation_id=ctx.deps.conversation.id,
+                file_id=file.id,
+            )
+        revision = await get_visible_file_revision(
+            ctx.deps.db,
+            workspace_id=ctx.deps.workspace.id,
+            file=file,
+            revision_id=pin,
+        )
+        file = file_for_revision(file, revision)
     except NotFoundError as exc:
         raise ModelRetry("File not found.") from exc
-    if file.current_revision_id is None:
-        raise ModelRetry("File has no current revision.")
-    revision = await ctx.deps.db.scalar(
-        select(FileRevision).where(
-            FileRevision.id == file.current_revision_id,
-            FileRevision.file_id == file.id,
-            FileRevision.workspace_id == ctx.deps.workspace.id,
-        )
-    )
-    if revision is None:
-        raise ModelRetry("File revision not found.")
     return file, revision
 
 
@@ -126,6 +135,7 @@ def file_metadata(file: File, revision: FileRevision, *, source: str) -> dict[st
     return {
         "kind": "file",
         "source": source,
+        "scope": file.scope,
         "file_id": str(file.id),
         "revision_id": str(revision.id),
         "name": file.name,

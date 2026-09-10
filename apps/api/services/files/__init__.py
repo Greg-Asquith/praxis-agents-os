@@ -6,6 +6,7 @@ from services.files.append_file_revision import append_file_revision
 from services.files.attachment_text import attachment_text_payload, markdown_for_revision
 from services.files.build_attachment_user_content import build_attachment_user_content
 from services.files.confirm_file_upload import confirm_file_upload
+from services.files.copy_file import copy_file
 from services.files.create_conversation_file_references import create_conversation_file_references
 from services.files.create_file_download import create_file_download
 from services.files.create_file_preview import create_file_preview
@@ -38,6 +39,7 @@ __all__ = [
     "attachment_text_payload",
     "build_attachment_user_content",
     "confirm_file_upload",
+    "copy_file",
     "create_conversation_file_references",
     "create_file_download",
     "create_file_preview",

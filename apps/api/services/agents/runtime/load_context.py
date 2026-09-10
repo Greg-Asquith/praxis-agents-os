@@ -20,7 +20,10 @@ from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.settle_run_family import lock_run_family
+from services.files.utils import file_for_revision, get_visible_file_revision
+from services.files.visibility import visible_file_filter
 from services.skills.utils import visible_skill_filter
+from utils.content import ContentScope
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +158,7 @@ async def load_available_files(
     """Load files attached to a conversation for the runtime prompt block."""
     rows = (
         await db.execute(
-            select(File, FileFolder.name)
+            select(File, FileFolder.name, FileReference.file_revision_id)
             .join(FileReference, FileReference.file_id == File.id)
             .outerjoin(
                 FileFolder,
@@ -167,25 +170,37 @@ async def load_available_files(
                 FileReference.workspace_id == conversation.workspace_id,
                 FileReference.target_type == "conversation",
                 FileReference.target_id == conversation.id,
-                File.workspace_id == conversation.workspace_id,
-                File.deleted == False,  # noqa: E712
+                visible_file_filter(conversation.workspace_id),
             )
             .order_by(FileReference.created_at.desc(), File.id.desc())
             .limit(settings.AVAILABLE_FILES_MAX_LISTED)
         )
     ).all()
-    return [
-        AvailableFile(
-            id=file.id,
-            name=file.name,
-            category=file.category,
-            media_type=file.content_type,
-            size_bytes=file.size_bytes,
-            processing_status=file.processing_status,
-            folder_name=folder_name,
+    available = []
+    for file, folder_name, pin in rows:
+        if file.scope == ContentScope.PLATFORM:
+            try:
+                revision = await get_visible_file_revision(
+                    db,
+                    workspace_id=conversation.workspace_id,
+                    file=file,
+                    revision_id=pin,
+                )
+            except NotFoundError:
+                continue
+            file = file_for_revision(file, revision)
+        available.append(
+            AvailableFile(
+                id=file.id,
+                name=file.name,
+                category=file.category,
+                media_type=file.content_type,
+                size_bytes=file.size_bytes,
+                processing_status=file.processing_status,
+                folder_name=folder_name,
+            )
         )
-        for file, folder_name in rows
-    ]
+    return available
 
 
 async def load_actor_context(

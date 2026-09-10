@@ -10,19 +10,20 @@ from pathlib import PurePath
 from uuid import UUID
 
 from pydantic_ai import ModelRetry, RunContext, UploadedFile
-from sqlalchemy import select
 
 from core.settings import settings
 from models.files import File, FileRevision
 from services.agents.models.domain import PROVIDER_ANTHROPIC, PROVIDER_GOOGLE, PROVIDER_OPENAI
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
+from services.agents.runtime.tools.files.utils import current_file_revision
 from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
 from services.audit_events import AuditAction, AuditActorType, AuditResourceType, AuditStatus
 from services.audit_events.operations import safe_record_operation_audit_event
 from services.files.contract import FileCategory, contract_for_content_type
-from services.files.utils import private_ref_from_key
+from services.files.utils import file_revision_ref
 from services.storage.factory import get_storage_provider
+from utils.content import ContentScope
 from utils.document_markdown import DocumentConversionError, convert_document_to_markdown
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class RunCodeInput:
     content: bytes
     media_type: str
     category: FileCategory
+    scope: str = ContentScope.WORKSPACE
 
 
 @dataclass(frozen=True)
@@ -88,35 +90,14 @@ async def load_run_code_inputs(
     ctx: RunContext[RuntimeDeps],
     references: Sequence[FileReference],
 ) -> tuple[RunCodeInput, ...]:
-    """Resolve current workspace revisions and load bounded source bytes."""
+    """Loads bounded source bytes from visible revisions, retaining conversation pins."""
     ids = list(dict.fromkeys(reference.entity_id for reference in references))
     if not ids:
         return ()
-    files = (
-        await ctx.deps.db.scalars(
-            select(File).where(
-                File.id.in_(ids),
-                File.workspace_id == ctx.deps.workspace.id,
-                File.deleted == False,  # noqa: E712
-            )
-        )
-    ).all()
-    by_id = {file.id: file for file in files}
     total = 0
     revisions: list[tuple[File, FileRevision, FileCategory]] = []
     for file_id in ids:
-        file = by_id.get(file_id)
-        if file is None or file.current_revision_id is None:
-            raise ModelRetry("One run_code input file is unavailable in this workspace.")
-        revision = await ctx.deps.db.scalar(
-            select(FileRevision).where(
-                FileRevision.id == file.current_revision_id,
-                FileRevision.file_id == file.id,
-                FileRevision.workspace_id == ctx.deps.workspace.id,
-            )
-        )
-        if revision is None:
-            raise ModelRetry("One run_code input revision is unavailable.")
+        file, revision = await current_file_revision(ctx, file_id)
         entry = contract_for_content_type(revision.content_type)
         if entry.category not in {
             FileCategory.EDITABLE_TEXT,
@@ -144,7 +125,7 @@ async def load_run_code_inputs(
     actual_total = 0
     sandbox_names = sandbox_names_for([file.name for file, _, _ in revisions])
     for (file, revision, category), sandbox_name in zip(revisions, sandbox_names, strict=True):
-        data = await storage.get_object(private_ref_from_key(revision.object_key))
+        data = await storage.get_object(file_revision_ref(revision))
         if len(data) > settings.NATIVE_RUN_CODE_MAX_UPLOAD_BYTES:
             raise ModelRetry(f"{file.name} exceeds the configured run_code source-byte limit.")
         actual_total += len(data)
@@ -161,6 +142,7 @@ async def load_run_code_inputs(
                 content=data,
                 media_type=revision.content_type,
                 category=category,
+                scope=file.scope,
             )
         )
     return tuple(loaded)
@@ -179,6 +161,8 @@ def resolve_run_code_edit_target(
     target = next((item for item in inputs if item.file_id == target_id), None)
     if target is None:
         raise ModelRetry("updates_file_id must also be included in file_ids.")
+    if target.scope == ContentScope.PLATFORM:
+        raise ModelRetry("Platform files are read-only. Make a workspace copy before editing.")
     if provider == PROVIDER_GOOGLE:
         raise ModelRetry(
             "Google run_code receives derived text and cannot safely update the source file. "
@@ -394,5 +378,5 @@ async def build_run_code_prompt(
             )
         )
         label = "derived Markdown" if item.category == FileCategory.INGESTIBLE_DOCUMENT else "text"
-        sections.append(f"Workspace file {item.name!r} ({label}):\n{framed}")
+        sections.append(f"File {item.name!r} ({label}):\n{framed}")
     return "\n\n".join(sections)

@@ -16,7 +16,7 @@ from services.assets.utils import normalize_content_type
 from services.files.attachment_text import attachment_text_payload, markdown_for_revision
 from services.files.contract import FileCategory, contract_for_content_type
 from services.files.resolve_chat_attachments import PDF_MEDIA_TYPE
-from services.files.utils import private_ref_from_key
+from services.files.utils import file_revision_ref
 from services.storage.factory import get_storage_provider
 from utils.document_markdown import DocumentConversionError
 
@@ -49,7 +49,12 @@ async def build_attachment_user_content(
                 details={"file_id": str(file.id)},
             )
         revision = revisions_by_id.get(file.current_revision_id)
-        if revision is None:
+        if (
+            revision is None
+            or revision.file_id != file.id
+            or revision.scope != file.scope
+            or revision.workspace_id != file.workspace_id
+        ):
             raise NotFoundError(
                 "File revision not found",
                 resource_type="file_revision",
@@ -65,7 +70,7 @@ async def _build_revision_content(*, file: File, revision: FileRevision) -> Bina
     if category == FileCategory.IMAGE or media_type == PDF_MEDIA_TYPE:
         provider = get_storage_provider()
         return BinaryContent(
-            data=await provider.get_object(private_ref_from_key(revision.object_key)),
+            data=await provider.get_object(file_revision_ref(revision)),
             media_type=media_type,
             identifier=str(file.id),
         )

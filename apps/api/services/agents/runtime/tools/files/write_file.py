@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 from pydantic_ai import ApprovalRequired, ModelRetry, RunContext
 
+from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
@@ -178,7 +179,7 @@ async def write_file(
                 expected_current_revision_id=expected_current_revision_id,
                 folder_id=target_folder.id if target_folder is not None else None,
             )
-    except (AppValidationError, ConflictError, NotFoundError) as exc:
+    except (AppValidationError, AuthorizationError, ConflictError, NotFoundError) as exc:
         raise ModelRetry(str(exc)) from exc
     if content_ref is not None:
         try:

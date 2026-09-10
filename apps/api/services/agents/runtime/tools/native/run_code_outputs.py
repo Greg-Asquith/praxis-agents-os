@@ -24,6 +24,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.openai import OpenAIResponsesModel
 
+from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from models.files import FileFolder
@@ -376,7 +377,7 @@ async def persist_sandbox_outputs(
                     input_revision_ids=input_revision_ids,
                 )
             )
-        except (AppValidationError, UnicodeDecodeError, ValueError) as exc:
+        except (AppValidationError, AuthorizationError, UnicodeDecodeError, ValueError) as exc:
             raise ToolFailed(
                 "The selected edited output could not be saved as a new revision: "
                 f"{getattr(exc, 'message', str(exc))}"

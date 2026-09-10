@@ -5,18 +5,16 @@
 from uuid import UUID
 
 from fastapi import Request
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError, NotFoundError
-from models.files import FileRevision
+from core.exceptions.general import AppValidationError
 from models.user import User
 from models.workspace import Workspace
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.contract import is_editable
 from services.files.domain import FileRevisionContentRead
-from services.files.utils import get_file_for_workspace, private_ref_from_key
+from services.files.utils import file_revision_ref, get_visible_file, get_visible_file_revision
 from services.storage.factory import get_storage_provider
 
 
@@ -30,20 +28,11 @@ async def get_file_revision_content(
     revision_id: UUID,
 ) -> FileRevisionContentRead:
     """Return stored UTF-8 text for one editable file revision."""
-    file = await get_file_for_workspace(db, workspace=workspace, file_id=file_id)
-    revision = await db.scalar(
-        select(FileRevision).where(
-            FileRevision.id == revision_id,
-            FileRevision.file_id == file.id,
-            FileRevision.workspace_id == workspace.id,
-        )
+    file = await get_visible_file(db, workspace_id=workspace.id, file_id=file_id)
+    revision = await get_visible_file_revision(
+        db, workspace_id=workspace.id, file=file, revision_id=revision_id
     )
-    if revision is None:
-        raise NotFoundError(
-            "File revision not found",
-            resource_type="file_revision",
-            resource_id=str(revision_id),
-        )
+
     if not is_editable(revision.content_type):
         raise AppValidationError(
             "File revision does not support text content reads",
@@ -51,7 +40,7 @@ async def get_file_revision_content(
             details={"content_type": revision.content_type},
         )
 
-    data = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
+    data = await get_storage_provider().get_object(file_revision_ref(revision))
     await record_workspace_audit_event(
         db,
         request=request,

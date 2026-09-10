@@ -5,6 +5,7 @@
 from fastapi import APIRouter
 
 from routes.files.confirm_file_upload import router as confirm_file_upload_router
+from routes.files.copy_file import router as copy_file_router
 from routes.files.create_file_download import router as create_file_download_router
 from routes.files.create_file_preview import router as create_file_preview_router
 from routes.files.create_file_upload import router as create_file_upload_router
@@ -28,6 +29,7 @@ from routes.files.update_folder import router as update_folder_router
 
 router = APIRouter(prefix="/files", tags=["files"])
 router.include_router(platform_router)
+router.include_router(copy_file_router)
 router.include_router(create_file_upload_router)
 router.include_router(confirm_file_upload_router)
 router.include_router(create_folder_router)

@@ -72,8 +72,8 @@ and platform-private storage. Domain callers must persist the destination
 identity for retries, serialise writes to it with resource locks, and supply an
 authorisation callback. The callback checks source visibility and destination
 write authority before any storage access and again before promotion. Owning
-services retain transactional audit and database writes; their product routes
-remain pending.
+services retain transactional audit and database writes; the File workspace-copy
+route uses this contract.
 
 Copies verify the expected size and SHA-256 digest, reject public storage, and
 write a fresh create-only destination. Source metadata is omitted and copies
@@ -133,8 +133,7 @@ CORS with the explicit application origin allowlist. Uploads use the signed
 API relay and its existing CORS policy.
 
 Provider contracts are verified with deterministic doubles. Live GCS, S3, and
-Azure verification remains pending. Workspace consumption of platform Files
-remains pending.
+Azure verification remains pending.
 
 ## Platform upload and maintenance services
 
@@ -177,7 +176,7 @@ Every `/files/platform` operation requires an authenticated active workspace
 membership and configured super-admin authority. Read-only workspace membership
 is sufficient for a super admin. Services check authority before committing the
 request transaction and opening maintenance access. Tenant File routes and
-agent tools retain their workspace ownership checks.
+agent tools admit published platform Files through tenant visibility checks.
 
 The management API exposes these operations:
 
@@ -216,8 +215,51 @@ sandbox Content Security Policy. Frontend preview rendering remains pending;
 it must use the existing sandboxed preview component. Downloaded bytes and
 previously issued signed capabilities retain their existing recall limits.
 
-Tenant discovery, downloads, attachments, tools, local copies, and the Files
-management UI for platform content remain pending.
+## Published Files in workspaces
+
+Tenant File lists, details, revision content, previews, and downloads admit
+published platform Files alongside workspace Files. Revision reads validate
+the parent and publication marker. Platform summaries use the published
+revision, including its size, type, hash, and ready processing state. Draft
+replacement metadata stays outside tenant responses. Withdrawal or deletion
+hides every revision from fresh reads and signed-link creation. Existing
+signed capabilities retain their bounded lifetime.
+
+Conversation attachments pin the platform revision when the reference is
+created. Reattaching the same File preserves its pin. Attachment conversion,
+prompt metadata, `read_file`, and `run_code` inputs honour that pin after a
+later publication. Workspace attachments retain their existing current-revision
+behaviour. References and target identifiers belong to the consuming workspace;
+another workspace cannot discover them. File tools and entity search use the
+same publication boundary. Platform content retains the existing untrusted
+content framing.
+
+Ordinary mutations, replacement uploads, restores, and folder moves reject
+platform targets with an instruction to make a workspace copy. Agent writes
+and code outputs retain workspace ownership, including during a super-admin
+conversation.
+
+`POST /files/{file_id}/copy` requires an active workspace editor and accepts
+`revision_id` and `request_id`. The revision must be published under a live,
+published platform parent. Retain the request ID when retrying the same copy;
+use a fresh ID for a separate copy. The result has a fresh workspace File
+identity and one revision. It carries no source history, references, grants,
+or private provenance. Document copies use local extraction rather than copying
+derived Markdown. A strict workspace audit records the source platform
+File and revision. Later source publication or withdrawal leaves the copy
+independent.
+
+Copy operations reserve a deterministic destination through the existing upload
+records before storage work. A scoped maintenance lock holds only the already
+authorised platform parent; tenant writes and live editor checks remain in the
+workspace session. The source lock covers the destination and audit commit,
+so publication and withdrawal cannot change source authority midway through a
+copy. Failed database writes can recover the same bytes on retry. Expired,
+unconsumed reservations retain cleanup ownership of the destination and copy
+stage; failed deletion retains the reservation for another pass.
+
+The Files management UI for platform publication, scope filters, and workspace
+copy actions remains pending.
 
 ## Runtime file references
 

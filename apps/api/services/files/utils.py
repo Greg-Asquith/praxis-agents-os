@@ -16,6 +16,7 @@ from models.files import File, FileFolder, FileRevision, FileUpload
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.files.domain import FileRead, FileRevisionRead
+from services.files.visibility import visible_file_filter, visible_file_revision_filter
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from services.storage.paths import safe_filename, validate_object_key
@@ -124,8 +125,84 @@ async def get_file_for_workspace(
         stmt = stmt.with_for_update()
     file = await db.scalar(stmt)
     if file is None:
+        visible = await db.scalar(
+            select(File).where(File.id == file_id, visible_file_filter(workspace.id))
+        )
+        if visible is not None:
+            require_workspace_file(visible)
         raise NotFoundError("File not found", resource_type="file", resource_id=str(file_id))
     return file
+
+
+def require_workspace_file(file: File) -> None:
+    """Directs changes to an independent workspace copy."""
+    if file.scope == ContentScope.PLATFORM:
+        raise AuthorizationError(
+            "Platform files are read-only. Make a workspace copy to change this file."
+        )
+
+
+async def get_visible_file(db: AsyncSession, *, workspace_id: UUID, file_id: UUID) -> File:
+    """Resolves a local or published platform parent under tenant visibility."""
+    file = await db.scalar(
+        select(File).where(File.id == file_id, visible_file_filter(workspace_id))
+    )
+    if file is None:
+        raise NotFoundError("File not found", resource_type="file", resource_id=str(file_id))
+    return file
+
+
+async def get_visible_file_revision(
+    db: AsyncSession, *, workspace_id: UUID, file: File, revision_id: UUID | None = None
+) -> FileRevision:
+    """Resolves a reviewed revision through its authorised parent."""
+    selected_id = revision_id or (
+        file.published_revision_id
+        if file.scope == ContentScope.PLATFORM
+        else file.current_revision_id
+    )
+    revision = await db.scalar(
+        select(FileRevision).where(
+            FileRevision.id == selected_id,
+            FileRevision.file_id == file.id,
+            visible_file_revision_filter(workspace_id),
+        )
+    )
+    if revision is None:
+        raise NotFoundError(
+            "File revision not found", resource_type="file_revision", resource_id=str(selected_id)
+        )
+    return revision
+
+
+def file_for_revision(file: File, revision: FileRevision) -> File:
+    """Projects published metadata without changing the persisted draft."""
+    if file.scope != ContentScope.PLATFORM:
+        return file
+    from services.files.contract import contract_for_content_type
+
+    values = {column.name: getattr(file, column.name) for column in File.__table__.columns}
+    values.update(
+        current_revision_id=revision.id,
+        published_revision_id=revision.id,
+        content_type=revision.content_type,
+        extension=revision.extension,
+        size_bytes=revision.size_bytes,
+        content_hash=revision.content_hash,
+        category=contract_for_content_type(revision.content_type).category.value,
+        revision_count=revision.revision_number,
+        processing_status="ready",
+        processing_error=None,
+        processing_attempts=0,
+        updated_at=revision.created_at,
+    )
+    return File(**values)
+
+
+def file_revision_ref(revision: FileRevision, *, markdown: bool = False):
+    """Carries the revision's ownership class to storage."""
+    key = revision.markdown_object_key if markdown else revision.object_key
+    return make_storage_object_ref(file_storage_bucket(revision.scope), key)
 
 
 async def get_folder_for_workspace(
@@ -323,6 +400,12 @@ async def get_file_for_upload(
     )
     file = await db.scalar(stmt)
     if file is None:
+        if scope == ContentScope.WORKSPACE:
+            visible = await db.scalar(
+                select(File).where(File.id == file_id, visible_file_filter(workspace_id))
+            )
+            if visible is not None:
+                require_workspace_file(visible)
         raise NotFoundError("File not found", resource_type="file", resource_id=str(file_id))
     return file
 
@@ -388,3 +471,64 @@ async def append_restore_revision(
     )
     await db.flush()
     return revision
+
+
+async def conversation_file_revision_id(
+    db: AsyncSession,
+    *,
+    workspace_id: UUID,
+    conversation_id: UUID,
+    file_id: UUID,
+) -> UUID | None:
+    """Returns a conversation's revision pin within its workspace."""
+    from models.files import FileReference
+
+    return await db.scalar(
+        select(FileReference.file_revision_id).where(
+            FileReference.workspace_id == workspace_id,
+            FileReference.target_type == "conversation",
+            FileReference.target_id == conversation_id,
+            FileReference.file_id == file_id,
+        )
+    )
+
+
+async def require_file_copy_editor(db: AsyncSession, *, actor: User, workspace: Workspace) -> None:
+    membership = await db.scalar(
+        select(WorkspaceMembership)
+        .join(Workspace, Workspace.id == WorkspaceMembership.workspace_id)
+        .join(User, User.id == WorkspaceMembership.user_id)
+        .where(
+            WorkspaceMembership.workspace_id == workspace.id,
+            WorkspaceMembership.user_id == actor.id,
+            WorkspaceMembership.deleted.is_(False),
+            Workspace.deleted.is_(False),
+            Workspace.status == "active",
+            User.deleted.is_(False),
+            User.is_active.is_(True),
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if membership is None:
+        raise AuthorizationError("Requires active workspace write access")
+    require_file_write_access(membership)
+
+
+async def get_file_copy_source(
+    db: AsyncSession, *, workspace: Workspace, file_id: UUID, revision_id: UUID, lock: bool = False
+) -> tuple[File, FileRevision]:
+    statement = (
+        select(File)
+        .where(File.id == file_id, File.scope == "platform", visible_file_filter(workspace.id))
+        .execution_options(populate_existing=True)
+    )
+    if lock:
+        statement = statement.with_for_update()
+    source = await db.scalar(statement)
+    if source is None:
+        raise NotFoundError("Published platform file not found")
+    revision = await get_visible_file_revision(
+        db, workspace_id=workspace.id, file=source, revision_id=revision_id
+    )
+    return source, revision

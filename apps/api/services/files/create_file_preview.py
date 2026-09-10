@@ -5,15 +5,13 @@
 from datetime import timedelta
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError, NotFoundError
-from models.files import FileRevision
+from core.exceptions.general import AppValidationError
 from models.workspace import Workspace
 from services.files.contract import FileCategory, contract_for_content_type
 from services.files.domain import FilePreviewGrant
-from services.files.utils import get_file_for_workspace, private_ref_from_key
+from services.files.utils import file_revision_ref, get_visible_file, get_visible_file_revision
 from services.storage.factory import get_storage_provider
 
 
@@ -24,8 +22,9 @@ async def create_file_preview(
     file_id: UUID,
 ) -> FilePreviewGrant:
     """Create a short-lived inline preview URL without recording a file-read audit event."""
-    file = await get_file_for_workspace(db, workspace=workspace, file_id=file_id)
-    entry = contract_for_content_type(file.content_type)
+    file = await get_visible_file(db, workspace_id=workspace.id, file_id=file_id)
+    revision = await get_visible_file_revision(db, workspace_id=workspace.id, file=file)
+    entry = contract_for_content_type(revision.content_type)
     previewable = entry.category in {FileCategory.IMAGE, FileCategory.VIDEO} or (
         entry.content_type == "application/pdf"
     )
@@ -33,25 +32,11 @@ async def create_file_preview(
         raise AppValidationError(
             "Previews are available for images, videos, and PDFs",
             field="file_id",
-            details={"file_id": str(file.id), "content_type": file.content_type},
-        )
-
-    revision = await db.scalar(
-        select(FileRevision).where(
-            FileRevision.id == file.current_revision_id,
-            FileRevision.file_id == file.id,
-            FileRevision.workspace_id == workspace.id,
-        )
-    )
-    if revision is None:
-        raise NotFoundError(
-            "File revision not found",
-            resource_type="file_revision",
-            resource_id=str(file.current_revision_id),
+            details={"file_id": str(file.id), "content_type": revision.content_type},
         )
 
     preview = await get_storage_provider().create_signed_download(
-        private_ref_from_key(revision.object_key),
+        file_revision_ref(revision),
         expires_in=timedelta(minutes=10),
         force_download=False,
         filename=file.name,

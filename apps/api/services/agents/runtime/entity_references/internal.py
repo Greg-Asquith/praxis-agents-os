@@ -29,7 +29,10 @@ from services.agents.runtime.entity_references.registry import (
     EntityResolverDefinition,
     register_entity_resolver,
 )
+from services.files.utils import file_for_revision, get_visible_file_revision
+from services.files.visibility import visible_file_filter
 from services.memories.authorisation import visible_memory_filter
+from utils.content import ContentScope
 
 
 def register_internal_entity_resolvers() -> None:
@@ -313,7 +316,7 @@ def _document_choice(document: KBDocument) -> EntityChoice:
 
 async def _search_files(ctx, search, _dependent_args, page_size, cursor):
     offset = _offset(cursor)
-    filters = [File.workspace_id == ctx.workspace.id, File.deleted.is_(False)]
+    filters = [visible_file_filter(ctx.workspace.id)]
     pattern = _pattern(search)
     if pattern:
         filters.append(File.name.ilike(pattern, escape="\\"))
@@ -326,7 +329,8 @@ async def _search_files(ctx, search, _dependent_args, page_size, cursor):
             .offset(offset)
         )
     )
-    return _page([_file_choice(row) for row in rows], offset=offset, page_size=page_size)
+    choices = [await _visible_file_choice(ctx, row) for row in rows]
+    return _page(choices, offset=offset, page_size=page_size)
 
 
 async def _resolve_files(ctx, values, _dependent_args):
@@ -336,15 +340,25 @@ async def _resolve_files(ctx, values, _dependent_args):
             await ctx.db.scalars(
                 select(File).where(
                     File.id.in_(wanted),
-                    File.workspace_id == ctx.workspace.id,
-                    File.deleted.is_(False),
+                    visible_file_filter(ctx.workspace.id),
                 )
             )
         )
         if wanted
         else []
     )
-    return tuple(_file_choice(row) for row in rows)
+    return tuple([await _visible_file_choice(ctx, row) for row in rows])
+
+
+async def _visible_file_choice(ctx, file: File) -> EntityChoice:
+    if file.scope == ContentScope.PLATFORM:
+        revision = await get_visible_file_revision(
+            ctx.db,
+            workspace_id=ctx.workspace.id,
+            file=file,
+        )
+        file = file_for_revision(file, revision)
+    return _file_choice(file)
 
 
 def _file_choice(file: File) -> EntityChoice:

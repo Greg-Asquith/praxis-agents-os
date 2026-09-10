@@ -17,7 +17,9 @@ from services.files.utils import (
     file_to_read,
     get_folder_for_workspace,
     require_file_write_access,
+    require_workspace_file,
 )
+from services.files.visibility import visible_file_filter
 
 
 async def move_files(
@@ -31,6 +33,13 @@ async def move_files(
 ) -> FileMoveResponse:
     require_file_write_access(membership)
     unique_ids = list(dict.fromkeys(payload.file_ids))
+    visible_files = (
+        await db.scalars(
+            select(File).where(File.id.in_(unique_ids), visible_file_filter(workspace.id))
+        )
+    ).all()
+    for file in visible_files:
+        require_workspace_file(file)
     target = (
         await get_folder_for_workspace(
             db,

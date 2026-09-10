@@ -227,6 +227,7 @@ async def prepare_runtime(
         agent=agent,
         user_prompt=user_prompt,
         attachment_file_ids=attachment_file_ids,
+        conversation_id=conversation.id,
     )
     completion_contract = (
         completion_contract_from_run_metadata(run.metadata_json)
@@ -294,6 +295,7 @@ async def assemble_user_prompt(
     agent: Agent,
     user_prompt: str | Sequence[UserContent] | None,
     attachment_file_ids: Sequence[UUID],
+    conversation_id: UUID | None = None,
 ) -> str | Sequence[UserContent] | None:
     if not attachment_file_ids:
         return user_prompt
@@ -303,6 +305,7 @@ async def assemble_user_prompt(
         workspace_id=workspace.id,
         agent=agent,
         file_ids=attachment_file_ids,
+        conversation_id=conversation_id,
     )
     attachment_contents = await build_attachment_user_content(
         db,

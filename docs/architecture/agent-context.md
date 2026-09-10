@@ -24,7 +24,7 @@ Knowledge Base, and memories](../guides/skills-files-knowledge-memories.md).
 | Storage            | `skills` table; docs in object storage                                  | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | `agent_memories` (markdown in Postgres, `HALFVEC` embeddings)                                       |
 | Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Budgeted core-memory prompt block + auto-mounted memory tools                                       |
 | Retrieval          | None                                                                    | None                                                                                       | Hybrid RRF: lexical + pgvector semantic + recency                         | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`)                           |
-| Scope              | Workspace or platform rows, assigned per agent via `Agent.skill_ids`    | Workspace; conversation visibility via `file_references`                                   | Workspace-wide, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
+| Scope              | Workspace or platform rows, assigned per agent via `Agent.skill_ids`    | Workspace and published platform; conversation visibility via `file_references`                                   | Workspace-wide, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
 | Agent-writable     | No                                                                      | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
 | Status             | Shipped end to end                                                      | Shipped end to end                                                                         | Shipped end to end                                                        | Shipped end to end                                                                                  |
 
@@ -96,8 +96,10 @@ handing an agent a specific document to work on.
   folder uses the normal per-file soft-delete and audit lifecycle before the
   existing sweeper purges both files and old folder tombstones.
 - **Scope note.** Attachment scopes what is _listed in the prompt_, but the
-  file tools can reach any workspace file — attachment is salience, not a
-  security boundary.
+  file tools can reach workspace and published platform Files. Attachment
+  determines prompt listing; it does not grant access. Platform references pin
+  the selected published revision. Withdrawal blocks further reads. Agent writes
+  remain local to the active workspace.
 - **Relationship to Artifacts.** Separate aggregates, deliberately. Files are
   the workspace's document store — inputs and working material, inert bytes
   behind signed downloads. Artifacts are agent-authored deliverables that get

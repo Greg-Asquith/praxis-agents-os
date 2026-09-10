@@ -16,6 +16,13 @@ from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
 from services.assets.utils import normalize_content_type
 from services.files.contract import FileCategory, contract_for_content_type
+from services.files.utils import (
+    conversation_file_revision_id,
+    file_for_revision,
+    get_visible_file_revision,
+)
+from services.files.visibility import visible_file_filter
+from utils.content import ContentScope
 
 # Pydantic AI accepts these image types and PDFs as native model input.
 # Other accepted workspace documents are converted to text before model dispatch.
@@ -29,6 +36,7 @@ async def resolve_chat_attachments(
     workspace_id: UUID,
     agent: Agent,
     file_ids: Sequence[UUID],
+    conversation_id: UUID | None = None,
 ) -> list[File]:
     """Load, order, and validate chat attachment files for one agent turn."""
     deduped_file_ids = _dedupe_file_ids(file_ids)
@@ -48,8 +56,7 @@ async def resolve_chat_attachments(
         await db.scalars(
             select(File).where(
                 File.id.in_(deduped_file_ids),
-                File.workspace_id == workspace_id,
-                File.deleted == False,  # noqa: E712
+                visible_file_filter(workspace_id),
             )
         )
     ).all()
@@ -63,6 +70,23 @@ async def resolve_chat_attachments(
                 resource_type="file",
                 resource_id=str(file_id),
             )
+        if file.scope == ContentScope.PLATFORM:
+            pin = (
+                (
+                    await conversation_file_revision_id(
+                        db,
+                        workspace_id=workspace_id,
+                        conversation_id=conversation_id,
+                        file_id=file.id,
+                    )
+                )
+                if conversation_id is not None
+                else None
+            )
+            revision = await get_visible_file_revision(
+                db, workspace_id=workspace_id, file=file, revision_id=pin
+            )
+            file = file_for_revision(file, revision)
         _validate_chat_attachment(file, agent=agent)
         ordered_files.append(file)
     return ordered_files

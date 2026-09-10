@@ -22,6 +22,7 @@ from services.files.folder_utils import folder_by_name
 
 class RuntimeFileSummary(BaseModel):
     id: UUID
+    scope: str
     name: str
     category: str
     media_type: str
@@ -44,7 +45,7 @@ class ListFilesOutput(BaseModel):
     label="List Files",
     code_eligible=True,
     description=(
-        "List workspace files readable by the current agent, optionally scoped to one named folder."
+        "List workspace and published platform files readable by the current agent, optionally scoped to one named folder."
     ),
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,
@@ -103,6 +104,7 @@ async def list_files(
         files=[
             RuntimeFileSummary(
                 id=file.id,
+                scope=file.scope,
                 name=file.name,
                 category=file.category,
                 media_type=file.content_type,

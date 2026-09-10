@@ -165,6 +165,7 @@ async def execute_run(
                             agent=agent,
                             user_prompt=user_prompt,
                             attachment_file_ids=attachment_file_ids,
+                            conversation_id=conversation.id,
                         )
                         attachment_file_ids_for_prepare = ()
                     eager_rows = await persist_eager_user_prompt(

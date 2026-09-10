@@ -5,10 +5,14 @@
 from collections.abc import Sequence
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.files import FileReference
+from core.exceptions.general import NotFoundError
+from models.files import File, FileReference
+from services.files.visibility import visible_file_filter
+from utils.content import ContentScope
 
 
 async def create_conversation_file_references(
@@ -23,6 +27,15 @@ async def create_conversation_file_references(
     if not file_ids:
         return
 
+    files = (
+        await db.scalars(
+            select(File).where(File.id.in_(file_ids), visible_file_filter(workspace_id))
+        )
+    ).all()
+    files_by_id = {file.id: file for file in files}
+    if any(file_id not in files_by_id for file_id in file_ids):
+        raise NotFoundError("File not found", resource_type="file")
+
     rows = [
         {
             "id": uuid4(),
@@ -30,7 +43,11 @@ async def create_conversation_file_references(
             "workspace_id": workspace_id,
             "target_type": "conversation",
             "target_id": conversation_id,
-            "file_revision_id": None,
+            "file_revision_id": (
+                files_by_id[file_id].published_revision_id
+                if files_by_id[file_id].scope == ContentScope.PLATFORM
+                else None
+            ),
             "created_by_user_id": created_by_user_id,
         }
         for file_id in file_ids

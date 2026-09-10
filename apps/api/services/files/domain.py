@@ -295,3 +295,12 @@ class PlatformFilePublishRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_current_revision_id: UUID
+
+
+class FileCopyRequest(BaseModel):
+    """Selects a published revision and retains an identity across copy retries."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    revision_id: UUID
+    request_id: UUID

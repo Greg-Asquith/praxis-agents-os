@@ -429,3 +429,109 @@ async def test_scheduled_run_code_respects_tool_policy_for_internal_execution(
 
     assert result.run.status == expected_status
     assert executed == expected_tasks
+
+
+async def test_run_code_platform_input_produces_workspace_file(
+    db_session_factory,
+    monkeypatch,
+    run_code_storage,
+):
+    from sqlalchemy import select
+
+    from core.database import maintenance_async_db_session
+    from models.files import FileReference
+    from services.files.utils import file_revision_ref, sha256_hex
+    from services.storage.factory import get_storage_provider
+    from tests.factories import build_file, build_file_revision
+
+    _enable_openai(monkeypatch)
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["run_code"],
+        tool_policies={"run_code": "auto"},
+    )
+    async with maintenance_async_db_session() as db:
+        workspace = await db.get(Workspace, context.workspace_id)
+        file = build_file(
+            workspace=workspace,
+            workspace_id=None,
+            scope="platform",
+            name="template.csv",
+            category="editable_text",
+            content_type="text/csv",
+            extension=".csv",
+            content_hash=sha256_hex(b"amount\n42\n"),
+            size_bytes=10,
+        )
+        db.add(file)
+        await db.flush()
+        revision = build_file_revision(file, is_published=True)
+        await get_storage_provider().put_object(
+            file_revision_ref(revision),
+            b"amount\n42\n",
+            content_type="text/csv",
+        )
+        db.add(revision)
+        await db.flush()
+        file.is_published = True
+        file.current_revision_id = file.published_revision_id = revision.id
+        file.revision_count = 1
+
+    async def execute(*, inputs, edit_target, **_kwargs):
+        assert inputs[0].content == b"amount\n42\n"
+        assert inputs[0].scope == "platform"
+        assert edit_target is None
+        return (
+            "Created [totals](sandbox:/mnt/data/totals.txt).",
+            [
+                run_code_tools.CapturedSandboxFile(
+                    name="totals.txt",
+                    content=b"total\n42\n",
+                    media_type="text/plain",
+                )
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(run_code_tools, "run_native_code_execution", execute)
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            "run_code",
+                            {
+                                "task": "Create a totals file",
+                                "file_ids": [_file_reference(file.id, file.name)],
+                                "model_provider": "openai",
+                            },
+                            "platform-input",
+                        ),
+                    )
+                ),
+                "The totals file is ready.",
+            ]
+        ),
+    )
+    assert result.run.status == "completed"
+    async with db_session_factory() as db:
+        output = await db.scalar(
+            select(File).where(
+                File.workspace_id == context.workspace_id,
+                File.name == "totals.txt",
+            )
+        )
+        assert output is not None
+        assert output.scope == "workspace"
+        output_revision = await db.get(FileRevision, output.current_revision_id)
+        assert output_revision.workspace_id == context.workspace_id
+        assert output_revision.scope == "workspace"
+        assert output_revision.object_key.startswith(f"workspaces/{context.workspace_id}/")
+        reference = await db.scalar(select(FileReference).where(FileReference.file_id == output.id))
+        assert reference.workspace_id == context.workspace_id
+        assert reference.target_id == result.run.conversation_id
+        source = await db.get(File, file.id)
+        assert source.current_revision_id == revision.id
