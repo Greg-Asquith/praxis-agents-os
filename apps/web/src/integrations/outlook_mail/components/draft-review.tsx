@@ -1,7 +1,7 @@
 // apps/web/src/integrations/outlook_mail/components/draft-review.tsx
 
 import { HtmlContentFrame } from "@/components/tool-ui/html-content-frame"
-import { OutlookMessageRows } from "@/integrations/outlook_mail/components/write-outcome"
+import { MessageHeaderRows } from "@/components/tool-ui/message"
 import type { outlookDraftReview } from "@/integrations/outlook_mail/lib/draft-review"
 
 type DraftReview = NonNullable<ReturnType<typeof outlookDraftReview>>
@@ -19,7 +19,7 @@ export function OutlookDraftReview({ draft }: { draft: DraftReview }) {
   ].filter((row) => row.value)
   return (
     <div className="grid min-w-0 gap-3">
-      <OutlookMessageRows rows={rows} />
+      <MessageHeaderRows rows={rows} />
       {draft.bodyType === "html" ? (
         <HtmlContentFrame
           className="border-border h-60 rounded-lg border"

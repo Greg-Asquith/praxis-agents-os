@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/presenters/campaign-links.tsx
 
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 
@@ -10,28 +9,31 @@ import {
   type CampaignLinkCampaignOutcome,
   type CampaignLinkResult,
 } from "@/integrations/google_ads/components/campaign-link-outcome"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
+import { integrationWriteCopy } from "@/integrations/write-copy"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isOneOf, isRecord } from "@/lib/guards"
 
-const copySpec = { object: "campaign shared list" }
-const copy = googleAdsWriteCopy({
-  verb: "Update",
-  ...copySpec,
-  effect: "updated",
+const OBJECT = "campaign shared list"
+const linkCopy = integrationWriteCopy(googleAdsProvider, {
+  verb: "Link",
+  object: OBJECT,
+  effect: "linked",
 })
-const linkCopy = googleAdsWriteCopy({ ...copySpec, verb: "Link", effect: "linked" })
-const unlinkCopy = googleAdsWriteCopy({ ...copySpec, verb: "Unlink", effect: "unlinked" })
+const unlinkCopy = integrationWriteCopy(googleAdsProvider, {
+  verb: "Unlink",
+  object: OBJECT,
+  effect: "unlinked",
+})
 
-export const googleAdsCampaignLinksPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-negative-list-campaign-links",
+export const googleAdsCampaignLinksPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_link_negative_keyword_list: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_link_negative_keyword_list: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Update", object: OBJECT, effect: "updated" },
       approval: {
-        ...copy.approval,
         title: (args) =>
           args.action === "UNLINK" ? unlinkCopy.approval.title : linkCopy.approval.title,
         parseArgs: campaignLinkArgs,

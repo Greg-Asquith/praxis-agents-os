@@ -1,4 +1,4 @@
-// apps/web/src/integration/google_search_console/lib/write-args.ts
+// apps/web/src/integrations/google_search_console/lib/write-args.ts
 
 export function parseWritableSiteUrls(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length < 1 || value.length > 20) return null

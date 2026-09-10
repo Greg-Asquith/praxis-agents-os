@@ -2,7 +2,7 @@
 
 import type { DataColumn, DataRow } from "@/components/ui/data-table"
 import { titleCaseToken } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
+import { isNullableFiniteNumber, isNullableString, isRecord } from "@/lib/guards"
 
 type BigQueryTable = {
   description: string | null
@@ -68,15 +68,15 @@ export function bigQueryDatasets(value: unknown): BigQueryDataset[] | null {
         typeof rawTable["table"] !== "string" ||
         typeof rawTable["table_type"] !== "string" ||
         typeof rawTable["last_synced_at"] !== "string" ||
-        !nullableString(rawTable["description"]) ||
-        !nullableNumber(rawTable["row_count"])
+        !isNullableString(rawTable["description"] ?? null) ||
+        !isNullableFiniteNumber(rawTable["row_count"] ?? null)
       ) {
         return null
       }
       tables.push({
-        description: rawTable["description"] ?? null,
+        description: stringOrNull(rawTable["description"]),
         lastSyncedAt: rawTable["last_synced_at"],
-        rowCount: rawTable["row_count"] ?? null,
+        rowCount: numberOrNull(rawTable["row_count"]),
         table: rawTable["table"],
         tableType: rawTable["table_type"],
       })
@@ -97,9 +97,9 @@ export function bigQuerySchema(value: unknown): BigQuerySchema | null {
     typeof value["table_type"] !== "string" ||
     typeof value["last_synced_at"] !== "string" ||
     typeof value["requires_partition_filter"] !== "boolean" ||
-    !nullableString(value["description"]) ||
-    !nullableNumber(value["row_count"]) ||
-    !nullableNumber(value["size_bytes"]) ||
+    !isNullableString(value["description"] ?? null) ||
+    !isNullableFiniteNumber(value["row_count"] ?? null) ||
+    !isNullableFiniteNumber(value["size_bytes"] ?? null) ||
     !Array.isArray(value["clustering_fields"]) ||
     !value["clustering_fields"].every((item): item is string => typeof item === "string") ||
     !Array.isArray(value["fields"])
@@ -113,12 +113,12 @@ export function bigQuerySchema(value: unknown): BigQuerySchema | null {
       typeof rawField["name"] !== "string" ||
       typeof rawField["type"] !== "string" ||
       typeof rawField["mode"] !== "string" ||
-      !nullableString(rawField["description"])
+      !isNullableString(rawField["description"] ?? null)
     ) {
       return null
     }
     fields.push({
-      description: rawField["description"] ?? null,
+      description: stringOrNull(rawField["description"]),
       mode: rawField["mode"],
       name: rawField["name"],
       type: rawField["type"],
@@ -126,12 +126,12 @@ export function bigQuerySchema(value: unknown): BigQuerySchema | null {
   }
   return {
     clusteringFields: value["clustering_fields"],
-    description: value["description"] ?? null,
+    description: stringOrNull(value["description"]),
     fields,
     lastSyncedAt: value["last_synced_at"],
     requiresPartitionFilter: value["requires_partition_filter"],
-    rowCount: value["row_count"] ?? null,
-    sizeBytes: value["size_bytes"] ?? null,
+    rowCount: numberOrNull(value["row_count"]),
+    sizeBytes: numberOrNull(value["size_bytes"]),
     table: value["table"],
     tableType: value["table_type"],
   }
@@ -189,10 +189,10 @@ export function bigQueryQueryResult(value: unknown): BigQueryQueryResult | null 
   }
 }
 
-function nullableString(value: unknown): value is string | null | undefined {
-  return value === null || value === undefined || typeof value === "string"
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null
 }
 
-function nullableNumber(value: unknown): value is number | null | undefined {
-  return value === null || value === undefined || typeof value === "number"
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" ? value : null
 }

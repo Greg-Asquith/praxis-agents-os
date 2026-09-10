@@ -26,9 +26,7 @@ export function testMicrosoftIntegrationModule(contract: MicrosoftModuleContract
     await loadIntegrationUiModules([contract.providerKey])
 
     expect(providerKeyForToolName(`${contract.providerKey}_future_tool`)).toBe(contract.providerKey)
-    expect(integrationIcon(contract.providerKey)).toBe(
-      contract.module.icons?.[contract.providerKey]
-    )
+    expect(integrationIcon(contract.providerKey)).toBe(contract.module.Logo)
     expect(integrationToolRowPresenters(contract.providerKey)).toEqual(
       contract.module.toolRowPresenters ?? []
     )

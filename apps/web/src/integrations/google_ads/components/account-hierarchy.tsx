@@ -1,18 +1,8 @@
 // apps/web/src/integrations/google_ads/components/account-hierarchy.tsx
 
 import { Badge } from "@/components/ui/badge"
+import type { GoogleAdsAccount } from "@/integrations/google_ads/lib/accounts"
 import { formatGoogleAdsAccountId, titleCaseToken } from "@/lib/format"
-
-export type GoogleAdsAccount = {
-  currencyCode: string
-  customerId: string
-  displayName: string
-  enabled: boolean
-  manager: boolean
-  parentCustomerId: string | null
-  status: string
-  writable: boolean
-}
 
 export function GoogleAdsAccountHierarchy({ accounts }: { accounts: GoogleAdsAccount[] }) {
   return (

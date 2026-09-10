@@ -7,7 +7,6 @@ import {
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
 import { UpdatePositiveKeywordsApproval } from "@/integrations/google_ads/components/update-positive-keywords-approval"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 import {
   POSITIVE_KEYWORD_PATCH_FIELDS_BY_KEY,
@@ -23,10 +22,11 @@ import {
   type UpdateKeywordResult,
 } from "@/integrations/google_ads/lib/positive-keyword-update"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 
 const COLUMNS: DataColumn[] = [
   { key: "scope", kind: "text", label: "Campaign · Ad Group" },
@@ -38,15 +38,11 @@ const COLUMNS: DataColumn[] = [
   { key: "after", kind: "text", label: "After", width: 320 },
 ]
 
-const copy = googleAdsWriteCopy({ verb: "Update", object: "keywords", effect: "updated" })
-
-export const googleAdsUpdatePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-update-positive-keywords",
+export const googleAdsUpdatePositiveKeywordsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_update_keywords: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_update_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Update", object: "keywords", effect: "updated" },
       approval: {
-        ...copy.approval,
         parseArgs: updateKeywordArgs,
         validateArgs: updateKeywordArgsValidationError,
         prompt: "Review every changed keyword setting. Keyword text and match type stay unchanged.",

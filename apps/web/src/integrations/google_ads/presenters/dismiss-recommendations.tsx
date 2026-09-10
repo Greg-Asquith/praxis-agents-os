@@ -8,7 +8,7 @@ import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
 import { countByKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
 import {
@@ -16,10 +16,11 @@ import {
   parseRecommendationReference,
 } from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isRecord } from "@/lib/guards"
 
 type RecommendationReference = {
@@ -53,15 +54,11 @@ const COLUMNS: DataColumn[] = [
   { key: "resourceName", kind: "id", label: "Resource Name" },
 ]
 
-const copy = googleAdsWriteCopy({ verb: "Dismiss", object: "recommendations", effect: "dismissed" })
-
-export const googleAdsDismissRecommendationsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-dismiss-recommendations",
+export const googleAdsDismissRecommendationsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_dismiss_recommendations: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_dismiss_recommendations: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Dismiss", object: "recommendations", effect: "dismissed" },
       approval: {
-        ...copy.approval,
         parseArgs: dismissRecommendationArgs,
         prompt:
           "Dismissal hides these Google proposals. It does not apply the recommended account changes.",

@@ -2,6 +2,8 @@
 
 import { ChevronDownIcon, ExternalLinkIcon } from "lucide-react"
 
+import { DetailList } from "@/components/tool-ui/detail-list"
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { ExternalContent } from "@/components/tool-ui/external-content"
 import { nodeText, type UntrustedNode } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
@@ -11,7 +13,7 @@ import { formatDateTime, pluralize, titleCaseToken } from "@/lib/format"
 
 export function InspectionResults({ inspections }: { inspections: SearchConsoleInspection[] }) {
   if (inspections.length === 0) {
-    return <p className="text-muted-foreground text-sm">No URL inspections were returned.</p>
+    return <EmptyResult>No URL inspections were returned.</EmptyResult>
   }
   return (
     <div className="grid gap-3">
@@ -52,23 +54,29 @@ function InspectionCard({ inspection }: { inspection: SearchConsoleInspection })
 function InspectionDetail({ inspection }: { inspection: SearchConsoleInspection }) {
   return (
     <>
-      <dl className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
-        <Detail label="Coverage" value={inspection.coverageState || "Not reported"} />
-        <Detail
-          label="Last crawl"
-          value={
-            inspection.lastCrawlTime ? formatDateTime(inspection.lastCrawlTime) : "Not reported"
-          }
-        />
-        <Detail label="Crawled as" value={inspection.crawledAs || "Not reported"} />
-        <Detail label="Page fetch" value={inspection.pageFetchState || "Not reported"} />
-        <Detail label="Indexing" value={inspection.indexingState || "Not reported"} />
-        <Detail label="Robots.txt" value={inspection.robotsTxtState || "Not reported"} />
-      </dl>
-      <dl className="border-border grid gap-2 border-t pt-3 text-xs sm:grid-cols-2">
-        <ExternalDetail label="Google canonical" value={inspection.googleCanonical} />
-        <ExternalDetail label="User canonical" value={inspection.userCanonical} />
-      </dl>
+      <DetailList
+        className="lg:grid-cols-3"
+        items={[
+          { label: "Coverage", value: inspection.coverageState || "Not reported" },
+          {
+            label: "Last crawl",
+            value: inspection.lastCrawlTime
+              ? formatDateTime(inspection.lastCrawlTime)
+              : "Not reported",
+          },
+          { label: "Crawled as", value: inspection.crawledAs || "Not reported" },
+          { label: "Page fetch", value: inspection.pageFetchState || "Not reported" },
+          { label: "Indexing", value: inspection.indexingState || "Not reported" },
+          { label: "Robots.txt", value: inspection.robotsTxtState || "Not reported" },
+        ]}
+      />
+      <DetailList
+        className="border-border border-t pt-3"
+        items={[
+          { label: "Google canonical", value: reported(inspection.googleCanonical) },
+          { label: "User canonical", value: reported(inspection.userCanonical) },
+        ]}
+      />
       <div className="grid gap-2 sm:grid-cols-2">
         <UrlDisclosure label="Sitemaps" values={inspection.sitemap} />
         <UrlDisclosure label="Referring URLs" values={inspection.referringUrls} />
@@ -104,17 +112,8 @@ function InspectionDetail({ inspection }: { inspection: SearchConsoleInspection 
   )
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid min-w-0 gap-0.5">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="wrap-break-word">{value}</dd>
-    </div>
-  )
-}
-
-function ExternalDetail({ label, value }: { label: string; value: UntrustedNode | null }) {
-  return <Detail label={label} value={nodeText(value) ?? "Not reported"} />
+function reported(value: UntrustedNode | null): string {
+  return nodeText(value) ?? "Not reported"
 }
 
 function UrlDisclosure({ label, values }: { label: string; values: UntrustedNode[] }) {

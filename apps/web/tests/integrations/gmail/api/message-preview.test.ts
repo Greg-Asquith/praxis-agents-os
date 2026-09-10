@@ -30,7 +30,8 @@ describe("Gmail API query keys", () => {
       "conversation",
       "conversation-1",
       "gmail",
-      "message-preview",
+      "gmail_message",
+      "content-preview",
       "hello@example.com",
       "message-1",
     ])

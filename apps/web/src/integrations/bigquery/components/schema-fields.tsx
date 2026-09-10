@@ -1,5 +1,6 @@
 // apps/web/src/integrations/bigquery/components/schema-fields.tsx
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { Badge } from "@/components/ui/badge"
 import { formatBytes } from "@/lib/format"
 import type { BigQuerySchema } from "@/integrations/bigquery/lib/results"
@@ -48,9 +49,7 @@ export function BigQuerySchemaFields({ schema }: { schema: BigQuerySchema }) {
           ))}
         </div>
       ) : (
-        <p className="text-muted-foreground py-4 text-center text-sm">
-          No cached fields for this table.
-        </p>
+        <EmptyResult>No cached fields for this table.</EmptyResult>
       )}
     </div>
   )

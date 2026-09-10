@@ -1,6 +1,6 @@
 // apps/web/src/components/tool-ui/message.tsx
 
-import { useState, type ReactElement, type ReactNode } from "react"
+import { Fragment, useState, type ReactElement, type ReactNode } from "react"
 import { MailIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
+import { EmptyResult } from "@/components/tool-ui/empty-result"
+import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export function MessageListRow({
@@ -174,5 +176,61 @@ export function MessageDetailSkeleton({ label }: { label: string }) {
       <Skeleton className="h-28 w-full" />
       <span className="sr-only">{label}</span>
     </section>
+  )
+}
+
+export function MessageList<T>({
+  ariaLabel,
+  emptyLabel,
+  items,
+  keyOf,
+  renderItem,
+}: {
+  ariaLabel: string
+  emptyLabel: string
+  items: T[]
+  keyOf: (item: T) => string
+  renderItem: (item: T) => ReactNode
+}) {
+  if (items.length === 0) {
+    return <EmptyResult>{emptyLabel}</EmptyResult>
+  }
+  return (
+    <div className="grid min-w-0 gap-2">
+      <p className="text-muted-foreground text-xs">
+        {String(items.length)} {pluralize(items.length, "Message")}
+      </p>
+      <div
+        aria-label={ariaLabel}
+        className="grid max-h-[min(32rem,60vh)] min-w-0 gap-2 overflow-y-auto overscroll-contain pr-1"
+        role="list"
+      >
+        {items.map((item) => (
+          <div className="min-w-0" key={keyOf(item)} role="listitem">
+            {renderItem(item)}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Compact header rows shared by outcome cards and draft reviews.
+export function MessageHeaderRows({
+  className,
+  rows,
+}: {
+  className?: string
+  rows: { label: string; value: string }[]
+}) {
+  return (
+    <dl className={cn("grid min-w-0 gap-2 text-xs sm:grid-cols-[4rem_1fr]", className)}>
+      {rows.map((row, index) => (
+        <Fragment key={`${row.label}-${String(index)}`}>
+          <dt className="text-muted-foreground">{row.label}</dt>
+          <dd className="min-w-0 wrap-break-word">{row.value}</dd>
+        </Fragment>
+      ))}
+    </dl>
   )
 }

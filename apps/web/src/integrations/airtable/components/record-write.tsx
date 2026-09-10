@@ -1,15 +1,26 @@
-// apps/web/src/integrations/airtable/components/write-outcome.tsx
+// apps/web/src/integrations/airtable/components/record-write.tsx
 
 import { CircleCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { microLabelClass } from "@/components/ui/stat"
 import { AirtableFieldGrid } from "@/integrations/airtable/components/record-fields"
+import type { AirtableWriteAction } from "@/integrations/airtable/lib/record-data"
+
+export function AirtableFieldsToWrite({ fields }: { fields: Record<string, unknown> }) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <p className={microLabelClass}>Fields to write</p>
+      <AirtableFieldGrid fields={fields} />
+    </div>
+  )
+}
 
 export function AirtableWriteReceipt({
   action,
   recordId,
 }: {
-  action: "create" | "update"
+  action: AirtableWriteAction
   recordId: string
 }) {
   return (

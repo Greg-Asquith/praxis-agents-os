@@ -1,4 +1,4 @@
-// apps/web/src/integrations/google_ads/presenters/negative-keywords/utils.tsx
+// apps/web/src/integrations/google_ads/presenters/negative-keywords/utils.ts
 
 import {
   parseScopedNegativeKeywordResult,

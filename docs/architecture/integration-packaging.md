@@ -463,12 +463,26 @@ separately distributed or installed.
 apps/web/src/integrations/
   contract.ts        # IntegrationUiModule type and re-exported tool-UI contracts
   registry.ts        # providerKey maps to a lazy provider import
+  provider-ui.tsx    # IntegrationProviderUi identity and the shared tool heading
+  read-presenter.tsx # fan-out and single-result read presenter factories
+  write-presenter.tsx# approval, lifecycle, and settled fan-out for writes
+  write-copy.ts      # lifecycle sentence templates shared by every provider
+  tool-details.ts    # argument readers and details-popover builders
+  connect-help.tsx   # setup guidance cards
   gmail/
     index.ts         # default-exports IntegrationUiModule
-    *-row.tsx        # custom ToolRowPresenters when needed
+    provider.ts      # the provider's IntegrationProviderUi object
+    presenters/      # one ToolRowPresenter per tool, built on the seams
+    components/      # provider visuals, including the logo
+    lib/             # parsers and detail builders
+    api/             # TanStack Query operations, when needed
   google_ads/
   ...
 ```
+
+Root files are the shared seams. The dependency rules forbid one provider
+directory importing another, so anything two providers need lives at the root
+or in the engine-owned `src/components/tool-ui/` kits.
 
 `src/integrations/` sits beside `src/features/` — same reasoning as the
 backend: a boundary, not a subfolder.
@@ -477,10 +491,11 @@ backend: a boundary, not a subfolder.
 
 ```ts
 export type IntegrationUiModule = {
+  catalogDescription?: string;
+  ConnectHelp?: ComponentType<{ provider: IntegrationProvider }>;
+  Logo: ComponentType<SVGProps<SVGSVGElement>>; // also the tool-ui icon token equal to the provider key
   providerKey: string;
   toolRowPresenters?: ToolRowPresenter[]; // custom rows, first-match-wins
-  icons?: Record<string, LucideIcon>; // extends the tool-ui icon tokens
-  ConnectHelp?: ComponentType<{ provider: IntegrationProviderEntry }>;
 };
 ```
 
@@ -593,17 +608,16 @@ or any `features/` code. Reviewers hold the line here.
 
 ## 9. Provider set
 
-Google Ads and Search Console configure `src/integrations/write-presenter.tsx`
-through thin adapters at their existing presenter paths. This provider-neutral
-seam owns approval argument merging, fail-closed validation, untrusted-source
-metadata, lifecycle states, and settled fan-out rendering. Provider packages
-own identity, copy, parsers, validation, summaries, and outcome components.
-Search Console supplies `renderUnverifiedOutcome` to retain detailed evidence
-beneath the warning. Google Ads keeps its failure view without that callback.
-The shared module imports no provider package, and providers import no sibling.
-Google Ads and Search Console share the write lifecycle because their approval
-and result envelopes follow the same contract. Notion retains its separate
-write presenter.
+Every provider with write tools configures `src/integrations/write-presenter.tsx`
+directly with its `IntegrationProviderUi` object and a copy spec. This
+provider-neutral seam owns approval argument merging, fail-closed validation,
+untrusted-source metadata, lifecycle states, lifecycle copy, and settled
+fan-out rendering. Provider packages own parsers, validation, prompts,
+summaries, and outcome components.
+Search Console and Outlook Mail supply `renderUnverifiedOutcome` to retain
+detailed evidence beneath the warning. Google Ads keeps its failure view without
+that callback. The shared module imports no provider package, and providers
+import no sibling.
 
 Editable budget assignments refresh display evidence through the authorized
 conversation-scoped entity lookup. Campaign reads establish source budget IDs;

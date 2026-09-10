@@ -1,147 +1,57 @@
 // apps/web/src/integrations/gmail/presenters/send.tsx
 
-import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
-import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
-import { parseFanOutData } from "@/components/tool-ui/fan-out"
-import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
-import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
-import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
-import { GmailLogo } from "@/integrations/gmail/components/logo"
-import { GmailSendMessage, sentMessageArgs } from "@/integrations/gmail/components/sent-message"
-import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
-import { GmailToolHeading } from "@/integrations/gmail/components/tool-heading"
-import { isRecord } from "@/lib/guards"
+import { MessageWriteOutcome, type MessageOutcomeView } from "@/components/tool-ui/message-outcome"
+import { MAIL_OUTCOME_ICONS } from "@/components/tool-ui/message-outcome-icons"
+import { gmailRecipientRows, gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
+import {
+  parseGmailSendArgs,
+  parseGmailSentMessageId,
+  type GmailSendArgs,
+} from "@/integrations/gmail/lib/write-args"
+import { gmailProvider } from "@/integrations/gmail/provider"
+import {
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 
-export const gmailSendPresenter: ToolRowPresenter = {
-  handlesApprovals: true,
-  key: "gmail-send-message",
-  matches: (activity) => activity.name === "gmail_send_message",
-  render: ({ activity, approvalDecision, defaultOpen, ui }) => {
-    if (approvalDecision) {
-      if (!sentMessageArgs(activity.args)) {
-        return null
-      }
-      const fields = ui?.arg_fields ?? []
-      return (
-        <ToolApprovalDecisionCard
-          activityId={approvalActivityIdentity(activity)}
-          approveLabel="Approve & Send"
-          args={activity.args}
-          controls={approvalDecision}
-          fallbackFields={approvalFallbackFields(activity.args, fields)}
-          fields={fields}
-          icon={<GmailLogo className="size-4" />}
-          label="Send Gmail Message"
-          prompt="The agent wants to send this email from the selected mailbox."
-          title="Review email before sending"
-          toolName={activity.name}
+export const gmailSendPresenter = createIntegrationWritePresenter({
+  variants: {
+    gmail_send_message: defineIntegrationWriteVariant<GmailSendArgs, string>(gmailProvider, {
+      approval: {
+        parseArgs: parseGmailSendArgs,
+        prompt: "The agent wants to send this email from the selected mailbox.",
+      },
+      copy: { effect: "sent", object: "email", verb: "Send" },
+      details: gmailSendDetails,
+      parseResult: parseGmailSentMessageId,
+      renderFailure: (args, description, _result, disposition) => (
+        <MessageWriteOutcome
+          description={description}
+          outcome={disposition === "unconfirmed" ? "unverified" : "failed"}
+          url={null}
+          view={sentEmailView(args)}
         />
-      )
-    }
-    if (activity.status === "running") {
-      return (
-        <FanOutSkeleton
-          heading={<GmailToolHeading>Send Gmail Message</GmailToolHeading>}
-          label="Sending email…"
+      ),
+      renderOutcome: (_messageId, args) => (
+        <MessageWriteOutcome
+          description={null}
+          outcome="applied"
+          url={null}
+          view={sentEmailView(args)}
         />
-      )
-    }
-    if (activity.status === "awaiting_approval") {
-      return (
-        <FanOutSkeleton
-          heading={<GmailToolHeading>Send Gmail Message</GmailToolHeading>}
-          label="Waiting for email approval…"
-        />
-      )
-    }
-    if (activity.status === "denied") {
-      return sendDeclined(activity, "This email was declined and was not sent.", defaultOpen)
-    }
-    if (activity.status === "failed" || activity.status === "unknown") {
-      return sendFailure(
-        activity.id,
-        activity.args,
-        "The send did not finish. No delivery was confirmed.",
-        defaultOpen
-      )
-    }
-    const fanOut = parseFanOutData(activity.result, sentMessageId)
-    if (!fanOut) {
-      return sendFailure(
-        activity.id,
-        activity.args,
-        "The system could not confirm that this email was delivered.",
-        defaultOpen
-      )
-    }
-    const { entries } = fanOut
-    return (
-      <div aria-label="Sent Gmail messages" className="w-full min-w-0">
-        <FanOutShell
-          contextLabel="Mailbox"
-          defaultOpen={defaultOpen}
-          details={gmailSendDetails(activity.args)}
-          entries={entries}
-          emptyLabel="No mailbox sent this message."
-          externalLabel="Email"
-          heading={<GmailToolHeading>Send Gmail Message</GmailToolHeading>}
-        >
-          {() => <GmailSendMessage args={activity.args} state="sent" />}
-        </FanOutShell>
-      </div>
-    )
+      ),
+    }),
   },
-}
+})
 
-function sendDeclined(activity: ToolActivity, description: string, defaultOpen: boolean) {
-  return (
-    <DeclinedFanOut
-      activityId={approvalActivityIdentity(activity)}
-      ariaLabel="Declined Gmail Message"
-      contextLabel="Mailbox"
-      defaultOpen={defaultOpen}
-      description={description}
-      details={gmailSendDetails(activity.args)}
-      displayName="Selected mailbox"
-      externalLabel="Email"
-      heading={<GmailToolHeading>Send Gmail Message</GmailToolHeading>}
-      providerKey="gmail"
-      reason={activity.decisionReason}
-    />
-  )
-}
-
-function sendFailure(activityId: string, args: unknown, description: string, defaultOpen: boolean) {
-  const entries = [
-    {
-      data: null,
-      displayName: "Selected mailbox",
-      errorMessage: description,
-      externalId: "Selected mailbox",
-      providerKey: "gmail",
-      renderKey: `gmail:failure:${activityId}`,
-      status: "failed",
-    },
-  ]
-  return (
-    <div aria-label="Unsent Gmail Message" className="w-full min-w-0">
-      <FanOutShell
-        contextLabel="Mailbox"
-        defaultOpen={defaultOpen}
-        details={gmailSendDetails(args)}
-        entries={entries}
-        externalLabel="Email"
-        heading={<GmailToolHeading>Send Gmail Message</GmailToolHeading>}
-        renderFailed={() => (
-          <GmailSendMessage args={args} description={description} state="not-sent" />
-        )}
-      >
-        {() => null}
-      </FanOutShell>
-    </div>
-  )
-}
-
-function sentMessageId(value: unknown): string | null {
-  return isRecord(value) && typeof value["message_id"] === "string" ? value["message_id"] : null
+function sentEmailView(args: GmailSendArgs | null): MessageOutcomeView {
+  return {
+    body: args?.body ?? null,
+    icons: MAIL_OUTCOME_ICONS,
+    linkLabel: () => "Open in Gmail",
+    note: "Gmail accepted the email for sending.",
+    rows: args ? gmailRecipientRows(args) : [],
+    subject: args?.subject ?? null,
+    titles: { applied: "Email sent", failed: "Email not sent", unverified: "Send not confirmed" },
+  }
 }

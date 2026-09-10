@@ -1,36 +1,16 @@
 // apps/web/src/integrations/outlook_mail/presenters/read.tsx
 
-import { parseFanOutData } from "@/components/tool-ui/fan-out"
-import type { ToolRowPresenter } from "@/integrations/contract"
-import { OutlookFanOut, OutlookSkeleton } from "@/integrations/outlook_mail/components/fan-out"
 import { OutlookMessageBody } from "@/integrations/outlook_mail/components/message"
 import { readMessage } from "@/integrations/outlook_mail/lib/messages"
+import { outlookMailProvider } from "@/integrations/outlook_mail/provider"
+import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
 
-const TITLE = "Read Outlook Message"
-
-export const outlookMailReadPresenter: ToolRowPresenter = {
-  key: "outlook-mail-read",
-  matches: (activity) => activity.name === "outlook_mail_read_message",
-  render: ({ activity, defaultOpen }) => {
-    if (activity.status === "running") {
-      return <OutlookSkeleton label="Reading message…" title={TITLE} />
-    }
-    const result = parseFanOutData(activity.result, readMessage)
-    if (!result) {
-      return null
-    }
-    return (
-      <OutlookFanOut
-        defaultOpen={defaultOpen}
-        emptyLabel="No mailbox returned this message."
-        entries={result.entries}
-        title={TITLE}
-      >
-        {(_entry, index) => {
-          const message = result.data[index]
-          return message ? <OutlookMessageBody message={message} /> : null
-        }}
-      </OutlookFanOut>
-    )
-  },
-}
+export const outlookMailReadPresenter = defineIntegrationReadPresenter(outlookMailProvider, {
+  ariaLabel: "Read Outlook Message results",
+  emptyLabel: "No mailbox returned this message.",
+  heading: "Read Outlook Message",
+  parseResult: readMessage,
+  progressLabel: "Reading message…",
+  render: (message) => <OutlookMessageBody message={message} />,
+  tool: "outlook_mail_read_message",
+})

@@ -207,8 +207,8 @@ describe("Outlook write presenters", () => {
     ["outlook_mail_reply_to_message", "Review reply before sending", "Approve &amp; Send"],
     ["outlook_mail_forward_message", "Review email before forwarding", "Approve &amp; Forward"],
     ["outlook_mail_create_draft", "Review draft before saving", "Approve &amp; Save"],
-    ["outlook_mail_move_message", "Review message move", "Approve &amp; Move"],
-    ["outlook_mail_update_message", "Review message update", "Approve &amp; Update"],
+    ["outlook_mail_move_message", "Review message before moving", "Approve &amp; Move"],
+    ["outlook_mail_update_message", "Review message before updating", "Approve &amp; Update"],
   ])("renders a branded approval card for %s", (name, title, approve) => {
     const context = props(name, "awaiting_approval")
     context.approvalDecision = controls()
@@ -265,7 +265,7 @@ describe("Outlook write presenters", () => {
 
   it.each([
     ["running", "Sending email…"],
-    ["awaiting_approval", "Waiting for approval to send this email…"],
+    ["awaiting_approval", "Waiting for approval to send email…"],
     ["failed", "The email could not be sent."],
   ] as const)("renders the %s state for a send", (status, copy) => {
     const html = render(outlookMailSendPresenter.render(props("outlook_mail_send_message", status)))
@@ -284,7 +284,7 @@ describe("Outlook write presenters", () => {
         props("outlook_mail_send_message", "denied", { decisionReason: "Wrong recipient" })
       )
     )
-    expect(html).toContain("This email was declined and was not sent.")
+    expect(html).toContain("This request was declined. Nothing was sent.")
     expect(html).toContain("Wrong recipient")
     expect(html).toContain("Subject: Monthly report")
     expect(html).not.toContain(">Failed<")
@@ -405,7 +405,7 @@ describe("Outlook write presenters", () => {
       }),
     ])
     expect(html).toContain("Send not confirmed")
-    expect(html).toContain("couldn&#x27;t verify whether Outlook sent this email")
+    expect(html).toContain("couldn&#x27;t verify whether Outlook sent the email")
     expect(html).toContain("Open in Outlook")
     expect(html).not.toContain("Open draft in Outlook")
     expect(html).not.toContain("Raw provider message")
@@ -429,11 +429,11 @@ describe("Outlook write presenters", () => {
     const missingMessage = completed("outlook_mail_update_message", [
       entry(applied({ message: null })),
     ])
-    expect(missingMessage).toContain("could not confirm that this message was updated")
+    expect(missingMessage).toContain("couldn&#x27;t confirm the message outcome")
     expect(missingMessage).not.toContain("Message updated")
     const html = render(
       outlookMailUpdatePresenter.render(props("outlook_mail_update_message", "completed"))
     )
-    expect(html).toContain("could not confirm that this message was updated")
+    expect(html).toContain("couldn&#x27;t confirm the message outcome")
   })
 })

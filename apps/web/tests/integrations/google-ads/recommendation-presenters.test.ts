@@ -346,7 +346,7 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads recommendations results"')
+    expect(html).toContain('aria-label="Apply Google Ads Recommendations results"')
     expect(html).toContain("Applied")
     expect(html).toContain("Failed")
     expect(html).toContain("Unverified")
@@ -393,7 +393,7 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(malformed).toContain("couldn&#x27;t verify this account&#x27;s recommendations outcomes")
+    expect(malformed).toContain("couldn&#x27;t confirm the recommendations outcome")
     expect(unverified).toContain("couldn&#x27;t verify whether Google Ads applied")
     expect(unverified).not.toContain("transport error")
   })
@@ -459,7 +459,7 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads recommendations results"')
+    expect(html).toContain('aria-label="Dismiss Google Ads Recommendations results"')
     expect(html).toContain("Dismissed")
     expect(html).toContain("Already dismissed")
     expect(html).toContain("Failed")
@@ -502,17 +502,17 @@ describe("Google Ads recommendation presenters", () => {
       )
     )
 
-    expect(malformed).toContain("couldn&#x27;t verify this account&#x27;s recommendations")
+    expect(malformed).toContain("couldn&#x27;t confirm the recommendations outcome")
     expect(unverified).toContain("couldn&#x27;t verify whether Google Ads dismissed")
     expect(unverified).not.toContain("transport error")
   })
 
   it("registers separate apply and dismiss presenters in the Google Ads module", () => {
     expect(googleAdsModule.toolRowPresenters.map((presenter) => presenter.key)).toContain(
-      "google-ads-apply-recommendations"
+      "google_ads_apply_recommendations"
     )
     expect(googleAdsModule.toolRowPresenters.map((presenter) => presenter.key)).toContain(
-      "google-ads-dismiss-recommendations"
+      "google_ads_dismiss_recommendations"
     )
     expect(googleAdsApplyRecommendationsPresenter.handlesApprovals).toBe(true)
     expect(googleAdsDismissRecommendationsPresenter.handlesApprovals).toBe(true)

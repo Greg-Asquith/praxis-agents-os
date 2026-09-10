@@ -9,9 +9,9 @@ import { notionSearchPagesPresenter } from "@/integrations/notion/presenters/sea
 import { notionWritePresenter } from "@/integrations/notion/presenters/write"
 
 export default {
-  catalogDescription: "Connect a Notion workspace and choose which pages agents can access.",
+  catalogDescription: "Let agents read and update the Notion pages you choose.",
   ConnectHelp: NotionConnectHelp,
-  icons: { notion: NotionLogo },
+  Logo: NotionLogo,
   providerKey: "notion",
   toolRowPresenters: [
     notionSearchPagesPresenter,

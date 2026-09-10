@@ -10,7 +10,7 @@ import type {
   OutlookSendArgs,
   OutlookUpdateArgs,
 } from "@/integrations/outlook_mail/lib/write-args"
-import { isRecord } from "@/lib/guards"
+import { booleanArg, numberArg, stringArg } from "@/integrations/tool-details"
 
 const FOLDER_LABELS: Record<string, string> = {
   archive: "Archive",
@@ -28,7 +28,7 @@ function outlookFolderLabel(folder: string): string {
 export function outlookSearchDetails(args: unknown): FanOutDetail[] {
   const folder = stringArg(args, "folder") ?? "inbox"
   const query = stringArg(args, "query")
-  const unreadOnly = isRecord(args) && args["unread_only"] === true
+  const unreadOnly = booleanArg(args, "unread_only") === true
   const limit = numberArg(args, "limit") ?? 10
   return [
     { label: "Folder", value: outlookFolderLabel(folder) },
@@ -126,14 +126,4 @@ function withSubject(rows: FanOutDetail[], subject: string | null): FanOutDetail
   return to?.label === "To"
     ? [to, { label: "Subject", value: subject }, ...rest]
     : [{ label: "Subject", value: subject }, ...rows]
-}
-
-function stringArg(args: unknown, key: string): string | null {
-  if (!isRecord(args) || typeof args[key] !== "string") return null
-  const value = args[key].trim()
-  return value || null
-}
-
-function numberArg(args: unknown, key: string): number | null {
-  return isRecord(args) && typeof args[key] === "number" ? args[key] : null
 }

@@ -1,6 +1,6 @@
 // apps/web/src/components/tool-ui/provider-preview-queries.ts
 
-import { queryOptions, type QueryKey } from "@tanstack/react-query"
+import { queryOptions, type QueryClient, type QueryKey } from "@tanstack/react-query"
 
 import { apiRequest } from "@/lib/api/client"
 import { baseIntegrationQueryKeys } from "@/lib/integration-query-keys"
@@ -49,4 +49,17 @@ export function providerPreviewQueryOptions<
     staleTime: Number.POSITIVE_INFINITY,
     retry: 1,
   })
+}
+
+// Returns an open handler that warms the preview cache before the popover renders.
+export function prefetchProviderPreview(
+  queryClient: QueryClient,
+  conversationId: string | null,
+  build: (conversationId: string) => ReturnType<typeof providerPreviewQueryOptions>
+) {
+  return () => {
+    if (conversationId !== null) {
+      void queryClient.prefetchQuery(build(conversationId))
+    }
+  }
 }

@@ -206,7 +206,7 @@ describe.each(cases)("$name result evidence", (test) => {
         data.counts[test.applied] = 0
         data.counts["failed"] = 1
       }
-      expect(render(test.name, data)).toContain("couldn&#x27;t verify this account&#x27;s")
+      expect(render(test.name, data)).toContain("couldn&#x27;t confirm the")
       expect(captured.tables).toHaveLength(0)
     }
   )

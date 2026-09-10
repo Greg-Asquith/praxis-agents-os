@@ -1,51 +1,31 @@
 // apps/web/src/integrations/gmail/lib/tool-details.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
-import { isRecord } from "@/lib/guards"
+import type { GmailSendArgs } from "@/integrations/gmail/lib/write-args"
+import { compactDetails, numberArg, stringArg } from "@/integrations/tool-details"
 
 export function gmailSearchDetails(args: unknown): FanOutDetail[] {
   const query = stringArg(args, "query")
   const limit = numberArg(args, "limit") ?? 10
-  return [
-    ...(query ? [{ label: "Search", value: query }] : []),
+  return compactDetails([
+    query ? { label: "Search", value: query } : null,
     { label: "Results", value: `Up to ${String(limit)} messages` },
-  ]
-}
-
-export function gmailSendDetails(args: unknown): FanOutDetail[] {
-  return compact([
-    listArg(args, "to", "To"),
-    stringDetail(args, "subject", "Subject"),
-    listArg(args, "cc", "Cc"),
-    listArg(args, "bcc", "Bcc"),
   ])
 }
 
-function stringDetail(args: unknown, key: string, label: string): FanOutDetail | null {
-  const value = stringArg(args, key)
-  return value ? { label, summary: true, value } : null
+export function gmailRecipientRows(args: GmailSendArgs): FanOutDetail[] {
+  return compactDetails([
+    { label: "To", value: args.to.join(", ") },
+    args.cc.length > 0 ? { label: "Cc", value: args.cc.join(", ") } : null,
+    args.bcc.length > 0 ? { label: "Bcc", value: args.bcc.join(", ") } : null,
+  ])
 }
 
-function listArg(args: unknown, key: string, label: string): FanOutDetail | null {
-  if (!isRecord(args) || !Array.isArray(args[key])) {
-    return null
+// The subject follows To so the card summary reads like an email header.
+export function gmailSendDetails(args: GmailSendArgs | null): FanOutDetail[] {
+  if (!args) {
+    return []
   }
-  const values = args[key].filter((value): value is string => typeof value === "string")
-  return values.length > 0 ? { label, value: values.join(", ") } : null
-}
-
-function stringArg(args: unknown, key: string): string | null {
-  if (!isRecord(args) || typeof args[key] !== "string") {
-    return null
-  }
-  const value = args[key].trim()
-  return value || null
-}
-
-function numberArg(args: unknown, key: string): number | null {
-  return isRecord(args) && typeof args[key] === "number" ? args[key] : null
-}
-
-function compact<T>(values: (T | null)[]): T[] {
-  return values.filter((value): value is T => value !== null)
+  const [to, ...rest] = gmailRecipientRows(args)
+  return compactDetails([to ?? null, { label: "Subject", value: args.subject }, ...rest])
 }

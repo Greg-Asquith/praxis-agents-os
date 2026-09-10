@@ -7,10 +7,10 @@ import { beforeAll, describe, expect, it } from "vitest"
 
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { toolPresentationsQueryOptions } from "@/features/tools/api/list-tool-presentations"
-import { inspectionPresenter } from "@/integrations/google_search_console/presenters/inspection"
-import { searchAnalyticsPresenter } from "@/integrations/google_search_console/presenters/search-analytics"
-import { sitemapsPresenter } from "@/integrations/google_search_console/presenters/sitemaps"
 import type { ToolActivity } from "@/integrations/contract"
+import { googleSearchConsoleInspectionPresenter } from "@/integrations/google_search_console/presenters/inspection"
+import { googleSearchConsoleSearchAnalyticsPresenter } from "@/integrations/google_search_console/presenters/search-analytics"
+import { googleSearchConsoleSitemapsPresenter } from "@/integrations/google_search_console/presenters/sitemaps"
 import { loadIntegrationUiModules } from "@/integrations/registry"
 
 describe("Google Search Console presenters", () => {
@@ -20,7 +20,7 @@ describe("Google Search Console presenters", () => {
 
   it("renders a bounded Search Analytics table and query details", () => {
     const html = render(
-      searchAnalyticsPresenter.render(
+      googleSearchConsoleSearchAnalyticsPresenter.render(
         props({
           id: "search-1",
           kind: "result",
@@ -50,7 +50,7 @@ describe("Google Search Console presenters", () => {
 
   it("renders sitemap status and an honest empty state", () => {
     const populated = render(
-      sitemapsPresenter.render(
+      googleSearchConsoleSitemapsPresenter.render(
         props({
           id: "sitemaps-1",
           kind: "result",
@@ -61,7 +61,7 @@ describe("Google Search Console presenters", () => {
       )
     )
     const empty = render(
-      sitemapsPresenter.render(
+      googleSearchConsoleSitemapsPresenter.render(
         props({
           id: "sitemaps-empty",
           kind: "result",
@@ -83,7 +83,7 @@ describe("Google Search Console presenters", () => {
   it("renders loading and partial-failure states and rejects malformed results", () => {
     expect(
       render(
-        searchAnalyticsPresenter.render(
+        googleSearchConsoleSearchAnalyticsPresenter.render(
           props({
             id: "search-running",
             kind: "call",
@@ -95,7 +95,7 @@ describe("Google Search Console presenters", () => {
     ).toContain("Querying Search Analytics")
     expect(
       render(
-        sitemapsPresenter.render(
+        googleSearchConsoleSitemapsPresenter.render(
           props({
             id: "sitemaps-running",
             kind: "call",
@@ -107,7 +107,7 @@ describe("Google Search Console presenters", () => {
     ).toContain("Listing Search Console sitemaps")
 
     const partial = render(
-      searchAnalyticsPresenter.render(
+      googleSearchConsoleSearchAnalyticsPresenter.render(
         props({
           id: "search-partial",
           kind: "result",
@@ -132,7 +132,7 @@ describe("Google Search Console presenters", () => {
     expect(partial).toContain("Search Console access was removed")
 
     expect(
-      searchAnalyticsPresenter.render(
+      googleSearchConsoleSearchAnalyticsPresenter.render(
         props({
           id: "search-bad",
           kind: "result",
@@ -146,7 +146,7 @@ describe("Google Search Console presenters", () => {
 
   it("renders URL inspection details, disclosures, links, loading, and URL errors", () => {
     const populated = render(
-      inspectionPresenter.render(
+      googleSearchConsoleInspectionPresenter.render(
         props({
           id: "inspection-1",
           kind: "result",
@@ -157,7 +157,7 @@ describe("Google Search Console presenters", () => {
       )
     )
     const failedUrl = render(
-      inspectionPresenter.render(
+      googleSearchConsoleInspectionPresenter.render(
         props({
           id: "inspection-error",
           kind: "result",
@@ -168,7 +168,7 @@ describe("Google Search Console presenters", () => {
       )
     )
     const empty = render(
-      inspectionPresenter.render(
+      googleSearchConsoleInspectionPresenter.render(
         props({
           id: "inspection-empty",
           kind: "result",
@@ -179,7 +179,7 @@ describe("Google Search Console presenters", () => {
       )
     )
     const loading = render(
-      inspectionPresenter.render(
+      googleSearchConsoleInspectionPresenter.render(
         props({
           id: "inspection-running",
           kind: "call",
@@ -200,7 +200,7 @@ describe("Google Search Console presenters", () => {
     expect(empty).toContain("No URL inspections were returned")
     expect(loading).toContain("Inspecting Search Console URLs")
     expect(
-      inspectionPresenter.render(
+      googleSearchConsoleInspectionPresenter.render(
         props({
           id: "inspection-bad",
           kind: "result",

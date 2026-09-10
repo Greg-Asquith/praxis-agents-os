@@ -18,12 +18,13 @@ import {
   loadIntegrationUiModules,
   providerKeyForToolName,
 } from "@/integrations/registry"
+import { prefetchProviderPreview } from "@/components/tool-ui/provider-preview-queries"
+import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
+import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
+import { parseGmailSendArgs } from "@/integrations/gmail/lib/write-args"
 import { gmailReadPresenter } from "@/integrations/gmail/presenters/read"
-import { gmailSearchMessageSelectHandler } from "@/integrations/gmail/lib/search-interaction"
 import { gmailSearchPresenter } from "@/integrations/gmail/presenters/search"
 import { gmailSendPresenter } from "@/integrations/gmail/presenters/send"
-import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
-import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
 
 const NODE = (content: string, ref = "message-1") => ({
   node: "praxis_untrusted" as const,
@@ -110,12 +111,9 @@ describe("Gmail tool presenters", () => {
     )
     vi.stubGlobal("fetch", fetchPreview)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const selectMessage = gmailSearchMessageSelectHandler({
-      conversationId: "conversation-1",
-      mailboxId: "hello@example.com",
-      messageId: "message-1",
-      queryClient,
-    })
+    const selectMessage = prefetchProviderPreview(queryClient, "conversation-1", (id) =>
+      gmailMessagePreviewQueryOptions(id, "hello@example.com", "message-1")
+    )
 
     selectMessage()
     await vi.waitFor(() => {
@@ -358,14 +356,16 @@ describe("Gmail tool presenters", () => {
 
   it("keeps long send inputs in the details popover but out of the header summary", () => {
     expect(
-      gmailSendDetails({
-        to: ["client@example.com"],
-        subject: "Project update",
-        body_html: "<p>A long message body</p>",
-      })
+      gmailSendDetails(
+        parseGmailSendArgs({
+          to: ["client@example.com"],
+          subject: "Project update",
+          body_html: "<p>A long message body</p>",
+        })
+      )
     ).toEqual([
       { label: "To", value: "client@example.com" },
-      { label: "Subject", summary: true, value: "Project update" },
+      { label: "Subject", value: "Project update" },
     ])
   })
 
@@ -390,8 +390,8 @@ describe("Gmail tool presenters", () => {
     )
     const html = render(rendered)
 
-    expect(html).toContain('aria-label="Sent Gmail messages"')
-    expect(html).toContain('aria-label="Sent email"')
+    expect(html).toContain('aria-label="Send Gmail Email results"')
+    expect(html).toContain('aria-label="Email sent"')
     expect(html).toContain("Email sent")
     expect(html).toContain("Project update")
     expect(html).toContain("client@example.com")
@@ -417,14 +417,14 @@ describe("Gmail tool presenters", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Unsent Gmail Message"')
+    expect(html).toContain('aria-label="Unconfirmed Send Gmail Email"')
     expect(html).toContain('aria-expanded="true"')
     expect(html).toContain("Collapse results")
-    expect(html).toContain("Send Gmail Message")
+    expect(html).toContain("Send Gmail Email")
     expect(html).toContain("Email not sent")
     expect(html).toContain("Failed")
     expect(html).toContain("Details")
-    expect(html).toContain("No delivery was confirmed.")
+    expect(html).toContain("The email could not be sent.")
     expect(html).toContain("Project update")
     expect(html).toContain("client@example.com")
   })
@@ -463,8 +463,8 @@ describe("Gmail tool presenters", () => {
       )
     )
 
-    expect(html).toContain("Email not sent")
-    expect(html).toContain("could not confirm")
+    expect(html).toContain("Send not confirmed")
+    expect(html).toContain("couldn&#x27;t confirm the email outcome")
   })
 
   it("replaces the pending skeleton with rich results before the streamed reply", () => {
@@ -596,9 +596,9 @@ describe("Gmail tool presenters", () => {
   it("registers all Gmail presenters through the lazy integration module", async () => {
     await loadIntegrationUiModules(["gmail"])
     expect(integrationToolRowPresenters("gmail").map((presenter) => presenter.key)).toEqual([
-      "gmail-search-messages",
-      "gmail-read-message",
-      "gmail-send-message",
+      "gmail_search_messages",
+      "gmail_read_message",
+      "gmail_send_message",
     ])
   })
 

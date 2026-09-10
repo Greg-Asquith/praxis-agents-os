@@ -132,7 +132,7 @@ describe("BigQuery tool presenters", () => {
     expect(html).toContain("Showing 2 of 12 rows.")
     expect(html).toContain("Download Report CSV")
     expect(html).toContain("Limited")
-    expect(html).toContain("Operator-defined row filters limited this result")
+    expect(html).toContain("Row filters limited this result")
     expect(html).not.toContain("praxis_untrusted")
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
@@ -195,17 +195,17 @@ describe("BigQuery tool presenters", () => {
 
   it("loads all presenters and the icon through the production registry seam", async () => {
     expect(bigQueryModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
-      "bigquery-list-tables",
-      "bigquery-get-table-schema",
-      "bigquery-run-query",
+      "bigquery_list_tables",
+      "bigquery_get_table_schema",
+      "bigquery_run_query",
     ])
 
     await loadIntegrationUiModules(["bigquery"])
 
     expect(integrationToolRowPresenters("bigquery").map((presenter) => presenter.key)).toEqual([
-      "bigquery-list-tables",
-      "bigquery-get-table-schema",
-      "bigquery-run-query",
+      "bigquery_list_tables",
+      "bigquery_get_table_schema",
+      "bigquery_run_query",
     ])
     const row = renderCustomToolCallRow(
       props({

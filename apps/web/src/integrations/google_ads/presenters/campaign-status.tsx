@@ -7,28 +7,25 @@ import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
 import { countByKind } from "@/integrations/google_ads/lib/outcomes"
 import {
   campaignReferenceLabels,
   googleAdsCampaignDetails,
 } from "@/integrations/google_ads/lib/tool-details"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isRecord } from "@/lib/guards"
 
-const copy = googleAdsWriteCopy({ verb: "Update", object: "campaign status", effect: "updated" })
-
-export const googleAdsCampaignStatusPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-update-campaign-status",
+export const googleAdsCampaignStatusPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_update_campaign_status: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_update_campaign_status: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Update", object: "campaign status", effect: "updated" },
       approval: {
-        ...copy.approval,
         parseArgs: campaignArgs,
         renderSummary: (value, fallback) => {
           const labels = campaignReferenceLabels(campaignArgs(value) ?? fallback)

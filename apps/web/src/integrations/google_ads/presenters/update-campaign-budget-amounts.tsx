@@ -18,11 +18,11 @@ import {
   parseCampaignBudgetReference,
 } from "@/integrations/google_ads/lib/campaign-budgets"
 import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isNullableString, isRecord, parsePositiveDecimal } from "@/lib/guards"
 
 const COLUMNS: DataColumn[] = [
@@ -35,19 +35,11 @@ const COLUMNS: DataColumn[] = [
   { key: "linkedCampaigns", kind: "text", label: "Linked Campaigns" },
 ]
 
-const copy = googleAdsWriteCopy({
-  verb: "Update",
-  object: "campaign budget amounts",
-  effect: "updated",
-})
-
-export const googleAdsUpdateCampaignBudgetAmountsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-update-campaign-budget-amounts",
+export const googleAdsUpdateCampaignBudgetAmountsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_update_campaign_budget_amounts: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_update_campaign_budget_amounts: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Update", object: "campaign budget amounts", effect: "updated" },
       approval: {
-        ...copy.approval,
         parseArgs: updateBudgetArgs,
         prompt: "Review each selected budget amount before changing live spend limits.",
         renderSummary: (value, fallback) =>

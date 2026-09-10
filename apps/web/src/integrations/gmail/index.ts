@@ -7,8 +7,8 @@ import { gmailSearchPresenter } from "@/integrations/gmail/presenters/search"
 import { gmailSendPresenter } from "@/integrations/gmail/presenters/send"
 
 export default {
-  catalogDescription: "Let agents read and manage your emails.",
-  icons: { gmail: GmailLogo },
+  catalogDescription: "Let agents read and send emails through Gmail.",
+  Logo: GmailLogo,
   providerKey: "gmail",
   toolRowPresenters: [gmailSearchPresenter, gmailReadPresenter, gmailSendPresenter],
 } satisfies IntegrationUiModule

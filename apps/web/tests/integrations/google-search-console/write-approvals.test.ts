@@ -7,8 +7,8 @@ import { describe, expect, it } from "vitest"
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { ToolUi } from "@/features/tools/types"
-import { requestIndexingPresenter } from "@/integrations/google_search_console/presenters/request-indexing"
-import { submitSitemapPresenter } from "@/integrations/google_search_console/presenters/submit-sitemap"
+import { googleSearchConsoleRequestIndexingPresenter } from "@/integrations/google_search_console/presenters/request-indexing"
+import { googleSearchConsoleSubmitSitemapPresenter } from "@/integrations/google_search_console/presenters/submit-sitemap"
 
 const UI: ToolUi = {
   icon: "google_search_console",
@@ -119,7 +119,7 @@ describe("Search Console sitemap write presenter", () => {
     const malformed = renderPresenter(activity("awaiting_approval", null), pendingControls())
     expect(malformed).toContain("Decline this request, then ask the agent")
     const sources = [{ source_kind: "integration", source_ref: "source-page" }]
-    const node = submitSitemapPresenter.render({
+    const node = googleSearchConsoleSubmitSitemapPresenter.render({
       activity: {
         ...activity("awaiting_approval", ARGS),
         derivedFromUntrusted: true,
@@ -140,14 +140,12 @@ describe("Search Console sitemap write presenter", () => {
   })
 
   it("keeps lifecycle states and malformed results distinct", () => {
-    expect(renderPresenter(activity("running", ARGS))).toContain(
-      "Submitting Search Console sitemaps"
-    )
+    expect(renderPresenter(activity("running", ARGS))).toContain("Submitting sitemaps")
     expect(renderPresenter(activity("awaiting_approval", ARGS))).toContain(
-      "Waiting for sitemap submission approval"
+      "Waiting for approval to submit sitemaps"
     )
     expect(renderPresenter(activity("unknown", ARGS))).toContain(
-      "couldn&#x27;t verify the sitemap submissions"
+      "couldn&#x27;t confirm the sitemaps outcome"
     )
     expect(renderPresenter(resultActivity({ results: [entry({ invalid: true })] }))).toContain(
       "Unconfirmed"
@@ -172,7 +170,7 @@ describe("Search Console sitemap write presenter", () => {
   it("shows editable approval details and distinguishes add from resubmit", () => {
     const html = renderPresenter(activity("awaiting_approval", ARGS), pendingControls())
 
-    expect(html).toContain("Submit Sitemaps to Google Search Console")
+    expect(html).toContain("Review sitemaps before submitting")
     expect(html).toContain("Google decides when and whether to crawl")
     expect(html).toContain("Resubmit")
     expect(html).toContain("Add")
@@ -212,12 +210,12 @@ describe("Search Console sitemap write presenter", () => {
     const denied = activity("denied", ARGS)
     denied.decisionReason = "Wait for the content deployment."
     const deniedHtml = renderPresenter(denied)
-    expect(deniedHtml).toContain("This sitemap submission was declined. Nothing was submitted.")
+    expect(deniedHtml).toContain("This request was declined. Nothing was submitted.")
     expect(deniedHtml).toContain("Wait for the content deployment.")
     expect(deniedHtml).toContain("Declined")
 
     const failedHtml = renderPresenter(activity("failed", ARGS))
-    expect(failedHtml).toContain("No sitemap submission was confirmed")
+    expect(failedHtml).toContain("The sitemaps could not be submitted.")
 
     const unverifiedHtml = renderPresenter(
       resultActivity({
@@ -272,7 +270,7 @@ describe("Search Console sitemap write presenter", () => {
       })
     )
 
-    expect(html).toContain("Search Console sitemap submission results")
+    expect(html).toContain("Submit Search Console Sitemaps results")
     expect(html).toContain("Resubmit")
     expect(html).toContain("Pending")
     expect(html).toContain("Sep")
@@ -287,14 +285,14 @@ describe("Search Console Indexing API write presenter", () => {
   it("shows the eligibility limit and editable notification records", () => {
     const html = renderIndexingPresenter(indexingActivity("awaiting_approval"), pendingControls())
 
-    expect(html).toContain("Send Indexing API Notifications")
+    expect(html).toContain("Review indexing notifications before sending")
     expect(html).toContain("only for job posting pages and livestream video pages")
     expect(html).toContain("may violate Google&#x27;s guidelines")
     expect(html).toContain("asks Google to remove the page from its index")
     expect(html).toContain("returns 404 or 410")
     expect(html).toContain("noindex directive")
     expect(html).toContain("Remove row 1")
-    expect(html).toContain("Approve &amp; Notify")
+    expect(html).toContain("Approve &amp; Send")
   })
 
   it("rejects edited URLs outside the selected writable sites", () => {
@@ -340,7 +338,7 @@ describe("Search Console Indexing API write presenter", () => {
       })
     )
 
-    expect(html).toContain("Search Console Indexing API notification results")
+    expect(html).toContain("Send Search Console Indexing Notifications results")
     expect(html).toContain("Job Posting")
     expect(html).toContain("Updated")
     expect(html).toContain("Sep")
@@ -387,7 +385,7 @@ function renderPresenter(
   approvalDecision?: ToolApprovalDecisionControls
 ) {
   return render(
-    submitSitemapPresenter.render({
+    googleSearchConsoleSubmitSitemapPresenter.render({
       activity: toolActivity,
       ...(approvalDecision ? { approvalDecision } : {}),
       compact: false,
@@ -404,7 +402,7 @@ function renderIndexingPresenter(
   approvalDecision?: ToolApprovalDecisionControls
 ) {
   return render(
-    requestIndexingPresenter.render({
+    googleSearchConsoleRequestIndexingPresenter.render({
       activity: toolActivity,
       ...(approvalDecision ? { approvalDecision } : {}),
       compact: false,

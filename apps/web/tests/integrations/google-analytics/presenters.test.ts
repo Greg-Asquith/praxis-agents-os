@@ -2,17 +2,17 @@ import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { compatibilityPresenter } from "@/integrations/google_analytics/presenters/compatibility"
-import { googleAdsLinksPresenter } from "@/integrations/google_analytics/presenters/google-ads-links"
-import { realtimePresenter } from "@/integrations/google_analytics/presenters/realtime"
-import { reportFieldsPresenter } from "@/integrations/google_analytics/presenters/report-fields"
-import { reportPresenter } from "@/integrations/google_analytics/presenters/report"
 import type { ToolActivity } from "@/integrations/contract"
+import { googleAnalyticsCompatibilityPresenter } from "@/integrations/google_analytics/presenters/compatibility"
+import { googleAnalyticsGoogleAdsLinksPresenter } from "@/integrations/google_analytics/presenters/google-ads-links"
+import { googleAnalyticsRealtimePresenter } from "@/integrations/google_analytics/presenters/realtime"
+import { googleAnalyticsReportPresenter } from "@/integrations/google_analytics/presenters/report"
+import { googleAnalyticsReportFieldsPresenter } from "@/integrations/google_analytics/presenters/report-fields"
 
 describe("Google Analytics tool presenters", () => {
   it("renders a report table with authoritative totals and honest data-quality notes", () => {
     const html = render(
-      reportPresenter.render(
+      googleAnalyticsReportPresenter.render(
         props({
           id: "report-1",
           kind: "result",
@@ -92,7 +92,7 @@ describe("Google Analytics tool presenters", () => {
 
   it("keeps partial failures visible and handles empty report rows", () => {
     const partial = render(
-      reportPresenter.render(
+      googleAnalyticsReportPresenter.render(
         props({
           id: "report-partial",
           kind: "result",
@@ -120,7 +120,7 @@ describe("Google Analytics tool presenters", () => {
 
   it("renders realtime rows and windows without date formatting", () => {
     const html = render(
-      realtimePresenter.render(
+      googleAnalyticsRealtimePresenter.render(
         props({
           id: "realtime-1",
           kind: "result",
@@ -158,7 +158,7 @@ describe("Google Analytics tool presenters", () => {
 
   it("renders dimension and metric field tables with counts", () => {
     const html = render(
-      reportFieldsPresenter.render(
+      googleAnalyticsReportFieldsPresenter.render(
         props({
           id: "fields-1",
           kind: "result",
@@ -196,10 +196,12 @@ describe("Google Analytics tool presenters", () => {
 
   it("renders compatible and incompatible field status lists", () => {
     const compatible = render(
-      compatibilityPresenter.render(props(compatibilityActivity(true, [], "compatible")))
+      googleAnalyticsCompatibilityPresenter.render(
+        props(compatibilityActivity(true, [], "compatible"))
+      )
     )
     const incompatible = render(
-      compatibilityPresenter.render(
+      googleAnalyticsCompatibilityPresenter.render(
         props(compatibilityActivity(false, ["itemName", "eventCount"], "incompatible"))
       )
     )
@@ -212,7 +214,7 @@ describe("Google Analytics tool presenters", () => {
 
   it("renders linked Google Ads accounts with operator-friendly ids and status", () => {
     const html = render(
-      googleAdsLinksPresenter.render(
+      googleAnalyticsGoogleAdsLinksPresenter.render(
         props({
           id: "links-1",
           kind: "result",
@@ -246,7 +248,7 @@ describe("Google Analytics tool presenters", () => {
 
   it("renders an honest empty linked-account state", () => {
     const html = render(
-      googleAdsLinksPresenter.render(
+      googleAnalyticsGoogleAdsLinksPresenter.render(
         props({
           id: "links-empty",
           kind: "result",
@@ -262,20 +264,24 @@ describe("Google Analytics tool presenters", () => {
 
   it("renders every loading state and falls back for malformed results", () => {
     for (const [presenter, name, label] of [
-      [reportPresenter, "google_analytics_run_report", "Running Google Analytics report"],
-      [realtimePresenter, "google_analytics_run_realtime_report", "realtime report"],
       [
-        reportFieldsPresenter,
+        googleAnalyticsReportPresenter,
+        "google_analytics_run_report",
+        "Running Google Analytics report",
+      ],
+      [googleAnalyticsRealtimePresenter, "google_analytics_run_realtime_report", "realtime report"],
+      [
+        googleAnalyticsReportFieldsPresenter,
         "google_analytics_list_report_fields",
         "Listing Google Analytics report fields",
       ],
       [
-        compatibilityPresenter,
+        googleAnalyticsCompatibilityPresenter,
         "google_analytics_check_report_fields",
         "Checking Google Analytics report fields",
       ],
       [
-        googleAdsLinksPresenter,
+        googleAnalyticsGoogleAdsLinksPresenter,
         "google_analytics_list_google_ads_links",
         "Listing linked Google Ads accounts",
       ],

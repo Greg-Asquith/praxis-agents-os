@@ -5,35 +5,23 @@ import {
   AdGroupNegativeKeywordApprovalSummary,
   AdGroupNegativeKeywordOutcome,
 } from "@/integrations/google_ads/components/negative-keyword-outcome"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   adGroupNegativeKeywordArgs,
   adGroupNegativeKeywordResult,
   adGroupNegativeKeywordSummary,
 } from "@/integrations/google_ads/presenters/negative-keywords/utils"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 
-const addCopy = googleAdsWriteCopy({
-  verb: "Add",
-  object: "ad group negative keywords",
-  effect: "added",
-})
-const removeCopy = googleAdsWriteCopy({
-  verb: "Remove",
-  object: "ad group negative keywords",
-  effect: "removed",
-})
-
-export const googleAdsAdGroupNegativeKeywordsPresenter = createGoogleAdsWritePresenter({
+export const googleAdsAdGroupNegativeKeywordsPresenter = createIntegrationWritePresenter({
   key: "google-ads-ad-group-negative-keywords",
   variants: {
-    google_ads_add_ad_group_negative_keywords: defineGoogleAdsWriteVariant({
-      ...addCopy,
+    google_ads_add_ad_group_negative_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Add", object: "ad group negative keywords", effect: "added" },
       approval: {
-        ...addCopy.approval,
         parseArgs: (value) => adGroupNegativeKeywordArgs(value, false),
         prompt: "Review the ad groups, campaigns, keyword rows before blocking matching traffic.",
         renderSummary: (value, fallback) => {
@@ -53,10 +41,9 @@ export const googleAdsAdGroupNegativeKeywordsPresenter = createGoogleAdsWritePre
         <GoogleAdsFailureTargets description={description} targets={args?.selectionLabels ?? []} />
       ),
     }),
-    google_ads_remove_ad_group_negative_keywords: defineGoogleAdsWriteVariant({
-      ...removeCopy,
+    google_ads_remove_ad_group_negative_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Remove", object: "ad group negative keywords", effect: "removed" },
       approval: {
-        ...removeCopy.approval,
         parseArgs: (value) => adGroupNegativeKeywordArgs(value, true),
         prompt:
           "Review the ad groups and exclusions. Removing them can re-enable traffic and increase spend.",

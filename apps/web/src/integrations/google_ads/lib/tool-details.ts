@@ -1,7 +1,8 @@
 // apps/web/src/integrations/google_ads/lib/tool-details.ts
 
-import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
+import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
+import { stringArg } from "@/integrations/tool-details"
 import { isRecord } from "@/lib/guards"
 
 export function googleAdsReportDetails(args: unknown): FanOutDetail[] {
@@ -34,12 +35,4 @@ export function campaignReferenceLabels(args: unknown): string[] {
     const value = label || campaignId
     return value ? [value] : []
   })
-}
-
-function stringArg(args: unknown, key: string): string | null {
-  if (!isRecord(args) || typeof args[key] !== "string") {
-    return null
-  }
-  const value = args[key].trim()
-  return value || null
 }

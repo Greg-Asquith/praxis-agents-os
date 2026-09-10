@@ -10,7 +10,7 @@ import type { IntegrationUiModule } from "@/integrations/contract"
 export default {
   catalogDescription: "Let agents explore approved datasets and run read-only SQL queries.",
   ConnectHelp: BigQueryConnectHelp,
-  icons: { bigquery: BigQueryLogo },
+  Logo: BigQueryLogo,
   providerKey: "bigquery",
   toolRowPresenters: [bigQueryTablesPresenter, bigQuerySchemaPresenter, bigQueryQueryPresenter],
 } satisfies IntegrationUiModule

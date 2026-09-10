@@ -1,6 +1,7 @@
 // apps/web/src/integrations/outlook_mail/lib/write-results.ts
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
+import type { MessageOutcome } from "@/components/tool-ui/message-outcome"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import {
   outlookMessageReference,
@@ -8,17 +9,15 @@ import {
 } from "@/integrations/outlook_mail/lib/write-args"
 import { isNullableString, isOneOf, isRecord } from "@/lib/guards"
 
-export type OutlookOutcome = "applied" | "failed" | "unverified"
-
 export type OutlookWriteResult = {
   detail: string | null
   errorCode: string | null
   message: OutlookMessageReference | null
-  outcome: OutlookOutcome
+  outcome: MessageOutcome
   url: string | null
 }
 
-const OUTCOMES: ReadonlySet<OutlookOutcome> = new Set(["applied", "failed", "unverified"])
+const OUTCOMES: ReadonlySet<MessageOutcome> = new Set(["applied", "failed", "unverified"])
 
 // Applied results must name the message; failures may still link the draft that remains.
 export function outlookWriteResult(value: unknown): OutlookWriteResult | null {

@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_search_console/components/sitemaps-table.tsx
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { filenameStem } from "@/lib/format"
 
@@ -21,8 +22,6 @@ export function SitemapsTable({ externalId, rows }: { externalId: string; rows: 
       rows={rows}
     />
   ) : (
-    <p className="text-muted-foreground py-4 text-center text-sm">
-      No submitted sitemaps were found.
-    </p>
+    <EmptyResult>No submitted sitemaps were found.</EmptyResult>
   )
 }

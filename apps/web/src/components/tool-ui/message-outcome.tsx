@@ -1,45 +1,45 @@
-// apps/web/src/integrations/outlook_mail/components/write-outcome.tsx
+// apps/web/src/components/tool-ui/message-outcome.tsx
 
-import { Fragment } from "react"
+import type { ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
 
-import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
-import { OutlookMessageRecovery } from "@/integrations/outlook_mail/components/message-recovery"
-import type { OutlookMessageReference } from "@/integrations/outlook_mail/lib/write-args"
 import { HtmlContentFrame } from "@/components/tool-ui/html-content-frame"
-import type { OutlookOutcome } from "@/integrations/outlook_mail/lib/write-results"
+import { MessageHeaderRows } from "@/components/tool-ui/message"
 import { cn } from "@/lib/utils"
 
-export type OutlookOutcomeView = {
+export type MessageOutcome = "applied" | "failed" | "unverified"
+
+export type MessageOutcomeView = {
   /** Approved HTML shown in the sandboxed frame; empty bodies render nothing. */
   body: string | null
-  icons: Record<OutlookOutcome, LucideIcon>
-  linkLabel: (outcome: OutlookOutcome) => string
+  icons: Record<MessageOutcome, LucideIcon>
+  linkLabel: (outcome: MessageOutcome) => string
   /** Muted line under the title once the change is confirmed. */
   note: string | null
-  rows: FanOutDetail[]
+  rows: { label: string; value: string }[]
   subject: string | null
-  titles: Record<OutlookOutcome, string>
+  titles: Record<MessageOutcome, string>
 }
 
-const TONES: Record<OutlookOutcome, { icon: string; title: string }> = {
+const TONES: Record<MessageOutcome, { icon: string; title: string }> = {
   applied: { icon: "bg-success/10 text-success", title: "text-success" },
   failed: { icon: "bg-destructive/10 text-destructive", title: "text-destructive" },
   unverified: { icon: "bg-warning/15 text-warning-foreground", title: "text-warning-foreground" },
 }
 
-export function OutlookWriteOutcome({
+export function MessageWriteOutcome({
   description,
   outcome,
-  message,
+  recovery,
   url,
   view,
 }: {
   description: string | null
-  outcome: OutlookOutcome
-  message: OutlookMessageReference | null
+  outcome: MessageOutcome
+  /** Shown under the header rows when the provider returned no link to open. */
+  recovery?: ReactNode
   url: string | null
-  view: OutlookOutcomeView
+  view: MessageOutcomeView
 }) {
   const Icon = view.icons[outcome]
   const tone = TONES[outcome]
@@ -78,17 +78,17 @@ export function OutlookWriteOutcome({
             rel="noreferrer"
             target="_blank"
           >
-            {outcome === "unverified" ? "Open in Outlook" : view.linkLabel(outcome)}
+            {view.linkLabel(outcome)}
           </a>
         ) : null}
       </header>
       {hasRows ? (
-        <OutlookMessageRows
+        <MessageHeaderRows
           className={cn("py-3", body && "border-border border-b")}
           rows={view.rows}
         />
       ) : null}
-      {!url && message ? <OutlookMessageRecovery message={message} /> : null}
+      {url ? null : recovery}
       {body ? (
         <div className="pt-3">
           <HtmlContentFrame
@@ -99,25 +99,5 @@ export function OutlookWriteOutcome({
         </div>
       ) : null}
     </article>
-  )
-}
-
-// Compact header rows shared by outcome cards and draft reviews.
-export function OutlookMessageRows({
-  className,
-  rows,
-}: {
-  className?: string
-  rows: FanOutDetail[]
-}) {
-  return (
-    <dl className={cn("grid min-w-0 gap-2 text-xs sm:grid-cols-[4rem_1fr]", className)}>
-      {rows.map((row, index) => (
-        <Fragment key={`${row.label}-${String(index)}`}>
-          <dt className="text-muted-foreground">{row.label}</dt>
-          <dd className="min-w-0 wrap-break-word">{row.value}</dd>
-        </Fragment>
-      ))}
-    </dl>
   )
 }

@@ -1,12 +1,13 @@
 // apps/web/src/integrations/bigquery/components/table-list.tsx
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { Badge } from "@/components/ui/badge"
 import { formatDateTime } from "@/lib/format"
 import type { BigQueryDataset } from "@/integrations/bigquery/lib/results"
 
 export function BigQueryTableList({ datasets }: { datasets: BigQueryDataset[] }) {
   if (datasets.length === 0) {
-    return <p className="text-muted-foreground py-4 text-center text-sm">No datasets selected.</p>
+    return <EmptyResult>No datasets selected.</EmptyResult>
   }
   return (
     <div className="grid gap-4">
@@ -53,9 +54,7 @@ export function BigQueryTableList({ datasets }: { datasets: BigQueryDataset[] })
               ))}
             </div>
           ) : (
-            <p className="border-border text-muted-foreground rounded-lg border border-dashed px-3 py-4 text-center text-sm">
-              No cached tables in this dataset.
-            </p>
+            <EmptyResult>No cached tables in this dataset.</EmptyResult>
           )}
         </section>
       ))}

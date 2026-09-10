@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest"
 
 import type { ToolActivity } from "@/integrations/contract"
 import googleAdsModule from "@/integrations/google_ads"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
+import { integrationWriteCopy } from "@/integrations/write-copy"
 
 const cases = [
   {
@@ -174,7 +175,7 @@ function entry(status: string, data: unknown) {
 describe("Google Ads registered write copy", () => {
   it("covers every declared write variant and every registered write presenter", () => {
     const names = Object.values(sources).flatMap((source) =>
-      [...source.matchAll(/(google_ads_\w+): defineGoogleAdsWriteVariant/g)].map(
+      [...source.matchAll(/(google_ads_\w+): defineIntegrationWriteVariant/g)].map(
         (match) => match[1]
       )
     )
@@ -193,11 +194,14 @@ describe("Google Ads registered write copy", () => {
   })
 
   it.each(cases)("uses shared lifecycle wording for $name", ({ name, spec }) => {
-    const copy = googleAdsWriteCopy(spec)
+    const copy = integrationWriteCopy(googleAdsProvider, spec)
     const running =
       name === "google_ads_link_negative_keyword_list"
-        ? googleAdsWriteCopy({ verb: "Link", object: "campaign shared list", effect: "linked" })
-            .progressLabel
+        ? integrationWriteCopy(googleAdsProvider, {
+            verb: "Link",
+            object: "campaign shared list",
+            effect: "linked",
+          }).progressLabel
         : copy.progressLabel
     const denied =
       name === "google_ads_dismiss_recommendations"

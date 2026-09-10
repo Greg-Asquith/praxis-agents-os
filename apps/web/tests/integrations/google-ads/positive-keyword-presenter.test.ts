@@ -292,7 +292,7 @@ describe("Google Ads positive keyword presenter", () => {
     )
 
     expect(html).toContain("trail shoes")
-    expect(html).not.toContain("couldn&#x27;t verify")
+    expect(html).not.toContain("couldn&#x27;t confirm")
   })
 
   it("rejects contradictory complete result totals", () => {
@@ -319,7 +319,7 @@ describe("Google Ads positive keyword presenter", () => {
       )
     )
 
-    expect(html).toContain("couldn&#x27;t verify")
+    expect(html).toContain("couldn&#x27;t confirm")
   })
 
   it("renders one exportable row per ad-group and keyword pair", () => {
@@ -364,7 +364,7 @@ describe("Google Ads positive keyword presenter", () => {
       )
     )
 
-    expect(html).toContain("Add Keywords")
+    expect(html).toContain("Add Google Ads Keywords")
     expect(html).toContain("trail shoes")
     expect(html).toContain("running shoes")
     expect(html).toContain("walking shoes")
@@ -472,8 +472,8 @@ describe("Google Ads positive keyword presenter", () => {
     expect(deniedHtml).toContain("declined")
     expect(deniedHtml).toContain("Use a different match type.")
     expect(deniedHtml).not.toContain("Failed")
-    expect(loadingHtml).toContain("Adding Google Ads keywords…")
-    expect(malformedHtml).toContain("couldn&#x27;t verify")
+    expect(loadingHtml).toContain("Adding keywords…")
+    expect(malformedHtml).toContain("couldn&#x27;t confirm")
     expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads added")
     expect(unverifiedHtml).not.toContain("provider transport detail")
   })

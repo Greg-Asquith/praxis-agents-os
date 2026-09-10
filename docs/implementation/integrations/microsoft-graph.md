@@ -142,7 +142,7 @@ cannot prevent a concurrent Outlook edit between that check and submission.
 
 Each write has its own tool row presenter under
 `apps/web/src/integrations/outlook_mail/presenters/`, built on the shared
-write seam described in the [integration guide](README.md#shared-write-presenters).
+write seam described in the [integration guide](README.md#shared-presenter-seams).
 The Outlook adapter supplies the mailbox branding, per-tool copy, argument
 parsers, and the outcome view; the seam owns approvals, lifecycle states, and
 fan-out cards. Approval cards edit the server-declared fields and block resume

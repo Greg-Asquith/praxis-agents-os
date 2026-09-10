@@ -8,7 +8,7 @@ import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
 import { countByKind } from "@/integrations/google_ads/lib/outcomes"
 import {
@@ -16,10 +16,11 @@ import {
   parseRecommendationReference,
 } from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { microsToCurrencyUnits } from "@/lib/format"
 import { isNullableFiniteNumber, isPositiveInteger, isRecord } from "@/lib/guards"
 
@@ -94,15 +95,11 @@ const COLUMNS: DataColumn[] = [
   { key: "impact", kind: "text", label: "Google Estimate" },
 ]
 
-const copy = googleAdsWriteCopy({ verb: "Apply", object: "recommendations", effect: "applied" })
-
-export const googleAdsApplyRecommendationsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-apply-recommendations",
+export const googleAdsApplyRecommendationsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_apply_recommendations: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_apply_recommendations: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Apply", object: "recommendations", effect: "applied" },
       approval: {
-        ...copy.approval,
         parseArgs: applyRecommendationArgs,
         prompt:
           "Review every recommendation and any custom parameters before applying Google's proposed account changes.",

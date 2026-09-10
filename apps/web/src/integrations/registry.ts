@@ -46,13 +46,7 @@ export function integrationToolRowPresenters(providerKey: string | null): ToolRo
 }
 
 export function integrationIcon(token: string): ComponentType<SVGProps<SVGSVGElement>> | null {
-  for (const module of loadedModules.values()) {
-    const icon = module.icons?.[token]
-    if (icon) {
-      return icon
-    }
-  }
-  return null
+  return loadedModules.get(token)?.Logo ?? null
 }
 
 export function useIntegrationUiModule(providerKey: string | null) {

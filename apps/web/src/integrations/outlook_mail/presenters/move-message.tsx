@@ -2,33 +2,27 @@
 
 import { FolderInputIcon } from "lucide-react"
 
+import { sameOutcomeIcon } from "@/components/tool-ui/message-outcome-icons"
 import { outlookMoveDetails } from "@/integrations/outlook_mail/lib/tool-details"
 import { outlookMoveArgs } from "@/integrations/outlook_mail/lib/write-args"
-import {
-  createOutlookWritePresenter,
-  defineOutlookWriteVariant,
-  outcomeIcons,
-} from "@/integrations/outlook_mail/presenters/write-presenter"
+import { defineOutlookWriteVariant } from "@/integrations/outlook_mail/presenters/write-presenter"
+import { createIntegrationWritePresenter } from "@/integrations/write-presenter"
 
-export const outlookMailMovePresenter = createOutlookWritePresenter({
-  key: "outlook-mail-move-message",
+export const outlookMailMovePresenter = createIntegrationWritePresenter({
   variants: {
     outlook_mail_move_message: defineOutlookWriteVariant({
       copy: {
-        approveLabel: "Approve & Move",
-        check: "the destination folder",
+        check: "Check the destination folder in Outlook before trying again.",
         effect: "moved",
-        heading: "Move Outlook Message",
         object: "message",
-        prompt: "The agent wants to move this message to the selected folder.",
-        title: "Review message move",
-        verb: "move",
+        verb: "Move",
       },
       details: outlookMoveDetails,
       parseArgs: outlookMoveArgs,
+      prompt: "The agent wants to move this message to the selected folder.",
       view: (args) => ({
         body: null,
-        icons: outcomeIcons(FolderInputIcon),
+        icons: sameOutcomeIcon(FolderInputIcon),
         linkLabel: () => "Open in Outlook",
         note: null,
         rows: outlookMoveDetails(args),

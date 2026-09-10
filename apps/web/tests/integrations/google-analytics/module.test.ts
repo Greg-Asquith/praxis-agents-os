@@ -15,15 +15,15 @@ describe("Google Analytics integration module", () => {
     await loadIntegrationUiModules(["google_analytics"])
 
     expect(providerKeyForToolName("google_analytics_run_report")).toBe("google_analytics")
-    expect(integrationIcon("google_analytics")).toBe(googleAnalyticsModule.icons.google_analytics)
+    expect(integrationIcon("google_analytics")).toBe(googleAnalyticsModule.Logo)
     expect(
       integrationToolRowPresenters("google_analytics").map((presenter) => presenter.key)
     ).toEqual([
-      "google-analytics-run-report",
-      "google-analytics-run-realtime-report",
-      "google-analytics-list-report-fields",
-      "google-analytics-check-report-fields",
-      "google-analytics-list-google-ads-links",
+      "google_analytics_run_report",
+      "google_analytics_run_realtime_report",
+      "google_analytics_list_report_fields",
+      "google_analytics_check_report_fields",
+      "google_analytics_list_google_ads_links",
     ])
     expect(googleAnalyticsModule.catalogDescription).toContain("website and app performance")
   })

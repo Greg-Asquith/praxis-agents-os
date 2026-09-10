@@ -10,22 +10,18 @@ import {
   budgetPeriodLabel,
   parseCampaignBudgetReference,
 } from "@/integrations/google_ads/lib/campaign-budgets"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isNullableString, isRecord, parsePositiveDecimal } from "@/lib/guards"
 
-const copy = googleAdsWriteCopy({ verb: "Create", object: "campaign budget", effect: "created" })
-
-export const googleAdsCreateCampaignBudgetPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-create-campaign-budget",
+export const googleAdsCreateCampaignBudgetPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_create_campaign_budget: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_create_campaign_budget: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Create", object: "campaign budget", effect: "created" },
       approval: {
-        ...copy.approval,
         parseArgs: createBudgetArgs,
         prompt: "Review the amount and delivery settings before creating this budget.",
         renderSummary: (value, fallback) =>

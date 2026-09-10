@@ -18,11 +18,11 @@ import {
   type CampaignReference,
 } from "@/integrations/google_ads/lib/campaigns"
 import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isNullableString, isRecord } from "@/lib/guards"
 
 const COLUMNS: DataColumn[] = [
@@ -33,15 +33,11 @@ const COLUMNS: DataColumn[] = [
   { key: "afterBudget", kind: "text", label: "After" },
 ]
 
-const copy = googleAdsWriteCopy({ verb: "Assign", object: "campaign budgets", effect: "assigned" })
-
-export const googleAdsAssignCampaignBudgetsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-assign-campaign-budgets",
+export const googleAdsAssignCampaignBudgetsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_assign_campaign_budgets: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_assign_campaign_budgets: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Assign", object: "campaign budgets", effect: "assigned" },
       approval: {
-        ...copy.approval,
         parseArgs: assignmentArgs,
         refreshDisplay: {
           fields: ["destination_budget", "campaigns"],

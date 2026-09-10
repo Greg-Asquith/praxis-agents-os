@@ -118,35 +118,67 @@ connection metadata provider-neutral.
 
 ## Frontend package layout
 
-Integration provider UI lives in `src/integrations/<provider>/` with
-`index.ts` (the `IntegrationUiModule` default export and the only file the
-registry imports), `presenters/` (tool row presenters), `components/`
-(provider-specific visual components, including the logo), `lib/`
-(non-visual helpers such as arg parsing and detail builders), and `api/`
-(TanStack Query operations, one per file) when the provider calls the API.
-Follow this layout for new providers.
+Integration provider UI lives in `src/integrations/<provider>/`:
 
-## Shared write presenters
+- `index.ts` is the `IntegrationUiModule` default export and the only file the
+  registry imports. It declares the provider key, `Logo`, an optional
+  `ConnectHelp` component, a `catalogDescription`, and the tool row presenters.
+- `provider.ts` exports one `IntegrationProviderUi` object: the provider key,
+  the short product name used in headings and sentences, the logo, the
+  connection labels (`contextLabel`, `externalLabel`), the fallback card name,
+  and an optional context-value formatter. Every presenter passes this object
+  to a shared seam instead of repeating those values.
+- `presenters/` holds tool row presenters, `components/` holds provider
+  visuals including the logo, `lib/` holds non-visual parsers and detail
+  builders, and `api/` holds TanStack Query operations (one per file) when the
+  provider calls the API.
 
-Google Ads, Search Console, and Outlook Mail write presenters configure
-`src/integrations/write-presenter.tsx`. This shared seam owns approval merging,
-validation precedence, provenance, lifecycle states, and fan-out rendering.
-Provider adapters own branding, copy, parsers, summaries, and outcome views.
-Outcome and failure renderers receive the parsed arguments so cards can show
-what was approved. Failure renderers also receive whether a failure is confirmed
-or the outcome is unconfirmed. Missing, malformed, and unknown write results
-show an Unconfirmed badge; confirmed failures and denials remain distinct.
-Unverified fan-out entries retain an Unconfirmed badge even without usable data.
-Detailed unverified evidence requires the explicit
-`renderUnverifiedOutcome` callback; Search Console and Outlook Mail supply it,
-while Google Ads keeps its failure view. A provider that reports a failed
-outcome inside a successful entry supplies `settledFailure` so that entry
-renders as a failed card. A provider that accepts unverified evidence inside a
-successful entry supplies `settledUnverified` so the outer badge and detailed
-view both remain unconfirmed. Do not copy the state machine into provider
-packages.
-Edited budget assignments refresh campaign and source-budget evidence through
-the conversation-scoped entity lookup. The shared approval refresh query keeps
-approval unavailable until the selected routes are verified, isolates stale
-responses by selection, and preserves completed decisions. Provider refresh
-functions own entity validation; refreshed display metadata stays out of edits.
+Follow this layout for new providers. A presenter's key is its tool name; a
+presenter that serves several tools under one parser family sets an explicit
+key.
+
+## Shared presenter seams
+
+Provider packages compose these root-level seams in `src/integrations/` and
+never copy them. Root files are shared by design because the dependency rules
+forbid one provider directory importing another.
+
+- `provider-ui.tsx`: the `IntegrationProviderUi` type and
+  `IntegrationToolHeading`, the logo-plus-title heading used by every card.
+- `read-presenter.tsx`: `defineIntegrationReadPresenter` for fan-out reads
+  (skeleton, envelope parsing, `FanOutShell` with the provider labels) and
+  `defineIntegrationResultPresenter` for tools that return one document. Reads
+  render nothing for failed or malformed activities so the default row shows
+  the error.
+- `write-presenter.tsx`: `defineIntegrationWriteVariant` and
+  `createIntegrationWritePresenter`. This seam owns approval merging,
+  validation precedence, provenance, lifecycle states, and settled fan-out
+  rendering. Provider adapters own parsers, prompts, summaries, and outcome
+  views. Outcome and failure renderers receive the parsed arguments, and
+  failure renderers also receive whether the failure is confirmed or the
+  outcome is unconfirmed. Missing, malformed, and unknown results show an
+  Unconfirmed badge; confirmed failures and declines stay distinct. Detailed
+  unverified evidence requires `renderUnverifiedOutcome`; a provider that
+  reports a failed outcome inside a successful entry supplies `settledFailure`,
+  and one that accepts unverified evidence inside a successful entry supplies
+  `settledUnverified`. Edited entity selections refresh through
+  `approval.refreshDisplay` and the conversation-scoped entity lookup.
+- `write-copy.ts`: `integrationWriteCopy(provider, { verb, object, effect })`
+  produces every lifecycle sentence (heading, approval title and labels,
+  progress and waiting labels, declined, failed, empty, malformed, unverified,
+  and aria labels). Variants pass a `copy` spec and override single strings
+  only when a template reads wrong; `check` replaces the closing "Check
+  <provider> before taking further action." sentence; `destructive` switches
+  the approval title to "Permanently <verb> <object>".
+- `tool-details.ts`: `stringArg`, `numberArg`, `booleanArg`, `stringListArg`,
+  and the `stringDetail`, `numberDetail`, `listDetail`, `compactDetails`
+  builders for the card details popover.
+- `connect-help.tsx`: `ConnectHelpCards` renders a provider's setup guidance
+  from a list of icon, title, and body items. `microsoft-connect-help.tsx`
+  is the shared Microsoft variant.
+
+The seams build on the engine-owned kits in `src/components/tool-ui/`:
+`FanOutShell`, `ToolResultCard`, `EmptyResult`, `DetailList`, `MessageList`
+and `MessageHeaderRows`, `MessageWriteOutcome` for mail-shaped write receipts,
+and `prefetchProviderPreview` for warming provider content previews. Add kit
+logic there, not in a provider package.

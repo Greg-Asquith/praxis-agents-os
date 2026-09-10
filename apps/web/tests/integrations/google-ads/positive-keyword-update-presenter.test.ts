@@ -556,7 +556,7 @@ describe("Google Ads positive keyword update presenter", () => {
       )
     )
 
-    expect(html).toContain("Update Keywords")
+    expect(html).toContain("Update Google Ads Keywords")
     expect(html).toContain("Criterion cannot be changed.")
     expect(html).toContain("Status: Paused")
     expect(html).toContain("Status: Enabled")
@@ -598,8 +598,8 @@ describe("Google Ads positive keyword update presenter", () => {
     )
 
     expect(deniedHtml).toContain("declined")
-    expect(loadingHtml).toContain("Updating Google Ads keywords…")
-    expect(malformedHtml).toContain("couldn&#x27;t verify")
+    expect(loadingHtml).toContain("Updating keywords…")
+    expect(malformedHtml).toContain("couldn&#x27;t confirm")
     expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads updated")
     expect(unverifiedHtml).not.toContain("provider transport detail")
   })
@@ -634,7 +634,7 @@ describe("Google Ads positive keyword update presenter", () => {
       )
     )
 
-    expect(html).toContain("couldn&#x27;t verify")
+    expect(html).toContain("couldn&#x27;t confirm")
     expect(html).not.toContain("representative sample")
   })
 })

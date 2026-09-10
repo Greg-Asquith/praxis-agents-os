@@ -19,7 +19,7 @@ import {
   parseAdGroupReference,
   type AdGroupReference,
 } from "@/integrations/google_ads/lib/ad-groups"
-import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
 import { CURRENCY_CODE_PATTERN, googleAdsId } from "@/integrations/google_ads/lib/field-values"
 import {
@@ -27,10 +27,11 @@ import {
   positiveKeywordInputValidationError,
   type PositiveKeywordInput,
 } from "@/integrations/google_ads/lib/positive-keywords"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { formatCurrencyAmount } from "@/lib/format"
 import { isNullableString, isRecord } from "@/lib/guards"
 
@@ -80,15 +81,11 @@ const RESULT_COLUMNS: DataColumn[] = [
   { key: "previousState", kind: "text", label: "Previous State" },
 ]
 
-const copy = googleAdsWriteCopy({ verb: "Add", object: "keywords", effect: "added" })
-
-export const googleAdsCreatePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-create-positive-keywords",
+export const googleAdsCreatePositiveKeywordsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_create_keywords: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_create_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Add", object: "keywords", effect: "added" },
       approval: {
-        ...copy.approval,
         parseArgs: createKeywordArgs,
         validateArgs: createKeywordArgsValidationError,
         prompt:

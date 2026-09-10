@@ -180,10 +180,10 @@ describe("Notion write approval and result fidelity", () => {
 
     expect(
       renderPresenter(activity("notion_update_page_content", "running", args), undefined, true)
-    ).toContain("Updating Notion page content…")
+    ).toContain("Updating page content…")
     expect(
       renderPresenter(activity("notion_update_page_content", "awaiting_approval", args))
-    ).toContain("Waiting for page content approval…")
+    ).toContain("Waiting for approval to update page content…")
     expect(
       renderPresenter(
         activity("notion_update_page_content", "awaiting_approval", args),
@@ -193,12 +193,12 @@ describe("Notion write approval and result fidelity", () => {
     const denied = activity("notion_update_page_content", "denied", args)
     denied.decisionReason = "Keep the draft wording."
     const deniedHtml = renderPresenter(denied)
-    expect(deniedHtml).toContain("This Notion change was declined. Nothing was changed.")
+    expect(deniedHtml).toContain("This request was declined. Nothing was updated.")
     expect(deniedHtml).toContain("Declined")
     expect(deniedHtml).toContain("Keep the draft wording.")
     expect(deniedHtml).not.toContain("Failed")
     expect(renderPresenter(activity("notion_update_page_content", "failed", args))).toContain(
-      "The Notion change did not finish. No change was confirmed."
+      "The page content could not be updated."
     )
   })
 
@@ -310,7 +310,9 @@ describe("Notion write approval and result fidelity", () => {
         { page }
       )
     )
-    expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Notion applied this change")
+    expect(unverifiedHtml).toContain(
+      "couldn&#x27;t verify whether Notion updated the page properties"
+    )
     expect(unverifiedHtml).toContain("Check the page in Notion before taking further action.")
     expect(unverifiedHtml).toContain("Unconfirmed")
     expect(unverifiedHtml).not.toContain(">Failed<")
@@ -354,8 +356,8 @@ describe("Notion write approval and result fidelity", () => {
   ])("fails closed for malformed applied results from %s", (name, data) => {
     const html = renderPresenter(resultActivity(name, fanOut(data), { page }))
 
-    expect(html).toContain("The system could not confirm the Notion change.")
-    expect(html).toContain("Failed")
+    expect(html).toContain("The system couldn&#x27;t confirm the page")
+    expect(html).toContain("Unconfirmed")
     expect(html).not.toContain("Change confirmed")
   })
 })

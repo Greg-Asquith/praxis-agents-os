@@ -36,6 +36,43 @@ The following contracts apply in this area:
   are text-only: do not add workspace document storage, copying, forking, or
   ownership transitions to their lifecycle.
 
+## Content ownership and publication foundation
+
+Knowledge documents and chunks, Files and revisions, and Artifacts and
+revisions carry immutable `workspace` or `platform` ownership. Workspace rows
+require a workspace ID and keep `is_published = false`. Platform rows have no
+workspace owner and default to unpublished. Upload grants carry the same
+ownership pair and bind their intended File and revision IDs.
+
+Upload reservations and File/revision creation use `READ COMMITTED`, the
+application's default transaction isolation. Database triggers serialise
+checks for reserved IDs and reject conflicting ownership, including concurrent
+reservations. These checks reject other isolation levels because their earlier
+snapshots could hide a conflicting reservation after waiting for its lock.
+
+Command-specific policies admit published platform content only for runtime
+sessions with a workspace context. Tenant writes remain workspace-only.
+Platform revisions additionally require their own publication marker and a
+published, non-deleted parent. Knowledge chunks inherit document visibility.
+File and Artifact current pointers identify draft revisions; separate
+published pointers identify reviewed revisions. Publication markers on
+revisions cannot be cleared. Withdrawal hides the parent and all its revisions.
+
+Database checks enforce parent ownership, revision membership, and immutable
+ownership. Platform knowledge excludes private, conversation, URL, and
+integration sources. Platform Files have no folder, and platform Artifacts
+have no workspace conversation, run, or agent provenance. References and
+anonymous Artifact shares retain workspace ownership.
+
+The migration preserves existing workspace rows. Its downgrade refuses while
+any platform content or upload grant remains. Export required content and
+explicitly remove platform rows through a maintenance procedure before
+downgrading. The migration never deletes platform content for you.
+
+Platform authoring, storage, retrieval, and operator interfaces are pending.
+These database structures alone do not make platform content available
+through the product.
+
 ## Connection capacity
 
 The per-process connection and turn-concurrency settings are defined as

@@ -11,15 +11,15 @@ import {
   renderRemovalApprovalSummary,
   renderRemovalOutcomeTable,
 } from "@/integrations/google_ads/components/remove-positive-keywords"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   parsePositiveKeywordReference,
   type PositiveKeywordReference,
 } from "@/integrations/google_ads/lib/positive-keywords"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
 const COLUMNS: DataColumn[] = [
@@ -32,15 +32,11 @@ const COLUMNS: DataColumn[] = [
   { key: "resultingStatus", kind: "status", label: "After" },
 ]
 
-const copy = googleAdsWriteCopy({ verb: "Remove", object: "keywords", effect: "removed" })
-
-export const googleAdsRemovePositiveKeywordsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-remove-positive-keywords",
+export const googleAdsRemovePositiveKeywordsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_remove_keywords: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_remove_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Remove", object: "keywords", effect: "removed" },
       approval: {
-        ...copy.approval,
         parseArgs: removalArgs,
         prompt:
           "Permanently remove these positive keywords from Google Ads. Removed keywords cannot be re-enabled.",

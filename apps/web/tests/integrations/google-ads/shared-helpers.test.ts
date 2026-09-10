@@ -5,7 +5,7 @@ import {
   parseGoogleAdsCustomParameters,
 } from "@/integrations/google_ads/lib/field-values"
 
-import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeEnvelope, parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
 import {
   countByKind,
@@ -90,61 +90,11 @@ describe("Google Ads outcome vocabulary", () => {
   })
 })
 
-describe("Google Ads lifecycle copy", () => {
-  it("pins every shell field", () => {
-    expect(
-      googleAdsWriteCopy({
-        verb: "Update",
-        object: "campaign status",
-        objectPlural: "campaign statuses",
-        effect: "changed",
-      })
-    ).toEqual({
-      heading: "Update Campaign Status",
-      approval: {
-        label: "Update Google Ads Campaign Status",
-        title: "Update Campaign Status",
-        approveLabel: "Approve & Update",
-      },
-      progressLabel: "Updating Google Ads campaign status…",
-      waitingLabel: "Waiting for campaign status approval…",
-      deniedDescription: "This campaign status change was declined. Nothing was changed.",
-      failedDescription: "The update did not finish. No campaign status change was confirmed.",
-      emptyLabel: "No Google Ads accounts changed campaign statuses.",
-      malformedDescription:
-        "The system couldn't verify this account's campaign status outcomes. Check Google Ads before taking further action.",
-      resultFailure:
-        "The system couldn't verify the campaign status changes. Check Google Ads before taking further action.",
-      unverifiedDescription:
-        "The system couldn't verify whether Google Ads changed campaign statuses. Check Google Ads before taking further action.",
-      resultAriaLabel: "Google Ads campaign status results",
-      unconfirmedAriaLabel: "Unconfirmed Google Ads campaign status change",
-    })
-    expect(
-      googleAdsWriteCopy({
-        verb: "Remove",
-        object: "budgets",
-        effect: "removed",
-        destructive: true,
-      }).approval.title
-    ).toBe("Permanently remove budgets")
+describe("Google Ads approval count lines", () => {
+  it("pluralises nouns", () => {
     expect(approvalCountLine(1, "campaign")).toBe("1 campaign")
     expect(approvalCountLine(0, "keyword")).toBe("0 keywords")
     expect(approvalCountLine(12, "recommendation")).toBe("12 recommendations")
-  })
-  it.each([
-    ["Create", "Creating"],
-    ["Assign", "Assigning"],
-    ["Remove", "Removing"],
-    ["Link", "Linking"],
-    ["Unlink", "Unlinking"],
-    ["Apply", "Applying"],
-    ["Dismiss", "Dismissing"],
-    ["Add", "Adding"],
-  ] as const)("conjugates %s", (verb, progress) => {
-    expect(googleAdsWriteCopy({ verb, object: "keywords", effect: "changed" }).progressLabel).toBe(
-      `${progress} Google Ads keywords…`
-    )
   })
 })
 

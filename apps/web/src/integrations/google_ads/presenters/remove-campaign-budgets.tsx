@@ -17,11 +17,11 @@ import {
   type CampaignBudgetWithCurrency,
 } from "@/integrations/google_ads/lib/campaign-budgets"
 import { parseOutcomeEnvelope } from "@/integrations/google_ads/lib/envelopes"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isNullableString, isRecord } from "@/lib/guards"
 
 const COLUMNS: DataColumn[] = [
@@ -34,20 +34,11 @@ const COLUMNS: DataColumn[] = [
   { key: "resultingStatus", kind: "status", label: "After" },
 ]
 
-const copy = googleAdsWriteCopy({
-  verb: "Remove",
-  object: "campaign budgets",
-  effect: "removed",
-  destructive: true,
-})
-
-export const googleAdsRemoveCampaignBudgetsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-remove-campaign-budgets",
+export const googleAdsRemoveCampaignBudgetsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_remove_campaign_budgets: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_remove_campaign_budgets: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Remove", object: "campaign budgets", effect: "removed", destructive: true },
       approval: {
-        ...copy.approval,
         parseArgs: removalArgs,
         prompt: "These unused campaign budgets are permanently removed from Google Ads.",
         renderSummary: (value, fallback) =>

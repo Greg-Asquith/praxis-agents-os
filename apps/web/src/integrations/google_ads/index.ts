@@ -22,7 +22,7 @@ import { googleAdsUpdatePositiveKeywordsPresenter } from "@/integrations/google_
 
 export default {
   catalogDescription: "Let agents manage and report on your ad accounts.",
-  icons: { google_ads: GoogleAdsLogo },
+  Logo: GoogleAdsLogo,
   providerKey: "google_ads",
   toolRowPresenters: [
     googleAdsReportPresenter,

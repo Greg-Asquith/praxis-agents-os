@@ -4,7 +4,7 @@ import type { SVGProps } from "react"
 
 export function AirtableLogo(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 48 40" focusable="false" {...props}>
+    <svg viewBox="0 0 48 40" aria-hidden="true" focusable="false" {...props}>
       <path
         fill="#fcb400"
         d="M21.9.5 2.4 8.6c-1.1.5-1.1 2 0 2.5l19.6 7.8c1.3.5 2.7.5 4 0l19.6-7.8c1.1-.4 1.1-2 0-2.5L26.1.5a5.6 5.6 0 0 0-4.2 0Z"

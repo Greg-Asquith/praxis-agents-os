@@ -7,6 +7,6 @@ import { OutlookCalendarLogo } from "@/integrations/outlook_calendar/components/
 export default {
   catalogDescription: "Let agents read and manage your Outlook calendar.",
   ConnectHelp: MicrosoftConnectHelp,
-  icons: { outlook_calendar: OutlookCalendarLogo },
+  Logo: OutlookCalendarLogo,
   providerKey: "outlook_calendar",
 } satisfies IntegrationUiModule

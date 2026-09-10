@@ -7,23 +7,23 @@ import {
   type ToolApprovalDecisionControls,
 } from "@/components/tool-ui/approval-card"
 import type { ToolRowPresenterProps } from "@/integrations/contract"
+import type { IntegrationProviderUi } from "@/integrations/provider-ui"
 import {
   createIntegrationWritePresenter,
   defineIntegrationWriteVariant,
-  type IntegrationWriteProvider,
   type IntegrationWriteVariant,
 } from "@/integrations/write-presenter"
 import { isRecord } from "@/lib/guards"
 
 type Args = { name: string }
-const provider: IntegrationWriteProvider = {
+const provider: IntegrationProviderUi = {
   contextLabel: "Project",
   externalLabel: "Project code",
   fallbackDisplayName: "Selected project",
-  providerKey: "example",
   formatContextValue: (value) => `Project ${value}`,
-  renderHeading: (heading) => createElement("strong", null, "Example: ", heading),
-  renderIcon: () => createElement("span", null, "Example icon"),
+  Logo: (props) => createElement("svg", { ...props, "data-testid": "example-logo" }),
+  name: "Example",
+  providerKey: "example",
 }
 const variant: IntegrationWriteVariant<Args, string> = {
   approval: {
@@ -34,6 +34,7 @@ const variant: IntegrationWriteVariant<Args, string> = {
     title: (args) => `Review ${args.name}`,
     renderSummary: (value) => createElement("span", null, "Summary: ", parseArgs(value)?.name),
   },
+  copy: { effect: "changed", object: "project", verb: "Update" },
   deniedDescription: "Change declined. Nothing changed.",
   emptyLabel: "No projects",
   failedDescription: "No change confirmed",
@@ -234,7 +235,8 @@ describe("integration write presenter", () => {
     ["unknown", "Missing project results"],
   ] as const)("renders configured %s state", (status, copy) => {
     const html = render(props(status))
-    expect(html).toContain("Example: Change project")
+    expect(html).toContain("Change project")
+    expect(html).toContain('data-testid="example-logo"')
     expect(html).toContain(copy)
     expect(html).not.toContain("Outcome:")
   })

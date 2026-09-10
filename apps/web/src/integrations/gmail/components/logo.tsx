@@ -4,7 +4,7 @@ import type { SVGProps } from "react"
 
 export function GmailLogo(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="52 42 88 66" focusable="false" {...props}>
+    <svg viewBox="52 42 88 66" aria-hidden="true" focusable="false" {...props}>
       <path fill="#4285f4" d="M58 108h14V74L52 59v43c0 3.32 2.69 6 6 6" />
       <path fill="#34a853" d="M120 108h14c3.32 0 6-2.69 6-6V59l-20 15" />
       <path fill="#fbbc04" d="M120 48v26l20-15v-8c0-7.42-8.47-11.65-14.4-7.2" />

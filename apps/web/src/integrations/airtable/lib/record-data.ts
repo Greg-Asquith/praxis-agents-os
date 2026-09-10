@@ -9,6 +9,19 @@ export type AirtableRecord = {
   recordId: string
 }
 
+export type AirtableRecordList = {
+  records: AirtableRecord[]
+  total: number
+}
+
+export type AirtableWriteAction = "create" | "update"
+
+export type AirtableWriteArgs = {
+  fields: Record<string, unknown>
+  recordId: string | null
+  table: string
+}
+
 export function parseAirtableRecord(value: unknown): AirtableRecord | null {
   if (
     !isRecord(value) ||
@@ -27,7 +40,44 @@ export function parseAirtableRecord(value: unknown): AirtableRecord | null {
   }
 }
 
-export function isAirtableJson(value: unknown, depth = 0): boolean {
+export function parseAirtableRecordList(value: unknown): AirtableRecordList | null {
+  if (!isRecord(value) || !Array.isArray(value["records"]) || typeof value["total"] !== "number") {
+    return null
+  }
+  const records = value["records"].map(parseAirtableRecord)
+  return records.every((record): record is AirtableRecord => record !== null)
+    ? { records, total: value["total"] }
+    : null
+}
+
+export function parseAirtableWriteArgs(
+  value: unknown,
+  action: AirtableWriteAction
+): AirtableWriteArgs | null {
+  if (
+    !isRecord(value) ||
+    typeof value["table"] !== "string" ||
+    !isRecord(value["fields"]) ||
+    Object.keys(value["fields"]).length === 0 ||
+    !isAirtableJson(value["fields"]) ||
+    (action === "update" && typeof value["record_id"] !== "string")
+  ) {
+    return null
+  }
+  return {
+    fields: value["fields"],
+    recordId: typeof value["record_id"] === "string" ? value["record_id"] : null,
+    table: value["table"],
+  }
+}
+
+export function parseAirtableRecordId(value: unknown): string | null {
+  return isRecord(value) && typeof value["record_id"] === "string" && value["record_id"].trim()
+    ? value["record_id"]
+    : null
+}
+
+function isAirtableJson(value: unknown, depth = 0): boolean {
   if (depth > 12) {
     return false
   }

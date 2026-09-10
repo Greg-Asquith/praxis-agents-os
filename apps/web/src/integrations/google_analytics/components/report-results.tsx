@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_analytics/components/report-results.tsx
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/ui/data-table"
 import { formatDataCell, type DataRow } from "@/components/ui/data-table-model"
@@ -36,7 +37,7 @@ export function GoogleAnalyticsReportResults({
           }
         />
       ) : (
-        <p className="text-muted-foreground py-4 text-center text-sm">No report rows returned.</p>
+        <EmptyResult>No report rows returned.</EmptyResult>
       )}
       {notes.length > 0 ? (
         <ul className="text-muted-foreground grid gap-1 text-xs">

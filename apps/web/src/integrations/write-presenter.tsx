@@ -1,9 +1,6 @@
 // apps/web/src/integrations/write-presenter.tsx
 
-import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 import type { ReactNode } from "react"
-import { RefreshedWriteApproval } from "@/integrations/refreshed-write-approval"
-import type { ApprovalDisplayRefresh } from "@/integrations/approval-display-query"
 
 import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
@@ -15,21 +12,20 @@ import {
   type ParsedFanOutData,
 } from "@/components/tool-ui/fan-out"
 import { DeclinedFanOut, FanOutShell, FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
+import type { ApprovalDisplayRefresh } from "@/integrations/approval-display-query"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
-
-export type IntegrationWriteProvider = {
-  contextLabel: string
-  externalLabel: string | null
-  fallbackDisplayName: string
-  formatContextValue?: (value: string) => string
-  providerKey: string
-  renderHeading: (heading: string) => ReactNode
-  renderIcon: () => ReactNode
-}
+import { IntegrationToolHeading, type IntegrationProviderUi } from "@/integrations/provider-ui"
+import { RefreshedWriteApproval } from "@/integrations/refreshed-write-approval"
+import {
+  integrationWriteCopy,
+  type IntegrationWriteCopy,
+  type IntegrationWriteCopySpec,
+} from "@/integrations/write-copy"
+import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 
 type ApprovalSpec<Args> = {
-  approveLabel: string
-  label: string
+  approveLabel?: string
+  label?: string
   parseArgs: (value: unknown) => Args | null
   prompt: string | ((args: Args) => string)
   refreshDisplay?: { fields: readonly string[]; refresh: ApprovalDisplayRefresh }
@@ -41,20 +37,19 @@ type ApprovalSpec<Args> = {
     onFieldEdit: (key: string, value: EditedValue) => void,
     disabled: boolean
   ) => ReactNode
-  title: string | ((args: Args) => string)
+  title?: string | ((args: Args) => string)
   validateArgs?: (value: unknown) => string | null
 }
 
-export type IntegrationWriteVariant<Args, Result> = {
+// Lifecycle strings default from `copy`; set one directly only when the template reads wrong.
+export type IntegrationWriteVariant<Args, Result> = Partial<
+  Omit<IntegrationWriteCopy, "approval" | "progressLabel">
+> & {
   approval: ApprovalSpec<Args>
-  deniedDescription: string
+  copy: IntegrationWriteCopySpec
   details?: (args: Args | null) => { label: string; value: string }[]
-  emptyLabel: string
-  failedDescription: string
-  heading: string
-  malformedDescription: string
   parseResult: (value: unknown) => Result | null
-  progressLabel: string | ((args: Args | null) => string)
+  progressLabel?: string | ((args: Args | null) => string)
   renderFailure?: (
     args: Args | null,
     description: string,
@@ -63,23 +58,25 @@ export type IntegrationWriteVariant<Args, Result> = {
   ) => ReactNode
   renderOutcome: (result: Result, args: Args | null) => ReactNode
   renderUnverifiedOutcome?: (result: Result, args: Args | null) => ReactNode
-  resultAriaLabel: string
-  resultFailure: string
   /** Describes a failure the provider reported inside a successful entry. */
   settledFailure?: (result: Result) => string | null
   /** Identifies ambiguous evidence even when the outer entry reports success. */
   settledUnverified?: (result: Result) => boolean
-  unconfirmedAriaLabel: string
-  unverifiedDescription: string
-  waitingLabel: string
 }
 
 export type IntegrationWriteRenderer = (context: ToolRowPresenterProps) => ReactNode | null
 
+type ResolvedVariant<Args, Result> = IntegrationWriteVariant<Args, Result> &
+  Omit<IntegrationWriteCopy, "approval" | "progressLabel"> & {
+    approval: ApprovalSpec<Args> & IntegrationWriteCopy["approval"]
+    progressLabel: string | ((args: Args | null) => string)
+  }
+
 export function defineIntegrationWriteVariant<Args, Result>(
-  provider: IntegrationWriteProvider,
-  variant: IntegrationWriteVariant<Args, Result>
+  provider: IntegrationProviderUi,
+  spec: IntegrationWriteVariant<Args, Result>
 ): IntegrationWriteRenderer {
+  const variant = resolveVariant(provider, spec)
   return (context) => {
     const { activity, approvalDecision, defaultOpen } = context
     const args = variant.approval.parseArgs(activity.args)
@@ -112,7 +109,9 @@ export function defineIntegrationWriteVariant<Args, Result>(
     if (activity.status === "running" || activity.status === "awaiting_approval") {
       return (
         <FanOutSkeleton
-          heading={provider.renderHeading(variant.heading)}
+          heading={
+            <IntegrationToolHeading provider={provider}>{variant.heading}</IntegrationToolHeading>
+          }
           label={
             activity.status === "awaiting_approval"
               ? variant.waitingLabel
@@ -123,15 +122,7 @@ export function defineIntegrationWriteVariant<Args, Result>(
     }
 
     if (activity.status === "denied") {
-      return writeDenied(
-        activity.id,
-        args,
-        variant.deniedDescription,
-        activity.decisionReason,
-        defaultOpen,
-        variant,
-        provider
-      )
+      return writeDenied(activity.id, args, activity.decisionReason, defaultOpen, variant, provider)
     }
 
     if (activity.status === "failed" || activity.status === "unknown") {
@@ -150,11 +141,46 @@ export function defineIntegrationWriteVariant<Args, Result>(
   }
 }
 
+export function createIntegrationWritePresenter({
+  key,
+  variants,
+}: {
+  key?: string
+  variants: Record<string, IntegrationWriteRenderer>
+}): ToolRowPresenter {
+  return {
+    handlesApprovals: true,
+    key: key ?? Object.keys(variants).join("+"),
+    matches: (activity) => Object.hasOwn(variants, activity.name),
+    render: (context) => variants[context.activity.name]?.(context) ?? null,
+  }
+}
+
+function resolveVariant<Args, Result>(
+  provider: IntegrationProviderUi,
+  spec: IntegrationWriteVariant<Args, Result>
+): ResolvedVariant<Args, Result> {
+  const copy = integrationWriteCopy(provider, spec.copy)
+  const { approval, ...rest } = spec
+  return {
+    ...copy,
+    ...definedEntries(rest),
+    approval: { ...copy.approval, ...definedEntries(approval) },
+    progressLabel: spec.progressLabel ?? copy.progressLabel,
+  } as ResolvedVariant<Args, Result>
+}
+
+function definedEntries<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined)
+  ) as Partial<T>
+}
+
 function renderSettledWrite<Args, Result>(
   { activity, defaultOpen }: ToolRowPresenterProps,
   args: Args | null,
-  provider: IntegrationWriteProvider,
-  variant: IntegrationWriteVariant<Args, Result>
+  provider: IntegrationProviderUi,
+  variant: ResolvedVariant<Args, Result>
 ) {
   const fanOut = parseSettledFanOutData(activity.result, variant.parseResult, {
     malformed: variant.malformedDescription,
@@ -185,7 +211,9 @@ function renderSettledWrite<Args, Result>(
         {...(provider.formatContextValue
           ? { formatContextValue: provider.formatContextValue }
           : {})}
-        heading={provider.renderHeading(variant.heading)}
+        heading={
+          <IntegrationToolHeading provider={provider}>{variant.heading}</IntegrationToolHeading>
+        }
         renderFailed={(entry, index) => {
           const result = fanOut.data[index] ?? null
           if (
@@ -228,11 +256,18 @@ function renderSettledWrite<Args, Result>(
 function renderApproval<Args, Result>(
   { activity, approvalDecision, ui }: ToolRowPresenterProps,
   args: Args | null,
-  provider: IntegrationWriteProvider,
-  variant: IntegrationWriteVariant<Args, Result>,
+  provider: IntegrationProviderUi,
+  variant: ResolvedVariant<Args, Result>,
   refreshed?: { value: unknown; error: string | null }
 ) {
   if (!approvalDecision) return null
+  const provenance = {
+    ...(activity.derivedFromUntrusted === undefined
+      ? {}
+      : { derivedFromUntrusted: activity.derivedFromUntrusted }),
+    ...(activity.taintSources === undefined ? {} : { taintSources: activity.taintSources }),
+  }
+  const icon = <provider.Logo aria-hidden="true" className="size-4" />
   if (args === null) {
     return (
       <ToolApprovalDecisionCard
@@ -240,11 +275,8 @@ function renderApproval<Args, Result>(
         approveLabel={variant.approval.approveLabel}
         args={activity.args}
         controls={approvalDecision}
-        {...(activity.derivedFromUntrusted === undefined
-          ? {}
-          : { derivedFromUntrusted: activity.derivedFromUntrusted })}
-        {...(activity.taintSources === undefined ? {} : { taintSources: activity.taintSources })}
-        icon={provider.renderIcon()}
+        {...provenance}
+        icon={icon}
         label={variant.approval.label}
         prompt="The approval details couldn't be verified, so this action can't be approved."
         title={variant.heading}
@@ -286,10 +318,7 @@ function renderApproval<Args, Result>(
       approveLabel={variant.approval.approveLabel}
       args={activity.args}
       controls={approvalDecision}
-      {...(activity.derivedFromUntrusted === undefined
-        ? {}
-        : { derivedFromUntrusted: activity.derivedFromUntrusted })}
-      {...(activity.taintSources === undefined ? {} : { taintSources: activity.taintSources })}
+      {...provenance}
       fallbackFields={
         renderFields
           ? approvalFallbackFields(
@@ -299,7 +328,7 @@ function renderApproval<Args, Result>(
           : []
       }
       fields={renderFields ? fields : []}
-      icon={provider.renderIcon()}
+      icon={icon}
       label={variant.approval.label}
       prompt={approvalCopy(variant.approval.prompt, currentParsedArgs ?? args)}
       title={approvalCopy(variant.approval.title, currentParsedArgs ?? args)}
@@ -313,21 +342,6 @@ function renderApproval<Args, Result>(
   )
 }
 
-export function createIntegrationWritePresenter({
-  key,
-  variants,
-}: {
-  key: string
-  variants: Record<string, IntegrationWriteRenderer>
-}): ToolRowPresenter {
-  return {
-    handlesApprovals: true,
-    key,
-    matches: (activity) => Object.hasOwn(variants, activity.name),
-    render: (context) => variants[context.activity.name]?.(context) ?? null,
-  }
-}
-
 function approvalCopy<Args>(value: string | ((args: Args) => string), args: Args): string {
   return typeof value === "function" ? value(args) : value
 }
@@ -335,7 +349,7 @@ function approvalCopy<Args>(value: string | ((args: Args) => string), args: Args
 // Parsed provider evidence can override a successful outer status.
 function settleEntries<Args, Result>(
   fanOut: ParsedFanOutData<Result>,
-  variant: IntegrationWriteVariant<Args, Result>
+  variant: ResolvedVariant<Args, Result>
 ): FanOutEntry[] {
   return fanOut.entries.map((entry, index) => {
     if (entry.errorCode === "malformed_result" || entry.errorCode === "unverified_mutation") {
@@ -361,11 +375,10 @@ function settleEntries<Args, Result>(
 function writeDenied<Args, Result>(
   activityId: string,
   args: Args | null,
-  description: string,
   reason: string | undefined,
   defaultOpen: boolean,
-  variant: IntegrationWriteVariant<Args, Result>,
-  provider: IntegrationWriteProvider
+  variant: ResolvedVariant<Args, Result>,
+  provider: IntegrationProviderUi
 ) {
   return (
     <DeclinedFanOut
@@ -373,12 +386,14 @@ function writeDenied<Args, Result>(
       ariaLabel={variant.unconfirmedAriaLabel}
       contextLabel={provider.contextLabel}
       defaultOpen={defaultOpen}
-      description={description}
+      description={variant.deniedDescription}
       {...(variant.details ? { details: variant.details(args) } : {})}
       displayName={provider.fallbackDisplayName}
       externalLabel={provider.externalLabel}
       {...(provider.formatContextValue ? { formatContextValue: provider.formatContextValue } : {})}
-      heading={provider.renderHeading(variant.heading)}
+      heading={
+        <IntegrationToolHeading provider={provider}>{variant.heading}</IntegrationToolHeading>
+      }
       providerKey={provider.providerKey}
       reason={reason}
     />
@@ -390,8 +405,8 @@ function writeFailure<Args, Result>(
   args: Args | null,
   description: string,
   defaultOpen: boolean,
-  variant: IntegrationWriteVariant<Args, Result>,
-  provider: IntegrationWriteProvider,
+  variant: ResolvedVariant<Args, Result>,
+  provider: IntegrationProviderUi,
   disposition: "failed" | "unconfirmed"
 ) {
   const entry: FanOutEntry = {
@@ -415,7 +430,9 @@ function writeFailure<Args, Result>(
         {...(provider.formatContextValue
           ? { formatContextValue: provider.formatContextValue }
           : {})}
-        heading={provider.renderHeading(variant.heading)}
+        heading={
+          <IntegrationToolHeading provider={provider}>{variant.heading}</IntegrationToolHeading>
+        }
         renderFailed={() =>
           variant.renderFailure?.(args, description, null, disposition) ?? (
             <p className="text-destructive text-sm">{description}</p>

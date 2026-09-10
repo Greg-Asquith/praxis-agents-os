@@ -1,13 +1,11 @@
 // apps/web/src/integrations/outlook_mail/presenters/folders.tsx
 
-import { parseFanOutData } from "@/components/tool-ui/fan-out"
 import type { DataColumn } from "@/components/ui/data-table"
-import type { ToolRowPresenter } from "@/integrations/contract"
-import { OutlookSkeleton } from "@/integrations/outlook_mail/components/fan-out"
-import { OutlookRecordList } from "@/integrations/outlook_mail/components/record-list"
+import { OutlookRecordTable } from "@/integrations/outlook_mail/components/record-table"
 import { folderRows } from "@/integrations/outlook_mail/lib/record-lists"
+import { outlookMailProvider } from "@/integrations/outlook_mail/provider"
+import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
 
-const TITLE = "List Outlook Folders"
 const COLUMNS: DataColumn[] = [
   { key: "name", label: "Folder", kind: "text", width: "auto" },
   { key: "unread_count", label: "Unread", kind: "number", align: "right" },
@@ -15,28 +13,21 @@ const COLUMNS: DataColumn[] = [
   { key: "child_folder_count", label: "Subfolders", kind: "number", align: "right" },
 ]
 
-export const outlookMailFoldersPresenter: ToolRowPresenter = {
-  key: "outlook-mail-folders",
-  matches: (activity) => activity.name === "outlook_mail_list_folders",
-  render: ({ activity, defaultOpen }) => {
-    if (activity.status === "running") {
-      return <OutlookSkeleton label="Listing folders…" title={TITLE} />
-    }
-    const result = parseFanOutData(activity.result, folderRows)
-    if (!result) {
-      return null
-    }
-    return (
-      <OutlookRecordList
-        columns={COLUMNS}
-        defaultOpen={defaultOpen}
-        emptyLabel="No folders found."
-        exportFilename="outlook-folders.csv"
-        noun="Folder"
-        nounPlural="Folders"
-        result={result}
-        title={TITLE}
-      />
-    )
-  },
-}
+export const outlookMailFoldersPresenter = defineIntegrationReadPresenter(outlookMailProvider, {
+  ariaLabel: "List Outlook Folders results",
+  emptyLabel: "No mailboxes returned a result.",
+  heading: "List Outlook Folders",
+  parseResult: folderRows,
+  progressLabel: "Listing folders…",
+  render: (rows) => (
+    <OutlookRecordTable
+      columns={COLUMNS}
+      emptyLabel="No folders found."
+      exportFilename="outlook-folders.csv"
+      noun="Folder"
+      nounPlural="Folders"
+      rows={rows}
+    />
+  ),
+  tool: "outlook_mail_list_folders",
+})

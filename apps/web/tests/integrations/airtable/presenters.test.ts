@@ -152,7 +152,7 @@ describe("Airtable tool presenters", () => {
       expect(rendered.props.fields).toBe(declaredFields)
     }
     const html = render(rendered)
-    expect(html).toContain("Review Airtable record update")
+    expect(html).toContain("Review record before updating")
     expect(html).toContain("Projects")
     expect(html).toContain("rec-1")
     expect(html).toContain("Fields to write")
@@ -165,55 +165,45 @@ describe("Airtable tool presenters", () => {
   })
 
   it.each([
-    [
-      airtableCreateRecordPresenter,
-      "airtable_create_record",
-      "running",
-      "Creating Airtable record…",
-    ],
+    [airtableCreateRecordPresenter, "airtable_create_record", "running", "Creating record…"],
     [
       airtableCreateRecordPresenter,
       "airtable_create_record",
       "awaiting_approval",
-      "Waiting for record creation approval…",
+      "Waiting for approval to create record…",
     ],
-    [airtableCreateRecordPresenter, "airtable_create_record", "denied", "Nothing was changed."],
+    [airtableCreateRecordPresenter, "airtable_create_record", "denied", "Nothing was created."],
     [
       airtableCreateRecordPresenter,
       "airtable_create_record",
       "failed",
-      "No Airtable change was confirmed.",
+      "The record could not be created.",
     ],
     [
       airtableCreateRecordPresenter,
       "airtable_create_record",
       "unknown",
-      "No Airtable change was confirmed.",
+      "confirm the record outcome. Check Airtable before taking further action.",
     ],
-    [
-      airtableUpdateRecordPresenter,
-      "airtable_update_record",
-      "running",
-      "Updating Airtable record…",
-    ],
+    [airtableUpdateRecordPresenter, "airtable_update_record", "running", "Updating record…"],
     [
       airtableUpdateRecordPresenter,
       "airtable_update_record",
       "awaiting_approval",
-      "Waiting for record update approval…",
+      "Waiting for approval to update record…",
     ],
-    [airtableUpdateRecordPresenter, "airtable_update_record", "denied", "Nothing was changed."],
+    [airtableUpdateRecordPresenter, "airtable_update_record", "denied", "Nothing was updated."],
     [
       airtableUpdateRecordPresenter,
       "airtable_update_record",
       "failed",
-      "No Airtable change was confirmed.",
+      "The record could not be updated.",
     ],
     [
       airtableUpdateRecordPresenter,
       "airtable_update_record",
       "unknown",
-      "No Airtable change was confirmed.",
+      "confirm the record outcome. Check Airtable before taking further action.",
     ],
   ] as const)("renders an honest %s %s lifecycle state", (presenter, name, status, expected) => {
     const html = render(
@@ -296,10 +286,10 @@ describe("Airtable tool presenters", () => {
       )
     ).toBeNull()
     expect(airtableModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
-      "airtable-list-records",
-      "airtable-get-record",
-      "airtable-create-record",
-      "airtable-update-record",
+      "airtable_list_records",
+      "airtable_get_record",
+      "airtable_create_record",
+      "airtable_update_record",
     ])
     expect(airtableCreateRecordPresenter.handlesApprovals).toBe(true)
     expect(airtableUpdateRecordPresenter.handlesApprovals).toBe(true)
@@ -309,7 +299,7 @@ describe("Airtable tool presenters", () => {
     await loadIntegrationUiModules(["airtable"])
 
     expect(integrationToolRowPresenters("airtable").map((presenter) => presenter.key)).toContain(
-      "airtable-list-records"
+      "airtable_list_records"
     )
     const row = renderCustomToolCallRow(
       props({

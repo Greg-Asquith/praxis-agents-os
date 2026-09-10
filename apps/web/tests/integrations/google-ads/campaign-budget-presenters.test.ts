@@ -527,7 +527,7 @@ describe("Google Ads campaign budget presenters", () => {
       )
     )
 
-    expect(malformed).toContain("couldn&#x27;t verify")
+    expect(malformed).toContain("couldn&#x27;t confirm")
     expect(unverified).toContain("couldn&#x27;t verify whether Google Ads")
     expect(unverified).not.toContain("raw provider error")
     const denied = activity(name, "denied", null)

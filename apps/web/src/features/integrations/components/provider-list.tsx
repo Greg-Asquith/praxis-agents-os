@@ -52,7 +52,7 @@ function ProviderListRow({
   provider: IntegrationProvider
 }) {
   const module = useIntegrationUiModule(provider.provider_key)
-  const Icon = module?.icons?.[provider.provider_key] ?? PlugZapIcon
+  const Icon = module?.Logo ?? PlugZapIcon
   const status = providerSummaryStatus(provider, connections)
   const available = Object.values(provider.configured_auth_modes).some(Boolean)
   const description =

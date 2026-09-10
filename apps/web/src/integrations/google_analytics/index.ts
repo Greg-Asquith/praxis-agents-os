@@ -1,25 +1,25 @@
 // apps/web/src/integrations/google_analytics/index.ts
 
+import type { IntegrationUiModule } from "@/integrations/contract"
 import { GoogleAnalyticsConnectHelp } from "@/integrations/google_analytics/components/connect-help"
 import { GoogleAnalyticsLogo } from "@/integrations/google_analytics/components/logo"
-import { compatibilityPresenter } from "@/integrations/google_analytics/presenters/compatibility"
-import { googleAdsLinksPresenter } from "@/integrations/google_analytics/presenters/google-ads-links"
-import { realtimePresenter } from "@/integrations/google_analytics/presenters/realtime"
-import { reportFieldsPresenter } from "@/integrations/google_analytics/presenters/report-fields"
-import { reportPresenter } from "@/integrations/google_analytics/presenters/report"
-import type { IntegrationUiModule } from "@/integrations/contract"
+import { googleAnalyticsCompatibilityPresenter } from "@/integrations/google_analytics/presenters/compatibility"
+import { googleAnalyticsGoogleAdsLinksPresenter } from "@/integrations/google_analytics/presenters/google-ads-links"
+import { googleAnalyticsRealtimePresenter } from "@/integrations/google_analytics/presenters/realtime"
+import { googleAnalyticsReportPresenter } from "@/integrations/google_analytics/presenters/report"
+import { googleAnalyticsReportFieldsPresenter } from "@/integrations/google_analytics/presenters/report-fields"
 
 export default {
   catalogDescription:
     "Let agents read website and app performance from Google Analytics properties.",
   ConnectHelp: GoogleAnalyticsConnectHelp,
-  icons: { google_analytics: GoogleAnalyticsLogo },
+  Logo: GoogleAnalyticsLogo,
   providerKey: "google_analytics",
   toolRowPresenters: [
-    reportPresenter,
-    realtimePresenter,
-    reportFieldsPresenter,
-    compatibilityPresenter,
-    googleAdsLinksPresenter,
+    googleAnalyticsReportPresenter,
+    googleAnalyticsRealtimePresenter,
+    googleAnalyticsReportFieldsPresenter,
+    googleAnalyticsCompatibilityPresenter,
+    googleAnalyticsGoogleAdsLinksPresenter,
   ],
 } satisfies IntegrationUiModule

@@ -1,13 +1,11 @@
 // apps/web/src/integrations/airtable/lib/tool-details.ts
 
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
-import { isRecord } from "@/lib/guards"
+import type { AirtableWriteArgs } from "@/integrations/airtable/lib/record-data"
+import { compactDetails, numberDetail, stringDetail } from "@/integrations/tool-details"
 
 export function airtableRecordDetails(args: unknown): FanOutDetail[] {
-  if (!isRecord(args)) {
-    return []
-  }
-  return compact([
+  return compactDetails([
     stringDetail(args, "table", "Table"),
     stringDetail(args, "record_id", "Record"),
     stringDetail(args, "view", "View"),
@@ -16,28 +14,12 @@ export function airtableRecordDetails(args: unknown): FanOutDetail[] {
   ])
 }
 
-function stringDetail(
-  args: Record<string, unknown>,
-  key: string,
-  label: string,
-  summary = true
-): FanOutDetail | null {
-  const value = args[key]
-  if (typeof value !== "string" || !value.trim()) {
-    return null
+export function airtableWriteDetails(args: AirtableWriteArgs | null): FanOutDetail[] {
+  if (!args) {
+    return []
   }
-  return { label, summary, value }
-}
-
-function numberDetail(
-  args: Record<string, unknown>,
-  key: string,
-  label: string
-): FanOutDetail | null {
-  const value = args[key]
-  return typeof value === "number" ? { label, value: String(value) } : null
-}
-
-function compact<T>(values: (T | null)[]): T[] {
-  return values.filter((value): value is T => value !== null)
+  return [
+    { label: "Table", value: args.table },
+    ...(args.recordId === null ? [] : [{ label: "Record", value: args.recordId }]),
+  ]
 }

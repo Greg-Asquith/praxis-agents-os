@@ -19,7 +19,7 @@ import { outlookMailUpdatePresenter } from "@/integrations/outlook_mail/presente
 export default {
   catalogDescription: "Let agents read and manage your Outlook email.",
   ConnectHelp: MicrosoftConnectHelp,
-  icons: { outlook_mail: OutlookMailLogo },
+  Logo: OutlookMailLogo,
   providerKey: "outlook_mail",
   toolRowPresenters: [
     outlookMailSearchPresenter,

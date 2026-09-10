@@ -8,10 +8,11 @@ import {
   matchesWritableSite,
   parseWritableSiteUrls,
 } from "@/integrations/google_search_console/lib/write-args"
+import { googleSearchConsoleProvider } from "@/integrations/google_search_console/provider"
 import {
-  createGoogleSearchConsoleWritePresenter,
-  defineGoogleSearchConsoleWriteVariant,
-} from "@/integrations/google_search_console/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { titleCaseToken } from "@/lib/format"
 import { isDateTimeString, isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
@@ -61,38 +62,28 @@ const COLUMNS: DataColumn[] = [
   { key: "details", kind: "text", label: "Details" },
 ]
 
-export const submitSitemapPresenter = createGoogleSearchConsoleWritePresenter({
-  key: "google-search-console-submit-sitemap",
+export const googleSearchConsoleSubmitSitemapPresenter = createIntegrationWritePresenter({
   variants: {
-    google_search_console_submit_sitemap: defineGoogleSearchConsoleWriteVariant({
+    google_search_console_submit_sitemap: defineIntegrationWriteVariant<
+      SubmissionArgs,
+      SubmissionResult
+    >(googleSearchConsoleProvider, {
       approval: {
-        approveLabel: "Approve & Submit",
-        label: "Submit Search Console Sitemaps",
         parseArgs: submissionArgs,
         prompt:
           "The agent wants Google to re-process these sitemaps. Google decides when and whether to crawl the URLs they list.",
-        renderSummary: renderApprovalSummary,
-        title: "Submit Sitemaps to Google Search Console",
+        renderSummary: (value, fallback) =>
+          renderApprovalSummary(submissionArgs(value) ?? fallback),
         validateArgs: validateSubmissionArgs,
       },
-      deniedDescription: "This sitemap submission was declined. Nothing was submitted.",
+      copy: { effect: "submitted", object: "sitemaps", verb: "Submit" },
       details: (args) =>
         args ? [{ label: "Sitemaps", value: String(args.sitemapUrls.length) }] : [],
-      emptyLabel: "No Search Console sites submitted sitemaps.",
-      failedDescription: "The submission did not finish. No sitemap submission was confirmed.",
-      heading: "Submit Search Console Sitemaps",
-      malformedDescription:
-        "The system couldn't verify this site's sitemap outcomes. Check the sitemaps in Search Console before submitting again.",
       parseResult: submissionResult,
-      progressLabel: "Submitting Search Console sitemaps…",
       renderOutcome: renderSubmissionOutcome,
-      resultAriaLabel: "Search Console sitemap submission results",
-      resultFailure:
-        "The system couldn't verify the sitemap submissions. Check Search Console before submitting again.",
-      unconfirmedAriaLabel: "Unconfirmed Search Console sitemap submission",
+      renderUnverifiedOutcome: renderSubmissionOutcome,
       unverifiedDescription:
         "Google may or may not have received the submission. Check the sitemap in Search Console before submitting again.",
-      waitingLabel: "Waiting for sitemap submission approval…",
     }),
   },
 })

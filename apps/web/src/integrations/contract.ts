@@ -31,8 +31,9 @@ export type ToolRowPresenter = {
 
 export type IntegrationUiModule = {
   catalogDescription?: string
+  ConnectHelp?: ComponentType<{ provider: IntegrationProvider }>
+  /** Provider mark; also resolves the tool-UI icon token equal to the provider key. */
+  Logo: ComponentType<SVGProps<SVGSVGElement>>
   providerKey: string
   toolRowPresenters?: ToolRowPresenter[]
-  icons?: Record<string, ComponentType<SVGProps<SVGSVGElement>>>
-  ConnectHelp?: ComponentType<{ provider: IntegrationProvider }>
 }

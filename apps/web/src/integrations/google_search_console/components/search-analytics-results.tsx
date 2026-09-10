@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_search_console/components/search-analytics-results.tsx
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { DataTable } from "@/components/ui/data-table"
 import type { SearchAnalyticsReport } from "@/integrations/google_search_console/lib/search-analytics-model"
 import { filenameStem } from "@/lib/format"
@@ -19,8 +20,6 @@ export function SearchAnalyticsResults({
       truncationNote={report.truncated ? report.truncationNote : null}
     />
   ) : (
-    <p className="text-muted-foreground py-4 text-center text-sm">
-      No search performance rows returned.
-    </p>
+    <EmptyResult>No search performance rows returned.</EmptyResult>
   )
 }

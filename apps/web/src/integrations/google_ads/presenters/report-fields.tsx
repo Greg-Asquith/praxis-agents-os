@@ -9,13 +9,15 @@ import {
 } from "@/integrations/google_ads/components/report-field-indicators"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Skeleton } from "@/components/ui/skeleton"
+import { DetailList } from "@/components/tool-ui/detail-list"
+import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { CopyTextButton } from "@/components/ui/copy-text-button"
 import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
-import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
+import { IntegrationToolHeading } from "@/integrations/provider-ui"
 import { titleCaseToken } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
+import { isNonEmptyString, isNonNegativeInteger, isRecord } from "@/lib/guards"
 
 const LIST_TOOL = "google_ads_list_report_fields"
 const GET_TOOL = "google_ads_get_report_field"
@@ -100,25 +102,21 @@ export const googleAdsReportFieldsPresenter: ToolRowPresenter = {
 }
 
 function reportFieldsSkeleton(exact: boolean) {
-  const action = exact ? "Getting" : "Listing"
-  const heading = exact ? "Get Google Ads Report Field" : "List Google Ads Report Fields"
   return (
-    <section
-      aria-busy="true"
-      aria-label={`${action} Google Ads report field metadata`}
-      className="border-border grid gap-3 rounded-lg border p-3"
-    >
-      <GoogleAdsToolHeading>{heading}</GoogleAdsToolHeading>
-      <Skeleton className="h-9 w-full" />
-      <Skeleton className="h-9 w-full" />
-      <Skeleton className="h-9 w-4/5" />
-    </section>
+    <FanOutSkeleton
+      heading={heading(exact ? "Get Google Ads Report Field" : "List Google Ads Report Fields")}
+      label={`${exact ? "Getting" : "Listing"} Google Ads report field metadata`}
+    />
   )
+}
+
+function heading(text: string) {
+  return <IntegrationToolHeading provider={googleAdsProvider}>{text}</IntegrationToolHeading>
 }
 
 function reportFieldsFailure(activity: ToolActivity, defaultOpen: boolean) {
   const exact = activity.name === GET_TOOL
-  const heading = exact ? "Get Google Ads Report Field" : "List Google Ads Report Fields"
+  const title = exact ? "Get Google Ads Report Field" : "List Google Ads Report Fields"
   const message =
     typeof activity.result === "string" && activity.result.trim()
       ? activity.result.trim()
@@ -127,10 +125,10 @@ function reportFieldsFailure(activity: ToolActivity, defaultOpen: boolean) {
         : "The field listing did not finish. No fields were confirmed."
   return (
     <ToolResultCard
-      ariaLabel={`${heading} failed`}
+      ariaLabel={`${title} failed`}
       defaultOpen={defaultOpen}
       details={reportFieldsArgDetails(activity)}
-      heading={<GoogleAdsToolHeading>{heading}</GoogleAdsToolHeading>}
+      heading={heading(title)}
       trailing={<ReportFieldsFailed unconfirmed={activity.status === "unknown"} />}
     >
       <div className="grid min-w-0 gap-3">
@@ -192,7 +190,7 @@ function listReportFieldsResult(
         { label: "Segments", summary: false, value: result.segmentCount.toLocaleString() },
         { label: "API version", summary: false, value: result.apiVersion },
       ]}
-      heading={<GoogleAdsToolHeading>List Google Ads Report Fields</GoogleAdsToolHeading>}
+      heading={heading("List Google Ads Report Fields")}
       trailing={<ReportFieldsDone />}
     >
       <div className="grid min-w-0 gap-4">
@@ -276,7 +274,7 @@ function getReportFieldsResult(defaultOpen: boolean, result: GetReportFields) {
         },
         { label: "API version", summary: false, value: result.apiVersion },
       ]}
-      heading={<GoogleAdsToolHeading>Get Google Ads Report Field</GoogleAdsToolHeading>}
+      heading={heading("Get Google Ads Report Field")}
       trailing={<ReportFieldsDone />}
     >
       <div className="grid min-w-0 gap-4">
@@ -298,12 +296,15 @@ function reportFieldDetail(field: ReportFieldDetail, apiVersion: string) {
   return (
     <section aria-label={`${field.name} metadata`} className="grid min-w-0 gap-3" key={field.name}>
       {copyableName("API name", field.name)}
-      <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {metadataValue("Category", humanizeToken(field.category))}
-        {metadataValue("Data type", humanizeToken(field.dataType))}
-        {metadataValue("Type URL", field.typeUrl ?? "Not provided")}
-        {metadataValue("API version", apiVersion)}
-      </dl>
+      <DetailList
+        className="lg:grid-cols-4"
+        items={[
+          { label: "Category", value: humanizeToken(field.category) },
+          { label: "Data type", value: humanizeToken(field.dataType) },
+          { label: "Type URL", value: field.typeUrl ?? "Not provided" },
+          { label: "API version", value: apiVersion },
+        ]}
+      />
       {fieldFlags(field)}
       <div className="grid gap-2">
         <h3 className="text-sm font-medium">Values and compatibility</h3>
@@ -352,17 +353,6 @@ function copyableName(label: string, value: string) {
         </code>
       </div>
       <CopyTextButton label={label} value={value} />
-    </div>
-  )
-}
-
-function metadataValue(label: string, value: string) {
-  return (
-    <div className="bg-muted/20 min-w-0 rounded-md border px-3 py-2">
-      <dt className="text-muted-foreground text-xs">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm" title={value}>
-        {value}
-      </dd>
     </div>
   )
 }
@@ -442,14 +432,14 @@ function parseListReportFields(value: unknown): ListReportFields | null {
     !isNonEmptyString(value["resource"]) ||
     typeof value["search_matched"] !== "boolean" ||
     !Array.isArray(value["attribute_resources"]) ||
-    !isCount(value["attribute_resource_count"]) ||
+    !isNonNegativeInteger(value["attribute_resource_count"]) ||
     !Array.isArray(value["metrics"]) ||
-    !isCount(value["metric_count"]) ||
+    !isNonNegativeInteger(value["metric_count"]) ||
     !Array.isArray(value["segments"]) ||
-    !isCount(value["segment_count"]) ||
+    !isNonNegativeInteger(value["segment_count"]) ||
     typeof value["compatibility_truncated"] !== "boolean" ||
     !Array.isArray(value["fields"]) ||
-    !isCount(value["field_count"]) ||
+    !isNonNegativeInteger(value["field_count"]) ||
     typeof value["truncated"] !== "boolean"
   )
     return null
@@ -624,12 +614,4 @@ function accentClass(accent: CollectionAccent): string {
   if (accent === "green") return "bg-[#34a853]"
   if (accent === "red") return "bg-[#ea4335]"
   return "bg-[#fbbc04]"
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
-function isCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
 }

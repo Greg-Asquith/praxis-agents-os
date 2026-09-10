@@ -1,3 +1,5 @@
+// apps/web/src/integrations/outlook_mail/components/message-recovery.tsx
+
 import { use, useState } from "react"
 
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"

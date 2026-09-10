@@ -1,6 +1,5 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/list.tsx
 
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 
 import {
@@ -15,25 +14,18 @@ import {
   listNegativeKeywordArgs,
   listNegativeKeywordResult,
 } from "@/integrations/google_ads/presenters/negative-keywords/utils"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 
-const addCopy = googleAdsWriteCopy({ verb: "Add", object: "negative keywords", effect: "added" })
-const removeCopy = googleAdsWriteCopy({
-  verb: "Remove",
-  object: "negative keywords",
-  effect: "removed",
-})
-
-export const googleAdsListNegativeKeywordsPresenter = createGoogleAdsWritePresenter({
+export const googleAdsListNegativeKeywordsPresenter = createIntegrationWritePresenter({
   key: "google-ads-list-negative-keywords",
   variants: {
-    google_ads_add_negative_keywords: defineGoogleAdsWriteVariant({
-      ...addCopy,
+    google_ads_add_negative_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Add", object: "negative keywords", effect: "added" },
       approval: {
-        ...addCopy.approval,
         parseArgs: (value) => listNegativeKeywordArgs(value, false),
         prompt: "Review the target list and keyword rows before changing live ad delivery.",
         renderSummary: (value, fallback) => {
@@ -54,10 +46,9 @@ export const googleAdsListNegativeKeywordsPresenter = createGoogleAdsWritePresen
       ),
       renderOutcome: (result) => <NegativeKeywordOutcome result={result} />,
     }),
-    google_ads_remove_negative_keywords: defineGoogleAdsWriteVariant({
-      ...removeCopy,
+    google_ads_remove_negative_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Remove", object: "negative keywords", effect: "removed" },
       approval: {
-        ...removeCopy.approval,
         parseArgs: (value) => listNegativeKeywordArgs(value, true),
         prompt:
           "Review the target list and keyword rows. Removing them re-enables matching traffic.",

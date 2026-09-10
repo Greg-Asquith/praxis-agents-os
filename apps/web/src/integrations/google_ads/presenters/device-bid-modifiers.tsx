@@ -10,33 +10,25 @@ import {
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import { formatBidAdjustment } from "@/integrations/google_ads/lib/bid-modifiers"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
-import { googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
 import {
   deviceBidModifierArgs,
   deviceBidModifierArgsError,
   DEVICES,
   type DeviceBidModifierArgs,
 } from "@/integrations/google_ads/lib/device-bid-modifier-inputs"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isNullableFiniteNumber, isNullableString, isOneOf, isRecord } from "@/lib/guards"
 const OUTCOMES = new Set(["updated", "already_set", "failed"] as const)
 
-const copy = googleAdsWriteCopy({
-  verb: "Update",
-  object: "device bid adjustments",
-  effect: "updated",
-})
-
-export const googleAdsDeviceBidModifiersPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-update-device-bid-modifiers",
+export const googleAdsDeviceBidModifiersPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_update_device_bid_modifiers: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_update_device_bid_modifiers: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Update", object: "device bid adjustments", effect: "updated" },
       approval: {
-        ...copy.approval,
         parseArgs: deviceBidModifierArgs,
         prompt:
           "Review the campaigns and multipliers before changing how much these campaigns bid per device.",

@@ -142,7 +142,7 @@ describe("positive keyword removal presenter", () => {
       if (failure === "counts") data.counts.failed = 0
       if (failure === "after") removed.resulting_status = "PAUSED"
       if (failure === "truncated") data.samples_truncated = true
-      expect(render("completed", value)).toContain("couldn&#x27;t verify")
+      expect(render("completed", value)).toContain("couldn&#x27;t confirm")
     }
   )
 
@@ -163,8 +163,8 @@ describe("positive keyword removal presenter", () => {
         status === "denied"
           ? "Nothing was removed"
           : status === "failed"
-            ? "No keywords change was confirmed"
-            : "Removing Google Ads keywords"
+            ? "The keywords could not be removed"
+            : "Removing keywords…"
       )
     }
   )

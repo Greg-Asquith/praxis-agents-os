@@ -1,7 +1,5 @@
 // apps/web/src/integrations/notion/lib/write-results.ts
 
-import type { ParsedFanOutData } from "@/components/tool-ui/fan-out"
-import { parseSettledFanOutData } from "@/components/tool-ui/fan-out"
 import { isRecord } from "@/lib/guards"
 
 export type NotionWriteKind = "create" | "content" | "properties"
@@ -14,21 +12,10 @@ export type NotionWriteResult = {
   url: string | null
 }
 
-export type ParsedNotionWriteFanOut = ParsedFanOutData<NotionWriteResult>
-
-export function parseNotionWriteFanOut(
+export function parseNotionWriteResult(
   value: unknown,
-  kind: NotionWriteKind,
-  malformedDescription: string,
-  unverifiedDescription: string
-): ParsedNotionWriteFanOut | null {
-  return parseSettledFanOutData(value, (result) => parseNotionWriteResult(result, kind), {
-    malformed: malformedDescription,
-    unverified: unverifiedDescription,
-  })
-}
-
-function parseNotionWriteResult(value: unknown, kind: NotionWriteKind): NotionWriteResult | null {
+  kind: NotionWriteKind
+): NotionWriteResult | null {
   if (!isRecord(value) || value["outcome"] !== "applied") {
     return null
   }
@@ -47,13 +34,7 @@ function parseNotionWriteResult(value: unknown, kind: NotionWriteKind): NotionWr
     ) {
       return null
     }
-    return {
-      appliedReplacements: null,
-      lastEditedTime,
-      pageTruncated: null,
-      title,
-      url,
-    }
+    return { appliedReplacements: null, lastEditedTime, pageTruncated: null, title, url }
   }
 
   if (kind === "content") {
@@ -71,13 +52,7 @@ function parseNotionWriteResult(value: unknown, kind: NotionWriteKind): NotionWr
     ) {
       return null
     }
-    return {
-      appliedReplacements,
-      lastEditedTime,
-      pageTruncated,
-      title,
-      url: null,
-    }
+    return { appliedReplacements, lastEditedTime, pageTruncated, title, url: null }
   }
 
   const lastEditedTime = requiredString(value["last_edited_time"])
@@ -86,13 +61,7 @@ function parseNotionWriteResult(value: unknown, kind: NotionWriteKind): NotionWr
   if (lastEditedTime === null || url === null || title === null) {
     return null
   }
-  return {
-    appliedReplacements: null,
-    lastEditedTime,
-    pageTruncated: null,
-    title,
-    url,
-  }
+  return { appliedReplacements: null, lastEditedTime, pageTruncated: null, title, url }
 }
 
 function referenceLabel(value: unknown): string | null {

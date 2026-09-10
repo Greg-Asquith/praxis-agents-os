@@ -2,6 +2,7 @@
 
 import { CalendarClockIcon } from "lucide-react"
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { ExternalContent } from "@/components/tool-ui/external-content"
 import { resolveToolField, type ToolFieldFormat } from "@/components/tool-ui/field-resolution"
 import { fieldLabelClass, readOnlyFieldWellClass } from "@/components/tool-ui/field-styles"
@@ -17,11 +18,7 @@ const LONG_TEXT_LENGTH = 160
 
 export function AirtableRecordList({ records }: { records: AirtableRecord[] }) {
   if (records.length === 0) {
-    return (
-      <p className="text-muted-foreground py-4 text-center text-sm">
-        No Airtable records were found.
-      </p>
-    )
+    return <EmptyResult>No Airtable records were found.</EmptyResult>
   }
   return (
     <div className="grid min-w-0 gap-3" role="list">

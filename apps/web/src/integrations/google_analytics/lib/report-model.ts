@@ -284,3 +284,28 @@ function numericRelation(value: unknown): string {
 function stringList(value: unknown[]): string[] | null {
   return value.every((item): item is string => typeof item === "string") ? value : null
 }
+
+// Realtime reports carry no metadata block, so a neutral one keeps the shared parser honest.
+export function parseRealtimeReportData(value: unknown): GoogleAnalyticsReport | null {
+  if (!isRecord(value) || !Array.isArray(value["window"])) {
+    return null
+  }
+  for (const range of value["window"]) {
+    if (
+      !isRecord(range) ||
+      typeof range["start_minutes_ago"] !== "number" ||
+      typeof range["end_minutes_ago"] !== "number"
+    )
+      return null
+  }
+  return parseReportData({
+    ...value,
+    metadata: {
+      currency_code: "",
+      data_loss_from_other_row: false,
+      sampled: false,
+      sampling_notes: [],
+      thresholded: false,
+    },
+  })
+}

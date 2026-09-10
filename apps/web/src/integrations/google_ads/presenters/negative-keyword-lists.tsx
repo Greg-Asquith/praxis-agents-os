@@ -6,28 +6,21 @@ import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { approvalCountLine, googleAdsWriteCopy } from "@/integrations/google_ads/lib/copy"
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
 import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
-  createGoogleAdsWritePresenter,
-  defineGoogleAdsWriteVariant,
-} from "@/integrations/google_ads/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { isRecord } from "@/lib/guards"
 
-const copy = googleAdsWriteCopy({
-  verb: "Create",
-  object: "negative keyword lists",
-  effect: "created",
-})
-
-export const googleAdsNegativeKeywordListsPresenter = createGoogleAdsWritePresenter({
-  key: "google-ads-create-negative-keyword-list",
+export const googleAdsNegativeKeywordListsPresenter = createIntegrationWritePresenter({
   variants: {
-    google_ads_create_negative_keyword_list: defineGoogleAdsWriteVariant({
-      ...copy,
+    google_ads_create_negative_keyword_list: defineIntegrationWriteVariant(googleAdsProvider, {
+      copy: { verb: "Create", object: "negative keyword lists", effect: "created" },
       approval: {
-        ...copy.approval,
         parseArgs: negativeKeywordListArgs,
         renderSummary: (value, fallback) => {
           const args = negativeKeywordListArgs(value) ?? fallback

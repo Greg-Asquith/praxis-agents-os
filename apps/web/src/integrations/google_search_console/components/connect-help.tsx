@@ -3,34 +3,23 @@
 import { CloudCogIcon, ShieldCheckIcon } from "lucide-react"
 
 import type { IntegrationProvider } from "@/features/integrations/types"
+import { ConnectHelpCards } from "@/integrations/connect-help"
 
 export function GoogleSearchConsoleConnectHelp({ provider }: { provider: IntegrationProvider }) {
   return (
-    <div className="border-border bg-muted/20 grid gap-4 rounded-xl border p-4 sm:grid-cols-2">
-      <div className="flex gap-3">
-        <ShieldCheckIcon
-          aria-hidden="true"
-          className="text-muted-foreground mt-0.5 size-4 shrink-0"
-        />
-        <div className="grid gap-1">
-          <h2 className="text-sm font-medium">Choose an account with property access</h2>
-          <p className="text-muted-foreground text-sm">
-            Sign in with a Google account that can view the client properties agents should use.
-            Owner permission is required for sitemap submissions and Indexing API actions.
-          </p>
-        </div>
-      </div>
-      <div className="flex gap-3">
-        <CloudCogIcon aria-hidden="true" className="text-muted-foreground mt-0.5 size-4 shrink-0" />
-        <div className="grid gap-1">
-          <h2 className="text-sm font-medium">Enable the Search Console APIs</h2>
-          <p className="text-muted-foreground text-sm">
-            Enable the Google Search Console API in the Cloud project that owns the OAuth client
-            used for {provider.display_name}. If your operator has enabled Indexing API actions,
-            enable the Indexing API in the same project.
-          </p>
-        </div>
-      </div>
-    </div>
+    <ConnectHelpCards
+      items={[
+        {
+          body: "Sign in with a Google account that can view the client properties agents should use. Owner permission is required for sitemap submissions and Indexing API actions.",
+          icon: ShieldCheckIcon,
+          title: "Choose an account with property access",
+        },
+        {
+          body: `Enable the Google Search Console API in the Cloud project that owns the OAuth client used for ${provider.display_name}. If your operator has enabled Indexing API actions, enable the Indexing API in the same project.`,
+          icon: CloudCogIcon,
+          title: "Enable the Search Console APIs",
+        },
+      ]}
+    />
   )
 }

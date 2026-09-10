@@ -15,14 +15,14 @@ describe("Notion integration module", () => {
     await loadIntegrationUiModules(["notion"])
 
     expect(providerKeyForToolName("notion_search_pages")).toBe("notion")
-    expect(integrationIcon("notion")).toBe(notionModule.icons.notion)
+    expect(integrationIcon("notion")).toBe(notionModule.Logo)
     expect(integrationToolRowPresenters("notion").map((presenter) => presenter.key)).toEqual([
-      "notion-search-pages",
-      "notion-read-page",
-      "notion-query-data-source",
+      "notion_search_pages",
+      "notion_read_page",
+      "notion_query_data_source",
       "notion-writes",
     ])
-    expect(notionModule.catalogDescription).toContain("choose which pages")
+    expect(notionModule.catalogDescription).toContain("pages you choose")
   })
 
   it("explains page selection and personal authorization", () => {
@@ -47,7 +47,7 @@ describe("Notion integration module", () => {
       })
     )
 
-    expect(html).toContain("authorization picker")
+    expect(html).toContain("authorisation picker")
     expect(html).toContain("Other users authorise separately")
     expect(html).toContain("editor in this workspace")
   })

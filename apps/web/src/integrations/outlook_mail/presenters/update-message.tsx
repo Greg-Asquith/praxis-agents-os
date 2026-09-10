@@ -2,37 +2,31 @@
 
 import { PencilLineIcon } from "lucide-react"
 
+import { sameOutcomeIcon } from "@/components/tool-ui/message-outcome-icons"
 import { outlookUpdateDetails } from "@/integrations/outlook_mail/lib/tool-details"
 import {
   outlookUpdateArgs,
   validateOutlookUpdateArgs,
 } from "@/integrations/outlook_mail/lib/write-args"
-import {
-  createOutlookWritePresenter,
-  defineOutlookWriteVariant,
-  outcomeIcons,
-} from "@/integrations/outlook_mail/presenters/write-presenter"
+import { defineOutlookWriteVariant } from "@/integrations/outlook_mail/presenters/write-presenter"
+import { createIntegrationWritePresenter } from "@/integrations/write-presenter"
 
-export const outlookMailUpdatePresenter = createOutlookWritePresenter({
-  key: "outlook-mail-update-message",
+export const outlookMailUpdatePresenter = createIntegrationWritePresenter({
   variants: {
     outlook_mail_update_message: defineOutlookWriteVariant({
       copy: {
-        approveLabel: "Approve & Update",
-        check: "the message",
+        check: "Check the message in Outlook before trying again.",
         effect: "updated",
-        heading: "Update Outlook Message",
         object: "message",
-        prompt: "The agent wants to change the read or flag state of this message.",
-        title: "Review message update",
-        verb: "update",
+        verb: "Update",
       },
       details: outlookUpdateDetails,
       parseArgs: outlookUpdateArgs,
+      prompt: "The agent wants to change the read or flag state of this message.",
       validateArgs: validateOutlookUpdateArgs,
       view: (args) => ({
         body: null,
-        icons: outcomeIcons(PencilLineIcon),
+        icons: sameOutcomeIcon(PencilLineIcon),
         linkLabel: () => "Open in Outlook",
         note: null,
         rows: outlookUpdateDetails(args),

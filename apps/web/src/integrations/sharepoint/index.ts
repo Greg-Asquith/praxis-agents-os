@@ -7,6 +7,6 @@ import { SharePointLogo } from "@/integrations/sharepoint/components/logo"
 export default {
   catalogDescription: "Let agents find and read files in SharePoint and OneDrive.",
   ConnectHelp: MicrosoftConnectHelp,
-  icons: { sharepoint: SharePointLogo },
+  Logo: SharePointLogo,
   providerKey: "sharepoint",
 } satisfies IntegrationUiModule

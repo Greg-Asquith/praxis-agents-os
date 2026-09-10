@@ -4,7 +4,7 @@ import type { SVGProps } from "react"
 
 export function GoogleAdsLogo(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 36 32" focusable="false" {...props}>
+    <svg viewBox="0 0 36 32" aria-hidden="true" focusable="false" {...props}>
       <path
         fill="#4285f4"
         d="M14.2 3.2a5.3 5.3 0 0 1 9.2 0l11.4 19.7a5.3 5.3 0 0 1-9.2 5.3L14.2 8.5a5.3 5.3 0 0 1 0-5.3Z"

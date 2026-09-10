@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_analytics/components/google-ads-links-table.tsx
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -9,16 +10,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatDateTime, formatGoogleAdsAccountId } from "@/lib/format"
-
-export type GoogleAdsLink = {
-  adsPersonalizationEnabled: boolean
-  canManageClients: boolean
-  createdAt: string | null
-  customerId: string
-}
+import type { GoogleAdsLink } from "@/integrations/google_analytics/lib/google-ads-links-model"
+import { formatDateTime, formatGoogleAdsAccountId, pluralize } from "@/lib/format"
 
 export function GoogleAnalyticsGoogleAdsLinksTable({ links }: { links: GoogleAdsLink[] }) {
+  if (links.length === 0) {
+    return <EmptyResult>No Google Ads accounts are linked to this property.</EmptyResult>
+  }
   return (
     <div className="min-w-0 overflow-x-auto">
       <Table>
@@ -56,7 +54,7 @@ export function GoogleAnalyticsGoogleAdsLinksTable({ links }: { links: GoogleAds
         </TableBody>
       </Table>
       <p className="text-muted-foreground pt-2 text-xs">
-        {String(links.length)} linked {links.length === 1 ? "account" : "accounts"}
+        {String(links.length)} linked {pluralize(links.length, "account")}
       </p>
     </div>
   )

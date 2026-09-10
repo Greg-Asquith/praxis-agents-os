@@ -4,12 +4,14 @@ import { use } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { AlertCircleIcon, PaperclipIcon } from "lucide-react"
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { ExternalContent } from "@/components/tool-ui/external-content"
 import {
   MessageDetail,
   MessageDetailSkeleton,
   MessagePreviewRow,
 } from "@/components/tool-ui/message"
+import { prefetchProviderPreview } from "@/components/tool-ui/provider-preview-queries"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import { Badge } from "@/components/ui/badge"
 import { outlookMessagePreviewQueryOptions } from "@/integrations/outlook_mail/api/message-preview"
@@ -25,18 +27,12 @@ import { formatBytes, pluralize } from "@/lib/format"
 export function OutlookMessageRow({ message }: { message: OutlookMessage }) {
   const queryClient = useQueryClient()
   const conversationId = use(ToolConversationContext)
-  const prefetchMessage = () => {
-    if (conversationId !== null) {
-      void queryClient.prefetchQuery(
-        outlookMessagePreviewQueryOptions(conversationId, message.mailboxId, message.messageId)
-      )
-    }
-  }
-
   return (
     <MessagePreviewRow
       date={messageDate(message)}
-      onOpen={prefetchMessage}
+      onOpen={prefetchProviderPreview(queryClient, conversationId, (id) =>
+        outlookMessagePreviewQueryOptions(id, message.mailboxId, message.messageId)
+      )}
       provenance={<MessageFlags message={message} />}
       sender={message.sender}
       snippet={message.preview}
@@ -44,11 +40,7 @@ export function OutlookMessageRow({ message }: { message: OutlookMessage }) {
     >
       <OutlookMessageView
         mailboxId={message.mailboxId}
-        errorFallback={
-          <p className="text-muted-foreground py-4 text-center text-sm">
-            This message preview is unavailable.
-          </p>
-        }
+        errorFallback={<EmptyResult>This message preview is unavailable.</EmptyResult>}
         fallback={<MessageDetailSkeleton label="Loading message preview…" />}
         messageId={message.messageId}
       />

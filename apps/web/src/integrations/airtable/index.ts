@@ -1,19 +1,19 @@
 // apps/web/src/integrations/airtable/index.ts
 
-import type { IntegrationUiModule } from "@/integrations/contract"
+import { AirtableLogo } from "@/integrations/airtable/components/logo"
 import {
   airtableGetRecordPresenter,
   airtableListRecordsPresenter,
 } from "@/integrations/airtable/presenters/records"
-import { AirtableLogo } from "@/integrations/airtable/components/logo"
 import {
   airtableCreateRecordPresenter,
   airtableUpdateRecordPresenter,
 } from "@/integrations/airtable/presenters/write"
+import type { IntegrationUiModule } from "@/integrations/contract"
 
 export default {
-  catalogDescription: "Let agents work with your Airtable records.",
-  icons: { airtable: AirtableLogo },
+  catalogDescription: "Let agents read and update your Airtable records.",
+  Logo: AirtableLogo,
   providerKey: "airtable",
   toolRowPresenters: [
     airtableListRecordsPresenter,

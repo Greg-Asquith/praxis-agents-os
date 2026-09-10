@@ -1,32 +1,16 @@
 // apps/web/src/integrations/notion/presenters/read-page.tsx
 
-import { parseFanOutData } from "@/components/tool-ui/fan-out"
-import type { ToolRowPresenter } from "@/integrations/contract"
-import {
-  NotionFanOut,
-  NotionPageResult,
-  NotionSkeleton,
-} from "@/integrations/notion/components/read-results"
+import { NotionPageResult } from "@/integrations/notion/components/read-results"
 import { parsePageData } from "@/integrations/notion/lib/read-results"
+import { notionProvider } from "@/integrations/notion/provider"
+import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
 
-export const notionReadPagePresenter: ToolRowPresenter = {
-  key: "notion-read-page",
-  matches: (activity) => activity.name === "notion_read_page",
-  render: ({ activity, defaultOpen }) => {
-    if (activity.status === "running") {
-      return <NotionSkeleton label="Reading Notion page…" title="Read Notion Page" />
-    }
-    const fanOut = parseFanOutData(activity.result, parsePageData)
-    if (!fanOut) {
-      return null
-    }
-    return (
-      <NotionFanOut defaultOpen={defaultOpen} entries={fanOut.entries} title="Read Notion Page">
-        {(_entry, index) => {
-          const data = fanOut.data[index]
-          return data ? <NotionPageResult data={data} /> : null
-        }}
-      </NotionFanOut>
-    )
-  },
-}
+export const notionReadPagePresenter = defineIntegrationReadPresenter(notionProvider, {
+  ariaLabel: "Read Notion Page results",
+  emptyLabel: "No Notion workspaces were queried.",
+  heading: "Read Notion Page",
+  parseResult: parsePageData,
+  progressLabel: "Reading Notion page…",
+  render: (data) => <NotionPageResult data={data} />,
+  tool: "notion_read_page",
+})

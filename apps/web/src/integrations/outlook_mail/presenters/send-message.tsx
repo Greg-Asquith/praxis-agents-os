@@ -1,37 +1,31 @@
 // apps/web/src/integrations/outlook_mail/presenters/send-message.tsx
 
+import { MAIL_OUTCOME_ICONS } from "@/components/tool-ui/message-outcome-icons"
 import {
   outlookRecipientRows,
   outlookSendDetails,
 } from "@/integrations/outlook_mail/lib/tool-details"
 import { outlookSendArgs } from "@/integrations/outlook_mail/lib/write-args"
-import {
-  createOutlookWritePresenter,
-  defineOutlookWriteVariant,
-  MAIL_ICONS,
-} from "@/integrations/outlook_mail/presenters/write-presenter"
+import { defineOutlookWriteVariant } from "@/integrations/outlook_mail/presenters/write-presenter"
+import { createIntegrationWritePresenter } from "@/integrations/write-presenter"
 
-export const outlookMailSendPresenter = createOutlookWritePresenter({
-  key: "outlook-mail-send-message",
+export const outlookMailSendPresenter = createIntegrationWritePresenter({
   variants: {
     outlook_mail_send_message: defineOutlookWriteVariant({
       copy: {
-        approveLabel: "Approve & Send",
-        check: "Sent Items and Drafts",
+        check: "Check Sent Items and Drafts in Outlook before trying again.",
         effect: "sent",
-        heading: "Send Outlook Email",
         object: "email",
-        prompt: "The agent wants to send this email from the selected mailbox.",
-        title: "Review email before sending",
-        verb: "send",
+        verb: "Send",
       },
       details: outlookSendDetails,
       parseArgs: outlookSendArgs,
+      prompt: "The agent wants to send this email from the selected mailbox.",
       view: (args) => ({
         body: args?.body ?? null,
-        icons: MAIL_ICONS,
+        icons: MAIL_OUTCOME_ICONS,
         linkLabel: (outcome) =>
-          outcome === "applied" ? "Open in Outlook" : "Open draft in Outlook",
+          outcome === "failed" ? "Open draft in Outlook" : "Open in Outlook",
         note: "Outlook accepted the email for sending.",
         rows: args ? outlookRecipientRows(args) : [],
         subject: args?.subject ?? null,

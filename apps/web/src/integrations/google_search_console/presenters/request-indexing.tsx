@@ -7,10 +7,11 @@ import {
   matchesWritableSite,
   parseWritableSiteUrls,
 } from "@/integrations/google_search_console/lib/write-args"
+import { googleSearchConsoleProvider } from "@/integrations/google_search_console/provider"
 import {
-  createGoogleSearchConsoleWritePresenter,
-  defineGoogleSearchConsoleWriteVariant,
-} from "@/integrations/google_search_console/presenters/write-presenter"
+  createIntegrationWritePresenter,
+  defineIntegrationWriteVariant,
+} from "@/integrations/write-presenter"
 import { titleCaseToken } from "@/lib/format"
 import { isDateTimeString, isNonNegativeInteger, isNullableString, isRecord } from "@/lib/guards"
 
@@ -64,37 +65,26 @@ const COLUMNS: DataColumn[] = [
   { key: "details", kind: "text", label: "Details" },
 ]
 
-export const requestIndexingPresenter = createGoogleSearchConsoleWritePresenter({
-  key: "google-search-console-request-indexing",
+export const googleSearchConsoleRequestIndexingPresenter = createIntegrationWritePresenter({
   variants: {
-    google_search_console_request_indexing: defineGoogleSearchConsoleWriteVariant({
+    google_search_console_request_indexing: defineIntegrationWriteVariant<
+      IndexingArgs,
+      IndexingResult
+    >(googleSearchConsoleProvider, {
       approval: {
-        approveLabel: "Approve & Notify",
-        label: "Send Search Console Indexing Notifications",
         parseArgs: indexingArgs,
         prompt:
           "Google accepts these notifications only for job posting pages and livestream video pages. Notifications for other pages are ignored and may violate Google's guidelines. A URL_DELETED notification asks Google to remove the page from its index. Before approving one, confirm that the page returns 404 or 410, or includes a noindex directive. Google decides when and whether to crawl, index, or remove each page.",
-        title: "Send Indexing API Notifications",
         validateArgs: validateIndexingArgs,
       },
-      deniedDescription: "These Indexing API notifications were declined. Nothing was sent.",
+      copy: { effect: "sent", object: "indexing notifications", verb: "Send" },
       details: (args) =>
         args ? [{ label: "Notifications", value: String(args.notifications.length) }] : [],
-      emptyLabel: "No Search Console sites sent Indexing API notifications.",
-      failedDescription: "The notifications did not finish. No Indexing API action was confirmed.",
-      heading: "Send Search Console Indexing Notifications",
-      malformedDescription:
-        "The system couldn't verify this site's Indexing API outcomes. Check Search Console before trying again.",
       parseResult: indexingResult,
-      progressLabel: "Sending Search Console indexing notifications…",
       renderOutcome: renderIndexingOutcome,
-      resultAriaLabel: "Search Console Indexing API notification results",
-      resultFailure:
-        "The system couldn't verify the Indexing API notifications. Check Search Console before trying again.",
-      unconfirmedAriaLabel: "Unconfirmed Search Console Indexing API notification",
+      renderUnverifiedOutcome: renderIndexingOutcome,
       unverifiedDescription:
         "Google may or may not have received the notification. Check Search Console before trying again.",
-      waitingLabel: "Waiting for Indexing API notification approval…",
     }),
   },
 })

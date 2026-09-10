@@ -1,7 +1,7 @@
 // apps/web/tests/integrations/outlook_mail/preview-interaction.tsx
 
 import type { ReactNode } from "react"
-import { GmailSearchMessageRow } from "@/integrations/gmail/components/search-message-row"
+import { GmailMessageRow } from "@/integrations/gmail/components/message"
 import { gmailReadPresenter } from "@/integrations/gmail/presenters/read"
 import { createRoot } from "react-dom/client"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
@@ -153,7 +153,7 @@ async function sharedSearchChecks() {
       provider === "outlook" ? (
         <OutlookMessageRow message={message} />
       ) : (
-        <GmailSearchMessageRow
+        <GmailMessageRow
           mailboxId="mailbox"
           message={{
             date: message.receivedAt,

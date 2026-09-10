@@ -15,9 +15,7 @@ describe("Google Search Console integration module", () => {
   it("loads lazily through the registry with its icon and presenters", async () => {
     await loadIntegrationUiModules(["google_search_console"])
 
-    expect(integrationIcon("google_search_console")).toBe(
-      googleSearchConsoleModule.icons.google_search_console
-    )
+    expect(integrationIcon("google_search_console")).toBe(googleSearchConsoleModule.Logo)
     expect(integrationToolRowPresenters("google_search_console")).toHaveLength(5)
     expect(googleSearchConsoleModule.catalogDescription).toContain("search performance")
   })

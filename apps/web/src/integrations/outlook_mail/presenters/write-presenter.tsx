@@ -1,48 +1,18 @@
 // apps/web/src/integrations/outlook_mail/presenters/write-presenter.tsx
 
-import { MailCheckIcon, MailQuestionIcon, MailXIcon, type LucideIcon } from "lucide-react"
-
 import type { FanOutDetail } from "@/components/tool-ui/fan-out-shell"
-import { OutlookMailLogo } from "@/integrations/outlook_mail/components/logo"
-import { OutlookToolHeading } from "@/integrations/outlook_mail/components/tool-heading"
-import {
-  OutlookWriteOutcome,
-  type OutlookOutcomeView,
-} from "@/integrations/outlook_mail/components/write-outcome"
-import {
-  outlookWriteCopy,
-  type OutlookWriteCopySpec,
-} from "@/integrations/outlook_mail/lib/write-copy"
+import { MessageWriteOutcome, type MessageOutcomeView } from "@/components/tool-ui/message-outcome"
+import { OutlookMessageRecovery } from "@/integrations/outlook_mail/components/message-recovery"
 import {
   outlookWriteResult,
   type OutlookWriteResult,
 } from "@/integrations/outlook_mail/lib/write-results"
+import { outlookMailProvider } from "@/integrations/outlook_mail/provider"
+import { integrationWriteCopy, type IntegrationWriteCopySpec } from "@/integrations/write-copy"
 import {
-  createIntegrationWritePresenter,
   defineIntegrationWriteVariant,
-  type IntegrationWriteProvider,
   type IntegrationWriteVariant,
 } from "@/integrations/write-presenter"
-
-// Mailbox identifiers are opaque Graph IDs, so cards show only the mailbox name.
-const provider: IntegrationWriteProvider = {
-  contextLabel: "Mailbox",
-  externalLabel: null,
-  fallbackDisplayName: "Selected mailbox",
-  providerKey: "outlook_mail",
-  renderHeading: (heading) => <OutlookToolHeading>{heading}</OutlookToolHeading>,
-  renderIcon: () => <OutlookMailLogo className="size-4" />,
-}
-
-export const MAIL_ICONS: OutlookOutcomeView["icons"] = {
-  applied: MailCheckIcon,
-  failed: MailXIcon,
-  unverified: MailQuestionIcon,
-}
-
-export function outcomeIcons(icon: LucideIcon): OutlookOutcomeView["icons"] {
-  return { applied: icon, failed: icon, unverified: icon }
-}
 
 const FAILED: OutlookWriteResult = {
   detail: null,
@@ -53,33 +23,34 @@ const FAILED: OutlookWriteResult = {
 }
 
 export type OutlookWriteVariant<Args> = {
-  copy: OutlookWriteCopySpec
+  copy: IntegrationWriteCopySpec
   details: (args: Args | null) => FanOutDetail[]
   parseArgs: (value: unknown) => Args | null
+  prompt: string
   renderSummary?: IntegrationWriteVariant<Args, OutlookWriteResult>["approval"]["renderSummary"]
   validateArgs?: (value: unknown) => string | null
-  view: (args: Args | null) => OutlookOutcomeView
+  view: (args: Args | null) => MessageOutcomeView
 }
 
 export function defineOutlookWriteVariant<Args>(variant: OutlookWriteVariant<Args>) {
-  const copy = outlookWriteCopy(variant.copy)
+  const { failedDescription } = integrationWriteCopy(outlookMailProvider, variant.copy)
   const outcome = (result: OutlookWriteResult, args: Args | null, description: string | null) => (
-    <OutlookWriteOutcome
+    <MessageWriteOutcome
       description={description}
-      message={result.message}
       outcome={result.outcome}
+      recovery={result.message ? <OutlookMessageRecovery message={result.message} /> : null}
       url={result.url}
       view={variant.view(args)}
     />
   )
-  return defineIntegrationWriteVariant<Args, OutlookWriteResult>(provider, {
-    ...copy,
+  return defineIntegrationWriteVariant<Args, OutlookWriteResult>(outlookMailProvider, {
     approval: {
-      ...copy.approval,
       parseArgs: variant.parseArgs,
+      prompt: variant.prompt,
       ...(variant.renderSummary ? { renderSummary: variant.renderSummary } : {}),
       ...(variant.validateArgs ? { validateArgs: variant.validateArgs } : {}),
     },
+    copy: variant.copy,
     details: variant.details,
     parseResult: outlookWriteResult,
     renderFailure: (args, description, result, disposition) =>
@@ -93,8 +64,6 @@ export function defineOutlookWriteVariant<Args>(variant: OutlookWriteVariant<Arg
       outcome({ ...result, outcome: "unverified" }, args, null),
     settledUnverified: (result) => result.outcome === "unverified",
     settledFailure: (result) =>
-      result.outcome === "failed" ? (result.detail ?? copy.failedDescription) : null,
+      result.outcome === "failed" ? (result.detail ?? failedDescription) : null,
   })
 }
-
-export const createOutlookWritePresenter = createIntegrationWritePresenter

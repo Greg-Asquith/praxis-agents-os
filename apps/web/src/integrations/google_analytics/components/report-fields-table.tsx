@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_analytics/components/report-fields-table.tsx
 
+import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 
 const FIELD_COLUMNS: DataColumn[] = [
@@ -39,7 +40,7 @@ export function GoogleAnalyticsReportFieldsTable({
           }
         />
       ) : (
-        <p className="text-muted-foreground py-3 text-sm">No {kind} matched.</p>
+        <EmptyResult>No {kind} matched.</EmptyResult>
       )}
     </section>
   )

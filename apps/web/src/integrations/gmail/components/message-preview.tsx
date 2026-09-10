@@ -8,7 +8,7 @@ import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-
 import { Badge } from "@/components/ui/badge"
 import {
   gmailMessagePreviewQueryOptions,
-  type GmailMessagePreview,
+  type GmailMessagePreviewMeta,
 } from "@/integrations/gmail/api/message-preview"
 
 export function GmailMessageView({
@@ -33,7 +33,7 @@ export function GmailMessageView({
   )
 }
 
-function MessageMetaChips({ meta }: { meta: GmailMessagePreview["meta"] }) {
+function MessageMetaChips({ meta }: { meta: GmailMessagePreviewMeta }) {
   const labels = meta.labels ?? []
   const threadCount = meta.thread_message_count ?? null
   const inThread = threadCount !== null && threadCount > 1
