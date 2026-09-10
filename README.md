@@ -300,7 +300,12 @@ Platform-private storage uses a separate deployment-owned resource configured
 with `GCS_PLATFORM_PRIVATE_BUCKET`, `S3_PLATFORM_PRIVATE_BUCKET`, or
 `AZURE_STORAGE_PLATFORM_PRIVATE_CONTAINER`. These settings are required when
 the platform storage class is used. The name must differ from the public
-resource and must not use the reserved `WORKSPACE_BUCKET_PREFIX-` namespace. See the
+resource and must not use the reserved `WORKSPACE_BUCKET_PREFIX-` namespace.
+S3 and Azure provision and harden this resource on the first platform write,
+signed upload, or promotion. Grant the runtime identity the provisioning
+capabilities above on the platform resource too. For S3, choose a globally
+unique name; `AWS_REGION` sets its location. GCP bootstrap provisions the GCS
+platform bucket with the deployment's explicit `ENV_FILE` and typed approval. See the
 [storage contracts](docs/implementation/storage-and-files.md#platform-private-storage)
 for isolation and verification limits.
 

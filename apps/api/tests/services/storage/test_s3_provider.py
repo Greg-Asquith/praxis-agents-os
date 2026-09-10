@@ -4,13 +4,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 
+from services.storage.copy_object import copy_object
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
     StorageError,
@@ -571,8 +574,8 @@ async def test_s3_platform_objects_remain_private_and_sign_in_the_platform_bucke
     assert download.ref == ref
     assert all(call["Params"]["Bucket"] == "platform-private" for call in client.presigned_calls)
     assert ("platform-private", ref.key) in client.objects
-    assert not client.bucket_configuration
-    assert not client.bucket_cors
+    assert set(client.bucket_configuration) == {"platform-private"}
+    assert set(client.bucket_cors) == {"platform-private"}
     assert await provider.delete_object(ref) is True
     assert await provider.stat_object(ref) is None
     assert await provider.delete_object(ref) is False
@@ -644,3 +647,87 @@ async def test_s3_promotion_rejects_cross_class_copy() -> None:
     with pytest.raises(StorageValidationError):
         await provider.promote_object(source, destination, expected_source_etag=stored.etag)
     assert await provider.stat_object(destination) is None
+
+
+async def test_s3_platform_provisioning_hardens_existing_bucket_and_preserves_metadata(
+    monkeypatch,
+) -> None:
+    client = _FakeS3Client()
+    client.buckets.add("platform-private")
+    client.bucket_tags["platform-private"] = [{"Key": "owner", "Value": "operations"}]
+    statement = {"Sid": "OperatorDeny", "Effect": "Deny", "Action": "s3:DeleteBucket"}
+    client.bucket_policies["platform-private"] = {"Statement": [statement]}
+    provider = _provider(client)
+    await provider.ensure_platform_bucket()
+
+    def fail_if_repeated(**kwargs):
+        raise AssertionError("Successful provisioning must be cached")
+
+    monkeypatch.setattr(client, "head_bucket", fail_if_repeated)
+    await provider.ensure_platform_bucket()
+    config = client.bucket_configuration["platform-private"]
+    assert "CreateBucket" not in config
+    assert all(config["PublicAccessBlockConfiguration"].values())
+    assert config["VersioningConfiguration"] == {"Status": "Enabled"}
+    assert config["OwnershipControls"]["Rules"] == [{"ObjectOwnership": "BucketOwnerEnforced"}]
+    assert config["ServerSideEncryptionConfiguration"]["Rules"][0][
+        "ApplyServerSideEncryptionByDefault"
+    ] == {"SSEAlgorithm": "AES256"}
+    assert statement in client.bucket_policies["platform-private"]["Statement"]
+    assert {"Key": "owner", "Value": "operations"} in client.bucket_tags["platform-private"]
+    assert {"Key": "praxis-platform", "Value": "true"} in client.bucket_tags["platform-private"]
+    assert WORKSPACE_BUCKET not in client.buckets
+
+
+async def test_s3_platform_provisioning_failure_blocks_upload_and_retries(monkeypatch) -> None:
+    client = _FakeS3Client()
+    provider = _provider(client)
+    original = client.put_public_access_block
+
+    def fail(**kwargs):
+        raise RuntimeError("Access denied")
+
+    monkeypatch.setattr(client, "put_public_access_block", fail)
+    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/uploads/report")
+    with pytest.raises(StorageError, match="Failed to harden"):
+        await provider.put_object(ref, b"report", overwrite=False)
+    assert not client.objects
+    assert not provider._platform_bucket_ensured
+    monkeypatch.setattr(client, "put_public_access_block", original)
+    await provider.put_object(ref, b"report", overwrite=False)
+    assert provider._platform_bucket_ensured
+    assert "BucketNamespace" not in client.bucket_configuration["platform-private"]["CreateBucket"]
+
+
+@pytest.mark.parametrize("source_bucket", [StorageBucket.PRIVATE, StorageBucket.PLATFORM_PRIVATE])
+async def test_s3_platform_cross_class_copy_is_immutable_and_retryable(source_bucket) -> None:
+    client = _FakeS3Client()
+    provider = _provider(client)
+    workspace_ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/copy.txt"))
+    platform_ref = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE, "platform/files/copy.txt"
+    )
+    source, destination = (
+        (workspace_ref, platform_ref)
+        if source_bucket == StorageBucket.PRIVATE
+        else (platform_ref, workspace_ref)
+    )
+    await provider.put_object(
+        source, b"report", content_type="text/plain", metadata={"private_owner": "internal"}
+    )
+    authorise = AsyncMock()
+    arguments = {
+        "authorise": authorise,
+        "expected_size_bytes": 6,
+        "expected_sha256": hashlib.sha256(b"report").hexdigest(),
+        "content_type": "text/plain",
+    }
+    copied = await copy_object(provider, source, destination, **arguments)
+    retried = await copy_object(provider, source, destination, **arguments)
+    assert copied == retried
+    assert copied.metadata == {}
+    assert copied.cache_control == "private, no-store"
+    assert await provider.get_object(destination) == b"report"
+    assert await provider.get_object(source) == b"report"
+    assert authorise.await_count == 3
+    assert all("copy-staging/" not in key for _, key in client.objects)

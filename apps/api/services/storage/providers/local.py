@@ -562,11 +562,11 @@ def _write_local_object(
     created_metadata = False
     try:
         with path.open(mode) as object_file:
+            created_object = not overwrite
             object_file.write(data)
-        created_object = not overwrite
         with metadata_path.open("w" if overwrite else "x", encoding="utf-8") as metadata_file:
+            created_metadata = not overwrite
             metadata_file.write(json.dumps(metadata, sort_keys=True))
-        created_metadata = not overwrite
     except BaseException:
         if created_metadata:
             metadata_path.unlink(missing_ok=True)

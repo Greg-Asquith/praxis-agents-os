@@ -3,6 +3,7 @@
 """Local filesystem storage provider tests."""
 
 import asyncio
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -321,3 +322,37 @@ async def test_platform_local_promotion_cannot_cross_storage_classes(
     with pytest.raises(StorageValidationError):
         await provider.promote_object(source, destination, expected_source_etag=stored.etag)
     assert await provider.stat_object(destination) is None
+
+
+@pytest.mark.parametrize("failure_target", ["object", "metadata"])
+async def test_local_exclusive_write_failure_removes_partial_files(
+    tmp_path, monkeypatch, failure_target
+):
+    provider = _provider(tmp_path)
+    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/partial.txt")
+    object_path = provider.filesystem_path(ref)
+    metadata_path = provider._metadata_path(ref)
+    target = object_path if failure_target == "object" else metadata_path
+    original_open = Path.open
+
+    class FailingWriter:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def write(self, data):
+            self.stream.write(data[:1])
+            raise OSError("Disk write failed")
+
+    @contextmanager
+    def interrupted_open(path, *args, **kwargs):
+        with original_open(path, *args, **kwargs) as stream:
+            yield FailingWriter(stream) if path == target else stream
+
+    monkeypatch.setattr(Path, "open", interrupted_open)
+    with pytest.raises(OSError, match="Disk write failed"):
+        await provider.put_object(ref, b"hello", overwrite=False)
+    assert not object_path.exists()
+    assert not metadata_path.exists()
+    monkeypatch.setattr(Path, "open", original_open)
+    await provider.put_object(ref, b"hello", overwrite=False)
+    assert await provider.get_object(ref) == b"hello"

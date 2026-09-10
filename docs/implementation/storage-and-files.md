@@ -63,7 +63,30 @@ deployment-owned private bucket or container. `StorageBucket.PRIVATE` keeps
 its workspace namespace and per-workspace resolution. Pass the complete
 `StorageObjectRef` through operations; a key alone does not identify a bucket.
 Same-bucket promotion preserves create-only destination writes and source
-validation. Cross-class copies remain pending.
+validation.
+
+`services/storage/copy_object.py` copies pinned content between workspace-private
+and platform-private storage. Domain callers must persist the destination
+identity for retries, serialise writes to it with resource locks, and supply an
+authorisation callback. The callback checks source visibility and destination
+write authority before any storage access and again before promotion. Owning
+services retain transactional audit and database writes; their product routes
+remain pending.
+
+Copies verify the expected size and SHA-256 digest, reject public storage, and
+write a fresh create-only destination. Source metadata is omitted and copies
+use `private, no-store`. Reads enforce a 262,144,000-byte ceiling before buffer
+growth. The byte-oriented provider contract buffers at most that payload plus
+its conversion copy and bounded stream chunks; input is released before
+promotion. No unbounded whole-object reads are used by the copy service.
+
+Temporary keys derive from the destination identity under `copy-staging/` in
+the destination namespace. Cleanup waits for writes to finish even after
+cancellation. Retrying the same destination validates existing content and
+removes a stage left by process interruption or a failed deletion. Callers must
+retain that identity until completion or explicit cleanup; there is no separate
+copy-stage sweeper. A lost promotion response can recover the complete object
+without overwriting or deleting it.
 
 Cloud adapters require these settings when platform storage is used:
 
@@ -86,9 +109,30 @@ Changing a capability's namespace or class fails. Public routes cannot read
 platform bytes. Local filesystem storage remains local-only.
 
 GCP bootstrap creates and hardens the platform-private bucket alongside the
-public-assets bucket. S3 and Azure provisioning remain pending. Provider
-contracts are verified with deterministic doubles; live cloud verification
-is pending. Platform publication and workspace consumption remain pending.
+public-assets bucket, retaining the explicit `ENV_FILE` and typed approval
+gate. Local filesystem storage creates its separate platform roots on demand.
+S3 and Azure create and harden their configured platform resource before the
+first platform write, signed upload, or promotion. Successful provisioning is
+cached per provider instance. Failed hardening blocks the write and retries
+on the next attempt.
+
+S3 uses the configured globally unique bucket name and `AWS_REGION`, with the
+same blocked public access, ownership controls, encryption, versioning,
+HTTPS-only policy, and browser CORS allowlist as workspace buckets. It preserves
+operator policy statements and tags, adding `praxis-platform=true`. Azure
+creates a private container, disables public access on an existing container,
+and preserves metadata and stored access policies, adding `praxis_platform=true`.
+Grant the runtime identity the corresponding provisioning and object permissions
+on this resource as well as workspace resources. For Azure, configure
+account-level encryption, secure transfer, blob versioning, and retention before
+deployment; container provisioning does not manage those
+settings. If browsers read signed Blob URLs directly, configure Blob service
+CORS with the explicit application origin allowlist. Uploads use the signed
+API relay and its existing CORS policy.
+
+Provider contracts are verified with deterministic doubles. Live GCS, S3, and
+Azure verification remains pending. Platform publication and workspace
+consumption remain pending.
 
 ## Platform upload and maintenance services
 

@@ -3,7 +3,10 @@
 """Shared helpers for storage service operations."""
 
 import asyncio
+import hashlib
 import logging
+from collections.abc import Coroutine
+from typing import Any
 
 from fastapi.responses import FileResponse, Response
 
@@ -115,3 +118,65 @@ def storage_object_not_found(
         bucket=ref.bucket.value,
         object_key=ref.key,
     )
+
+
+async def read_copy_content(
+    provider: StorageProvider,
+    ref: StorageObjectRef,
+    expected_size: int,
+    expected_sha256: str,
+) -> bytes:
+    """Read a pinned object with an enforced total byte limit."""
+    stored = await provider.stat_object(ref)
+    if stored is None:
+        raise storage_object_not_found(provider, ref, operation="copy_object")
+    if stored.size_bytes != expected_size:
+        raise StoragePreconditionError("Copy source size changed", operation="copy_object")
+    content = bytearray()
+    digest = hashlib.sha256()
+    async for chunk in provider.stream_object(ref):
+        if len(content) + len(chunk) > expected_size:
+            raise StoragePreconditionError(
+                "Copy exceeds its declared size", operation="copy_object"
+            )
+        content.extend(chunk)
+        digest.update(chunk)
+    if len(content) != expected_size or digest.hexdigest() != expected_sha256:
+        raise StoragePreconditionError("Copy content changed", operation="copy_object")
+    return bytes(content)
+
+
+async def validate_copy_destination(
+    provider: StorageProvider,
+    ref: StorageObjectRef,
+    expected_size: int,
+    expected_sha256: str,
+    content_type: str,
+) -> StoredObject | None:
+    """Adopt a retry destination only when its bytes and safe metadata agree."""
+    stored = await provider.stat_object(ref)
+    if stored is None:
+        return None
+    if (
+        stored.content_type != content_type
+        or stored.cache_control != "private, no-store"
+        or stored.metadata
+    ):
+        raise StoragePreconditionError("Copy destination already exists", operation="copy_object")
+    await read_copy_content(provider, ref, expected_size, expected_sha256)
+    return stored
+
+
+async def await_copy_mutation[T](mutation: Coroutine[Any, Any, T]) -> T:
+    """Drain provider writes before cleanup, including repeated cancellation."""
+    task = asyncio.create_task(mutation)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    result = task.result()
+    if cancelled:
+        raise asyncio.CancelledError
+    return result

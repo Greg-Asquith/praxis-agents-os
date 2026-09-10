@@ -20,6 +20,7 @@ from services.storage.domain import (
     StorageBucket,
     StorageObjectRef,
     StoredObject,
+    make_storage_object_ref,
 )
 from services.storage.errors import (
     StorageError,
@@ -117,6 +118,7 @@ class S3StorageProvider:
         )
         self._ensured_workspace_ids: OrderedDict[UUID, None] = OrderedDict()
         self._ensured_workspace_ids_lock = threading.Lock()
+        self._platform_bucket_ensured = False
         self._public_bucket_cors_ensured = False
         self._public_bucket_cors_lock = threading.Lock()
 
@@ -141,23 +143,44 @@ class S3StorageProvider:
             if workspace_id in self._ensured_workspace_ids:
                 self._ensured_workspace_ids.move_to_end(workspace_id)
                 return
-        bucket_name = self._workspace_bucket_name(workspace_id)
+        await self._ensure_private_bucket(
+            self._workspace_bucket_name(workspace_id), workspace_id=workspace_id
+        )
+        with self._ensured_workspace_ids_lock:
+            self._ensured_workspace_ids[workspace_id] = None
+            if len(self._ensured_workspace_ids) > 256:
+                self._ensured_workspace_ids.popitem(last=False)
+
+    async def ensure_platform_bucket(self) -> None:
+        """Creates and hardens the configured deployment-private bucket."""
+        bucket_name = self._bucket_name(
+            make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/provisioning")
+        )
+        if not self._platform_bucket_ensured:
+            await self._ensure_private_bucket(bucket_name)
+            self._platform_bucket_ensured = True
+
+    async def _ensure_private_bucket(
+        self, bucket_name: str, *, workspace_id: UUID | None = None
+    ) -> None:
+        operation = "ensure_platform_bucket" if workspace_id is None else "ensure_workspace_bucket"
         try:
             await asyncio.to_thread(self.client.head_bucket, Bucket=bucket_name)
         except Exception as exc:
             if not _is_not_found_error(exc):
                 raise StorageError(
-                    "Failed to inspect workspace S3 bucket",
+                    "Failed to inspect private S3 bucket",
                     provider_key=self.provider_key,
-                    operation="ensure_workspace_bucket",
+                    operation=operation,
                     bucket=bucket_name,
                     original_error=exc,
                 ) from exc
             create_params: dict[str, Any] = {
                 "Bucket": bucket_name,
-                "BucketNamespace": "account-regional",
                 "ObjectOwnership": "BucketOwnerEnforced",
             }
+            if workspace_id is not None:
+                create_params["BucketNamespace"] = "account-regional"
             if self.region_name != "us-east-1":
                 create_params["CreateBucketConfiguration"] = {
                     "LocationConstraint": self.region_name
@@ -167,9 +190,9 @@ class S3StorageProvider:
             except Exception as create_exc:
                 if not _is_bucket_already_owned_error(create_exc):
                     raise StorageError(
-                        "Failed to create workspace S3 bucket",
+                        "Failed to create private S3 bucket",
                         provider_key=self.provider_key,
-                        operation="ensure_workspace_bucket",
+                        operation=operation,
                         bucket=bucket_name,
                         original_error=create_exc,
                     ) from create_exc
@@ -227,9 +250,10 @@ class S3StorageProvider:
                 str(tag["Key"]): {"Key": str(tag["Key"]), "Value": str(tag["Value"])}
                 for tag in existing_tags
             }
-            tags_by_key["praxis-workspace"] = {
-                "Key": "praxis-workspace",
-                "Value": str(workspace_id),
+            tag_key = "praxis-platform" if workspace_id is None else "praxis-workspace"
+            tags_by_key[tag_key] = {
+                "Key": tag_key,
+                "Value": "true" if workspace_id is None else str(workspace_id),
             }
             await asyncio.to_thread(
                 self.client.put_bucket_tagging,
@@ -238,16 +262,12 @@ class S3StorageProvider:
             )
         except Exception as exc:
             raise StorageError(
-                "Failed to harden workspace S3 bucket",
+                "Failed to harden private S3 bucket",
                 provider_key=self.provider_key,
-                operation="ensure_workspace_bucket",
+                operation=operation,
                 bucket=bucket_name,
                 original_error=exc,
             ) from exc
-        with self._ensured_workspace_ids_lock:
-            self._ensured_workspace_ids[workspace_id] = None
-            if len(self._ensured_workspace_ids) > 256:
-                self._ensured_workspace_ids.popitem(last=False)
 
     async def put_object(
         self,
@@ -260,7 +280,10 @@ class S3StorageProvider:
         overwrite: bool = True,
     ) -> StoredObject:
         workspace_id = workspace_id_for_ref(ref)
-        if workspace_id is not None:
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._bucket_name(ref)
+            await self.ensure_platform_bucket()
+        elif workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
@@ -481,7 +504,10 @@ class S3StorageProvider:
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )
-        if destination_workspace_id is not None:
+        if destination.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._bucket_name(destination)
+            await self.ensure_platform_bucket()
+        elif destination_workspace_id is not None:
             await self.ensure_workspace_bucket(destination_workspace_id)
         bucket_name = self._bucket_name(source)
         try:
@@ -542,7 +568,10 @@ class S3StorageProvider:
         expires_in: timedelta,
     ) -> SignedUpload:
         workspace_id = workspace_id_for_ref(ref)
-        if workspace_id is not None:
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._bucket_name(ref)
+            await self.ensure_platform_bucket()
+        elif workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
         elif ref.bucket == StorageBucket.PUBLIC:
             await self._ensure_public_bucket_cors()
@@ -700,9 +729,9 @@ class S3StorageProvider:
             statements = [statements]
         elif not isinstance(statements, list):
             raise StorageValidationError(
-                "Workspace S3 bucket policy must contain a Statement list",
+                "Private S3 bucket policy must contain a Statement list",
                 provider_key=self.provider_key,
-                operation="ensure_workspace_bucket",
+                operation="ensure_https_only_policy",
                 bucket=bucket_name,
             )
         https_only_statement = {

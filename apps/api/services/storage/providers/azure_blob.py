@@ -22,6 +22,7 @@ from services.storage.domain import (
     StorageBucket,
     StorageObjectRef,
     StoredObject,
+    make_storage_object_ref,
 )
 from services.storage.errors import (
     StorageError,
@@ -139,6 +140,7 @@ class AzureBlobStorageProvider:
         self.public_container = self.service_client.get_container_client(self.public_container_name)
         self._workspace_containers: OrderedDict[UUID, Any] = OrderedDict()
         self._ensured_workspace_ids: set[UUID] = set()
+        self._platform_bucket_ensured = False
         self._workspace_containers_lock = threading.Lock()
         self.content_settings_cls = content_settings_cls or self._require_content_settings_cls()
         self.match_conditions_cls = match_conditions_cls or self._require_match_conditions_cls()
@@ -174,15 +176,37 @@ class AzureBlobStorageProvider:
                 self._workspace_containers.move_to_end(workspace_id)
                 return
         container = self._workspace_container(workspace_id)
-        metadata = {"praxis_workspace": str(workspace_id)}
+        await self._ensure_private_container(
+            container,
+            metadata={"praxis_workspace": str(workspace_id)},
+            operation="ensure_workspace_bucket",
+        )
+        self._remember_ensured_workspace_container(workspace_id, container)
+
+    async def ensure_platform_bucket(self) -> None:
+        """Creates and keeps private the deployment-owned container."""
+        container = self._container(
+            make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/provisioning")
+        )
+        if not self._platform_bucket_ensured:
+            await self._ensure_private_container(
+                container,
+                metadata={"praxis_platform": "true"},
+                operation="ensure_platform_bucket",
+            )
+            self._platform_bucket_ensured = True
+
+    async def _ensure_private_container(
+        self, container: Any, *, metadata: dict[str, str], operation: str
+    ) -> None:
         try:
             properties = await asyncio.to_thread(container.get_container_properties)
         except Exception as exc:
             if not _is_azure_not_found(exc):
                 raise StorageError(
-                    "Failed to inspect workspace Azure container",
+                    "Failed to inspect private Azure container",
                     provider_key=self.provider_key,
-                    operation="ensure_workspace_bucket",
+                    operation=operation,
                     bucket=container.container_name,
                     original_error=exc,
                 ) from exc
@@ -191,9 +215,9 @@ class AzureBlobStorageProvider:
             except Exception as create_exc:
                 if not _is_azure_precondition_failed(create_exc):
                     raise StorageError(
-                        "Failed to create workspace Azure container",
+                        "Failed to create private Azure container",
                         provider_key=self.provider_key,
-                        operation="ensure_workspace_bucket",
+                        operation=operation,
                         bucket=container.container_name,
                         original_error=create_exc,
                     ) from create_exc
@@ -222,13 +246,12 @@ class AzureBlobStorageProvider:
             )
         except Exception as exc:
             raise StorageError(
-                "Failed to harden workspace Azure container",
+                "Failed to harden private Azure container",
                 provider_key=self.provider_key,
-                operation="ensure_workspace_bucket",
+                operation=operation,
                 bucket=container.container_name,
                 original_error=exc,
             ) from exc
-        self._remember_ensured_workspace_container(workspace_id, container)
 
     async def put_object(
         self,
@@ -241,7 +264,10 @@ class AzureBlobStorageProvider:
         overwrite: bool = True,
     ) -> StoredObject:
         workspace_id = workspace_id_for_ref(ref)
-        if workspace_id is not None:
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._container_name(ref)
+            await self.ensure_platform_bucket()
+        elif workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
@@ -423,7 +449,10 @@ class AzureBlobStorageProvider:
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )
-        if destination_workspace_id is not None:
+        if destination.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._container_name(destination)
+            await self.ensure_platform_bucket()
+        elif destination_workspace_id is not None:
             await self.ensure_workspace_bucket(destination_workspace_id)
         container = self._container(source)
         source_blob = container.get_blob_client(source.key)
@@ -501,7 +530,10 @@ class AzureBlobStorageProvider:
         expires_in: timedelta,
     ) -> SignedUpload:
         workspace_id = workspace_id_for_ref(ref)
-        if workspace_id is not None:
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._container_name(ref)
+            await self.ensure_platform_bucket()
+        elif workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
         self._container_name(ref)
         normalized_content_type = _require_content_type(

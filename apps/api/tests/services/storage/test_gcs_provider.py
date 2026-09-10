@@ -5,14 +5,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
 
+from services.storage.copy_object import copy_object
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
     StorageError,
@@ -577,3 +580,28 @@ async def test_gcs_promotion_rejects_cross_class_copy() -> None:
     with pytest.raises(StorageValidationError):
         await provider.promote_object(source, destination, expected_source_etag=stored.etag)
     assert await provider.stat_object(destination) is None
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+async def test_gcs_authorised_copy_between_private_classes(reverse: bool) -> None:
+    client = _FakeGcsClient()
+    provider = _provider(client)
+    source = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/source"))
+    destination = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/copy")
+    if reverse:
+        source, destination = destination, source
+    await provider.put_object(source, b"report", metadata={"workspace": "private"})
+    kwargs = {
+        "authorise": AsyncMock(),
+        "expected_size_bytes": 6,
+        "expected_sha256": hashlib.sha256(b"report").hexdigest(),
+        "content_type": "text/plain",
+    }
+    copied = await copy_object(provider, source, destination, **kwargs)
+    assert copied == await copy_object(provider, source, destination, **kwargs)
+    assert await provider.get_object(destination) == b"report"
+    assert copied.metadata == {}
+    assert copied.cache_control == "private, no-store"
+    assert all(
+        "/copy-staging/" not in key for bucket in client.buckets.values() for key in bucket.objects
+    )
