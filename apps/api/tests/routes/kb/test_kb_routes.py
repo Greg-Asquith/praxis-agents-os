@@ -10,6 +10,7 @@ from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
+from core.database import maintenance_async_db_session
 from models.kb import KBDocument
 from models.workspace import WorkspaceRole
 from services.kb.schemas import KBSearchHit, KBSearchResult
@@ -120,6 +121,7 @@ async def test_search_allows_read_only_and_returns_service_contract(
             results=[
                 KBSearchHit(
                     id=chunk_id,
+                    scope="workspace",
                     document_id=document_id,
                     chunk_index=0,
                     content="Install WireGuard.",
@@ -219,3 +221,49 @@ async def test_get_document_allows_read_only_and_maps_hidden_to_404(
     )
     assert hidden_response.status_code == 404
     assert hidden_response.headers["content-type"].startswith("application/problem+json")
+
+
+async def test_platform_knowledge_read_routes_filter_scope_and_hide_drafts(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    actor, workspace, headers = await _authenticated_workspace(db_session)
+    local = build_kb_document(workspace=workspace, created_by_user_id=actor.id)
+    published = build_kb_document(
+        workspace=workspace,
+        scope="platform",
+        workspace_id=None,
+        is_published=True,
+        status="ready",
+    )
+    draft = build_kb_document(workspace=workspace, scope="platform", workspace_id=None)
+    async with maintenance_async_db_session() as db:
+        db.add_all([local, published, draft])
+
+    response = await db_async_client.get(
+        "/api/v1/kb/documents",
+        headers=headers,
+        params={"scope": "platform", "limit": 1},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1
+    assert response.json()["documents"][0]["id"] == str(published.id)
+    assert response.json()["documents"][0]["scope"] == "platform"
+    visible = await db_async_client.get(
+        f"/api/v1/kb/documents/{published.id}",
+        headers=headers,
+    )
+    assert visible.status_code == 200, visible.text
+    assert visible.json()["scope"] == "platform"
+    assert visible.json()["workspace_id"] is None
+    assert visible.json()["content_md"] == {
+        "node": "praxis_untrusted",
+        "source_kind": "kb",
+        "source_ref": f"document:{published.id}",
+        "content": published.content_md,
+    }
+    hidden = await db_async_client.get(
+        f"/api/v1/kb/documents/{draft.id}",
+        headers=headers,
+    )
+    assert hidden.status_code == 404

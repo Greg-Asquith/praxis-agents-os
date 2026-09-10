@@ -24,18 +24,15 @@ from services.embeddings.domain import (
 )
 from services.kb.domain import ANNOTATION_DEFAULTS, KB_COLLECTION_DIMS
 from services.kb.schemas import KBSearchHit, KBSearchResult
+from services.kb.visibility import VISIBLE_CHUNK_SQL
 from services.retrieval import RerankItem, get_reranker
 from services.retrieval.domain import RRF_K
 from services.retrieval.utils import configure_hnsw_search
 
 logger = logging.getLogger(__name__)
 
-_VISIBILITY_FILTERS = """
-      AND c.workspace_id = :workspace_id
-      AND d.deleted_at IS NULL
-      AND (d.source_type NOT IN ('url', 'integration') OR d.source_sync_status = 'ready')
-      AND (NOT d.is_private OR d.created_by_user_id = :user_id)
-      AND (NOT :private_only OR d.is_private)
+_VISIBILITY_FILTERS = f"""
+      AND ({VISIBLE_CHUNK_SQL})
       AND (:source_types IS NULL OR d.source_type = ANY(:source_types))
       AND (:document_ids IS NULL OR c.document_id = ANY(:document_ids))
 """
@@ -72,7 +69,7 @@ semantic AS (
 _FINAL_SELECT = """
 SELECT c.id, c.document_id, c.chunk_index, c.content, c.context_line,
        c.char_start, c.char_end, c.meta, c.embedding IS NULL AS pending_embedding,
-       d.title, d.source_type, d.external_url, d.is_private,
+       d.title, d.scope, d.source_type, d.external_url, d.is_private,
        f.score, f.sources
 FROM fused f
 JOIN kb_chunks c ON c.id = f.id
@@ -127,6 +124,8 @@ _LEXICAL_SEARCH_SQL = _build_search_sql(semantic=False)
 
 def _statement(*, semantic: bool):
     statement = text(_HYBRID_SEARCH_SQL if semantic else _LEXICAL_SEARCH_SQL).bindparams(
+        bindparam("workspace_id", type_=PGUUID(as_uuid=True)),
+        bindparam("user_id", type_=PGUUID(as_uuid=True)),
         bindparam("source_types", type_=ARRAY(String())),
         bindparam("document_ids", type_=ARRAY(PGUUID(as_uuid=True))),
         bindparam("recency_source_types", type_=ARRAY(String())),

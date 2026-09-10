@@ -22,8 +22,10 @@ from services.agents.runtime.tools import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
+from services.agents.runtime.untrusted import UntrustedNode
 from services.kb.get_document import get_kb_document
 from services.kb.search_chunks import search_chunks
+from utils.content import ContentScope
 
 KB_AGENT_SEARCH_DEFAULT_LIMIT = 5
 
@@ -47,11 +49,12 @@ class KnowledgeChunkResult(BaseModel):
     """One model-visible knowledge search hit."""
 
     document_id: str
+    scope: ContentScope
     reference: KnowledgeDocumentReference
     document_title: str
     source_type: str
     is_private: bool
-    content: str
+    content: str | UntrustedNode
 
 
 class SearchKnowledgeOutput(BaseModel):
@@ -68,13 +71,14 @@ class ReadDocumentOutput(BaseModel):
     """A bounded character window from one knowledge document."""
 
     document_id: str
+    scope: ContentScope
     title: str
     source_type: str
     is_private: bool
     start: int
     end: int
     total_chars: int
-    content: str
+    content: str | UntrustedNode
 
 
 @runtime_tool(
@@ -83,7 +87,7 @@ class ReadDocumentOutput(BaseModel):
     label="Search Knowledge",
     code_eligible=False,
     description=(
-        "Search this workspace's knowledge base. Returns short snippets ranked "
+        "Search workspace and published platform knowledge. Returns short snippets ranked "
         "by relevance; call read_document with a result's document_id to read "
         "the full document."
     ),
@@ -118,7 +122,7 @@ class ReadDocumentOutput(BaseModel):
 )
 async def search_knowledge(
     ctx: RunContext[RuntimeDeps],
-    query: Annotated[str, Field(description="Terms to search for in workspace knowledge.")],
+    query: Annotated[str, Field(description="Terms to search for in visible knowledge.")],
     filters: KnowledgeSearchFilters | None = None,
     limit: Annotated[
         int,
@@ -129,7 +133,7 @@ async def search_knowledge(
         ),
     ] = KB_AGENT_SEARCH_DEFAULT_LIMIT,
 ) -> dict[str, Any]:
-    """Search visible workspace knowledge through the shared hybrid service."""
+    """Searches visible knowledge through the shared hybrid service."""
     normalized_query = query.strip()
     if not normalized_query:
         raise ModelRetry("search_knowledge requires a non-empty query.")
@@ -156,17 +160,23 @@ async def search_knowledge(
     hits = [
         {
             "document_id": str(hit.document_id),
+            "scope": hit.scope,
             "reference": KnowledgeDocumentReference(
                 entity_id=hit.document_id,
+                scope=hit.scope,
                 label=hit.title,
                 description=(
-                    f"{'Private' if hit.is_private else 'Workspace'} · {hit.source_type.title()}"
+                    f"{'Private' if hit.is_private else hit.scope.title()} · {hit.source_type.title()}"
                 ),
             ),
             "document_title": hit.title,
             "source_type": hit.source_type,
             "is_private": hit.is_private,
-            "content": hit.content,
+            "content": (
+                UntrustedNode(source_kind="kb", source_ref=f"chunk:{hit.id}", content=hit.content)
+                if hit.scope == ContentScope.PLATFORM
+                else hit.content
+            ),
         }
         for hit in result.results
     ]
@@ -225,7 +235,7 @@ async def read_document(
     ],
     range: ReadRange | None = None,
 ) -> dict[str, Any]:
-    """Read a bounded window from one visible workspace knowledge document."""
+    """Reads a bounded window from one visible knowledge document."""
     try:
         document = await get_kb_document(
             ctx.deps.db,
@@ -260,11 +270,16 @@ async def read_document(
     window = content[requested_range.start : end]
     return {
         "document_id": str(document.id),
+        "scope": document.scope,
         "title": document.title,
         "source_type": document.source_type,
         "is_private": document.is_private,
         "start": requested_range.start,
         "end": end,
         "total_chars": total_chars,
-        "content": window,
+        "content": (
+            UntrustedNode(source_kind="kb", source_ref=f"document:{document.id}", content=window)
+            if document.scope == ContentScope.PLATFORM
+            else window
+        ),
     }

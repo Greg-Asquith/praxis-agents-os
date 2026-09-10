@@ -60,8 +60,10 @@ async def get_mutable_document(
         select(KBDocument)
         .where(
             KBDocument.id == document_id,
+            KBDocument.scope == "workspace",
             KBDocument.workspace_id == workspace_id,
             KBDocument.deleted.is_(False),
+            KBDocument.deleted_at.is_(None),
             or_(
                 KBDocument.is_private.is_(False),
                 KBDocument.created_by_user_id == user_id,

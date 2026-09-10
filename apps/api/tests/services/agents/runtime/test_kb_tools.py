@@ -24,6 +24,7 @@ from services.agents.runtime.tools.kb import (
     search_knowledge,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.agents.runtime.untrusted import UntrustedNode
 from services.embeddings.domain import EmbeddingProviderError
 from services.kb.create_document import create_kb_document
 from services.kb.domain import (
@@ -64,8 +65,10 @@ def _context(*, db: object, workspace: object, user: object):
     )
 
 
+@pytest.mark.parametrize("scope", ["workspace", "platform"])
 async def test_search_knowledge_clamps_limit_and_preserves_filters(
     monkeypatch: pytest.MonkeyPatch,
+    scope: str,
 ) -> None:
     workspace = SimpleNamespace(id=uuid4())
     user = SimpleNamespace(id=uuid4())
@@ -82,6 +85,7 @@ async def test_search_knowledge_clamps_limit_and_preserves_filters(
                 KBSearchHit(
                     id=chunk_id,
                     document_id=document_id,
+                    scope=scope,
                     chunk_index=2,
                     content="Quarterly reviews are required.",
                     context_line=None,
@@ -125,14 +129,24 @@ async def test_search_knowledge_clamps_limit_and_preserves_filters(
     assert output["used_lexical_fallback"] is True
     assert output["results"][0] == {
         "document_id": str(document_id),
+        "scope": scope,
         "document_title": "Access policy",
         "source_type": KB_SOURCE_MANUAL,
         "is_private": False,
-        "content": "Quarterly reviews are required.",
+        "content": (
+            UntrustedNode(
+                source_kind="kb",
+                source_ref=f"chunk:{chunk_id}",
+                content="Quarterly reviews are required.",
+            )
+            if scope == "platform"
+            else "Quarterly reviews are required."
+        ),
         "reference": KnowledgeDocumentReference(
             entity_id=document_id,
             label="Access policy",
-            description="Workspace · Manual",
+            description=f"{scope.title()} · Manual",
+            scope=scope,
         ),
     }
     assert "read_document" in output["next_step"]
@@ -162,8 +176,10 @@ async def test_search_knowledge_defaults_to_a_small_limit(
         await search_knowledge(context, "policy", limit=0)
 
 
+@pytest.mark.parametrize("scope", ["workspace", "platform"])
 async def test_read_document_caps_range(
     monkeypatch: pytest.MonkeyPatch,
+    scope: str,
 ) -> None:
     workspace = SimpleNamespace(id=uuid4())
     user = SimpleNamespace(id=uuid4())
@@ -176,8 +192,8 @@ async def test_read_document_caps_range(
         assert kwargs["user_id"] == user.id
         return KBDocumentRead(
             id=document_id,
-            scope="workspace",
-            workspace_id=workspace.id,
+            scope=scope,
+            workspace_id=workspace.id if scope == "workspace" else None,
             is_published=False,
             title="External policy",
             concept_id=None,
@@ -210,9 +226,14 @@ async def test_read_document_caps_range(
     )
     validated = ReadDocumentOutput.model_validate(output)
 
+    assert validated.scope == scope
     assert validated.start == 5
     assert validated.end == 17
-    assert validated.content == content[5:17]
+    assert validated.content == (
+        UntrustedNode(source_kind="kb", source_ref=f"document:{document_id}", content=content[5:17])
+        if scope == "platform"
+        else content[5:17]
+    )
 
 
 async def test_read_document_retries_for_invalid_range(

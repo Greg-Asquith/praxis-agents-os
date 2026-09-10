@@ -23,6 +23,7 @@ class KBSearchHit(BaseModel):
 
     id: UUID
     document_id: UUID
+    scope: ContentScope
     chunk_index: int
     content: str
     context_line: str | None
@@ -40,7 +41,7 @@ class KBSearchHit(BaseModel):
     @field_serializer("content")
     def serialize_content(self, content: str) -> str | UntrustedNode:
         """Keep external-source provenance structured for browser clients."""
-        if self.source_type not in KB_FRAMED_SOURCE_TYPES:
+        if self.scope != ContentScope.PLATFORM and self.source_type not in KB_FRAMED_SOURCE_TYPES:
             return content
         return UntrustedNode(
             source_kind="kb",
@@ -122,7 +123,9 @@ class KBDocumentRead(BaseModel):
     @field_serializer("content_md")
     def serialize_content(self, content: str | None) -> str | UntrustedNode | None:
         """Keep external-source provenance structured for browser clients."""
-        if content is None or self.source_type not in KB_FRAMED_SOURCE_TYPES:
+        if content is None or (
+            self.scope != ContentScope.PLATFORM and self.source_type not in KB_FRAMED_SOURCE_TYPES
+        ):
             return content
         return UntrustedNode(
             source_kind="kb",

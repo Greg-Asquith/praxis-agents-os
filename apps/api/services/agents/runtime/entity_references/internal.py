@@ -31,6 +31,7 @@ from services.agents.runtime.entity_references.registry import (
 )
 from services.files.utils import file_for_revision, get_visible_file_revision
 from services.files.visibility import visible_file_filter
+from services.kb.visibility import visible_document_filter
 from services.memories.authorisation import visible_memory_filter
 from utils.content import ContentScope
 
@@ -256,9 +257,7 @@ def _artifact_choice(artifact: Artifact) -> EntityChoice:
 async def _search_documents(ctx, search, _dependent_args, page_size, cursor):
     offset = _offset(cursor)
     filters = [
-        KBDocument.workspace_id == ctx.workspace.id,
-        KBDocument.deleted.is_(False),
-        or_(KBDocument.is_private.is_(False), KBDocument.created_by_user_id == ctx.actor.id),
+        visible_document_filter(ctx.workspace.id, ctx.actor.id),
     ]
     pattern = _pattern(search)
     if pattern:
@@ -287,12 +286,7 @@ async def _resolve_documents(ctx, values, _dependent_args):
             await ctx.db.scalars(
                 select(KBDocument).where(
                     KBDocument.id.in_(wanted),
-                    KBDocument.workspace_id == ctx.workspace.id,
-                    KBDocument.deleted.is_(False),
-                    or_(
-                        KBDocument.is_private.is_(False),
-                        KBDocument.created_by_user_id == ctx.actor.id,
-                    ),
+                    visible_document_filter(ctx.workspace.id, ctx.actor.id),
                 )
             )
         )
@@ -303,10 +297,11 @@ async def _resolve_documents(ctx, values, _dependent_args):
 
 
 def _document_choice(document: KBDocument) -> EntityChoice:
-    privacy = "Private" if document.is_private else "Workspace"
+    privacy = "Private" if document.is_private else document.scope.title()
     return EntityChoice.from_reference(
         KnowledgeDocumentReference(
             entity_id=document.id,
+            scope=document.scope,
             label=document.title,
             description=f"{privacy} · {document.source_type.title()} · {document.status.title()}",
         ),

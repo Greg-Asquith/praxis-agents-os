@@ -4,12 +4,14 @@
 
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import NotFoundError
 from models.kb import KBDocument
+from services.kb.domain import KB_REFRESHABLE_SOURCE_TYPES, KB_SYNC_READY
 from services.kb.schemas import KBDocumentRead
+from services.kb.visibility import visible_document_filter
 
 
 async def get_kb_document(
@@ -23,12 +25,7 @@ async def get_kb_document(
     document = await db.scalar(
         select(KBDocument).where(
             KBDocument.id == document_id,
-            KBDocument.workspace_id == workspace_id,
-            KBDocument.deleted_at.is_(None),
-            or_(
-                KBDocument.is_private.is_(False),
-                KBDocument.created_by_user_id == user_id,
-            ),
+            visible_document_filter(workspace_id, user_id, include_unready_local_sources=True),
         )
     )
     if document is None:
@@ -38,4 +35,11 @@ async def get_kb_document(
             resource_id=str(document_id),
         )
 
-    return KBDocumentRead.from_document(document)
+    result = KBDocumentRead.from_document(document)
+    if (
+        document.source_type in KB_REFRESHABLE_SOURCE_TYPES
+        and document.source_sync_status != KB_SYNC_READY
+    ):
+        result.content_md = None
+        result.summary = None
+    return result

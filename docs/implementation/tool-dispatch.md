@@ -84,6 +84,13 @@ The following contracts apply in this area:
   presentation. The complete reviewed row set is the consent boundary; do not
   replace it with sequential single-row calls or workflow-scoped grants.
 
+Knowledge references include server-derived `scope` for workspace and platform
+citations. Search and resolution admit only visible documents in the active
+workspace or published platform entries. Re-resolution refreshes ownership from
+the database rather than trusting the supplied reference's display metadata.
+Platform Knowledge content uses the shared untrusted-content node and model-only
+framing through the existing search and read tools.
+
 ## Transcript approvals
 
 The following contracts apply in this area:

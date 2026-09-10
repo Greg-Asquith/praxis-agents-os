@@ -61,10 +61,11 @@ When a tool result includes an artifact reference, link that artifact as `[label
 KNOWLEDGE_INSTRUCTIONS = """\
 ## Knowledge Base
 
-Search the workspace knowledge base before answering questions it may cover.
+Search workspace and system knowledge before answering questions it may cover.
 search_knowledge returns short snippets: when a result looks relevant, call
 read_document with its document_id for the full document, and cite the
-document title when relying on retrieved content. Iterate with refined queries
+document title and scope when relying on retrieved content. Workspace knowledge takes
+precedence over system level knowledge. Iterate with refined queries
 when needed. This should always be your first port of call - only answer using your own knowledge if there are no relevant documents in the knowledge base.
 """
 

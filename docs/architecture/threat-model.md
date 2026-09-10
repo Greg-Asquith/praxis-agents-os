@@ -122,7 +122,14 @@ Deployment-wide ownership does not make source instructions trusted. The helper
 has no function tools, and stale results after deletion or withdrawal cannot
 replace stored chunks. Platform ingestion tests exercise the hostile annotation
 fixture and verify that discarded output retains its platform usage record.
-Combined platform retrieval remains pending.
+Platform Knowledge retrieval uses channel (c), with published snippets and
+canonical document windows carried as structured untrusted-content nodes.
+Publication grants read access rather than instruction authority. A deterministic
+runtime scenario retrieves hostile platform text and checks model-only framing,
+server-minted document provenance, bounded reads, and dispatch audit. Privacy,
+publication, and withdrawal checks run before candidate limits and again when
+references resolve. Local manual and upload handling retains its existing
+curation boundary.
 
 **Google Ads exception (operator decision, 2026-07-23):** Google Ads tool
 results are ordinary typed tool data and do not use the provenance-node or

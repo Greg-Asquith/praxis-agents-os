@@ -2,7 +2,7 @@
 
 """List visible knowledge documents in a workspace."""
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.kb import KBDocument
@@ -12,6 +12,8 @@ from services.kb.schemas import (
     KBDocumentListItem,
     KBDocumentsListResponse,
 )
+from services.kb.visibility import visible_document_filter
+from utils.content import ContentScope
 from utils.pagination import paginate
 
 
@@ -25,15 +27,18 @@ async def list_documents(
     source_type: str | None,
     status: str | None,
     is_private: bool | None,
+    scope: ContentScope | None = None,
 ) -> KBDocumentsListResponse:
     filters = [
-        KBDocument.workspace_id == workspace.id,
-        KBDocument.deleted.is_(False),
-        or_(
-            KBDocument.is_private.is_(False),
-            KBDocument.created_by_user_id == actor.id,
+        visible_document_filter(
+            workspace.id,
+            actor.id,
+            private_only=is_private is True,
+            include_unready_local_sources=True,
         ),
     ]
+    if scope is not None:
+        filters.append(KBDocument.scope == scope)
     if source_type is not None:
         filters.append(KBDocument.source_type == source_type)
     if status is not None:

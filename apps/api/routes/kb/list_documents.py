@@ -14,6 +14,7 @@ from core.dependencies import (
 )
 from services.kb.documents import list_documents as list_documents_service
 from services.kb.schemas import KBDocumentsListResponse
+from utils.content import ContentScope
 
 router = APIRouter(dependencies=[Depends(require_read)])
 
@@ -29,6 +30,7 @@ async def list_documents(
     source_type: Literal["upload", "url", "manual", "conversation", "integration"] | None = None,
     status: Literal["pending", "processing", "ready", "error"] | None = None,
     is_private: bool | None = None,
+    scope: ContentScope | None = None,
 ) -> KBDocumentsListResponse:
     workspace, _membership = workspace_context
     return await list_documents_service(
@@ -40,4 +42,5 @@ async def list_documents(
         source_type=source_type,
         status=status,
         is_private=is_private,
+        scope=scope,
     )

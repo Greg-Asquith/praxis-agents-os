@@ -24,7 +24,7 @@ Knowledge Base, and memories](../guides/skills-files-knowledge-memories.md).
 | Storage            | `skills` table; docs in object storage                                  | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | `agent_memories` (markdown in Postgres, `HALFVEC` embeddings)                                       |
 | Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Budgeted core-memory prompt block + auto-mounted memory tools                                       |
 | Retrieval          | None                                                                    | None                                                                                       | Hybrid RRF: lexical + pgvector semantic + recency                         | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`)                           |
-| Scope              | Workspace or platform rows, assigned per agent via `Agent.skill_ids`    | Workspace and published platform; conversation visibility via `file_references`                                   | Workspace-wide, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
+| Scope              | Workspace or platform rows, assigned per agent via `Agent.skill_ids`    | Workspace and published platform; conversation visibility via `file_references`                                   | Workspace and published platform, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
 | Agent-writable     | No                                                                      | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
 | Status             | Shipped end to end                                                      | Shipped end to end                                                                         | Shipped end to end                                                        | Shipped end to end                                                                                  |
 
@@ -164,14 +164,16 @@ agent consults via retrieval.
   `search_knowledge` and `read_document`
   (`services/agents/runtime/tools/kb.py`). Results are wrapped in the shared
   untrusted-content framing. There is deliberately no agent write tool yet.
-- **Scope.** Workspace-wide — every agent searches the same KB. Private
-  documents (`is_private`) are visible only to their creator, enforced in
-  both the search SQL and document reads.
+- **Scope.** Every agent searches the active workspace and published platform
+  Knowledge through one bounded ranking. Private documents (`is_private`) remain
+  creator-only in their workspace. Results and citations identify ownership.
+  Platform snippets use untrusted-content framing and do not override local
+  facts by title. Withdrawal removes entries from subsequent reads and pickers.
 - **Platform authoring.** Super admins create manual entries and entries
   pinned to platform File revisions through explicit management routes.
   Processing uses platform-owned usage and requires review before publication.
-  Editing or reprocessing requires withdrawal. Combined platform retrieval and
-  the Knowledge web interface remain pending. See the
+  Editing or reprocessing requires withdrawal. The Knowledge web interface for
+  platform authoring and local copies remains pending. See the
   [platform ingestion contract](../implementation/knowledge-sources.md#platform-authoring-and-ingestion).
 - **Relationship to Files.** Separate tables and UIs. Uploading a document to
   the KB through the web UI first creates a workspace File, then pins the KB

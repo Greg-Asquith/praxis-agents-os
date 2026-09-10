@@ -11,7 +11,11 @@ from models.kb import KBChunk, KBDocument
 
 
 def visible_document_filter(
-    workspace_id: UUID | None, user_id: UUID | None, *, private_only: bool = False
+    workspace_id: UUID | None,
+    user_id: UUID | None,
+    *,
+    private_only: bool = False,
+    include_unready_local_sources: bool = False,
 ) -> ColumnElement[bool]:
     """Preserves local privacy and source access when admitting platform knowledge."""
     if workspace_id is None:
@@ -43,6 +47,7 @@ def visible_document_filter(
         or_(
             KBDocument.source_type.not_in(("url", "integration")),
             KBDocument.source_sync_status == "ready",
+            KBDocument.scope == "workspace" if include_unready_local_sources else false(),
         ),
         ownership,
     )
@@ -65,7 +70,7 @@ def visible_chunk_filter(
     )
 
 
-# Aliases and bound parameters match search_chunks; adoption belongs to retrieval.
+# Aliases and bound parameters match the shared chunk search.
 VISIBLE_CHUNK_SQL = """
     :workspace_id IS NOT NULL
     AND c.document_id = d.id

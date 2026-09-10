@@ -39,8 +39,9 @@ queries cannot read these events.
 Before editing or reprocessing a published entry, withdraw it. Processing and
 failure keep it withdrawn. Successful ingestion prepares canonical content and
 chunks for review; only an explicit super-admin publication makes it visible
-under the platform database policy. Combined workspace/platform retrieval and
-the Knowledge web interface remain pending.
+under the platform database policy. Published entries join workspace retrieval
+through the existing API and agent tools. Platform authoring controls, badges,
+and copy actions in the Knowledge web interface remain pending.
 
 Platform ingestion and embedding use separate actor-owned jobs. Each job
 requires an active super admin and carries the expected ingestion version.
@@ -67,6 +68,34 @@ failure semantics.
 A live platform document retains its pinned File revision, including while the
 document is a draft or withdrawn. File retention skips pinned parents. Creating
 an upload entry locks the live File until the document transaction commits.
+
+## Published Knowledge reads
+
+Search combines workspace documents and published platform documents in one
+ranking. Both lexical and semantic candidate queries apply ownership, privacy,
+source access, source-type filters, and document-ID filters before their limits.
+The final result limit and optional reranker apply to that shared candidate set.
+`private_only` returns only private documents created by the requesting user in
+the active workspace. Query embeddings are charged once to that workspace.
+Missing or failed query embeddings retain lexical fallback.
+
+Search hits, agent results, and Knowledge references include `scope`. Duplicate
+titles remain distinct document IDs. Publication grants access to reference
+material, not instruction authority. Platform snippets and document content use
+structured untrusted-content nodes, with framing applied to model history.
+Agents fetch only bounded search results and requested document windows.
+
+The document list accepts an optional `scope=workspace|platform` filter. Counts
+and pages use the same ownership and privacy predicate. Draft, withdrawn, and
+deleted platform entries are absent from ordinary search, detail, lists, and
+entity pickers. Resolution rechecks publication, including saved references.
+Workspace mutations remain local, including for super admins. Explicit platform
+management routes retain separate authority to inspect drafts.
+
+Local URL and integration metadata remain available for processing and recovery.
+When source access is not ready, detail reads omit canonical content and summary,
+and search and pickers omit the source. This does not grant access to another
+user's private entry or another workspace's metadata.
 
 ## Import and refresh lifecycle
 

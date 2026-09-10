@@ -76,15 +76,18 @@ jobs are implemented. Platform File management routes publish reviewed
 revisions through locked, strictly audited maintenance transactions. Knowledge
 management also uses explicit super-admin maintenance transactions for manual
 and pinned upload entries. Versioned ingestion stays unpublished until review.
-Combined Knowledge retrieval, its operator interface, and Artifact management
-remain pending.
+Combined Knowledge retrieval uses the shared scope and privacy predicates.
+Its platform operator controls and Artifact management remain pending.
 
 Domain-owned `visibility.py` helpers in `services/kb`, `services/files`, and
 `services/artifacts` define local and published platform reads. Missing workspace
 IDs deny all reads. Revision predicates require matching parent ownership and a
 publication marker; KB chunks inherit privacy and source-access checks from the
-parent. The KB SQL predicate is tested against the ORM predicate. Tenant read
-paths retain their workspace filters until storage and publication are ready.
+parent. The KB SQL predicate is tested against the ORM predicate and applies
+before both lexical and semantic candidate limits. Knowledge and File reads
+admit published platform resources through these helpers. Local Knowledge
+source metadata remains inspectable for recovery without returning unavailable
+content. Artifact read-path integration remains pending.
 
 Parent response contracts expose `scope`, nullable `workspace_id`,
 `is_published`, and `can_manage_platform`. The management flag requires a live

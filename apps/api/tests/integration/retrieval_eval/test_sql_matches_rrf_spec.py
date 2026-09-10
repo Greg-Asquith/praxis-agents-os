@@ -54,6 +54,8 @@ async def test_sql_order_scores_and_sources_match_weighted_rrf(
         dimensions=KB_COLLECTION_DIMS,
     )
     statement = text(_SOURCE_RANK_SQL).bindparams(
+        bindparam("workspace_id", type_=PGUUID(as_uuid=True)),
+        bindparam("user_id", type_=PGUUID(as_uuid=True)),
         bindparam("source_types", type_=ARRAY(String())),
         bindparam("document_ids", type_=ARRAY(PGUUID(as_uuid=True))),
         bindparam("recency_source_types", type_=ARRAY(String())),

@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from utils.content import ContentScope
+
 ENTITY_REFERENCE_VERSION = 1
 
 
@@ -68,6 +70,7 @@ class ArtifactReference(InternalEntityReference):
 
 
 class KnowledgeDocumentReference(InternalEntityReference):
+    scope: ContentScope = ContentScope.WORKSPACE
     entity_kind: Literal["knowledge_document"] = "knowledge_document"
 
 
