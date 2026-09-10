@@ -93,6 +93,12 @@ class FileConfirmRequest(BaseModel):
         return normalized
 
 
+class PlatformFileConfirmRequest(FileConfirmRequest):
+    """Confirms a platform upload and optionally publishes it after processing."""
+
+    publish_when_ready: bool = False
+
+
 class FileEditRequest(BaseModel):
     """Text edit request for an editable file."""
 

@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
 from core.dependencies import require_super_admin_user
-from core.exceptions.general import AppValidationError, NotFoundError
+from core.exceptions.auth import AuthorizationError
+from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
+from core.settings import settings
 from models.files import File, FileRevision
 from models.user import User
 from services.audit_events import AuditResourceType
@@ -24,6 +26,7 @@ from services.files.contract import max_size_bytes, require_matching_pair
 from services.files.domain import FileRead
 from services.files.utils import file_to_read
 from services.storage.domain import StorageBucket, make_storage_object_ref
+from services.storage.errors import StoragePreconditionError
 from services.storage.factory import get_storage_provider
 from services.storage.utils import read_copy_content
 from utils.content import ContentScope
@@ -78,7 +81,7 @@ def platform_file_to_read(file: File, actor: User) -> FileRead:
 async def record_file_change(
     db: AsyncSession,
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     file: File,
     details: PlatformContentAuditDetails,
@@ -105,4 +108,60 @@ async def read_revision_bytes(revision: FileRevision) -> bytes:
         make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, revision.object_key),
         revision.size_bytes,
         revision.content_hash,
+    )
+
+
+async def read_revision_markdown(revision: FileRevision) -> bytes:
+    """Reads stored extraction within its recorded size and configured limit."""
+    expected_size = revision.markdown_size_bytes
+    if not revision.markdown_object_key or expected_size is None:
+        raise AppValidationError("The file preview is not ready", field="revision_id")
+    if not 0 <= expected_size <= settings.FILES_MAX_MARKDOWN_BYTES:
+        raise AppValidationError("File preview exceeds the content limit", field="revision_id")
+    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, revision.markdown_object_key)
+    content = bytearray()
+    async for chunk in get_storage_provider().stream_object(ref):
+        if len(content) + len(chunk) > expected_size:
+            raise StoragePreconditionError("File preview size changed", operation="file_preview")
+        content.extend(chunk)
+    if len(content) != expected_size:
+        raise StoragePreconditionError("File preview size changed", operation="file_preview")
+    return bytes(content)
+
+
+async def publish_locked_revision(
+    db: AsyncSession,
+    *,
+    file: File,
+    revision: FileRevision,
+    actor: User,
+    request: Request | None,
+) -> None:
+    """Publishes verified content and audit evidence while the caller holds its parent lock."""
+    actor = await db.get(User, actor.id, populate_existing=True)
+    if actor is None or actor.deleted or not actor.is_active:
+        raise AuthorizationError("Platform publication requires an active super admin")
+    require_super_admin_user(actor)
+    if file.current_revision_id != revision.id:
+        raise ConflictError("File has changed", conflicting_resource="file")
+    if file.processing_status != "ready":
+        raise AppValidationError("File processing must finish before publication")
+    await read_revision_bytes(revision)
+    if file.is_published and file.published_revision_id == revision.id:
+        return
+    previous = file.published_revision_id
+    revision.is_published = True
+    await db.flush()
+    file.published_revision_id = revision.id
+    file.is_published = True
+    await record_file_change(
+        db,
+        request=request,
+        actor=actor,
+        file=file,
+        details=PlatformContentAuditDetails(
+            operation="publish",
+            revision_id=revision.id,
+            previous_revision_id=previous,
+        ),
     )

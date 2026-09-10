@@ -2,6 +2,7 @@
 
 """List workspace files."""
 
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import case, func, select
@@ -12,23 +13,20 @@ from models.files import File, FileFolder, FileRevision
 from models.workspace import Workspace
 from services.files.contract import FileCategory
 from services.files.domain import FileListResponse
-from services.files.utils import file_for_revision, file_to_read
+from services.files.utils import (
+    file_for_revision,
+    file_name_search_filter,
+    file_sort_column,
+    file_to_read,
+)
 from services.files.visibility import visible_file_filter, visible_file_revision_filter
-
-_SORT_COLUMNS = {
-    "created_at": File.created_at,
-    "extension": File.extension,
-    "name": File.name,
-    "processing_status": File.processing_status,
-    "size_bytes": File.size_bytes,
-    "updated_at": File.updated_at,
-}
 
 
 async def list_files(
     db: AsyncSession,
     *,
     workspace: Workspace,
+    scope: Literal["all", "workspace", "platform"] = "all",
     category: str | None = None,
     search: str | None = None,
     sort_by: str = "updated_at",
@@ -51,6 +49,8 @@ async def list_files(
             (File.scope == "workspace") | visible_file_revision_filter(workspace.id),
         )
     )
+    if scope != "all":
+        stmt = stmt.where(File.scope == scope)
     if folder_id is not None and root_only:
         raise AppValidationError("folder_id and root_only cannot be combined", field="folder_id")
     if folder_id is not None:
@@ -64,15 +64,9 @@ async def list_files(
             raise AppValidationError("Unknown file category", field="category") from exc
         stmt = stmt.where(File.category == normalized_category)
     if search:
-        escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{escaped}%"
-        stmt = stmt.where(File.name.ilike(pattern, escape="\\"))
+        stmt = stmt.where(file_name_search_filter(search))
 
-    sort_column = _SORT_COLUMNS.get(sort_by)
-    if sort_column is None:
-        raise AppValidationError("Unknown file sort field", field="sort_by")
-    if sort_direction not in {"asc", "desc"}:
-        raise AppValidationError("Unknown file sort direction", field="sort_direction")
+    sort_column = file_sort_column(sort_by, sort_direction)
 
     if sort_by in {"extension", "size_bytes", "updated_at", "processing_status"}:
         published_value = {

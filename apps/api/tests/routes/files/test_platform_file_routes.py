@@ -68,12 +68,20 @@ async def test_platform_list_precedes_workspace_file_id_and_bounds_pagination(
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://testserver"
     ) as client:
-        response = await client.get("/api/v1/files/platform/")
+        response = await client.get("/api/v1/files/platform/", params={"search": "Report"})
         invalid = await client.get("/api/v1/files/platform/", params={"limit": 101})
     assert response.status_code == 200
     assert response.json() == {"files": [], "total": 0}
     assert invalid.status_code == 422
-    service.assert_awaited_once_with(db, actor=actor, limit=50, offset=0)
+    service.assert_awaited_once_with(
+        db,
+        actor=actor,
+        limit=50,
+        offset=0,
+        search="Report",
+        sort_by="created_at",
+        sort_direction="desc",
+    )
 
 
 async def test_platform_upload_passes_explicit_scope(
@@ -119,3 +127,68 @@ async def test_platform_upload_passes_explicit_scope(
     assert service.await_args.kwargs["membership"].role == WorkspaceRole.READ_ONLY
     assert service.await_args.kwargs["scope"] == ContentScope.PLATFORM
     assert service.await_args.kwargs["payload"] == FileUploadRequest(**payload)
+
+
+async def test_workspace_confirmation_rejects_platform_publication_intent(
+    platform_route_app, monkeypatch
+):
+    app, _, _ = platform_route_app
+    service = AsyncMock()
+    module = import_module("routes.files.confirm_file_upload")
+    monkeypatch.setattr(module, "confirm_upload_service", service)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.post(
+            "/api/v1/files/uploads/confirm",
+            json={"upload_token": "grant", "publish_when_ready": True},
+        )
+    assert response.status_code == 422
+    service.assert_not_awaited()
+
+
+async def test_platform_confirmation_accepts_publication_intent(platform_route_app, monkeypatch):
+    from datetime import UTC, datetime
+
+    from services.files.domain import PlatformFileConfirmRequest
+    from utils.content import ContentScope
+
+    app, db, actor = platform_route_app
+    file_id, revision_id = uuid4(), uuid4()
+    service = AsyncMock(
+        return_value={
+            "id": file_id,
+            "scope": "platform",
+            "workspace_id": None,
+            "is_published": True,
+            "published_revision_id": revision_id,
+            "name": "guide.txt",
+            "category": "editable_text",
+            "content_type": "text/plain",
+            "extension": ".txt",
+            "size_bytes": 5,
+            "content_hash": "a" * 64,
+            "current_revision_id": revision_id,
+            "revision_count": 1,
+            "processing_status": "ready",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
+        }
+    )
+    module = import_module("routes.files.platform.confirm_file_upload")
+    monkeypatch.setattr(module, "confirm_upload_service", service)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        response = await client.post(
+            "/api/v1/files/platform/uploads/confirm",
+            json={"upload_token": "grant", "publish_when_ready": True},
+        )
+    assert response.status_code == 200
+    assert response.json()["is_published"] is True
+    assert service.await_args.args == (db,)
+    assert service.await_args.kwargs["actor"] is actor
+    assert service.await_args.kwargs["scope"] == ContentScope.PLATFORM
+    assert service.await_args.kwargs["payload"] == PlatformFileConfirmRequest.model_validate(
+        {"upload_token": "grant", "publish_when_ready": True}
+    )

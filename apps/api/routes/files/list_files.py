@@ -2,7 +2,7 @@
 
 """Route for listing workspace files."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -18,6 +18,7 @@ router = APIRouter()
 async def list_files(
     db: AsyncDbSessionDep,
     workspace_context: CurrentWorkspaceDep,
+    scope: Annotated[Literal["all", "workspace", "platform"], Query()] = "all",
     category: Annotated[str | None, Query(max_length=32)] = None,
     search: Annotated[str | None, Query(max_length=255)] = None,
     sort_by: Annotated[str, Query(max_length=32)] = "updated_at",
@@ -31,6 +32,7 @@ async def list_files(
     return await list_files_service(
         db,
         workspace=workspace,
+        scope=scope,
         category=category,
         search=search,
         sort_by=sort_by,

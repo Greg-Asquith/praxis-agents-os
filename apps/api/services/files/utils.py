@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql.elements import ColumnElement
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, NotFoundError
@@ -273,6 +275,7 @@ async def set_processing_state_for_revision(
     file: File,
     revision: FileRevision,
     initiated_by_user_id: UUID | None,
+    publish_when_ready: bool = False,
 ) -> None:
     """Set file processing state and enqueue extraction for ingestible revisions."""
     from services.files.contract import is_ingestible
@@ -292,7 +295,11 @@ async def set_processing_state_for_revision(
         concurrency_user_id=initiated_by_user_id if file.scope == ContentScope.PLATFORM else None,
         subject_type="file_revision",
         subject_id=revision.id,
-        payload={"file_id": str(file.id), "revision_id": str(revision.id)},
+        payload={
+            "file_id": str(file.id),
+            "revision_id": str(revision.id),
+            **({"publish_when_ready": True} if publish_when_ready else {}),
+        },
         content_hash=revision.content_hash,
         initiated_by_user_id=initiated_by_user_id,
     )
@@ -532,3 +539,29 @@ async def get_file_copy_source(
         db, workspace_id=workspace.id, file=source, revision_id=revision_id
     )
     return source, revision
+
+
+def file_name_search_filter(search: str) -> ColumnElement[bool]:
+    """Matches file names without treating search characters as LIKE wildcards."""
+    escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return File.name.ilike(f"%{escaped}%", escape="\\")
+
+
+def file_sort_column(
+    sort_by: str, sort_direction: str
+) -> InstrumentedAttribute[Any] | ColumnElement[Any]:
+    """Returns the allowed File sort column after validating its direction."""
+    columns = {
+        "created_at": File.created_at,
+        "extension": File.extension,
+        "name": File.name.collate("C"),
+        "processing_status": File.processing_status,
+        "size_bytes": File.size_bytes,
+        "updated_at": File.updated_at,
+    }
+    column = columns.get(sort_by)
+    if column is None:
+        raise AppValidationError("Unknown file sort field", field="sort_by")
+    if sort_direction not in {"asc", "desc"}:
+        raise AppValidationError("Unknown file sort direction", field="sort_direction")
+    return column

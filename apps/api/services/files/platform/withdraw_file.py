@@ -5,8 +5,10 @@
 from uuid import UUID
 
 from fastapi import Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from models.jobs import Job
 from models.user import User
 from services.audit_events.platform_content_events import PlatformContentAuditDetails
 from services.files.domain import FileRead
@@ -27,7 +29,21 @@ async def withdraw_file(
 ) -> FileRead:
     async with platform_session(db, actor) as maintenance_db:
         file = await get_platform_file(maintenance_db, file_id=file_id, for_update=True)
-        if file.is_published:
+        jobs = await maintenance_db.scalars(
+            select(Job)
+            .where(
+                Job.kind == "files.extract_platform",
+                Job.subject_id == file.current_revision_id,
+                Job.workspace_id.is_(None),
+            )
+            .with_for_update()
+        )
+        cancelled_publication = False
+        for job in jobs:
+            if job.payload.get("publish_when_ready") is True:
+                job.payload = {**job.payload, "publish_when_ready": False}
+                cancelled_publication = True
+        if file.is_published or cancelled_publication:
             file.is_published = False
             await record_file_change(
                 maintenance_db,
@@ -35,7 +51,8 @@ async def withdraw_file(
                 actor=actor,
                 file=file,
                 details=PlatformContentAuditDetails(
-                    operation="withdraw", revision_id=file.published_revision_id
+                    operation="withdraw",
+                    revision_id=file.published_revision_id or file.current_revision_id,
                 ),
             )
         return platform_file_to_read(file, actor)

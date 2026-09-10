@@ -58,7 +58,7 @@ class PlatformContentAuditDetails(BaseModel):
 async def record_platform_content_audit_event(
     db: AsyncSession,
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     resource_type: Literal[
         AuditResourceType.FILE, AuditResourceType.KB_DOCUMENT, AuditResourceType.ARTIFACT

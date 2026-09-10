@@ -25,7 +25,8 @@ from services.audit_events.platform_content_events import (
 )
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.contract import FILE_CONTRACT, require_matching_pair
-from services.files.domain import FileConfirmRequest, FileRead
+from services.files.domain import FileConfirmRequest, FileRead, PlatformFileConfirmRequest
+from services.files.platform.utils import publish_locked_revision
 from services.files.utils import (
     best_effort_delete_file_object,
     file_storage_bucket,
@@ -70,6 +71,8 @@ async def confirm_file_upload(
                 workspace=None,
                 payload=payload,
             )
+    if isinstance(payload, PlatformFileConfirmRequest):
+        raise AppValidationError("Platform confirmation requires platform scope")
     require_file_write_access(membership)
     return await _confirm_upload(
         db, request=request, actor=actor, workspace=workspace, payload=payload
@@ -186,7 +189,11 @@ async def _confirm_upload(
         )
         require_declared_upload_size(source_stored.size_bytes, file_upload)
         content_hash = await sha256_hex_stream(provider.stream_object(ref))
-        if existing_file is not None and existing_file.content_hash == content_hash:
+        if (
+            workspace is not None
+            and existing_file is not None
+            and existing_file.content_hash == content_hash
+        ):
             file_upload.consumed_at = datetime.now(UTC)
             await best_effort_delete_file_object(ref.key, provider=provider, bucket=bucket)
             await db.flush()
@@ -284,11 +291,17 @@ async def _confirm_upload(
     file.extension = revision.extension
     file.size_bytes = revision.size_bytes
     file.content_hash = revision.content_hash
+    publish_when_ready = (
+        workspace is None
+        and isinstance(payload, PlatformFileConfirmRequest)
+        and payload.publish_when_ready
+    )
     await set_processing_state_for_revision(
         db,
         file=file,
         revision=revision,
         initiated_by_user_id=actor.id,
+        publish_when_ready=publish_when_ready,
     )
     file_upload.consumed_at = datetime.now(UTC)
     await db.flush()
@@ -321,6 +334,14 @@ async def _confirm_upload(
                 "revision_kind": revision.revision_kind,
                 "content_hash": revision.content_hash,
             },
+        )
+    if publish_when_ready and file.processing_status == "ready":
+        await publish_locked_revision(
+            db,
+            file=file,
+            revision=revision,
+            actor=actor,
+            request=request,
         )
     await db.refresh(file)
     return file_to_read(

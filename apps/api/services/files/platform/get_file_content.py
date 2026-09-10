@@ -8,14 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from models.user import User
-from services.files.contract import is_editable
+from services.files.contract import contract_for_content_type
 from services.files.domain import FileRevisionContentRead
 from services.files.platform.utils import (
     get_platform_file,
     get_platform_revision,
     platform_session,
     read_revision_bytes,
+    read_revision_markdown,
 )
+from utils.digests import sha256_hex
 
 
 async def get_file_content(
@@ -26,15 +28,21 @@ async def get_file_content(
         revision = await get_platform_revision(
             maintenance_db, file=file, revision_id=revision_id or file.current_revision_id
         )
-        if not is_editable(revision.content_type):
+        entry = contract_for_content_type(revision.content_type)
+        if entry.editable:
+            data = await read_revision_bytes(revision)
+            content_type = revision.content_type
+        elif entry.ingestible:
+            data = await read_revision_markdown(revision)
+            content_type = "text/markdown"
+        else:
             raise AppValidationError("File revision does not support text content reads")
-        data = await read_revision_bytes(revision)
         return FileRevisionContentRead(
             file_id=file.id,
             revision_id=revision.id,
             revision_number=revision.revision_number,
-            content_type=revision.content_type,
-            size_bytes=revision.size_bytes,
-            content_hash=revision.content_hash,
+            content_type=content_type,
+            size_bytes=len(data),
+            content_hash=sha256_hex(data),
             content=data.decode("utf-8", errors="replace"),
         )

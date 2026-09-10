@@ -17,6 +17,7 @@ from services.files.list_file_revisions import list_file_revisions
 from services.files.list_files import list_files
 from services.files.platform.withdraw_file import withdraw_file
 from services.storage.domain import StorageBucket
+from tests.factories import build_file, build_file_revision
 from tests.services.files.test_platform_file_management import (
     _draft,
     _publish,
@@ -121,3 +122,50 @@ async def test_withdrawal_blocks_every_tenant_file_read(
         assert not list(
             await tenant.scalars(select(FileRevision).where(FileRevision.file_id == file.id))
         )
+
+
+async def test_platform_scope_filter_precedes_count_and_pagination(
+    db_session, db_session_factory, management_context
+):
+    actor = management_context["actor"]
+    workspace = management_context["workspace"]
+    published = await _draft(db_session, management_context)
+    await _publish(db_session, actor, published)
+    await _draft(db_session, management_context, content=b"hidden draft")
+    async with maintenance_async_db_session() as db:
+        local = build_file(workspace=workspace, name="aaa-local.pdf")
+        db.add(local)
+        await db.flush()
+        revision = build_file_revision(local)
+        db.add(revision)
+        await db.flush()
+        local.current_revision_id = revision.id
+        local.revision_count = 1
+    async with db_session_factory() as tenant:
+        await set_session_tenant_context(tenant, workspace_id=workspace.id, user_id=actor.id)
+        for scope, expected_ids in (
+            ("all", [local.id, published.id]),
+            ("workspace", [local.id]),
+            ("platform", [published.id]),
+        ):
+            first = await list_files(
+                tenant,
+                workspace=workspace,
+                scope=scope,
+                limit=1,
+                sort_by="name",
+                sort_direction="asc",
+            )
+            assert first.total == len(expected_ids)
+            assert [file.id for file in first.files] == expected_ids[:1]
+            second = await list_files(
+                tenant,
+                workspace=workspace,
+                scope=scope,
+                limit=1,
+                offset=1,
+                sort_by="name",
+                sort_direction="asc",
+            )
+            assert second.total == len(expected_ids)
+            assert [file.id for file in second.files] == expected_ids[1:]

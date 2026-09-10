@@ -15,6 +15,7 @@ from core.settings import settings
 from models.files import File, FileRevision
 from models.jobs import Job
 from models.user import User
+from services.files.platform.utils import publish_locked_revision
 from services.files.utils import parse_extraction_payload_ids
 from services.jobs.registry import job_handler
 from services.jobs.utils import sanitize_error_message
@@ -97,11 +98,12 @@ def _validate_job(job: Job) -> tuple[UUID, UUID]:
     return file_id, revision_id
 
 
-async def _require_actor(db: AsyncSession, job: Job) -> None:
+async def _require_actor(db: AsyncSession, job: Job) -> User:
     actor = await db.get(User, job.initiated_by_user_id, populate_existing=True)
     if actor is None or actor.deleted or not actor.is_active:
         raise AuthorizationError("Platform extraction requires an active super admin")
     require_super_admin_user(actor)
+    return actor
 
 
 async def _load_subject(
@@ -182,3 +184,13 @@ async def _persist_markdown(
         file.processing_error = None
         file.processing_attempts = (file.processing_attempts or 0) + 1
         await db.flush()
+        stored_job = await db.get(Job, job.id, populate_existing=True)
+        if stored_job is not None and stored_job.payload.get("publish_when_ready") is True:
+            actor = await _require_actor(db, job)
+            await publish_locked_revision(
+                db,
+                file=file,
+                revision=revision,
+                actor=actor,
+                request=None,
+            )

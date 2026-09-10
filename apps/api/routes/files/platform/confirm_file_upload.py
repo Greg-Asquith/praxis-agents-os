@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
 from services.files import confirm_file_upload as confirm_upload_service
-from services.files.domain import FileConfirmRequest, FileRead
+from services.files.domain import FileRead, PlatformFileConfirmRequest
 from utils.content import ContentScope
 
 router = APIRouter()
@@ -18,7 +18,7 @@ async def confirm_file_upload(
     db: AsyncDbSessionDep,
     actor: CurrentUserDep,
     workspace_context: CurrentWorkspaceDep,
-    payload: FileConfirmRequest,
+    payload: PlatformFileConfirmRequest,
 ) -> FileRead:
     workspace, membership = workspace_context
     return await confirm_upload_service(
