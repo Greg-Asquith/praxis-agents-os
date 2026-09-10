@@ -175,9 +175,16 @@ async def emit_agent_stream_event(
                 tool_call_id=part.tool_call_id,
                 name=part.tool_name,
                 result=public_function_tool_result(part),
-                outcome=getattr(part, "outcome", None),
+                outcome=function_tool_result_outcome(part),
             ),
         )
+
+
+def function_tool_result_outcome(part: ToolReturnPart | RetryPromptPart) -> str | None:
+    """Labels a retry so live rows do not present the model-facing error as success."""
+    if isinstance(part, RetryPromptPart):
+        return "retry"
+    return getattr(part, "outcome", None)
 
 
 def public_function_tool_result(part: ToolReturnPart | RetryPromptPart) -> Any:

@@ -30,6 +30,7 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    RetryPromptPart,
     TextPart,
     ThinkingPart,
     ThinkingPartDelta,
@@ -448,6 +449,28 @@ async def test_rich_tool_result_streams_metadata_without_file_bytes() -> None:
     [event] = sink.events
     assert event.event == EVENT_TOOL_RESULT
     assert event.data["result"] == metadata
+
+
+async def test_retry_prompt_streams_a_retry_outcome() -> None:
+    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
+
+    await emit_agent_stream_event(
+        sink,
+        FunctionToolResultEvent(
+            part=RetryPromptPart(
+                tool_name="google_ads_list_report_fields",
+                tool_call_id="list-fields",
+                content="Google Ads has no report resource named auction_insight.",
+            )
+        ),
+        run_id=str(uuid4()),
+        state=EventTranslationState(),
+    )
+
+    [event] = sink.events
+    assert event.event == EVENT_TOOL_RESULT
+    assert event.data["outcome"] == "retry"
+    assert event.data["result"] == "Google Ads has no report resource named auction_insight."
 
 
 async def test_deferred_resume_replay_only_replays_deferred_tool_results() -> None:

@@ -557,6 +557,26 @@ describe("agentStreamReducer", () => {
     expect(state.toolCalls["failed-1"]?.status).toBe("failed")
   })
 
+  it("marks a retry returned to the model as failed rather than completed", () => {
+    const state = reduceEvents([
+      {
+        event: "tool.result",
+        data: {
+          ...eventWithSeq(1),
+          tool_call_id: "retry-1",
+          name: "google_ads_list_report_fields",
+          result: "Google Ads has no report resource named auction_insight.",
+          outcome: "retry",
+        },
+      },
+    ])
+
+    expect(state.toolCalls["retry-1"]?.status).toBe("failed")
+    expect(state.toolCalls["retry-1"]?.result).toBe(
+      "Google Ads has no report resource named auction_insight."
+    )
+  })
+
   it("tracks workflow state and bounded outcome excerpts on the outer call", () => {
     const state = reduceEvents([
       {

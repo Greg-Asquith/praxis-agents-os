@@ -6,6 +6,10 @@ export function ReportFieldsDone() {
   return <Badge variant="success">Done</Badge>
 }
 
+export function ReportFieldsFailed({ unconfirmed }: { unconfirmed: boolean }) {
+  return <Badge variant="destructive">{unconfirmed ? "Unconfirmed" : "Failed"}</Badge>
+}
+
 export function ReportFieldFlag({ label, value }: { label: string; value: boolean }) {
   return (
     <div className="flex items-center gap-1.5">

@@ -242,6 +242,40 @@ describe("Google Ads report-field presenter", () => {
     expect(html).toContain("Not provided")
   })
 
+  it("renders a retry returned to the model as a failure, not a result", () => {
+    const listHtml = render(
+      googleAdsReportFieldsPresenter.render(
+        props({
+          ...activity("google_ads_list_report_fields", "failed"),
+          args: { resource: "auction_insight", search: "campaign metrics", limit: 100 },
+          outcome: "retry",
+          result:
+            "Google Ads has no report resource named auction_insight. Use a GAQL FROM resource name such as campaign.",
+        })
+      )
+    )
+    const getHtml = render(
+      googleAdsReportFieldsPresenter.render(
+        props({
+          ...activity("google_ads_get_report_field", "unknown"),
+          args: { field_names: ["campaign.id", "campaign.nope"] },
+        })
+      )
+    )
+
+    expect(listHtml).toContain('aria-label="List Google Ads Report Fields failed"')
+    expect(listHtml).toContain("Failed")
+    expect(listHtml).toContain("What Went Wrong")
+    expect(listHtml).toContain("has no report resource named auction_insight")
+    expect(listHtml).toContain("Resource: auction_insight")
+    expect(listHtml).toContain("Search: campaign metrics")
+    expect(listHtml).not.toContain("Done")
+    expect(getHtml).toContain('aria-label="Get Google Ads Report Field failed"')
+    expect(getHtml).toContain("Unconfirmed")
+    expect(getHtml).toContain("The field lookup did not finish")
+    expect(getHtml).toContain("Fields: campaign.id, campaign.nope")
+  })
+
   it("falls back for malformed payloads from either tool", () => {
     for (const name of ["google_ads_list_report_fields", "google_ads_get_report_field"]) {
       expect(

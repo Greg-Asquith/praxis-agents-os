@@ -4,13 +4,15 @@ import { ChevronDownIcon } from "lucide-react"
 
 import {
   ReportFieldsDone,
+  ReportFieldsFailed,
   ReportFieldFlag,
 } from "@/integrations/google_ads/components/report-field-indicators"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { CopyTextButton } from "@/components/ui/copy-text-button"
-import type { ToolRowPresenter } from "@/integrations/contract"
+import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import { GoogleAdsToolHeading } from "@/integrations/google_ads/components/tool-heading"
 import { titleCaseToken } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
@@ -80,6 +82,9 @@ export const googleAdsReportFieldsPresenter: ToolRowPresenter = {
     if (activity.status === "running") {
       return reportFieldsSkeleton(activity.name === GET_TOOL)
     }
+    if (activity.status === "failed" || activity.status === "unknown") {
+      return reportFieldsFailure(activity, defaultOpen)
+    }
     if (activity.name === LIST_TOOL) {
       const result = parseListReportFields(activity.result)
       return result
@@ -109,6 +114,53 @@ function reportFieldsSkeleton(exact: boolean) {
       <Skeleton className="h-9 w-4/5" />
     </section>
   )
+}
+
+function reportFieldsFailure(activity: ToolActivity, defaultOpen: boolean) {
+  const exact = activity.name === GET_TOOL
+  const heading = exact ? "Get Google Ads Report Field" : "List Google Ads Report Fields"
+  const message =
+    typeof activity.result === "string" && activity.result.trim()
+      ? activity.result.trim()
+      : exact
+        ? "The field lookup did not finish. No metadata was confirmed."
+        : "The field listing did not finish. No fields were confirmed."
+  return (
+    <ToolResultCard
+      ariaLabel={`${heading} failed`}
+      defaultOpen={defaultOpen}
+      details={reportFieldsArgDetails(activity)}
+      heading={<GoogleAdsToolHeading>{heading}</GoogleAdsToolHeading>}
+      trailing={<ReportFieldsFailed unconfirmed={activity.status === "unknown"} />}
+    >
+      <div className="grid min-w-0 gap-3">
+        <Alert variant="destructive">
+          <AlertTitle>What Went Wrong</AlertTitle>
+          <AlertDescription className="whitespace-pre-wrap">{message}</AlertDescription>
+        </Alert>
+        <p className="text-muted-foreground text-sm">The agent saw this error and can adjust.</p>
+      </div>
+    </ToolResultCard>
+  )
+}
+
+function reportFieldsArgDetails(activity: ToolActivity) {
+  const args = isRecord(activity.args) ? activity.args : {}
+  if (activity.name === GET_TOOL) {
+    const names = Array.isArray(args["field_names"])
+      ? args["field_names"].filter(isNonEmptyString)
+      : []
+    return names.length > 0 ? [{ label: "Fields", value: names.join(", ") }] : []
+  }
+  const details = []
+  if (isNonEmptyString(args["resource"])) {
+    details.push({ label: "Resource", value: args["resource"] })
+  }
+  const search = listReportFieldSearch(args)
+  if (search) {
+    details.push({ label: "Search", value: search })
+  }
+  return details
 }
 
 function listReportFieldsResult(

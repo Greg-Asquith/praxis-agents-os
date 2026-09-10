@@ -42,7 +42,11 @@ The following contracts apply in this area:
   keep failing the run so recovery evidence records them. Write tools with no
   disposition also fail the run. Tools should still raise a specific retry
   where they can name the fix, as the Google Ads report-field tools do for
-  unknown field and resource names.
+  unknown field and resource names. A retry streams as a `tool.result` event
+  with outcome `retry` and is persisted as a retry prompt, so both the live
+  and reloaded transcript show it as a failed call. Provider presenters must
+  render failed and unknown activities themselves instead of parsing the
+  message as a result.
 - Opaque tool targets use the runtime entity-reference contract. Internal
   resolvers stay under `services/agents/runtime/entity_references`; concrete
   provider reference models and resolvers stay in their provider package and

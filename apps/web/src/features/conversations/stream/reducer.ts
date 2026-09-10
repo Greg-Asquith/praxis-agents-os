@@ -509,6 +509,9 @@ function resultStatus(
   if (outcome === "denied" || outcome === "failed") {
     return outcome
   }
+  if (outcome === "retry") {
+    return "failed"
+  }
   if (!parentToolCallId || !isRecord(result)) {
     return "completed"
   }
