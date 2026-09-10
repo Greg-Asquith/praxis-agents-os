@@ -31,9 +31,11 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
   `apps/api/tests/security/test_workspace_rls.py`. Runtime paths set the
   workspace/user GUC contract; cross-workspace maintenance access is explicit
   and never leaks into a tenant handler.
-- Every new private object surface builds keys under
-  `workspaces/{workspace_id}/...`; non-workspace private keys fail closed and
-  must not reintroduce a shared-private-bucket fallback.
+- Workspace-private objects use `StorageBucket.PRIVATE` and keys under
+  `workspaces/{workspace_id}/...`. Platform-private objects use the explicit
+  `StorageBucket.PLATFORM_PRIVATE` class, `platform/...` keys, and a dedicated
+  private bucket. Neither class falls back to public storage or crosses into
+  the other namespace.
 - Nothing loosens CORS, cookie, CSRF, rate-limit, or provider validation, and
   no exempt lists were widened, even "temporarily" or for local convenience.
 - No secrets committed or logged. Credentials resolve through the established

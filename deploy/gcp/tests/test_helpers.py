@@ -6,6 +6,8 @@ import contextlib
 import importlib.util
 import io
 import json
+import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -28,6 +30,85 @@ from services.secrets.utils import (
 
 
 class GcpDeploymentHelperTests(unittest.TestCase):
+    def test_private_bucket_bootstrap_plans_creation_or_hardening_for_approval(self) -> None:
+        source = (REPO_ROOT / "deploy/gcp/bootstrap.sh").read_text()
+        block = source.split('echo "Checking platform-private bucket"', 1)[1].split(
+            'echo "Checking dedicated service accounts and IAM"', 1
+        )[0]
+        for exists, location in ((False, ""), (True, "EUROPE-WEST4"), (True, "US")):
+            with self.subTest(exists=exists, location=location):
+                setup = f"""
+set -Eeuo pipefail
+GCS_PLATFORM_PRIVATE_BUCKET=example-private
+GCP_PROJECT_ID=example-project
+GCP_REGION=europe-west4
+public_assets_cors_file=/tmp/explicit-cors.json
+exists={str(exists).lower()}
+location={shlex.quote(location)}
+gcs_value() {{
+  if [[ "$*" == *"value(name)"* ]]; then "$exists";
+  else printf '%s' "$location"; fi
+}}
+plan_gcs() {{ printf 'PLAN %s\\n' "$*"; }}
+execute_section() {{ printf 'APPROVAL %s\\n' "$*"; }}
+die() {{ echo "$*" >&2; exit 1; }}
+"""
+                result = subprocess.run(
+                    ["bash", "-c", setup + block],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if location == "US":
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("does not match europe-west4", result.stderr)
+                    self.assertNotIn("PLAN", result.stdout)
+                    continue
+                self.assertEqual(result.returncode, 0, result.stderr)
+                commands = [
+                    line for line in result.stdout.splitlines()
+                    if line.startswith("PLAN ")
+                ]
+                self.assertEqual(len(commands), 1 if exists else 2)
+                for command in commands:
+                    self.assertIn("gs://example-private", command)
+                    self.assertIn("--project=example-project", command)
+                    self.assertIn("--uniform-bucket-level-access", command)
+                    self.assertIn("--public-access-prevention", command)
+                    self.assertIn("--soft-delete-duration=30d", command)
+                    self.assertNotIn("allUsers", command)
+                    self.assertNotIn("allAuthenticatedUsers", command)
+                if not exists:
+                    self.assertIn("buckets create", commands[0])
+                    self.assertIn("--location=europe-west4", commands[0])
+                self.assertIn("buckets update", commands[-1])
+                self.assertIn("--versioning", commands[-1])
+                self.assertIn("--cors-file=/tmp/explicit-cors.json", commands[-1])
+                self.assertTrue(
+                    result.stdout.endswith("APPROVAL Platform-private bucket\n")
+                )
+
+    def test_private_bucket_approval_rejection_does_not_execute_mutations(self) -> None:
+        source = (REPO_ROOT / "deploy/gcp/bootstrap.sh").read_text()
+        approval = "execute_section() {" + source.split("execute_section() {", 1)[1].split(
+            "\ngcs_value() {", 1
+        )[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp) / "mutation"
+            setup = (
+                "set -Eeuo pipefail\n"
+                "die() { echo \"$*\" >&2; exit 1; }\n"
+                f"planned_commands=({shlex.quote('touch ' + shlex.quote(str(marker)))})\n"
+                "planned_metrics_env=('')\n"
+            )
+            result = subprocess.run(
+                ["bash", "-c", setup + approval + '\nexecute_section "Platform-private bucket"'],
+                input="no\n", capture_output=True, text=True, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("authorization not granted", result.stderr)
+            self.assertFalse(marker.exists())
+
     def test_secret_id_matches_application_mapping(self) -> None:
         for logical_name in (
             "application-encryption-keys",

@@ -19,6 +19,7 @@ class StorageBucket(StrEnum):
 
     PUBLIC = "public"
     PRIVATE = "private"
+    PLATFORM_PRIVATE = "platform_private"
 
 
 class StorageObjectRef(BaseModel):

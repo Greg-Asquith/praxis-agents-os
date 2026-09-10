@@ -98,6 +98,8 @@ grep -q 'value: drain' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 for manifest in \
   "$TEST_TMP/rendered/services/praxis-api.yaml" \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
+  grep -A1 'name: GCS_PLATFORM_PRIVATE_BUCKET' "$manifest" \
+    | grep -q 'value: praxis-platform-example-staging'
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
   grep -A1 'name: MICROSOFT_GRAPH_TENANT' "$manifest" | grep -q 'value: organizations'
   grep -A1 'name: MICROSOFT_GRAPH_REQUESTS_PER_SECOND' "$manifest" | grep -q 'value: "4.0"'
@@ -159,6 +161,35 @@ if grep -R -q --exclude='test.sh' 'PUBLIC_ASSET_PREFIX\|/assets$' "$GCP_DIR"; th
   echo "deployment helpers must preserve the application's existing public object keys" >&2
   exit 1
 fi
+
+for invalid_private_bucket in missing public workspace; do
+  if [[ "$invalid_private_bucket" == missing ]]; then
+    sed '/^GCS_PLATFORM_PRIVATE_BUCKET=/d' "$GCP_DIR/.env.example" > "$TEST_TMP/private.env"
+    expected='required variable GCS_PLATFORM_PRIVATE_BUCKET is unset or empty'
+  elif [[ "$invalid_private_bucket" == workspace ]]; then
+    sed 's/^GCS_PLATFORM_PRIVATE_BUCKET=.*/GCS_PLATFORM_PRIVATE_BUCKET=praxis-example-staging-00000000000000000000000000000001/' \
+      "$GCP_DIR/.env.example" > "$TEST_TMP/private.env"
+    expected='GCS_PLATFORM_PRIVATE_BUCKET must not use the workspace bucket prefix'
+  else
+    sed 's/^GCS_PLATFORM_PRIVATE_BUCKET=.*/GCS_PLATFORM_PRIVATE_BUCKET=praxis-example-staging-public-assets/' \
+      "$GCP_DIR/.env.example" > "$TEST_TMP/private.env"
+    expected='GCS_PLATFORM_PRIVATE_BUCKET must differ from GCS_PUBLIC_ASSETS_BUCKET'
+  fi
+  for script in deploy bootstrap; do
+    if (
+      export GCS_PLATFORM_PRIVATE_BUCKET=ambient-private-bucket
+      if [[ "$script" == deploy ]]; then
+        "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/private-render" "$TEST_TMP/private.env"
+      else
+        "$GCP_DIR/bootstrap.sh" "$TEST_TMP/private.env"
+      fi
+    ) > "$TEST_TMP/private.out" 2>&1; then
+      echo "$script unexpectedly accepted $invalid_private_bucket private bucket" >&2
+      exit 1
+    fi
+    grep -Fq "$expected" "$TEST_TMP/private.out"
+  done
+done
 
 sed '/^GCP_PROJECT_ID=/d' "$GCP_DIR/.env.example" > "$TEST_TMP/missing.env"
 if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/missing-render" "$TEST_TMP/missing.env" abcdef0123456789 \

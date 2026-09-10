@@ -32,6 +32,7 @@ from services.storage.errors import (
     StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
+from services.storage.platform_buckets import platform_bucket_name
 from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
     require_content_type as _require_content_type,
@@ -86,6 +87,7 @@ class AzureBlobStorageProvider:
         *,
         account_name: str,
         public_container_name: str,
+        platform_private_container: str = "",
         workspace_bucket_prefix: str,
         app_base_url: str,
         api_prefix: str,
@@ -112,6 +114,7 @@ class AzureBlobStorageProvider:
             "AZURE_STORAGE_PUBLIC_CONTAINER",
             provider_key=self.provider_key,
         )
+        self.platform_private_container = platform_private_container
         self.workspace_bucket_prefix = _require_setting(
             workspace_bucket_prefix,
             "WORKSPACE_BUCKET_PREFIX",
@@ -150,6 +153,7 @@ class AzureBlobStorageProvider:
         return cls(
             account_name=settings.AZURE_STORAGE_ACCOUNT_NAME,
             public_container_name=settings.AZURE_STORAGE_PUBLIC_CONTAINER,
+            platform_private_container=settings.AZURE_STORAGE_PLATFORM_PRIVATE_CONTAINER,
             workspace_bucket_prefix=settings.WORKSPACE_BUCKET_PREFIX,
             app_base_url=settings.APP_BASE_URL,
             api_prefix=settings.API_V1_PREFIX,
@@ -499,6 +503,7 @@ class AzureBlobStorageProvider:
         workspace_id = workspace_id_for_ref(ref)
         if workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
+        self._container_name(ref)
         normalized_content_type = _require_content_type(
             content_type, provider_key=self.provider_key, ref=ref
         )
@@ -619,6 +624,8 @@ class AzureBlobStorageProvider:
         self._raise_no_local_signature("require_valid_download_signature")
 
     def _container(self, ref: StorageObjectRef):
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            return self.service_client.get_container_client(self._container_name(ref))
         workspace_id = workspace_id_for_ref(ref)
         return (
             self.public_container
@@ -627,6 +634,15 @@ class AzureBlobStorageProvider:
         )
 
     def _container_name(self, ref: StorageObjectRef) -> str:
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            return platform_bucket_name(
+                ref,
+                self.platform_private_container,
+                workspace_bucket_prefix=self.workspace_bucket_prefix,
+                setting_name="AZURE_STORAGE_PLATFORM_PRIVATE_CONTAINER",
+                provider_key=self.provider_key,
+                public_bucket_name=self.public_container_name,
+            )
         workspace_id = workspace_id_for_ref(ref)
         if workspace_id is None:
             return self.public_container_name
@@ -672,10 +688,10 @@ class AzureBlobStorageProvider:
         content_disposition: str | None = None,
         content_type: str | None = None,
     ) -> str:
+        container_name = self._container_name(ref)
         starts_on = datetime.now(UTC) - timedelta(minutes=SIGNED_URL_CLOCK_SKEW_MINUTES)
         delegation_key = await self._get_user_delegation_key(expires_at=expires_at)
         permissions = self.sas_permissions_cls(**permission_kwargs)
-        container_name = self._container_name(ref)
         try:
             sas_token = await asyncio.to_thread(
                 self.generate_sas_func,

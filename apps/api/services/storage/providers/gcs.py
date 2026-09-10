@@ -27,6 +27,7 @@ from services.storage.errors import (
     StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
+from services.storage.platform_buckets import platform_bucket_name
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
@@ -82,6 +83,7 @@ class GcsStorageProvider:
         self,
         *,
         public_bucket_name: str,
+        platform_private_bucket: str = "",
         workspace_bucket_prefix: str,
         workspace_bucket_location: str,
         public_assets_base_url: str | None = None,
@@ -95,6 +97,7 @@ class GcsStorageProvider:
             "GCS_PUBLIC_ASSETS_BUCKET",
             provider_key=self.provider_key,
         )
+        self.platform_private_bucket = platform_private_bucket
         self.workspace_bucket_prefix = _require_setting(
             workspace_bucket_prefix,
             "WORKSPACE_BUCKET_PREFIX",
@@ -126,6 +129,7 @@ class GcsStorageProvider:
     def from_settings(cls, settings: Settings) -> GcsStorageProvider:
         return cls(
             public_bucket_name=settings.GCS_PUBLIC_ASSETS_BUCKET,
+            platform_private_bucket=settings.GCS_PLATFORM_PRIVATE_BUCKET,
             workspace_bucket_prefix=settings.WORKSPACE_BUCKET_PREFIX,
             public_assets_base_url=settings.PUBLIC_ASSETS_BASE_URL,
             public_cache_control=settings.PUBLIC_ASSETS_CACHE_CONTROL,
@@ -580,6 +584,16 @@ class GcsStorageProvider:
         self._raise_no_local_signature("require_valid_download_signature")
 
     def _bucket(self, ref: StorageObjectRef):
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            name = platform_bucket_name(
+                ref,
+                self.platform_private_bucket,
+                workspace_bucket_prefix=self.workspace_bucket_prefix,
+                setting_name="GCS_PLATFORM_PRIVATE_BUCKET",
+                provider_key=self.provider_key,
+                public_bucket_name=self.public_bucket_name,
+            )
+            return self.client.bucket(name)
         workspace_id = workspace_id_for_ref(ref)
         return self.public_bucket if workspace_id is None else self._workspace_bucket(workspace_id)
 

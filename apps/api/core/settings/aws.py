@@ -11,6 +11,9 @@ class AwsSettingsMixin:
         default="",
         description="S3 bucket for public assets. Required when STORAGE_PROVIDER=s3.",
     )
+    S3_PLATFORM_PRIVATE_BUCKET: str = Field(
+        default="", description="Dedicated private S3 bucket. Required for platform storage."
+    )
     AWS_REGION: str = Field(
         default="",
         description=(

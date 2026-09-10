@@ -80,7 +80,8 @@ REGION=europe-west4              # = GCP_REGION
 
 - [ ] `make gcp-bootstrap ENV_FILE=$ENV_FILE` — creates Artifact Registry,
       Cloud SQL (instance, database, and password-backed users), the
-      public-assets bucket with explicit-origin browser-upload CORS, Secret
+      public-assets and platform-private buckets with explicit-origin
+      browser-upload CORS, Secret
       Manager resources, service accounts and custom roles, the Scheduler
       trigger, and log/audit config.
       It generates and stores the database credentials, database URLs,
@@ -309,6 +310,10 @@ machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
       while listing and anonymous writes fail. (The bucket holds only
       application-owned avatars/icons under `users/` and `workspaces/`;
       workspace buckets are separate and private.)
+
+- [ ] Platform-private bucket: anonymous reads, listing, and writes fail.
+      Read-back output shows public-access prevention, uniform access,
+      versioning, 30-day soft delete, and only configured CORS origins.
 
 ## Deploy a change
 

@@ -29,6 +29,7 @@ from services.storage.errors import (
     StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
+from services.storage.platform_buckets import platform_bucket_name
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
@@ -71,6 +72,7 @@ class S3StorageProvider:
         self,
         *,
         public_bucket_name: str,
+        platform_private_bucket: str = "",
         workspace_bucket_prefix: str,
         region_name: str,
         account_id: str,
@@ -86,6 +88,7 @@ class S3StorageProvider:
             "S3_PUBLIC_ASSETS_BUCKET",
             provider_key=self.provider_key,
         )
+        self.platform_private_bucket = platform_private_bucket
         self.workspace_bucket_prefix = _require_setting(
             workspace_bucket_prefix,
             "WORKSPACE_BUCKET_PREFIX",
@@ -121,6 +124,7 @@ class S3StorageProvider:
     def from_settings(cls, settings: Settings) -> S3StorageProvider:
         return cls(
             public_bucket_name=settings.S3_PUBLIC_ASSETS_BUCKET,
+            platform_private_bucket=settings.S3_PLATFORM_PRIVATE_BUCKET,
             workspace_bucket_prefix=settings.WORKSPACE_BUCKET_PREFIX,
             region_name=settings.AWS_REGION,
             account_id=settings.AWS_ACCOUNT_ID,
@@ -309,10 +313,11 @@ class S3StorageProvider:
         return stored
 
     async def get_object(self, ref: StorageObjectRef) -> bytes:
+        bucket_name = self._bucket_name(ref)
         try:
             response = await asyncio.to_thread(
                 self.client.get_object,
-                Bucket=self._bucket_name(ref),
+                Bucket=bucket_name,
                 Key=ref.key,
             )
             body = response["Body"]
@@ -341,10 +346,11 @@ class S3StorageProvider:
             ) from exc
 
     async def stream_object(self, ref: StorageObjectRef):
+        bucket_name = self._bucket_name(ref)
         try:
             response = await asyncio.to_thread(
                 self.client.get_object,
-                Bucket=self._bucket_name(ref),
+                Bucket=bucket_name,
                 Key=ref.key,
             )
             body = response["Body"]
@@ -398,10 +404,11 @@ class S3StorageProvider:
                 close()
 
     async def stat_object(self, ref: StorageObjectRef) -> StoredObject | None:
+        bucket_name = self._bucket_name(ref)
         try:
             response = await asyncio.to_thread(
                 self.client.head_object,
-                Bucket=self._bucket_name(ref),
+                Bucket=bucket_name,
                 Key=ref.key,
             )
         except Exception as exc:
@@ -537,18 +544,19 @@ class S3StorageProvider:
         workspace_id = workspace_id_for_ref(ref)
         if workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
-        else:
+        elif ref.bucket == StorageBucket.PUBLIC:
             await self._ensure_public_bucket_cors()
         normalized_content_type = _require_content_type(
             content_type, provider_key=self.provider_key, ref=ref
         )
+        bucket_name = self._bucket_name(ref)
         expires_at = datetime.now(UTC) + expires_in
         try:
             url = await asyncio.to_thread(
                 self.client.generate_presigned_url,
                 "put_object",
                 Params={
-                    "Bucket": self._bucket_name(ref),
+                    "Bucket": bucket_name,
                     "Key": ref.key,
                     "ContentType": normalized_content_type,
                     "ContentLength": expected_size_bytes,
@@ -652,6 +660,15 @@ class S3StorageProvider:
         self._raise_no_local_signature("require_valid_download_signature")
 
     def _bucket_name(self, ref: StorageObjectRef) -> str:
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            return platform_bucket_name(
+                ref,
+                self.platform_private_bucket,
+                workspace_bucket_prefix=self.workspace_bucket_prefix,
+                setting_name="S3_PLATFORM_PRIVATE_BUCKET",
+                provider_key=self.provider_key,
+                public_bucket_name=self.public_bucket_name,
+            )
         workspace_id = workspace_id_for_ref(ref)
         if workspace_id is None:
             return self.public_bucket_name

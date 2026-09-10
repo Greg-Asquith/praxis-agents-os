@@ -4,7 +4,7 @@
 
 from collections.abc import Iterator
 from datetime import timedelta
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from uuid import UUID
 
 import pytest
@@ -40,12 +40,17 @@ def _relative_url(absolute_url: str) -> str:
     return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
 
 
+@pytest.mark.parametrize("platform", [False, True])
 async def test_local_signed_upload_and_download_routes(
     db_async_client: AsyncClient,
     local_storage_settings: None,
+    platform: bool,
 ) -> None:
     provider = get_local_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("results/output.txt"))
+    ref = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
+        "platform/results/output.txt" if platform else _private_key("results/output.txt"),
+    )
 
     upload = await provider.create_signed_upload(
         ref,
@@ -250,3 +255,59 @@ async def test_local_public_route_does_not_serve_sidecar_metadata(
 
     assert response.status_code == 404
     assert response.json()["title"] == "Storage Object Not Found"
+
+
+@pytest.mark.parametrize("action", ["upload", "download"])
+@pytest.mark.parametrize("tamper", ["bucket", "namespace", "key", "expires", "signature"])
+async def test_platform_local_signed_routes_reject_tampering(
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+    action: str,
+    tamper: str,
+) -> None:
+    provider = get_local_storage_provider()
+    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/result.txt")
+    await provider.put_object(ref, b"original", content_type="text/plain")
+    if action == "upload":
+        signed = await provider.create_signed_upload(
+            ref,
+            content_type="text/plain",
+            expected_size_bytes=4,
+            expires_in=timedelta(minutes=5),
+        )
+    else:
+        signed = await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
+    parsed = urlsplit(signed.url)
+    path = parsed.path
+    query = parse_qs(parsed.query)
+    if tamper == "bucket":
+        if action == "upload":
+            path = path.replace("/upload/platform_private/", "/upload/private/")
+        else:
+            query["bucket"] = ["private"]
+    elif tamper == "namespace":
+        path = path.replace("/platform/", f"/workspaces/{WORKSPACE_ID}/")
+    elif tamper == "key":
+        path = path.replace("result.txt", "another.txt")
+    elif tamper == "expires":
+        query["expires"] = [str(int(query["expires"][0]) + 60)]
+    else:
+        query["sig"] = ["invalid"]
+    url = f"{path}?{urlencode(query, doseq=True)}"
+    if action == "upload":
+        response = await db_async_client.put(url, content=b"evil", headers=signed.headers)
+    else:
+        response = await db_async_client.get(url)
+    assert response.status_code == 403
+    assert await provider.get_object(ref) == b"original"
+
+
+async def test_platform_local_bytes_are_unavailable_through_public_route(
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    provider = get_local_storage_provider()
+    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/private.txt")
+    await provider.put_object(ref, b"private", content_type="text/plain")
+    response = await db_async_client.get(f"/api/v1/storage/public/{ref.key}")
+    assert response.status_code == 404

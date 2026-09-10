@@ -42,9 +42,13 @@ def _provider(tmp_path) -> LocalStorageProvider:
     )
 
 
-async def test_local_provider_put_get_stat_and_delete_object(tmp_path) -> None:
+@pytest.mark.parametrize("platform", [False, True])
+async def test_local_provider_put_get_stat_and_delete_object(tmp_path, platform: bool) -> None:
     provider = _provider(tmp_path)
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/hello.txt"))
+    ref = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
+        "platform/files/hello.txt" if platform else _private_key("files/hello.txt"),
+    )
 
     stored = await provider.put_object(
         ref,
@@ -58,7 +62,12 @@ async def test_local_provider_put_get_stat_and_delete_object(tmp_path) -> None:
     assert stored.content_type == "text/plain"
     assert stored.metadata == {"purpose": "test"}
     assert await provider.get_object(ref) == b"hello"
-    assert provider.filesystem_path(ref) == (tmp_path / "private-ws" / str(WORKSPACE_ID) / ref.key)
+    root = (
+        tmp_path / "platform_private" if platform else tmp_path / "private-ws" / str(WORKSPACE_ID)
+    )
+    assert provider.filesystem_path(ref) == root / ref.key
+    assert stored.public_url is None
+    assert stored.cache_control is None
 
     stat = await provider.stat_object(ref)
     assert stat is not None
@@ -69,10 +78,19 @@ async def test_local_provider_put_get_stat_and_delete_object(tmp_path) -> None:
     assert await provider.delete_object(ref) is False
 
 
-async def test_local_promotion_is_create_only_and_preserves_validated_bytes(tmp_path) -> None:
+@pytest.mark.parametrize("platform", [False, True])
+async def test_local_promotion_is_create_only_and_preserves_validated_bytes(
+    tmp_path, platform: bool
+) -> None:
     provider = _provider(tmp_path)
-    source = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("uploads/source.txt"))
-    destination = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/final.txt"))
+    source = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
+        "platform/uploads/source.txt" if platform else _private_key("uploads/source.txt"),
+    )
+    destination = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
+        "platform/files/final.txt" if platform else _private_key("files/final.txt"),
+    )
     source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
 
     promoted = await provider.promote_object(
@@ -141,9 +159,15 @@ async def test_cancelled_storage_write_removes_partial_object(
     assert await provider.stat_object(ref) is None
 
 
-async def test_local_provider_stream_object_chunks_and_maps_missing(tmp_path) -> None:
+@pytest.mark.parametrize("platform", [False, True])
+async def test_local_provider_stream_object_chunks_and_maps_missing(
+    tmp_path, platform: bool
+) -> None:
     provider = _provider(tmp_path)
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/large.bin"))
+    ref = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
+        "platform/files/large.bin" if platform else _private_key("files/large.bin"),
+    )
     data = b"a" * (STORAGE_STREAM_CHUNK_SIZE + 17)
     await provider.put_object(ref, data, content_type="application/octet-stream")
 
@@ -152,7 +176,10 @@ async def test_local_provider_stream_object_chunks_and_maps_missing(tmp_path) ->
     assert b"".join(chunks) == data
     assert len(chunks) > 1
 
-    missing_ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/missing.bin"))
+    missing_ref = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
+        "platform/files/missing.bin" if platform else _private_key("files/missing.bin"),
+    )
     with pytest.raises(StorageNotFoundError):
         _missing = [chunk async for chunk in provider.stream_object(missing_ref)]
 
@@ -244,3 +271,53 @@ async def test_local_provider_factory_returns_local_provider(monkeypatch, tmp_pa
         assert isinstance(provider, LocalStorageProvider)
     finally:
         reset_storage_provider_cache()
+
+
+@pytest.mark.parametrize(
+    ("bucket", "key"),
+    [
+        (StorageBucket.PLATFORM_PRIVATE, _private_key("files/report.txt")),
+        (StorageBucket.PLATFORM_PRIVATE, "platform-other/files/report.txt"),
+        (StorageBucket.PRIVATE, "platform/files/report.txt"),
+    ],
+)
+async def test_platform_local_namespace_substitution_fails_closed(
+    tmp_path,
+    bucket: StorageBucket,
+    key: str,
+) -> None:
+    provider = _provider(tmp_path)
+    ref = make_storage_object_ref(bucket, key)
+    with pytest.raises(StorageValidationError):
+        await provider.put_object(ref, b"blocked")
+    with pytest.raises(StorageValidationError):
+        await provider.get_object(ref)
+    with pytest.raises(StorageValidationError):
+        await provider.stat_object(ref)
+    with pytest.raises(StorageValidationError):
+        await provider.delete_object(ref)
+    with pytest.raises(StorageValidationError):
+        _chunks = [chunk async for chunk in provider.stream_object(ref)]
+    with pytest.raises(StorageValidationError):
+        await provider.create_signed_upload(
+            ref,
+            content_type="text/plain",
+            expected_size_bytes=4,
+            expires_in=timedelta(minutes=5),
+        )
+    with pytest.raises(StorageValidationError):
+        await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
+
+
+@pytest.mark.parametrize("destination_bucket", [StorageBucket.PUBLIC, StorageBucket.PRIVATE])
+async def test_platform_local_promotion_cannot_cross_storage_classes(
+    tmp_path,
+    destination_bucket: StorageBucket,
+) -> None:
+    provider = _provider(tmp_path)
+    source = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/source.txt")
+    destination = make_storage_object_ref(destination_bucket, _private_key("files/copy.txt"))
+    stored = await provider.put_object(source, b"private")
+    with pytest.raises(StorageValidationError):
+        await provider.promote_object(source, destination, expected_source_etag=stored.etag)
+    assert await provider.stat_object(destination) is None

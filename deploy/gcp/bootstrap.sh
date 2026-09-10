@@ -17,8 +17,6 @@ die() {
 ENV_FILE=$1
 [[ -f "$ENV_FILE" ]] || die "environment file not found: $ENV_FILE"
 set -a
-unset GOOGLE_VERTEX_AI GOOGLE_VERTEX_LOCATION
-unset ANTHROPIC_VERTEX_AI ANTHROPIC_VERTEX_LOCATION VERTEX_PARTNER_MODELS_ENABLED VERTEX_PARTNER_LOCATION VERTEX_PARTNER_MODEL_LOCATIONS
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 GOOGLE_VERTEX_AI=${GOOGLE_VERTEX_AI:-false}
@@ -33,7 +31,7 @@ required_vars=(
   ARTIFACT_REGISTRY_REPOSITORY CLOUD_SQL_INSTANCE CLOUD_SQL_DATABASE_VERSION
   CLOUD_SQL_EDITION CLOUD_SQL_TIER CLOUD_SQL_STORAGE_SIZE CLOUD_SQL_STORAGE_TYPE CLOUD_SQL_DATABASE
   CLOUD_SQL_MAINTENANCE_USER CLOUD_SQL_RUNTIME_USER CLOUD_SQL_BACKUP_START_TIME CLOUD_SQL_DELETION_PROTECTION
-  CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE GCS_PUBLIC_ASSETS_BUCKET
+  CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE GCS_PUBLIC_ASSETS_BUCKET GCS_PLATFORM_PRIVATE_BUCKET
   WORKSPACE_BUCKET_PREFIX GCS_WORKSPACE_BUCKET_LOCATION API_SERVICE_ACCOUNT
   WEB_SERVICE_ACCOUNT WORKER_SERVICE_ACCOUNT MIGRATE_SERVICE_ACCOUNT
   SCHEDULER_JOB_NAME
@@ -45,6 +43,11 @@ required_vars=(
 for variable_name in "${required_vars[@]}"; do
   [[ -n "${!variable_name:-}" ]] || die "required variable $variable_name is unset or empty"
 done
+
+[[ "$GCS_PLATFORM_PRIVATE_BUCKET" != "$GCS_PUBLIC_ASSETS_BUCKET" ]] \
+  || die "GCS_PLATFORM_PRIVATE_BUCKET must differ from GCS_PUBLIC_ASSETS_BUCKET"
+[[ "$GCS_PLATFORM_PRIVATE_BUCKET" != "$WORKSPACE_BUCKET_PREFIX-"* ]] \
+  || die "GCS_PLATFORM_PRIVATE_BUCKET must not use the workspace bucket prefix"
 
 [[ "$DEPLOYMENT_ENVIRONMENT" == "staging" || "$DEPLOYMENT_ENVIRONMENT" == "production" ]] \
   || die "DEPLOYMENT_ENVIRONMENT must be staging or production"
@@ -521,6 +524,26 @@ plan_gcs storage buckets add-iam-policy-binding "gs://${GCS_PUBLIC_ASSETS_BUCKET
   --project="$GCP_PROJECT_ID" --quiet
 execute_section "Public-assets bucket"
 
+echo "Checking platform-private bucket"
+if ! gcs_value storage buckets describe "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
+  --project="$GCP_PROJECT_ID" --format='value(name)' --quiet >/dev/null 2>&1; then
+  plan_gcs storage buckets create "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
+    --project="$GCP_PROJECT_ID" --location="$GCP_REGION" \
+    --uniform-bucket-level-access --public-access-prevention \
+    --soft-delete-duration=30d --quiet
+else
+  actual_bucket_location=$(gcs_value storage buckets describe "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
+    --project="$GCP_PROJECT_ID" --format='value(location)' --quiet)
+  normalized_bucket_location=$(printf '%s' "$actual_bucket_location" | tr '[:upper:]' '[:lower:]')
+  [[ "$normalized_bucket_location" == "$GCP_REGION" ]] \
+    || die "existing platform-private bucket location $actual_bucket_location does not match $GCP_REGION"
+fi
+plan_gcs storage buckets update "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
+  --project="$GCP_PROJECT_ID" --uniform-bucket-level-access \
+  --public-access-prevention --versioning --soft-delete-duration=30d \
+  --cors-file="$public_assets_cors_file" --quiet
+execute_section "Platform-private bucket"
+
 echo "Checking dedicated service accounts and IAM"
 service_accounts=(
   "$API_SERVICE_ACCOUNT" "$WEB_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"
@@ -700,6 +723,11 @@ run gcloud sql instances describe "$CLOUD_SQL_INSTANCE" --project="$GCP_PROJECT_
 gcs_run storage buckets describe "gs://${GCS_PUBLIC_ASSETS_BUCKET}" \
   --project="$GCP_PROJECT_ID" --format='yaml(name,location,iamConfiguration,cors_config)'
 gcs_run storage buckets get-iam-policy "gs://${GCS_PUBLIC_ASSETS_BUCKET}" \
+  --project="$GCP_PROJECT_ID" --format='yaml(bindings)'
+gcs_run storage buckets describe "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
+  --project="$GCP_PROJECT_ID" \
+  --format='yaml(name,location,public_access_prevention,uniform_bucket_level_access,versioning_enabled,soft_delete_policy,cors_config)'
+gcs_run storage buckets get-iam-policy "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
   --project="$GCP_PROJECT_ID" --format='yaml(bindings)'
 run gcloud scheduler jobs describe "$SCHEDULER_JOB_NAME" --location="$GCP_REGION" \
   --project="$GCP_PROJECT_ID" --format='yaml(name,schedule,timeZone,httpTarget)'

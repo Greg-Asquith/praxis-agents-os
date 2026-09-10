@@ -51,9 +51,13 @@ class LocalStorageProvider:
         self.root = Path(root).resolve()
         self.public_root = self.root / StorageBucket.PUBLIC.value
         self.private_workspace_root = self.root / "private-ws"
+        self.platform_private_root = self.root / StorageBucket.PLATFORM_PRIVATE.value
         self.metadata_root = self.root / ".metadata"
         self.public_metadata_root = self.metadata_root / StorageBucket.PUBLIC.value
         self.private_workspace_metadata_root = self.metadata_root / "private-ws"
+        self.platform_private_metadata_root = (
+            self.metadata_root / StorageBucket.PLATFORM_PRIVATE.value
+        )
         self.app_base_url = app_base_url.rstrip("/")
         self.api_prefix = api_prefix.rstrip("/")
         self.secret_key = secret_key
@@ -329,12 +333,14 @@ class LocalStorageProvider:
         force_download: bool = False,
         filename: str | None = None,
     ) -> SignedDownload:
+        workspace_id_for_ref(ref)
         expires_at = datetime.now(UTC) + expires_in
         if ref.bucket == StorageBucket.PUBLIC:
             return SignedDownload(ref=ref, url=self.public_url(ref) or "", expires_at=expires_at)
 
         expires = int(expires_at.timestamp())
         query = {
+            "bucket": ref.bucket.value,
             "expires": str(expires),
             "sig": self._signature(
                 action="download",
@@ -470,12 +476,16 @@ class LocalStorageProvider:
 
     def _bucket_root(self, ref: StorageObjectRef) -> Path:
         workspace_id = workspace_id_for_ref(ref)
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            return self.platform_private_root
         if workspace_id is None:
             return self.public_root
         return self.private_workspace_root / str(workspace_id)
 
     def _metadata_bucket_root(self, ref: StorageObjectRef) -> Path:
         workspace_id = workspace_id_for_ref(ref)
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            return self.platform_private_metadata_root
         if workspace_id is None:
             return self.public_metadata_root
         return self.private_workspace_metadata_root / str(workspace_id)

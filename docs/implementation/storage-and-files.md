@@ -21,7 +21,7 @@ must stay behind the `StorageProvider` contract, with their SDKs as
 optional extras (`gcp`, `aws`, `azure`). Public assets stay in one shared
 public bucket; managed avatar/icon keys retain their existing `users/...`
 and `workspaces/...` roots, so deployment URLs and public-access policies
-must not insert an extra prefix. Every private key must use
+must not insert an extra prefix. Every workspace-private key must use
 `workspaces/{workspace_id}/...`
 and resolves unconditionally to that workspace's dedicated bucket/container.
 GCS bucket creation must pass the configured immutable
@@ -55,6 +55,40 @@ sample bounded while per-file deletion events retain the complete audit trail.
 For a clean local reset from the repository root, remove
 `apps/api/.local/storage` and re-upload development files; there is deliberately
 no compatibility read path.
+
+## Platform-private storage
+
+`StorageBucket.PLATFORM_PRIVATE` resolves `platform/...` keys to a dedicated
+deployment-owned private bucket or container. `StorageBucket.PRIVATE` keeps
+its workspace namespace and per-workspace resolution. Pass the complete
+`StorageObjectRef` through operations; a key alone does not identify a bucket.
+Same-bucket promotion preserves create-only destination writes and source
+validation. Cross-class copies and platform upload grants remain pending.
+
+Cloud adapters require these settings when platform storage is used:
+
+| Provider | Setting |
+| --- | --- |
+| GCS | `GCS_PLATFORM_PRIVATE_BUCKET` |
+| S3 | `S3_PLATFORM_PRIVATE_BUCKET` |
+| Azure Blob | `AZURE_STORAGE_PLATFORM_PRIVATE_CONTAINER` |
+
+An empty value fails before provider I/O. The configured name must differ
+from the public resource and must not start with `WORKSPACE_BUCKET_PREFIX`
+followed by `-`, which is reserved for workspace buckets. Platform storage
+never provisions a workspace bucket or adopts public cache defaults.
+
+Local development uses separate `platform_private/` object and metadata
+roots. Signed downloads use the existing private route with an explicit
+`bucket` query value; the signature binds the class, key, expiry, and download
+options. Upload signatures also bind content type and exact declared size.
+Changing a capability's namespace or class fails. Public routes cannot read
+platform bytes. Local filesystem storage remains local-only.
+
+GCP bootstrap creates and hardens the platform-private bucket alongside the
+public-assets bucket. S3 and Azure provisioning remain pending. Provider
+contracts are verified with deterministic doubles; live cloud verification
+is pending. Platform publication and workspace consumption remain pending.
 
 ## Runtime file references
 

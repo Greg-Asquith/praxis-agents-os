@@ -296,6 +296,14 @@ Grant that identity only the capabilities used by the selected provider:
 | S3         | `S3_PUBLIC_ASSETS_BUCKET`, `AWS_ACCOUNT_ID`, `AWS_REGION`, `PUBLIC_ASSETS_BASE_URL`                                                           | Create and inspect buckets; set public-access block, encryption, ownership, versioning, policy, and tags; read, write, copy, and delete objects. Account-regional workspace buckets are unsupported in `me-south-1` and `me-central-1`.                                                                                      |
 | Azure Blob | `AZURE_STORAGE_ACCOUNT_NAME`, `AZURE_STORAGE_PUBLIC_CONTAINER`; optionally `AZURE_STORAGE_ACCOUNT_URL` and `AZURE_MANAGED_IDENTITY_CLIENT_ID` | Create and inspect containers; update metadata and access policy; read, write, copy, and delete blobs. Signed URLs also require `Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action`; `Storage Blob Data Contributor` plus `Storage Blob Delegator` are suitable built-in-role starting points. |
 
+Platform-private storage uses a separate deployment-owned resource configured
+with `GCS_PLATFORM_PRIVATE_BUCKET`, `S3_PLATFORM_PRIVATE_BUCKET`, or
+`AZURE_STORAGE_PLATFORM_PRIVATE_CONTAINER`. These settings are required when
+the platform storage class is used. The name must differ from the public
+resource and must not use the reserved `WORKSPACE_BUCKET_PREFIX-` namespace. See the
+[storage contracts](docs/implementation/storage-and-files.md#platform-private-storage)
+for isolation and verification limits.
+
 Plan capacity before adopting bucket-per-workspace storage. S3 accounts default
 to 10,000 general-purpose buckets (an adjustable quota). GCS limits bucket
 creation and deletion to roughly one request every two seconds per project, so

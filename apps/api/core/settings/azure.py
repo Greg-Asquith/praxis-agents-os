@@ -11,6 +11,10 @@ class AzureSettingsMixin:
         default="",
         description="Azure Blob Storage account name. Required when CLOUD_PROVIDER=azure.",
     )
+    AZURE_STORAGE_PLATFORM_PRIVATE_CONTAINER: str = Field(
+        default="",
+        description="Dedicated private Azure Blob container. Required for platform storage.",
+    )
     AZURE_STORAGE_PUBLIC_CONTAINER: str = Field(
         default="",
         description="Azure Blob container for public assets. Required when CLOUD_PROVIDER=azure.",

@@ -8,11 +8,15 @@ from uuid import UUID
 
 from services.storage.domain import StorageBucket, StorageObjectRef
 from services.storage.errors import StorageValidationError
+from services.storage.platform_buckets import validate_platform_ref
 
 
 def workspace_id_for_ref(ref: StorageObjectRef) -> UUID | None:
-    """Resolve the workspace owning a private ref; public refs have no workspace bucket."""
+    """Resolves the workspace owner; other storage classes have no workspace bucket."""
     if ref.bucket == StorageBucket.PUBLIC:
+        return None
+    if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+        validate_platform_ref(ref)
         return None
 
     prefix, separator, _remainder = ref.key.partition("/")

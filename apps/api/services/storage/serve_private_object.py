@@ -5,6 +5,7 @@
 from fastapi.responses import Response
 
 from services.storage.domain import StorageBucket, make_storage_object_ref
+from services.storage.errors import StorageValidationError
 from services.storage.factory import get_storage_provider
 from services.storage.paths import build_content_disposition
 from services.storage.utils import (
@@ -17,14 +18,22 @@ from services.storage.utils import (
 async def serve_private_object(
     object_key: str,
     *,
+    bucket: StorageBucket = StorageBucket.PRIVATE,
     expires: int,
     signature: str,
     force_download: bool = False,
     filename: str | None = None,
 ) -> Response:
     """Return a signed private object response for the configured provider."""
+    if bucket == StorageBucket.PUBLIC:
+        raise StorageValidationError(
+            "Private downloads require a private storage class",
+            operation="serve_private_object",
+            bucket=bucket.value,
+            object_key=object_key,
+        )
     provider = get_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, object_key)
+    ref = make_storage_object_ref(bucket, object_key)
     provider.require_valid_download_signature(
         ref=ref,
         expires=expires,

@@ -16,7 +16,11 @@ STORAGE_STREAM_CHUNK_SIZE = 1024 * 1024
 
 @runtime_checkable
 class StorageProvider(Protocol):
-    """Provider-neutral object storage surface used by application services."""
+    """Provider-neutral storage with explicit public, workspace, and platform classes.
+
+    Operations resolve both the logical class and key. Platform objects require
+    a dedicated private bucket and never trigger workspace provisioning.
+    """
 
     provider_key: str
 
@@ -60,7 +64,7 @@ class StorageProvider(Protocol):
         *,
         expected_source_etag: str,
     ) -> StoredObject:
-        """Copy a validated object to a new destination using conditional creation."""
+        """Copies validated bytes within one class and physical bucket, create-only."""
         ...
 
     async def create_signed_upload(
