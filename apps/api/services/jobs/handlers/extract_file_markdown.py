@@ -3,8 +3,6 @@
 """Extract workspace file revisions to markdown."""
 
 import logging
-from typing import Any
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from models.files import File, FileRevision
 from models.jobs import Job
-from services.files.utils import private_ref_from_key, revision_markdown_key
+from services.files.utils import (
+    parse_extraction_payload_ids,
+    private_ref_from_key,
+    revision_markdown_key,
+)
 from services.jobs.registry import job_handler
 from services.jobs.utils import sanitize_error_message
 from services.storage.factory import get_storage_provider
@@ -26,7 +28,9 @@ EXTRACT_FILE_MARKDOWN_KIND = "files.extract"
 @job_handler(kind=EXTRACT_FILE_MARKDOWN_KIND, timeout=300.0, max_attempts=3)
 async def extract_file_markdown(db: AsyncSession, job: Job) -> None:
     """Extract one file revision to markdown and backfill the revision."""
-    file_id, revision_id = _parse_payload_ids(job.payload)
+    if job.workspace_id is None:
+        return
+    file_id, revision_id = parse_extraction_payload_ids(job.payload)
     if file_id is None or revision_id is None:
         logger.warning(
             "Skipping file extraction job with invalid payload",
@@ -37,6 +41,8 @@ async def extract_file_markdown(db: AsyncSession, job: Job) -> None:
     revision = await db.scalar(
         select(FileRevision).where(
             FileRevision.id == revision_id,
+            FileRevision.file_id == file_id,
+            FileRevision.scope == "workspace",
             FileRevision.workspace_id == job.workspace_id,
         )
     )
@@ -50,6 +56,7 @@ async def extract_file_markdown(db: AsyncSession, job: Job) -> None:
     file = await db.scalar(
         select(File).where(
             File.id == file_id,
+            File.scope == "workspace",
             File.workspace_id == revision.workspace_id,
         )
     )
@@ -114,6 +121,8 @@ async def _copy_restored_markdown(
     source = await db.scalar(
         select(FileRevision).where(
             FileRevision.id == revision.restored_from_revision_id,
+            FileRevision.file_id == revision.file_id,
+            FileRevision.scope == "workspace",
             FileRevision.workspace_id == revision.workspace_id,
         )
     )
@@ -133,12 +142,3 @@ def _mark_current_revision_ready(file: File, revision: FileRevision) -> None:
     if file.processing_status in {"pending", "processing"}:
         file.processing_status = "ready"
         file.processing_error = None
-
-
-def _parse_payload_ids(payload: dict[str, Any]) -> tuple[UUID | None, UUID | None]:
-    try:
-        file_id = UUID(str(payload.get("file_id")))
-        revision_id = UUID(str(payload.get("revision_id")))
-    except (TypeError, ValueError, AttributeError):
-        return None, None
-    return file_id, revision_id

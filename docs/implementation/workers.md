@@ -40,3 +40,17 @@ Agent execution owns its heartbeat through bounded finalisation. A committed
 completion or approval suspension does not interrupt its own finaliser.
 Shutdown failures remain distinct from human cancellation, and scheduled-run
 settlement uses a bounded cleanup path.
+
+## Platform File maintenance
+
+Platform File extraction uses the actor-owned `files.extract_platform` kind.
+It checks the initiating user's active super-admin authority and opens explicit
+maintenance transactions for platform subjects. Conversion runs outside the
+write transaction, followed by a locked version and lifecycle recheck.
+
+Startup also ensures `platform.files.sweep_deleted` and
+`platform.files.sweep_uploads`. These system jobs require an unowned maintenance
+session and retain failed deletions for retry. Each pass handles at most 100
+revisions or 100 upload grants. Workspace retention jobs exclude platform rows.
+See the [storage reference](storage-and-files.md#platform-upload-and-maintenance-services)
+for upload, extraction, and retention boundaries.

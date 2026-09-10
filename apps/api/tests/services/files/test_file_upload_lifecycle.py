@@ -465,7 +465,7 @@ async def test_confirm_preserves_extension_alias_and_rejects_deleted_replace(
         payload=FileUploadRequest(
             filename="Report.markdown",
             content_type="text/markdown",
-            size_bytes=8,
+            size_bytes=len(b"# Alias"),
         ),
     )
     assert grant_result.grant is not None

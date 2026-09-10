@@ -1,6 +1,6 @@
 # apps/api/services/files/confirm_file_upload.py
 
-"""Confirm a direct-uploaded workspace file."""
+"""Confirms workspace uploads and authorised platform drafts."""
 
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -9,6 +9,8 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import maintenance_async_db_session
+from core.dependencies import require_super_admin_user
 from core.exceptions.general import AppValidationError, ConflictError
 from models.files import File, FileRevision, FileUpload
 from models.user import User
@@ -17,23 +19,30 @@ from services.assets.domain import AssetKind
 from services.assets.tokens import token_ref, verify_asset_upload_token
 from services.assets.utils import validate_stored_object
 from services.audit_events import AuditAction, AuditResourceType
+from services.audit_events.platform_content_events import (
+    PlatformContentAuditDetails,
+    record_platform_content_audit_event,
+)
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.contract import FILE_CONTRACT, require_matching_pair
 from services.files.domain import FileConfirmRequest, FileRead
 from services.files.utils import (
     best_effort_delete_file_object,
+    file_storage_bucket,
+    file_storage_prefix,
     file_to_read,
     get_file_folder_name,
-    get_file_for_workspace,
+    get_file_for_upload,
     get_folder_for_workspace,
+    require_declared_upload_size,
     require_file_write_access,
-    revision_object_key,
     set_processing_state_for_revision,
     sha256_hex_stream,
 )
-from services.storage.domain import StorageBucket, make_storage_object_ref
+from services.storage.domain import make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from services.storage.utils import promote_object_or_get_existing
+from utils.content import ContentScope
 
 
 async def confirm_file_upload(
@@ -44,39 +53,75 @@ async def confirm_file_upload(
     workspace: Workspace,
     membership: WorkspaceMembership,
     payload: FileConfirmRequest,
+    scope: ContentScope = ContentScope.WORKSPACE,
 ) -> FileRead:
-    """Confirm an uploaded file and append the new revision."""
+    """Confirms an uploaded file and appends an immutable revision."""
+    scope = ContentScope(scope)
+    if scope == ContentScope.PLATFORM:
+        require_super_admin_user(actor)
+        if payload.folder_id is not None:
+            raise AppValidationError("Platform files cannot belong to a folder", field="folder_id")
+        await db.commit()
+        async with maintenance_async_db_session() as maintenance_db:
+            return await _confirm_upload(
+                maintenance_db,
+                request=request,
+                actor=actor,
+                workspace=None,
+                payload=payload,
+            )
     require_file_write_access(membership)
+    return await _confirm_upload(
+        db, request=request, actor=actor, workspace=workspace, payload=payload
+    )
+
+
+async def _confirm_upload(
+    db: AsyncSession,
+    *,
+    request: Request,
+    actor: User,
+    workspace: Workspace | None,
+    payload: FileConfirmRequest,
+) -> FileRead:
+    scope = ContentScope.PLATFORM if workspace is None else ContentScope.WORKSPACE
+    workspace_id = workspace.id if workspace is not None else None
+    bucket = file_storage_bucket(scope)
     token_payload = verify_asset_upload_token(
         payload.upload_token,
-        expected_kind=AssetKind.WORKSPACE_FILE,
+        expected_kind=AssetKind.PLATFORM_FILE if workspace is None else AssetKind.WORKSPACE_FILE,
         actor_user_id=actor.id,
-        workspace_id=workspace.id,
+        workspace_id=workspace_id,
     )
     ref = token_ref(token_payload)
-    if ref.bucket != StorageBucket.PRIVATE:
+    if ref.bucket != bucket or token_payload.workspace_id != workspace_id:
         raise AppValidationError("Upload token is not valid for this file", field="upload_token")
     file_upload = await db.scalar(
         select(FileUpload)
         .where(
             FileUpload.object_key == ref.key,
-            FileUpload.workspace_id == workspace.id,
+            FileUpload.workspace_id == workspace_id,
+            FileUpload.scope == scope,
             FileUpload.created_by_user_id == actor.id,
         )
         .with_for_update()
     )
-    if file_upload is None:
+    if file_upload is None or str(file_upload.id) != token_payload.jti:
         raise AppValidationError("Upload token is not valid for this file", field="upload_token")
     if file_upload.consumed_at is not None:
-        file = await get_file_for_workspace(
+        file = await get_file_for_upload(
             db,
-            workspace=workspace,
+            scope=scope,
+            workspace_id=workspace_id,
             file_id=file_upload.file_id,
         )
-        await best_effort_delete_file_object(ref.key)
+        await best_effort_delete_file_object(ref.key, bucket=bucket)
         return file_to_read(
             file,
-            folder_name=await get_file_folder_name(db, workspace=workspace, file=file),
+            folder_name=await get_file_folder_name(db, workspace=workspace, file=file)
+            if workspace
+            else None,
+            actor=actor,
         )
     if file_upload.expires_at < datetime.now(UTC):
         raise AppValidationError("File upload has expired", field="upload_token")
@@ -85,20 +130,17 @@ async def confirm_file_upload(
     if not uploaded_extension:
         raise AppValidationError("Uploaded file has no extension", field="upload_token")
     final_ref = make_storage_object_ref(
-        StorageBucket.PRIVATE,
-        revision_object_key(
-            workspace.id,
-            file_upload.file_id,
-            file_upload.revision_id,
-            uploaded_extension,
-        ),
+        bucket,
+        f"{file_storage_prefix(scope, workspace_id)}/files/"
+        f"{file_upload.file_id}/{file_upload.revision_id}{uploaded_extension}",
     )
 
     existing_file = await db.scalar(
         select(File)
         .where(
             File.id == file_upload.file_id,
-            File.workspace_id == workspace.id,
+            File.workspace_id == workspace_id,
+            File.scope == scope,
         )
         .with_for_update()
     )
@@ -109,7 +151,7 @@ async def confirm_file_upload(
             conflicting_resource="file",
             details={"file_id": str(existing_file.id)},
         )
-    if is_new_file and payload.folder_id is not None:
+    if workspace is not None and is_new_file and payload.folder_id is not None:
         await get_folder_for_workspace(
             db,
             workspace=workspace,
@@ -117,6 +159,10 @@ async def confirm_file_upload(
             for_update=True,
         )
 
+    if token_payload.content_type != file_upload.content_type:
+        raise AppValidationError(
+            "Upload token does not match the declared content type", field="upload_token"
+        )
     provider = get_storage_provider()
     allowed_types = {entry.content_type for entry in FILE_CONTRACT}
     source_stored = await provider.stat_object(ref)
@@ -126,8 +172,9 @@ async def confirm_file_upload(
             expected_content_type=token_payload.content_type,
             allowed_content_types=allowed_types,
             max_size_bytes=token_payload.max_size_bytes,
-            asset_label="workspace file",
+            asset_label="file",
         )
+        require_declared_upload_size(stored.size_bytes, file_upload)
         content_hash = await sha256_hex_stream(provider.stream_object(final_ref))
     else:
         source_stored = validate_stored_object(
@@ -135,12 +182,13 @@ async def confirm_file_upload(
             expected_content_type=token_payload.content_type,
             allowed_content_types=allowed_types,
             max_size_bytes=token_payload.max_size_bytes,
-            asset_label="workspace file",
+            asset_label="file",
         )
+        require_declared_upload_size(source_stored.size_bytes, file_upload)
         content_hash = await sha256_hex_stream(provider.stream_object(ref))
         if existing_file is not None and existing_file.content_hash == content_hash:
             file_upload.consumed_at = datetime.now(UTC)
-            await best_effort_delete_file_object(ref.key, provider=provider)
+            await best_effort_delete_file_object(ref.key, provider=provider, bucket=bucket)
             await db.flush()
             return file_to_read(
                 existing_file,
@@ -148,7 +196,10 @@ async def confirm_file_upload(
                     db,
                     workspace=workspace,
                     file=existing_file,
-                ),
+                )
+                if workspace
+                else None,
+                actor=actor,
             )
 
         stored, promoted = await promote_object_or_get_existing(
@@ -162,8 +213,9 @@ async def confirm_file_upload(
             expected_content_type=token_payload.content_type,
             allowed_content_types=allowed_types,
             max_size_bytes=token_payload.max_size_bytes,
-            asset_label="workspace file",
+            asset_label="file",
         )
+        require_declared_upload_size(stored.size_bytes, file_upload)
         if not promoted:
             final_hash = await sha256_hex_stream(provider.stream_object(final_ref))
             if final_hash != content_hash:
@@ -181,7 +233,8 @@ async def confirm_file_upload(
     if is_new_file:
         file = File(
             id=file_upload.file_id,
-            workspace_id=workspace.id,
+            workspace_id=workspace_id,
+            scope=scope,
             name=file_upload.filename,
             folder_id=payload.folder_id,
             category=entry.category.value,
@@ -207,7 +260,8 @@ async def confirm_file_upload(
     revision = FileRevision(
         id=file_upload.revision_id,
         file_id=file.id,
-        workspace_id=workspace.id,
+        workspace_id=workspace_id,
+        scope=scope,
         revision_number=file.revision_count + 1,
         revision_kind=revision_kind,
         content_type=entry.content_type,
@@ -235,25 +289,41 @@ async def confirm_file_upload(
     )
     file_upload.consumed_at = datetime.now(UTC)
     await db.flush()
-    await best_effort_delete_file_object(ref.key, provider=provider)
+    await best_effort_delete_file_object(ref.key, provider=provider, bucket=bucket)
 
-    await record_workspace_audit_event(
-        db,
-        request=request,
-        workspace_id=workspace.id,
-        action=AuditAction.CREATE,
-        resource_type=AuditResourceType.FILE,
-        resource_id=file.id,
-        actor=actor,
-        details={
-            "filename": file.name,
-            "size_bytes": revision.size_bytes,
-            "revision_kind": revision.revision_kind,
-            "content_hash": revision.content_hash,
-        },
-    )
+    if workspace is None:
+        await record_platform_content_audit_event(
+            db,
+            request=request,
+            actor=actor,
+            resource_type=AuditResourceType.FILE,
+            resource_id=file.id,
+            details=PlatformContentAuditDetails(
+                operation="create" if is_new_file else "replace",
+                revision_id=revision.id,
+            ),
+        )
+    else:
+        await record_workspace_audit_event(
+            db,
+            request=request,
+            workspace_id=workspace_id,
+            action=AuditAction.CREATE,
+            resource_type=AuditResourceType.FILE,
+            resource_id=file.id,
+            actor=actor,
+            details={
+                "filename": file.name,
+                "size_bytes": revision.size_bytes,
+                "revision_kind": revision.revision_kind,
+                "content_hash": revision.content_hash,
+            },
+        )
     await db.refresh(file)
     return file_to_read(
         file,
-        folder_name=await get_file_folder_name(db, workspace=workspace, file=file),
+        folder_name=await get_file_folder_name(db, workspace=workspace, file=file)
+        if workspace
+        else None,
+        actor=actor,
     )

@@ -25,6 +25,7 @@ async def sweep_deleted_kb_documents(
         await db.scalars(
             select(KBDocument)
             .where(
+                KBDocument.scope == "workspace",
                 KBDocument.deleted.is_(True),
                 KBDocument.deleted_at.is_not(None),
                 KBDocument.deleted_at < cutoff,

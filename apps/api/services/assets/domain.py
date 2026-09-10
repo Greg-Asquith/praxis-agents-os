@@ -21,6 +21,7 @@ class AssetKind(StrEnum):
     WORKSPACE_ICON = "workspace_icon"
     SKILL_DOCUMENT = "skill_document"
     WORKSPACE_FILE = "workspace_file"
+    PLATFORM_FILE = "platform_file"
 
 
 @dataclass(frozen=True)

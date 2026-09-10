@@ -63,7 +63,7 @@ deployment-owned private bucket or container. `StorageBucket.PRIVATE` keeps
 its workspace namespace and per-workspace resolution. Pass the complete
 `StorageObjectRef` through operations; a key alone does not identify a bucket.
 Same-bucket promotion preserves create-only destination writes and source
-validation. Cross-class copies and platform upload grants remain pending.
+validation. Cross-class copies remain pending.
 
 Cloud adapters require these settings when platform storage is used:
 
@@ -89,6 +89,41 @@ GCP bootstrap creates and hardens the platform-private bucket alongside the
 public-assets bucket. S3 and Azure provisioning remain pending. Provider
 contracts are verified with deterministic doubles; live cloud verification
 is pending. Platform publication and workspace consumption remain pending.
+
+## Platform upload and maintenance services
+
+The File upload and confirmation services accept an explicit platform scope
+from an authorised caller. They check super-admin authority before opening a
+maintenance transaction. The HTTP upload routes retain workspace scope;
+platform management routes and publication remain pending.
+
+Platform grants bind the creator, unique staging key, storage class, persisted
+grant ID, and intended File revision. Confirmation checks the exact declared
+size before create-only promotion. It consumes the grant and commits the draft
+revision with a strict global audit event. A retry can recover promoted bytes
+after a database failure. Replacement revisions leave the published pointer
+unchanged. Platform Files have no folder and do not count towards workspace
+storage usage. Workspace confirmation also checks the persisted declared size.
+
+Ingestible platform revisions enqueue `files.extract_platform` with the
+initiating user's concurrency ownership. The handler verifies their live
+super-admin authority before maintenance access. Conversion reads bounded
+bytes outside the write transaction. A locked recheck of the parent, current
+revision, content hash, and publication state prevents stale, deleted, or
+withdrawn work from persisting. Extraction never publishes content.
+
+Extraction uses a deterministic, create-only Markdown object. A retry validates
+existing bytes before adopting an output left by a failed database transaction.
+Interrupted storage writes are cleaned while the parent lock remains held.
+
+Worker startup ensures two explicit maintenance jobs. Each
+`platform.files.sweep_deleted` pass processes at most 100 revisions across
+expired File tombstones, including unrecorded deterministic extraction outputs.
+Live platform Knowledge Base pins prevent purge. Each
+`platform.files.sweep_uploads` pass processes at most 100 expired grants,
+removing staging and unreferenced promoted objects. Provider deletion failures
+retain database evidence for retry. The workspace File and knowledge sweepers
+exclude platform rows. Neither platform job accepts tenant or user ownership.
 
 ## Runtime file references
 

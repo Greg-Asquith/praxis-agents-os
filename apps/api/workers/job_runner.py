@@ -71,6 +71,7 @@ async def run_once(
     from services.jobs.handlers.sweep_expired_security_events import (
         ensure_security_event_sweep_job,
     )
+    from services.jobs.handlers.sweep_platform_files import ensure_platform_files_sweep_jobs
     from services.jobs.handlers.sweep_rate_limit_attempts import ensure_rate_limit_sweep_job
     from services.jobs.handlers.sweep_terminal_jobs import ensure_sweep_job
 
@@ -90,6 +91,7 @@ async def run_once(
             )
         await ensure_sweep_job(db)
         await ensure_files_sweep_job(db)
+        await ensure_platform_files_sweep_jobs(db)
         await ensure_artifact_shares_sweep_job(db)
         await ensure_agent_run_approval_sweep_job(db)
         await ensure_abandoned_agent_run_sweep_job(db)

@@ -71,6 +71,7 @@ async def _purge_expired_deleted_files(db: AsyncSession, *, now: datetime) -> No
         await db.scalars(
             select(File)
             .where(
+                File.scope == "workspace",
                 File.deleted.is_(True),
                 File.deleted_at.is_not(None),
                 File.deleted_at < cutoff,
@@ -128,6 +129,7 @@ async def _purge_expired_uploads(db: AsyncSession, *, now: datetime) -> None:
         await db.scalars(
             select(FileUpload)
             .where(
+                FileUpload.scope == "workspace",
                 FileUpload.consumed_at.is_(None),
                 FileUpload.expires_at < now,
             )

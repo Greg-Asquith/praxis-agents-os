@@ -44,6 +44,7 @@ def _assemble_runtime_catalogs() -> None:
         embed_kb_chunks,
         embed_memory,
         extract_file_markdown,
+        extract_platform_file_markdown,
         ingest_kb_document,
         provision_workspace_bucket,
         reconcile_kb_sources,
@@ -58,6 +59,8 @@ def _assemble_runtime_catalogs() -> None:
         sweep_expired_memories,
         sweep_expired_scratch,
         sweep_expired_security_events,
+        sweep_platform_file_uploads,
+        sweep_platform_files,
         sweep_rate_limit_attempts,
         sweep_terminal_jobs,
     )
@@ -67,6 +70,7 @@ def _assemble_runtime_catalogs() -> None:
         embed_kb_chunks,
         embed_memory,
         extract_file_markdown,
+        extract_platform_file_markdown,
         ingest_kb_document,
         provision_workspace_bucket,
         reconcile_kb_sources,
@@ -81,6 +85,8 @@ def _assemble_runtime_catalogs() -> None:
         sweep_expired_memories,
         sweep_expired_scratch,
         sweep_expired_security_events,
+        sweep_platform_file_uploads,
+        sweep_platform_files,
         sweep_rate_limit_attempts,
         sweep_terminal_jobs,
     )

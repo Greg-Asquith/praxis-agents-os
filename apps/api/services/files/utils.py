@@ -3,32 +3,41 @@
 """Helpers specific to workspace file services."""
 
 import logging
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
-from core.exceptions.general import NotFoundError
-from models.files import File, FileFolder, FileRevision
+from core.exceptions.general import AppValidationError, NotFoundError
+from models.files import File, FileFolder, FileRevision, FileUpload
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.files.domain import FileRead, FileRevisionRead
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
-from services.storage.paths import unique_object_key, validate_object_key
+from services.storage.paths import validate_object_key
 from services.storage.provider import StorageProvider
 from services.workspaces.utils import EDITOR_ROLES, MANAGER_ROLES
-from utils.content import can_manage_platform_content
+from utils.content import ContentScope, can_manage_platform_content
 from utils.digests import sha256_hex as sha256_hex, sha256_hex_stream as sha256_hex_stream
 
 logger = logging.getLogger(__name__)
 
 
+def parse_extraction_payload_ids(payload: dict[str, Any]) -> tuple[UUID | None, UUID | None]:
+    """Reads the file and revision identifiers from an extraction job."""
+    try:
+        file_id = UUID(str(payload.get("file_id")))
+        revision_id = UUID(str(payload.get("revision_id")))
+    except (TypeError, ValueError, AttributeError):
+        return None, None
+    return file_id, revision_id
+
+
 def normalize_required_text(value: str, *, field: str = "name", max_length: int = 255) -> str:
     """Trim required labels and enforce their persisted length."""
-    from core.exceptions.general import AppValidationError
-
     normalized = value.strip()
     if not normalized:
         raise AppValidationError("Value cannot be blank", field=field)
@@ -54,12 +63,6 @@ def revision_object_key(
     key = f"workspaces/{workspace_id}/files/{file_id}/{revision_id}{normalize_extension(extension)}"
     make_storage_object_ref(StorageBucket.PRIVATE, key)
     return key
-
-
-def file_upload_object_key(workspace_id: UUID, extension: str) -> str:
-    """Build a unique temporary key for a direct file upload."""
-    normalized = normalize_extension(extension)
-    return unique_object_key(f"workspaces/{workspace_id}/uploads/files", f"upload{normalized}")
 
 
 def revision_markdown_key(workspace_id: UUID, file_id: UUID, revision_id: UUID) -> str:
@@ -160,17 +163,18 @@ async def best_effort_delete_file_object(
     object_key: str | None,
     *,
     provider: StorageProvider | None = None,
+    bucket: StorageBucket = StorageBucket.PRIVATE,
 ) -> None:
     """Delete a private file object without failing the surrounding operation."""
     if not object_key:
         return
     try:
         storage_provider = provider or get_storage_provider()
-        await storage_provider.delete_object(private_ref_from_key(object_key))
+        await storage_provider.delete_object(make_storage_object_ref(bucket, object_key))
     except Exception:
         logger.warning(
-            "Failed to delete private workspace file object",
-            extra={"object_key": object_key},
+            "Failed to delete private file object",
+            extra={"bucket": bucket.value, "object_key": object_key},
             exc_info=True,
         )
 
@@ -205,8 +209,9 @@ async def set_processing_state_for_revision(
     file.processing_status = "pending"
     await enqueue_job(
         db,
-        kind="files.extract",
+        kind="files.extract_platform" if file.scope == ContentScope.PLATFORM else "files.extract",
         workspace_id=file.workspace_id,
+        concurrency_user_id=initiated_by_user_id if file.scope == ContentScope.PLATFORM else None,
         subject_type="file_revision",
         subject_id=revision.id,
         payload={"file_id": str(file.id), "revision_id": str(revision.id)},
@@ -280,3 +285,49 @@ def revision_to_read(revision: FileRevision) -> FileRevisionRead:
         restored_from_revision_id=revision.restored_from_revision_id,
         created_at=revision.created_at,
     )
+
+
+def file_storage_bucket(scope: ContentScope | str) -> StorageBucket:
+    """Returns the explicit private storage class for a file owner."""
+    return (
+        StorageBucket.PLATFORM_PRIVATE
+        if ContentScope(scope) == ContentScope.PLATFORM
+        else StorageBucket.PRIVATE
+    )
+
+
+def file_storage_prefix(scope: ContentScope | str, workspace_id: UUID | None) -> str:
+    """Validates ownership before constructing a private file namespace."""
+    if ContentScope(scope) == ContentScope.PLATFORM and workspace_id is None:
+        return "platform"
+    if ContentScope(scope) == ContentScope.WORKSPACE and workspace_id is not None:
+        return f"workspaces/{workspace_id}"
+    raise AppValidationError("Invalid file storage owner")
+
+
+async def get_file_for_upload(
+    db: AsyncSession,
+    *,
+    scope: ContentScope,
+    workspace_id: UUID | None,
+    file_id: UUID,
+) -> File:
+    """Resolves an upload target within its authorised ownership boundary."""
+    stmt = select(File).where(
+        File.id == file_id,
+        File.scope == scope,
+        File.workspace_id == workspace_id,
+        File.deleted.is_(False),
+    )
+    file = await db.scalar(stmt)
+    if file is None:
+        raise NotFoundError("File not found", resource_type="file", resource_id=str(file_id))
+    return file
+
+
+def require_declared_upload_size(actual_size: int, upload: FileUpload) -> None:
+    """Rejects bytes that differ from the persisted upload declaration."""
+    if actual_size != upload.declared_size_bytes:
+        raise AppValidationError(
+            "Uploaded file size does not match the declared size", field="size_bytes"
+        )

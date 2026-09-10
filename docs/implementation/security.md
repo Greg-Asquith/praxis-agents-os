@@ -115,4 +115,6 @@ Artifact event additionally admits an active workspace editor for the matching
 published Artifact, recording the editor as the actor. This represents a save
 that immediately publishes a new version to every workspace. Audit failures
 propagate so the caller's maintenance transaction rolls back. The corresponding
-platform mutation APIs are pending. Ordinary skill audit handling is unchanged.
+platform mutation APIs are pending. Platform File confirmation services use
+this strict writer in the same maintenance transaction as draft creation or
+replacement and grant consumption. Ordinary skill audit handling is unchanged.

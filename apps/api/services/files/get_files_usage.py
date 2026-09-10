@@ -26,7 +26,12 @@ async def get_files_usage(
                 FileRevision.markdown_size_bytes,
             )
             .join(File, File.id == FileRevision.file_id)
-            .where(File.workspace_id == workspace.id)
+            .where(
+                File.workspace_id == workspace.id,
+                File.scope == "workspace",
+                FileRevision.workspace_id == workspace.id,
+                FileRevision.scope == "workspace",
+            )
         )
     ).all()
 

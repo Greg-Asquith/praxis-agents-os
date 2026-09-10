@@ -69,9 +69,10 @@ any platform content or upload grant remains. Export required content and
 explicitly remove platform rows through a maintenance procedure before
 downgrading. The migration never deletes platform content for you.
 
-Platform authoring, storage, retrieval, and operator interfaces are pending.
-These database structures alone do not make platform content available
-through the product.
+Platform-private storage, upload services, extraction, and bounded maintenance
+jobs are implemented. Platform authoring routes, publication, retrieval, and
+operator interfaces remain pending. These foundations alone do not make
+platform content available through the product.
 
 Domain-owned `visibility.py` helpers in `services/kb`, `services/files`, and
 `services/artifacts` define local and published platform reads. Missing workspace

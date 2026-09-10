@@ -125,6 +125,9 @@ assert {
 }.issubset(RUNTIME_TOOL_CATALOG)
 assert {
     "files.extract",
+    "files.extract_platform",
+    "platform.files.sweep_deleted",
+    "platform.files.sweep_uploads",
     "integrations.discover_resources",
     "integrations.process_event",
 }.issubset(JOB_HANDLERS)
