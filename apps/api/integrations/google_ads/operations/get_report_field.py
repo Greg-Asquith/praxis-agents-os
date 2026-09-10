@@ -1,19 +1,41 @@
 # apps/api/integrations/google_ads/operations/get_report_field.py
 
-"""Get metadata for one Google Ads report resource or field."""
+"""Get metadata for one or more Google Ads report resources or fields."""
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import quote
 
-from core.exceptions.integration import IntegrationValidationError
+from core.exceptions.integration import IntegrationNotFoundError, IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import GOOGLE_ADS_API_VERSION, GoogleAdsClient
 
 _FIELD_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$")
 _OPERATION = "get_report_field"
+# One query rarely selects more fields than this, and each name costs one provider request.
+REPORT_FIELD_BATCH_LIMIT = 10
+
+
+async def get_report_fields(
+    client: GoogleAdsClient,
+    *,
+    field_names: Sequence[str],
+) -> dict[str, Any]:
+    normalized_names = validate_report_field_names(field_names)
+    fields: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for name in normalized_names:
+        try:
+            fields.append(await get_report_field(client, field_name=name))
+        except IntegrationNotFoundError:
+            missing.append(name)
+    return {
+        "api_version": GOOGLE_ADS_API_VERSION,
+        "fields": fields,
+        "missing": missing,
+    }
 
 
 async def get_report_field(
@@ -37,7 +59,6 @@ async def get_report_field(
         )
 
     return {
-        "api_version": GOOGLE_ADS_API_VERSION,
         "name": field["name"],
         "category": field["category"],
         "data_type": field["data_type"],
@@ -52,6 +73,22 @@ async def get_report_field(
         "metrics": field["metrics"],
         "segments": field["segments"],
     }
+
+
+def validate_report_field_names(values: Sequence[str]) -> list[str]:
+    if isinstance(values, str | bytes) or not isinstance(values, Sequence):
+        raise TypeError("Google Ads report field names must be a list of strings")
+    if not 1 <= len(values) <= REPORT_FIELD_BATCH_LIMIT:
+        raise ValueError(
+            f"Google Ads report field names must contain between 1 and "
+            f"{REPORT_FIELD_BATCH_LIMIT} names"
+        )
+    normalized: list[str] = []
+    for value in values:
+        name = validate_report_field_name(value)
+        if name not in normalized:
+            normalized.append(name)
+    return normalized
 
 
 def validate_report_field_name(value: str) -> str:

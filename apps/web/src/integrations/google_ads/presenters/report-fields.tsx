@@ -18,6 +18,7 @@ import { isRecord } from "@/lib/guards"
 const LIST_TOOL = "google_ads_list_report_fields"
 const GET_TOOL = "google_ads_get_report_field"
 const MAX_VALUES = 100
+const MAX_EXACT_FIELDS = 10
 
 const FIELD_COLUMNS: DataColumn[] = [
   { key: "name", kind: "id", label: "API name", width: 240 },
@@ -49,19 +50,25 @@ type ListReportFields = {
   metricCount: number
   metrics: string[]
   resource: string
+  searchMatched: boolean
   segmentCount: number
   segments: string[]
   truncated: boolean
 }
 
-type GetReportField = ReportField & {
-  apiVersion: string
+type ReportFieldDetail = ReportField & {
   attributeResources: string[]
   enumValues: string[]
   metrics: string[]
   segments: string[]
   selectableWith: string[]
   typeUrl: string | null
+}
+
+type GetReportFields = {
+  apiVersion: string
+  fields: ReportFieldDetail[]
+  missing: string[]
 }
 
 type CollectionAccent = "blue" | "green" | "red" | "yellow"
@@ -80,8 +87,8 @@ export const googleAdsReportFieldsPresenter: ToolRowPresenter = {
         : null
     }
     if (activity.name === GET_TOOL) {
-      const result = parseGetReportField(activity.result)
-      return result ? getReportFieldResult(defaultOpen, result) : null
+      const result = parseGetReportFields(activity.result)
+      return result ? getReportFieldsResult(defaultOpen, result) : null
     }
     return null
   },
@@ -111,6 +118,7 @@ function listReportFieldsResult(
 ) {
   const rows = result.fields.map(fieldRow)
   const fieldsShortened = rows.length < result.fieldCount
+  const searchMissed = search !== null && !result.searchMatched
   const compatibilityShortened =
     result.compatibilityTruncated ||
     result.metrics.length < result.metricCount ||
@@ -122,7 +130,7 @@ function listReportFieldsResult(
       details={[
         { label: "Resource", value: result.resource },
         { label: "Search", value: search ?? "All fields" },
-        { label: "Matches", value: matchSummary(result) },
+        { label: "Matches", value: searchMissed ? "No matches, all shown" : matchSummary(result) },
         {
           label: "Resource fields",
           summary: false,
@@ -137,6 +145,11 @@ function listReportFieldsResult(
     >
       <div className="grid min-w-0 gap-4">
         {copyableName("Resource", result.resource)}
+        {searchMissed ? (
+          <p className="text-muted-foreground text-sm">
+            Nothing matched “{search}”, so every field, metric, and segment is shown instead.
+          </p>
+        ) : null}
         {rows.length > 0 ? (
           <DataTable
             columns={FIELD_COLUMNS}
@@ -197,63 +210,83 @@ function listReportFieldsResult(
   )
 }
 
-function getReportFieldResult(defaultOpen: boolean, result: GetReportField) {
+function getReportFieldsResult(defaultOpen: boolean, result: GetReportFields) {
+  const found = result.fields.map((field) => field.name)
   return (
     <ToolResultCard
       ariaLabel="Google Ads report field metadata"
       defaultOpen={defaultOpen}
       details={[
-        { label: "Field", value: result.name },
-        { label: "Category", value: humanizeToken(result.category) },
+        { label: "Fields", value: found.length > 0 ? found.join(", ") : "None found" },
+        {
+          label: "Not found",
+          value: result.missing.length > 0 ? result.missing.join(", ") : "None",
+        },
         { label: "API version", summary: false, value: result.apiVersion },
       ]}
       heading={<GoogleAdsToolHeading>Get Google Ads Report Field</GoogleAdsToolHeading>}
       trailing={<ReportFieldsDone />}
     >
       <div className="grid min-w-0 gap-4">
-        {copyableName("API name", result.name)}
-        <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {metadataValue("Category", humanizeToken(result.category))}
-          {metadataValue("Data type", humanizeToken(result.dataType))}
-          {metadataValue("Type URL", result.typeUrl ?? "Not provided")}
-          {metadataValue("API version", result.apiVersion)}
-        </dl>
-        {fieldFlags(result)}
-        <div className="grid gap-2">
-          <h3 className="text-sm font-medium">Values and compatibility</h3>
-          {nameCollection({
-            accent: "red",
-            emptyLabel: "This field has no enum values.",
-            label: "Enum values",
-            names: result.enumValues,
-          })}
-          {nameCollection({
-            accent: "blue",
-            emptyLabel: "No selectable-with fields returned.",
-            label: "Selectable with",
-            names: result.selectableWith,
-          })}
-          {nameCollection({
-            accent: "blue",
-            emptyLabel: "No attribute resources returned.",
-            label: "Attribute resources",
-            names: result.attributeResources,
-          })}
-          {nameCollection({
-            accent: "green",
-            emptyLabel: "No compatible metrics returned.",
-            label: "Metrics",
-            names: result.metrics,
-          })}
-          {nameCollection({
-            accent: "yellow",
-            emptyLabel: "No compatible segments returned.",
-            label: "Segments",
-            names: result.segments,
-          })}
-        </div>
+        {result.fields.map((field) => reportFieldDetail(field, result.apiVersion))}
+        {result.missing.length > 0
+          ? nameCollection({
+              accent: "red",
+              emptyLabel: "Every requested name was found.",
+              label: "Not found in Google Ads",
+              names: result.missing,
+            })
+          : null}
       </div>
     </ToolResultCard>
+  )
+}
+
+function reportFieldDetail(field: ReportFieldDetail, apiVersion: string) {
+  return (
+    <section aria-label={`${field.name} metadata`} className="grid min-w-0 gap-3" key={field.name}>
+      {copyableName("API name", field.name)}
+      <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {metadataValue("Category", humanizeToken(field.category))}
+        {metadataValue("Data type", humanizeToken(field.dataType))}
+        {metadataValue("Type URL", field.typeUrl ?? "Not provided")}
+        {metadataValue("API version", apiVersion)}
+      </dl>
+      {fieldFlags(field)}
+      <div className="grid gap-2">
+        <h3 className="text-sm font-medium">Values and compatibility</h3>
+        {nameCollection({
+          accent: "red",
+          emptyLabel: "This field has no enum values.",
+          label: "Enum values",
+          names: field.enumValues,
+        })}
+        {nameCollection({
+          accent: "blue",
+          emptyLabel: "No selectable-with fields returned.",
+          label: "Selectable with",
+          names: field.selectableWith,
+        })}
+        {nameCollection({
+          accent: "blue",
+          emptyLabel: "No attribute resources returned.",
+          label: "Attribute resources",
+          names: field.attributeResources,
+        })}
+        {nameCollection({
+          accent: "green",
+          emptyLabel: "No compatible metrics returned.",
+          label: "Metrics",
+          names: field.metrics,
+        })}
+        {nameCollection({
+          accent: "yellow",
+          emptyLabel: "No compatible segments returned.",
+          label: "Segments",
+          names: field.segments,
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -355,6 +388,7 @@ function parseListReportFields(value: unknown): ListReportFields | null {
     !isRecord(value) ||
     !isNonEmptyString(value["api_version"]) ||
     !isNonEmptyString(value["resource"]) ||
+    typeof value["search_matched"] !== "boolean" ||
     !Array.isArray(value["attribute_resources"]) ||
     !isCount(value["attribute_resource_count"]) ||
     !Array.isArray(value["metrics"]) ||
@@ -392,6 +426,7 @@ function parseListReportFields(value: unknown): ListReportFields | null {
     metricCount: value["metric_count"],
     metrics,
     resource: value["resource"],
+    searchMatched: value["search_matched"],
     segmentCount: value["segment_count"],
     segments,
     truncated: value["truncated"],
@@ -421,10 +456,30 @@ function countLabel(count: number, singular: string): string {
   return `${count.toLocaleString()} ${count === 1 ? singular : `${singular}s`}`
 }
 
-function parseGetReportField(value: unknown): GetReportField | null {
+function parseGetReportFields(value: unknown): GetReportFields | null {
   if (
     !isRecord(value) ||
     !isNonEmptyString(value["api_version"]) ||
+    !Array.isArray(value["fields"]) ||
+    value["fields"].length > MAX_EXACT_FIELDS ||
+    !Array.isArray(value["missing"]) ||
+    value["missing"].length > MAX_EXACT_FIELDS
+  )
+    return null
+  const fields: ReportFieldDetail[] = []
+  for (const item of value["fields"]) {
+    const field = parseReportFieldDetail(item)
+    if (!field) return null
+    fields.push(field)
+  }
+  const missing = parseNames(value["missing"])
+  if (!missing) return null
+  return { apiVersion: value["api_version"], fields, missing }
+}
+
+function parseReportFieldDetail(value: unknown): ReportFieldDetail | null {
+  if (
+    !isRecord(value) ||
     (value["type_url"] !== null && !isNonEmptyString(value["type_url"])) ||
     !Array.isArray(value["enum_values"]) ||
     !Array.isArray(value["selectable_with"]) ||
@@ -443,7 +498,6 @@ function parseGetReportField(value: unknown): GetReportField | null {
     return null
   return {
     ...field,
-    apiVersion: value["api_version"],
     attributeResources,
     enumValues,
     metrics,

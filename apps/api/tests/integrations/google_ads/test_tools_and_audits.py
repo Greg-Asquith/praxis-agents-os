@@ -141,10 +141,13 @@ async def test_list_report_fields_rejects_invalid_input_before_dispatch(
     audit.assert_not_awaited()
 
 
-@pytest.mark.parametrize("field_name", ["campaign..id", "Campaign.id", "a" * 257])
+@pytest.mark.parametrize(
+    "field_names",
+    [["campaign..id"], ["Campaign.id"], ["a" * 257], [], [f"campaign.f{i}" for i in range(11)]],
+)
 async def test_get_report_field_rejects_invalid_input_before_dispatch(
     monkeypatch,
-    field_name: str,
+    field_names: list[str],
 ) -> None:
     client = AsyncMock()
     audit = AsyncMock()
@@ -160,24 +163,15 @@ async def test_get_report_field_rejects_invalid_input_before_dispatch(
     with pytest.raises(ModelRetry):
         await google_ads_get_report_field(
             _read_ctx(_read_entry(), tool_name="google_ads_get_report_field"),
-            field_name,
+            field_names,
         )
 
     client.assert_not_awaited()
     audit.assert_not_awaited()
 
 
-@pytest.mark.parametrize(
-    ("tool", "argument", "expected"),
-    [
-        (google_ads_get_report_field, "campaign.nope", "has no report field named campaign.nope"),
-        (google_ads_list_report_fields, "nope", "has no report resource named nope"),
-    ],
-)
-async def test_report_field_tools_return_unknown_names_to_the_model(
-    monkeypatch, tool, argument, expected
-) -> None:
-    module = tool.__module__
+async def test_list_report_fields_returns_unknown_resources_to_the_model(monkeypatch) -> None:
+    module = "integrations.google_ads.tools.list_report_fields"
 
     async def missing(*_args, **_kwargs):
         raise IntegrationNotFoundError(
@@ -187,8 +181,31 @@ async def test_report_field_tools_return_unknown_names_to_the_model(
     monkeypatch.setattr(f"{module}.google_ads_client", AsyncMock())
     monkeypatch.setattr(f"{module}.run_audited_integration_operation", missing)
 
-    with pytest.raises(ModelRetry, match=expected):
-        await tool(_read_ctx(_read_entry(), tool_name=tool.__name__), argument)
+    with pytest.raises(ModelRetry, match="has no report resource named nope"):
+        await google_ads_list_report_fields(
+            _read_ctx(_read_entry(), tool_name="google_ads_list_report_fields"), "nope"
+        )
+
+
+async def test_get_report_field_returns_missing_names_instead_of_failing(monkeypatch) -> None:
+    operation = AsyncMock(
+        return_value={"api_version": "v24", "fields": [], "missing": ["campaign.nope"]}
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.get_report_field.google_ads_client",
+        AsyncMock(return_value=object()),
+    )
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.get_report_field.get_report_fields", operation
+    )
+
+    result = await google_ads_get_report_field(
+        _read_ctx(_read_entry(), tool_name="google_ads_get_report_field"),
+        ["campaign.nope", " campaign.nope "],
+    )
+
+    assert result["missing"] == ["campaign.nope"]
+    assert operation.await_args.kwargs["field_names"] == ["campaign.nope"]
 
 
 async def test_report_field_tools_require_compatible_active_context() -> None:
@@ -199,7 +216,7 @@ async def test_report_field_tools_require_compatible_active_context() -> None:
 
     ctx.tool_name = "google_ads_get_report_field"
     with pytest.raises(ModelRetry, match="includes Google Ads"):
-        await google_ads_get_report_field(ctx, "campaign.id")
+        await google_ads_get_report_field(ctx, ["campaign.id"])
 
 
 async def test_list_report_fields_uses_one_context_entry_and_one_read_audit(monkeypatch) -> None:
@@ -269,19 +286,24 @@ async def test_get_report_field_records_success_and_failure_audits(monkeypatch) 
     operation = AsyncMock(
         return_value={
             "api_version": "v24",
-            "name": "campaign.id",
-            "category": "ATTRIBUTE",
-            "data_type": "INT64",
-            "selectable": True,
-            "filterable": True,
-            "sortable": True,
-            "is_repeated": False,
-            "type_url": None,
-            "enum_values": [],
-            "selectable_with": [],
-            "attribute_resources": [],
-            "metrics": [],
-            "segments": [],
+            "fields": [
+                {
+                    "name": "campaign.id",
+                    "category": "ATTRIBUTE",
+                    "data_type": "INT64",
+                    "selectable": True,
+                    "filterable": True,
+                    "sortable": True,
+                    "is_repeated": False,
+                    "type_url": None,
+                    "enum_values": [],
+                    "selectable_with": [],
+                    "attribute_resources": [],
+                    "metrics": [],
+                    "segments": [],
+                }
+            ],
+            "missing": [],
         }
     )
     monkeypatch.setattr(
@@ -293,14 +315,15 @@ async def test_get_report_field_records_success_and_failure_audits(monkeypatch) 
         AsyncMock(return_value=object()),
     )
     monkeypatch.setattr(
-        "integrations.google_ads.tools.get_report_field.get_report_field",
+        "integrations.google_ads.tools.get_report_field.get_report_fields",
         operation,
     )
     ctx = _read_ctx(entry, tool_name="google_ads_get_report_field")
 
-    result = await google_ads_get_report_field(ctx, " campaign.id ")
+    result = await google_ads_get_report_field(ctx, [" campaign.id "])
 
-    assert result["name"] == "campaign.id"
+    assert result["fields"][0]["name"] == "campaign.id"
+    assert operation.await_args.kwargs["field_names"] == ["campaign.id"]
     assert audit.await_args.kwargs["status"] == AuditStatus.SUCCESS
     assert audit.await_args.kwargs["operation"] == "get_report_field"
     assert audit.await_args.kwargs["operation_detail"] is None
@@ -313,7 +336,7 @@ async def test_get_report_field_records_success_and_failure_audits(monkeypatch) 
     audit.reset_mock()
 
     with pytest.raises(IntegrationValidationError, match="invalid metadata"):
-        await google_ads_get_report_field(ctx, "campaign.id")
+        await google_ads_get_report_field(ctx, ["campaign.id"])
 
     assert audit.await_args.kwargs["status"] == AuditStatus.FAILURE
     assert audit.await_args.kwargs["error_code"] == "IntegrationValidationError"

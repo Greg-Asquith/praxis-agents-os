@@ -105,6 +105,27 @@ describe("Google Ads report-field presenter", () => {
     expect(html).toContain("No compatible segments returned")
   })
 
+  it("explains when no search term matched and the whole catalog is shown", () => {
+    const html = render(
+      googleAdsReportFieldsPresenter.render(
+        props({
+          ...activity("google_ads_list_report_fields"),
+          args: { resource: "shared_criterion", search: "nothing here", limit: 50 },
+          result: listResult({
+            resource: "shared_criterion",
+            search_matched: false,
+            fields: [field("shared_criterion.keyword.text", "ATTRIBUTE", "STRING")],
+            field_count: 1,
+          }),
+        })
+      )
+    )
+
+    expect(html).toContain("Matches: No matches, all shown")
+    expect(html).toContain("Nothing matched “nothing here”")
+    expect(html).toContain("shared_criterion.keyword.text")
+  })
+
   it("distinguishes successful metric searches from calls with no matches", () => {
     const metricsHtml = render(
       googleAdsReportFieldsPresenter.render(
@@ -153,23 +174,32 @@ describe("Google Ads report-field presenter", () => {
       googleAdsReportFieldsPresenter.render(
         props({
           ...activity("google_ads_get_report_field"),
-          args: { field_name: "campaign.status" },
-          result: {
-            ...field("campaign.status", "ATTRIBUTE", "ENUM"),
-            api_version: "v24",
-            type_url: "google.ads.googleads.v24.enums.CampaignStatusEnum.CampaignStatus",
-            enum_values: ["ENABLED", "PAUSED", "REMOVED"],
-            selectable_with: ["campaign.id", "campaign.name"],
-            attribute_resources: ["customer"],
-            metrics: ["metrics.clicks"],
-            segments: ["segments.date"],
-          },
+          args: { field_names: ["campaign.status", "campaign.id", "campaign.nope"] },
+          result: getResult(
+            [
+              {
+                ...field("campaign.status", "ATTRIBUTE", "ENUM"),
+                type_url: "google.ads.googleads.v24.enums.CampaignStatusEnum.CampaignStatus",
+                enum_values: ["ENABLED", "PAUSED", "REMOVED"],
+                selectable_with: ["campaign.id", "campaign.name"],
+                attribute_resources: ["customer"],
+                metrics: ["metrics.clicks"],
+                segments: ["segments.date"],
+              },
+              detail("campaign.id", "ATTRIBUTE", "INT64"),
+            ],
+            ["campaign.nope"]
+          ),
         })
       )
     )
 
     expect(html).toContain('aria-label="Google Ads report field metadata"')
     expect(html).toContain("campaign.status")
+    expect(html).toContain('aria-label="campaign.id metadata"')
+    expect(html).toContain("Fields: campaign.status, campaign.id")
+    expect(html).toContain("Not found: campaign.nope")
+    expect(html).toContain("Not found in Google Ads")
     expect(html).toContain('aria-label="Copy API name"')
     expect(html).toContain("Enum values")
     expect(html).toContain("Selectable with")
@@ -189,20 +219,23 @@ describe("Google Ads report-field presenter", () => {
       googleAdsReportFieldsPresenter.render(
         props({
           ...activity("google_ads_get_report_field"),
-          result: {
-            ...field("campaign.status", "ATTRIBUTE", "ENUM"),
-            api_version: "v24",
-            type_url: null,
-            enum_values: enumValues,
-            selectable_with: [],
-            attribute_resources: ["customer"],
-            metrics: ["metrics.clicks"],
-            segments: ["segments.date"],
-          },
+          result: getResult([
+            {
+              ...field("campaign.status", "ATTRIBUTE", "ENUM"),
+              type_url: null,
+              enum_values: enumValues,
+              selectable_with: [],
+              attribute_resources: ["customer"],
+              metrics: ["metrics.clicks"],
+              segments: ["segments.date"],
+            },
+          ]),
         })
       )
     )
 
+    expect(html).toContain("Not found: None")
+    expect(html).not.toContain("Not found in Google Ads")
     expect(html).toContain("101")
     expect(html).toContain("VALUE_100")
     expect(html).not.toContain("limited to 100 values")
@@ -256,10 +289,27 @@ function field(
   }
 }
 
+function detail(name: string, category: string, dataType: string) {
+  return {
+    ...field(name, category, dataType),
+    type_url: null,
+    enum_values: [],
+    selectable_with: [],
+    attribute_resources: [],
+    metrics: [],
+    segments: [],
+  }
+}
+
+function getResult(fields: Record<string, unknown>[], missing: string[] = []) {
+  return { api_version: "v24", fields, missing }
+}
+
 function listResult(overrides: Record<string, unknown> = {}) {
   return {
     api_version: "v24",
     resource: "campaign",
+    search_matched: true,
     attribute_resources: [],
     attribute_resource_count: 0,
     metrics: ["metrics.clicks"],

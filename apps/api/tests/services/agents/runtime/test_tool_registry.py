@@ -1858,10 +1858,13 @@ def test_google_ads_field_tool_contracts_are_complete_and_versioned() -> None:
 
     get_definition = definitions["google_ads_get_report_field"]
     get_schema = get_definition.serialized_input_schema()
-    assert set(get_schema["properties"]) == {"field_name"}
-    assert get_schema["required"] == ["field_name"]
-    assert get_schema["properties"]["field_name"]["minLength"] == 1
-    assert get_schema["properties"]["field_name"]["maxLength"] == 256
+    assert set(get_schema["properties"]) == {"field_names"}
+    assert get_schema["required"] == ["field_names"]
+    names_schema = get_schema["properties"]["field_names"]
+    assert names_schema["minItems"] == 1
+    assert names_schema["maxItems"] == 10
+    assert names_schema["items"]["minLength"] == 1
+    assert names_schema["items"]["maxLength"] == 256
     assert get_definition.output_model is not None
     assert get_definition.output_model.__name__ == "GoogleAdsGetReportFieldOutput"
 

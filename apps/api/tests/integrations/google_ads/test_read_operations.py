@@ -9,8 +9,11 @@ from pydantic_ai import (
     ModelRetry,
 )
 
-from core.exceptions.integration import IntegrationValidationError
-from integrations.google_ads.operations.get_report_field import get_report_field
+from core.exceptions.integration import IntegrationNotFoundError, IntegrationValidationError
+from integrations.google_ads.operations.get_report_field import (
+    get_report_field,
+    get_report_fields,
+)
 from integrations.google_ads.operations.list_ad_groups import list_ad_groups
 from integrations.google_ads.operations.list_campaign_device_criteria import (
     list_campaign_device_criteria,
@@ -31,6 +34,7 @@ from integrations.google_ads.tools.run_report import google_ads_run_report
 from integrations.google_ads.tools.schemas.report_fields import (
     GoogleAdsGetReportFieldOutput,
     GoogleAdsListReportFieldsOutput,
+    GoogleAdsReportFieldDetail,
 )
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.http import IntegrationRequestPolicy
@@ -104,6 +108,7 @@ async def test_list_report_fields_returns_bounded_sorted_catalog() -> None:
     assert result == {
         "api_version": "v24",
         "resource": "campaign",
+        "search_matched": True,
         "attribute_resources": ["bidding_strategy", "customer"],
         "attribute_resource_count": 2,
         "metrics": ["metrics.clicks", "metrics.conversions"],
@@ -139,37 +144,94 @@ async def test_list_report_fields_returns_bounded_sorted_catalog() -> None:
     assert client.calls[1]["json"] == {
         "query": (
             "SELECT name, category, data_type, selectable, filterable, sortable, "
-            "is_repeated WHERE name LIKE 'campaign.%' ORDER BY name LIMIT 3"
+            "is_repeated WHERE name LIKE 'campaign.%' ORDER BY name LIMIT 2000"
         )
     }
 
 
-async def test_list_report_fields_searches_names_and_filters_compatibility_locally() -> None:
-    client = _ReportFieldClient(
+def _shared_criterion_client() -> _ReportFieldClient:
+    return _ReportFieldClient(
         resource_payload=_report_field(
-            "campaign",
+            "shared_criterion",
             category="RESOURCE",
             data_type="MESSAGE",
+            attributeResources=["customer", "shared_set"],
             metrics=["metrics.clicks", "metrics.cost_micros"],
-            segments=["segments.click_type", "segments.date"],
+            segments=["segments.keyword.info.text", "segments.date"],
         ),
-        search_payload={"results": [], "totalResultsCount": 0},
+        search_payload={
+            "results": [
+                _report_field("shared_criterion.keyword.text"),
+                _report_field("shared_criterion.shared_set", data_type="RESOURCE_NAME"),
+                _report_field("shared_criterion.type", data_type="ENUM"),
+                _report_field("shared_set.name"),
+            ],
+            "totalResultsCount": "4",
+        },
     )
+
+
+async def test_list_report_fields_matches_each_search_term_locally() -> None:
+    client = _shared_criterion_client()
 
     result = await list_report_fields(
         client,
-        resource=" campaign ",
-        search=" Click%_'\\ ",
+        resource=" shared_criterion ",
+        search="  Shared_Set   KEYWORD ",
         limit=50,
     )
 
+    assert result["search_matched"] is True
+    assert [field["name"] for field in result["fields"]] == [
+        "shared_criterion.keyword.text",
+        "shared_criterion.shared_set",
+    ]
+    assert result["field_count"] == 2
     assert result["metrics"] == []
-    assert result["segments"] == []
+    assert result["segments"] == ["segments.keyword.info.text"]
+    assert result["truncated"] is False
     assert client.calls[1]["json"]["query"] == (
         "SELECT name, category, data_type, selectable, filterable, sortable, "
-        "is_repeated WHERE name LIKE 'campaign.%' "
-        "AND name LIKE '%click[%][_]\\'\\\\%' ORDER BY name LIMIT 51"
+        "is_repeated WHERE name LIKE 'shared_criterion.%' ORDER BY name LIMIT 2000"
     )
+
+
+async def test_list_report_fields_returns_the_whole_catalog_when_no_term_matches() -> None:
+    client = _shared_criterion_client()
+
+    result = await list_report_fields(
+        client,
+        resource="shared_criterion",
+        search="nothing_like_this",
+        limit=2,
+    )
+
+    assert GoogleAdsListReportFieldsOutput.model_validate(result)
+    assert result["search_matched"] is False
+    assert [field["name"] for field in result["fields"]] == [
+        "shared_criterion.keyword.text",
+        "shared_criterion.shared_set",
+    ]
+    assert result["field_count"] == 3
+    assert result["metrics"] == ["metrics.clicks", "metrics.cost_micros"]
+    assert result["segments"] == ["segments.date", "segments.keyword.info.text"]
+    assert result["truncated"] is True
+    assert len(client.calls) == 2
+
+
+async def test_list_report_fields_treats_a_partial_provider_page_as_truncated() -> None:
+    client = _ReportFieldClient(
+        resource_payload=_report_field("campaign", category="RESOURCE", data_type="MESSAGE"),
+        search_payload={
+            "results": [_report_field("campaign.id", data_type="INT64")],
+            "totalResultsCount": "250",
+        },
+    )
+
+    result = await list_report_fields(client, resource="campaign", search=None, limit=50)
+
+    assert result["field_count"] == 1
+    assert result["truncated"] is True
 
 
 async def test_list_report_fields_bounds_compatibility_and_uses_conservative_fallback() -> None:
@@ -304,7 +366,7 @@ async def test_get_report_field_supports_each_catalog_artifact(
 
     result = await get_report_field(client, field_name=field_name)
 
-    assert GoogleAdsGetReportFieldOutput.model_validate(result)
+    assert GoogleAdsReportFieldDetail.model_validate(result)
     assert result["name"] == field_name
     assert result["category"] == category
     assert result["data_type"] == data_type
@@ -335,7 +397,7 @@ async def test_get_report_field_returns_every_value_in_each_metadata_array() -> 
 
     result = await get_report_field(client, field_name="campaign.status")
 
-    assert GoogleAdsGetReportFieldOutput.model_validate(result)
+    assert GoogleAdsReportFieldDetail.model_validate(result)
     assert result["type_url"] is None
     assert all(
         result[key] == values
@@ -396,6 +458,79 @@ async def test_get_report_field_reports_missing_metadata_actionably() -> None:
         match=r"did not return metadata for campaign\.name",
     ):
         await get_report_field(client, field_name="campaign.name")
+
+
+class _BatchFieldClient:
+    def __init__(self, payloads: dict[str, object]) -> None:
+        self.payloads = payloads
+        self.paths: list[str] = []
+
+    async def get(self, path: str, **_kwargs):
+        self.paths.append(path)
+        payload = self.payloads[path.removeprefix("googleAdsFields/")]
+        if isinstance(payload, Exception):
+            raise payload
+        return payload
+
+
+async def test_get_report_fields_batches_names_and_reports_missing_ones() -> None:
+    client = _BatchFieldClient(
+        {
+            "campaign.status": _report_field(
+                "campaign.status", data_type="ENUM", enumValues=["PAUSED", "ENABLED"]
+            ),
+            "campaign.nope": IntegrationNotFoundError(
+                "Integration resource was not found",
+                provider_key="google_ads",
+                operation="get_report_field",
+            ),
+            "metrics.clicks": _report_field("metrics.clicks", category="METRIC", data_type="INT64"),
+        }
+    )
+
+    result = await get_report_fields(
+        client,
+        field_names=[" campaign.status ", "campaign.nope", "campaign.status", "metrics.clicks"],
+    )
+
+    assert GoogleAdsGetReportFieldOutput.model_validate(result)
+    assert result["api_version"] == "v24"
+    assert [field["name"] for field in result["fields"]] == ["campaign.status", "metrics.clicks"]
+    assert result["fields"][0]["enum_values"] == ["ENABLED", "PAUSED"]
+    assert result["missing"] == ["campaign.nope"]
+    assert client.paths == [
+        "googleAdsFields/campaign.status",
+        "googleAdsFields/campaign.nope",
+        "googleAdsFields/metrics.clicks",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field_names", "message"),
+    [
+        ([], "between 1 and 10"),
+        ([f"campaign.f{index}" for index in range(11)], "between 1 and 10"),
+        (["campaign.id", "Campaign.name"], "report field name"),
+    ],
+)
+async def test_get_report_fields_rejects_invalid_batches_before_dispatch(
+    field_names: list[str], message: str
+) -> None:
+    client = AsyncMock()
+
+    with pytest.raises(ValueError, match=message):
+        await get_report_fields(client, field_names=field_names)
+
+    client.get.assert_not_awaited()
+
+
+async def test_get_report_fields_rejects_a_bare_string() -> None:
+    client = AsyncMock()
+
+    with pytest.raises(TypeError, match="list of strings"):
+        await get_report_fields(client, field_names="campaign.id")  # type: ignore[arg-type]
+
+    client.get.assert_not_awaited()
 
 
 async def test_report_caps_rows_without_model_framing() -> None:

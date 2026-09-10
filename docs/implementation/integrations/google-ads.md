@@ -18,9 +18,16 @@ writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
 
 The report-field discovery tools run one audited operation against the first
-selected account. An unknown field or resource name returns a Google Ads 404,
-which each tool maps to a `ModelRetry` naming the missing value and the tool to
-use for discovery, so the model corrects itself instead of ending the run.
+selected account and are designed so one call answers one question.
+`google_ads_list_report_fields` fetches every field of the resource once and
+matches each space-separated search term locally, so `shared_set keyword`
+finds both `shared_criterion.shared_set` and `shared_criterion.keyword.text`.
+When no term matches, the tool returns the whole catalogue with
+`search_matched` false instead of an empty result that invites guessing.
+`google_ads_get_report_field` accepts up to ten names per call and lists the
+ones Google Ads does not know in `missing`, so the model never probes fields one
+at a time. An unknown resource name for the list tool still maps the Google Ads
+404 to a `ModelRetry` naming the missing value.
 
 ### Keyword targets and evidence
 

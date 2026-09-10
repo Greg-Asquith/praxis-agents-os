@@ -52,7 +52,11 @@ async def google_ads_list_report_fields(
         str | None,
         Field(
             max_length=100,
-            description="Optional text matched against resource fields, metrics, and segments.",
+            description=(
+                "Optional space-separated terms. A name matches when it contains any term, so "
+                "`shared_set keyword` finds shared_criterion.shared_set and "
+                "shared_criterion.keyword.text."
+            ),
         ),
     ] = None,
     limit: Annotated[
@@ -104,8 +108,12 @@ DEFINITION = RuntimeToolDefinition(
     function=google_ads_list_report_fields,
     description=(
         f"List bounded Google Ads {GOOGLE_ADS_API_VERSION} attributes, compatible metrics, and "
-        "compatible segments for one GAQL FROM resource. Use the returned names to construct a "
-        "query, then call google_ads_run_report to execute it."
+        "compatible segments for one GAQL FROM resource in a single call. `search` terms match "
+        "independently. When none match, the full lists are returned and `search_matched` is "
+        "false. Fields of any resource in `attribute_resources` (for example shared_set.name "
+        "when querying shared_criterion) are selectable too and need no separate lookup. Use "
+        "the returned names to construct a query, then call google_ads_run_report to execute "
+        "it. Do not confirm fields one at a time afterwards."
     ),
     provider="google_ads",
     label="List Google Ads Report Fields",

@@ -36,6 +36,7 @@ from .recommendations import (
 from .report_fields import (
     GoogleAdsGetReportFieldOutput,
     GoogleAdsListReportFieldsOutput,
+    GoogleAdsReportFieldDetail,
     GoogleAdsReportFieldSummary,
 )
 from .run_report import GoogleAdsJsonValue, GoogleAdsRunReportOutput
@@ -74,6 +75,7 @@ __all__ = [
     "GoogleAdsRemoveCampaignBudgetsOutput",
     "GoogleAdsRemoveCampaignKeywordOutput",
     "GoogleAdsRemoveNegativeKeywordsOutput",
+    "GoogleAdsReportFieldDetail",
     "GoogleAdsReportFieldSummary",
     "GoogleAdsRunReportOutput",
     "GoogleAdsTotalBudgetAmount",

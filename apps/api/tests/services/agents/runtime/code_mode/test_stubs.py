@@ -176,6 +176,7 @@ def test_google_ads_report_field_stubs_are_typed_and_versioned() -> None:
     ) in listed
 
     exact = render_tool_stub(definitions["google_ads_get_report_field"])
+    assert "class GoogleAdsReportFieldDetail(TypedDict):" in exact
     assert "class GoogleAdsGetReportFieldOutput(TypedDict):" in exact
     assert "type_url: str | None" in exact
     assert "enum_values: list[str]" in exact
@@ -183,8 +184,11 @@ def test_google_ads_report_field_stubs_are_typed_and_versioned() -> None:
     assert "attribute_resources: list[str]" in exact
     assert "metrics: list[str]" in exact
     assert "segments: list[str]" in exact
+    assert "fields: list[GoogleAdsReportFieldDetail]" in exact
+    assert "missing: list[str]" in exact
     assert (
-        "async def google_ads_get_report_field(*, field_name: str) -> GoogleAdsGetReportFieldOutput"
+        "async def google_ads_get_report_field(*, field_names: list[str]) "
+        "-> GoogleAdsGetReportFieldOutput"
     ) in exact
 
     for rendered in (listed, exact):
