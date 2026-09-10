@@ -29,7 +29,7 @@ async def get_platform_usage_summary(
     from_: datetime | None = None,
     to: datetime | None = None,
 ) -> UsageSummaryResponse:
-    """Return exact priced-subset totals across every workspace."""
+    """Returns exact priced-subset totals for the platform and every workspace."""
     await db.execute(text("SET TRANSACTION READ ONLY"))
     usage_range = resolve_usage_range(from_, to)
     day = cast(func.date_trunc("day", func.timezone("UTC", AIUsageEvent.occurred_at)), Date)
@@ -158,11 +158,11 @@ def _rows_to_buckets(result, *, include_dimension: bool = False) -> list[UsageBu
 def _dimension_expressions(dimension: PlatformUsageDimension):
     if dimension is PlatformUsageDimension.WORKSPACE:
         key = case(
-            (AIUsageEvent.workspace_id.is_(None), literal("unattributed")),
+            (AIUsageEvent.scope == "platform", literal("platform")),
             else_=cast(AIUsageEvent.workspace_id, String),
         )
         label = case(
-            (AIUsageEvent.workspace_id.is_(None), literal("Unattributed")),
+            (AIUsageEvent.scope == "platform", literal("Platform")),
             (Workspace.deleted.is_(True), literal("Removed workspace")),
             else_=func.concat(Workspace.name, " · ", Workspace.slug),
         )

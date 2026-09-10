@@ -14,15 +14,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from core.database import (
     configure_async_db_session,
     get_maintenance_async_db_session_factory,
+    set_session_tenant_context,
 )
 from models.ai_usage_event import AIUsageEvent
 from models.workspace import Workspace
+from services.ai_usage.get_usage_breakdown import get_usage_breakdown
 from services.ai_usage.get_usage_summary import get_usage_summary
 from services.ai_usage.platform_queries import (
     get_platform_usage_breakdown,
     get_platform_usage_summary,
 )
-from services.ai_usage.schemas import PlatformUsageDimension
+from services.ai_usage.schemas import PlatformUsageDimension, UsageDimension
 from tests.factories import build_user, build_workspace
 
 
@@ -182,6 +184,72 @@ async def test_platform_queries_reconcile_across_workspaces_and_are_read_only(
             delete(Workspace).where(Workspace.id.in_([workspace_a.id, workspace_b.id]))
         )
         await cleanup_db.commit()
+
+
+async def test_platform_owner_costs_are_separate_from_workspace_usage(
+    committed_db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    workspace = build_workspace(slug=f"platform-owner-{uuid4().hex[:8]}")
+    occurred_at = datetime(2097, 4, 1, tzinfo=UTC)
+    usage_range = {"from_": occurred_at, "to": datetime(2097, 4, 2, tzinfo=UTC)}
+    platform_event = _event(
+        None,
+        occurred_at,
+        scope="platform",
+        purpose="kb_annotation",
+        input_tokens=2_000_000,
+    )
+    async with get_maintenance_async_db_session_factory()() as seed_db:
+        seed_db.add(workspace)
+        await seed_db.flush()
+        seed_db.add_all([platform_event, _event(workspace.id, occurred_at)])
+        await seed_db.commit()
+
+    try:
+        async with get_maintenance_async_db_session_factory()() as platform_db:
+            summary = await get_platform_usage_summary(platform_db, **usage_range)
+            owners = await get_platform_usage_breakdown(
+                platform_db,
+                dimension=PlatformUsageDimension.WORKSPACE,
+                **usage_range,
+            )
+        owner_rows = {row.key: row for row in owners.rows}
+        assert set(owner_rows) == {"platform", str(workspace.id)}
+        assert owner_rows["platform"].label == "Platform"
+        assert owner_rows["platform"].estimated_cost_usd == Decimal("6")
+        assert owner_rows["platform"].requests == 1
+        assert owner_rows[str(workspace.id)].estimated_cost_usd == Decimal("3")
+        assert summary.totals.estimated_cost_usd == Decimal("9")
+        assert summary.totals.requests == 2
+
+        # Explicit workspace predicates apply even without RLS filtering.
+        for factory in (
+            committed_db_session_factory,
+            get_maintenance_async_db_session_factory(),
+        ):
+            async with factory() as workspace_db:
+                await set_session_tenant_context(workspace_db, workspace_id=workspace.id)
+                local_summary = await get_usage_summary(
+                    workspace_db, workspace_id=workspace.id, **usage_range
+                )
+                assert local_summary.totals.estimated_cost_usd == Decimal("3")
+                assert local_summary.totals.requests == 1
+                for dimension in UsageDimension:
+                    breakdown = await get_usage_breakdown(
+                        workspace_db,
+                        workspace_id=workspace.id,
+                        dimension=dimension,
+                        **usage_range,
+                    )
+                    assert sum(row.requests for row in breakdown.rows) == 1
+                    assert sum(row.estimated_cost_usd for row in breakdown.rows) == Decimal("3")
+    finally:
+        async with get_maintenance_async_db_session_factory()() as cleanup_db:
+            await cleanup_db.execute(
+                delete(AIUsageEvent).where(AIUsageEvent.id == platform_event.id)
+            )
+            await cleanup_db.execute(delete(Workspace).where(Workspace.id == workspace.id))
+            await cleanup_db.commit()
 
 
 def _plan_nodes(node: dict[str, Any]):

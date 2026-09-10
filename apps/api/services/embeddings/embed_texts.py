@@ -7,7 +7,10 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import SESSION_MAINTENANCE_KEY
+from core.exceptions.auth import AuthorizationError
 from core.settings import settings
+from services.ai_usage.admit_platform_ingestion import admit_platform_ingestion
 from services.ai_usage.domain import AIUsageEventData, AIUsagePurpose
 from services.ai_usage.record_durable import record_ai_usage_durable
 from services.embeddings.domain import (
@@ -20,13 +23,15 @@ from services.embeddings.get_embedding_provider import get_embedding_provider
 from services.embeddings.record_embedding_usage import record_embedding_usage
 from services.embeddings.registry import get_embedding_model
 from services.embeddings.utils import assert_batch_shape, chunk_batches
+from utils.content import ContentScope
 
 
 async def embed_texts(
     db: AsyncSession,
     texts: Sequence[str],
     *,
-    workspace_id: UUID,
+    workspace_id: UUID | None,
+    scope: ContentScope = ContentScope.WORKSPACE,
     purpose: AIUsagePurpose,
     agent_id: UUID | None = None,
     user_id: UUID | None = None,
@@ -41,6 +46,7 @@ async def embed_texts(
     # Validate the closed purpose and stable identity before any provider work.
     AIUsageEventData(
         workspace_id=workspace_id,
+        scope=scope,
         provider=provider_key,
         model=model,
         purpose=purpose,
@@ -49,6 +55,9 @@ async def embed_texts(
         run_id=run_id,
         conversation_id=conversation_id,
     )
+
+    if scope == ContentScope.PLATFORM and not db.info.get(SESSION_MAINTENANCE_KEY):
+        raise AuthorizationError("Platform ingestion requires a maintenance session")
 
     if not texts:
         return EmbeddingBatch(
@@ -98,6 +107,8 @@ async def embed_texts(
     requests = 0
     try:
         for text_batch in chunk_batches(texts, batch_size):
+            if scope == ContentScope.PLATFORM:
+                await admit_platform_ingestion(db)
             try:
                 result = await resolved_provider.embed_texts(
                     text_batch,
@@ -130,6 +141,7 @@ async def embed_texts(
             await record_ai_usage_durable(
                 AIUsageEventData(
                     workspace_id=workspace_id,
+                    scope=scope,
                     provider=resolved_provider.provider,
                     model=model,
                     purpose=purpose,
@@ -151,9 +163,10 @@ async def embed_texts(
         requests=requests,
     )
     assert_batch_shape(combined, len(texts))
-    await record_embedding_usage(
-        db,
-        workspace_id=workspace_id,
-        tokens=total_tokens,
-    )
+    if scope == ContentScope.WORKSPACE:
+        await record_embedding_usage(
+            db,
+            workspace_id=workspace_id,
+            tokens=total_tokens,
+        )
     return combined

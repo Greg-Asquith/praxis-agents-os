@@ -8,7 +8,11 @@ import random
 import re
 from collections.abc import Sequence
 
-from services.embeddings.domain import EmbeddingBatch, EmbeddingProvider
+from services.embeddings.domain import (
+    EmbeddingBatch,
+    EmbeddingProvider,
+    EmbeddingProviderPartialUsageError,
+)
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
@@ -59,4 +63,40 @@ class FakeEmbeddingProvider(EmbeddingProvider):
             provider=self.provider,
             model=model,
             dimensions=dimensions,
+        )
+
+
+class RecordingProvider(EmbeddingProvider):
+    provider = "recording"
+
+    def __init__(self, *, omit_last: bool = False) -> None:
+        self.call_sizes: list[int] = []
+        self.omit_last = omit_last
+
+    async def embed_texts(
+        self,
+        texts: Sequence[str],
+        *,
+        model: str,
+        dimensions: int,
+    ) -> EmbeddingBatch:
+        self.call_sizes.append(len(texts))
+        vectors = [[float(index)] * dimensions for index in range(len(texts))]
+        if self.omit_last:
+            vectors = vectors[:-1]
+        return EmbeddingBatch(
+            vectors=vectors,
+            total_tokens=len(texts) * 3,
+            provider=self.provider,
+            model=model,
+            dimensions=dimensions,
+        )
+
+
+class PartialUsageFailingProvider(RecordingProvider):
+    async def embed_texts(self, texts, *, model, dimensions):
+        raise EmbeddingProviderPartialUsageError(
+            "second request failed",
+            input_tokens=4,
+            requests=1,
         )

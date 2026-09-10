@@ -43,6 +43,7 @@ from models.integrations import (  # noqa: F401
 from models.jobs import Job  # noqa: F401
 from models.kb import KBChunk, KBDocument  # noqa: F401
 from models.notification import Notification  # noqa: F401
+from models.platform_ingestion_usage import PlatformIngestionUsage  # noqa: F401
 from models.rate_limiting import RateLimitAttempt  # noqa: F401
 from models.scratch import ScratchEntry  # noqa: F401
 from models.security import SecurityEvent  # noqa: F401

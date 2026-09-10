@@ -1,6 +1,6 @@
 # apps/api/models/ai_usage_event.py
 
-"""Append-only workspace AI usage ledger."""
+"""Append-only AI usage ledger with explicit ownership."""
 
 from sqlalchemy import (
     BigInteger,
@@ -23,10 +23,11 @@ class AIUsageEvent(Base, UUIDMixin, CreatedAtMixin):
 
     __tablename__ = "ai_usage_events"
 
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
     workspace_id = Column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     occurred_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     provider = Column(String(50), nullable=False)
@@ -47,6 +48,16 @@ class AIUsageEvent(Base, UUIDMixin, CreatedAtMixin):
     details = Column(JSONB)
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="ai_usage_events_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'workspace' OR (purpose IN ('kb_annotation', 'embedding_kb_ingest') "
+            "AND agent_id IS NULL AND run_id IS NULL AND conversation_id IS NULL)",
+            name="ai_usage_events_platform_context_check",
+        ),
         CheckConstraint(
             "purpose IN ("
             "'agent_run', 'conversation_naming', 'history_summary', 'kb_annotation', "

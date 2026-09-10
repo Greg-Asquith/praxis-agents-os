@@ -38,8 +38,43 @@ The following contracts apply in this area:
   use the sanctioned maintenance session, and set each transaction read-only
   before its first query. The `/platform-usage` router is super-admin-only;
   it exposes aggregate usage and workspace/user/model/purpose attribution but
-  never workspace content. RLS remains unchanged.
+  never workspace content. Platform-owned costs appear under **Platform** in
+  the workspace breakdown. Workspace usage reads and budgets exclude them.
 
+
+## Platform ingestion accounting
+
+Usage events and monthly embedding counters carry an explicit `scope`.
+Workspace ownership requires a workspace ID. Platform ownership requires no
+workspace ID and maintenance-only writes. Platform events retain provider,
+model, purpose, and optional acting user. They accept `kb_annotation` and
+`embedding_kb_ingest`, and reject agent, run, and conversation provenance.
+Query embeddings remain owned by the requesting workspace.
+
+`embed_texts` requires a maintenance session for explicit platform scope.
+Its durable recorder commits the platform ledger event and embedding counter
+in one maintenance transaction, including known usage from partial failures.
+The caller's rollback cannot remove those costs. Workspace recording retains
+the bounded runtime metering pool and existing soft embedding-token budget.
+The shared helper meter accepts platform annotation only with an explicit
+maintenance session. Platform knowledge authoring and ingestion jobs remain
+pending.
+
+`PLATFORM_INGESTION_MONTHLY_CALL_BUDGET` defaults to 1,000 and accepts values
+from one to 1,000,000. Before each platform embedding batch or annotation helper
+invocation, a separate maintenance transaction atomically reserves one call
+in `platform_ingestion_usage`. Concurrent workers share the same UTC-month
+counter. Exhaustion or reservation failure stops the call before provider I/O.
+Failed attempts and interrupted work retain their reservation. Empty embedding
+input does not reserve a call. The counter grants no runtime access and does
+not use the usage ledger for admission.
+
+This is a call admission limit, not a dollar or token cap. Each embedding batch
+retains the configured text-count and per-text character bounds. Provider
+request counts, retries, and returned tokens remain separate usage measures.
+Annotation callers retain their bounded chunk and model-call contracts.
+Changing the setting applies to subsequent admissions. A new UTC month starts
+a separate counter without deleting prior accounting.
 
 ## Invocation settlement
 

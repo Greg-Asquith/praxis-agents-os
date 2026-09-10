@@ -1222,3 +1222,156 @@ async def test_platform_upload_reservation_serialises_concurrent_file_creation(
             await cleanup.execute(sa.delete(users).where(users.c.id == user_id))
             await cleanup.execute(sa.delete(workspaces).where(workspaces.c.id == workspace_id))
             await cleanup.commit()
+
+
+@pytest.mark.parametrize("table_name", ("ai_usage_events", "embedding_token_usage"))
+async def test_platform_usage_is_hidden_and_runtime_writes_are_denied(
+    table_name, db_session_factory
+):
+    async with get_maintenance_async_db_session_factory()() as db:
+        table = await _reflect_table(db, table_name)
+        platform_values = {"scope": "platform", "workspace_id": None}
+        if table_name == "ai_usage_events":
+            platform_values["purpose"] = "embedding_kb_ingest"
+        row_id = (
+            await _insert_seed(
+                db, table, workspace_id=uuid4(), marker="platform-usage", overrides=platform_values
+            )
+        )[0]
+        for workspace_id in (uuid4(), uuid4(), None):
+            async with db_session_factory() as runtime:
+                await set_session_tenant_context(runtime, workspace_id=workspace_id)
+                assert (
+                    await runtime.scalar(sa.select(table.c.id).where(table.c.id == row_id)) is None
+                )
+                with pytest.raises(DBAPIError):
+                    async with runtime.begin_nested():
+                        await _insert_seed(
+                            runtime,
+                            table,
+                            workspace_id=uuid4(),
+                            marker="denied-usage",
+                            overrides=platform_values,
+                        )
+                for statement in (
+                    sa.update(table)
+                    .where(table.c.id == row_id)
+                    .values(workspace_id=workspace_id, scope="workspace"),
+                    sa.delete(table).where(table.c.id == row_id),
+                ):
+                    if table_name == "ai_usage_events":
+                        with pytest.raises(DBAPIError):
+                            async with runtime.begin_nested():
+                                await runtime.execute(statement)
+                    else:
+                        assert (await runtime.execute(statement)).rowcount == 0
+        assert await db.scalar(sa.select(table.c.id).where(table.c.id == row_id)) == row_id
+
+
+@pytest.mark.parametrize("table_name", ("ai_usage_events", "embedding_token_usage"))
+@pytest.mark.parametrize(
+    "scope,has_workspace", (("platform", True), ("workspace", False), ("other", False))
+)
+async def test_platform_usage_owner_constraints(
+    table_name, scope, has_workspace, db_session_factory
+):
+    async with get_maintenance_async_db_session_factory()() as db:
+        table = await _reflect_table(db, table_name)
+        overrides = {"scope": scope, "workspace_id": uuid4() if has_workspace else None}
+        if table_name == "ai_usage_events":
+            overrides["purpose"] = "embedding_kb_ingest"
+        await db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+        with pytest.raises(DBAPIError, match="scope_owner_check"):
+            async with db.begin_nested():
+                await _insert_seed(
+                    db, table, workspace_id=uuid4(), marker="invalid-owner", overrides=overrides
+                )
+
+
+@pytest.mark.parametrize(
+    "invalid_context",
+    (
+        {"purpose": "agent_run"},
+        {"agent_id": uuid4()},
+        {"run_id": uuid4()},
+        {"conversation_id": uuid4()},
+    ),
+)
+async def test_platform_usage_rejects_workspace_execution_context(
+    invalid_context, db_session_factory
+):
+    async with get_maintenance_async_db_session_factory()() as db:
+        table = await _reflect_table(db, "ai_usage_events")
+        await db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+        with pytest.raises(DBAPIError, match="platform_context_check"):
+            async with db.begin_nested():
+                await _insert_seed(
+                    db,
+                    table,
+                    workspace_id=uuid4(),
+                    marker="invalid-context",
+                    overrides={
+                        "scope": "platform",
+                        "workspace_id": None,
+                        "purpose": "embedding_kb_ingest",
+                        **invalid_context,
+                    },
+                )
+
+
+async def test_platform_embedding_usage_has_one_counter_per_month(db_session_factory):
+    async with get_maintenance_async_db_session_factory()() as db:
+        table = await _reflect_table(db, "embedding_token_usage")
+        for marker in ("first", "duplicate"):
+            if marker == "first":
+                await _insert_seed(
+                    db,
+                    table,
+                    workspace_id=uuid4(),
+                    marker=marker,
+                    overrides={"scope": "platform", "workspace_id": None},
+                )
+            else:
+                with pytest.raises(DBAPIError, match="uq_embedding_token_usage_platform_month"):
+                    async with db.begin_nested():
+                        await _insert_seed(
+                            db,
+                            table,
+                            workspace_id=uuid4(),
+                            marker=marker,
+                            overrides={"scope": "platform", "workspace_id": None},
+                        )
+
+
+async def test_platform_ingestion_admission_is_maintenance_only(db_session_factory):
+    async with get_maintenance_async_db_session_factory()() as db:
+        table = await _reflect_table(db, "platform_ingestion_usage")
+        await _insert_seed(db, table, workspace_id=uuid4(), marker="admission")
+        assert tuple(
+            (
+                await db.execute(
+                    sa.text(
+                        "SELECT relrowsecurity, relforcerowsecurity FROM pg_class WHERE oid = 'platform_ingestion_usage'::regclass"
+                    )
+                )
+            ).one()
+        ) == (True, True)
+        assert (
+            await db.scalar(
+                sa.text(
+                    "SELECT count(*) FROM pg_policies WHERE tablename = 'platform_ingestion_usage'"
+                )
+            )
+            == 0
+        )
+        async with db_session_factory() as runtime:
+            await set_session_tenant_context(runtime, workspace_id=uuid4())
+            for statement in (
+                sa.select(table),
+                sa.insert(table).values(id=uuid4(), period_month=date(2026, 9, 1)),
+                sa.update(table).values(requests_reserved=0),
+                sa.delete(table),
+            ):
+                with pytest.raises(DBAPIError, match="permission denied"):
+                    async with runtime.begin_nested():
+                        await runtime.execute(statement)

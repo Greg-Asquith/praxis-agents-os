@@ -106,6 +106,21 @@ operations. Direct tenant SQL writes stay workspace-only. The future editor
 service must recheck membership and the expected version before a deliberate
 maintenance transaction and commit the revision, publication, and audit together.
 
+## Platform usage ownership
+
+AI usage events and embedding counters carry explicit workspace or platform
+ownership. Platform rows have no workspace owner and remain invisible and
+unwritable through tenant sessions. Platform usage events permit knowledge
+annotation and ingestion only, without agent, run, or conversation provenance.
+Embedding counters retain workspace/month uniqueness and add a partial unique
+platform/month index. The platform ingestion admission counter has forced RLS
+and no runtime grants. Maintenance transactions reserve bounded calls before
+provider I/O. See [AI usage accounting](ai-usage.md) for budget semantics.
+
+The usage migration refuses downgrade while platform accounting remains.
+Maintenance operators must preserve required accounting before explicitly
+removing it for a downgrade.
+
 ## Connection capacity
 
 The per-process connection and turn-concurrency settings are defined as

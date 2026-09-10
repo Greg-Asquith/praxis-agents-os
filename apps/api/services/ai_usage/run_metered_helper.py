@@ -7,10 +7,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
 from pydantic_ai.usage import RunUsage
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.auth import AuthorizationError
+from services.ai_usage.admit_platform_ingestion import admit_platform_ingestion
 from services.ai_usage.domain import AIUsageEventData
 from services.ai_usage.record_durable import record_ai_usage_durable
 from services.ai_usage.utils import usage_values
+from utils.content import ContentScope
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +22,14 @@ logger = logging.getLogger(__name__)
 async def run_metered_helper[T](
     event: AIUsageEventData,
     call: Callable[[RunUsage], Awaitable[T]],
+    *,
+    db: AsyncSession | None = None,
 ) -> T:
     """Run a helper with owned usage and durably record known usage in finally."""
+    if event.scope == ContentScope.PLATFORM:
+        if db is None:
+            raise AuthorizationError("Platform ingestion requires a maintenance session")
+        await admit_platform_ingestion(db)
     usage = RunUsage()
     try:
         return await call(usage)

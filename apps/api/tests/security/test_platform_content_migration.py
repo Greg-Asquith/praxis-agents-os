@@ -19,6 +19,18 @@ from tests.security.test_workspace_rls import (
 )
 
 
+@pytest.fixture(autouse=True)
+async def clean_platform_content(db_session_factory):
+    # Releasing this savepoint retains cleanup only inside the fixture's outer rollback.
+    async with get_maintenance_async_db_session_factory()() as db:
+        await db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+        for table_name in (*PLATFORM_TABLES, "file_uploads"):
+            table = await _reflect_table(db, table_name)
+            await db.execute(sa.delete(table).where(table.c.scope == "platform"))
+        await db.execute(sa.text("SET LOCAL session_replication_role = origin"))
+        await db.commit()
+
+
 def _run_migration(connection, direction):
     migration = run_path(
         str(

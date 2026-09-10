@@ -3,7 +3,6 @@
 """Public embedding operation tests."""
 
 import importlib
-from collections.abc import Sequence
 from uuid import uuid4
 
 import pytest
@@ -14,43 +13,16 @@ from services.ai_usage.domain import PURPOSE_EMBEDDING_KB_SEARCH, AIUsageEventDa
 from services.embeddings.domain import (
     EmbeddingBatch,
     EmbeddingConfigurationError,
-    EmbeddingProvider,
     EmbeddingProviderError,
     EmbeddingProviderPartialUsageError,
 )
 from services.embeddings.embed_texts import embed_texts
 from services.embeddings.get_embedding_usage import get_embedding_usage
 from tests.factories import build_workspace
+from tests.support.embeddings import PartialUsageFailingProvider, RecordingProvider
 
 pytestmark = pytest.mark.asyncio
 embed_texts_module = importlib.import_module("services.embeddings.embed_texts")
-
-
-class RecordingProvider(EmbeddingProvider):
-    provider = "recording"
-
-    def __init__(self, *, omit_last: bool = False) -> None:
-        self.call_sizes: list[int] = []
-        self.omit_last = omit_last
-
-    async def embed_texts(
-        self,
-        texts: Sequence[str],
-        *,
-        model: str,
-        dimensions: int,
-    ) -> EmbeddingBatch:
-        self.call_sizes.append(len(texts))
-        vectors = [[float(index)] * dimensions for index in range(len(texts))]
-        if self.omit_last:
-            vectors = vectors[:-1]
-        return EmbeddingBatch(
-            vectors=vectors,
-            total_tokens=len(texts) * 3,
-            provider=self.provider,
-            model=model,
-            dimensions=dimensions,
-        )
 
 
 class FailingSecondProvider(RecordingProvider):
@@ -71,15 +43,6 @@ class MultiRequestProvider(RecordingProvider):
             model=result.model,
             dimensions=result.dimensions,
             requests=len(texts),
-        )
-
-
-class PartialUsageFailingProvider(RecordingProvider):
-    async def embed_texts(self, texts, *, model, dimensions):
-        raise EmbeddingProviderPartialUsageError(
-            "second request failed",
-            input_tokens=4,
-            requests=1,
         )
 
 

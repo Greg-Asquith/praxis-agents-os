@@ -44,6 +44,13 @@ class EmbeddingsSettingsMixin:
         description="Observed, soft monthly embedding-token budget per workspace.",
     )
 
+    PLATFORM_INGESTION_MONTHLY_CALL_BUDGET: int = Field(
+        default=1_000,
+        gt=0,
+        le=1_000_000,
+        description="Hard monthly admission limit for platform embedding batches and annotation calls.",
+    )
+
     @model_validator(mode="after")
     def validate_embedding_provider_config(self):
         """Require explicit connectivity for the selected embedding provider."""

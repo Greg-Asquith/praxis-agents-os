@@ -335,6 +335,7 @@ def add_event(db: AsyncSession, event: AIUsageEventData) -> None:
     db.add(
         AIUsageEvent(
             workspace_id=event.workspace_id,
+            scope=event.scope,
             provider=event.provider,
             model=event.model,
             purpose=event.purpose,

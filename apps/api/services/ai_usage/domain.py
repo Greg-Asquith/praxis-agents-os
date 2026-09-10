@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
+from utils.content import ContentScope
+
 PURPOSE_AGENT_RUN = "agent_run"
 PURPOSE_CONVERSATION_NAMING = "conversation_naming"
 PURPOSE_HISTORY_SUMMARY = "history_summary"
@@ -63,10 +65,11 @@ type AIUsagePurpose = Literal[
 class AIUsageEventData:
     """Validated inputs for one ledger row."""
 
-    workspace_id: UUID
+    workspace_id: UUID | None
     provider: str
     model: str
     purpose: AIUsagePurpose
+    scope: ContentScope = ContentScope.WORKSPACE
     input_tokens: int = 0
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
@@ -80,6 +83,14 @@ class AIUsageEventData:
     event_id: UUID | None = None
 
     def __post_init__(self) -> None:
+        validate_usage_owner(self.scope, self.workspace_id)
+        if self.scope == ContentScope.PLATFORM:
+            if self.purpose not in (PURPOSE_KB_ANNOTATION, PURPOSE_EMBEDDING_KB_INGEST):
+                raise ValueError("Platform usage must be knowledge ingestion or annotation")
+            if any(
+                value is not None for value in (self.agent_id, self.run_id, self.conversation_id)
+            ):
+                raise ValueError("Platform usage cannot carry workspace provenance")
         if self.purpose not in AI_USAGE_PURPOSES:
             raise ValueError(f"Unknown AI usage purpose: {self.purpose!r}")
         if not self.provider.strip():
@@ -119,3 +130,13 @@ class AIUsageEventData:
                 self.requests,
             )
         )
+
+
+def validate_usage_owner(scope: ContentScope, workspace_id: UUID | None) -> None:
+    """Validates the explicit usage owner before provider work."""
+    if scope not in (ContentScope.WORKSPACE, ContentScope.PLATFORM):
+        raise ValueError("Unknown AI usage scope")
+    if (scope == ContentScope.WORKSPACE) != isinstance(workspace_id, UUID):
+        raise ValueError("AI usage scope and workspace owner must agree")
+    if scope == ContentScope.PLATFORM and workspace_id is not None:
+        raise ValueError("Platform usage cannot have a workspace owner")
