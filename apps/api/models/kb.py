@@ -23,14 +23,16 @@ from models.base import Base, BaseModel, TimestampMixin, UUIDMixin
 
 
 class KBDocument(BaseModel):
-    """Workspace-owned canonical knowledge-base document."""
+    """Canonical knowledge-base document with explicit ownership."""
 
     __tablename__ = "kb_documents"
 
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
+    is_published = Column(Boolean, nullable=False, server_default=text("false"))
     workspace_id = Column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     title = Column(String(500), nullable=False)
@@ -76,6 +78,27 @@ class KBDocument(BaseModel):
     )
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="kb_documents_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'workspace' OR (source_type IN ('manual', 'upload') "
+            "AND is_private = false AND integration_resource_id IS NULL "
+            "AND external_id IS NULL AND external_url IS NULL "
+            "AND NOT (meta ?| ARRAY['conversation_id', 'source_conversation_id', 'workspace_id']))",
+            name="kb_documents_platform_content_check",
+        ),
+        CheckConstraint(
+            "scope = 'platform' OR is_published = false",
+            name="kb_documents_workspace_publication_check",
+        ),
+        Index(
+            "ix_kb_documents_platform_created",
+            "created_at",
+            postgresql_where=text("scope = 'platform' AND is_published = true AND deleted = false"),
+        ),
         CheckConstraint(
             "source_type IN ('upload','url','manual','conversation','integration')",
             name="ck_kb_documents_source_type",
@@ -135,10 +158,12 @@ class KBChunk(Base, UUIDMixin, TimestampMixin):
         ForeignKey("kb_documents.id", ondelete="CASCADE"),
         nullable=False,
     )
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
+    is_published = Column(Boolean, nullable=False, server_default=text("false"))
     workspace_id = Column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     chunk_index = Column(Integer, nullable=False)
@@ -162,6 +187,15 @@ class KBChunk(Base, UUIDMixin, TimestampMixin):
     meta = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="kb_chunks_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'platform' OR is_published = false",
+            name="kb_chunks_workspace_publication_check",
+        ),
         CheckConstraint("char_end > char_start", name="ck_kb_chunks_char_range"),
         CheckConstraint("token_estimate >= 0", name="ck_kb_chunks_token_estimate_nonnegative"),
         CheckConstraint(

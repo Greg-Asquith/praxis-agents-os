@@ -548,3 +548,677 @@ async def test_user_owned_integrations_remain_visible_across_workspaces(
                     )
                     == connection_id[0]
                 )
+
+
+PLATFORM_FAMILIES = (
+    ("kb_documents", "kb_chunks", "document_id", None, None),
+    ("files", "file_revisions", "file_id", "current_revision_id", "published_revision_id"),
+    (
+        "artifacts",
+        "artifact_revisions",
+        "artifact_id",
+        "current_version_id",
+        "published_version_id",
+    ),
+)
+PLATFORM_TABLES = tuple(name for family in PLATFORM_FAMILIES for name in family[:2])
+
+
+async def _seed_resource_family(db, family, *, workspace_id, scope="platform"):
+    parent_name, child_name, parent_key, current_key, published_key = family
+    parent = await _reflect_table(db, parent_name)
+    child = await _reflect_table(db, child_name)
+    ownership = {"scope": scope, "workspace_id": workspace_id if scope == "workspace" else None}
+    parent_values = dict(ownership)
+    if parent_name == "kb_documents":
+        parent_values.update(status="ready", content_md="Published knowledge")
+    parent_id = (
+        await _insert_seed(
+            db, parent, workspace_id=workspace_id, marker="parent", overrides=parent_values
+        )
+    )[0]
+    child_ids = []
+    for number in (1, 2, 3):
+        values = {**ownership, parent_key: parent_id}
+        values["chunk_index" if child_name == "kb_chunks" else "revision_number"] = number
+        if scope == "platform":
+            values["is_published"] = number < 3
+        child_ids.append(
+            (
+                await _insert_seed(
+                    db, child, workspace_id=workspace_id, marker="child", overrides=values
+                )
+            )[0]
+        )
+    updates = {"is_published": scope == "platform"}
+    if current_key:
+        updates[current_key] = child_ids[2]
+        updates[published_key] = child_ids[1] if scope == "platform" else None
+    await db.execute(sa.update(parent).where(parent.c.id == parent_id).values(**updates))
+    return parent, child, parent_id, child_ids
+
+
+@pytest.mark.parametrize("family", PLATFORM_FAMILIES, ids=lambda family: family[0])
+async def test_platform_resources_are_runtime_read_only_across_workspaces(
+    family, db_session_factory
+):
+    workspace_a, workspace_b = uuid4(), uuid4()
+    async with get_maintenance_async_db_session_factory()() as db:
+        parent, child, parent_id, child_ids = await _seed_resource_family(
+            db, family, workspace_id=workspace_a
+        )
+        for workspace_id in (workspace_a, workspace_b, None):
+            async with db_session_factory() as runtime:
+                await set_session_tenant_context(runtime, workspace_id=workspace_id)
+                visible_parent = await runtime.scalar(
+                    sa.select(parent.c.id).where(parent.c.id == parent_id)
+                )
+                assert visible_parent == (parent_id if workspace_id else None)
+                visible_children = set(
+                    (
+                        await runtime.scalars(
+                            sa.select(child.c.id).where(child.c.id.in_(child_ids))
+                        )
+                    ).all()
+                )
+                expected = child_ids if child.name == "kb_chunks" else child_ids[:2]
+                assert visible_children == (set(expected) if workspace_id else set())
+                for table, row_id in ((parent, parent_id), (child, child_ids[0])):
+                    for operation in (
+                        sa.update(table).where(table.c.id == row_id).values(is_published=False),
+                        sa.delete(table).where(table.c.id == row_id),
+                    ):
+                        assert (await runtime.execute(operation)).rowcount == 0
+                    values = _seed_values(
+                        table,
+                        workspace_id=workspace_a,
+                        marker="denied",
+                        overrides={"scope": "platform", "workspace_id": None, family[2]: parent_id}
+                        if table is child
+                        else {"scope": "platform", "workspace_id": None},
+                    )
+                    with pytest.raises(DBAPIError):
+                        async with runtime.begin_nested():
+                            await runtime.execute(sa.insert(table).values(**values))
+
+        for updates in ({"is_published": False}, {"is_published": True, "deleted": True}):
+            await db.execute(sa.update(parent).where(parent.c.id == parent_id).values(**updates))
+            for workspace_id in (workspace_a, workspace_b):
+                async with db_session_factory() as runtime:
+                    await set_session_tenant_context(runtime, workspace_id=workspace_id)
+                    assert (
+                        await runtime.scalar(sa.select(parent.c.id).where(parent.c.id == parent_id))
+                        is None
+                    )
+                    assert not (
+                        await runtime.scalars(
+                            sa.select(child.c.id).where(child.c.id.in_(child_ids))
+                        )
+                    ).all()
+
+
+@pytest.mark.parametrize("table_name", (*PLATFORM_TABLES, "file_uploads"))
+async def test_platform_resource_owner_constraints_reject_invalid_pairs(
+    table_name, db_session_factory
+):
+    async with get_maintenance_async_db_session_factory()() as db:
+        table = await _reflect_table(db, table_name)
+        for overrides in (
+            {"scope": "platform", "workspace_id": uuid4()},
+            {"scope": "workspace", "workspace_id": None},
+            {"scope": "unknown", "workspace_id": None},
+        ):
+            with pytest.raises(DBAPIError):
+                async with db.begin_nested():
+                    await db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+                    await _insert_seed(
+                        db, table, workspace_id=uuid4(), marker="invalid", overrides=overrides
+                    )
+
+
+@pytest.mark.parametrize("family", PLATFORM_FAMILIES, ids=lambda family: family[0])
+async def test_platform_resource_parent_and_owner_changes_are_rejected(family, db_session_factory):
+    workspace_id = uuid4()
+    async with get_maintenance_async_db_session_factory()() as db:
+        workspaces = await _reflect_table(db, "workspaces")
+        other_workspace = uuid4()
+        for owner in (workspace_id, other_workspace):
+            await _insert_seed(
+                db, workspaces, workspace_id=owner, marker="owner", overrides={"id": owner}
+            )
+        parent, child, parent_id, child_ids = await _seed_resource_family(
+            db, family, workspace_id=workspace_id
+        )
+        _, _, local_parent_id, local_child_ids = await _seed_resource_family(
+            db, family, workspace_id=workspace_id, scope="workspace"
+        )
+        _, _, other_parent_id, other_child_ids = await _seed_resource_family(
+            db, family, workspace_id=other_workspace, scope="workspace"
+        )
+        statements = [
+            sa.update(parent)
+            .where(parent.c.id == parent_id)
+            .values(scope="workspace", workspace_id=workspace_id, is_published=False),
+            sa.update(parent)
+            .where(parent.c.id == local_parent_id)
+            .values(workspace_id=other_workspace),
+            sa.update(parent).where(parent.c.id == local_parent_id).values(is_published=True),
+            sa.update(child)
+            .where(child.c.id == child_ids[0])
+            .values(**{family[2]: local_parent_id}),
+            sa.update(child)
+            .where(child.c.id == local_child_ids[0])
+            .values(**{family[2]: other_parent_id}),
+            sa.update(child)
+            .where(child.c.id == local_child_ids[0])
+            .values(workspace_id=other_workspace),
+        ]
+        if family[3]:
+            statements.extend(
+                [
+                    sa.update(parent)
+                    .where(parent.c.id == parent_id)
+                    .values(**{family[3]: local_child_ids[0]}),
+                    sa.update(parent)
+                    .where(parent.c.id == local_parent_id)
+                    .values(**{family[3]: other_child_ids[0]}),
+                    sa.update(parent)
+                    .where(parent.c.id == parent_id)
+                    .values(**{family[4]: child_ids[2]}),
+                    sa.update(parent)
+                    .where(parent.c.id == parent_id)
+                    .values(**{family[4]: local_child_ids[0]}),
+                    sa.update(child)
+                    .where(child.c.id == child_ids[2])
+                    .values(revision_kind="restore", restored_from_revision_id=local_child_ids[0]),
+                    sa.update(child)
+                    .where(child.c.id == local_child_ids[2])
+                    .values(revision_kind="restore", restored_from_revision_id=other_child_ids[0]),
+                ]
+            )
+        for statement in statements:
+            with pytest.raises(DBAPIError):
+                async with db.begin_nested():
+                    await db.execute(statement)
+                    await db.execute(sa.text("SET CONSTRAINTS ALL IMMEDIATE"))
+
+
+@pytest.mark.parametrize("family", PLATFORM_FAMILIES, ids=lambda family: family[0])
+async def test_platform_resource_insert_rejects_mismatched_parents(family, db_session_factory):
+    workspace_id = uuid4()
+    async with get_maintenance_async_db_session_factory()() as db:
+        workspaces = await _reflect_table(db, "workspaces")
+        await _insert_seed(
+            db,
+            workspaces,
+            workspace_id=workspace_id,
+            marker="owner",
+            overrides={"id": workspace_id},
+        )
+        _, child, platform_parent_id, platform_children = await _seed_resource_family(
+            db, family, workspace_id=workspace_id
+        )
+        _, _, workspace_parent_id, workspace_children = await _seed_resource_family(
+            db, family, workspace_id=workspace_id, scope="workspace"
+        )
+        parent, _, _, other_platform_children = await _seed_resource_family(
+            db, family, workspace_id=workspace_id
+        )
+        if family[3]:
+            for pointer in (family[3], family[4]):
+                with pytest.raises(DBAPIError, match="Revision pointer"):
+                    async with db.begin_nested():
+                        await db.execute(
+                            sa.update(parent)
+                            .where(parent.c.id == platform_parent_id)
+                            .values(**{pointer: other_platform_children[0]})
+                        )
+        invalid_values = [
+            {"scope": "workspace", "workspace_id": workspace_id, family[2]: platform_parent_id},
+            {"scope": "platform", "workspace_id": None, family[2]: workspace_parent_id},
+        ]
+        if family[3]:
+            invalid_values.extend(
+                [
+                    {
+                        "scope": "platform",
+                        "workspace_id": None,
+                        family[2]: platform_parent_id,
+                        "revision_kind": "restore",
+                        "restored_from_revision_id": workspace_children[0],
+                    },
+                    {
+                        "scope": "platform",
+                        "workspace_id": None,
+                        family[2]: platform_parent_id,
+                        "revision_kind": "restore",
+                        "restored_from_revision_id": other_platform_children[0],
+                    },
+                    {
+                        "scope": "workspace",
+                        "workspace_id": workspace_id,
+                        family[2]: workspace_parent_id,
+                        "revision_kind": "restore",
+                        "restored_from_revision_id": platform_children[0],
+                    },
+                ]
+            )
+        for overrides in invalid_values:
+            overrides["chunk_index" if child.name == "kb_chunks" else "revision_number"] = 4
+            with pytest.raises(DBAPIError):
+                async with db.begin_nested():
+                    await _insert_seed(
+                        db,
+                        child,
+                        workspace_id=workspace_id,
+                        marker="invalid-parent",
+                        overrides=overrides,
+                    )
+                    await db.execute(sa.text("SET CONSTRAINTS ALL IMMEDIATE"))
+
+
+async def test_platform_upload_grants_are_hidden_and_runtime_read_only(db_session_factory):
+    async with get_maintenance_async_db_session_factory()() as db:
+        uploads = await _reflect_table(db, "file_uploads")
+        await db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+        upload_id = (
+            await _insert_seed(
+                db,
+                uploads,
+                workspace_id=uuid4(),
+                marker="platform-upload",
+                overrides={"scope": "platform", "workspace_id": None},
+            )
+        )[0]
+        await db.execute(sa.text("SET LOCAL session_replication_role = origin"))
+        for workspace_id in (uuid4(), uuid4(), None):
+            async with db_session_factory() as runtime:
+                await set_session_tenant_context(runtime, workspace_id=workspace_id)
+                assert (
+                    await runtime.scalar(sa.select(uploads.c.id).where(uploads.c.id == upload_id))
+                    is None
+                )
+                assert (
+                    await runtime.execute(
+                        sa.update(uploads)
+                        .where(uploads.c.id == upload_id)
+                        .values(filename="changed")
+                    )
+                ).rowcount == 0
+                assert (
+                    await runtime.execute(sa.delete(uploads).where(uploads.c.id == upload_id))
+                ).rowcount == 0
+                with pytest.raises(DBAPIError):
+                    async with runtime.begin_nested():
+                        await _insert_seed(
+                            runtime,
+                            uploads,
+                            workspace_id=uuid4(),
+                            marker="denied-upload",
+                            overrides={"scope": "platform", "workspace_id": None},
+                        )
+
+
+@pytest.mark.parametrize("family", PLATFORM_FAMILIES[1:], ids=lambda family: family[0])
+async def test_platform_revision_publication_preserves_orm_immutability(family, db_session_factory):
+    from models.artifacts import ArtifactRevision
+    from models.files import FileRevision
+
+    model = FileRevision if family[0] == "files" else ArtifactRevision
+    async with get_maintenance_async_db_session_factory()() as db:
+        _, _, _, children = await _seed_resource_family(db, family, workspace_id=uuid4())
+        revision = await db.get(model, children[2])
+        revision.is_published = True
+        await db.flush()
+        assert revision.is_published is True
+        for attribute, value in (("is_published", False), ("object_key", "rewritten")):
+            with pytest.raises(RuntimeError, match="immutable"):
+                async with db.begin_nested():
+                    revision = await db.get(model, children[2])
+                    setattr(revision, attribute, value)
+                    await db.flush()
+
+
+async def test_platform_content_keeps_upload_targets_and_consuming_references_local(
+    db_session_factory,
+):
+    workspace_id, other_workspace = uuid4(), uuid4()
+    async with get_maintenance_async_db_session_factory()() as db:
+        files, _, file_id, revisions = await _seed_resource_family(
+            db, PLATFORM_FAMILIES[1], workspace_id=workspace_id
+        )
+        _, _, artifact_id, versions = await _seed_resource_family(
+            db, PLATFORM_FAMILIES[2], workspace_id=workspace_id
+        )
+        uploads = await _reflect_table(db, "file_uploads")
+        references = await _reflect_table(db, "file_references")
+        shares = await _reflect_table(db, "artifact_shares")
+        conversations = await _reflect_table(db, "conversations")
+        folders = await _reflect_table(db, "file_folders")
+        await db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+        upload_id = (
+            await _insert_seed(
+                db,
+                uploads,
+                workspace_id=workspace_id,
+                marker="upload",
+                overrides={"scope": "platform", "workspace_id": None},
+            )
+        )[0]
+        targets = []
+        for owner in (workspace_id, other_workspace):
+            workspaces = await _reflect_table(db, "workspaces")
+            await _insert_seed(
+                db, workspaces, workspace_id=owner, marker="owner", overrides={"id": owner}
+            )
+            targets.append(
+                (await _insert_seed(db, conversations, workspace_id=owner, marker="target"))[0]
+            )
+        folder_id = (await _insert_seed(db, folders, workspace_id=workspace_id, marker="folder"))[0]
+        await db.execute(sa.text("SET LOCAL session_replication_role = origin"))
+        reference_id = (
+            await _insert_seed(
+                db,
+                references,
+                workspace_id=workspace_id,
+                marker="reference",
+                overrides={
+                    "file_id": file_id,
+                    "file_revision_id": revisions[0],
+                    "target_id": targets[0],
+                },
+            )
+        )[0]
+        for values in (
+            {"scope": "workspace", "workspace_id": workspace_id},
+            {"file_id": file_id},
+            {"revision_id": uuid4()},
+        ):
+            with pytest.raises(DBAPIError):
+                async with db.begin_nested():
+                    await db.execute(
+                        sa.update(uploads).where(uploads.c.id == upload_id).values(**values)
+                    )
+        invalid_inserts = (
+            (shares, {"artifact_id": artifact_id, "version_id": versions[0]}),
+            (
+                references,
+                {"file_id": file_id, "file_revision_id": revisions[0], "target_id": targets[1]},
+            ),
+            (
+                references,
+                {
+                    "file_id": file_id,
+                    "file_revision_id": revisions[2],
+                    "target_id": targets[0],
+                },
+            ),
+        )
+        for table, values in invalid_inserts:
+            with pytest.raises(DBAPIError):
+                async with db.begin_nested():
+                    await _insert_seed(
+                        db, table, workspace_id=workspace_id, marker="denied", overrides=values
+                    )
+        with pytest.raises(DBAPIError):
+            async with db.begin_nested():
+                await db.execute(
+                    sa.update(files).where(files.c.id == file_id).values(folder_id=folder_id)
+                )
+        for owner in (workspace_id, other_workspace, None):
+            async with db_session_factory() as runtime:
+                await set_session_tenant_context(runtime, workspace_id=owner)
+                statement = sa.select(references.c.id).where(references.c.id == reference_id)
+                if owner is None:
+                    # The unchanged reference policy rejects an empty UUID context.
+                    with pytest.raises(DBAPIError, match="invalid input syntax for type uuid"):
+                        async with runtime.begin_nested():
+                            await runtime.scalar(statement)
+                else:
+                    assert await runtime.scalar(statement) == (
+                        reference_id if owner == workspace_id else None
+                    )
+
+
+async def test_platform_upload_target_check_ignores_temporary_table_shadowing(db_session_factory):
+    workspace_id = uuid4()
+    async with get_maintenance_async_db_session_factory()() as db:
+        _, _, platform_file_id, _ = await _seed_resource_family(
+            db, PLATFORM_FAMILIES[1], workspace_id=workspace_id
+        )
+        uploads = await _reflect_table(db, "file_uploads")
+        await db.execute(
+            sa.text("CREATE TEMP TABLE files (LIKE public.files INCLUDING DEFAULTS) ON COMMIT DROP")
+        )
+        async with db_session_factory() as runtime:
+            await set_session_tenant_context(runtime, workspace_id=workspace_id)
+            with pytest.raises(DBAPIError, match="Upload target ownership does not match"):
+                async with runtime.begin_nested():
+                    await _insert_seed(
+                        runtime,
+                        uploads,
+                        workspace_id=workspace_id,
+                        marker="shadowed",
+                        overrides={"file_id": platform_file_id},
+                    )
+
+
+async def test_platform_upload_reservation_rejects_file_creation_by_another_owner(
+    db_session_factory,
+):
+    workspace_id, reserved_file_id, reserved_revision_id = uuid4(), uuid4(), uuid4()
+    async with get_maintenance_async_db_session_factory()() as db:
+        workspaces = await _reflect_table(db, "workspaces")
+        await _insert_seed(
+            db,
+            workspaces,
+            workspace_id=workspace_id,
+            marker="owner",
+            overrides={"id": workspace_id},
+        )
+        uploads = await _reflect_table(db, "file_uploads")
+        files = await _reflect_table(db, "files")
+        await db.execute(sa.text("SET LOCAL session_replication_role = replica"))
+        await _insert_seed(
+            db,
+            uploads,
+            workspace_id=workspace_id,
+            marker="reserved",
+            overrides={
+                "scope": "platform",
+                "workspace_id": None,
+                "file_id": reserved_file_id,
+                "revision_id": reserved_revision_id,
+            },
+        )
+        await db.execute(sa.text("SET LOCAL session_replication_role = origin"))
+        async with db_session_factory() as runtime:
+            await set_session_tenant_context(runtime, workspace_id=workspace_id)
+            with pytest.raises(DBAPIError, match=r"[Uu]pload"):
+                async with runtime.begin_nested():
+                    await _insert_seed(
+                        runtime,
+                        files,
+                        workspace_id=workspace_id,
+                        marker="reserved",
+                        overrides={"id": reserved_file_id},
+                    )
+
+        _, revisions, local_file_id, _ = await _seed_resource_family(
+            db, PLATFORM_FAMILIES[1], workspace_id=workspace_id, scope="workspace"
+        )
+        async with db_session_factory() as runtime:
+            await set_session_tenant_context(runtime, workspace_id=workspace_id)
+            with pytest.raises(DBAPIError, match=r"[Uu]pload"):
+                async with runtime.begin_nested():
+                    await _insert_seed(
+                        runtime,
+                        revisions,
+                        workspace_id=workspace_id,
+                        marker="reserved",
+                        overrides={
+                            "id": reserved_revision_id,
+                            "file_id": local_file_id,
+                            "revision_number": 4,
+                        },
+                    )
+
+
+@pytest.mark.parametrize("target_key", ("file_id", "revision_id"))
+async def test_platform_upload_grants_reject_conflicting_reservations(
+    target_key, db_session_factory
+):
+    workspace_id = uuid4()
+    async with get_maintenance_async_db_session_factory()() as db:
+        workspaces = await _reflect_table(db, "workspaces")
+        await _insert_seed(
+            db,
+            workspaces,
+            workspace_id=workspace_id,
+            marker="owner",
+            overrides={"id": workspace_id},
+        )
+        users = await _reflect_table(db, "users")
+        user_id = (await _insert_seed(db, users, workspace_id=workspace_id, marker="creator"))[0]
+        uploads = await _reflect_table(db, "file_uploads")
+        target_id = uuid4()
+        await _insert_seed(
+            db,
+            uploads,
+            workspace_id=workspace_id,
+            marker="platform-reservation",
+            overrides={
+                "scope": "platform",
+                "workspace_id": None,
+                "created_by_user_id": user_id,
+                target_key: target_id,
+            },
+        )
+        async with db_session_factory() as runtime:
+            await set_session_tenant_context(runtime, workspace_id=workspace_id)
+            with pytest.raises(DBAPIError, match=r"[Uu]pload"):
+                async with runtime.begin_nested():
+                    await _insert_seed(
+                        runtime,
+                        uploads,
+                        workspace_id=workspace_id,
+                        marker="conflict",
+                        overrides={"created_by_user_id": user_id, target_key: target_id},
+                    )
+
+
+@pytest.mark.parametrize("table_name", ("files", "file_uploads"))
+async def test_platform_upload_identity_inserts_reject_repeatable_read(
+    table_name, committed_db_session_factory
+):
+    async with get_maintenance_async_db_session_factory()() as db:
+        await db.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+        table = await _reflect_table(db, table_name)
+        with pytest.raises(DBAPIError, match="READ COMMITTED"):
+            async with db.begin_nested():
+                await _insert_seed(
+                    db,
+                    table,
+                    workspace_id=uuid4(),
+                    marker="snapshot",
+                    overrides={"scope": "platform", "workspace_id": None},
+                )
+
+
+async def test_platform_upload_reservation_serialises_concurrent_file_creation(
+    committed_db_session_factory,
+):
+    import asyncio
+
+    workspace_id, file_id = uuid4(), uuid4()
+    maintenance = get_maintenance_async_db_session_factory()
+    async with maintenance() as setup:
+        workspaces = await _reflect_table(setup, "workspaces")
+        users = await _reflect_table(setup, "users")
+        files = await _reflect_table(setup, "files")
+        uploads = await _reflect_table(setup, "file_uploads")
+        await _insert_seed(
+            setup,
+            workspaces,
+            workspace_id=workspace_id,
+            marker="race",
+            overrides={"id": workspace_id},
+        )
+        user_id = (await _insert_seed(setup, users, workspace_id=workspace_id, marker="race"))[0]
+        await setup.commit()
+    started = asyncio.Event()
+    second_pid = None
+
+    async def create_conflicting_file():
+        nonlocal second_pid
+        async with committed_db_session_factory() as runtime:
+            await set_session_tenant_context(runtime, workspace_id=workspace_id)
+            second_pid = await runtime.scalar(sa.text("SELECT pg_backend_pid()"))
+            started.set()
+            with pytest.raises(DBAPIError, match=r"[Uu]pload"):
+                await _insert_seed(
+                    runtime,
+                    files,
+                    workspace_id=workspace_id,
+                    marker="race",
+                    overrides={"id": file_id},
+                )
+
+    task = None
+    upload_id = None
+    try:
+        async with maintenance() as first:
+            upload_id = (
+                await _insert_seed(
+                    first,
+                    uploads,
+                    workspace_id=workspace_id,
+                    marker="race",
+                    overrides={
+                        "scope": "platform",
+                        "workspace_id": None,
+                        "file_id": file_id,
+                        "created_by_user_id": user_id,
+                    },
+                )
+            )[0]
+            task = asyncio.create_task(create_conflicting_file())
+            try:
+                async with asyncio.timeout(10):
+                    await started.wait()
+                    while not await first.scalar(
+                        sa.text(
+                            "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid = :pid AND locktype = 'advisory' AND NOT granted)"
+                        ),
+                        {"pid": second_pid},
+                    ):
+                        if task.done():
+                            await task
+                            pytest.fail(
+                                "The conflicting insert did not wait for the upload reservation"
+                            )
+                    await first.commit()
+                    await task
+                    assert (
+                        await first.scalar(sa.select(files.c.id).where(files.c.id == file_id))
+                        is None
+                    )
+                    assert (
+                        await first.scalar(
+                            sa.select(uploads.c.scope).where(uploads.c.id == upload_id)
+                        )
+                        == "platform"
+                    )
+            finally:
+                await first.rollback()
+    finally:
+        if task is not None:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        async with maintenance() as cleanup:
+            if upload_id is not None:
+                await cleanup.execute(sa.delete(uploads).where(uploads.c.id == upload_id))
+            await cleanup.execute(sa.delete(users).where(users.c.id == user_id))
+            await cleanup.execute(sa.delete(workspaces).where(workspaces.c.id == workspace_id))
+            await cleanup.commit()

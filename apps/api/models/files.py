@@ -77,12 +77,19 @@ class FileFolder(BaseModel):
 
 
 class File(BaseModel):
-    """Workspace-scoped logical file with a current revision pointer."""
+    """Logical file with draft and published revision pointers."""
 
     __tablename__ = "files"
 
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
+    is_published = Column(Boolean, nullable=False, server_default=text("false"))
+    published_revision_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("file_revisions.id", use_alter=True, name="fk_files_published_revision"),
+        nullable=True,
+    )
     workspace_id = Column(
-        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True
     )
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
@@ -108,6 +115,30 @@ class File(BaseModel):
     processing_attempts = Column(Integer, nullable=False, server_default=text("0"))
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="files_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'workspace' OR folder_id IS NULL",
+            name="files_platform_folder_check",
+        ),
+        CheckConstraint(
+            "scope = 'platform' OR is_published = false",
+            name="files_workspace_publication_check",
+        ),
+        Index(
+            "ix_files_platform_created",
+            "created_at",
+            postgresql_where=text("scope = 'platform' AND is_published = true AND deleted = false"),
+        ),
+        Index("ix_files_published_revision_id", "published_revision_id"),
+        CheckConstraint(
+            "(scope = 'platform' OR published_revision_id IS NULL) AND "
+            "(NOT is_published OR published_revision_id IS NOT NULL)",
+            name="files_published_pointer_check",
+        ),
         CheckConstraint("revision_count >= 0", name="files_revision_count_check"),
         CheckConstraint(
             _in_sql("processing_status", FILE_PROCESSING_STATUSES),
@@ -147,7 +178,9 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
         nullable=False,
         index=True,
     )
-    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False)
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
+    is_published = Column(Boolean, nullable=False, server_default=text("false"))
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True)
     revision_number = Column(Integer, nullable=False)
     revision_kind = Column(String(16), nullable=False)
     content_type = Column(String(128), nullable=False)
@@ -167,6 +200,15 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
     markdown_size_bytes = Column(BigInteger, nullable=True)
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="file_revisions_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'platform' OR is_published = false",
+            name="file_revisions_workspace_publication_check",
+        ),
         CheckConstraint("revision_number > 0", name="file_revisions_revision_number_check"),
         CheckConstraint(
             _in_sql("revision_kind", FILE_REVISION_KINDS),
@@ -236,8 +278,9 @@ class FileUpload(Base, UUIDMixin, CreatedAtMixin):
 
     __tablename__ = "file_uploads"
 
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
     workspace_id = Column(
-        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=True, index=True
     )
     file_id = Column(
         UUID(as_uuid=True),
@@ -255,7 +298,14 @@ class FileUpload(Base, UUIDMixin, CreatedAtMixin):
     consumed_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="file_uploads_scope_owner_check",
+        ),
         UniqueConstraint("object_key", name="uq_file_uploads_object_key"),
+        Index("ix_file_uploads_file_id", "file_id"),
+        Index("ix_file_uploads_revision_id", "revision_id"),
         Index(
             "ix_file_uploads_pending_expiry",
             "expires_at",
@@ -266,10 +316,12 @@ class FileUpload(Base, UUIDMixin, CreatedAtMixin):
 
 @event.listens_for(FileRevision, "before_update")
 def _reject_file_revision_mutation(_mapper, connection, target: FileRevision) -> None:
-    """Reject revision rewrites except set-once derived markdown fields."""
+    """Allows publication and set-once derived markdown without rewriting content."""
     state = inspect(target)
     for attr in state.attrs:
         if not attr.history.has_changes():
+            continue
+        if attr.key == "is_published" and target.is_published is True:
             continue
         if attr.key not in _REVISION_MUTABLE_ONCE:
             raise RuntimeError(f"File revisions are immutable: {attr.key}")

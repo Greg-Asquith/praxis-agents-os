@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.agent import Agent
 from models.files import FileReference, FileRevision, FileUpload
 from tests.factories import (
+    build_conversation,
     build_file,
     build_file_reference,
     build_file_revision,
@@ -206,9 +207,13 @@ async def test_file_upload_duplicate_object_key_is_rejected(db_session: AsyncSes
 async def test_file_hard_delete_cascades_revisions_and_references(
     db_session: AsyncSession,
 ) -> None:
-    _workspace, user, file, revision = await _file_with_revision(db_session, suffix="cascade")
+    workspace, user, file, revision = await _file_with_revision(db_session, suffix="cascade")
+    conversation = build_conversation(workspace=workspace, user=user)
+    db_session.add(conversation)
+    await db_session.flush()
     reference = build_file_reference(
         file,
+        target_id=conversation.id,
         file_revision_id=revision.id,
         created_by_user_id=user.id,
     )

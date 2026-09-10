@@ -26,14 +26,21 @@ ARTIFACT_REVISION_KINDS = ("create", "edit", "restore")
 
 
 class Artifact(BaseModel):
-    """Workspace-scoped artifact with an immutable revision chain."""
+    """Artifact with explicit ownership and an immutable revision chain."""
 
     __tablename__ = "artifacts"
 
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
+    is_published = Column(Boolean, nullable=False, server_default=text("false"))
+    published_version_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("artifact_revisions.id", use_alter=True, name="fk_artifacts_published_version"),
+        nullable=True,
+    )
     workspace_id = Column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL"))
@@ -55,6 +62,30 @@ class Artifact(BaseModel):
     title = Column(String(255), nullable=False)
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="artifacts_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'workspace' OR (agent_id IS NULL AND conversation_id IS NULL AND run_id IS NULL)",
+            name="artifacts_platform_provenance_check",
+        ),
+        CheckConstraint(
+            "scope = 'platform' OR is_published = false",
+            name="artifacts_workspace_publication_check",
+        ),
+        Index(
+            "ix_artifacts_platform_created",
+            "created_at",
+            postgresql_where=text("scope = 'platform' AND is_published = true AND deleted = false"),
+        ),
+        Index("ix_artifacts_published_version_id", "published_version_id"),
+        CheckConstraint(
+            "(scope = 'platform' OR published_version_id IS NULL) AND "
+            "(NOT is_published OR published_version_id IS NOT NULL)",
+            name="artifacts_published_pointer_check",
+        ),
         CheckConstraint(
             f"artifact_type IN ({', '.join(repr(value) for value in ARTIFACT_TYPES)})",
             name="artifacts_type_check",
@@ -82,10 +113,12 @@ class ArtifactRevision(Base, UUIDMixin, CreatedAtMixin):
         nullable=False,
         index=True,
     )
+    scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
+    is_published = Column(Boolean, nullable=False, server_default=text("false"))
     workspace_id = Column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     revision_number = Column(Integer, nullable=False)
@@ -105,6 +138,15 @@ class ArtifactRevision(Base, UUIDMixin, CreatedAtMixin):
     )
 
     __table_args__ = (
+        CheckConstraint(
+            "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
+            "(scope = 'platform' AND workspace_id IS NULL)",
+            name="artifact_revisions_scope_owner_check",
+        ),
+        CheckConstraint(
+            "scope = 'platform' OR is_published = false",
+            name="artifact_revisions_workspace_publication_check",
+        ),
         CheckConstraint(
             "revision_number > 0",
             name="artifact_revisions_revision_number_check",
@@ -189,7 +231,11 @@ class ArtifactShare(Base, UUIDMixin, TimestampMixin):
 
 @event.listens_for(ArtifactRevision, "before_update")
 def _reject_artifact_revision_mutation(_mapper, _connection, target: ArtifactRevision) -> None:
-    """Reject all updates to persisted artifact revisions."""
+    """Allows publication without rewriting persisted artifact content."""
     state = inspect(target)
-    if any(attribute.history.has_changes() for attribute in state.attrs):
+    if any(
+        attribute.history.has_changes()
+        and not (attribute.key == "is_published" and target.is_published is True)
+        for attribute in state.attrs
+    ):
         raise RuntimeError("Artifact revisions are immutable")
