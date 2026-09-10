@@ -8,6 +8,13 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.ai_usage.pricing import ModelPrice
+
+
+class ModelPricingResponse(BaseModel):
+    as_of: date
+    models: list[ModelPrice]
+
 
 class UsageDimension(StrEnum):
     AGENT = "agent"

@@ -15,6 +15,7 @@ import { usePlatformUsageSummaryQuery } from "@/features/usage/api/get-platform-
 import { useUsageBreakdownQuery } from "@/features/usage/api/get-usage-breakdown"
 import { useUsageSummaryQuery } from "@/features/usage/api/get-usage-summary"
 import { CostQualityPanel } from "@/features/usage/components/cost-quality-panel"
+import { ModelPricingDialog } from "@/features/usage/components/model-pricing-dialog"
 import { UsageBreakdownTable } from "@/features/usage/components/usage-breakdown-table"
 import { UsageEmptyState } from "@/features/usage/components/usage-empty-state"
 import { UsageTokenStats } from "@/features/usage/components/usage-token-stats"
@@ -166,18 +167,21 @@ function UsageDashboardView<Dimension extends string>({
                 : "Understand how your team uses models and where estimated costs come from."}
             </CardDescription>
           </div>
-          <Tabs
-            value={String(days)}
-            onValueChange={(value) => {
-              setDays(Number(value) as RangeDays)
-            }}
-          >
-            <TabsList variant="micro">
-              <TabsTrigger value="7">7 days</TabsTrigger>
-              <TabsTrigger value="30">30 days</TabsTrigger>
-              <TabsTrigger value="90">90 days</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex flex-wrap items-center gap-3">
+            <ModelPricingDialog />
+            <Tabs
+              value={String(days)}
+              onValueChange={(value) => {
+                setDays(Number(value) as RangeDays)
+              }}
+            >
+              <TabsList variant="micro">
+                <TabsTrigger value="7">7 days</TabsTrigger>
+                <TabsTrigger value="30">30 days</TabsTrigger>
+                <TabsTrigger value="90">90 days</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-6 px-1">

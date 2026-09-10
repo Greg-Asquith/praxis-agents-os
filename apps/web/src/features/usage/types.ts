@@ -82,3 +82,16 @@ export type UsageRange = {
   from: string
   to: string
 }
+
+export type ModelPricing = {
+  as_of: string
+  models: {
+    provider: string
+    model: string
+    effective_from: string
+    input_usd_per_mtok: string
+    cache_read_usd_per_mtok: string
+    cache_write_usd_per_mtok: string
+    output_usd_per_mtok: string
+  }[]
+}

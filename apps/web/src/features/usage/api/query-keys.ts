@@ -6,6 +6,7 @@ const baseUsageQueryKeys = createWorkspaceScopedQueryKeys("usage")
 
 export const usageQueryKeys = {
   ...baseUsageQueryKeys,
+  pricing: () => [...baseUsageQueryKeys.workspace(), "model-pricing"] as const,
   breakdown: (params: object) => [...baseUsageQueryKeys.workspace(), "breakdown", params] as const,
   summary: (params: object) => [...baseUsageQueryKeys.workspace(), "summary", params] as const,
 }
