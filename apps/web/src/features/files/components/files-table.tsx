@@ -1,6 +1,6 @@
 // apps/web/src/features/files/components/files-table.tsx
 
-import { useEffect, useReducer, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useReducer, useState, type ReactNode } from "react"
 import type { OnChangeFn, PaginationState, SortingState } from "@tanstack/react-table"
 import {
   DownloadIcon,
@@ -16,6 +16,11 @@ import {
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
+  ACTIVATABLE_ROW_CLASS_NAME,
+  handleRowKeyDown,
+  stopRowClick,
+} from "@/components/data-table/row-activation"
+import {
   createAppColumnHelper,
   useAppTable,
   useCellContext,
@@ -25,6 +30,7 @@ import {
 import {
   paginationStateFromServer,
   paginationStateToServer,
+  resolveUpdater,
   sortingStateFromServer,
   sortingStateToServer,
 } from "@/components/data-table/server-state"
@@ -81,9 +87,6 @@ const SORT_LABELS = {
 } as const satisfies Partial<Record<FileSortField, string>>
 
 const EMPTY_FOLDERS: FileFolder[] = []
-
-const ROW_CLASS_NAME =
-  "hover:bg-muted/50 focus-visible:ring-ring cursor-pointer focus-visible:ring-2 focus-visible:outline-none"
 
 const columnHelper = createAppColumnHelper<WorkspaceFile>()
 
@@ -454,22 +457,6 @@ function deleteDescription(targets: WorkspaceFile[]) {
   return `This deletes ${String(targets.length)} files.`
 }
 
-function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, open: () => void) {
-  if (event.target !== event.currentTarget) {
-    return
-  }
-  if (event.key !== "Enter" && event.key !== " ") {
-    return
-  }
-
-  event.preventDefault()
-  open()
-}
-
-function stopRowClick(event: { stopPropagation: () => void }) {
-  event.stopPropagation()
-}
-
 function FileHeaderCell({
   allSelected,
   indeterminate,
@@ -572,10 +559,6 @@ function FileBodyCell({
   }
 }
 
-function resolveUpdater<T>(updater: T | ((previous: T) => T), previous: T): T {
-  return typeof updater === "function" ? (updater as (value: T) => T)(previous) : updater
-}
-
 function FileNameCell({
   file,
   showFolder,
@@ -657,7 +640,7 @@ function FileRow({
   return (
     <TableRow
       aria-label={`Open Details for ${file.name}`}
-      className={ROW_CLASS_NAME}
+      className={ACTIVATABLE_ROW_CLASS_NAME}
       onClick={() => {
         onOpenFile(file.id)
       }}
@@ -705,7 +688,7 @@ function FolderRow({
   return (
     <TableRow
       aria-label={`Open folder ${folder.name}`}
-      className={ROW_CLASS_NAME}
+      className={ACTIVATABLE_ROW_CLASS_NAME}
       onClick={open}
       onKeyDown={(event) => {
         handleRowKeyDown(event, open)

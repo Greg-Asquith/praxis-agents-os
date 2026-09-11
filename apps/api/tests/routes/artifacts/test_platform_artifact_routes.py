@@ -15,6 +15,7 @@ from core.database import get_async_db_session
 from core.dependencies import get_current_user, get_current_workspace
 from models.workspace import WorkspaceRole
 from routes.artifacts import router
+from services.artifacts.platform.schemas import PlatformArtifactListResponse
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
@@ -114,7 +115,8 @@ async def test_platform_list_precedes_workspace_id_and_bounds_pagination(
     platform_route_context, monkeypatch
 ):
     app, db, actor, workspace = platform_route_context
-    service = AsyncMock(return_value=[])
+    empty = PlatformArtifactListResponse(items=[], total=0, limit=50, offset=0)
+    service = AsyncMock(return_value=empty)
     monkeypatch.setattr(
         import_module("routes.artifacts.platform.list_artifacts"), "list_artifacts_service", service
     )
@@ -126,7 +128,7 @@ async def test_platform_list_precedes_workspace_id_and_bounds_pagination(
             invalid = await client.get("/api/v1/artifacts/platform/", params=params)
             assert invalid.status_code == 422
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == empty.model_dump(mode="json")
     service.assert_awaited_once_with(db, actor=actor, workspace=workspace, limit=50, offset=0)
 
 

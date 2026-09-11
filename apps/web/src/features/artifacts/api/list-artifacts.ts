@@ -1,9 +1,10 @@
 // apps/web/src/features/artifacts/api/list-artifacts.ts
 
-import { keepPreviousData, queryOptions, useQuery } from "@tanstack/react-query"
+import { queryOptions } from "@tanstack/react-query"
 
 import type {
   ArtifactListResponse,
+  ArtifactScope,
   ArtifactSortDirection,
   ArtifactSortField,
 } from "@/features/artifacts/types"
@@ -22,6 +23,7 @@ export const artifactQueryKeys = {
 export type ListArtifactsParams = {
   limit?: number
   offset?: number
+  scope?: ArtifactScope
   search?: string
   sortBy?: ArtifactSortField
   sortDirection?: ArtifactSortDirection
@@ -30,6 +32,7 @@ export type ListArtifactsParams = {
 async function listArtifacts({
   limit = 50,
   offset = 0,
+  scope,
   search,
   sortBy = "updated_at",
   sortDirection = "desc",
@@ -38,6 +41,7 @@ async function listArtifacts({
     query: {
       limit,
       offset,
+      scope,
       search,
       sort_by: sortBy,
       sort_direction: sortDirection,
@@ -49,11 +53,6 @@ export function artifactsQueryOptions(params: ListArtifactsParams = {}) {
   return queryOptions({
     queryKey: artifactQueryKeys.list(params),
     queryFn: () => listArtifacts(params),
-    placeholderData: keepPreviousData,
     staleTime: 30_000,
   })
-}
-
-export function useArtifactsQuery(params: ListArtifactsParams = {}) {
-  return useQuery(artifactsQueryOptions(params))
 }

@@ -1,11 +1,11 @@
 // apps/web/src/features/files/routes/files-route.tsx
 
-import { useEffect, useState, useTransition } from "react"
-import { Link, Navigate, useNavigate, useRouterState } from "@tanstack/react-router"
+import { useTransition } from "react"
+import { Link, Navigate, useNavigate, useSearch } from "@tanstack/react-router"
 import { useSuspenseQueries } from "@tanstack/react-query"
-import { ArrowLeftIcon, SearchIcon } from "lucide-react"
+import { ArrowLeftIcon } from "lucide-react"
 
-import { Input } from "@/components/ui/input"
+import { DebouncedSearchInput } from "@/components/forms/debounced-search-input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { platformFilesQueryOptions } from "@/features/files/api/platform-list-files"
@@ -20,6 +20,7 @@ import { FolderHeader } from "@/features/files/components/folder-header"
 import { NewFolderButton } from "@/features/files/components/new-folder-button"
 import { fileWindow, mergeListEntries } from "@/features/files/list-entries"
 import type { FilesSearch } from "@/features/files/search"
+import type { SearchPatch } from "@/lib/list-search"
 import type {
   FileFolder,
   FileScopeFilter,
@@ -31,28 +32,23 @@ import { canEditWorkspace } from "@/features/workspaces/permissions"
 
 const PAGE_SIZE = 10
 const MAX_FILE_LIMIT = 100
-const SEARCH_DEBOUNCE_MS = 300
 const NO_FOLDERS: FileFolder[] = []
 
-type SearchPatch = { [Key in keyof FilesSearch]?: FilesSearch[Key] | undefined }
-
 // Drops default values so the URL only carries state that differs from a fresh visit.
-function normaliseSearch(next: SearchPatch): FilesSearch {
+function normaliseSearch(next: SearchPatch<FilesSearch>): FilesSearch {
   return {
     ...(next.direction === "asc" ? { direction: next.direction } : {}),
     ...(next.fileId ? { fileId: next.fileId } : {}),
     ...(next.folder ? { folder: next.folder } : {}),
     ...(next.page && next.page > 1 ? { page: next.page } : {}),
     ...(next.q ? { q: next.q } : {}),
-    ...(next.scope && next.scope !== "all" ? { scope: next.scope } : {}),
+    ...(next.scope ? { scope: next.scope } : {}),
     ...(next.sort && next.sort !== "updated_at" ? { sort: next.sort } : {}),
   }
 }
 
 export function FilesRoute() {
-  const search = useRouterState({
-    select: (state): FilesSearch => state.location.search,
-  })
+  const search = useSearch({ from: "/app/files" })
   const navigate = useNavigate()
   const [isChangingView, startViewTransition] = useTransition()
   const { workspace } = useActiveWorkspace()
@@ -112,7 +108,7 @@ export function FilesRoute() {
     return <Navigate replace search={{}} to="/files" />
   }
 
-  function navigateTo(next: SearchPatch, { transition = false } = {}) {
+  function navigateTo(next: SearchPatch<FilesSearch>, { transition = false } = {}) {
     const run = () => {
       void navigate({ to: "/files", search: normaliseSearch(next) })
     }
@@ -138,7 +134,12 @@ export function FilesRoute() {
   function updateScope(value: unknown) {
     if (value !== "all" && value !== "workspace" && value !== "platform") return
     navigateTo(
-      { direction: search.direction, q: search.q, scope: value, sort: search.sort },
+      {
+        direction: search.direction,
+        q: search.q,
+        sort: search.sort,
+        ...(value === "all" ? {} : { scope: value }),
+      },
       { transition: true }
     )
   }
@@ -190,7 +191,13 @@ export function FilesRoute() {
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <FilesSearchInput disabled={isChangingView} onChange={updateQuery} value={query} />
+          <DebouncedSearchInput
+            ariaLabel="Search files"
+            disabled={isChangingView}
+            onChange={updateQuery}
+            placeholder="Search files"
+            value={query}
+          />
           {currentFolder ? null : (
             <Tabs onValueChange={updateScope} value={scope}>
               <TabsList aria-label="Which files to show">
@@ -311,58 +318,5 @@ export function FilesRoute() {
     <FileDropZone folderId={currentFolder?.id ?? null}>{content}</FileDropZone>
   ) : (
     content
-  )
-}
-
-function FilesSearchInput({
-  disabled,
-  onChange,
-  value,
-}: {
-  disabled: boolean
-  onChange: (value: string) => void
-  value: string
-}) {
-  const [draft, setDraft] = useState(value)
-  const [syncedValue, setSyncedValue] = useState(value)
-  if (value !== syncedValue) {
-    setSyncedValue(value)
-    setDraft(value)
-  }
-
-  useEffect(() => {
-    const trimmed = draft.trim()
-    if (trimmed === value) return
-    const timer = window.setTimeout(() => {
-      onChange(trimmed)
-    }, SEARCH_DEBOUNCE_MS)
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [draft, onChange, value])
-
-  return (
-    <div className="relative w-full sm:w-72">
-      <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-      <Input
-        aria-label="Search files"
-        className="pl-8"
-        disabled={disabled}
-        onChange={(event) => {
-          setDraft(event.target.value)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            onChange(draft.trim())
-          } else if (event.key === "Escape" && draft) {
-            setDraft("")
-            onChange("")
-          }
-        }}
-        placeholder="Search files"
-        type="search"
-        value={draft}
-      />
-    </div>
   )
 }

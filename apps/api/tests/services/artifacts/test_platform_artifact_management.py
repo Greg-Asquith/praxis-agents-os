@@ -197,7 +197,9 @@ async def test_platform_artifact_list_returns_scoped_paginated_summaries(
         db_session, **platform_context, request=build_test_request(), artifact_id=deleted.id
     )
 
-    results = await list_artifacts(db_session, **platform_context)
+    listed = await list_artifacts(db_session, **platform_context)
+    results = listed.items
+    assert (listed.total, listed.limit, listed.offset) == (2, 50, 0)
     assert {artifact.id: artifact.version_count for artifact in results} == {
         published.id: 2,
         withdrawn.id: 1,
@@ -212,7 +214,8 @@ async def test_platform_artifact_list_returns_scoped_paginated_summaries(
     }
     assert all("versions" not in artifact.model_dump() for artifact in results)
     page = await list_artifacts(db_session, **platform_context, offset=1, limit=1)
-    assert page == results[1:2]
+    assert page.items == results[1:2]
+    assert (page.total, page.limit, page.offset) == (2, 1, 1)
 
 
 async def test_platform_artifact_rejects_stale_source_review(db_session, platform_context):

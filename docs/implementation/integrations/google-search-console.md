@@ -31,6 +31,10 @@ complete pending intent immediately before mutation, and reads each sitemap
 back for terminal status evidence. An ambiguous submission remains
 unverified and is not replayed automatically.
 
+The discovery callback accepts the credential value, principal label, and
+connection pacing key in the shared runner's positional order. The Search
+Console HTTP client uses the credential value to authenticate site discovery.
+
 ### Indexing API
 
 `GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED` adds the `indexing` OAuth scope

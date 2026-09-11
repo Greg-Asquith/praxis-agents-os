@@ -1,5 +1,7 @@
 """Google Search Console REST client and site discovery contracts."""
 
+from importlib import import_module
+
 import httpx2
 import pytest
 
@@ -8,6 +10,7 @@ from core.exceptions.integration import (
     IntegrationPermissionError,
     IntegrationValidationError,
 )
+from integrations.google_search_console import PROVIDER
 from integrations.google_search_console.client import (
     GoogleSearchConsoleClient,
     _raise_indexing_permission_error,
@@ -18,7 +21,9 @@ from integrations.google_search_console.discover_resources import (
     WEBMASTERS_SCOPE,
     discover_google_search_console_sites,
 )
+from services.integrations.discovery.run_discovery import _fetch_resources
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.plugin import PROVIDER_PLUGINS, DiscoveredIntegrationResource
 from tests.integrations.google_search_console.support import sites_transport, static_token
 
 
@@ -221,6 +226,50 @@ def test_normalize_site_url_rejects_invalid_values(value: str) -> None:
 def test_site_path_encodes_domain_and_url_prefix_identifiers() -> None:
     assert site_path("sc-domain:example.com") == "sites/sc-domain%3Aexample.com"
     assert site_path("https://www.example.com/") == ("sites/https%3A%2F%2Fwww.example.com%2F")
+
+
+async def test_shared_discovery_runner_calls_registered_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovery_module = import_module("integrations.google_search_console.discover_resources")
+    monkeypatch.setitem(PROVIDER_PLUGINS, "google_search_console", PROVIDER)
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.path == "/webmasters/v3/sites"
+        assert request.headers["Authorization"] == "Bearer access-token"
+        return httpx2.Response(
+            200,
+            json={
+                "siteEntry": [{"siteUrl": "sc-domain:example.com", "permissionLevel": "siteOwner"}]
+            },
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        monkeypatch.setattr(
+            discovery_module,
+            "GoogleSearchConsoleClient",
+            lambda access_token: GoogleSearchConsoleClient(access_token, client=http_client),
+        )
+        resources, degraded_reason, preserved_parent_external_ids = await _fetch_resources(
+            provider_key="google_search_console",
+            credential_value="access-token",
+            principal_label="alex@example.com",
+            pacing_key="connection-key",
+        )
+
+    assert resources == (
+        DiscoveredIntegrationResource(
+            resource_type="google_search_console_site",
+            external_id="sc-domain:example.com",
+            display_name="example.com",
+            writable=True,
+            required_write_scopes=(WEBMASTERS_SCOPE,),
+            permissions_metadata={"permission_level": "siteOwner", "property_type": "domain"},
+        ),
+    )
+    assert degraded_reason is None
+    assert preserved_parent_external_ids == frozenset()
 
 
 async def test_discovery_filters_deduplicates_sorts_and_maps_permissions() -> None:

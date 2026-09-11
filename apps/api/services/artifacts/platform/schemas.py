@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from services.artifacts.schemas import ArtifactRead, ArtifactSummaryRead
+from utils.pagination import OffsetPage
 
 
 class PlatformArtifactRead(ArtifactRead):
@@ -15,6 +16,10 @@ class PlatformArtifactRead(ArtifactRead):
 
 class PlatformArtifactSummaryRead(ArtifactSummaryRead):
     published_version_id: UUID | None
+
+
+class PlatformArtifactListResponse(OffsetPage):
+    items: list[PlatformArtifactSummaryRead]
 
 
 class PlatformArtifactVersionRequest(BaseModel):

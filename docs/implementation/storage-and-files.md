@@ -356,7 +356,7 @@ The API exposes these operations:
 | Method | Path after `/artifacts/platform` | Result |
 | --- | --- | --- |
 | `POST` | `/from-workspace/{artifact_id}` | Independent published Artifact from the selected workspace version |
-| `GET` | `/` | Super-admin summaries with version counts and bounded pagination |
+| `GET` | `/` | Super-admin summaries with version counts, a total, and bounded pagination |
 | `GET` | `/{artifact_id}` | Super-admin detail with the latest 100 versions |
 | `GET` | `/{artifact_id}/content` | Authenticated, bounded version text with `private, no-store` |
 | `PATCH` | `/{artifact_id}` | Immutable edit, immediately published when the parent is published |
@@ -388,8 +388,7 @@ before saving. A conflicting version returns a review-required conflict.
 Editor save responses omit never-published versions and their restoration-source
 IDs. Tenant row-level security and ordinary workspace mutation services remain local.
 The management content endpoint returns JSON text without a signed capability;
-clients must use the existing sandboxed preview. Platform Artifact management
-controls in the web UI remain pending.
+clients use the existing sandboxed preview.
 
 Publication accepts the existing text Artifact types and rejects declared linked
 assets in HTML, CSS, Markdown, and Mermaid. Embed supported raster images and
@@ -432,10 +431,37 @@ to 100 visible versions. Never-published versions and restoration-source IDs
 stay outside tenant responses. Historical published versions remain readable
 while the parent remains published. Withdrawal and deletion block fresh reads.
 
-The Artifacts list and detail page mark platform content as **Shared**. Detail
-pages retain previews, version history, and **Open**. Workspace editing,
-restoration, and anonymous share controls stay hidden for shared Artifacts.
-Platform management and workspace-copy controls in the web UI remain pending.
+## Artifacts web UI
+
+The Artifacts page has **All**, workspace, and **Shared** filters. Search,
+sorting, and pagination live in the URL and apply on the server. Rows show a
+type tile, a **Shared** badge for platform content, and **Open** for published
+versions, and open the detail page. In the **Shared** tab, super admins see the
+management list instead, including **Withdrawn** and **Unpublished** rows that
+other members cannot read. That list has a fixed order and no search.
+
+Detail pages show type, scope, and publication badges, a version selector, the
+sandboxed preview, **Open**, and the diff against the current version. A notice
+states that a shared Artifact is available in every workspace. Read-only members
+and members without edit authority see no write controls. Workspace owners,
+admins, and members see **Edit** and **Restore** on published shared Artifacts.
+The edit dialog and the restore confirmation state that the saved version
+becomes visible to every workspace immediately. A stale-version conflict keeps
+the typed text in the editor and offers **Reload** to review the latest version
+before saving again. Editors also see **Make a workspace copy**, which copies
+the displayed version and opens the local copy in the editor. The copy request
+retains its request ID across retries.
+
+Super admins see **Publish to platform** on workspace Artifacts. The dialog shows
+the title, the selected version, the sandboxed content preview, and the audience
+statement "Available in every workspace on this deployment." Submission sends the
+reviewed current version; a stale review returns a conflict message. Publication
+opens the new shared Artifact through the management read path, where
+**Publish**, **Withdraw**, and **Delete** carry the same audience reminder.
+Withdrawn Artifacts stay on the management read path until published again.
+Platform mutations invalidate Artifact caches across workspaces in the browser;
+workspace copies invalidate only the destination workspace. Anonymous share
+links remain workspace-only.
 
 Artifact view URLs use a `v2` signature that binds the requesting workspace,
 resource scope, Artifact ID, version ID, and expiry. Serving verifies that

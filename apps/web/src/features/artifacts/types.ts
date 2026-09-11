@@ -1,6 +1,8 @@
 // apps/web/src/features/artifacts/types.ts
 
 export type ArtifactType = "html" | "markdown" | "mermaid" | "csv" | "image-ref"
+export type ArtifactScope = "workspace" | "platform"
+export type ArtifactScopeFilter = "all" | ArtifactScope
 export type ArtifactSortDirection = "asc" | "desc"
 export type ArtifactSortField = "artifact_type" | "title" | "updated_at" | "version_count"
 
@@ -23,8 +25,11 @@ export type ArtifactVersion = {
 
 export type ArtifactSummary = {
   id: string
-  scope: "workspace" | "platform"
+  scope: ArtifactScope
   workspace_id: string | null
+  is_published: boolean
+  can_manage_platform: boolean
+  can_edit: boolean
   agent_id: string | null
   conversation_id: string | null
   run_id: string | null
@@ -40,11 +45,19 @@ export type Artifact = Omit<ArtifactSummary, "version_count"> & {
   versions: ArtifactVersion[]
 }
 
+// Management reads carry the published pointer; null means never published.
+export type PlatformArtifactSummary = ArtifactSummary & { published_version_id: string | null }
+export type PlatformArtifact = Artifact & { published_version_id: string | null }
+
 export type ArtifactListResponse = {
   items: ArtifactSummary[]
   total: number
   limit: number
   offset: number
+}
+
+export type PlatformArtifactListResponse = Omit<ArtifactListResponse, "items"> & {
+  items: PlatformArtifactSummary[]
 }
 
 export type ArtifactContent = {

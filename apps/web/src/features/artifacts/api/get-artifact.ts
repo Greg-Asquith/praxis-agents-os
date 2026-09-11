@@ -1,6 +1,6 @@
 // apps/web/src/features/artifacts/api/get-artifact.ts
 
-import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
+import { queryOptions } from "@tanstack/react-query"
 
 import { artifactQueryKeys } from "@/features/artifacts/api/list-artifacts"
 import type { Artifact } from "@/features/artifacts/types"
@@ -16,8 +16,4 @@ export function artifactQueryOptions(artifactId: string) {
     queryFn: () => getArtifact(artifactId),
     staleTime: 30_000,
   })
-}
-
-export function useArtifactQuery(artifactId: string) {
-  return useSuspenseQuery(artifactQueryOptions(artifactId))
 }

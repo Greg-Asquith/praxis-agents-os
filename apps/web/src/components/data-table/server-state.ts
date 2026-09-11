@@ -55,3 +55,7 @@ export function sortingStateToServer<TField extends string>(
     sort_direction: firstSort.desc ? "desc" : "asc",
   }
 }
+
+export function resolveUpdater<T>(updater: T | ((previous: T) => T), previous: T): T {
+  return typeof updater === "function" ? (updater as (value: T) => T)(previous) : updater
+}

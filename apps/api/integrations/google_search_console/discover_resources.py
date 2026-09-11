@@ -16,6 +16,7 @@ _WRITE_PERMISSION_LEVELS = frozenset({"siteOwner"})
 async def discover_resources(
     credential_value: str,
     _principal_label: str | None = None,
+    _pacing_key: str = "",
 ) -> tuple[DiscoveredIntegrationResource, ...]:
     async def access_token(_force: bool) -> str:
         return credential_value

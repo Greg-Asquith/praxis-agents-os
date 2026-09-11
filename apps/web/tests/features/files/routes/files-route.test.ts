@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: PropsWithChildren) => createElement("a", null, children),
   Navigate: () => null,
   useNavigate: () => vi.fn(),
-  useRouterState: () => ({
+  useSearch: () => ({
     folder: state.folder,
     page: state.page,
     q: state.q,

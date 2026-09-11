@@ -14,8 +14,7 @@ import {
 
 import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { agentsQueryOptions } from "@/features/agents/api/list-agents"
-import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
-import { artifactsQueryOptions } from "@/features/artifacts/api/list-artifacts"
+import { validateArtifactDetailSearch, validateArtifactsSearch } from "@/features/artifacts/search"
 import { getOptionalCurrentUser } from "@/features/auth/api/get-current-user"
 import { validateOAuthCallbackSearch } from "@/features/auth/oauth-callback"
 import { OAUTH_LOGIN_CALLBACK_PATH } from "@/features/auth/oauth-login-constants"
@@ -313,16 +312,7 @@ const filesRoute = createRoute({
 const artifactsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/artifacts",
-  loader: async ({ context }) => {
-    await context.queryClient.ensureQueryData(
-      artifactsQueryOptions({
-        limit: 25,
-        offset: 0,
-        sortBy: "updated_at",
-        sortDirection: "desc",
-      })
-    )
-  },
+  validateSearch: validateArtifactsSearch,
   component: lazyRouteComponent(
     () => import("@/features/artifacts/routes/artifacts-route"),
     "ArtifactsRoute"
@@ -332,9 +322,7 @@ const artifactsRoute = createRoute({
 const artifactDetailRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/artifacts/$artifactId",
-  loader: async ({ context, params }) => {
-    await context.queryClient.ensureQueryData(artifactQueryOptions(params.artifactId))
-  },
+  validateSearch: validateArtifactDetailSearch,
   component: lazyRouteComponent(
     () => import("@/features/artifacts/routes/artifact-detail-route"),
     "ArtifactDetailRoute"

@@ -9,14 +9,18 @@ from core.exceptions.general import AppValidationError
 from models.artifacts import Artifact, ArtifactRevision
 from models.user import User
 from models.workspace import Workspace
-from services.artifacts.platform.schemas import PlatformArtifactSummaryRead
+from services.artifacts.platform.schemas import (
+    PlatformArtifactListResponse,
+    PlatformArtifactSummaryRead,
+)
 from services.artifacts.platform.utils import platform_session
 from services.artifacts.utils import artifact_to_summary
+from utils.pagination import paginate
 
 
 async def list_artifacts(
     db: AsyncSession, *, actor: User, workspace: Workspace, offset: int = 0, limit: int = 50
-) -> list[PlatformArtifactSummaryRead]:
+) -> PlatformArtifactListResponse:
     if offset < 0 or not 1 <= limit <= 100:
         raise AppValidationError("Invalid pagination")
     async with platform_session(db, actor=actor, workspace=workspace) as (
@@ -34,23 +38,30 @@ async def list_artifacts(
             .correlate(Artifact)
             .scalar_subquery()
         )
-        rows = await maintenance_db.execute(
-            select(Artifact, version_count)
-            .where(
+        rows, total = await paginate(
+            maintenance_db,
+            select(Artifact, version_count).where(
                 Artifact.scope == "platform",
                 Artifact.workspace_id.is_(None),
                 Artifact.deleted.is_(False),
-            )
-            .order_by(Artifact.created_at.desc(), Artifact.id)
-            .offset(offset)
-            .limit(limit)
+            ),
+            Artifact.created_at.desc(),
+            Artifact.id,
+            limit=limit,
+            offset=offset,
+            scalars=False,
         )
-        return [
-            PlatformArtifactSummaryRead(
-                **artifact_to_summary(
-                    artifact, version_count=count, actor=actor, membership=membership
-                ).model_dump(),
-                published_version_id=artifact.published_version_id,
-            )
-            for artifact, count in rows
-        ]
+        return PlatformArtifactListResponse(
+            items=[
+                PlatformArtifactSummaryRead(
+                    **artifact_to_summary(
+                        artifact, version_count=count, actor=actor, membership=membership
+                    ).model_dump(),
+                    published_version_id=artifact.published_version_id,
+                )
+                for artifact, count in rows
+            ],
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
