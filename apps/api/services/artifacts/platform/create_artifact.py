@@ -54,7 +54,11 @@ async def create_artifact(
         membership,
     ):
         source = await get_artifact_row(
-            maintenance_db, workspace_id=workspace.id, artifact_id=artifact_id, for_update=True
+            maintenance_db,
+            workspace_id=workspace.id,
+            artifact_id=artifact_id,
+            for_update=True,
+            workspace_only=True,
         )
         require_expected(source, payload.expected_current_version_id)
         source_revision = await get_artifact_revision(
@@ -113,7 +117,11 @@ async def create_artifact(
         membership,
     ):
         source = await get_artifact_row(
-            maintenance_db, workspace_id=workspace.id, artifact_id=artifact_id, for_update=True
+            maintenance_db,
+            workspace_id=workspace.id,
+            artifact_id=artifact_id,
+            for_update=True,
+            workspace_only=True,
         )
         require_expected(source, payload.expected_current_version_id)
         source_revision = await get_artifact_revision(

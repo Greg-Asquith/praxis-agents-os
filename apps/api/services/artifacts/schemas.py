@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.agents.runtime.entity_references.domain import ArtifactReference
+from services.agents.runtime.untrusted import UntrustedNode
 from utils.content import ContentScope
 
 
@@ -21,6 +22,8 @@ class ArtifactToolResult(BaseModel):
 
 class ArtifactToolSummary(BaseModel):
     id: str
+    scope: ContentScope
+    current_version_id: UUID
     reference: ArtifactReference
     title: str
     artifact_type: str
@@ -37,12 +40,14 @@ class ArtifactListToolResult(BaseModel):
 
 class ArtifactReadToolResult(BaseModel):
     id: str
+    scope: ContentScope
+    version_id: UUID
     reference: ArtifactReference
     title: str
     artifact_type: str
     revision_number: int
     updated_at: datetime
-    content: str | None
+    content: str | UntrustedNode | None
     truncated: bool
     size_bytes: int
     content_type: str
@@ -112,6 +117,13 @@ class ArtifactUpdateRequest(BaseModel):
 
     content: str
     title: str | None = None
+
+
+class ArtifactCopyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version_id: UUID
+    request_id: UUID
 
 
 class ArtifactShareCreateRequest(BaseModel):

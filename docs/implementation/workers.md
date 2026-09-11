@@ -85,3 +85,10 @@ ownership before storage work.
 Failed or cancelled orphan-cleanup jobs remain outside ordinary terminal-job
 retention. Their payload retains the object identity after automatic retries are
 exhausted. Successful cleanup jobs follow normal job retention.
+
+Workspace Artifact copies reserve their immutable destination through
+`artifacts.cleanup_copy`. The workspace-owned job waits five minutes before
+checking whether the exact local revision committed. It deletes only missing
+revision output and the deterministic copy stage. Copy saves hold the pending
+job row through commit, so cleanup cannot race the destination write. Failed
+or cancelled cleanup jobs stay outside terminal retention.

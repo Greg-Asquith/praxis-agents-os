@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.jobs import Job
-from services.artifacts.domain import CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND
+from services.artifacts.domain import (
+    CLEANUP_ARTIFACT_COPY_KIND,
+    CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND,
+)
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES, JOB_STATUS_SUCCEEDED, TERMINAL_JOB_STATUSES
 from services.jobs.registry import job_handler
 
@@ -30,7 +33,9 @@ async def sweep_terminal_jobs(db: AsyncSession, job: Job) -> None:
             Job.finished_at < cutoff,
             # Unfinished cleanup retains the only durable owner of orphaned object bytes.
             or_(
-                Job.kind != CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND,
+                Job.kind.not_in(
+                    (CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND, CLEANUP_ARTIFACT_COPY_KIND)
+                ),
                 Job.status == JOB_STATUS_SUCCEEDED,
             ),
         )

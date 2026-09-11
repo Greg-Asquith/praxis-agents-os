@@ -47,7 +47,7 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     dataset = _load_dataset(judge_model)
     cases = {case.name: case for case in dataset.cases}
 
-    assert len(cases) == 17
+    assert len(cases) == 18
     assert not any(isinstance(item, LLMJudge) for item in cases["list_files_selection"].evaluators)
     assert not any(isinstance(item, LLMJudge) for item in cases["json_format"].evaluators)
     judges = [item for item in cases["identity_name"].evaluators if isinstance(item, LLMJudge)]
@@ -79,6 +79,10 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
     assert kb_search_case.inputs["channel_fixture"]["source_kind"] == "kb"
     assert "prompt_injection_basic.md" in kb_search_case.inputs["channel_fixture"]["fixture_path"]
     assert kb_read_case.inputs["channel_fixture"]["source_ref"].startswith("document:")
+    artifact_case = cases["injection_platform_artifact_reports_embedded_instructions"]
+    assert artifact_case.inputs["channel_fixture"]["source_kind"] == "artifact"
+    assert "update_artifact" in artifact_case.metadata["forbidden_tools"]
+    assert any(isinstance(item, LLMJudge) for item in artifact_case.evaluators)
     assert summary_case.inputs["history_summary_fixture_path"].endswith(
         "hostile_conversation_span.txt"
     )

@@ -23,11 +23,12 @@ from services.artifacts.platform.utils import (
 async def update_artifact(
     db: AsyncSession,
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     workspace: Workspace,
     artifact_id: UUID,
     payload: PlatformArtifactUpdateRequest,
+    published_only: bool = False,
 ) -> PlatformArtifactRead:
     reservation = await reserve_revision(
         db,
@@ -35,12 +36,15 @@ async def update_artifact(
         workspace=workspace,
         artifact_id=artifact_id,
         expected_current_version_id=payload.expected_current_version_id,
+        published_only=published_only,
     )
     async with platform_session(
         db, actor=actor, workspace=workspace, artifact_id=artifact_id, editing=True
     ) as (maintenance_db, actor, membership):
-        artifact = await platform_artifact(maintenance_db, artifact_id, lock=True)
-        require_editor(artifact, actor=actor, membership=membership)
+        artifact = await platform_artifact(
+            maintenance_db, artifact_id, lock=True, published_only=published_only
+        )
+        require_editor(artifact, actor=actor, membership=membership, runtime=published_only)
         require_expected(artifact, payload.expected_current_version_id)
         title = payload.title if payload.title is not None else artifact.title
         return await append_revision(

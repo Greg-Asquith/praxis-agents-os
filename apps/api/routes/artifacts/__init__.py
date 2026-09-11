@@ -5,6 +5,7 @@
 from fastapi import APIRouter, Depends
 
 from core.dependencies import require_read
+from routes.artifacts.copy_artifact import router as copy_artifact_router
 from routes.artifacts.create_share import router as create_share_router
 from routes.artifacts.create_view_url import router as create_view_url_router
 from routes.artifacts.get_artifact import router as get_artifact_router
@@ -22,6 +23,7 @@ router = APIRouter(
     dependencies=[Depends(require_read)],
 )
 router.include_router(platform_router)
+router.include_router(copy_artifact_router)
 router.include_router(list_artifacts_router)
 router.include_router(get_version_content_router)
 router.include_router(create_view_url_router)

@@ -19,6 +19,7 @@ const artifact: ArtifactSummary = {
   created_at: "2026-08-12T09:00:00Z",
   current_version_id: "version-2",
   id: "artifact-1",
+  scope: "workspace",
   run_id: "run-1",
   title: "Launch brief",
   updated_at: "2026-08-12T10:30:00Z",
@@ -55,6 +56,14 @@ describe("ArtifactsTable", () => {
     expect(html).toContain('aria-label="Search artifacts"')
     expect(html).toContain("Sort: Updated")
     expect(html).toContain("Showing 1-12 of 12")
+  })
+
+  it("identifies shared Artifacts in both table and mobile layouts", () => {
+    const html = renderArtifacts([{ ...artifact, scope: "platform", workspace_id: null }])
+
+    expect(html.match(/>Shared</g)).toHaveLength(2)
+    expect(html).toContain('href="/artifacts/artifact-1"')
+    expect(renderArtifacts([artifact])).not.toContain(">Shared<")
   })
 
   it("keeps the existing empty state", () => {

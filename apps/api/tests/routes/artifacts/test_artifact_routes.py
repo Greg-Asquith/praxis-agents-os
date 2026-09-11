@@ -617,7 +617,9 @@ async def test_html_serving_headers_are_exact_and_cookie_free(
     local_storage_settings: None,
 ) -> None:
     _headers, artifact, version_id, session_token = await _seed(db_session)
-    capability = create_artifact_view_url(artifact=artifact, version_id=version_id)
+    capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id, artifact=artifact, version_id=version_id
+    )
     await set_session_tenant_context(db_session, workspace_id=uuid4())
     db_async_client.cookies.set("session", session_token)
     response = await db_async_client.get(_relative_url(capability.url))
@@ -641,7 +643,9 @@ async def test_signed_serving_fails_closed_for_all_invalid_targets(
     local_storage_settings: None,
 ) -> None:
     _headers, artifact, version_id, _token = await _seed(db_session)
-    capability = create_artifact_view_url(artifact=artifact, version_id=version_id)
+    capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id, artifact=artifact, version_id=version_id
+    )
     relative = _relative_url(capability.url)
     tampered = relative[:-1] + ("0" if relative[-1] != "0" else "1")
     assert (await db_async_client.get(tampered)).status_code == 404
@@ -653,13 +657,15 @@ async def test_signed_serving_fails_closed_for_all_invalid_targets(
 
     unknown_version = uuid4()
     unknown_capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id,
         artifact=artifact,
         version_id=unknown_version,
     )
     assert (await db_async_client.get(_relative_url(unknown_capability.url))).status_code == 404
 
-    unknown_artifact = Artifact(id=uuid4(), workspace_id=artifact.workspace_id)
+    unknown_artifact = Artifact(id=uuid4(), workspace_id=artifact.workspace_id, scope="workspace")
     unknown_artifact_capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id,
         artifact=unknown_artifact,
         version_id=uuid4(),
     )
@@ -669,6 +675,7 @@ async def test_signed_serving_fails_closed_for_all_invalid_targets(
 
     _other_headers, _other_artifact, other_version_id, _other_token = await _seed(db_session)
     cross_chain_capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id,
         artifact=artifact,
         version_id=other_version_id,
     )
@@ -691,7 +698,9 @@ async def test_signed_serving_hides_storage_disappearance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _headers, artifact, version_id, _token = await _seed(db_session)
-    capability = create_artifact_view_url(artifact=artifact, version_id=version_id)
+    capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id, artifact=artifact, version_id=version_id
+    )
     provider = get_storage_provider()
 
     async def missing_after_stat(_ref):
@@ -723,7 +732,9 @@ async def test_expired_serving_capability_returns_uniform_not_found(
 ) -> None:
     _headers, artifact, version_id, _token = await _seed(db_session)
     monkeypatch.setattr(settings, "ARTIFACT_VIEW_URL_TTL_SECONDS", -1)
-    capability = create_artifact_view_url(artifact=artifact, version_id=version_id)
+    capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id, artifact=artifact, version_id=version_id
+    )
 
     response = await db_async_client.get(_relative_url(capability.url))
 
@@ -741,7 +752,9 @@ async def test_plain_artifact_is_sandboxed_and_downloadable(
         artifact_type="markdown",
         content="# Report",
     )
-    capability = create_artifact_view_url(artifact=artifact, version_id=version_id)
+    capability = create_artifact_view_url(
+        workspace_id=artifact.workspace_id, artifact=artifact, version_id=version_id
+    )
     response = await db_async_client.get(_relative_url(capability.url) + "&download=1")
     assert response.status_code == 200
     assert response.headers["content-type"] == "text/plain; charset=utf-8"

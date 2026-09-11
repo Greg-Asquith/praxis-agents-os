@@ -44,6 +44,7 @@ from services.jobs.enqueue_job import enqueue_job
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from services.storage.utils import await_copy_mutation, read_copy_content
+from services.workspaces.utils import EDITOR_ROLES
 
 
 async def live_authority(
@@ -103,13 +104,17 @@ async def platform_session(
         yield maintenance_db, live_actor, membership
 
 
-async def platform_artifact(db: AsyncSession, artifact_id: UUID, *, lock: bool = False) -> Artifact:
+async def platform_artifact(
+    db: AsyncSession, artifact_id: UUID, *, lock: bool = False, published_only: bool = False
+) -> Artifact:
     statement = select(Artifact).where(
         Artifact.id == artifact_id,
         Artifact.scope == "platform",
         Artifact.workspace_id.is_(None),
         Artifact.deleted.is_(False),
     )
+    if published_only:
+        statement = statement.where(Artifact.is_published.is_(True))
     if lock:
         statement = statement.with_for_update()
     artifact = await db.scalar(statement.execution_options(populate_existing=True))
@@ -119,8 +124,14 @@ async def platform_artifact(db: AsyncSession, artifact_id: UUID, *, lock: bool =
 
 
 def require_editor(
-    artifact: Artifact | None, *, actor: User, membership: WorkspaceMembership
+    artifact: Artifact | None,
+    *,
+    actor: User,
+    membership: WorkspaceMembership,
+    runtime: bool = False,
 ) -> None:
+    if runtime and membership.role not in EDITOR_ROLES:
+        raise AuthorizationError("A workspace editor must request this Artifact update")
     if artifact is None or not can_edit_artifact(artifact, actor=actor, membership=membership):
         raise AuthorizationError(
             "Make a workspace copy or ask a workspace editor to edit this Artifact"
@@ -223,7 +234,7 @@ async def record_change(
     artifact: Artifact,
     actor: User,
     membership: WorkspaceMembership,
-    request: Request,
+    request: Request | None,
     details: PlatformContentAuditDetails,
 ) -> None:
     await db.flush()
@@ -258,13 +269,16 @@ async def reserve_revision(
     workspace: Workspace,
     artifact_id: UUID,
     expected_current_version_id: UUID,
+    published_only: bool = False,
 ) -> Job:
     """Commits cleanup ownership before the save acquires its maintenance connection."""
     async with platform_session(
         db, actor=actor, workspace=workspace, artifact_id=artifact_id, editing=True
     ) as (maintenance_db, actor, membership):
-        artifact = await platform_artifact(maintenance_db, artifact_id)
-        require_editor(artifact, actor=actor, membership=membership)
+        artifact = await platform_artifact(
+            maintenance_db, artifact_id, published_only=published_only
+        )
+        require_editor(artifact, actor=actor, membership=membership, runtime=published_only)
         require_expected(artifact, expected_current_version_id)
         return await enqueue_job(
             maintenance_db,
@@ -285,7 +299,7 @@ async def append_revision(
     artifact: Artifact,
     actor: User,
     membership: WorkspaceMembership,
-    request: Request,
+    request: Request | None,
     content: str,
     title: str,
     reservation: Job,

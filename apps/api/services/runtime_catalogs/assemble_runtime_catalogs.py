@@ -40,6 +40,7 @@ def _assemble_runtime_catalogs() -> None:
     """Imports and registers every process-wide runtime contribution."""
     # Registration order lets provider validation resolve platform-owned job kinds.
     from services.jobs.handlers import (
+        cleanup_artifact_copy,
         cleanup_platform_artifact_object,
         converge_application_encryption,
         embed_kb_chunks,
@@ -70,6 +71,7 @@ def _assemble_runtime_catalogs() -> None:
     )
 
     _ = (
+        cleanup_artifact_copy,
         converge_application_encryption,
         embed_kb_chunks,
         embed_memory,

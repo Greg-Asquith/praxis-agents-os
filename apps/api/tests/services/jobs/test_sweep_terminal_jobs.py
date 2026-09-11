@@ -9,7 +9,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.jobs import Job
-from services.artifacts.domain import CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND
+from services.artifacts.domain import (
+    CLEANUP_ARTIFACT_COPY_KIND,
+    CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND,
+)
 from services.jobs.domain import (
     JOB_STATUS_CANCELLED,
     JOB_STATUS_FAILED,
@@ -64,11 +67,15 @@ async def test_ensure_sweep_job_is_idempotent(db_session: AsyncSession) -> None:
     assert second.id == first.id
 
 
+@pytest.mark.parametrize(
+    "kind", [CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND, CLEANUP_ARTIFACT_COPY_KIND]
+)
 async def test_terminal_retention_preserves_unfinished_artifact_cleanup(
     db_session: AsyncSession,
+    kind: str,
 ) -> None:
     cleanup_jobs = [
-        build_job(kind=CLEANUP_PLATFORM_ARTIFACT_OBJECT_KIND, status=status)
+        build_job(kind=kind, status=status)
         for status in (JOB_STATUS_FAILED, JOB_STATUS_CANCELLED, JOB_STATUS_SUCCEEDED)
     ]
     unrelated = build_job(kind="test.unrelated", status=JOB_STATUS_FAILED)

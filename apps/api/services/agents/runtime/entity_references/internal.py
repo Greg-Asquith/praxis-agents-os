@@ -29,6 +29,7 @@ from services.agents.runtime.entity_references.registry import (
     EntityResolverDefinition,
     register_entity_resolver,
 )
+from services.artifacts.visibility import visible_artifact_filter
 from services.files.utils import file_for_revision, get_visible_file_revision
 from services.files.visibility import visible_file_filter
 from services.kb.visibility import visible_document_filter
@@ -209,7 +210,7 @@ def _memory_choice(memory: AgentMemory) -> EntityChoice:
 
 async def _search_artifacts(ctx, search, _dependent_args, page_size, cursor):
     offset = _offset(cursor)
-    filters = [Artifact.workspace_id == ctx.workspace.id, Artifact.deleted.is_(False)]
+    filters = [visible_artifact_filter(ctx.workspace.id)]
     pattern = _pattern(search)
     if pattern:
         filters.append(Artifact.title.ilike(pattern, escape="\\"))
@@ -220,6 +221,7 @@ async def _search_artifacts(ctx, search, _dependent_args, page_size, cursor):
             .order_by(Artifact.updated_at.desc(), Artifact.id.desc())
             .limit(page_size + 1)
             .offset(offset)
+            .execution_options(populate_existing=True)
         )
     )
     return _page([_artifact_choice(row) for row in rows], offset=offset, page_size=page_size)
@@ -230,11 +232,12 @@ async def _resolve_artifacts(ctx, values, _dependent_args):
     rows = (
         list(
             await ctx.db.scalars(
-                select(Artifact).where(
+                select(Artifact)
+                .where(
                     Artifact.id.in_(wanted),
-                    Artifact.workspace_id == ctx.workspace.id,
-                    Artifact.deleted.is_(False),
+                    visible_artifact_filter(ctx.workspace.id),
                 )
+                .execution_options(populate_existing=True)
             )
         )
         if wanted
@@ -249,6 +252,7 @@ def _artifact_choice(artifact: Artifact) -> EntityChoice:
             entity_id=artifact.id,
             label=artifact.title,
             description=f"{artifact.artifact_type.title()} artifact",
+            scope_label=artifact.scope.title(),
         ),
         icon="file",
     )

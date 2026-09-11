@@ -13,15 +13,17 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import set_session_tenant_context
-from core.exceptions.general import NotFoundError
+from core.exceptions.general import AppValidationError, NotFoundError
 from core.settings import Settings, settings
 from models.artifacts import Artifact
 from models.workspace import Workspace
+from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import ArtifactReference
 from services.agents.runtime.tools.artifacts import (
@@ -373,11 +375,31 @@ def test_expired_view_capability_fails_before_lookup() -> None:
     with pytest.raises(NotFoundError):
         require_valid_artifact_view_signature(
             workspace_id=uuid4(),
+            scope="workspace",
             artifact_id=uuid4(),
             version_id=uuid4(),
             expires=0,
-            signature="v1." + ("0" * 64),
+            signature="v2." + ("0" * 64),
         )
+
+
+async def test_platform_artifact_approval_cannot_replace_the_reviewed_version() -> None:
+    args = {
+        "artifact_id": {"entity_kind": "artifact", "entity_id": str(uuid4()), "label": "Report"},
+        "content": "Reviewed report",
+        "expected_current_version_id": str(uuid4()),
+    }
+    with pytest.raises(AppValidationError, match="not editable") as error:
+        await validate_and_canonicalize_override_args(
+            None,
+            actor=None,
+            workspace=None,
+            membership=None,
+            run=None,
+            tool_call=ToolCallPart("update_artifact", args, "update-report"),
+            override_args={**args, "expected_current_version_id": str(uuid4())},
+        )
+    assert error.value.details["locked_fields"] == ["expected_current_version_id"]
 
 
 @pytest.mark.parametrize(

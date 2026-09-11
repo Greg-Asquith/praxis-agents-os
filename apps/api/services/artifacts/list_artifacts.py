@@ -1,6 +1,6 @@
 # apps/api/services/artifacts/list_artifacts.py
 
-"""List workspace artifacts."""
+"""Lists visible workspace and published platform Artifacts."""
 
 from uuid import UUID
 
@@ -13,6 +13,8 @@ from models.user import User
 from models.workspace import WorkspaceMembership
 from services.artifacts.schemas import ArtifactListResponse
 from services.artifacts.utils import artifact_to_summary
+from services.artifacts.visibility import visible_artifact_filter, visible_artifact_revision_filter
+from utils.content import ContentScope
 
 
 async def list_artifacts(
@@ -27,11 +29,11 @@ async def list_artifacts(
     sort_direction: str = "desc",
     actor: User | None = None,
     membership: WorkspaceMembership | None = None,
+    scope: ContentScope | None = None,
 ) -> ArtifactListResponse:
-    filters = [
-        Artifact.workspace_id == workspace_id,
-        Artifact.deleted.is_(False),
-    ]
+    filters = [visible_artifact_filter(workspace_id)]
+    if scope is not None:
+        filters.append(Artifact.scope == scope)
     if conversation_id is not None:
         filters.append(Artifact.conversation_id == conversation_id)
     if search:
@@ -49,7 +51,7 @@ async def list_artifacts(
             ArtifactRevision.artifact_id.label("artifact_id"),
             func.count(ArtifactRevision.id).label("version_count"),
         )
-        .where(ArtifactRevision.workspace_id == workspace_id)
+        .where(visible_artifact_revision_filter(workspace_id))
         .group_by(ArtifactRevision.artifact_id)
         .subquery()
     )
@@ -77,12 +79,17 @@ async def list_artifacts(
             .order_by(order, id_order)
             .limit(limit)
             .offset(offset)
+            .execution_options(populate_existing=True)
         )
     ).all()
     return ArtifactListResponse(
         items=[
             artifact_to_summary(
-                artifact, version_count=int(revision_count), actor=actor, membership=membership
+                artifact,
+                version_count=int(revision_count),
+                actor=actor,
+                membership=membership,
+                published_only=True,
             )
             for artifact, revision_count in rows
         ],

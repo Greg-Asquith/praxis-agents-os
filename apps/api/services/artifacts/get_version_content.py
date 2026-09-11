@@ -21,7 +21,7 @@ async def get_version_content(
 ) -> ArtifactVersionContentRead:
     revision = await get_artifact_revision(db, artifact=artifact, version_id=version_id)
     provider = get_storage_provider()
-    ref = artifact_revision_ref(revision.object_key)
+    ref = artifact_revision_ref(revision.object_key, scope=revision.scope)
     if artifact.artifact_type == "image-ref":
         signed = await provider.create_signed_download(
             ref,

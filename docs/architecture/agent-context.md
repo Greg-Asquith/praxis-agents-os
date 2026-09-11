@@ -110,7 +110,11 @@ handing an agent a specific document to work on.
   use an artifact for content that someone views, presents, or shares. Use a
   file for data or documents kept for reference and later work. An `.html`
   file is never served as
-  a page; an `html` artifact is.
+  a page; an `html` artifact is. Published platform Artifacts are available
+  through the same list and read tools, with untrusted-content framing and
+  scope labels. Agent-requested edits use the initiating user's live edit
+  authority and reviewed version. A save immediately publishes the immutable
+  version to every workspace. Initial agent output remains workspace-owned.
 
 Use a file when the task reads, edits, or creates a specific document. Use the
 Knowledge Base when the agent must find information by searching.

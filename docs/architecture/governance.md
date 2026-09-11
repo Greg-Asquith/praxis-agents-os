@@ -44,10 +44,19 @@ Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 | Delete workspace-scope memories _(enforced)_                                                    | —         | —      | ✓     | ✓     |
 | Edit/delete own-scope (user/agent) memories _(enforced)_                                        | —         | ✓      | ✓     | ✓     |
 | Create artifacts via agents _(enforced)_                                                        | —         | ✓      | ✓     | ✓     |
+| Edit published platform Artifacts directly or through agents _(enforced)_                       | —         | ✓      | ✓     | ✓     |
 | Create/revoke artifact share links _(enforced)_                                                 | —         | —      | ✓     | ✓     |
 | View audit log _(enforced: MANAGER)_                                                            | —         | —      | ✓     | ✓     |
 | View security events _(enforced: super-admin only — `security_events` has no workspace column)_ | —         | —      | —     | —     |
 | Configure agent tool policies _(enforced: EDITOR via agents)_                                   | —         | ✓      | ✓     | ✓     |
+
+Published platform Artifact updates use the initiating user's live editor
+authority, including during delegated and resumed agent execution. The save
+retains a reviewed version and immediately publishes the resulting immutable
+version to every workspace. Initial platform publication, withdrawal, and
+deletion remain super-admin operations. Direct super-admin management retains
+its workspace-role exemption; agent execution retains its editor-role gate.
+_(enforced)_
 
 Conversation reads require chat ownership or an explicit workspace share.
 All active members can read shared root chats. Only the chat owner can enable

@@ -1,5 +1,6 @@
 // apps/web/src/features/conversations/native-tools/artifact-tools.ts
 
+import { nodeText } from "@/components/tool-ui/untrusted-node"
 import type { ArtifactType } from "@/features/artifacts/types"
 import {
   isDateTimeString,
@@ -112,15 +113,16 @@ export function artifactReadToolResult(value: unknown): ArtifactReadToolResult |
     !isArtifactType(value["artifact_type"]) ||
     !isPositiveInteger(value["revision_number"]) ||
     !isDateTimeString(value["updated_at"]) ||
-    !isNullableString(value["content"]) ||
     typeof value["truncated"] !== "boolean" ||
     !isNonNegativeInteger(value["size_bytes"]) ||
     typeof value["content_type"] !== "string"
   ) {
     return null
   }
+  const content = nodeText(value["content"])
   const reference = artifactReference(value["reference"])
   if (
+    (value["content"] !== null && content === null) ||
     reference?.entity_id !== value["id"] ||
     (value["artifact_type"] === "image-ref") !== (value["content"] === null) ||
     (value["content"] === null && value["truncated"])
@@ -134,7 +136,7 @@ export function artifactReadToolResult(value: unknown): ArtifactReadToolResult |
     artifact_type: value["artifact_type"],
     revision_number: value["revision_number"],
     updated_at: value["updated_at"],
-    content: value["content"],
+    content,
     truncated: value["truncated"],
     size_bytes: value["size_bytes"],
     content_type: value["content_type"],

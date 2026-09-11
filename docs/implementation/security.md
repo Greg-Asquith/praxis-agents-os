@@ -128,3 +128,17 @@ Platform File management uses this strict writer for draft confirmation,
 metadata edits, restoration, publication, withdrawal, and deletion. Each event
 commits in the same maintenance transaction as its mutation. Ordinary skill
 audit handling is unchanged.
+
+Published platform Artifact edits requested through an agent use the same save
+service and strict global audit. The run's initiating user supplies authority;
+an agent creator, delegate, or approval cannot add permissions. Runtime writes
+recheck an active editor role under the final authority lock, including for
+super admins, because agent execution retains its workspace role boundary.
+The reviewed version remains unchanged through approval. Withdrawal or a stale
+version prevents the save.
+
+Signed Artifact view capabilities bind the requesting workspace, resource scope,
+parent, immutable version, and expiry under a dedicated v2 HMAC purpose. The
+serving route verifies the signature before setting tenant context and querying
+the exact visible parent and version. Platform publication grants no anonymous
+share. Host isolation and rendering headers retain their existing policy.

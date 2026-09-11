@@ -8,7 +8,8 @@ from uuid import UUID
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
-from core.exceptions.general import AppValidationError, NotFoundError
+from core.exceptions.auth import AuthorizationError
+from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import ArtifactReference
@@ -24,6 +25,7 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
+from services.agents.runtime.untrusted import UntrustedNode
 from services.artifacts import (
     create_artifact as create_artifact_service,
     get_artifact as get_artifact_service,
@@ -31,19 +33,32 @@ from services.artifacts import (
     list_artifacts as list_artifacts_service,
     update_artifact as update_artifact_service,
 )
+from services.artifacts.platform.schemas import PlatformArtifactUpdateRequest
+from services.artifacts.platform.update_artifact import (
+    update_artifact as update_platform_artifact,
+)
 from services.artifacts.schemas import (
     ArtifactListToolResult,
     ArtifactReadToolResult,
     ArtifactToolResult,
     ArtifactToolSummary,
 )
+from services.artifacts.utils import get_artifact_row
+from utils.content import ContentScope
 
 
-def _artifact_reference(*, artifact_id: UUID, title: str, artifact_type: str) -> ArtifactReference:
+def _artifact_reference(
+    *,
+    artifact_id: UUID,
+    title: str,
+    artifact_type: str,
+    scope: ContentScope = ContentScope.WORKSPACE,
+) -> ArtifactReference:
     return ArtifactReference(
         entity_id=artifact_id,
         label=title,
         description=f"{artifact_type.title()} artifact",
+        scope_label=scope.title(),
     )
 
 
@@ -53,8 +68,8 @@ def _artifact_reference(*, artifact_id: UUID, title: str, artifact_type: str) ->
     label="List artifacts",
     code_eligible=False,
     description=(
-        "List recent workspace artifacts so you can find an existing deliverable before "
-        "creating or updating one. Search matches artifact titles and types."
+        "List recent workspace and published platform-wide artifacts before creating a deliverable. "
+        "Search matches artifact titles and types. Edits to platform-wide artifacts affect every workspace."
     ),
     effect=TOOL_EFFECT_READ,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -92,10 +107,13 @@ async def list_artifacts(
     items = [
         ArtifactToolSummary(
             id=str(artifact.id),
+            scope=artifact.scope,
+            current_version_id=artifact.current_version_id,
             reference=_artifact_reference(
                 artifact_id=artifact.id,
                 title=artifact.title,
                 artifact_type=artifact.artifact_type,
+                scope=artifact.scope,
             ),
             title=artifact.title,
             artifact_type=artifact.artifact_type,
@@ -118,8 +136,9 @@ async def list_artifacts(
     label="Read artifact",
     code_eligible=False,
     description=(
-        "Read the current version of a workspace artifact before revising it. Binary image "
-        "artifacts return metadata only and remain viewable in the Artifacts UI."
+        "Read the current workspace version or published platform-wide version of an artifact. "
+        "Use the returned version_id as expected_current_version_id when updating a platform-wide "
+        "artifact. Binary images return metadata only and remain viewable in the Artifacts UI."
     ),
     effect=TOOL_EFFECT_READ,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -177,16 +196,27 @@ async def read_artifact(
         content = content[: settings.ARTIFACT_READ_TOOL_MAX_CHARS]
     return ArtifactReadToolResult(
         id=str(artifact.id),
+        scope=artifact.scope,
+        version_id=artifact.current_version_id,
         reference=_artifact_reference(
             artifact_id=artifact.id,
             title=artifact.title,
             artifact_type=artifact.artifact_type,
+            scope=artifact.scope,
         ),
         title=artifact.title,
         artifact_type=artifact.artifact_type,
         revision_number=revision_number,
         updated_at=artifact.updated_at,
-        content=content,
+        content=(
+            UntrustedNode(
+                source_kind="artifact",
+                source_ref=f"artifact:{artifact.id}/version:{artifact.current_version_id}",
+                content=content,
+            )
+            if content is not None and artifact.scope == ContentScope.PLATFORM
+            else content
+        ),
         truncated=truncated,
         size_bytes=version.size_bytes,
         content_type=version.content_type,
@@ -246,7 +276,7 @@ async def create_artifact(
     title: str,
     artifact_type: Literal["html", "markdown", "mermaid", "csv"],
     content: str,
-) -> dict[str, str]:
+) -> dict[str, object]:
     try:
         artifact, revision = await create_artifact_service(
             ctx.deps.db,
@@ -279,8 +309,10 @@ async def create_artifact(
     label="Update artifact",
     code_eligible=False,
     description=(
-        "Append a new immutable version to any workspace artifact, including artifacts "
-        "created in other conversations. Read its current version before replacing it."
+        "Append an immutable version to a workspace or published platform-wide artifact. Read it "
+        "first. Platform updates require expected_current_version_id from that read and the "
+        "requesting user's editor permission; the saved version becomes visible to every "
+        "workspace immediately. Create a workspace artifact for client-specific work."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -298,7 +330,10 @@ async def create_artifact(
         completed_label="Artifact updated",
         failed_label="Artifact update failed",
         approval_title="Update artifact?",
-        approval_prompt="Review this new artifact version before it is saved.",
+        approval_prompt=(
+            "Review this artifact version before saving. "
+            "A platform artifact becomes visible to every workspace immediately."
+        ),
         approve_label="Update Artifact",
         arg_fields=(
             ToolFieldPresentation(
@@ -323,30 +358,63 @@ async def update_artifact(
     artifact_id: ArtifactReference,
     content: str,
     title: str | None = None,
-) -> dict[str, str]:
+    expected_current_version_id: Annotated[
+        UUID | None,
+        Field(description="The version_id returned by read_artifact. Required for platform edits."),
+    ] = None,
+) -> dict[str, object]:
     try:
-        artifact, revision = await update_artifact_service(
+        target = await get_artifact_row(
             ctx.deps.db,
-            workspace=ctx.deps.workspace,
+            workspace_id=ctx.deps.workspace.id,
             artifact_id=artifact_id.entity_id,
-            content=content,
-            title=title,
-            agent=ctx.deps.agent,
-            conversation=ctx.deps.conversation,
-            run=ctx.deps.run,
         )
+        if target.scope == ContentScope.PLATFORM:
+            # Concurrent withdrawal can hide this row from tenant retry recovery.
+            ctx.deps.db.expunge(target)
+            if expected_current_version_id is None:
+                raise ModelRetry(
+                    "Read the platform artifact and supply its expected_current_version_id."
+                )
+            artifact = await update_platform_artifact(
+                ctx.deps.db,
+                request=None,
+                actor=ctx.deps.user,
+                workspace=ctx.deps.workspace,
+                artifact_id=artifact_id.entity_id,
+                payload=PlatformArtifactUpdateRequest(
+                    content=content,
+                    title=title,
+                    expected_current_version_id=expected_current_version_id,
+                ),
+                published_only=True,
+            )
+            version_id = artifact.current_version_id
+        else:
+            artifact, revision = await update_artifact_service(
+                ctx.deps.db,
+                workspace=ctx.deps.workspace,
+                artifact_id=artifact_id.entity_id,
+                content=content,
+                title=title,
+                agent=ctx.deps.agent,
+                conversation=ctx.deps.conversation,
+                run=ctx.deps.run,
+            )
+            version_id = revision.id
     except NotFoundError as exc:
         raise ModelRetry("Unknown artifact id") from exc
-    except AppValidationError as exc:
+    except (AppValidationError, AuthorizationError, ConflictError) as exc:
         raise ModelRetry(exc.message) from exc
     return ArtifactToolResult(
         artifact_id=str(artifact.id),
-        version_id=str(revision.id),
+        version_id=str(version_id),
         title=artifact.title,
         artifact_type=artifact.artifact_type,
         reference=_artifact_reference(
             artifact_id=artifact.id,
             title=artifact.title,
             artifact_type=artifact.artifact_type,
+            scope=artifact.scope,
         ),
     ).model_dump()

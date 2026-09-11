@@ -78,7 +78,8 @@ management also uses explicit super-admin maintenance transactions for manual
 and pinned upload entries. Versioned ingestion stays unpublished until review.
 Combined Knowledge retrieval uses the shared scope and privacy predicates.
 Artifact management uses the same explicit maintenance boundary for publication
-and live editor saves. Artifact tenant read-path integration remains pending.
+and live editor saves. Artifact tenant reads require published parents and
+revisions.
 
 Domain-owned `visibility.py` helpers in `services/kb`, `services/files`, and
 `services/artifacts` define local and published platform reads. Missing workspace
@@ -88,7 +89,7 @@ parent. The KB SQL predicate is tested against the ORM predicate and applies
 before both lexical and semantic candidate limits. Knowledge and File reads
 admit published platform resources through these helpers. Local Knowledge
 source metadata remains inspectable for recovery without returning unavailable
-content. Artifact read-path integration remains pending.
+content. Artifact reads expose the published version pointer.
 
 Parent response contracts expose `scope`, nullable `workspace_id`,
 `is_published`, and `can_manage_platform`. The management flag requires a live
@@ -108,8 +109,11 @@ workspace Artifacts. The platform contract grants those roles editing of
 published global Artifacts, with each saved version visible to every workspace
 immediately. Super admins retain draft management. The explicit platform save
 service rechecks and locks live authority and the expected version before saving.
-Initial publication, withdrawal, and deletion remain super-admin operations.
-Direct tenant SQL writes stay workspace-only.
+Agent-requested published Artifact edits use the same explicit save service
+under the requesting user's live authority and selected version. Delegation
+and approval do not widen that authority. Initial publication, withdrawal,
+and deletion remain super-admin operations. Direct tenant SQL writes stay
+workspace-only.
 The immutable revision, publication pointers, and strict audit commit together.
 
 ## Platform usage ownership

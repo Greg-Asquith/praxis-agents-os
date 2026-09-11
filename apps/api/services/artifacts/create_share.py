@@ -49,6 +49,7 @@ async def create_artifact_share(
         db,
         workspace_id=workspace.id,
         artifact_id=artifact_id,
+        workspace_only=True,
     )
     if artifact.current_version_id is None:
         raise RuntimeError("Artifact has no current revision")

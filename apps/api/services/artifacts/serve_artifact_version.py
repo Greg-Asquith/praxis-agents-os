@@ -25,7 +25,7 @@ async def serve_artifact_version(
 ) -> Response:
     revision = await get_artifact_revision(db, artifact=artifact, version_id=version_id)
     provider = get_storage_provider()
-    ref = artifact_revision_ref(revision.object_key)
+    ref = artifact_revision_ref(revision.object_key, scope=revision.scope)
     try:
         stored = await provider.stat_object(ref)
         content = await provider.get_object(ref) if stored is not None else None

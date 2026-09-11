@@ -12,6 +12,37 @@ import {
 } from "@/features/conversations/native-tools/artifact-tools"
 
 describe("artifact tool payloads", () => {
+  it("reads framed platform content and rejects malformed nodes", () => {
+    const result = {
+      id: "artifact-1",
+      reference: { ...artifactReference("artifact-1", "Report"), scope_label: "Platform" },
+      scope: "platform",
+      title: "Report",
+      artifact_type: "html",
+      revision_number: 1,
+      updated_at: "2026-09-10T10:00:00Z",
+      content: {
+        node: "praxis_untrusted",
+        source_kind: "artifact",
+        source_ref: "artifact-1",
+        content: "<h1>Report</h1>",
+      },
+      truncated: false,
+      size_bytes: 15,
+      content_type: "text/html",
+    }
+    expect(artifactReadToolResult(result)).toMatchObject({
+      content: "<h1>Report</h1>",
+      reference: { scope_label: "Platform" },
+    })
+    expect(
+      artifactReadToolResult({ ...result, content: { ...result.content, source_ref: null } })
+    ).toBeNull()
+    expect(
+      artifactReadToolResult({ ...result, content: { ...result.content, node: "unknown" } })
+    ).toBeNull()
+  })
+
   it("parses supported completed artifact results", () => {
     expect(
       artifactToolResult({

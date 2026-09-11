@@ -29,4 +29,6 @@ async def create_view_url(
         artifact_id=artifact_id,
     )
     await get_artifact_revision(db, artifact=artifact, version_id=version_id)
-    return create_artifact_view_url(artifact=artifact, version_id=version_id)
+    return create_artifact_view_url(
+        workspace_id=workspace.id, artifact=artifact, version_id=version_id
+    )

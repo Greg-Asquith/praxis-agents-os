@@ -35,15 +35,7 @@ const columnHelper = createAppColumnHelper<ArtifactSummary>()
 const columns = columnHelper.columns([
   columnHelper.accessor("title", {
     header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ row }) => (
-      <Link
-        className="font-medium hover:underline"
-        params={{ artifactId: row.original.id }}
-        to="/artifacts/$artifactId"
-      >
-        {row.original.title}
-      </Link>
-    ),
+    cell: ({ row }) => <ArtifactTitle artifact={row.original} />,
     enableSorting: true,
     meta: { label: "Artifact" },
     sortDescFirst: false,
@@ -139,13 +131,7 @@ export function ArtifactsTable({
             <ResponsiveList className={isChangingView ? "opacity-60" : undefined}>
               {artifacts.map((artifact) => (
                 <ResponsiveListItem key={artifact.id}>
-                  <Link
-                    className="font-medium hover:underline"
-                    params={{ artifactId: artifact.id }}
-                    to="/artifacts/$artifactId"
-                  >
-                    {artifact.title}
-                  </Link>
+                  <ArtifactTitle artifact={artifact} />
                   <dl className="mt-3 grid grid-cols-3 gap-3">
                     <ResponsiveListMeta label="Type">
                       {artifactTypeLabel(artifact.artifact_type)}
@@ -169,6 +155,21 @@ export function ArtifactsTable({
         />
       </div>
     </table.AppTable>
+  )
+}
+
+function ArtifactTitle({ artifact }: { artifact: ArtifactSummary }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Link
+        className="font-medium hover:underline"
+        params={{ artifactId: artifact.id }}
+        to="/artifacts/$artifactId"
+      >
+        {artifact.title}
+      </Link>
+      {artifact.scope === "platform" ? <Badge variant="secondary">Shared</Badge> : null}
+    </div>
   )
 }
 

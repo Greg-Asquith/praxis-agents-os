@@ -24,9 +24,9 @@ from services.jobs.handlers.cleanup_platform_artifact_object import (
 )
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
-from tests.services.artifacts.test_platform_artifact_concurrency import (
-    _edit,
+from tests.support.platform_artifacts import (
     committed_artifact_context as committed_artifact_context,
+    edit_platform_artifact,
 )
 
 
@@ -53,7 +53,9 @@ async def test_failed_save_retains_committed_cleanup_for_written_bytes(
         )
 
     with pytest.raises(OSError):
-        await _edit(committed_db_session_factory, context, artifact, "<p>Failed save</p>")
+        await edit_platform_artifact(
+            committed_db_session_factory, context, artifact, "<p>Failed save</p>"
+        )
 
     async with maintenance_async_db_session() as db:
         job = (
@@ -128,7 +130,9 @@ async def test_save_rejects_a_reservation_claimed_before_its_write_transaction(
     monkeypatch.setattr(get_storage_provider(), "put_object", put)
 
     with pytest.raises(ConflictError, match="save expired"):
-        await _edit(committed_db_session_factory, context, artifact, "<p>Expired save</p>")
+        await edit_platform_artifact(
+            committed_db_session_factory, context, artifact, "<p>Expired save</p>"
+        )
 
     put.assert_not_awaited()
     async with maintenance_async_db_session() as db:
@@ -166,7 +170,9 @@ async def test_authority_is_rechecked_after_cleanup_reservation_commits(
     put = AsyncMock(side_effect=AssertionError("A revoked editor must not write bytes"))
     monkeypatch.setattr(get_storage_provider(), "put_object", put)
     with pytest.raises(AuthorizationError):
-        await _edit(committed_db_session_factory, context, artifact, "<p>Denied save</p>")
+        await edit_platform_artifact(
+            committed_db_session_factory, context, artifact, "<p>Denied save</p>"
+        )
     put.assert_not_awaited()
     async with maintenance_async_db_session() as db:
         persisted = await db.get(Artifact, artifact.id)
@@ -200,7 +206,9 @@ async def test_worker_skips_cleanup_while_save_holds_reservation_lock(
 
     monkeypatch.setattr(provider, "put_object", pause_write)
     task = asyncio.create_task(
-        _edit(committed_db_session_factory, context, artifact, "<p>Saved version</p>")
+        edit_platform_artifact(
+            committed_db_session_factory, context, artifact, "<p>Saved version</p>"
+        )
     )
     try:
         async with asyncio.timeout(10):

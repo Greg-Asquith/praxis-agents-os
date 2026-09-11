@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query
 from core.dependencies import AsyncDbSessionDep, CurrentUserDep, CurrentWorkspaceDep
 from services.artifacts import list_artifacts as list_artifacts_service
 from services.artifacts.schemas import ArtifactListResponse
+from utils.content import ContentScope
 
 router = APIRouter()
 
@@ -25,6 +26,7 @@ async def list_artifacts(
     search: Annotated[str | None, Query(max_length=255)] = None,
     sort_by: Annotated[str, Query(max_length=32)] = "updated_at",
     sort_direction: Annotated[str, Query(max_length=4)] = "desc",
+    scope: Annotated[ContentScope | None, Query()] = None,
 ) -> ArtifactListResponse:
     workspace, membership = workspace_context
     return await list_artifacts_service(
@@ -38,4 +40,5 @@ async def list_artifacts(
         search=search,
         sort_by=sort_by,
         sort_direction=sort_direction,
+        scope=scope,
     )

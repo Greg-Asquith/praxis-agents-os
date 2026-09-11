@@ -20,7 +20,9 @@ async def list_artifact_shares(
     workspace_id: UUID,
     artifact_id: UUID,
 ) -> ArtifactShareListResponse:
-    await get_artifact_row(db, workspace_id=workspace_id, artifact_id=artifact_id)
+    await get_artifact_row(
+        db, workspace_id=workspace_id, artifact_id=artifact_id, workspace_only=True
+    )
     rows = (
         await db.execute(
             select(ArtifactShare, User.display_name, User.email)

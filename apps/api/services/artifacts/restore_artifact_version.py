@@ -33,6 +33,7 @@ async def restore_artifact_version(
         workspace_id=workspace.id,
         artifact_id=artifact_id,
         for_update=True,
+        workspace_only=True,
     )
     source = await get_artifact_revision(db, artifact=artifact, version_id=version_id)
     if artifact.current_version_id is None:

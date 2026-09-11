@@ -26,7 +26,9 @@ async def revoke_artifact_share(
     share_id: UUID,
     actor: User,
 ) -> None:
-    await get_artifact_row(db, workspace_id=workspace_id, artifact_id=artifact_id)
+    await get_artifact_row(
+        db, workspace_id=workspace_id, artifact_id=artifact_id, workspace_only=True
+    )
     share = await db.scalar(
         select(ArtifactShare)
         .where(

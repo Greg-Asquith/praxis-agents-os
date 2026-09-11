@@ -42,6 +42,7 @@ async def update_artifact(
         workspace_id=workspace.id,
         artifact_id=artifact_id,
         for_update=True,
+        workspace_only=True,
     )
     resolved_title = title if title is not None else artifact.title
     data = validate_artifact_content(

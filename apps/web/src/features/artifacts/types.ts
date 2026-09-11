@@ -23,7 +23,8 @@ export type ArtifactVersion = {
 
 export type ArtifactSummary = {
   id: string
-  workspace_id: string
+  scope: "workspace" | "platform"
+  workspace_id: string | null
   agent_id: string | null
   conversation_id: string | null
   run_id: string | null

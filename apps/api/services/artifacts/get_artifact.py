@@ -1,6 +1,6 @@
 # apps/api/services/artifacts/get_artifact.py
 
-"""Read one workspace artifact and its versions."""
+"""Reads one visible Artifact and its published or workspace versions."""
 
 from uuid import UUID
 
@@ -12,6 +12,7 @@ from models.user import User
 from models.workspace import WorkspaceMembership
 from services.artifacts.schemas import ArtifactRead
 from services.artifacts.utils import artifact_to_read, get_artifact_row
+from services.artifacts.visibility import visible_artifact_revision_filter
 
 
 async def get_artifact(
@@ -31,9 +32,15 @@ async def get_artifact(
         (
             await db.scalars(
                 select(ArtifactRevision)
-                .where(ArtifactRevision.artifact_id == artifact.id)
+                .where(
+                    ArtifactRevision.artifact_id == artifact.id,
+                    visible_artifact_revision_filter(workspace_id),
+                )
                 .order_by(ArtifactRevision.revision_number.desc())
+                .limit(100)
             )
         ).all()
     )
-    return artifact_to_read(artifact, revisions, actor=actor, membership=membership)
+    return artifact_to_read(
+        artifact, revisions, actor=actor, membership=membership, published_only=True
+    )

@@ -386,11 +386,10 @@ Artifact leaves it withdrawn until explicit publication.
 Services recheck and lock the active user, workspace, membership, and parent
 before saving. A conflicting version returns a review-required conflict.
 Editor save responses omit never-published versions and their restoration-source
-IDs. Tenant row-level security and agent mutation services remain workspace-only.
+IDs. Tenant row-level security and ordinary workspace mutation services remain local.
 The management content endpoint returns JSON text without a signed capability;
-clients must use the existing sandboxed preview. Tenant serving, discovery,
-runtime consumption, local copies, and the platform Artifact web UI remain
-pending.
+clients must use the existing sandboxed preview. Platform Artifact management
+controls in the web UI remain pending.
 
 Publication accepts the existing text Artifact types and rejects declared linked
 assets in HTML, CSS, Markdown, and Mermaid. Embed supported raster images and
@@ -422,3 +421,51 @@ private File retention. Workspace artifacts remain outside this maintenance job.
 Failed or cancelled orphan-cleanup jobs remain outside ordinary terminal-job
 retention. Their payload retains the object identity after automatic retries are
 exhausted. Successful cleanup jobs follow normal job retention.
+
+## Published Artifacts in workspaces
+
+Tenant lists, details, version content, and entity discovery admit published
+platform Artifacts alongside workspace Artifacts. The optional `scope` filter
+applies before list pagination and totals. Summaries expose the published
+version pointer and count only published versions. Detail history is bounded
+to 100 visible versions. Never-published versions and restoration-source IDs
+stay outside tenant responses. Historical published versions remain readable
+while the parent remains published. Withdrawal and deletion block fresh reads.
+
+The Artifacts list and detail page mark platform content as **Shared**. Detail
+pages retain previews, version history, and **Open**. Workspace editing,
+restoration, and anonymous share controls stay hidden for shared Artifacts.
+Platform management and workspace-copy controls in the web UI remain pending.
+
+Artifact view URLs use a `v2` signature that binds the requesting workspace,
+resource scope, Artifact ID, version ID, and expiry. Serving verifies that
+signature before establishing tenant context, then checks the exact visible
+parent and revision. Platform bytes use `PLATFORM_PRIVATE`. The separate host,
+Content Security Policy, sandbox, MIME checks, and `no-store` headers retain
+their existing behaviour. Version 1 view URLs are rejected; clients obtain a
+fresh URL through the authenticated API. Anonymous platform sharing remains
+forbidden. Previously delivered bytes cannot be recalled.
+
+`list_artifacts` and `read_artifact` identify scope and return the published
+version ID. Platform content uses the shared untrusted-content node. The
+conversation decoder presents its bounded text through the existing Artifact
+preview. `update_artifact` accepts a published platform target when the
+requesting user has live edit authority. It requires the version from the
+preceding read as `expected_current_version_id`. Saves use the same explicit
+platform service as direct edits and immediately publish the immutable version
+with strict global audit. Delegated runs retain the requesting user. Approval
+waits preserve the selected version; resumed saves recheck live membership,
+publication, and concurrency. Existing tool policies and run envelopes apply.
+Agent creation and generated output remain workspace-owned.
+
+`POST /artifacts/{artifact_id}/copy` requires a live workspace editor and takes
+`version_id` and `request_id`. Retain the request ID when retrying the same copy.
+The selected published text version becomes one fresh workspace Artifact and
+revision, with no source history, shares, or execution provenance. Strict
+workspace audit records the source platform Artifact and version. Subsequent
+source changes leave the copy independent. The source lock spans the local
+resource and audit commit. A workspace-owned `artifacts.cleanup_copy` job
+reserves deterministic object ownership before copying. After a five-minute
+grace period, cleanup removes uncommitted destination and staging bytes.
+Claimed or completed reservations cannot restart an incomplete copy; use a new
+request ID. Failed or cancelled cleanup jobs retain their ownership evidence.

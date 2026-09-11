@@ -113,6 +113,14 @@ The following contracts apply in this area:
   bounded. Present the complete result rather than its model summary; use the
   shared `DataTable` client pagination for large bounded row sets so copy and
   CSV export still operate over all rows.
+- Artifact reads and discovery include workspace and published platform content,
+  scope labels, and selected version IDs. Platform read text uses the shared
+  untrusted-content node and model-only framing. `update_artifact` requires
+  `expected_current_version_id` for a platform target and carries that pin
+  unchanged through approval. The explicit platform save service rechecks
+  live initiating-user authority, publication, and version under lock. Saving
+  publishes immediately to every workspace. Delegation preserves the
+  initiating user; configured tool policy and run envelopes still apply.
 - Artifact create, list, read, and update results share the dedicated
   `ArtifactToolRow`. Discovery rows must preserve structured artifact
   references as links to the management surface; reads default to the shared

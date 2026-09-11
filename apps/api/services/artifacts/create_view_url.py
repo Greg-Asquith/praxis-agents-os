@@ -9,10 +9,11 @@ from core.exceptions.general import NotFoundError
 from core.settings import settings
 from models.artifacts import Artifact
 from services.artifacts.schemas import ArtifactViewUrl
+from utils.content import ContentScope
 from utils.security import create_hmac_signature, derive_purpose_key, verify_hmac_signature
 
-_SIGNATURE_VERSION = "v1"
-_SIGNATURE_PURPOSE = "praxis:artifact-view-url:v1"
+_SIGNATURE_VERSION = "v2"
+_SIGNATURE_PURPOSE = "praxis:artifact-view-url:v2"
 
 
 def _signature_key() -> str:
@@ -20,16 +21,27 @@ def _signature_key() -> str:
     return derive_purpose_key(root, _SIGNATURE_PURPOSE).hex()
 
 
-def _payload(*, workspace_id: UUID, artifact_id: UUID, version_id: UUID, expires: int) -> str:
-    return f"artifact-view:v1:{workspace_id}:{artifact_id}:{version_id}:{expires}"
+def _payload(
+    *, workspace_id: UUID, scope: ContentScope, artifact_id: UUID, version_id: UUID, expires: int
+) -> str:
+    return f"artifact-view:v2:{workspace_id}:{scope}:{artifact_id}:{version_id}:{expires}"
 
 
-def create_artifact_view_url(*, artifact: Artifact, version_id: UUID) -> ArtifactViewUrl:
+def create_artifact_view_url(
+    *, workspace_id: UUID, artifact: Artifact, version_id: UUID
+) -> ArtifactViewUrl:
+    if (
+        artifact.deleted
+        or (artifact.scope == ContentScope.WORKSPACE and artifact.workspace_id != workspace_id)
+        or (artifact.scope == ContentScope.PLATFORM and not artifact.is_published)
+    ):
+        raise NotFoundError("Artifact not found")
     expires_at = datetime.now(UTC) + timedelta(seconds=settings.ARTIFACT_VIEW_URL_TTL_SECONDS)
     expires = int(expires_at.timestamp())
     digest = create_hmac_signature(
         _payload(
-            workspace_id=artifact.workspace_id,
+            workspace_id=workspace_id,
+            scope=artifact.scope,
             artifact_id=artifact.id,
             version_id=version_id,
             expires=expires,
@@ -40,7 +52,7 @@ def create_artifact_view_url(*, artifact: Artifact, version_id: UUID) -> Artifac
     return ArtifactViewUrl(
         url=(
             f"{base}/artifacts/view/{artifact.id}/{version_id}"
-            f"?workspace_id={artifact.workspace_id}&expires={expires}"
+            f"?workspace_id={workspace_id}&scope={artifact.scope}&expires={expires}"
             f"&sig={_SIGNATURE_VERSION}.{digest}"
         ),
         expires_at=datetime.fromtimestamp(expires, tz=UTC),
@@ -50,6 +62,7 @@ def create_artifact_view_url(*, artifact: Artifact, version_id: UUID) -> Artifac
 def require_valid_artifact_view_signature(
     *,
     workspace_id: UUID,
+    scope: ContentScope,
     artifact_id: UUID,
     version_id: UUID,
     expires: int,
@@ -63,6 +76,7 @@ def require_valid_artifact_view_signature(
     if not verify_hmac_signature(
         _payload(
             workspace_id=workspace_id,
+            scope=scope,
             artifact_id=artifact_id,
             version_id=version_id,
             expires=expires,

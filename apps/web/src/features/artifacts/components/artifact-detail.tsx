@@ -20,6 +20,7 @@ import { ArtifactSharesList } from "@/features/artifacts/components/artifact-sha
 import { artifactTypeLabel } from "@/features/artifacts/format"
 import { ArtifactVersionSelector } from "@/features/artifacts/components/artifact-version-selector"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { canEditWorkspace } from "@/features/workspaces/permissions"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
 import { openSignedResource } from "@/lib/open-signed-resource"
@@ -44,9 +45,11 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
   const currentVersion = artifact.versions.find(
     (version) => version.id === artifact.current_version_id
   )
-  const canWrite = workspace.current_user_role !== "read_only"
+  const isWorkspaceArtifact = artifact.scope === "workspace"
+  const canWrite = isWorkspaceArtifact && canEditWorkspace(workspace.current_user_role)
   const canManageShares =
-    workspace.current_user_role === "owner" || workspace.current_user_role === "admin"
+    isWorkspaceArtifact &&
+    (workspace.current_user_role === "owner" || workspace.current_user_role === "admin")
 
   async function handleRestore() {
     setError(null)
@@ -106,6 +109,7 @@ export function ArtifactDetail({ artifactId }: { artifactId: string }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Badge variant="secondary">{artifactTypeLabel(artifact.artifact_type)}</Badge>
+            {artifact.scope === "platform" ? <Badge variant="secondary">Shared</Badge> : null}
             {selectedVersion ? (
               <span className="text-muted-foreground text-xs">
                 {formatDateTime(selectedVersion.created_at)}
