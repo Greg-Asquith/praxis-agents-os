@@ -73,13 +73,22 @@ REGION=europe-west4              # = GCP_REGION
       `RUNTIME_SECRET_BINDINGS`. Store the login application's Directory
       (tenant) ID in that secret.
       Seed its secret version before deployment, alongside the client secret.
-- [ ] For each enabled Microsoft Graph integration, fill its client ID and set
-      `MICROSOFT_GRAPH_TENANT`. Add the matching client secret to
-      `RUNTIME_SECRET_BINDINGS`, using these bindings as needed:
+- [ ] For Microsoft Graph, add
+      `MICROSOFT_GRAPH_TENANT=praxis-microsoft-graph-tenant` to
+      `RUNTIME_SECRET_BINDINGS` and store the tenant ID in that secret. Client
+      IDs and service-specific tenant overrides can also use secret bindings.
+      Bound settings need no raw value in the deployment environment file;
+      the API and worker receive one Secret Manager reference for each setting.
+      Unset service tenant overrides use the shared tenant at runtime. Add each
+      enabled service's client secret using these bindings as needed:
       `OUTLOOK_MAIL_OAUTH_CLIENT_SECRET=praxis-outlook-mail-oauth-client-secret`,
       `OUTLOOK_CALENDAR_OAUTH_CLIENT_SECRET=praxis-outlook-calendar-oauth-client-secret`,
       and
       `SHAREPOINT_OAUTH_CLIENT_SECRET=praxis-sharepoint-oauth-client-secret`.
+      For deployments that use raw Microsoft Graph settings, the environment
+      file still accepts them. A secret binding takes precedence over a raw
+      value for the same setting. These integration secrets stay off the
+      migration job unless listed in `MIGRATE_SECRET_ENV_NAMES`.
 
 ### 2. Bootstrap
 

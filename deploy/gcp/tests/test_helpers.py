@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -13,6 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
@@ -207,6 +210,78 @@ die() {{ echo "$*" >&2; exit 1; }}
             "value: ${RAW}", {"RAW": "back\\slash ${AND} &1"}, ["RAW"]
         )
         self.assertEqual(rendered, "value: back\\slash ${AND} &1")
+
+    def test_microsoft_graph_settings_use_defaults_and_preserve_tenant_overrides(self) -> None:
+        entries = yaml.safe_load(helpers.microsoft_graph_env_yaml({
+            "MICROSOFT_GRAPH_TENANT": "shared.example.com",
+            "OUTLOOK_MAIL_OAUTH_TENANT": "mail.example.com",
+        }, ""))
+        values = {entry["name"]: entry["value"] for entry in entries}
+        self.assertEqual(values["MICROSOFT_GRAPH_TENANT"], "shared.example.com")
+        self.assertEqual(values["OUTLOOK_MAIL_OAUTH_TENANT"], "mail.example.com")
+        self.assertEqual(values["OUTLOOK_CALENDAR_OAUTH_TENANT"], "")
+        self.assertEqual(values["MICROSOFT_GRAPH_REQUESTS_PER_SECOND"], "4.0")
+        self.assertEqual(values["SHAREPOINT_DISCOVERY_MAX_SITES"], "50")
+
+    def test_microsoft_graph_settings_can_all_use_secret_bindings(self) -> None:
+        bindings = ",".join(
+            f"{name}=example-{index}"
+            for index, name in enumerate(helpers.MICROSOFT_GRAPH_ENV_DEFAULTS)
+        )
+        rendered = helpers.microsoft_graph_env_yaml({"RUNTIME_SECRET_BINDINGS": bindings}, "")
+        self.assertTrue(rendered)
+        self.assertIsNone(yaml.safe_load(rendered))
+
+    def test_microsoft_graph_secret_bindings_render_without_raw_configuration(self) -> None:
+        bound_names = (
+            "MICROSOFT_GRAPH_TENANT", "OUTLOOK_MAIL_OAUTH_CLIENT_ID", "OUTLOOK_MAIL_OAUTH_TENANT",
+        )
+        example = (REPO_ROOT / "deploy/gcp/.env.example").read_text()
+        base = "\n".join(
+            line for line in example.splitlines()
+            if line.split("=", 1)[0] not in helpers.MICROSOFT_GRAPH_ENV_DEFAULTS
+        )
+        bindings = ",".join(f"{name}=example-{name.lower()}" for name in bound_names)
+        environment = {
+            key: value for key, value in os.environ.items()
+            if key not in helpers.MICROSOFT_GRAPH_ENV_DEFAULTS
+        }
+        for stale_raw_value in (False, True):
+            with self.subTest(stale_raw_value=stale_raw_value), tempfile.TemporaryDirectory() as tmp:
+                env_file = Path(tmp) / "deployment.env"
+                content = base + f'\nRUNTIME_SECRET_BINDINGS="${{RUNTIME_SECRET_BINDINGS}},{bindings}"\n'
+                if stale_raw_value:
+                    content += "\n".join(f"{name}=stale-raw-value" for name in bound_names)
+                env_file.write_text(content)
+                rendered = Path(tmp) / "rendered"
+                result = subprocess.run(
+                    [str(REPO_ROOT / "deploy/gcp/deploy.sh"), "--render-only", str(rendered),
+                     str(env_file), "abcdef0123456789"],
+                    env=environment, capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for manifest in ("services/praxis-api.yaml", "jobs/praxis-worker.yaml"):
+                    source = (rendered / manifest).read_text()
+                    self.assertNotIn("stale-raw-value", source)
+                    document = yaml.safe_load(source)
+                    spec = document["spec"]["template"]["spec"]
+                    if manifest.startswith("jobs/"):
+                        spec = spec["template"]["spec"]
+                    entries = spec["containers"][0]["env"]
+                    for name in bound_names:
+                        self.assertEqual([entry for entry in entries if entry["name"] == name], [{
+                            "name": name,
+                            "valueFrom": {"secretKeyRef": {
+                                "name": f"example-{name.lower()}", "key": "latest",
+                            }},
+                        }])
+                    values = {entry["name"]: entry.get("value") for entry in entries}
+                    self.assertEqual(values["OUTLOOK_CALENDAR_OAUTH_TENANT"], "")
+                    self.assertEqual(values["SHAREPOINT_OAUTH_CLIENT_ID"], "")
+                    self.assertEqual(values["MICROSOFT_GRAPH_REQUESTS_PER_SECOND"], "4.0")
+                migration = (rendered / "jobs/praxis-migrate.yaml").read_text()
+                for name in bound_names:
+                    self.assertNotIn(name, migration)
 
     def test_audit_policy_cli_reports_changed_then_unchanged(self) -> None:
         def run_cli(input_path: Path, output_path: Path) -> str:

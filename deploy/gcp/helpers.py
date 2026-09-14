@@ -29,6 +29,17 @@ GCS_BROWSER_CORS_RESPONSE_HEADERS = (
     "x-goog-if-generation-match",
 )
 GCS_BROWSER_CORS_MAX_AGE_SECONDS = 3600
+MICROSOFT_GRAPH_ENV_DEFAULTS = {
+    "MICROSOFT_GRAPH_TENANT": "",
+    "MICROSOFT_GRAPH_REQUESTS_PER_SECOND": "4.0",
+    "OUTLOOK_MAIL_OAUTH_CLIENT_ID": "",
+    "OUTLOOK_MAIL_OAUTH_TENANT": "",
+    "OUTLOOK_CALENDAR_OAUTH_CLIENT_ID": "",
+    "OUTLOOK_CALENDAR_OAUTH_TENANT": "",
+    "SHAREPOINT_OAUTH_CLIENT_ID": "",
+    "SHAREPOINT_OAUTH_TENANT": "",
+    "SHAREPOINT_DISCOVERY_MAX_SITES": "50",
+}
 
 
 _LOGICAL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_/-]{1,255}$")
@@ -117,6 +128,21 @@ def render_template(template: str, values: dict[str, str], allowed: list[str]) -
     return _TEMPLATE_VARIABLE_PATTERN.sub(replace, template)
 
 
+def microsoft_graph_env_yaml(values: dict[str, str], indent: str) -> str:
+    """Renders Microsoft Graph settings while leaving bound values to Secret Manager."""
+    bound_names = {
+        binding.split("=", 1)[0]
+        for binding in values.get("RUNTIME_SECRET_BINDINGS", "").split(",")
+    }
+    lines = []
+    for name, default in MICROSOFT_GRAPH_ENV_DEFAULTS.items():
+        if name in bound_names:
+            continue
+        value = values.get(name, default)
+        lines.extend((f"{indent}- name: {name}", f"{indent}  value: {json.dumps(value)}"))
+    return "\n".join(lines) or f"{indent}# Microsoft Graph settings use runtime secret bindings."
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -141,6 +167,8 @@ def _build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("output", type=Path)
     render_parser.add_argument("allowlist", help="space-separated ${VAR} references")
     subparsers.add_parser("partner-locations")
+    microsoft_env_parser = subparsers.add_parser("microsoft-graph-env")
+    microsoft_env_parser.add_argument("indent")
     return parser
 
 
@@ -166,6 +194,9 @@ def partner_locations_yaml() -> str:
 
 def main() -> None:
     args = _build_parser().parse_args()
+    if args.command == "microsoft-graph-env":
+        print(microsoft_graph_env_yaml(dict(os.environ), args.indent))
+        return
     if args.command == "partner-locations":
         try:
             print(partner_locations_yaml())

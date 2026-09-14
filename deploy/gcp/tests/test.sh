@@ -95,20 +95,24 @@ if grep -q '/readyz' "$TEST_TMP/rendered/services/praxis-api.yaml"; then
   exit 1
 fi
 grep -q 'value: drain' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
+grep -A1 'name: GOOGLE_VERTEX_AI' "$TEST_TMP/rendered/jobs/praxis-migrate.yaml" \
+  | grep -q 'value: "false"'
+grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$TEST_TMP/rendered/jobs/praxis-migrate.yaml" \
+  | grep -q 'value: auto'
 for manifest in \
   "$TEST_TMP/rendered/services/praxis-api.yaml" \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
   grep -A1 'name: GCS_PLATFORM_PRIVATE_BUCKET' "$manifest" \
     | grep -q 'value: praxis-platform-example-staging'
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
-  grep -A1 'name: MICROSOFT_GRAPH_TENANT' "$manifest" | grep -q 'value: organizations'
+  grep -A1 'name: MICROSOFT_GRAPH_TENANT' "$manifest" | grep -q 'value: "organizations"'
   grep -A1 'name: MICROSOFT_GRAPH_REQUESTS_PER_SECOND' "$manifest" | grep -q 'value: "4.0"'
-  grep -A1 'name: OUTLOOK_MAIL_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: disabled'
-  grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: organizations'
-  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: disabled'
-  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" | grep -q 'value: organizations'
-  grep -A1 'name: SHAREPOINT_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: disabled'
-  grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: organizations'
+  grep -A1 'name: OUTLOOK_MAIL_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: "disabled"'
+  grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
+  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: "disabled"'
+  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
+  grep -A1 'name: SHAREPOINT_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: "disabled"'
+  grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: SHAREPOINT_DISCOVERY_MAX_SITES' "$manifest" | grep -q 'value: "50"'
   grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: auto'
 done
@@ -126,10 +130,10 @@ for manifest in \
   "$TEST_TMP/microsoft-overrides-render/services/praxis-api.yaml" \
   "$TEST_TMP/microsoft-overrides-render/jobs/praxis-worker.yaml"; do
   grep -A1 'name: MICROSOFT_GRAPH_REQUESTS_PER_SECOND' "$manifest" | grep -q 'value: "8.0"'
-  grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: mail.example.com'
+  grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: "mail.example.com"'
   grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" \
-    | grep -q 'value: calendar.example.com'
-  grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: sharepoint.example.com'
+    | grep -q 'value: "calendar.example.com"'
+  grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: "sharepoint.example.com"'
   grep -A1 'name: SHAREPOINT_DISCOVERY_MAX_SITES' "$manifest" | grep -q 'value: "75"'
 done
 
@@ -156,6 +160,12 @@ for env_name in DB_POOL_SIZE DB_POOL_MAX_OVERFLOW DB_MAINTENANCE_POOL_SIZE \
 done
 grep -A1 'name: AGENT_RUN_MAX_CONCURRENT_TURNS' "$TEST_TMP/rendered/services/praxis-api.yaml" \
   | grep -q 'value: "3"'
+for manifest in \
+  "$TEST_TMP/rendered/services/praxis-api.yaml" \
+  "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
+  grep -A1 'name: KB_ANNOTATION_PROVIDER' "$manifest" | grep -q 'value: "openai"'
+  grep -A1 'name: KB_ANNOTATION_MODEL' "$manifest" | grep -q 'value: "gpt-5.6-luna"'
+done
 grep -q 'maxRetries: 0' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 if grep -R -q --exclude='test.sh' 'PUBLIC_ASSET_PREFIX\|/assets$' "$GCP_DIR"; then
   echo "deployment helpers must preserve the application's existing public object keys" >&2
