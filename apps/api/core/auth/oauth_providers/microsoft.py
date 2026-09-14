@@ -26,7 +26,7 @@ class MicrosoftOAuthProvider(OAuthProviderWithRetry):
         super().__init__(provider_name="microsoft", provider_display_name="Microsoft")
         self.client_id = settings.MICROSOFT_OAUTH_CLIENT_ID
         self.client_secret = settings.MICROSOFT_OAUTH_CLIENT_SECRET.get_secret_value()
-        self.tenant = "common"  # Allow both personal and work/school accounts
+        self.tenant = settings.MICROSOFT_AZURE_TENANT_ID
         self.auth_url = f"https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/authorize"
         self.token_url = f"https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token"
         self.user_info_url = "https://graph.microsoft.com/v1.0/me"

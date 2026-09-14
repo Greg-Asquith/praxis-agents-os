@@ -2,7 +2,9 @@
 
 """OAuth provider and email authentication settings."""
 
-from pydantic import Field, SecretStr, model_validator
+from typing import Annotated
+
+from pydantic import Field, SecretStr, StringConstraints, model_validator
 
 
 class AuthSettingsMixin:
@@ -47,6 +49,12 @@ class AuthSettingsMixin:
     )
     MICROSOFT_OAUTH_REDIRECT_URI: str = Field(
         default="", description="Microsoft OAuth redirect URI"
+    )
+    MICROSOFT_AZURE_TENANT_ID: Annotated[
+        str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9.-]*$")
+    ] = Field(
+        default="common",
+        description="Microsoft login tenant ID, tenant domain, common, organizations, or consumers",
     )
 
     @model_validator(mode="after")

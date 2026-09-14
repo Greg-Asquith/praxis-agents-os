@@ -68,6 +68,11 @@ REGION=europe-west4              # = GCP_REGION
       one login provider, and fill its client ID and `/oauth/callback` redirect
       URI. Add its client secret to `RUNTIME_SECRET_BINDINGS`; for example,
       `GOOGLE_OAUTH_CLIENT_SECRET=praxis-google-oauth-client-secret`.
+- [ ] For Microsoft login, add
+      `MICROSOFT_AZURE_TENANT_ID=praxis-microsoft-azure-tenant-id` to
+      `RUNTIME_SECRET_BINDINGS`. Store the login application's Directory
+      (tenant) ID in that secret.
+      Seed its secret version before deployment, alongside the client secret.
 - [ ] For each enabled Microsoft Graph integration, fill its client ID and set
       `MICROSOFT_GRAPH_TENANT`. Add the matching client secret to
       `RUNTIME_SECRET_BINDINGS`, using these bindings as needed:

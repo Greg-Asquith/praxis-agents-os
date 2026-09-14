@@ -42,6 +42,20 @@ The following contracts apply in this area:
   approval, credential, notification, and schedule flows should leave enough
   context to debug later.
 
+## Microsoft login tenant
+
+`MICROSOFT_AZURE_TENANT_ID` selects the tenant for Microsoft login authorisation,
+code exchange, and token refresh.
+For a single-tenant Entra application, set it to the application's Directory
+(tenant) ID or tenant domain. Its default is `common`; `organizations` and
+`consumers` are also supported when they match the application's account types.
+An explicit blank value or URL is rejected during settings validation.
+
+This login setting is independent of `MICROSOFT_GRAPH_TENANT`, which configures
+the separate Microsoft Graph integration applications. Locally, set it in
+`apps/api/.env` and restart the API. On Cloud Run, use the
+[runtime secret binding](../../deploy/gcp/README.md) for this value.
+
 ## Return paths
 
 Protected-route redirects preserve a validated same-origin relative path in
