@@ -167,7 +167,11 @@ the same limit applies while streaming, even when metadata understates the size.
 Both failures report `too_large`. Only `download_item` requests
 `@microsoft.graph.downloadUrl` through `get_item`, consumes it through
 `get_bytes`, and removes it from returned metadata. The URL is not persisted
-or returned by the tool. This follows Microsoft's
+or returned by the tool. Download metadata omits `$select` because SharePoint
+can suppress the download annotation when selected metadata fields are present.
+The response is still filtered to the explicit item fields and the one download
+annotation before it reaches `download_item`. Ordinary metadata reads retain
+`$select` and exclude download annotations. This follows Microsoft's
 [pre-authenticated download contract](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content).
 
 The result contains `name`, normalised `content_type`, actual downloaded
@@ -191,8 +195,15 @@ Invalid UTF-8 text or HTML, corrupt or encrypted documents, parser-limit
 failures, and conversion deadlines report
 `conversion_failed`, with copy explaining that the file may be protected or
 damaged. The conversion helper's process deadline is opt-in; other callers
-retain their existing thread execution. The registered file-content presenter
-is pending; the default scalar list renderer cannot display its nested result.
+retain their existing thread execution.
+
+The file-content presenter uses the shared read shell and sanitised Markdown
+renderer. It shows the filename, content type, formatted size, and an
+**Open in SharePoint** citation guarded by the shared HTTP URL validator.
+Truncated content carries a **64 KiB limit reached** badge. Long content scrolls
+within the result card. Provider error entries retain their recovery copy;
+malformed display fields fall back to the default tool row. Only display fields
+enter the view, excluding reference metadata and download annotations.
 
 Metadata validation errors retain the owning operation: `search_files`,
 `list_folder`, `get_item`, or `read_file`. Errors omit rejected provider values.

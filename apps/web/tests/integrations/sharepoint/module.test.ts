@@ -6,10 +6,11 @@ import sharePointModule from "@/integrations/sharepoint"
 import { testMicrosoftIntegrationModule } from "../microsoft-module-contract"
 
 describe("SharePoint integration module", () => {
-  it("registers the folder listing and search presenters", () => {
+  it("registers the folder listing, search, and file read presenters", () => {
     expect(sharePointModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
       "sharepoint_list_folder",
       "sharepoint_search_files",
+      "sharepoint_read_file",
     ])
   })
 

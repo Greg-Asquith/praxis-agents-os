@@ -4,6 +4,7 @@ import type { IntegrationUiModule } from "@/integrations/contract"
 import { MicrosoftConnectHelp } from "@/integrations/microsoft-connect-help"
 import { SharePointLogo } from "@/integrations/sharepoint/components/logo"
 import { sharePointListFolderPresenter } from "@/integrations/sharepoint/presenters/list-folder"
+import { sharePointReadFilePresenter } from "@/integrations/sharepoint/presenters/read-file"
 import { sharePointSearchFilesPresenter } from "@/integrations/sharepoint/presenters/search-files"
 
 export default {
@@ -11,5 +12,9 @@ export default {
   ConnectHelp: MicrosoftConnectHelp,
   Logo: SharePointLogo,
   providerKey: "sharepoint",
-  toolRowPresenters: [sharePointListFolderPresenter, sharePointSearchFilesPresenter],
+  toolRowPresenters: [
+    sharePointListFolderPresenter,
+    sharePointSearchFilesPresenter,
+    sharePointReadFilePresenter,
+  ],
 } satisfies IntegrationUiModule

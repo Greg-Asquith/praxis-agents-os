@@ -664,8 +664,9 @@ execution with a deadline and strict UTF-8 decoding, used by SharePoint.
 Its result entry point supplies actual truncation state and conversion source
 to SharePoint and Outlook attachment reads; existing string callers retain
 replacement decoding. Other conversion callers retain thread execution.
-File-content presentation, Calendar tools, and SharePoint
-link resolution remain pending.
+The file-content presenter uses the shared read seam and Markdown renderer with
+guarded citations, size and type details, and an explicit truncation badge.
+Calendar tools and SharePoint link resolution remain pending.
 Gmail and Outlook share the provider-neutral preview query and content loader
 in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.

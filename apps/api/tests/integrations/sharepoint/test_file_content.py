@@ -68,11 +68,16 @@ async def test_real_documents_retain_provenance_and_hide_download_url(
         requests.append(request)
         if request.url.host == "graph.microsoft.com":
             assert request.headers["Authorization"] == "Bearer token"
-            assert "@microsoft.graph.downloadUrl" in request.url.params["$select"]
             assert request.url.path == "/v1.0/drives/drive/items/file"
-            return httpx2.Response(
-                200, json=metadata(name=filename, size=len(data), file={"mimeType": content_type})
+            item = metadata(name=filename, size=len(data), file={"mimeType": content_type})
+            item["@microsoft.graph.downloadUrlNoAuth"] = (
+                "https://example.com/PRIVATE_DOWNLOAD_SECRET"
             )
+            item["createdBy"] = {"user": {"displayName": "PRIVATE_CREATOR_METADATA"}}
+            # SharePoint omits the download annotation when metadata fields use $select.
+            if "$select" in request.url.params:
+                item.pop("@microsoft.graph.downloadUrl")
+            return httpx2.Response(200, json=item)
         assert request.url.host == "8.8.8.8"
         assert request.headers["Host"] == "example.sharepoint.com"
         assert request.extensions["sni_hostname"] == "example.sharepoint.com"
@@ -90,6 +95,7 @@ async def test_real_documents_retain_provenance_and_hide_download_url(
         assert result[field].source_kind == "sharepoint_drive_item"
         assert result[field].source_ref == "drive:file"
     assert "PRIVATE_DOWNLOAD_SECRET" not in str(result) + caplog.text
+    assert "PRIVATE_CREATOR_METADATA" not in str(result)
     assert DOWNLOAD_URL not in str([record.__dict__ for record in caplog.records])
 
 

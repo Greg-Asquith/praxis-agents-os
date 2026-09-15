@@ -19,7 +19,8 @@ async def get_item(
             item_path(drive_id, item_id),
             operation="get_item",
             policy=IntegrationRequestPolicy.READ,
-            params={"$select": select},
+            # Graph can omit download annotations when metadata fields use $select.
+            params=None if include_download_url else {"$select": select},
         ),
         operation="get_item",
     )
