@@ -1,0 +1,22 @@
+{
+  "value": [
+    {
+      "id": "file",
+      "name": "Quarterly report.docx",
+      "size": 1234,
+      "file": {"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+      "lastModifiedDateTime": "2026-09-15T09:00:00Z",
+      "webUrl": "https://example.sharepoint.com/sites/Finance/Documents/Quarterly%20report.docx",
+      "parentReference": {"driveId": "drive", "path": "/drives/drive/root:"}
+    },
+    {
+      "id": "folder",
+      "name": "Reports",
+      "size": 0,
+      "folder": {"childCount": 201},
+      "lastModifiedDateTime": "2026-09-15T09:00:00Z",
+      "webUrl": "https://example.sharepoint.com/sites/Finance/Documents/Reports",
+      "parentReference": {"driveId": "drive", "path": "/drives/drive/root:"}
+    }
+  ]
+}

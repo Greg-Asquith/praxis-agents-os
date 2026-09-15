@@ -26,6 +26,7 @@ from integrations.google_search_console.tools import (
 )
 from integrations.notion.tools import TOOL_DEFINITIONS as NOTION_TOOL_DEFINITIONS
 from integrations.outlook_mail.tools import TOOL_DEFINITIONS as OUTLOOK_MAIL_TOOL_DEFINITIONS
+from integrations.sharepoint.tools import TOOL_DEFINITIONS as SHAREPOINT_TOOL_DEFINITIONS
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
@@ -58,9 +59,11 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
             *NOTION_TOOL_DEFINITIONS,
             *OUTLOOK_MAIL_TOOL_DEFINITIONS,
+            *SHAREPOINT_TOOL_DEFINITIONS,
         )
     }
     expected = {
+        "sharepoint_list_folder": ("read", "internal", "auto", False),
         "outlook_mail_search_messages": ("read", "internal", "auto", False),
         "outlook_mail_read_message": ("read", "internal", "auto", False),
         "outlook_mail_list_folders": ("read", "internal", "auto", False),
@@ -180,6 +183,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
         *NOTION_TOOL_DEFINITIONS,
         *OUTLOOK_MAIL_TOOL_DEFINITIONS,
+        *SHAREPOINT_TOOL_DEFINITIONS,
     )
 
     for definition in definitions:

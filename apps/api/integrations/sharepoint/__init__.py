@@ -7,7 +7,9 @@ from services.integrations.microsoft_graph import entra_oauth_config
 from services.integrations.plugin import IntegrationProviderPlugin, OAuthClientConfig
 
 from .discover_resources import discover_resources
+from .entity_resolvers import SHAREPOINT_DRIVE_ITEM_RESOLVER
 from .settings import sharepoint_settings
+from .tools import TOOL_DEFINITIONS
 
 SHAREPOINT_OAUTH_SCOPES = (
     "openid",
@@ -46,5 +48,7 @@ PROVIDER = IntegrationProviderPlugin(
         event_delivery="none",
     ),
     discover_resources=discover_resources,
+    tool_definitions=TOOL_DEFINITIONS,
+    entity_resolvers=(SHAREPOINT_DRIVE_ITEM_RESOLVER,),
     oauth_config=oauth_config,
 )

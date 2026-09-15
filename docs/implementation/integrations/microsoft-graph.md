@@ -16,8 +16,7 @@ Authentication failures must propagate to credential refresh and connection
 recovery. The seam must not import provider packages. The Outlook
 Mail, Outlook Calendar, and SharePoint packages each own isolated OAuth
 settings and discovery. They expose `outlook_mailbox`, `outlook_calendar`,
-and `sharepoint_drive` resources, respectively. Calendar and SharePoint tools
-are pending.
+and `sharepoint_drive` resources, respectively. Calendar tools are pending.
 
 `MicrosoftGraphClient.get_graph_bytes(path, operation=..., max_bytes=...)`
 reads authenticated binary Graph responses, including attachment `/$value`
@@ -83,6 +82,38 @@ The `outlook_message` preview returns raw content to the engine for bounding
 and sanitisation. Preview definitions validate provider-specific reference
 patterns: Outlook permits bounded base64 IDs; Gmail retains its short URL-safe
 IDs.
+
+## SharePoint and OneDrive folder listing
+
+Select libraries in Active Context to use `sharepoint_list_folder`.
+Without a folder reference, it lists the root of every selected library.
+With a reference, it targets exactly one selected drive and checks that the
+item is a local folder before listing its children. Missing or ambiguous
+drive selections stop before credential access. Remote shortcuts and items
+with a different or missing parent drive are excluded. Package items, including
+OneNote notebooks, are omitted and cannot be used as folder targets. Malformed
+local file or folder metadata fails that library with a safe typed error;
+other selected libraries retain their results.
+
+Each library returns one page of up to `limit` items, with a default of 50
+and a maximum of 200. `has_more` reports a continuation or an oversized
+provider page; the tool does not follow continuation URLs. Results include
+scoped references, names, kinds, parent paths, sizes, content types, modified
+times, and citation URLs. Provider text uses `sharepoint_drive_item`
+provenance nodes. Citation URLs up to 8,192 characters are preserved in full.
+Longer URLs fail that library with a safe error instead of returning a partial
+link. Names are bounded to 500 characters, parent paths to 2,000, content
+types to 255, and timestamps to 100. The complete serialised result has a
+768 KiB ceiling, including the full citation URLs.
+Download annotations are neither requested nor included in results.
+
+The tool uses the audited context runners and works in Code Mode. Known
+references resolve by ID within exactly one selected drive. Search-based
+reference choices, file search, file reads, link resolution, and the custom
+folder presenter are pending.
+
+Fetching original Office files into Files, editing them, and saving them back
+to SharePoint is pending. Markdown reads do not provide that workflow.
 
 ## Outlook Mail writes
 
