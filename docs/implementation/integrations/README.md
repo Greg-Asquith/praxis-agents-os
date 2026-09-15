@@ -15,7 +15,7 @@ Use these focused references for provider behaviour:
 - [Google Analytics](google-analytics.md): property discovery and reporting.
 - [Google Search Console](google-search-console.md): site routing and indexing writes.
 - [Notion](notion.md): personal grants, bounded reads, and approved writes.
-- [Microsoft Graph](microsoft-graph.md): Entra connections, discovery, Outlook tools, and SharePoint folder listing.
+- [Microsoft Graph](microsoft-graph.md): Entra connections, discovery, Outlook tools, and SharePoint file tools.
 
 For Gmail and Airtable, follow the shared contracts here and the provider
 packages under `apps/api/integrations/` and `apps/web/src/integrations/`.

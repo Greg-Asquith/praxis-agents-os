@@ -1,6 +1,6 @@
 # apps/api/integrations/sharepoint/tools/schemas.py
 
-"""Typed SharePoint folder listing results."""
+"""Typed SharePoint listing and search results."""
 
 from typing import Literal
 
@@ -41,3 +41,18 @@ class FolderEntry(IntegrationFanOutEntry):
 
 class FolderOutput(IntegrationFanOutOutput):
     results: list[FolderEntry]
+
+
+class SearchData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[DriveItem] = Field(max_length=25)
+    count: int = Field(ge=0, le=25)
+
+
+class SearchEntry(IntegrationFanOutEntry):
+    data: SearchData | None = None
+
+
+class SharePointSearchOutput(IntegrationFanOutOutput):
+    results: list[SearchEntry]

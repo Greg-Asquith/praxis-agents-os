@@ -127,8 +127,9 @@ async def test_malformed_local_supported_items_still_fail(change):
     async with graph(
         lambda _: httpx2.Response(200, json={"value": [file, {**file, **change}]})
     ) as client:
-        with pytest.raises(IntegrationValidationError, match="invalid item metadata"):
+        with pytest.raises(IntegrationValidationError, match="invalid item metadata") as caught:
             await list_children(client, drive_id="drive")
+    assert caught.value.operation == "list_folder"
 
 
 @pytest.mark.parametrize("packages_only", [False, True])
@@ -187,6 +188,7 @@ async def test_invalid_provider_ids_raise_safe_typed_errors(item_id):
             await list_children(client, drive_id="drive")
     assert caught.value.user_message == "SharePoint returned invalid item metadata."
     assert caught.value.provider_key == "sharepoint"
+    assert caught.value.operation == "list_folder"
     assert caught.value.__suppress_context__ is True
 
 
@@ -202,6 +204,7 @@ async def test_citation_urls_are_complete_or_rejected(length):
             with pytest.raises(IntegrationValidationError, match="citation URL") as caught:
                 await list_children(client, drive_id="drive")
             assert url not in str(caught.value)
+            assert caught.value.operation == "list_folder"
         else:
             result = await list_children(client, drive_id="drive")
             assert result["items"][0]["web_url"].content == url

@@ -646,12 +646,18 @@ bounded read tools, scoped message and attachment resolvers, and an
 mailbox and retain immutable message references and terminal evidence. Move
 and update also support operator-configured automatic execution. Real-tenant
 reply rendering verification remains pending. SharePoint contributes bounded
-folder listing and exact-ID reference resolution within selected libraries.
-Listing excludes packages, remote shortcuts, and foreign-drive items. Its
-folder presenter uses the shared fan-out read seam and DataTable with validated
-public item fields. Calendar tools and SharePoint search, content reads, and
-link resolution remain pending. Gmail and Outlook share the provider-neutral preview
-query and content loader in `components/tool-ui/`; provider wrappers own metadata
+folder listing, drive-root search, and exact-ID reference resolution within
+selected libraries. The listing tool's optional `folder` entity field exposes
+authorised name and exact lookup through the conversation-scoped API.
+The resolver returns up to 25 file and folder choices with kind descriptions;
+exact lookup accepts at most 25 values. An editable browser picker is pending.
+Listing and search exclude packages, remote shortcuts, and foreign-drive items.
+The folder presenter uses the shared fan-out read seam and DataTable with validated
+public item fields. Human-readable SharePoint search results remain pending B2;
+the default scalar list renderer does not display structured library results.
+Calendar tools, SharePoint content reads, and link resolution remain pending.
+Gmail and Outlook share the provider-neutral preview query and content loader
+in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.
 
 Outlook deliberately retains per-tool execution closures for its multi-request

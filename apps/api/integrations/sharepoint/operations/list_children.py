@@ -25,7 +25,7 @@ async def list_children(
         raise ValueError("SharePoint folder limits must be between 1 and 200.")
     if folder_id is not None:
         folder = await get_item(client, drive_id=drive_id, item_id=folder_id)
-        if item_kind(folder) != "folder":
+        if item_kind(folder, operation="list_folder") != "folder":
             raise IntegrationValidationError(
                 "Select a SharePoint folder to list its contents.",
                 provider_key="sharepoint",
@@ -45,9 +45,11 @@ async def list_children(
     if not isinstance(values, list):
         raise invalid_response("list_folder")
     items = [
-        item_result(item, drive_id=drive_id)
+        item_result(item, drive_id=drive_id, operation="list_folder")
         for item in values[:limit]
-        if isinstance(item, dict) and is_local_item(item, drive_id) and item_kind(item) is not None
+        if isinstance(item, dict)
+        and is_local_item(item, drive_id)
+        and item_kind(item, operation="list_folder") is not None
     ]
     return {
         "items": items,

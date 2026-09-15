@@ -83,7 +83,7 @@ and sanitisation. Preview definitions validate provider-specific reference
 patterns: Outlook permits bounded base64 IDs; Gmail retains its short URL-safe
 IDs.
 
-## SharePoint and OneDrive folder listing
+## SharePoint and OneDrive file tools
 
 Select libraries in Active Context to use `sharepoint_list_folder`.
 Without a folder reference, it lists the root of every selected library.
@@ -116,9 +116,36 @@ Links use the shared HTTP URL guard. Empty and partial results retain their
 own copy, and `has_more` remains visible even when a page has no eligible items.
 Malformed result fields fall back to the default tool row.
 
-The tool uses the audited context runners and works in Code Mode. Known
-references resolve by ID within exactly one selected drive. Search-based
-reference choices, file search, file reads, and link resolution are pending.
+`sharepoint_search_files` searches names, metadata, and indexed content through
+Graph's [drive-root search](https://learn.microsoft.com/en-us/graph/api/driveitem-search).
+The query must contain non-whitespace text and be 1-200 characters. Each
+selected library returns `items` and `count`, with a default limit of 10 and
+a maximum of 25 provider candidates over at most five pages. Remote, foreign,
+unscoped, and package items are excluded, so counts can be below the limit.
+Continuation URLs must retain the global Graph host and the original drive
+search path as sent by HTTPX, preserving encoded path separators. The search
+uses the same bounded metadata, provenance, citations, and complete result
+ceiling as folder listing. It does not download content.
+Human-readable search results are pending B2. The default row's scalar list
+renderer does not display the structured per-library result objects.
+
+Both tools use the audited context runners and work in Code Mode. Known
+references resolve by ID within exactly one selected drive, with at most 25
+exact values per request. Larger requests fail before credentials or HTTP.
+The listing tool's optional `folder` entity field authorises name lookup through
+the conversation-scoped application API. Lookup requires a mounted tool,
+conversation access, and actor-accessible compatible Active Context.
+It searches selected drives and keeps case-insensitive name matches among the
+bounded candidates, including files and folders. Choice descriptions identify
+folders and explain that files cannot be used for folder listing.
+Empty lookup text lists library roots. The field remains read-only in tool
+presentation; an editable browser picker is pending separate UI work.
+The resolver offers at most 25 choices across all libraries, with bounded local
+choice paging. Ambiguous drive selections are skipped before credential access.
+File reads and link resolution are pending.
+
+Metadata validation errors retain the owning operation: `search_files`,
+`list_folder`, or `get_item`. Errors omit rejected provider values.
 
 Fetching original Office files into Files, editing them, and saving them back
 to SharePoint is pending. Markdown reads do not provide that workflow.

@@ -17,6 +17,7 @@ from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.settings import sharepoint_settings
 from integrations.sharepoint.tools.list_folder import DEFINITION, sharepoint_list_folder
 from integrations.sharepoint.tools.schemas import FolderOutput
+from integrations.sharepoint.tools.search_files import DEFINITION as SEARCH_DEFINITION
 from integrations.sharepoint.tools.utils import bounded_output, sharepoint_available
 from services.agents.runtime.code_mode.stubs import render_tool_stub
 from services.agents.runtime.tools.contract import validate_definition
@@ -26,7 +27,7 @@ from tests.integrations.sharepoint.support import context, entry, fixture, graph
 
 
 def test_registration_schema_and_code_mode_stub(monkeypatch):
-    assert PROVIDER.tool_definitions == (DEFINITION,)
+    assert PROVIDER.tool_definitions == (DEFINITION, SEARCH_DEFINITION)
     validate_definition(DEFINITION)
     stub = render_tool_stub(DEFINITION)
     assert "def sharepoint_list_folder(" in stub
@@ -140,7 +141,7 @@ def test_complete_result_byte_bound():
 def test_complete_result_byte_bound_includes_full_citation_urls():
     file = fixture("children.json")["value"][0]
     url = "https://example.sharepoint.com/" + "a" * 8000
-    item = item_result({**file, "webUrl": url}, drive_id="drive")
+    item = item_result({**file, "webUrl": url}, drive_id="drive", operation="list_folder")
     assert item["web_url"].content == url
     with pytest.raises(ModelRetry, match="too much data"):
         bounded_output(

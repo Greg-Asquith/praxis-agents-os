@@ -13,6 +13,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_EGRESS_PROVIDER_QUERY,
     TOOL_POLICY_AUTO,
     RuntimeToolDefinition,
+    ToolFieldPresentation,
     ToolPresentation,
 )
 from services.integrations.context.fan_out import run_context_fan_out
@@ -97,6 +98,15 @@ DEFINITION = RuntimeToolDefinition(
         running_label="Listing SharePoint folder",
         completed_label="Listed SharePoint folder",
         failed_label="Could not list SharePoint folder",
+        arg_fields=(
+            ToolFieldPresentation(
+                key="folder",
+                label="Folder",
+                format="entity",
+                entity_kind="sharepoint_drive_item",
+                secondary=True,
+            ),
+        ),
         result_fields=RESULTS_FIELD,
     ),
 )

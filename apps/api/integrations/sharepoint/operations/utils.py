@@ -3,8 +3,9 @@
 """Bounded metadata and provenance for SharePoint drive items."""
 
 from typing import Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
+import httpx2
 from pydantic import ValidationError
 
 from core.exceptions.integration import IntegrationValidationError
@@ -16,6 +17,28 @@ ITEM_SELECT = (
     "id,name,size,file,folder,package,lastModifiedDateTime,webUrl,parentReference,remoteItem"
 )
 MAX_CITATION_URL_CHARS = 8192
+
+
+def search_next_link(value: object, path: str) -> str:
+    """Validates that a continuation stays on the original drive search."""
+    if not isinstance(value, str):
+        raise invalid_response("search_files")
+    try:
+        url = urlsplit(value)
+        transport_path = httpx2.URL(value).raw_path.split(b"?", 1)[0]
+        expected_path = httpx2.URL(f"https://graph.microsoft.com/v1.0{path}").raw_path.split(
+            b"?", 1
+        )[0]
+    except (ValueError, httpx2.InvalidURL):
+        raise invalid_response("search_files") from None
+    if (
+        url.scheme != "https"
+        or url.netloc != "graph.microsoft.com"
+        or url.fragment
+        or transport_path != expected_path
+    ):
+        raise invalid_response("search_files")
+    return value
 
 
 def item_path(drive_id: str, item_id: str | None = None) -> str:
@@ -54,7 +77,7 @@ def untrusted(drive_id: str, item_id: str, value: object, limit: int = 500) -> U
     )
 
 
-def item_kind(item: dict) -> Literal["file", "folder"] | None:
+def item_kind(item: dict, *, operation: str) -> Literal["file", "folder"] | None:
     """Returns a supported kind, or None for package items."""
     if isinstance(item.get("package"), dict):
         return None
@@ -62,35 +85,35 @@ def item_kind(item: dict) -> Literal["file", "folder"] | None:
         return "folder"
     if isinstance(item.get("file"), dict):
         return "file"
-    raise invalid_response("list_folder")
+    raise invalid_response(operation)
 
 
-def citation_url(drive_id: str, item_id: str, value: object) -> UntrustedNode:
+def citation_url(drive_id: str, item_id: str, value: object, *, operation: str) -> UntrustedNode:
     if isinstance(value, str) and len(value) > MAX_CITATION_URL_CHARS:
         raise IntegrationValidationError(
             "SharePoint returned a citation URL that is too long.",
             provider_key="sharepoint",
-            operation="list_folder",
+            operation=operation,
         )
     return untrusted(drive_id, item_id, value, MAX_CITATION_URL_CHARS)
 
 
-def item_result(item: dict, *, drive_id: str) -> dict:
-    kind = item_kind(item)
+def item_result(item: dict, *, drive_id: str, operation: str) -> dict:
+    kind = item_kind(item, operation=operation)
     if kind is None:
-        raise invalid_response("list_folder")
+        raise invalid_response(operation)
     try:
         reference = SharePointDriveItemReference(
             drive_id=drive_id, item_id=item.get("id"), kind=kind
         )
     except ValidationError:
-        raise invalid_response("list_folder") from None
+        raise invalid_response(operation) from None
     item_id = reference.item_id
-    parent = object_payload(item.get("parentReference"), operation="list_folder")
+    parent = object_payload(item.get("parentReference"), operation=operation)
     file = item.get("file")
     size = item.get("size", 0)
     if type(size) is not int or size < 0:
-        raise invalid_response("list_folder")
+        raise invalid_response(operation)
     return {
         "reference": reference,
         "name": untrusted(drive_id, item_id, item.get("name")),
@@ -101,5 +124,5 @@ def item_result(item: dict, *, drive_id: str) -> dict:
             drive_id, item_id, file.get("mimeType") if isinstance(file, dict) else None, 255
         ),
         "modified_at": untrusted(drive_id, item_id, item.get("lastModifiedDateTime"), 100),
-        "web_url": citation_url(drive_id, item_id, item.get("webUrl")),
+        "web_url": citation_url(drive_id, item_id, item.get("webUrl"), operation=operation),
     }
