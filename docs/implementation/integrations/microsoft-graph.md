@@ -151,7 +151,7 @@ Empty lookup text lists library roots. The field remains read-only in tool
 presentation; an editable browser picker is pending separate UI work.
 The resolver offers at most 25 choices across all libraries, with bounded local
 choice paging. Ambiguous drive selections are skipped before credential access.
-Link resolution is implemented below; its result presenter remains pending.
+Link resolution and its result presenter are described below.
 
 ### File content
 
@@ -255,8 +255,16 @@ SharePoint connection and Active Context, refreshing discovery if needed.
 Missing, invalid, or non-string optional site and file URLs retain generic
 site/library hints and the `library_not_selected` error code.
 Keeping the hint as a node preserves Code Mode provenance on failure. A denied
-sharing request asks for the file's direct URL. Link-result presentation is
-pending; the scalar default renderer does not display the nested item or hint.
+sharing request asks for the file's direct URL.
+
+The link presenter shows each resolved file or folder through the shared item
+table, including its guarded citation. Failed entries retain their recovery
+copy and show the site/library hint as escaped plain text for
+`library_not_selected`. Missing or malformed hints leave the recovery copy
+visible. The pasted URL appears as plain text in the card summary and details;
+it is never activated as a link. Malformed resolved items fall back to the
+default tool row. References, provenance metadata, and download annotations
+are excluded from the view.
 
 Fetching original Office files into Files, editing them, and saving them back
 to SharePoint is pending. Markdown reads do not provide that workflow.

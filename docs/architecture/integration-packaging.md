@@ -671,7 +671,10 @@ path or the Graph sharing endpoint. It makes at most one logical request per
 selected connection, checks the resolved drive against that connection's
 selected libraries, and retains untrusted provenance for item metadata and
 library-selection recovery hints. It uses the shared context and audit runners.
-Calendar tools and SharePoint link-result presentation remain pending.
+The link presenter reuses the shared item table and read seam. The seam's
+optional failure renderer shows escaped site/library recovery hints alongside
+the error message. Pasted URLs remain plain text, and only validated result
+citations become links. Calendar tools remain pending.
 Gmail and Outlook share the provider-neutral preview query and content loader
 in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.

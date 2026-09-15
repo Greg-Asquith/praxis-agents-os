@@ -149,7 +149,8 @@ forbid one provider directory importing another.
   (skeleton, envelope parsing, `FanOutShell` with the provider labels) and
   `defineIntegrationResultPresenter` for tools that return one document. Reads
   render nothing for failed or malformed activities so the default row shows
-  the error.
+  the error. An optional `renderFailed` callback renders provider recovery
+  details for failed entries inside a valid fan-out result.
 - `write-presenter.tsx`: `defineIntegrationWriteVariant` and
   `createIntegrationWritePresenter`. This seam owns approval merging,
   validation precedence, provenance, lifecycle states, and settled fan-out

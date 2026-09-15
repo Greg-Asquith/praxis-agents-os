@@ -87,6 +87,114 @@ function render(node: ReactNode) {
   return renderToStaticMarkup(createElement("div", null, node))
 }
 
+describe("SharePoint link results", () => {
+  beforeAll(async () => {
+    await loadIntegrationUiModules(["sharepoint"])
+  })
+
+  const url = "https://example.sharepoint.com/:w:/s/Operations/shared-file"
+  const renderLinks = (results: unknown[]) =>
+    renderResults(results, "completed", "sharepoint_open_link", { url })
+
+  it.each(["file", "folder"])("shows one resolved %s and its guarded citation", (kind) => {
+    const html = render(renderLinks([success({ ...item, kind })]))
+    for (const text of ["Monthly report.txt", "Operations library", "1 item", "1,024", url])
+      expect(html).toContain(text)
+    expect(html).toContain(kind === "file" ? "File" : "Folder")
+    expect(html).toContain(`href="${item.web_url.content}"`)
+    expect(html).toContain('rel="noopener noreferrer"')
+    expect(html).not.toContain(`href="${url}"`)
+    expect(html).not.toMatch(/praxis_untrusted|source_ref|opaque-drive-id|opaque-item-id/)
+  })
+
+  it.each([
+    [
+      "library_not_selected",
+      "The linked library is not selected. Select the named site and library in the SharePoint connection and Active Context. Refresh discovery first if it is not listed.",
+    ],
+    ["link_not_supported", "Use the file's direct SharePoint URL."],
+    ["not_found", "This file was not found. Check the link and try again."],
+    ["access_denied", "Library access denied. Check your SharePoint permissions."],
+  ])("shows %s recovery copy and keeps the pasted URL inactive", (error_code, error_message) => {
+    const html = render(renderLinks([{ ...failure, error_code, error_message }]))
+    expect(html).toContain(renderToStaticMarkup(error_message))
+    expect(html).toContain(url)
+    expect(html).toContain("Failed")
+    expect(html).not.toMatch(/<a\b/)
+  })
+
+  it("escapes library recovery hints and excludes private failure fields", () => {
+    const html = render(
+      renderLinks([
+        {
+          ...failure,
+          error_code: "library_not_selected",
+          data: {
+            library: node('<a href="https://example.com">Operations</a> / Documents'),
+            reference: item.reference,
+            "@microsoft.graph.downloadUrl": "https://example.com/private-download",
+          },
+        },
+      ])
+    )
+    expect(html).toContain("Library: ")
+    expect(html).toContain(
+      "&lt;a href=&quot;https://example.com&quot;&gt;Operations&lt;/a&gt; / Documents"
+    )
+    expect(html).toContain(failure.error_message)
+    expect(html).not.toMatch(/<a\b|private-download|opaque-item-id|source_ref/)
+  })
+
+  it.each([
+    null,
+    {},
+    { library: 7 },
+    { library: { ...node("excluded-library-hint"), source_ref: null } },
+  ])("retains recovery copy for missing or malformed library hints: %j", (data) => {
+    const html = render(renderLinks([{ ...failure, error_code: "library_not_selected", data }]))
+    expect(html).toContain(failure.error_message)
+    expect(html).not.toMatch(/<p[^>]*>Library: /)
+    expect(html).not.toContain("excluded-library-hint")
+  })
+
+  it("only shows library hints for unselected libraries", () => {
+    const html = render(
+      renderLinks([{ ...failure, data: { library: node("excluded-library-hint") } }])
+    )
+    expect(html).not.toContain("excluded-library-hint")
+    expect(html).toContain(failure.error_message)
+  })
+
+  it("retains partial, empty, loading, and missing-message states", () => {
+    const html = render(renderLinks([success(item), failure]))
+    expect(html).toContain("Monthly report.txt")
+    expect(html).toContain(failure.error_message)
+    expect(render(renderLinks([]))).toContain("No library returned this link.")
+    expect(render(renderResults([], "running", "sharepoint_open_link"))).toContain(
+      "Opening SharePoint link…"
+    )
+    expect(render(renderLinks([{ ...failure, error_message: null }]))).toContain(
+      "This connection did not return a result."
+    )
+  })
+
+  it.each(["javascript:alert(1)", "data:text/html,unsafe", "//example.com/file"])(
+    "keeps unsafe resolved citations inactive: %s",
+    (web_url) => {
+      const html = render(renderLinks([success({ ...item, web_url: node(web_url) })]))
+      expect(html).toContain("Monthly report.txt")
+      expect(html).not.toMatch(/<a\b/)
+    }
+  )
+
+  it.each([null, {}, { ...item, size_bytes: -1 }, { ...item, name: 7 }])(
+    "falls back for malformed resolved items: %j",
+    (data) => {
+      expect(renderLinks([success(data)])).toBeNull()
+    }
+  )
+})
+
 describe("SharePoint file content results", () => {
   beforeAll(async () => {
     await loadIntegrationUiModules(["sharepoint"])
