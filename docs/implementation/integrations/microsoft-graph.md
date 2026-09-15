@@ -107,10 +107,18 @@ types to 255, and timestamps to 100. The complete serialised result has a
 768 KiB ceiling, including the full citation URLs.
 Download annotations are neither requested nor included in results.
 
+The folder presenter groups results by library and uses the shared DataTable
+for file and folder labels, numeric byte sizes, modified times, citation links,
+paths, and content types. It retains sorting, pagination, row details, copy,
+and CSV export. Long text stays within cells. Only public item fields enter
+table rows; references, provenance metadata, and internal fields are excluded.
+Links use the shared HTTP URL guard. Empty and partial results retain their
+own copy, and `has_more` remains visible even when a page has no eligible items.
+Malformed result fields fall back to the default tool row.
+
 The tool uses the audited context runners and works in Code Mode. Known
 references resolve by ID within exactly one selected drive. Search-based
-reference choices, file search, file reads, link resolution, and the custom
-folder presenter are pending.
+reference choices, file search, file reads, and link resolution are pending.
 
 Fetching original Office files into Files, editing them, and saving them back
 to SharePoint is pending. Markdown reads do not provide that workflow.

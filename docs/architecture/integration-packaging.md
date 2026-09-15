@@ -647,9 +647,10 @@ mailbox and retain immutable message references and terminal evidence. Move
 and update also support operator-configured automatic execution. Real-tenant
 reply rendering verification remains pending. SharePoint contributes bounded
 folder listing and exact-ID reference resolution within selected libraries.
-Listing excludes packages, remote shortcuts, and foreign-drive items. Calendar
-tools and SharePoint's custom presenter, search, content reads, and link
-resolution remain pending. Gmail and Outlook share the provider-neutral preview
+Listing excludes packages, remote shortcuts, and foreign-drive items. Its
+folder presenter uses the shared fan-out read seam and DataTable with validated
+public item fields. Calendar tools and SharePoint search, content reads, and
+link resolution remain pending. Gmail and Outlook share the provider-neutral preview
 query and content loader in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.
 

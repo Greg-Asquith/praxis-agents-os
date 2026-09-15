@@ -1,11 +1,17 @@
 // apps/web/tests/integrations/sharepoint/module.test.ts
 
-import { describe } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import sharePointModule from "@/integrations/sharepoint"
 import { testMicrosoftIntegrationModule } from "../microsoft-module-contract"
 
 describe("SharePoint integration module", () => {
+  it("registers the folder listing presenter", () => {
+    expect(sharePointModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
+      "sharepoint_list_folder",
+    ])
+  })
+
   testMicrosoftIntegrationModule({
     description: "Let agents find and read files in SharePoint and OneDrive.",
     displayName: "SharePoint",
