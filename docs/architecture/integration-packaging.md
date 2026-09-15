@@ -652,9 +652,10 @@ authorised name and exact lookup through the conversation-scoped API.
 The resolver returns up to 25 file and folder choices with kind descriptions;
 exact lookup accepts at most 25 values. An editable browser picker is pending.
 Listing and search exclude packages, remote shortcuts, and foreign-drive items.
-The folder presenter uses the shared fan-out read seam and DataTable with validated
-public item fields. Human-readable SharePoint search results remain pending B2;
-the default scalar list renderer does not display structured library results.
+The folder and search presenters use the shared fan-out read seam and DataTable
+with validated public item fields. Search echoes the query and shows per-library
+counts, including zero matches. Both retain partial failures and fall back to
+the default row for malformed results.
 Calendar tools, SharePoint content reads, and link resolution remain pending.
 Gmail and Outlook share the provider-neutral preview query and content loader
 in `components/tool-ui/`; provider wrappers own metadata

@@ -126,8 +126,11 @@ Continuation URLs must retain the global Graph host and the original drive
 search path as sent by HTTPX, preserving encoded path separators. The search
 uses the same bounded metadata, provenance, citations, and complete result
 ceiling as folder listing. It does not download content.
-Human-readable search results are pending B2. The default row's scalar list
-renderer does not display the structured per-library result objects.
+The search presenter echoes the query and groups matching items by library,
+with a count for each library and explicit zero-match copy. It reuses the
+folder item table and its public-field validation. Error entries retain their
+copy alongside successful libraries. Malformed fields, inconsistent counts,
+and pages above 25 items fall back to the default tool row.
 
 Both tools use the audited context runners and work in Code Mode. Known
 references resolve by ID within exactly one selected drive, with at most 25

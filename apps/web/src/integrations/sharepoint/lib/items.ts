@@ -39,3 +39,10 @@ export function folderResult(value: unknown) {
   if (rows === null || rows.length > 200 || value["count"] !== rows.length) return null
   return { rows, hasMore: value["has_more"] }
 }
+
+export function searchResult(value: unknown): DataRow[] | null {
+  if (!isRecord(value) || !isNonNegativeInteger(value["count"])) return null
+  const rows = itemRows(value["items"])
+  if (rows === null || rows.length > 25 || value["count"] !== rows.length) return null
+  return rows
+}

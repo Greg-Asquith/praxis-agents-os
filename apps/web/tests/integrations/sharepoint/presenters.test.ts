@@ -49,12 +49,18 @@ const failure = {
 }
 const listing = { items: [item], count: 1, has_more: false }
 
-function renderResults(results: unknown[], status: "completed" | "running" = "completed") {
+function renderResults(
+  results: unknown[],
+  status: "completed" | "running" = "completed",
+  name = "sharepoint_list_folder",
+  args?: unknown
+) {
   return renderCustomToolCallRow({
     activity: {
       id: "call",
       kind: "result",
-      name: "sharepoint_list_folder",
+      name,
+      args,
       status,
       result: { results },
     },
@@ -192,37 +198,6 @@ describe("SharePoint folder results", () => {
     expect(html).toContain(`href="${url}"`)
   })
 
-  it.each([null, [null], [{}], [{ ...item, name: 7 }]].map((items) => ({ items })))(
-    "rejects malformed item lists: $items",
-    ({ items }) => {
-      expect(renderResults([success({ ...listing, items })])).toBeNull()
-    }
-  )
-
-  it.each(["name", "path", "content_type", "modified_at", "web_url"])(
-    "enforces text types for %s",
-    (field) => {
-      for (const invalid of [7, null, { content: "unframed" }, { ...node("text"), content: 7 }]) {
-        expect(
-          renderResults([success({ ...listing, items: [{ ...item, [field]: invalid }] })])
-        ).toBeNull()
-      }
-      expect(
-        renderResults([success({ ...listing, items: [{ ...item, [field]: "plain text" }] })])
-      ).not.toBeNull()
-    }
-  )
-
-  it.each(["1024", -1, 1.5, Infinity, NaN, null])("rejects invalid sizes: %s", (size) => {
-    expect(
-      renderResults([success({ ...listing, items: [{ ...item, size_bytes: size }] })])
-    ).toBeNull()
-  })
-
-  it.each(["shortcut", "File", null, node("file")])("rejects invalid kinds: %s", (kind) => {
-    expect(renderResults([success({ ...listing, items: [{ ...item, kind }] })])).toBeNull()
-  })
-
   it.each([
     { count: "1" },
     { count: -1 },
@@ -232,5 +207,169 @@ describe("SharePoint folder results", () => {
     { items: Array.from({ length: 201 }, () => item), count: 201 },
   ])("rejects malformed folder metadata: %s", (overrides) => {
     expect(renderResults([success({ ...listing, ...overrides })])).toBeNull()
+  })
+})
+
+describe.each(["sharepoint_list_folder", "sharepoint_search_files"])(
+  "%s item validation",
+  (tool) => {
+    beforeAll(async () => {
+      await loadIntegrationUiModules(["sharepoint"])
+    })
+
+    const renderItems = (results: unknown[]) => renderResults(results, "completed", tool)
+
+    it.each([null, [null], [{}], [{ ...item, name: 7 }]].map((items) => ({ items })))(
+      "rejects malformed item lists: $items",
+      ({ items }) => {
+        expect(renderItems([success({ ...listing, items })])).toBeNull()
+      }
+    )
+
+    it.each(["name", "path", "content_type", "modified_at", "web_url"])(
+      "enforces text types for %s",
+      (field) => {
+        for (const invalid of [7, null, { content: "unframed" }, { ...node("text"), content: 7 }]) {
+          expect(
+            renderItems([success({ ...listing, items: [{ ...item, [field]: invalid }] })])
+          ).toBeNull()
+        }
+        expect(
+          renderItems([success({ ...listing, items: [{ ...item, [field]: "plain text" }] })])
+        ).not.toBeNull()
+      }
+    )
+
+    it.each(["1024", -1, 1.5, Infinity, NaN, null])("rejects invalid sizes: %s", (size) => {
+      expect(
+        renderItems([success({ ...listing, items: [{ ...item, size_bytes: size }] })])
+      ).toBeNull()
+    })
+
+    it.each(["shortcut", "File", null, node("file")])("rejects invalid kinds: %s", (kind) => {
+      expect(renderItems([success({ ...listing, items: [{ ...item, kind }] })])).toBeNull()
+    })
+  }
+)
+
+const search = { items: [item], count: 1 }
+const renderSearch = (results: unknown[], args: unknown = { query: "Monthly report" }) =>
+  renderResults(results, "completed", "sharepoint_search_files", args)
+
+describe("SharePoint search results", () => {
+  beforeAll(async () => {
+    await loadIntegrationUiModules(["sharepoint"])
+  })
+
+  it("echoes the query and shows each library's count through the registry", () => {
+    const row = renderSearch([
+      success(search),
+      {
+        ...success({
+          items: [item, { ...item, name: node("Reports"), kind: "folder", size_bytes: 0 }],
+          count: 2,
+        }),
+        display_name: "Finance library",
+        external_id: "opaque-finance-drive",
+      },
+    ])
+    expect(row).not.toBeNull()
+    const html = render(row)
+    for (const text of [
+      "Search SharePoint files",
+      "Monthly report",
+      "Operations library",
+      "Finance library",
+      "1 item",
+      "2 items",
+      "Reports",
+      "Folder",
+    ])
+      expect(html).toContain(text)
+    expect(html.indexOf("1 item")).toBeLessThan(html.indexOf("Finance library"))
+    expect(html.indexOf("2 items")).toBeGreaterThan(html.indexOf("Finance library"))
+    expect(html).toContain(`href="${item.web_url.content}"`)
+    expect(html).not.toMatch(/praxis_untrusted|source_ref|opaque-|More items are available/)
+  })
+
+  it.each(["error", "partial"])("keeps query and failure copy for %s results", (mode) => {
+    const html = render(renderSearch(mode === "partial" ? [success(search), failure] : [failure]))
+    expect(html).toContain("Monthly report")
+    expect(html).toContain(failure.error_message)
+    expect(html).toContain("Other library")
+    if (mode === "partial") {
+      expect(html).toContain("Monthly report.txt")
+      expect(html).toContain("1 item")
+    }
+    expect(html).not.toMatch(/opaque-|praxis_untrusted|source_ref/)
+  })
+
+  it("shows zero matches and empty library results", () => {
+    const html = render(renderSearch([success({ items: [], count: 0 })]))
+    expect(html).toContain("0 items found.")
+    expect(html).toContain("Operations library")
+    expect(html).toContain("Monthly report")
+    expect(render(renderSearch([]))).toContain("No libraries were searched.")
+  })
+
+  it("shows loading copy", () => {
+    expect(render(renderResults([], "running", "sharepoint_search_files"))).toContain(
+      "Searching libraries…"
+    )
+  })
+
+  it("escapes hostile queries and item text and excludes private fields", () => {
+    const html = render(
+      renderSearch(
+        [
+          success({
+            items: [
+              {
+                ...item,
+                name: node("<script>unsafe</script>"),
+                web_url: node("javascript:alert(1)"),
+                internal: "private-token",
+              },
+            ],
+            count: 1,
+          }),
+        ],
+        { query: '<img src=x onerror="alert(1)">' }
+      )
+    )
+    expect(html).toContain("&lt;img")
+    expect(html).toContain("&lt;script&gt;")
+    expect(html).not.toMatch(/<img|<script|href="javascript:|private-token|opaque-/)
+  })
+
+  it.each([null, {}, { query: 7 }, { query: { content: "private-query" } }])(
+    "omits malformed query arguments: %s",
+    (args) => {
+      const row = renderSearch([success(search)], args)
+      expect(row).not.toBeNull()
+      expect(render(row)).not.toContain("private-query")
+    }
+  )
+
+  it("accepts a complete page of 25 matches", () => {
+    expect(
+      render(renderSearch([success({ items: Array.from({ length: 25 }, () => item), count: 25 })]))
+    ).toContain("25 items")
+  })
+
+  it.each([
+    null,
+    {},
+    { ...search, count: "1" },
+    { ...search, count: -1 },
+    { ...search, count: 1.5 },
+    { ...search, count: NaN },
+    { ...search, count: Infinity },
+    { ...search, count: 0 },
+    { ...search, count: 2 },
+    { items: Array.from({ length: 26 }, () => item), count: 26 },
+  ])("falls back for malformed search results: %s", (data) => {
+    expect(renderSearch([success(data)])).toBeNull()
+    expect(renderSearch([success(search), success(data), failure])).toBeNull()
   })
 })

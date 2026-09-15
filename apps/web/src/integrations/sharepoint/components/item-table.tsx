@@ -14,10 +14,18 @@ const COLUMNS: DataColumn[] = [
   { key: "content_type", label: "Content type", kind: "text" },
 ]
 
-export function SharePointItemTable({ rows, hasMore }: { rows: DataRow[]; hasMore: boolean }) {
+export function SharePointItemTable({
+  rows,
+  hasMore,
+  emptyLabel = "No files or folders found.",
+}: {
+  rows: DataRow[]
+  hasMore: boolean
+  emptyLabel?: string
+}) {
   const more = hasMore ? "More items are available in this folder." : null
   if (rows.length === 0) {
-    return <EmptyResult>{more ?? "No files or folders found."}</EmptyResult>
+    return <EmptyResult>{more ?? emptyLabel}</EmptyResult>
   }
   return (
     <DataTable
