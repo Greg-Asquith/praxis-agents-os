@@ -140,7 +140,8 @@ function VisibleToolCallRow({
       <FailedToolCard
         activity={activity}
         argFields={argFields}
-        headline={headlineForActivity(activity, title, ui)}
+        defaultOpen={defaultOpen}
+        label={title}
         iconToken={ui?.icon ?? null}
       />
     )

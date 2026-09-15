@@ -1,12 +1,10 @@
 // apps/web/src/features/conversations/components/failed-tool-card.tsx
 
+import { TriangleAlertIcon } from "lucide-react"
 
-import { ChevronRightIcon, RotateCcwIcon, TriangleAlertIcon } from "lucide-react"
-
+import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
-import { ToolFieldGrid } from "@/features/conversations/components/tool-field"
-import { ToolSurfaceCard } from "@/features/conversations/components/tool-surface-card"
 import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import { friendlyResultText, type ResolvedToolField } from "@/features/conversations/tool-ui"
@@ -14,12 +12,14 @@ import { friendlyResultText, type ResolvedToolField } from "@/features/conversat
 export function FailedToolCard({
   activity,
   argFields,
-  headline,
+  defaultOpen = false,
+  label,
   iconToken,
 }: {
   activity: ToolActivity
   argFields: ResolvedToolField[]
-  headline: string
+  defaultOpen?: boolean
+  label: string
   iconToken: string | null
 }) {
   const message =
@@ -29,44 +29,32 @@ export function FailedToolCard({
   const canAdjust = activity.kind === "retry" || activity.outcome === "retry"
 
   return (
-    <ToolSurfaceCard
-      ariaLabel={headline}
-      header={
-        <div className="flex min-w-0 items-start gap-2 pt-1">
-          <h3 className="min-w-0 flex-1 text-sm font-medium wrap-break-word">{headline}</h3>
-          <ActivityStatusBadge status="failed" />
-        </div>
+    <ToolResultCard
+      ariaLabel={`${label} failed`}
+      defaultOpen={defaultOpen}
+      details={argFields.map((field) => ({ label: field.label, value: field.value }))}
+      heading={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <ToolUiIcon token={iconToken} />
+          <span className="truncate">{label}</span>
+        </span>
       }
-      icon={<ToolUiIcon token={iconToken} />}
-      footer={
-        <div className="text-muted-foreground flex items-start gap-2 text-xs">
-          {canAdjust ? <RotateCcwIcon className="mt-0.5 size-3.5 shrink-0" /> : null}
-          <p>
-            {canAdjust
-              ? "The agent received this error and can adjust its next attempt."
-              : "Any further attempts appear as separate steps in this conversation."}
-          </p>
-        </div>
-      }
+      trailing={<ActivityStatusBadge status="failed" />}
     >
-      <Alert variant="destructive">
-        <TriangleAlertIcon />
-        <AlertTitle>What went wrong</AlertTitle>
-        <AlertDescription className="max-h-60 min-w-0 overflow-y-auto wrap-anywhere whitespace-pre-wrap">
-          {message}
-        </AlertDescription>
-      </Alert>
-      {argFields.length > 0 ? (
-        <details className="group/request min-w-0">
-          <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 rounded-md py-1 text-xs">
-            <ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-open/request:rotate-90" />
-            Request details
-          </summary>
-          <div className="pt-3">
-            <ToolFieldGrid fields={argFields} />
-          </div>
-        </details>
-      ) : null}
-    </ToolSurfaceCard>
+      <div className="flex min-w-0 flex-col gap-3">
+        <Alert variant="destructive">
+          <TriangleAlertIcon />
+          <AlertTitle>What went wrong</AlertTitle>
+          <AlertDescription className="wrap-anywhere whitespace-pre-wrap">
+            {message}
+          </AlertDescription>
+        </Alert>
+        {canAdjust ? (
+          <p className="text-muted-foreground text-xs">
+            The agent received this error and can adjust its next attempt.
+          </p>
+        ) : null}
+      </div>
+    </ToolResultCard>
   )
 }

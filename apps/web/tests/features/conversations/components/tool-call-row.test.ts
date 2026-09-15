@@ -97,7 +97,7 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
 
-  it.each([false, true])("keeps the failure reason outside request details (live: %s)", (live) => {
+  it.each([false, true])("starts failed result cards collapsed (live: %s)", (live) => {
     const html = renderRow(
       {
         id: "search-1",
@@ -110,14 +110,17 @@ describe("ToolCallRow lifecycle", () => {
       live
     )
 
-    expect(html).toContain("<details")
-    expect(html).toContain('<section aria-label="Couldn&#x27;t Search the Web"')
-    expect(html).not.toContain('open=""')
-    expect(html).toContain("Request details")
-    expect(html).toContain("What went wrong")
-    expect(html.indexOf("The requested source could not be found.")).toBeLessThan(
-      html.indexOf("<details")
-    )
+    expect(html).toContain('data-slot="tool-result-card"')
+    expect(html).toContain('<section aria-label="Web Search failed"')
+    expect(html).toContain('aria-label="Expand results"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain(">Details</button>")
+    expect(html).toContain("Search: missing source")
+    expect(html).not.toContain("What went wrong")
+    expect(html).not.toContain("The requested source could not be found.")
+    expect(html).not.toContain("Request details")
+    expect(html).not.toContain("Any further attempts")
+    expect(html).not.toContain("<details")
     expect(html).not.toContain("can adjust its next attempt")
     expect(html).not.toContain("Technical")
   })
@@ -130,6 +133,8 @@ describe("ToolCallRow lifecycle", () => {
         name: "web_search",
         status: "failed",
       },
+      true,
+      [presentation],
       true
     )
 
@@ -141,13 +146,18 @@ describe("ToolCallRow lifecycle", () => {
   it.each(["run_code", "fetch_url", "unregistered_tool"])(
     "uses the shared error card for %s when its presenter has no failure view",
     (name) => {
-      const html = renderRow({
-        id: "failed-1",
-        kind: "result",
-        name,
-        status: "failed",
-        result: "The service is temporarily unavailable.",
-      })
+      const html = renderRow(
+        {
+          id: "failed-1",
+          kind: "result",
+          name,
+          status: "failed",
+          result: "The service is temporarily unavailable.",
+        },
+        false,
+        [presentation],
+        true
+      )
 
       expect(html).toContain("<section")
       expect(html).toContain("What went wrong")
@@ -173,17 +183,23 @@ describe("ToolCallRow lifecycle", () => {
   it.each([{ kind: "retry" as const }, { kind: "result" as const, outcome: "retry" }])(
     "explains a recorded retry without claiming another attempt has started: %s",
     (retry) => {
-      const html = renderRow({
-        ...retry,
-        id: "script-retry",
-        name: "run_code",
-        status: "failed",
-        result: "Choose a supported file format.",
-      })
+      const html = renderRow(
+        {
+          ...retry,
+          id: "script-retry",
+          name: "run_code",
+          status: "failed",
+          result: "Choose a supported file format.",
+        },
+        false,
+        [presentation],
+        true
+      )
 
       expect(html).toContain("The agent received this error and can adjust its next attempt.")
       expect(html).not.toContain("Retrying")
-      expect(html).not.toContain("<button")
+      expect(html).toContain('aria-label="Collapse results"')
+      expect(html).not.toContain(">Try again<")
     }
   )
 
@@ -200,7 +216,7 @@ describe("ToolCallRow lifecycle", () => {
       },
       false,
       [presentation],
-      false,
+      true,
       true
     )
 
@@ -211,13 +227,18 @@ describe("ToolCallRow lifecycle", () => {
   })
 
   it("renders error text as text rather than executable markup", () => {
-    const html = renderRow({
-      id: "script-failure",
-      kind: "result",
-      name: "run_code",
-      status: "failed",
-      result: '<script>alert("error")</script>',
-    })
+    const html = renderRow(
+      {
+        id: "script-failure",
+        kind: "result",
+        name: "run_code",
+        status: "failed",
+        result: '<script>alert("error")</script>',
+      },
+      false,
+      [presentation],
+      true
+    )
 
     expect(html).toContain("&lt;script&gt;")
     expect(html).not.toContain("<script>")

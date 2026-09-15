@@ -101,12 +101,14 @@ The following contracts apply in this area:
 
 - Per-tool-call UI (approvals, live status, results) renders inline in the
   tool row within the transcript, not as separate blocks.
-- Failed calls without a dedicated failure presenter use a shared error card
-  in live and saved transcripts, including nested calls. The reason stays
-  visible, with request fields under **Request details**. Missing error text
-  gets an explicit fallback. Retry outcomes explain that the agent received
-  the error and can adjust its next attempt; they do not claim a retry has
-  started. Subsequent attempts retain their own activity rows.
+- Failed calls without a dedicated failure presenter use the normal tool
+  result card in live and saved transcripts, including nested calls. The
+  card keeps the tool's name, icon, **Failed** badge, expand/collapse control,
+  and **Details** menu for request fields. It starts collapsed; expanding it
+  shows the error and any retry explanation.
+  Missing error text gets an explicit fallback. Retry outcomes explain that
+  the agent received the error and can adjust its next attempt; they do not
+  claim a retry has started. Subsequent attempts retain their own activity rows.
 - Declined tool rows use the **Declined** badge, never **Failed**, and show the
   operator's reason when they provided one.
 - Approval presenters may consume server-owned display arguments prefixed with
