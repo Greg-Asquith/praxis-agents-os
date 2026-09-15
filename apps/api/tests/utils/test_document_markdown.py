@@ -158,3 +158,34 @@ def test_document_content_type_uses_supported_document_contract(content_type, ex
     from utils.document_markdown import document_content_type
 
     assert document_content_type(content_type) == expected
+
+
+@pytest.mark.parametrize("content_type", ["text/plain", "text/html", "application/xhtml+xml"])
+async def test_thread_conversion_keeps_replacement_decoding_by_default(content_type):
+    assert (
+        await convert_document_to_markdown(
+            b"\xff", content_type=content_type, filename="document", max_bytes=100
+        )
+        == "�"
+    )
+
+
+@pytest.mark.parametrize("max_bytes", [0, 1, 10, 55, 56, 57, 64 * 1024])
+async def test_bounding_metadata_and_string_api_respect_all_byte_caps(max_bytes):
+    from utils.document_markdown import convert_document_to_markdown_result, truncate_markdown
+
+    text = "界" * 30_000
+    result = await convert_document_to_markdown_result(
+        text.encode(), content_type="text/plain", filename="document", max_bytes=max_bytes
+    )
+    assert result.truncated is True
+    assert len(result.markdown.encode()) <= max_bytes
+    assert "�" not in result.markdown
+    assert truncate_markdown(text, max_bytes=max_bytes) == result.markdown
+
+
+def test_negative_markdown_byte_cap_is_rejected():
+    from utils.document_markdown import truncate_markdown
+
+    with pytest.raises(ValueError, match="non-negative"):
+        truncate_markdown("guide", max_bytes=-1)

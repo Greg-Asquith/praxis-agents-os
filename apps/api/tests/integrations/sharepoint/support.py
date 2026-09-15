@@ -13,9 +13,24 @@ import httpx2
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.microsoft_graph import MicrosoftGraphClient, fixed_access_token
 
+DOWNLOAD_URL = "https://example.sharepoint.com/private-download?token=PRIVATE_DOWNLOAD_SECRET"
+HOSTILE_DOCX = Path(__file__).parents[2] / "fixtures/prompt_injection/hostile_sharepoint.docx"
+DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 
 def fixture(name):
     return json.loads((Path(__file__).with_name("fixtures") / name).read_text())
+
+
+def file_metadata(**changes):
+    return {
+        **fixture("children.json")["value"][0],
+        "name": "notes.txt",
+        "size": 1,
+        "file": {"mimeType": "text/plain"},
+        "@microsoft.graph.downloadUrl": DOWNLOAD_URL,
+        **changes,
+    }
 
 
 @asynccontextmanager

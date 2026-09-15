@@ -16,6 +16,7 @@ from integrations.sharepoint.operations.utils import item_result
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.settings import sharepoint_settings
 from integrations.sharepoint.tools.list_folder import DEFINITION, sharepoint_list_folder
+from integrations.sharepoint.tools.read_file import DEFINITION as READ_DEFINITION
 from integrations.sharepoint.tools.schemas import FolderOutput
 from integrations.sharepoint.tools.search_files import DEFINITION as SEARCH_DEFINITION
 from integrations.sharepoint.tools.utils import bounded_output, sharepoint_available
@@ -27,7 +28,7 @@ from tests.integrations.sharepoint.support import context, entry, fixture, graph
 
 
 def test_registration_schema_and_code_mode_stub(monkeypatch):
-    assert PROVIDER.tool_definitions == (DEFINITION, SEARCH_DEFINITION)
+    assert PROVIDER.tool_definitions == (DEFINITION, SEARCH_DEFINITION, READ_DEFINITION)
     validate_definition(DEFINITION)
     stub = render_tool_stub(DEFINITION)
     assert "def sharepoint_list_folder(" in stub

@@ -8,9 +8,8 @@ from core.exceptions.integration import IntegrationDownloadTooLargeError, Integr
 from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.microsoft_graph import MicrosoftGraphClient
 from utils.document_markdown import (
-    TRUNCATION_MARKER,
     DocumentConversionError,
-    convert_document_to_markdown,
+    convert_document_to_markdown_result,
     document_content_type,
 )
 
@@ -65,7 +64,7 @@ async def get_attachment(
         ) from None
     filename = text(metadata.get("name"))
     try:
-        markdown = await convert_document_to_markdown(
+        conversion = await convert_document_to_markdown_result(
             data,
             content_type=content_type,
             filename=filename,
@@ -79,11 +78,9 @@ async def get_attachment(
         "name": untrusted(message_id, filename),
         "content_type": untrusted(message_id, content_type),
         "size_bytes": len(data),
-        "markdown": untrusted(message_id, markdown),
-        "truncated": markdown.endswith(TRUNCATION_MARKER),
-        "source": "text"
-        if content_type in {"text/plain", "text/markdown", "text/csv", "application/json"}
-        else "converted",
+        "markdown": untrusted(message_id, conversion.markdown),
+        "truncated": conversion.truncated,
+        "source": conversion.source,
     }
 
 

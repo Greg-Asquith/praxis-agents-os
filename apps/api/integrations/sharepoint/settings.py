@@ -13,6 +13,7 @@ class SharePointSettings(BaseSettings):
     SHAREPOINT_OAUTH_CLIENT_SECRET: SecretStr = SecretStr("")
     SHAREPOINT_OAUTH_TENANT: str = ""
     SHAREPOINT_DISCOVERY_MAX_SITES: int = Field(default=50, ge=1, le=200)
+    SHAREPOINT_FILE_MAX_DOWNLOAD_BYTES: int = Field(default=52_428_800, ge=1, le=104_857_600)
 
     model_config = SettingsConfigDict(
         env_file=".env",

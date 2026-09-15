@@ -1,6 +1,6 @@
 # apps/api/integrations/sharepoint/tools/schemas.py
 
-"""Typed SharePoint listing and search results."""
+"""Typed SharePoint listing, search, and file content results."""
 
 from typing import Literal
 
@@ -56,3 +56,24 @@ class SearchEntry(IntegrationFanOutEntry):
 
 class SharePointSearchOutput(IntegrationFanOutOutput):
     results: list[SearchEntry]
+
+
+class SharePointFileData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: UntrustedText
+    content_type: UntrustedText
+    size_bytes: int = Field(ge=0)
+    modified_at: UntrustedText
+    web_url: UntrustedText
+    markdown: UntrustedText
+    truncated: bool
+    source: Literal["converted", "text"]
+
+
+class SharePointFileEntry(IntegrationFanOutEntry):
+    data: SharePointFileData | None = None
+
+
+class SharePointFileOutput(IntegrationFanOutOutput):
+    results: list[SharePointFileEntry]

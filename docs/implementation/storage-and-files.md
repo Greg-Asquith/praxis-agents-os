@@ -15,6 +15,24 @@ The document attachment settings are defined as follows:
 | `MAX_MULTIMODAL_DOCUMENT_BYTES` | `20971520` | Maximum PDF attachment size sent to a model as raw bytes. |
 | `CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS` | `60` | Maximum time for on-demand chat attachment conversion. Configuration accepts 5–300 seconds. |
 
+The shared `convert_document_to_markdown` helper accepts an optional
+`timeout_seconds` argument. When supplied, conversion runs in a cancellable
+AnyIO process; timeout or cancellation kills the worker. Output is bounded
+inside the worker before it returns. Callers that omit the argument use a
+thread. The [SharePoint file read](integrations/microsoft-graph.md#file-content)
+uses this deadline with its provider-owned download limit.
+
+`convert_document_to_markdown_result` provides the same conversion with
+`markdown`, `truncated`, and `source` fields. The worker records truncation when
+it bounds the output; literal marker text does not imply missing content.
+Both entry points accept `strict_utf8=True` to reject invalid UTF-8 text,
+including HTML, inside the worker. The default replaces invalid bytes.
+SharePoint opts into strict decoding; Outlook attachments retain replacement
+decoding. Both use the result entry point for actual truncation state.
+String-returning callers retain their existing contract. For byte caps smaller
+than the marker, bounding returns only the marker prefix that fits. A zero cap
+returns empty text; negative caps are rejected.
+
 ## Storage providers and upload lifecycle
 
 Storage goes through the `services/storage` provider abstraction.

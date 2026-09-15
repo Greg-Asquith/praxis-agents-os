@@ -28,6 +28,7 @@ from services.integrations.http import (
     resolve_before_dispatch,
 )
 
+from .download_logging import suppress_download_logging
 from .errors import graph_response_error
 from .pacing import paced_request
 
@@ -341,23 +342,37 @@ class MicrosoftGraphClient:
         }
 
         async def consume(response: httpx2.Response) -> bytes:
+            if response.status_code != 200:
+                raise self._response_error(operation)
             return await self._consume_bytes(response, operation=operation, max_bytes=max_bytes)
 
-        return await consume_stream_with_retries(
-            "GET",
-            url,
-            operation=operation,
-            provider_key=self._provider_key,
-            policy=IntegrationRequestPolicy.READ,
-            consume=consume,
-            client=client,
-            attempt_context=lambda: self._request_attempt(download_headers),
-            include_original_error=False,
-            headers=download_headers,
-            extensions={"sni_hostname": original_host},
-            follow_redirects=False,
-            timeout=settings.INTEGRATIONS_HTTP_TIMEOUT_SECONDS,
-        )
+        with suppress_download_logging():
+            return await consume_stream_with_retries(
+                "GET",
+                url,
+                operation=operation,
+                provider_key=self._provider_key,
+                policy=IntegrationRequestPolicy.READ,
+                consume=consume,
+                client=client,
+                attempt_context=lambda: self._request_attempt(download_headers),
+                include_original_error=False,
+                response_error_mapper=lambda response: (
+                    IntegrationValidationError(
+                        "This file is locked or protected. Try an unprotected copy.",
+                        provider_key=self._provider_key,
+                        operation=operation,
+                        error_code="protected",
+                        failure_disposition=IntegrationFailureDisposition.REJECTED,
+                    )
+                    if response.status_code == 423
+                    else None
+                ),
+                headers=download_headers,
+                extensions={"sni_hostname": original_host},
+                follow_redirects=False,
+                timeout=settings.INTEGRATIONS_HTTP_TIMEOUT_SECONDS,
+            )
 
     async def _consume_bytes(
         self, response: httpx2.Response, *, operation: str, max_bytes: int

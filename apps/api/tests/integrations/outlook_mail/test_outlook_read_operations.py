@@ -24,6 +24,7 @@ from integrations.outlook_mail.settings import outlook_mail_settings
 from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.microsoft_graph import MicrosoftGraphClient, fixed_access_token
 from tests.support.documents import tiny_docx, tiny_pdf
+from utils.document_markdown import TRUNCATION_MARKER
 
 
 @asynccontextmanager
@@ -248,11 +249,12 @@ async def test_attachment_rejects_before_download(monkeypatch, changes, code):
     assert len(requests) == 1
 
 
-async def test_attachment_download_and_unicode_boundary():
+@pytest.mark.parametrize("content", ["x" * 90000, "界" * 30000], ids=["ascii", "multibyte"])
+async def test_attachment_download_and_unicode_boundary(content):
     def handler(request):
         if request.url.path.endswith("/$value"):
             assert request.headers["Authorization"] == "Bearer token"
-            return httpx2.Response(200, content=("界" * 30000).encode())
+            return httpx2.Response(200, content=content.encode())
         return httpx2.Response(
             200,
             json={
@@ -266,9 +268,65 @@ async def test_attachment_download_and_unicode_boundary():
     async with graph(handler) as client:
         result = await get_attachment(client, message_id="message", attachment_id="attachment")
     assert len(result["markdown"].content.encode()) <= 65536
+    assert result["markdown"].content.endswith(TRUNCATION_MARKER)
     assert result["truncated"] is True
     assert result["source"] == "text"
     assert result["markdown"].source_ref == "message"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [f"Complete content{TRUNCATION_MARKER}", f"Before{TRUNCATION_MARKER}\nAfter"],
+    ids=["literal-marker-suffix", "literal-marker-inside"],
+)
+async def test_attachment_literal_marker_is_not_truncation(content):
+    def handler(request):
+        if request.url.path.endswith("/$value"):
+            return httpx2.Response(200, content=content.encode())
+        return httpx2.Response(
+            200,
+            json={
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "contentType": "text/plain",
+                "name": "report.txt",
+                "size": len(content.encode()),
+            },
+        )
+
+    async with graph(handler) as client:
+        result = await get_attachment(client, message_id="message", attachment_id="attachment")
+    assert result["markdown"].content == content
+    assert result["truncated"] is False
+    assert result["source"] == "text"
+    assert result["markdown"].source_kind == "outlook_message"
+
+
+@pytest.mark.parametrize(
+    "data,content_type,name,source",
+    [
+        (b"Text \xff", "text/plain", "report.txt", "text"),
+        (b"<p>Text \xff</p>", "text/html", "report.html", "converted"),
+    ],
+)
+async def test_attachment_replaces_invalid_utf8(data, content_type, name, source):
+    def handler(request):
+        if request.url.path.endswith("/$value"):
+            return httpx2.Response(200, content=data)
+        return httpx2.Response(
+            200,
+            json={
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "contentType": content_type,
+                "name": name,
+                "size": len(data),
+            },
+        )
+
+    async with graph(handler) as client:
+        result = await get_attachment(client, message_id="message", attachment_id="attachment")
+    assert result["markdown"].content == "Text \ufffd"
+    assert result["truncated"] is False
+    assert result["source"] == source
 
 
 @pytest.mark.parametrize(

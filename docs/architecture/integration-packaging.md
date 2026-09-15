@@ -656,7 +656,16 @@ The folder and search presenters use the shared fan-out read seam and DataTable
 with validated public item fields. Search echoes the query and shows per-library
 counts, including zero matches. Both retain partial failures and fall back to
 the default row for malformed results.
-Calendar tools, SharePoint content reads, and link resolution remain pending.
+SharePoint file reads target one selected library, download at most 50 MiB by
+default, and return at most 64 KiB of Markdown with a citation and typed
+provenance. The shared Graph client excludes signed download URLs from results
+and HTTP diagnostics. The shared converter supports cancellable process
+execution with a deadline and strict UTF-8 decoding, used by SharePoint.
+Its result entry point supplies actual truncation state and conversion source
+to SharePoint and Outlook attachment reads; existing string callers retain
+replacement decoding. Other conversion callers retain thread execution.
+File-content presentation, Calendar tools, and SharePoint
+link resolution remain pending.
 Gmail and Outlook share the provider-neutral preview query and content loader
 in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.

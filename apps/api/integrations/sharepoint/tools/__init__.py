@@ -3,6 +3,7 @@
 """SharePoint tool definitions."""
 
 from .list_folder import DEFINITION as LIST_FOLDER
+from .read_file import DEFINITION as READ_FILE
 from .search_files import DEFINITION as SEARCH_FILES
 
-TOOL_DEFINITIONS = (LIST_FOLDER, SEARCH_FILES)
+TOOL_DEFINITIONS = (LIST_FOLDER, SEARCH_FILES, READ_FILE)

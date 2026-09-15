@@ -6,7 +6,7 @@ from typing import Literal
 from urllib.parse import quote, urlsplit
 
 import httpx2
-from pydantic import ValidationError
+from pydantic import AnyHttpUrl, ValidationError
 
 from core.exceptions.integration import IntegrationValidationError
 from services.agents.runtime.untrusted import UntrustedNode
@@ -17,6 +17,13 @@ ITEM_SELECT = (
     "id,name,size,file,folder,package,lastModifiedDateTime,webUrl,parentReference,remoteItem"
 )
 MAX_CITATION_URL_CHARS = 8192
+MAX_MARKDOWN_BYTES = 64 * 1024
+
+
+def file_error(message: str, code: str) -> IntegrationValidationError:
+    return IntegrationValidationError(
+        message, provider_key="sharepoint", operation="read_file", error_code=code
+    )
 
 
 def search_next_link(value: object, path: str) -> str:
@@ -96,6 +103,23 @@ def citation_url(drive_id: str, item_id: str, value: object, *, operation: str) 
             operation=operation,
         )
     return untrusted(drive_id, item_id, value, MAX_CITATION_URL_CHARS)
+
+
+def require_file_citation(value: object) -> None:
+    """Validates a file citation before downloading its content."""
+    if not isinstance(value, str) or not value:
+        raise invalid_response("read_file")
+    if "\\" in value or any(
+        character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value
+    ):
+        raise invalid_response("read_file")
+    try:
+        host = urlsplit(value).hostname
+        url = AnyHttpUrl(value)
+    except ValueError:
+        raise invalid_response("read_file") from None
+    if not host or url.username is not None or url.password is not None or url.port == 0:
+        raise invalid_response("read_file")
 
 
 def item_result(item: dict, *, drive_id: str, operation: str) -> dict:

@@ -281,7 +281,7 @@ async def test_attachment_failure_reasons_survive_public_and_audit_outputs(
         AsyncMock(return_value=provider),
     )
     monkeypatch.setattr(
-        "integrations.outlook_mail.operations.get_attachment.convert_document_to_markdown",
+        "integrations.outlook_mail.operations.get_attachment.convert_document_to_markdown_result",
         AsyncMock(side_effect=DocumentConversionError("private provider body")),
     )
     result = await outlook_mail_read_attachment(
@@ -315,7 +315,7 @@ async def test_download_overflow_preserves_public_and_audit_reason(monkeypatch, 
         "services.integrations.operations.record_integration_operation_audit_event", audit
     )
     monkeypatch.setattr(
-        "integrations.outlook_mail.operations.get_attachment.convert_document_to_markdown",
+        "integrations.outlook_mail.operations.get_attachment.convert_document_to_markdown_result",
         conversion,
     )
     requests = []

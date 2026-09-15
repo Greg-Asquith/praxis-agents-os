@@ -28,7 +28,10 @@ bodies or transport exceptions. Declared and streamed size overflow raises
 `IntegrationDownloadTooLargeError` with rejected disposition. Partial streams
 are discarded before retry.
 `get_bytes` remains the separate download method for pre-authenticated public
-URLs and sends no bearer token.
+URLs and sends no bearer token. It pins public DNS addresses, refuses redirects
+and non-200 downloads, and suppresses HTTP client diagnostics for the download
+task so signed URLs do not enter logs. Concurrent requests keep their logging.
+A download rejected with 423 reports `protected` without retaining the response.
 
 ## Frontend contracts
 
@@ -78,6 +81,9 @@ positive. Both attachment metadata and streamed download bytes enforce it.
 Metadata, declared download length, and streamed overflow report
 `attachment_too_large`
 in tool results and operation audits.
+Attachment reads report the shared converter's actual truncation state, so
+literal marker text does not imply lost content. Text and HTML retain the
+converter's default replacement decoding for invalid UTF-8 bytes.
 The `outlook_message` preview returns raw content to the engine for bounding
 and sanitisation. Preview definitions validate provider-specific reference
 patterns: Outlook permits bounded base64 IDs; Gmail retains its short URL-safe
@@ -105,7 +111,7 @@ Longer URLs fail that library with a safe error instead of returning a partial
 link. Names are bounded to 500 characters, parent paths to 2,000, content
 types to 255, and timestamps to 100. The complete serialised result has a
 768 KiB ceiling, including the full citation URLs.
-Download annotations are neither requested nor included in results.
+Listing and search neither request nor return download annotations.
 
 The folder presenter groups results by library and uses the shared DataTable
 for file and folder labels, numeric byte sizes, modified times, citation links,
@@ -132,7 +138,7 @@ folder item table and its public-field validation. Error entries retain their
 copy alongside successful libraries. Malformed fields, inconsistent counts,
 and pages above 25 items fall back to the default tool row.
 
-Both tools use the audited context runners and work in Code Mode. Known
+All three read tools use the audited context runners and work in Code Mode. Known
 references resolve by ID within exactly one selected drive, with at most 25
 exact values per request. Larger requests fail before credentials or HTTP.
 The listing tool's optional `folder` entity field authorises name lookup through
@@ -145,10 +151,51 @@ Empty lookup text lists library roots. The field remains read-only in tool
 presentation; an editable browser picker is pending separate UI work.
 The resolver offers at most 25 choices across all libraries, with bounded local
 choice paging. Ambiguous drive selections are skipped before credential access.
-File reads and link resolution are pending.
+Link resolution is pending.
+
+### File content
+
+`sharepoint_read_file` takes a file reference and targets exactly one selected
+library. Unselected or ambiguous drives fail before credentials or HTTP. The
+item ID and parent drive must match the reference; remote shortcuts, folders,
+and packages cannot be read. Supported types come from the shared file contract.
+Images and other unsupported types report `unsupported_type`.
+
+`SHAREPOINT_FILE_MAX_DOWNLOAD_BYTES` defaults to 52,428,800 bytes (50 MiB) and
+accepts 1-104,857,600 bytes. Metadata above the limit fails before download;
+the same limit applies while streaming, even when metadata understates the size.
+Both failures report `too_large`. Only `download_item` requests
+`@microsoft.graph.downloadUrl` through `get_item`, consumes it through
+`get_bytes`, and removes it from returned metadata. The URL is not persisted
+or returned by the tool. This follows Microsoft's
+[pre-authenticated download contract](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content).
+
+The result contains `name`, normalised `content_type`, actual downloaded
+`size_bytes`, `modified_at`, `web_url`, `markdown`, `truncated`, and `source`
+(`text` or `converted`). Provider text uses `sharepoint_drive_item` provenance
+with `{drive_id}:{item_id}` as its source reference. Markdown is bounded to
+64 KiB on a UTF-8 boundary, including the truncation marker. Citations retain
+the full URL within the shared 8,192-character limit. Reads require a usable
+HTTP(S) citation before downloading content. Missing or invalid citations fail
+with safe metadata errors that omit the rejected value. Listing and search
+retain optional citations. `truncated` records actual output bounding, so
+complete content ending with the literal marker reports `false`.
+
+Conversion uses the shared document helper with a 30-second deadline inside
+the tool's 90-second timeout. Its cancellable AnyIO worker is killed on timeout
+or cancellation, and bounds Markdown before returning it to the parent process.
+AnyDoc retains its built-in decompression, nesting, node, and expansion limits.
+No download URL enters the conversion worker. Text and HTML decode once inside
+the worker with strict UTF-8 validation. Valid HTML returns `source="converted"`.
+Invalid UTF-8 text or HTML, corrupt or encrypted documents, parser-limit
+failures, and conversion deadlines report
+`conversion_failed`, with copy explaining that the file may be protected or
+damaged. The conversion helper's process deadline is opt-in; other callers
+retain their existing thread execution. The registered file-content presenter
+is pending; the default scalar list renderer cannot display its nested result.
 
 Metadata validation errors retain the owning operation: `search_files`,
-`list_folder`, or `get_item`. Errors omit rejected provider values.
+`list_folder`, `get_item`, or `read_file`. Errors omit rejected provider values.
 
 Fetching original Office files into Files, editing them, and saving them back
 to SharePoint is pending. Markdown reads do not provide that workflow.

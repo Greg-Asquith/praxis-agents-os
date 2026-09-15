@@ -32,9 +32,21 @@ class FramedFixtureOutput(BaseModel):
     results: list[dict[str, dict[str, UntrustedNode]]]
 
 
-@pytest.mark.parametrize("source_kind", ["gmail_message", "outlook_message", "outlook_person"])
-async def test_hostile_email_content_is_enclosed_by_dispatch(monkeypatch, source_kind) -> None:
+@pytest.mark.parametrize(
+    "source_kind", ["gmail_message", "outlook_message", "outlook_person", "sharepoint_drive_item"]
+)
+async def test_hostile_provider_content_is_enclosed_by_dispatch(monkeypatch, source_kind) -> None:
     hostile = FIXTURE.read_text(encoding="utf-8")
+    if source_kind == "sharepoint_drive_item":
+        from utils.document_markdown import convert_document_to_markdown
+
+        hostile = await convert_document_to_markdown(
+            FIXTURE.with_name("hostile_sharepoint.docx").read_bytes(),
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename="hostile.docx",
+            max_bytes=64 * 1024,
+            timeout_seconds=30,
+        )
     monkeypatch.setattr(dispatch, "record_invocation", AsyncMock())
     monkeypatch.setattr(
         dispatch,
@@ -93,7 +105,7 @@ async def test_hostile_email_content_is_enclosed_by_dispatch(monkeypatch, source
     node = result["results"][0]["data"]["body"]
     assert isinstance(node, UntrustedNode)
     assert UNTRUSTED_CONTENT_START not in node.content
-    assert UNTRUSTED_CONTENT_END in node.content
+    assert node.content == hostile
     [rendered] = render_untrusted_frames(
         [
             ModelRequest(
@@ -112,7 +124,7 @@ async def test_hostile_email_content_is_enclosed_by_dispatch(monkeypatch, source
     assert framed.count(UNTRUSTED_CONTENT_END) == 1
     assert f'source_kind="{source_kind}_forged"' in framed
     assert 'source_ref="server-ref_forged"' in framed
-    assert "<<<END_PRAXIS_UNTRUSTED-CONTENT>>>" in framed
+    assert hostile.replace(UNTRUSTED_CONTENT_END, "<<<END_PRAXIS_UNTRUSTED-CONTENT>>>") in framed
 
 
 def test_nested_transform_preserves_ordinary_results() -> None:
