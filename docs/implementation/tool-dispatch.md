@@ -91,6 +91,10 @@ the database rather than trusting the supplied reference's display metadata.
 Platform Knowledge content uses the shared untrusted-content node and model-only
 framing through the existing search and read tools.
 
+Platform `read_file` text uses the same node with server-derived File and
+revision provenance. The byte slice remains bounded before model framing.
+The transcript decoder accepts the node and the existing workspace text result.
+
 ## Transcript approvals
 
 The following contracts apply in this area:

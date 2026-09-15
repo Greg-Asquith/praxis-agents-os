@@ -1,5 +1,6 @@
 // apps/web/src/features/conversations/native-tools/file-tools.ts
 
+import { nodeText } from "@/components/tool-ui/untrusted-node"
 import type { FileContractCategory, FileProcessingStatus } from "@/features/files/types"
 import { isRecord } from "@/lib/guards"
 
@@ -214,9 +215,10 @@ export function readFileContentResult(value: unknown): ReadFileContentToolResult
   if (!isRecord(result)) {
     return null
   }
+  const content = nodeText(result["content"])
   if (
     result["mode"] !== "content" ||
-    typeof result["content"] !== "string" ||
+    content === null ||
     typeof result["offset"] !== "number" ||
     typeof result["end_offset"] !== "number" ||
     typeof result["total_bytes"] !== "number" ||
@@ -227,7 +229,7 @@ export function readFileContentResult(value: unknown): ReadFileContentToolResult
 
   return {
     mode: "content",
-    content: result["content"],
+    content,
     offset: result["offset"],
     end_offset: result["end_offset"],
     total_bytes: result["total_bytes"],

@@ -30,6 +30,12 @@ The following contracts apply in this area:
   predicates, and be added to `tests/security/test_workspace_rls.py`.
   Missing GUCs must continue to fail closed. Never grant the runtime role
   `BYPASSRLS`, ownership, or superuser privileges.
+- Protected application tables have a `maintenance_access` policy that grants
+  the migration account cross-workspace reads and writes. This supports managed
+  Postgres without superuser or `BYPASSRLS` privileges. The runtime role must
+  not belong to the maintenance role. Add this policy with `FOR ALL TO
+  CURRENT_USER USING (true) WITH CHECK (true)` when creating an RLS table.
+  Migrations and maintenance connections must use the same owning account.
 - Skills have exactly two immutable scopes. Workspace skills retain a required
   `workspace_id` and normal tenant ownership. Platform skills have
   `workspace_id = NULL`, are readable and assignable in every workspace, and

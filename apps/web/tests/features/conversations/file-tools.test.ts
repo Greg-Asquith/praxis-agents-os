@@ -1,5 +1,8 @@
 // apps/web/tests/features/conversations/file-tools.test.ts
 
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -9,6 +12,7 @@ import {
   fileEntityFromWriteResult,
   generateImageResult,
   listFilesResult,
+  readFileContentResult,
   readFileImageResult,
   readFileUrlResult,
 } from "@/features/conversations/native-tools/file-tools"
@@ -151,4 +155,66 @@ describe("file tool entities", () => {
       processingStatus: "ready",
     })
   })
+})
+
+const fileTextSlice = {
+  mode: "content",
+  offset: 0,
+  end_offset: 12,
+  total_bytes: 12,
+  truncated: false,
+}
+
+describe("file content decoding", () => {
+  it.each([
+    "Policy text",
+    {
+      node: "praxis_untrusted",
+      source_kind: "file",
+      source_ref: "file:shared/revision:published",
+      content: "Policy text",
+    },
+  ])("decodes plain workspace content and wrapped platform content", (content) => {
+    expect(readFileContentResult({ ...fileTextSlice, content })).toEqual({
+      ...fileTextSlice,
+      content: "Policy text",
+    })
+  })
+
+  it.each([
+    null,
+    {},
+    { node: "praxis_untrusted", content: "Missing source" },
+    { node: "praxis_untrusted", source_kind: "file", source_ref: "file:shared", content: 12 },
+  ])("rejects malformed content nodes", (content) => {
+    expect(readFileContentResult({ ...fileTextSlice, content })).toBeNull()
+  })
+})
+
+it("renders wrapped platform File text in the transcript without exposing the wrapper", () => {
+  const html = renderToStaticMarkup(
+    createElement(FileToolRow, {
+      activity: {
+        id: "read",
+        kind: "result",
+        status: "completed",
+        name: "read_file",
+        result: {
+          ...fileTextSlice,
+          media_type: "text/plain",
+          content: {
+            node: "praxis_untrusted",
+            source_kind: "file",
+            source_ref: "file:shared/revision:published",
+            content: "<p>Delivery policy</p>",
+          },
+        },
+      },
+      defaultOpen: true,
+    })
+  )
+  expect(html).toContain('aria-label="Read File"')
+  expect(html).toContain("&lt;p&gt;Delivery policy&lt;/p&gt;")
+  expect(html).not.toContain("<p>Delivery policy</p>")
+  expect(html).not.toContain("praxis_untrusted")
 })

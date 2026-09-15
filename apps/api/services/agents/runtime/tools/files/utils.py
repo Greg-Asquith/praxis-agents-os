@@ -12,6 +12,7 @@ from models.files import File, FileRevision
 from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.untrusted import UntrustedNode
 from services.files.utils import (
     conversation_file_revision_id,
     file_for_revision,
@@ -96,7 +97,15 @@ def slice_text(
         "offset": offset,
         "end_offset": end,
         "total_bytes": total,
-        "content": content,
+        "content": (
+            UntrustedNode(
+                source_kind="file",
+                source_ref=f"file:{metadata['file_id']}/revision:{metadata['revision_id']}",
+                content=content,
+            ).model_dump(mode="json")
+            if metadata.get("scope") == ContentScope.PLATFORM
+            else content
+        ),
     }
     if end < total:
         result["truncated"] = True

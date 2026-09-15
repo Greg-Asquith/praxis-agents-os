@@ -27,6 +27,6 @@ export function useRestorePlatformArtifactVersionMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: restorePlatformArtifactVersion,
-    onSuccess: (artifact) => applyPlatformArtifactChange(queryClient, artifact),
+    onSuccess: () => applyPlatformArtifactChange(queryClient),
   })
 }

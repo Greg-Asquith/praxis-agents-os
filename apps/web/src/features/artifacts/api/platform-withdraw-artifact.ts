@@ -16,6 +16,6 @@ export function useWithdrawPlatformArtifactMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: withdrawPlatformArtifact,
-    onSuccess: (artifact) => applyPlatformArtifactChange(queryClient, artifact),
+    onSuccess: () => applyPlatformArtifactChange(queryClient),
   })
 }

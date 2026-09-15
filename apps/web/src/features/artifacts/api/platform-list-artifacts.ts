@@ -3,7 +3,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { artifactQueryKeys } from "@/features/artifacts/api/list-artifacts"
-import type { PlatformArtifact, PlatformArtifactListResponse } from "@/features/artifacts/types"
+import type { PlatformArtifactListResponse } from "@/features/artifacts/types"
 import { apiRequest } from "@/lib/api/client"
 import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 
@@ -29,15 +29,8 @@ export function platformArtifactsQueryOptions({
   })
 }
 
-// Platform changes alter what every workspace reads, so both caches reset across workspace keys.
-export async function applyPlatformArtifactChange(
-  queryClient: QueryClient,
-  artifact?: PlatformArtifact
-) {
-  if (artifact) {
-    queryClient.setQueryData(platformArtifactQueryKeys.detail(artifact.id), artifact)
-    queryClient.setQueryData(artifactQueryKeys.detail(artifact.id), artifact)
-  }
+// Refetch each workspace's access state without seeding management data into tenant reads.
+export async function applyPlatformArtifactChange(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: platformArtifactQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: artifactQueryKeys.all }),

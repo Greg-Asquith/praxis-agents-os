@@ -177,7 +177,12 @@ async def test_platform_attachment_pin_survives_publication_in_prompt_tools_and_
     assert available.size_bytes == 3
     ctx = _ctx(db_session, context)
     ref = RuntimeFileReference(entity_id=context.file.id, label=context.file.name)
-    assert (await read_file(ctx, ref))["content"] == "old"
+    assert (await read_file(ctx, ref))["content"] == {
+        "node": "praxis_untrusted",
+        "source_kind": "file",
+        "source_ref": f"file:{context.file.id}/revision:{context.revision.id}",
+        "content": "old",
+    }
     [code_input] = await load_run_code_inputs(ctx, [ref])
     assert code_input.content == b"old"
     assert code_input.revision_id == context.revision.id

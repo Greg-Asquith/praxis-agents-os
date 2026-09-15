@@ -90,3 +90,28 @@ it("keeps Knowledge upload revisions unpublished for review", async () => {
     publish_when_ready: false,
   })
 })
+
+it("invalidates published Files in every cached workspace when an upload completes after switching", async () => {
+  const client = new QueryClient()
+  const cachedKeys = ["alpha", "beta"].flatMap((workspace) => {
+    setActiveWorkspaceSlug(workspace)
+    return [
+      filesQueryKeys.list({ scope: "platform" }),
+      filesQueryKeys.detail("file"),
+      filesQueryKeys.revisions("file"),
+    ]
+  })
+  for (const queryKey of cachedKeys) client.setQueryData(queryKey, { scope: "platform" })
+  const mutation = client
+    .getMutationCache()
+    .build(client, platformUploadFileMutationOptions(client))
+  stubFetch(() => {
+    setActiveWorkspaceSlug("alpha")
+    return jsonResponse({ file: { id: "file", scope: "platform", is_published: true } })
+  })
+  await mutation.execute(new File(["Template"], "Template.txt"))
+  for (const queryKey of cachedKeys) {
+    expect(client.getQueryState(queryKey)?.isInvalidated).toBe(true)
+  }
+  client.clear()
+})

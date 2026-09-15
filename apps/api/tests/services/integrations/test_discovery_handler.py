@@ -274,6 +274,8 @@ async def test_enqueued_discovery_executes_through_real_worker(
         setup.add(connection)
         await setup.flush()
         job = await enqueue_discovery(setup, connection=connection)
+        # Select this job before unrelated recurring work in the shared test database.
+        job.priority = -1
         await setup.commit()
         user_id = user.id
         workspace_id = workspace.id
@@ -339,6 +341,7 @@ async def test_terminal_worker_timeout_persists_failure_lifecycle(
         await setup.flush()
         job = await enqueue_discovery(setup, connection=connection)
         job.max_attempts = 1
+        job.priority = -1
         await setup.commit()
         user_id = user.id
         workspace_id = workspace.id

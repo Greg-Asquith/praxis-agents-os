@@ -8,20 +8,25 @@ from uuid import uuid4
 import pytest
 from pydantic_ai.messages import RetryPromptPart, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from core.database import maintenance_async_db_session
+from core.exceptions.auth import AuthorizationError
+from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.artifacts import Artifact, ArtifactRevision
 from models.audit_event import AuditEvent
+from models.jobs import Job
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
+from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.entity_references.domain import AgentReference, ArtifactReference
 from services.artifacts.utils import artifact_revision_ref
 from services.storage.factory import get_storage_provider
 from tests.factories import build_user, build_workspace_membership
-from tests.support.platform_artifacts import seed_published_artifact
+from tests.support.delegation import resume_scenario
+from tests.support.platform_artifacts import add_platform_artifact_revision, seed_published_artifact
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -63,6 +68,9 @@ async def delegated_platform_artifact(committed_db_session_factory, monkeypatch,
                 saved = await db.get(Artifact, artifact.id)
                 saved.is_published = False
                 saved.deleted = True
+                await db.execute(
+                    delete(Job).where(Job.subject_type == "artifact", Job.subject_id == artifact.id)
+                )
         finally:
             reset_storage_provider_cache()
 
@@ -205,3 +213,112 @@ async def test_platform_artifact_delegate_uses_initiating_members_live_edit_auth
             )
             == b"Edited by the initiating member's delegate."
         )
+
+
+@pytest.mark.parametrize("change", ["none", "stale", "withdrawn", "read_only", "removed"])
+async def test_platform_artifact_delegated_approval_resume_rechecks_live_authority(
+    committed_db_session_factory, delegated_platform_artifact, monkeypatch, change
+):
+    context, child, artifact, original = delegated_platform_artifact
+    async with maintenance_async_db_session() as db:
+        run = await db.get(AgentRun, context.run_id)
+        run.trigger = "scheduled"
+        run.metadata_json = {"envelope": {"side_effect_policy": "require_approval"}}
+    child_model = scripted_model(
+        turns=[
+            ToolTurn(
+                (
+                    ToolCall(
+                        "update_artifact",
+                        {
+                            "artifact_id": ArtifactReference(
+                                entity_id=artifact.id, label=artifact.title
+                            ).model_dump(mode="json"),
+                            "content": "Approved delegated update",
+                            "expected_current_version_id": str(original.id),
+                        },
+                        "child-update",
+                    ),
+                )
+            ),
+            "The delegated request is handled.",
+        ]
+    )
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: child_model)
+    parent_model = scripted_model(
+        turns=[
+            ToolTurn(
+                (
+                    ToolCall(
+                        "delegate_to_agent",
+                        {
+                            "agent_id": AgentReference(
+                                entity_id=child.id, label=child.name
+                            ).model_dump(mode="json"),
+                            "task": "Update the reviewed platform report.",
+                        },
+                        "delegate-child",
+                    ),
+                )
+            ),
+            "The request is handled.",
+        ]
+    )
+    suspended = await run_scenario(committed_db_session_factory, context, model=parent_model)
+    assert suspended.run.status == "awaiting_approval"
+    [approval] = [
+        event.data for event in suspended.events if event.event == "tool.approval_required"
+    ]
+    assert approval["tool_call_id"] == "child-update"
+    assert approval["delegation"]["parent_tool_call_id"] == "delegate-child"
+    async with maintenance_async_db_session() as db:
+        saved = await db.get(Artifact, artifact.id)
+        assert saved.published_version_id == original.id
+        if change == "stale":
+            await add_platform_artifact_revision(
+                db, saved, content="Concurrent update", revision_number=2
+            )
+        elif change == "withdrawn":
+            saved.is_published = False
+        elif change in {"read_only", "removed"}:
+            membership = await db.scalar(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == context.workspace_id,
+                    WorkspaceMembership.user_id == context.user_id,
+                )
+            )
+            if change == "removed":
+                membership.deleted = True
+            else:
+                membership.role = WorkspaceRole.READ_ONLY
+        expected_version = saved.current_version_id
+
+    async def resume():
+        return await resume_scenario(
+            committed_db_session_factory,
+            context,
+            model=parent_model,
+            decisions=[AgentRunResumeDecision(tool_call_id="child-update", decision="approved")],
+        )
+
+    if change == "removed":
+        with pytest.raises(AuthorizationError):
+            await resume()
+    elif change == "withdrawn":
+        with pytest.raises(AppValidationError, match="unavailable"):
+            await resume()
+    else:
+        resumed = await resume()
+        assert resumed.run.status == ("failed" if change == "read_only" else "completed")
+    async with maintenance_async_db_session() as db:
+        saved = await db.get(Artifact, artifact.id)
+        assert (saved.current_version_id != expected_version) == (change == "none")
+        events = list(
+            await db.scalars(select(AuditEvent).where(AuditEvent.resource_id == str(artifact.id)))
+        )
+        assert len(events) == (1 if change == "none" else 0)
+        if change == "none":
+            revision = await db.get(ArtifactRevision, saved.published_version_id)
+            assert revision.created_by_user_id == context.user_id
+            assert events[0].actor_user_id == context.user_id
+            assert events[0].workspace_id is None

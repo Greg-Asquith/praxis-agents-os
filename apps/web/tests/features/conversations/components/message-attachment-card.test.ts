@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest"
 
 import type { MessageAttachment } from "@/features/conversations/attachments"
 import { MessageAttachmentCard } from "@/features/conversations/components/message-attachment-card"
+import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
+import { ApiError } from "@/lib/api/errors"
 import { fileQueryOptions } from "@/features/files/api/get-file"
 import type { WorkspaceFile } from "@/features/files/types"
 
@@ -80,6 +82,37 @@ describe("MessageAttachmentCard", () => {
 
     expect(html).toContain(attachment.mediaType)
     expect(html).not.toContain("August report.pptx")
+  })
+
+  it("shows unavailable for a withdrawn platform image in a saved chat", async () => {
+    const queryClient = createQueryClient()
+    queryClient.setDefaultOptions({ queries: { retry: false, retryOnMount: false } })
+    const error = new ApiError({ status: 404, message: "File unavailable", problem: null })
+    await expect(
+      queryClient.fetchQuery({
+        ...filePreviewQueryOptions(attachment.fileId),
+        queryFn: () => Promise.reject(error),
+      })
+    ).rejects.toBe(error)
+
+    const html = renderToStaticMarkup(
+      createElement(QueryClientProvider, {
+        client: queryClient,
+        children: createElement(MessageAttachmentCard, {
+          attachment: {
+            ...attachment,
+            name: "Shared template.png",
+            mediaType: "image/png",
+            scope: "platform",
+          },
+        }),
+      })
+    )
+
+    expect(html).toContain("Shared template.png")
+    expect(html).toContain("File unavailable")
+    expect(html).not.toContain("<img")
+    queryClient.clear()
   })
 
   it("keeps the media type fallback when the file lookup returns 404", async () => {

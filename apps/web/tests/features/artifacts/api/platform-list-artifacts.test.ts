@@ -1,17 +1,21 @@
-import { QueryClient } from "@tanstack/react-query"
-import { afterEach, describe, expect, it } from "vitest"
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
-import { artifactsQueryOptions } from "@/features/artifacts/api/list-artifacts"
+import { useUpdatePlatformArtifactMutation } from "@/features/artifacts/api/platform-update-artifact"
+import { jsonResponse, stubFetch } from "../../../support/fetch-stub"
+import { artifactQueryKeys, artifactsQueryOptions } from "@/features/artifacts/api/list-artifacts"
 import { platformArtifactQueryOptions } from "@/features/artifacts/api/platform-get-artifact"
 import {
   applyPlatformArtifactChange,
+  platformArtifactQueryKeys,
   platformArtifactsQueryOptions,
 } from "@/features/artifacts/api/platform-list-artifacts"
-import type { PlatformArtifact } from "@/features/artifacts/types"
 import { clearActiveWorkspace, setActiveUserId, setActiveWorkspaceSlug } from "@/lib/workspace"
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   clearActiveWorkspace()
 })
 
@@ -36,7 +40,7 @@ describe("platform artifact caches", () => {
     ])
   })
 
-  it("seeds both detail caches and resets artifact caches across workspaces", async () => {
+  it("invalidates cached lists and details without copying access state across workspaces", async () => {
     const client = new QueryClient()
     setActiveUserId("user-1")
     setActiveWorkspaceSlug("acme")
@@ -46,13 +50,55 @@ describe("platform artifact caches", () => {
     setActiveWorkspaceSlug("other")
     const otherKey = artifactsQueryOptions({ limit: 25 }).queryKey
     client.setQueryData(otherKey, page)
-    const artifact = { id: "artifact", title: "Shared" } as PlatformArtifact
+    const readerKey = artifactQueryKeys.detail("artifact")
+    const managementKey = platformArtifactQueryKeys.detail("artifact")
+    const readerArtifact = { id: "artifact", scope: "platform", can_edit: false }
+    client.setQueryData(readerKey, readerArtifact)
+    client.setQueryData(managementKey, { ...readerArtifact, can_edit: true })
 
-    await applyPlatformArtifactChange(client, artifact)
+    await applyPlatformArtifactChange(client)
 
-    expect(client.getQueryData(artifactQueryOptions("artifact").queryKey)).toBe(artifact)
-    expect(client.getQueryData(platformArtifactQueryOptions("artifact").queryKey)).toBe(artifact)
+    expect(client.getQueryData(readerKey)).toEqual(readerArtifact)
+    expect(client.getQueryState(readerKey)?.isInvalidated).toBe(true)
+    expect(client.getQueryState(managementKey)?.isInvalidated).toBe(true)
     expect(client.getQueryState(acmeKey)?.isInvalidated).toBe(true)
     expect(client.getQueryState(otherKey)?.isInvalidated).toBe(true)
+    client.clear()
   })
+})
+
+it("does not seed an editor response into a workspace switched to during save", async () => {
+  const client = new QueryClient()
+  setActiveUserId("user-1")
+  setActiveWorkspaceSlug("editor")
+  let save: ReturnType<typeof useUpdatePlatformArtifactMutation>["mutateAsync"] | undefined
+  function MutationHarness() {
+    save = useUpdatePlatformArtifactMutation().mutateAsync
+    return null
+  }
+  renderToStaticMarkup(
+    createElement(QueryClientProvider, {
+      client,
+      children: createElement(MutationHarness),
+    })
+  )
+  const editorArtifact = { id: "artifact", scope: "platform", can_edit: true }
+  const fetch = stubFetch(() => {
+    setActiveWorkspaceSlug("reader")
+    return jsonResponse(editorArtifact)
+  })
+  setActiveWorkspaceSlug("reader")
+  const readerKey = artifactQueryKeys.detail("artifact")
+  const readerArtifact = { ...editorArtifact, can_edit: false }
+  client.setQueryData(readerKey, readerArtifact)
+  setActiveWorkspaceSlug("editor")
+
+  expect(save).toBeDefined()
+  await save?.({ artifactId: "artifact", content: "Updated", expectedCurrentVersionId: "reviewed" })
+
+  expect(fetch).toHaveBeenCalledOnce()
+  expect(client.getQueryData(readerKey)).toEqual(readerArtifact)
+  expect(client.getQueryState(readerKey)?.isInvalidated).toBe(true)
+  expect(client.getQueryData(platformArtifactQueryOptions("artifact").queryKey)).toBeUndefined()
+  client.clear()
 })

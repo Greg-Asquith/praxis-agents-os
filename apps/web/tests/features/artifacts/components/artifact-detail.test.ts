@@ -8,7 +8,7 @@ import {
   createRouter,
   RouterContextProvider,
 } from "@tanstack/react-router"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
 import { artifactVersionContentQueryOptions } from "@/features/artifacts/api/get-artifact-version-content"
@@ -19,6 +19,7 @@ import { ArtifactDetail } from "@/features/artifacts/components/artifact-detail"
 import type { Artifact, ArtifactContent, PlatformArtifact } from "@/features/artifacts/types"
 import { ActiveWorkspaceContext } from "@/features/workspaces/components/active-workspace-context"
 import type { Workspace } from "@/features/workspaces/types"
+import { clearActiveWorkspace, setActiveUserId, setActiveWorkspaceSlug } from "@/lib/workspace"
 
 vi.mock("@/features/artifacts/api/list-artifact-shares", () => ({
   useArtifactSharesQuery: vi.fn(() => ({ data: { items: [] } })),
@@ -75,8 +76,14 @@ const workspace: Workspace = {
 }
 
 beforeEach(() => vi.clearAllMocks())
+afterEach(() => {
+  clearActiveWorkspace()
+})
 
 type RenderOptions = {
+  client?: QueryClient
+  seed?: boolean
+  workspaceName?: string
   artifact?: Partial<PlatformArtifact>
   isSuperAdmin?: boolean
   management?: boolean
@@ -86,6 +93,9 @@ type RenderOptions = {
 
 function renderDetail({
   artifact: overrides = {},
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  seed = true,
+  workspaceName = workspace.name,
   isSuperAdmin = false,
   management = false,
   role,
@@ -98,14 +108,15 @@ function renderDetail({
     can_edit: EDITOR_ROLES.has(role) && (scope === "workspace" || artifact.is_published),
     ...overrides,
   }
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const detailOptions = management ? platformArtifactQueryOptions : artifactQueryOptions
   const contentOptions = management
     ? platformArtifactVersionContentQueryOptions
     : artifactVersionContentQueryOptions
-  client.setQueryData(detailOptions(target.id).queryKey, target)
-  for (const version of target.versions) {
-    client.setQueryData(contentOptions(target.id, version.id).queryKey, content)
+  if (seed) {
+    client.setQueryData(detailOptions(target.id).queryKey, target)
+    for (const version of target.versions) {
+      client.setQueryData(contentOptions(target.id, version.id).queryKey, content)
+    }
   }
   const rootRoute = createRootRoute()
   const router = createRouter({
@@ -122,7 +133,7 @@ function renderDetail({
         router,
         children: createElement(ActiveWorkspaceContext, {
           value: {
-            workspace: { ...workspace, current_user_role: role },
+            workspace: { ...workspace, name: workspaceName, current_user_role: role },
             workspaces: [],
             setWorkspaceBySlug: () => undefined,
           },
@@ -138,6 +149,41 @@ function renderDetail({
 }
 
 describe("ArtifactDetail", () => {
+  it("preserves shared labels and each workspace's access when returning to cached content", () => {
+    const client = new QueryClient()
+    setActiveUserId("member")
+    setActiveWorkspaceSlug("editor")
+    renderDetail({ client, role: "member", workspaceName: "Client One" })
+    setActiveWorkspaceSlug("reader")
+    renderDetail({ client, role: "read_only", workspaceName: "Client Two" })
+
+    setActiveWorkspaceSlug("editor")
+    const editable = renderDetail({
+      client,
+      seed: false,
+      role: "member",
+      workspaceName: "Client One",
+    })
+    expect(editable).toContain(">Shared<")
+    expect(editable).toContain("Edit</button>")
+    expect(editable).toContain("stay in Client One")
+    expect(editable).not.toContain("Client Two")
+
+    setActiveWorkspaceSlug("reader")
+    const readOnly = renderDetail({
+      client,
+      seed: false,
+      role: "read_only",
+      workspaceName: "Client Two",
+    })
+    expect(readOnly).toContain(">Shared<")
+    expect(readOnly).toContain("Available in every workspace on this deployment")
+    expect(readOnly).not.toContain("Edit</button>")
+    expect(readOnly).not.toContain("Make a workspace copy")
+    expect(readOnly).not.toContain("Client One")
+    client.clear()
+  })
+
   it.each(["read_only", null] as const)(
     "renders a read-only shared preview for role %s without copies, edits, or shares",
     (role) => {

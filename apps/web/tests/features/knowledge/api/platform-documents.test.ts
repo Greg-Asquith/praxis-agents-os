@@ -78,6 +78,33 @@ describe("platform Knowledge API", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: platformKnowledgeQueryKeys.all })
   })
 
+  it("invalidates retained platform reads when withdrawing after a workspace switch", async () => {
+    const client = new QueryClient()
+    setActiveUserId("admin")
+    const cachedKeys = ["alpha", "beta"].flatMap((workspace) => {
+      setActiveWorkspaceSlug(workspace)
+      return [
+        knowledgeQueryKeys.list({ scope: "platform" }),
+        knowledgeQueryKeys.detail("document"),
+        knowledgeQueryKeys.search("delivery policy"),
+        platformKnowledgeQueryKeys.detail("document"),
+      ]
+    })
+    for (const queryKey of cachedKeys) client.setQueryData(queryKey, { scope: "platform" })
+    const mutation = client
+      .getMutationCache()
+      .build(client, platformWithdrawDocumentMutationOptions(client))
+    stubFetch(() => {
+      setActiveWorkspaceSlug("alpha")
+      return jsonResponse({ id: "document", is_published: false })
+    })
+    await mutation.execute("document")
+    for (const queryKey of cachedKeys) {
+      expect(client.getQueryState(queryKey)?.isInvalidated).toBe(true)
+    }
+    client.clear()
+  })
+
   it("pins uploads to the selected platform revision without tenant privacy fields", async () => {
     const fetch = stubFetch(jsonResponse({ id: "document" }))
     const client = new QueryClient()

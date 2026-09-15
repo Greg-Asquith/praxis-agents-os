@@ -33,6 +33,6 @@ export function usePublishArtifactToPlatformMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: publishArtifactToPlatform,
-    onSuccess: (created) => applyPlatformArtifactChange(queryClient, created),
+    onSuccess: () => applyPlatformArtifactChange(queryClient),
   })
 }

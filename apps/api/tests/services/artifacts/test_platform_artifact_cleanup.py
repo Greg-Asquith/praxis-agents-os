@@ -13,6 +13,7 @@ from sqlalchemy import select
 from core.database import maintenance_async_db_session
 from models.artifacts import Artifact, ArtifactRevision
 from models.jobs import Job
+from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.handlers import sweep_platform_artifacts as module
 from services.storage.domain import StorageBucket, make_storage_object_ref
 
@@ -121,7 +122,12 @@ async def test_platform_artifact_retention_ensures_one_successor(db_session):
         await module.ensure_platform_artifacts_sweep_job(db)
         await module.ensure_platform_artifacts_sweep_job(db)
         jobs = list(
-            await db.scalars(select(Job).where(Job.kind == module.SWEEP_PLATFORM_ARTIFACTS_KIND))
+            await db.scalars(
+                select(Job).where(
+                    Job.kind == module.SWEEP_PLATFORM_ARTIFACTS_KIND,
+                    Job.status.in_(IN_FLIGHT_JOB_STATUSES),
+                )
+            )
         )
         assert len(jobs) == 1
         assert jobs[0].workspace_id is jobs[0].concurrency_user_id is None

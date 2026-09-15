@@ -248,6 +248,11 @@ another workspace cannot discover them. File tools and entity search use the
 same publication boundary. Platform content retains the existing untrusted
 content framing.
 
+`read_file` wraps published platform text and extracted Markdown in the shared
+untrusted-content node with File and revision provenance. Byte offsets and
+limits apply to the source text before framing. The transcript decoder displays
+the text, and the model receives the existing untrusted-content delimiters.
+
 Ordinary mutations, replacement uploads, restores, and folder moves reject
 platform targets with an instruction to make a workspace copy. Agent writes
 and code outputs retain workspace ownership, including during a super-admin
@@ -459,9 +464,10 @@ reviewed current version; a stale review returns a conflict message. Publication
 opens the new shared Artifact through the management read path, where
 **Publish**, **Withdraw**, and **Delete** carry the same audience reminder.
 Withdrawn Artifacts stay on the management read path until published again.
-Platform mutations invalidate Artifact caches across workspaces in the browser;
-workspace copies invalidate only the destination workspace. Anonymous share
-links remain workspace-only.
+Platform mutations invalidate Artifact caches across workspaces in the browser.
+Each workspace refetches its access state; management responses never seed tenant
+caches after a workspace switch. Workspace copies invalidate only the destination
+workspace. Anonymous share links remain workspace-only.
 
 Artifact view URLs use a `v2` signature that binds the requesting workspace,
 resource scope, Artifact ID, version ID, and expiry. Serving verifies that

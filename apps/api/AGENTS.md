@@ -39,7 +39,8 @@ Preserve these boundaries in every backend change:
   and user context. New confidential tables require forced row-level security
   in their creating migration and coverage in `tests/security/test_workspace_rls.py`.
 - Keep maintenance access explicit. Never grant runtime ownership, superuser,
-  or `BYPASSRLS` privileges.
+  or `BYPASSRLS` privileges. Include the maintenance policy described in the
+  database reference when creating a protected table.
 - Route every agent tool through the registry and `runtime/dispatch.py` for
   authorisation, approval, audit, and bounded results.
 - Resolve credentials through the existing provider and secret-reference

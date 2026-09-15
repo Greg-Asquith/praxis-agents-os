@@ -29,6 +29,6 @@ export function useUpdatePlatformArtifactMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: updatePlatformArtifact,
-    onSuccess: (artifact) => applyPlatformArtifactChange(queryClient, artifact),
+    onSuccess: () => applyPlatformArtifactChange(queryClient),
   })
 }
