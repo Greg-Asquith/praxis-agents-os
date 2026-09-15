@@ -13,6 +13,7 @@ import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-f
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ApprovalDecisionContext } from "@/features/conversations/approval-decision-context"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
+import { FailedToolCard } from "@/features/conversations/components/failed-tool-card"
 import { ToolField, ToolFieldGrid } from "@/features/conversations/components/tool-field"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import {
@@ -134,6 +135,15 @@ function VisibleToolCallRow({
         title={normalizeOptionalText(ui?.approval_title) ?? title}
       />
     )
+  } else if (activity.status === "failed") {
+    defaultRow = (
+      <FailedToolCard
+        activity={activity}
+        argFields={argFields}
+        headline={headlineForActivity(activity, title, ui)}
+        iconToken={ui?.icon ?? null}
+      />
+    )
   } else if (live && !compact && activity.status === "running") {
     defaultRow = (
       <RunningToolCard
@@ -191,11 +201,6 @@ function VisibleToolCallRow({
               description="This action was declined and was not performed."
               reason={activity.decisionReason}
             />
-            <ToolFieldGrid fields={argFields} />
-          </>
-        ) : activity.status === "failed" ? (
-          <>
-            <FailedToolContent resultText={friendlyResultText(activity.result)} />
             <ToolFieldGrid fields={argFields} />
           </>
         ) : (
@@ -302,26 +307,6 @@ function RunningToolCard({
     >
       <ToolFieldGrid fields={argFields} />
     </ToolSurfaceCard>
-  )
-}
-
-function FailedToolContent({ resultText }: { resultText: string | null }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <p className="text-muted-foreground text-sm">The agent saw this error and can adjust.</p>
-      {resultText ? (
-        <div className="**:data-[slot=tool-field-label]:text-destructive **:data-[slot=tool-field-well]:border-destructive/40 **:data-[slot=tool-field-well]:bg-destructive/5">
-          <ToolField
-            field={{
-              key: "error",
-              label: "What went wrong",
-              value: resultText,
-              format: "multiline",
-            }}
-          />
-        </div>
-      ) : null}
-    </div>
   )
 }
 

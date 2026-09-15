@@ -97,7 +97,7 @@ describe("ToolCallRow lifecycle", () => {
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
   })
 
-  it("opens live failures with plain-language framing and no technical disclosure", () => {
+  it.each([false, true])("keeps the failure reason outside request details (live: %s)", (live) => {
     const html = renderRow(
       {
         id: "search-1",
@@ -107,13 +107,18 @@ describe("ToolCallRow lifecycle", () => {
         args: { query: "missing source" },
         result: "The requested source could not be found.",
       },
-      true
+      live
     )
 
     expect(html).toContain("<details")
-    expect(html).toContain('open=""')
-    expect(html).toContain("The agent saw this error and can adjust.")
+    expect(html).toContain('<section aria-label="Couldn&#x27;t Search the Web"')
+    expect(html).not.toContain('open=""')
+    expect(html).toContain("Request details")
     expect(html).toContain("What went wrong")
+    expect(html.indexOf("The requested source could not be found.")).toBeLessThan(
+      html.indexOf("<details")
+    )
+    expect(html).not.toContain("can adjust its next attempt")
     expect(html).not.toContain("Technical")
   })
 
@@ -128,9 +133,94 @@ describe("ToolCallRow lifecycle", () => {
       true
     )
 
-    expect(html).toContain('open=""')
-    expect(html).toContain("The agent saw this error and can adjust.")
-    expect(html).not.toContain("What went wrong")
+    expect(html).toContain("No further error details were recorded.")
+    expect(html).toContain("What went wrong")
+    expect(html).not.toContain("<details")
+  })
+
+  it.each(["run_code", "fetch_url", "unregistered_tool"])(
+    "uses the shared error card for %s when its presenter has no failure view",
+    (name) => {
+      const html = renderRow({
+        id: "failed-1",
+        kind: "result",
+        name,
+        status: "failed",
+        result: "The service is temporarily unavailable.",
+      })
+
+      expect(html).toContain("<section")
+      expect(html).toContain("What went wrong")
+      expect(html).toContain("The service is temporarily unavailable.")
+      expect(html).not.toContain("<details")
+    }
+  )
+
+  it("preserves a tool's dedicated failure card", () => {
+    const html = renderRow({
+      id: "image-failure",
+      kind: "result",
+      name: "generate_image",
+      status: "failed",
+      result: "The service is temporarily unavailable.",
+    })
+
+    expect(html).toContain('aria-label="Generate Image failed"')
+    expect(html).toContain("The service is temporarily unavailable.")
+    expect(html).not.toContain("Any further attempts")
+  })
+
+  it.each([{ kind: "retry" as const }, { kind: "result" as const, outcome: "retry" }])(
+    "explains a recorded retry without claiming another attempt has started: %s",
+    (retry) => {
+      const html = renderRow({
+        ...retry,
+        id: "script-retry",
+        name: "run_code",
+        status: "failed",
+        result: "Choose a supported file format.",
+      })
+
+      expect(html).toContain("The agent received this error and can adjust its next attempt.")
+      expect(html).not.toContain("Retrying")
+      expect(html).not.toContain("<button")
+    }
+  )
+
+  it("shows retained failure excerpts in compact nested calls without exposing raw results", () => {
+    const html = renderRow(
+      {
+        id: "nested-failure",
+        kind: "result",
+        name: "unregistered_tool",
+        parentToolCallId: "workflow-1",
+        status: "failed",
+        result: { internal_payload: "Do not show raw JSON" },
+        resultExcerpt: "The requested file was not found.",
+      },
+      false,
+      [presentation],
+      false,
+      true
+    )
+
+    expect(html).toContain("<section")
+    expect(html).toContain("The requested file was not found.")
+    expect(html).not.toContain("internal_payload")
+    expect(html).not.toContain("<details")
+  })
+
+  it("renders error text as text rather than executable markup", () => {
+    const html = renderRow({
+      id: "script-failure",
+      kind: "result",
+      name: "run_code",
+      status: "failed",
+      result: '<script>alert("error")</script>',
+    })
+
+    expect(html).toContain("&lt;script&gt;")
+    expect(html).not.toContain("<script>")
   })
 
   it("opens live denials and shows the operator reason separately", () => {
@@ -339,7 +429,8 @@ function renderRow(
   activity: ToolActivity,
   live = false,
   presentations: ToolPresentationEntry[] = [presentation],
-  defaultOpen = false
+  defaultOpen = false,
+  compact = false
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -351,7 +442,7 @@ function renderRow(
   return renderToStaticMarkup(
     createElement(QueryClientProvider, {
       client: queryClient,
-      children: createElement(ToolCallRow, { activity, defaultOpen, live }),
+      children: createElement(ToolCallRow, { activity, compact, defaultOpen, live }),
     })
   )
 }
