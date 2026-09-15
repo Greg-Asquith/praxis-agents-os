@@ -183,6 +183,13 @@ and neutralised forged delimiters, and retain structured saved and public
 results. Invalid provider IDs and excessive citation URLs produce safe errors
 without reflecting the rejected values.
 
+SharePoint link resolution uses the same item projection and admits references
+only from libraries selected on the resolving connection. An unselected
+library returns only bounded site and library labels as a provenance node,
+plus server-authored recovery copy. Direct and Code Mode scenarios verify
+framing and retained taint for both successful metadata and failed lookup hints.
+No file content or download annotation enters a link result.
+
 SharePoint file reads use the same provenance for converted document content.
 Only selected-drive items reach the downloader. Downloads are bounded to
 50 MiB by default; converted Markdown is bounded to 64 KiB. Conversion runs in

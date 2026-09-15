@@ -151,7 +151,7 @@ Empty lookup text lists library roots. The field remains read-only in tool
 presentation; an editable browser picker is pending separate UI work.
 The resolver offers at most 25 choices across all libraries, with bounded local
 choice paging. Ambiguous drive selections are skipped before credential access.
-Link resolution is pending.
+Link resolution is implemented below; its result presenter remains pending.
 
 ### File content
 
@@ -206,7 +206,57 @@ malformed display fields fall back to the default tool row. Only display fields
 enter the view, excluding reference metadata and download annotations.
 
 Metadata validation errors retain the owning operation: `search_files`,
-`list_folder`, `get_item`, or `read_file`. Errors omit rejected provider values.
+`list_folder`, `get_item`, `read_file`, or `open_link`. Errors omit rejected
+provider values.
+
+`sharepoint_open_link` accepts an HTTPS SharePoint or work OneDrive URL up to
+8,192 characters. A direct URL under a selected library resolves through
+`/drives/{drive_id}/root:/{relative_path}`. Matching checks the hostname and
+decoded path segments, chooses the longest library prefix, and rejects
+traversal and encoded separators before credentials. Direct links target only
+the matching connection. Library form and view routes ending in
+`/Forms/*.aspx`, including `AllItems.aspx`, report `link_not_supported`
+before credentials or HTTP and ask for a direct file or folder URL. The tool
+does not extract item paths from their query parameters. Ordinary direct
+file URLs retain benign query parameters such as `?web=1` during validation;
+those parameters do not enter the Graph item path. Other `.aspx` item paths
+remain eligible for direct resolution.
+
+Missing or invalid cached library URLs are excluded from direct matching.
+They cannot block a healthy library's direct link. Their drive IDs remain
+selected for the sharing result's scope check. Other links use the
+[Graph sharing endpoint](https://learn.microsoft.com/en-us/graph/api/shares-get)
+once per selected connection, without a link-redemption header. Each connection
+makes at most one logical metadata request, with the shared read retry policy.
+Microsoft documents write permissions for that endpoint, but a tenant check
+with only the existing read-only SharePoint grant successfully resolved an
+already accessible file URL. Tenant policy and item permissions can still deny
+a sharing link. No write scope is requested.
+
+Link resolution checks every selected library on the resolving connection.
+Only a local file or folder in that set returns a reference. A result from
+another connection's selected drive is rejected. Remote shortcuts, packages,
+ambiguous selections, and malformed metadata fail closed. A direct-path result
+must also match the requested drive. Results use the same bounded item fields,
+provenance, and citation limits as listing. Download annotations are excluded.
+
+Successful results identify the actual library. A sharing request uses the
+first selected library on that connection as its audit context, and records
+the resolved `{drive_id}:{item_id}` in `external_ref`. Direct requests use the
+matching library for both. Credential and provider failures remain audited
+and isolated by connection through the shared context runner.
+
+Failures report `not_found`, `access_denied` for a denied direct read,
+`link_not_supported` for an invalid URL or denied sharing request, or
+`library_not_selected`. The last includes bounded site and library names in
+`data.library` as an untrusted node, derived from the returned site and file
+URLs when available. Its recovery copy asks you to select that library in the
+SharePoint connection and Active Context, refreshing discovery if needed.
+Missing, invalid, or non-string optional site and file URLs retain generic
+site/library hints and the `library_not_selected` error code.
+Keeping the hint as a node preserves Code Mode provenance on failure. A denied
+sharing request asks for the file's direct URL. Link-result presentation is
+pending; the scalar default renderer does not display the nested item or hint.
 
 Fetching original Office files into Files, editing them, and saving them back
 to SharePoint is pending. Markdown reads do not provide that workflow.

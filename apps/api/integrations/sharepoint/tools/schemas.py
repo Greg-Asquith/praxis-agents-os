@@ -1,6 +1,6 @@
 # apps/api/integrations/sharepoint/tools/schemas.py
 
-"""Typed SharePoint listing, search, and file content results."""
+"""Typed SharePoint listing, search, file content, and link results."""
 
 from typing import Literal
 
@@ -77,3 +77,17 @@ class SharePointFileEntry(IntegrationFanOutEntry):
 
 class SharePointFileOutput(IntegrationFanOutOutput):
     results: list[SharePointFileEntry]
+
+
+class SharePointLibraryHint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    library: UntrustedText
+
+
+class SharePointLinkEntry(IntegrationFanOutEntry):
+    data: DriveItem | SharePointLibraryHint | None = None
+
+
+class SharePointLinkOutput(IntegrationFanOutOutput):
+    results: list[SharePointLinkEntry]

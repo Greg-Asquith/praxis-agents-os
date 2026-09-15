@@ -666,7 +666,12 @@ to SharePoint and Outlook attachment reads; existing string callers retain
 replacement decoding. Other conversion callers retain thread execution.
 The file-content presenter uses the shared read seam and Markdown renderer with
 guarded citations, size and type details, and an explicit truncation badge.
-Calendar tools and SharePoint link resolution remain pending.
+SharePoint link resolution returns a scoped reference from a direct library
+path or the Graph sharing endpoint. It makes at most one logical request per
+selected connection, checks the resolved drive against that connection's
+selected libraries, and retains untrusted provenance for item metadata and
+library-selection recovery hints. It uses the shared context and audit runners.
+Calendar tools and SharePoint link-result presentation remain pending.
 Gmail and Outlook share the provider-neutral preview query and content loader
 in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.

@@ -66,6 +66,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "sharepoint_list_folder": ("read", "internal", "auto", False),
         "sharepoint_search_files": ("read", "internal", "auto", False),
         "sharepoint_read_file": ("read", "internal", "auto", False),
+        "sharepoint_open_link": ("read", "internal", "auto", False),
         "outlook_mail_search_messages": ("read", "internal", "auto", False),
         "outlook_mail_read_message": ("read", "internal", "auto", False),
         "outlook_mail_list_folders": ("read", "internal", "auto", False),

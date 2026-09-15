@@ -1,0 +1,15 @@
+{
+  "id": "file",
+  "name": "Quarterly report.docx",
+  "size": 1234,
+  "file": {
+    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  },
+  "lastModifiedDateTime": "2026-09-15T09:00:00Z",
+  "webUrl": "https://example.sharepoint.com/sites/Finance/Documents/Quarterly%20report.docx",
+  "parentReference": {
+    "driveId": "drive",
+    "path": "/drives/drive/root:"
+  },
+  "@microsoft.graph.downloadUrl": "https://example.sharepoint.com/private-download?token=PRIVATE_DOWNLOAD_SECRET"
+}
