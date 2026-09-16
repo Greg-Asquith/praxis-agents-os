@@ -9,9 +9,9 @@ import httpx2
 import pytest
 
 from core.exceptions.integration import IntegrationValidationError
-from integrations.sharepoint.operations.convert_item import convert_item
 from integrations.sharepoint.operations.download_item import download_item
 from integrations.sharepoint.operations.list_children import list_children
+from integrations.sharepoint.operations.read_item_window import read_item_window
 from integrations.sharepoint.operations.search_items import search_items
 from integrations.sharepoint.operations.utils import MAX_CITATION_URL_CHARS
 from integrations.sharepoint.references import SharePointDriveItemReference
@@ -44,15 +44,16 @@ from tests.integrations.sharepoint.support import context, entry, file_metadata,
         "https://example.com/" + "a" * MAX_CITATION_URL_CHARS,
     ],
 )
-async def test_unusable_citation_fails_before_download(monkeypatch, citation, caplog):
+@pytest.mark.parametrize("operation", ["read_file", "find_in_file"])
+async def test_unusable_citation_fails_before_download(monkeypatch, citation, caplog, operation):
     caplog.set_level(logging.DEBUG)
     async with graph(lambda _: httpx2.Response(200, json=file_metadata(webUrl=citation))) as client:
         download = AsyncMock(return_value=b"notes")
         monkeypatch.setattr(client, "get_bytes", download)
         with pytest.raises(IntegrationValidationError) as caught:
-            await download_item(client, drive_id="drive", item_id="file")
+            await download_item(client, drive_id="drive", item_id="file", operation=operation)
         download.assert_not_awaited()
-    assert caught.value.operation == "read_file"
+    assert caught.value.operation == operation
     assert caught.value.original_error is None
     evidence = "".join(traceback.format_exception(caught.value)) + caplog.text
     assert "PRIVATE_CITATION_SECRET" not in evidence
@@ -76,7 +77,7 @@ async def test_long_citation_survives_read_with_provenance(monkeypatch, scheme):
     citation = prefix + "a" * (MAX_CITATION_URL_CHARS - len(prefix))
     async with graph(lambda _: httpx2.Response(200, json=file_metadata(webUrl=citation))) as client:
         monkeypatch.setattr(client, "get_bytes", AsyncMock(return_value=b"notes"))
-        result = await convert_item(client, drive_id="drive", item_id="file")
+        result = await read_item_window(client, drive_id="drive", item_id="file")
     assert result["web_url"].content == citation
     assert result["web_url"].source_kind == "sharepoint_drive_item"
     assert result["web_url"].source_ref == "drive:file"

@@ -3,7 +3,11 @@
 """Shared document-to-markdown conversion helpers."""
 
 import asyncio
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
+from itertools import islice
 from pathlib import PurePosixPath
 from typing import Literal
 
@@ -12,6 +16,7 @@ from anyio import fail_after, to_process
 from core.exceptions.general import AppValidationError
 from services.assets.utils import normalize_content_type
 from services.storage.paths import safe_filename
+from utils.text_window import TextWindow, TextWindowError, utf8_window
 
 TRUNCATION_MARKER = "\n\n[Truncated: document exceeds the converted size limit.]"
 _TEXT_CONTENT_TYPES = frozenset({"application/json", "text/plain", "text/markdown", "text/csv"})
@@ -90,19 +95,10 @@ async def convert_document_to_markdown_result(
 ) -> DocumentConversionResult:
     """Converts bytes with actual truncation state and worker-side UTF-8 policy."""
     if timeout_seconds is not None:
-        try:
-            with fail_after(timeout_seconds):
-                return await to_process.run_sync(
-                    _convert_bounded_sync,
-                    data,
-                    content_type,
-                    filename,
-                    max_bytes,
-                    strict_utf8,
-                    cancellable=True,
-                )
-        except Exception:
-            raise DocumentConversionError("Document could not be converted to markdown") from None
+        return await _run_document_process(
+            partial(_convert_bounded_sync, data, content_type, filename, max_bytes, strict_utf8),
+            timeout_seconds=timeout_seconds,
+        )
     try:
         return await asyncio.to_thread(
             _convert_bounded_sync, data, content_type, filename, max_bytes, strict_utf8
@@ -115,6 +111,14 @@ def _convert_bounded_sync(
     data: bytes, content_type: str, filename: str, max_bytes: int, strict_utf8: bool
 ) -> DocumentConversionResult:
     """Converts and bounds output before returning it from the worker."""
+    markdown, source = _convert_text_sync(data, content_type, filename, strict_utf8)
+    markdown, truncated = _bound_markdown(markdown, max_bytes=max_bytes)
+    return DocumentConversionResult(markdown=markdown, truncated=truncated, source=source)
+
+
+def _convert_text_sync(
+    data: bytes, content_type: str, filename: str, strict_utf8: bool
+) -> tuple[str, Literal["text", "converted"]]:
     normalized_content_type = normalize_content_type(content_type)
     errors = "strict" if strict_utf8 else "replace"
     source: Literal["text", "converted"] = "converted"
@@ -126,8 +130,7 @@ def _convert_bounded_sync(
     else:
         extension = document_extension(filename, content_type=normalized_content_type)
         markdown = _convert_sync(data, extension)
-    markdown, truncated = _bound_markdown(markdown, max_bytes=max_bytes)
-    return DocumentConversionResult(markdown=markdown, truncated=truncated, source=source)
+    return markdown, source
 
 
 def document_extension(filename: str, *, content_type: str | None = None) -> str:
@@ -183,3 +186,88 @@ def _bound_markdown(markdown: str, *, max_bytes: int) -> tuple[str, bool]:
     return encoded[:allowed_content_bytes].decode(
         "utf-8", errors="ignore"
     ) + TRUNCATION_MARKER, True
+
+
+@dataclass(frozen=True)
+class DocumentWindowResult:
+    window: TextWindow
+    source: Literal["text", "converted"]
+
+
+@dataclass(frozen=True)
+class DocumentFindResult:
+    total_bytes: int
+    matches: list[tuple[int, str]]
+    has_more: bool
+
+
+async def _run_document_process[T](operation: Callable[[], T], *, timeout_seconds: float) -> T:
+    try:
+        with fail_after(timeout_seconds):
+            return await to_process.run_sync(operation, cancellable=True)
+    except TextWindowError:
+        raise
+    except Exception:
+        raise DocumentConversionError("Document could not be converted to markdown") from None
+
+
+async def read_document_window(
+    data: bytes,
+    *,
+    content_type: str,
+    filename: str,
+    offset: int,
+    max_bytes: int,
+    timeout_seconds: float,
+) -> DocumentWindowResult:
+    """Converts the whole document and returns only the requested window from the worker."""
+    return await _run_document_process(
+        partial(_read_window_sync, data, content_type, filename, offset, max_bytes),
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _read_window_sync(
+    data: bytes, content_type: str, filename: str, offset: int, max_bytes: int
+) -> DocumentWindowResult:
+    markdown, source = _convert_text_sync(data, content_type, filename, True)
+    encoded = markdown.encode("utf-8")
+    try:
+        window = utf8_window(encoded, offset=offset, max_bytes=max_bytes)
+    except TextWindowError as exc:
+        raise TextWindowError(
+            f"{exc} The converted content contains {len(encoded)} bytes."
+        ) from None
+    return DocumentWindowResult(window, source)
+
+
+async def find_document_text(
+    data: bytes,
+    *,
+    content_type: str,
+    filename: str,
+    query: str,
+    limit: int,
+    timeout_seconds: float,
+) -> DocumentFindResult:
+    """Searches the whole converted document and returns bounded excerpts from the worker."""
+    return await _run_document_process(
+        partial(_find_text_sync, data, content_type, filename, query, limit),
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _find_text_sync(
+    data: bytes, content_type: str, filename: str, query: str, limit: int
+) -> DocumentFindResult:
+    markdown, _ = _convert_text_sync(data, content_type, filename, True)
+    found = list(islice(re.finditer(re.escape(query), markdown, re.IGNORECASE), limit + 1))
+    matches = []
+    previous_start = byte_offset = 0
+    for match in found[:limit]:
+        start = max(0, match.start() - 120)
+        end = min(len(markdown), match.end() + 120)
+        byte_offset += len(markdown[previous_start:start].encode("utf-8"))
+        previous_start = start
+        matches.append((byte_offset, markdown[start:end]))
+    return DocumentFindResult(len(markdown.encode("utf-8")), matches, len(found) > limit)

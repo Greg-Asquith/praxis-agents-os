@@ -174,20 +174,53 @@ annotation before it reaches `download_item`. Ordinary metadata reads retain
 `$select` and exclude download annotations. This follows Microsoft's
 [pre-authenticated download contract](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content).
 
-The result contains `name`, normalised `content_type`, actual downloaded
-`size_bytes`, `modified_at`, `web_url`, `markdown`, `truncated`, and `source`
-(`text` or `converted`). Provider text uses `sharepoint_drive_item` provenance
-with `{drive_id}:{item_id}` as its source reference. Markdown is bounded to
-64 KiB on a UTF-8 boundary, including the truncation marker. Citations retain
-the full URL within the shared 8,192-character limit. Reads require a usable
-HTTP(S) citation before downloading content. Missing or invalid citations fail
-with safe metadata errors that omit the rejected value. Listing and search
-retain optional citations. `truncated` records actual output bounding, so
-complete content ending with the literal marker reports `false`.
+`sharepoint_read_file` accepts a UTF-8 byte `offset` (default zero) and
+`max_bytes` (4-65,536, default 65,536). Its result contains `name`, normalised
+`content_type`, downloaded `size_bytes`, `modified_at`, `web_url`, `markdown`,
+`offset`, `end_offset`, `total_bytes`, `truncated`, `limit_reached`, and `source`
+(`text` or `converted`). `truncated` means more content follows this window.
+The continuation `hint` names the next offset and the find tool. An offset
+past the total or inside a character reports `invalid_offset` with the total.
+The shared `utils/text_window.py` helper preserves native file-read boundaries.
+
+Reads cover the whole converted document. The worker returns only the requested
+window, bounded to 64 KiB on UTF-8 boundaries. `total_bytes` counts the complete
+Markdown, and `limit_reached` is false. No conversion marker replaces later
+content. Each window downloads and converts the file again as a separate
+audited read; converted documents are not cached. Use find to reach relevant
+content with fewer reads than sequential paging. Offsets refer to that conversion;
+a provider edit between calls can change the content at an offset.
+
+`sharepoint_find_in_file` takes the same scoped file reference, a literal query
+of 1-200 characters, and a match limit of 1-25 (default 10). It searches the
+whole converted document inside the worker, including content beyond 2 MiB.
+Matching is case-insensitive and escapes regex metacharacters. The worker
+collects at most one extra match to set `has_more`. Each match returns an
+excerpt with up to 120 characters either side and its starting UTF-8 byte
+`offset`. Pass that offset to `sharepoint_read_file` for surrounding content.
+The result also contains `name`, `web_url`, `total_bytes`, `limit_reached=false`,
+and `count`. Byte offsets are accumulated without re-encoding every prefix.
+Only bounded excerpts leave the worker, rather than the complete Markdown.
+
+Provider text, including windows and excerpts, uses `sharepoint_drive_item`
+provenance with `{drive_id}:{item_id}` as its source reference. Citations retain
+the full URL within the shared 8,192-character limit. Reads and find require a
+usable HTTP(S) citation before downloading content. Missing or invalid citations
+fail with safe metadata errors that omit the rejected value. Listing and search
+retain optional citations. A literal truncation marker in source text has no
+special meaning for window or search coverage.
+
+The internal bulk conversion operation `convert_item` returns plain Markdown
+bounded by `SHAREPOINT_FILE_MAX_MARKDOWN_BYTES`: default 2,097,152 bytes, range
+65,536-10,485,760. It reports `limit_reached` and includes the shared marker when
+capped. A caller can supply its own `max_bytes`. This bulk-output cap prepares
+the conversion seam for Knowledge Base import, which remains pending. It does
+not limit whole-document windows or find.
 
 Conversion uses the shared document helper with a 30-second deadline inside
 the tool's 90-second timeout. Its cancellable AnyIO worker is killed on timeout
-or cancellation, and bounds Markdown before returning it to the parent process.
+or cancellation. Conversion, windowing, and matching all run inside the deadline;
+only bounded Markdown, a window, or excerpts return to the parent process.
 AnyDoc retains its built-in decompression, nesting, node, and expansion limits.
 No download URL enters the conversion worker. Text and HTML decode once inside
 the worker with strict UTF-8 validation. Valid HTML returns `source="converted"`.
@@ -203,11 +236,16 @@ renderer. It shows the filename, content type, formatted size, and an
 Truncated content carries a **64 KiB limit reached** badge. Long content scrolls
 within the result card. Provider error entries retain their recovery copy;
 malformed display fields fall back to the default tool row. Only display fields
-enter the view, excluding reference metadata and download annotations.
+enter the view, excluding reference metadata and download annotations. Window
+position, corrected continuation copy, and find-result presentation remain
+pending in the next frontend slice.
 
 Metadata validation errors retain the owning operation: `search_files`,
-`list_folder`, `get_item`, `read_file`, or `open_link`. Errors omit rejected
-provider values.
+`list_folder`, `get_item`, `read_file`, `find_in_file`, or `open_link`.
+Shared file validation, download, and conversion errors use the caller's
+`read_file` or `find_in_file` context. Bulk conversion retains `read_file`.
+Metadata lookup failures retain `get_item`, including within reads and finds.
+Errors omit rejected provider values.
 
 `sharepoint_open_link` accepts an HTTPS SharePoint or work OneDrive URL up to
 8,192 characters. A direct URL under a selected library resolves through

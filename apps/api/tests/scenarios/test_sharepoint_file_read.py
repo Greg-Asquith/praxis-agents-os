@@ -8,6 +8,7 @@ import httpx2
 import pytest
 from pydantic_ai.messages import ToolReturnPart
 
+from integrations.sharepoint.tools.find_in_file import DEFINITION as FIND_DEFINITION
 from integrations.sharepoint.tools.read_file import DEFINITION
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_END, UNTRUSTED_CONTENT_START
@@ -31,6 +32,7 @@ from utils.document_markdown import TRUNCATION_MARKER
 
 
 @pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("find", [False, True])
 @pytest.mark.parametrize(
     "content_type,content,marker,source",
     [
@@ -40,9 +42,9 @@ from utils.document_markdown import TRUNCATION_MARKER
     ],
 )
 async def test_file_read_dispatch_retains_content_citation_and_audit(
-    db_session_factory, monkeypatch, nested, content_type, content, marker, source
+    db_session_factory, monkeypatch, nested, find, content_type, content, marker, source
 ):
-    definition = replace(DEFINITION, availability_check=lambda: True)
+    definition = replace(FIND_DEFINITION if find else DEFINITION, availability_check=lambda: True)
     monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
     monkeypatch.setattr(
         "services.audit_events.integration_events.get_async_db_session_factory",
@@ -62,14 +64,15 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
     )
     reference = {"entity_kind": "sharepoint_drive_item", "drive_id": "drive", "item_id": "file"}
     reference.update(name=None, kind="file")
+    args = {"file": reference, **({"query": marker} if find else {})}
     call = (
         ToolCall(
             "run_workflow",
-            {"code": f"await sharepoint_read_file(file={reference!r})"},
+            {"code": f"await {definition.name}(**{args!r})"},
             "file-workflow",
         )
         if nested
-        else ToolCall(definition.name, {"file": reference})
+        else ToolCall(definition.name, args)
     )
     requests = []
 
@@ -82,7 +85,8 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
     seen = []
     async with graph(handler) as provider:
         monkeypatch.setattr(
-            "integrations.sharepoint.tools.read_file.drive_client", AsyncMock(return_value=provider)
+            f"integrations.sharepoint.tools.{'find_in_file' if find else 'read_file'}.drive_client",
+            AsyncMock(return_value=provider),
         )
         result = await run_scenario(
             db_session_factory,
@@ -97,7 +101,8 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
     assert requests[0].url.path == "/v1.0/drives/drive/items/file"
     assert "Authorization" not in requests[1].headers
     [audit] = [row for row in result.audit_rows if row.details.get("provider_operation")]
-    assert audit.status == "success" and audit.details["provider_operation"] == "read_file"
+    assert audit.status == "success"
+    assert audit.details["provider_operation"] == ("find_in_file" if find else "read_file")
     [saved] = result.tool_returns(call.name)
     if nested:
         trace = saved["metadata"]["code_mode_trace"]
@@ -109,9 +114,18 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
     else:
         payload = saved["content"]
     data = payload["results"][0]["data"]
-    assert data["source"] == source and not data["truncated"]
-    assert marker in data["markdown"]["content"]
-    assert data["markdown"]["source_ref"] == "drive:file"
+    assert not data["limit_reached"]
+    if find:
+        assert data["count"] == 1 and not data["has_more"]
+        node = data["matches"][0]["excerpt"]
+        assert data["matches"][0]["offset"] >= 0
+    else:
+        assert data["source"] == source and not data["truncated"]
+        node = data["markdown"]
+        assert data["offset"] == 0
+        assert data["end_offset"] == data["total_bytes"] == len(node["content"].encode())
+    assert marker in node["content"]
+    assert node["source_ref"] == "drive:file"
     assert data["web_url"]["content"].startswith("https://")
     delivered = [
         part.content
@@ -119,7 +133,11 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
         for part in message.parts
         if isinstance(part, ToolReturnPart)
     ]
-    framed = delivered[0] if nested else delivered[0]["results"][0]["data"]["markdown"]
+    if nested:
+        framed = delivered[0]
+    else:
+        framed_data = delivered[0]["results"][0]["data"]
+        framed = framed_data["matches"][0]["excerpt"] if find else framed_data["markdown"]
     assert framed.count(UNTRUSTED_CONTENT_START) == framed.count(UNTRUSTED_CONTENT_END) == 1
     evidence = json.dumps(saved) + str(delivered) + str(audit.details)
     assert DOWNLOAD_URL not in evidence and "PRIVATE_DOWNLOAD_SECRET" not in evidence

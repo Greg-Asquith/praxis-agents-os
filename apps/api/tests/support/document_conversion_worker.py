@@ -5,9 +5,7 @@ import time
 from pathlib import Path
 
 
-def slow_conversion(
-    data: bytes, _content_type: str, _filename: str, _max_bytes: int, _strict_utf8: bool
-) -> str:
+def slow_conversion(data: bytes, *_args) -> str:
     Path(data.decode()).write_text(str(os.getpid()))
     time.sleep(60)
     return "Unexpected completion"

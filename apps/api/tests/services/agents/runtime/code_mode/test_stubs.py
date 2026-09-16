@@ -22,6 +22,7 @@ from integrations.google_analytics.tools import (
 from integrations.google_search_console.tools import (
     TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
 )
+from integrations.sharepoint.tools import TOOL_DEFINITIONS as SHAREPOINT_TOOL_DEFINITIONS
 from services.agents.runtime.code_mode.stubs import (
     CodeModeCatalog,
     UnsupportedCodeModeSchemaError,
@@ -312,6 +313,7 @@ async def test_every_first_party_eligible_schema_renders() -> None:
             *GOOGLE_ADS_TOOL_DEFINITIONS,
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
             *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
+            *SHAREPOINT_TOOL_DEFINITIONS,
         )
         if definition.code_eligible
     }

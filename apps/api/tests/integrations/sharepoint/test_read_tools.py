@@ -15,6 +15,7 @@ from integrations.sharepoint import PROVIDER
 from integrations.sharepoint.operations.utils import item_result
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.settings import sharepoint_settings
+from integrations.sharepoint.tools.find_in_file import DEFINITION as FIND_DEFINITION
 from integrations.sharepoint.tools.list_folder import DEFINITION, sharepoint_list_folder
 from integrations.sharepoint.tools.open_link import DEFINITION as LINK_DEFINITION
 from integrations.sharepoint.tools.read_file import DEFINITION as READ_DEFINITION
@@ -33,6 +34,7 @@ def test_registration_schema_and_code_mode_stub(monkeypatch):
         DEFINITION,
         SEARCH_DEFINITION,
         READ_DEFINITION,
+        FIND_DEFINITION,
         LINK_DEFINITION,
     )
     validate_definition(DEFINITION)

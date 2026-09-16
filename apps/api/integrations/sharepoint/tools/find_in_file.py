@@ -1,6 +1,6 @@
-# apps/api/integrations/sharepoint/tools/read_file.py
+# apps/api/integrations/sharepoint/tools/find_in_file.py
 
-"""Read one referenced file in a selected SharePoint library."""
+"""Find literal text in one referenced SharePoint file."""
 
 from typing import Annotated
 
@@ -22,9 +22,9 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 
-from ..operations.read_item_window import read_item_window
+from ..operations.find_in_item import find_in_item
 from ..references import SharePointDriveItemReference
-from .schemas import SharePointFileOutput
+from .schemas import SharePointFindOutput
 from .utils import (
     RESULTS_FIELD,
     SHAREPOINT_DRIVE_BINDING,
@@ -34,14 +34,14 @@ from .utils import (
 )
 
 
-async def sharepoint_read_file(
+async def sharepoint_find_in_file(
     ctx: RunContext[RuntimeDeps],
     file: Annotated[
         SharePointDriveItemReference,
         Field(description="File reference returned by SharePoint listing or search."),
     ],
-    offset: Annotated[int, Field(ge=0)] = 0,
-    max_bytes: Annotated[int, Field(ge=4, le=65536)] = 65536,
+    query: Annotated[str, Field(min_length=1, max_length=200)],
+    limit: Annotated[int, Field(ge=1, le=25)] = 10,
 ) -> dict:
     async def operation(entry, references):
         reference = references[0]
@@ -49,18 +49,22 @@ async def sharepoint_read_file(
         async def execute():
             client = await drive_client(ctx, entry)
             return IntegrationAuditOutcome(
-                await read_item_window(
+                await find_in_item(
                     client,
                     drive_id=entry.external_id,
                     item_id=reference.item_id,
-                    offset=offset,
-                    max_bytes=max_bytes,
+                    query=query,
+                    limit=limit,
                 ),
                 external_ref=reference.item_id,
             )
 
         return await run_audited_integration_operation(
-            ctx, entry, tool_name="sharepoint_read_file", operation="read_file", execute=execute
+            ctx,
+            entry,
+            tool_name="sharepoint_find_in_file",
+            operation="find_in_file",
+            execute=execute,
         )
 
     return bounded_output(
@@ -71,36 +75,35 @@ async def sharepoint_read_file(
 
 
 DEFINITION = RuntimeToolDefinition(
-    name="sharepoint_read_file",
-    function=sharepoint_read_file,
+    name="sharepoint_find_in_file",
+    function=sharepoint_find_in_file,
     description=(
-        "Reads a document or text file in a selected SharePoint or OneDrive library using "
-        "its file reference. Returns one UTF-8 byte window of up to 64 KiB of Markdown with a citation. "
-        "Continue from end_offset while truncated is true. Each window downloads and converts "
-        "the file again; sharepoint_find_in_file finds the relevant offset with fewer reads "
-        "than paging through a large document. Images, folders, packages, and files above "
-        "the download limit are unsupported."
+        "Finds case-insensitive literal text throughout a selected SharePoint or OneDrive file. "
+        "Downloads and converts the file once, then returns up to 25 bounded excerpts. "
+        "Pass an excerpt's byte offset to sharepoint_read_file to read surrounding content. "
+        "Search covers the whole converted document; only matching excerpts are returned."
     ),
     provider="sharepoint",
-    label="Read SharePoint file",
+    label="Find in SharePoint file",
     code_eligible=True,
     effect=TOOL_EFFECT_READ,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     default_policy=TOOL_POLICY_AUTO,
     takes_ctx=True,
     timeout=90,
-    output_model=SharePointFileOutput,
+    output_model=SharePointFindOutput,
     integration_binding=SHAREPOINT_DRIVE_BINDING,
     availability_check=sharepoint_available,
     presentation=ToolPresentation(
         icon="sharepoint",
-        running_label="Reading SharePoint file",
-        completed_label="Read SharePoint file",
-        failed_label="Could not read SharePoint file",
+        running_label="Finding text in SharePoint file",
+        completed_label="Found text in SharePoint file",
+        failed_label="Could not find text in SharePoint file",
         arg_fields=(
             ToolFieldPresentation(
                 key="file", label="File", format="entity", entity_kind="sharepoint_drive_item"
             ),
+            ToolFieldPresentation(key="query", label="Query", format="text"),
         ),
         result_fields=RESULTS_FIELD,
     ),

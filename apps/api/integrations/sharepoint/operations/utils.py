@@ -20,9 +20,9 @@ MAX_CITATION_URL_CHARS = 8192
 MAX_MARKDOWN_BYTES = 64 * 1024
 
 
-def file_error(message: str, code: str) -> IntegrationValidationError:
+def file_error(message: str, code: str, *, operation: str) -> IntegrationValidationError:
     return IntegrationValidationError(
-        message, provider_key="sharepoint", operation="read_file", error_code=code
+        message, provider_key="sharepoint", operation=operation, error_code=code
     )
 
 
@@ -105,21 +105,21 @@ def citation_url(drive_id: str, item_id: str, value: object, *, operation: str) 
     return untrusted(drive_id, item_id, value, MAX_CITATION_URL_CHARS)
 
 
-def require_file_citation(value: object) -> None:
+def require_file_citation(value: object, *, operation: str) -> None:
     """Validates a file citation before downloading its content."""
     if not isinstance(value, str) or not value:
-        raise invalid_response("read_file")
+        raise invalid_response(operation)
     if "\\" in value or any(
         character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value
     ):
-        raise invalid_response("read_file")
+        raise invalid_response(operation)
     try:
         host = urlsplit(value).hostname
         url = AnyHttpUrl(value)
     except ValueError:
-        raise invalid_response("read_file") from None
+        raise invalid_response(operation) from None
     if not host or url.username is not None or url.password is not None or url.port == 0:
-        raise invalid_response("read_file")
+        raise invalid_response(operation)
 
 
 def item_result(item: dict, *, drive_id: str, operation: str) -> dict:
@@ -149,4 +149,24 @@ def item_result(item: dict, *, drive_id: str, operation: str) -> dict:
         ),
         "modified_at": untrusted(drive_id, item_id, item.get("lastModifiedDateTime"), 100),
         "web_url": citation_url(drive_id, item_id, item.get("webUrl"), operation=operation),
+    }
+
+
+def conversion_error(*, operation: str) -> IntegrationValidationError:
+    return file_error(
+        "This file could not be converted to text. It may be protected or damaged. "
+        "Try an unprotected copy.",
+        "conversion_failed",
+        operation=operation,
+    )
+
+
+def file_content_metadata(item: dict, *, drive_id: str, size_bytes: int, operation: str) -> dict:
+    result = item_result(item, drive_id=drive_id, operation=operation)
+    return {
+        "name": result["name"],
+        "content_type": result["content_type"],
+        "size_bytes": size_bytes,
+        "modified_at": result["modified_at"],
+        "web_url": result["web_url"],
     }

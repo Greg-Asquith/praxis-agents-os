@@ -657,15 +657,22 @@ with validated public item fields. Search echoes the query and shows per-library
 counts, including zero matches. Both retain partial failures and fall back to
 the default row for malformed results.
 SharePoint file reads target one selected library, download at most 50 MiB by
-default, and return at most 64 KiB of Markdown with a citation and typed
-provenance. The shared Graph client excludes signed download URLs from results
-and HTTP diagnostics. The shared converter supports cancellable process
+default, and return at most 64 KiB of Markdown per UTF-8 byte window with a
+citation and typed provenance. Windows and case-insensitive literal find cover
+the whole converted document. Find returns at most 25 excerpts with byte offsets
+that the read tool accepts. Conversion, windowing, and matching run inside the
+30-second cancellable worker; only bounded responses leave it. Each call is a
+fresh audited download and conversion. The shared UTF-8 window helper also
+serves native file reads. Bulk conversion retains its separate 2 MiB default
+output cap for the pending Knowledge Base import seam. The shared Graph client
+excludes signed download URLs from results and HTTP diagnostics. The shared converter supports cancellable process
 execution with a deadline and strict UTF-8 decoding, used by SharePoint.
 Its result entry point supplies actual truncation state and conversion source
 to SharePoint and Outlook attachment reads; existing string callers retain
 replacement decoding. Other conversion callers retain thread execution.
 The file-content presenter uses the shared read seam and Markdown renderer with
 guarded citations, size and type details, and an explicit truncation badge.
+Window-position and find-result presentation remain pending.
 SharePoint link resolution returns a scoped reference from a direct library
 path or the Graph sharing endpoint. It makes at most one logical request per
 selected connection, checks the resolved drive against that connection's

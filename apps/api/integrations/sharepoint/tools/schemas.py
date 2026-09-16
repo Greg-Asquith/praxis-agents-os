@@ -67,6 +67,11 @@ class SharePointFileData(BaseModel):
     modified_at: UntrustedText
     web_url: UntrustedText
     markdown: UntrustedText
+    offset: int = Field(ge=0)
+    end_offset: int = Field(ge=0)
+    total_bytes: int = Field(ge=0)
+    limit_reached: bool
+    hint: str | None = None
     truncated: bool
     source: Literal["converted", "text"]
 
@@ -91,3 +96,30 @@ class SharePointLinkEntry(IntegrationFanOutEntry):
 
 class SharePointLinkOutput(IntegrationFanOutOutput):
     results: list[SharePointLinkEntry]
+
+
+class SharePointFileMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    offset: int = Field(ge=0)
+    excerpt: UntrustedText
+
+
+class SharePointFindData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: UntrustedText
+    web_url: UntrustedText
+    total_bytes: int = Field(ge=0)
+    limit_reached: bool
+    matches: list[SharePointFileMatch] = Field(max_length=25)
+    count: int = Field(ge=0, le=25)
+    has_more: bool
+
+
+class SharePointFindEntry(IntegrationFanOutEntry):
+    data: SharePointFindData | None = None
+
+
+class SharePointFindOutput(IntegrationFanOutOutput):
+    results: list[SharePointFindEntry]
