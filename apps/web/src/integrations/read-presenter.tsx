@@ -16,7 +16,7 @@ export type IntegrationReadVariant<Result> = {
   heading: string
   parseResult: (value: unknown) => Result | null
   progressLabel: string
-  render: (result: Result, entry: FanOutEntry) => ReactNode
+  render: (result: Result, entry: FanOutEntry, args: unknown) => ReactNode
   renderFailed?: (entry: FanOutEntry) => ReactNode
   tool: string
 }
@@ -68,7 +68,9 @@ export function defineIntegrationReadPresenter<Result>(
           >
             {(entry, index) => {
               const result = fanOut.data[index]
-              return result === null || result === undefined ? null : variant.render(result, entry)
+              return result === null || result === undefined
+                ? null
+                : variant.render(result, entry, activity.args)
             }}
           </FanOutShell>
         </div>

@@ -3,6 +3,7 @@
 import type { IntegrationUiModule } from "@/integrations/contract"
 import { MicrosoftConnectHelp } from "@/integrations/microsoft-connect-help"
 import { SharePointLogo } from "@/integrations/sharepoint/components/logo"
+import { sharePointFindInFilePresenter } from "@/integrations/sharepoint/presenters/find-in-file"
 import { sharePointListFolderPresenter } from "@/integrations/sharepoint/presenters/list-folder"
 import { sharePointOpenLinkPresenter } from "@/integrations/sharepoint/presenters/open-link"
 import { sharePointReadFilePresenter } from "@/integrations/sharepoint/presenters/read-file"
@@ -18,5 +19,6 @@ export default {
     sharePointSearchFilesPresenter,
     sharePointReadFilePresenter,
     sharePointOpenLinkPresenter,
+    sharePointFindInFilePresenter,
   ],
 } satisfies IntegrationUiModule

@@ -672,7 +672,13 @@ to SharePoint and Outlook attachment reads; existing string callers retain
 replacement decoding. Other conversion callers retain thread execution.
 The file-content presenter uses the shared read seam and Markdown renderer with
 guarded citations, size and type details, and an explicit truncation badge.
-Window-position and find-result presentation remain pending.
+Window positions use formatted sizes, with separate badges for remaining
+content and retained conversion limits. Find results show escaped excerpts,
+literal query emphasis, match counts, and guarded citations without raw offsets
+or a fixed search-cap notice. The shared read seam passes raw tool arguments
+to its result renderer for provider-validated query emphasis. This shared edit
+extends the published presenter contract without adding provider branches or
+changing existing renderers.
 SharePoint link resolution returns a scoped reference from a direct library
 path or the Graph sharing endpoint. It makes at most one logical request per
 selected connection, checks the resolved drive against that connection's

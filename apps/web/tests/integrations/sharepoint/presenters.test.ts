@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import { loadIntegrationUiModules } from "@/integrations/registry"
 import { parseFileContent } from "@/integrations/sharepoint/lib/file-content"
+import { parseFindResults } from "@/integrations/sharepoint/lib/find-results"
 import { itemRows } from "@/integrations/sharepoint/lib/items"
 
 const node = (content: string) => ({
@@ -57,6 +58,10 @@ const fileContent = {
   web_url: item.web_url,
   markdown: node("# Monthly report\n\nRevenue **increased**."),
   truncated: false,
+  offset: 0,
+  end_offset: 41,
+  total_bytes: 41,
+  limit_reached: false,
   source: "text",
 }
 
@@ -200,6 +205,59 @@ describe("SharePoint file content results", () => {
     await loadIntegrationUiModules(["sharepoint"])
   })
 
+  it.each([
+    [0, 65536, 1153434, "Showing the first 64.0 KB of 1.1 MB"],
+    [131072, 196608, 1153434, "Showing 64.0 KB starting 128.0 KB into the file"],
+    [3145728, 3211264, 4194304, "Showing 64.0 KB starting 3.0 MB into the file"],
+    [131072, 196608, 196608, "Showing 64.0 KB starting 128.0 KB into the file"],
+  ])("shows a readable position starting at %i", (offset, end_offset, total_bytes, label) => {
+    const html = render(
+      renderResults(
+        [
+          success({
+            ...fileContent,
+            offset,
+            end_offset,
+            total_bytes,
+            truncated: end_offset < total_bytes,
+            hint: "Showing bytes 131072-196608; call sharepoint_read_file with offset=196608",
+          }),
+        ],
+        "completed",
+        "sharepoint_read_file"
+      )
+    )
+    expect(html).toContain(label)
+    expect(html.includes("More content available")).toBe(end_offset < total_bytes)
+    expect(html).not.toMatch(/Showing bytes|offset=|131072|196608|Conversion limit reached/)
+  })
+
+  it("omits position and limit copy for complete documents", () => {
+    const html = render(renderResults([success(fileContent)], "completed", "sharepoint_read_file"))
+    expect(html).not.toMatch(/Showing|More content available|Conversion limit reached|64 KiB limit/)
+  })
+
+  it.each([false, true])(
+    "shows a retained conversion limit independently of more content (%s)",
+    (truncated) => {
+      const html = render(
+        renderResults(
+          [
+            success({
+              ...fileContent,
+              truncated,
+              limit_reached: true,
+            }),
+          ],
+          "completed",
+          "sharepoint_read_file"
+        )
+      )
+      expect(html).toContain("Conversion limit reached")
+      expect(html.includes("More content available")).toBe(truncated)
+    }
+  )
+
   it.each([false, true])(
     "preserves citations and truncation (%s) through the registry",
     (truncated) => {
@@ -217,7 +275,7 @@ describe("SharePoint file content results", () => {
       expect(html).toContain("Open in SharePoint")
       expect(html).toContain('rel="noopener noreferrer"')
       expect(html).toContain('target="_blank"')
-      expect(html.includes("64 KiB limit reached")).toBe(truncated)
+      expect(html.includes("More content available")).toBe(truncated)
       expect(html).not.toMatch(/praxis_untrusted|source_ref|opaque-drive-id|sharepoint_drive_item/)
     }
   )
@@ -305,11 +363,17 @@ describe("SharePoint file content results", () => {
       web_url: webUrl,
       markdown: "",
       size_bytes: 0,
+      end_offset: 0,
+      total_bytes: 0,
       connection_id: "private-connection",
       "@microsoft.graph.downloadUrl": "https://example.com/private-download",
     }
     expect(parseFileContent(data)).toEqual({
       contentType: "text/plain",
+      endOffset: 0,
+      limitReached: false,
+      offset: 0,
+      totalBytes: 0,
       markdown: "",
       name,
       sizeBytes: 0,
@@ -335,10 +399,209 @@ describe("SharePoint file content results", () => {
     { size_bytes: "1024" },
     { size_bytes: Infinity },
     { markdown: { ...node("text"), source_ref: null } },
+    { offset: undefined },
+    { offset: -1 },
+    { offset: "0" },
+    { offset: 42 },
+    { end_offset: undefined },
+    { end_offset: 42 },
+    { end_offset: 0.5 },
+    { total_bytes: undefined },
+    { total_bytes: -1 },
+    { total_bytes: Infinity },
+    { limit_reached: undefined },
+    { limit_reached: "false" },
   ])("falls back for malformed file fields: %j", (fields) => {
     expect(
       renderResults([success({ ...fileContent, ...fields })], "completed", "sharepoint_read_file")
     ).toBeNull()
+  })
+})
+
+describe("SharePoint find in file results", () => {
+  beforeAll(async () => {
+    await loadIntegrationUiModules(["sharepoint"])
+  })
+
+  const found = {
+    name: item.name,
+    web_url: item.web_url,
+    total_bytes: 4194304,
+    limit_reached: false,
+    matches: [{ offset: 3145728, excerpt: node("Annual REVENUE increased.") }],
+    count: 1,
+    has_more: false,
+  }
+  const renderFind = (results: unknown[], args: unknown = { query: "revenue" }) =>
+    renderResults(results, "completed", "sharepoint_find_in_file", args)
+
+  it("echoes the query, emphasises a literal match, and shows the citation", () => {
+    const html = render(renderFind([success(found)]))
+    for (const text of ["Monthly report.txt", "Operations library", "Search", "revenue", "1 match"])
+      expect(html).toContain(text)
+    expect(html).toContain("Annual <strong>REVENUE</strong> increased.")
+    expect(html).toContain(`href="${item.web_url.content}"`)
+    expect(html).toContain('rel="noopener noreferrer"')
+    expect(html).toContain('target="_blank"')
+    expect(html).not.toMatch(/3145728|4194304|offset=|2 MB|2.0 MB|limit reached|Conversion limit/)
+  })
+
+  it("renders hostile excerpts, names, and regex metacharacters as escaped text", () => {
+    const excerpt =
+      '<script>alert(1)</script> A.*[B] <img src=x onerror="alert(1)">\n[link](https://example.com) **bold**'
+    const html = render(
+      renderFind(
+        [
+          success({
+            ...found,
+            name: node("<iframe>report</iframe>"),
+            matches: [{ offset: 0, excerpt: node(excerpt) }],
+          }),
+        ],
+        { query: "a.*[b]" }
+      )
+    )
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
+    expect(html).toContain("<strong>A.*[B]</strong>")
+    expect(html).toContain("&lt;iframe&gt;report&lt;/iframe&gt;")
+    expect(html).toContain("[link](https://example.com) **bold**")
+    expect(html).not.toMatch(/<script|<img|<iframe|href="https:\/\/example.com"/)
+  })
+
+  it.each([
+    ["İstanbul REVENUE increased", "revenue", "İstanbul <strong>REVENUE</strong> increased"],
+    ["First REVENUE then revenue", "REVENUE", "First <strong>REVENUE</strong> then revenue"],
+    ["Annual REVENUE increased", " revenue ", "Annual<strong> REVENUE </strong>increased"],
+    ["🌍 RÉSUMÉ attached", "résumé", "🌍 <strong>RÉSUMÉ</strong> attached"],
+    ["🌍".repeat(101), "🌍".repeat(101), `<strong>${"🌍".repeat(101)}</strong>`],
+  ])("preserves original characters and literal whitespace: %s", (excerpt, query, expected) => {
+    const html = render(
+      renderFind(
+        [
+          success({
+            ...found,
+            matches: [{ offset: 0, excerpt }],
+          }),
+        ],
+        { query }
+      )
+    )
+    expect(html).toContain(expected)
+  })
+
+  it.each([
+    [0, false, "No matches"],
+    [3, false, "3 matches"],
+    [10, true, "Showing the first 10 matches"],
+  ])("shows count %i with has_more=%s", (count, has_more, label) => {
+    const matches = Array.from({ length: count }, (_, offset) => ({ offset, excerpt: "Revenue" }))
+    const html = render(renderFind([success({ ...found, matches, count, has_more })]))
+    expect(html).toContain(label)
+    expect(html).not.toMatch(/2 MB|2.0 MB|Conversion limit reached/)
+    if (count === 0) expect(html).not.toContain("<li")
+  })
+
+  it("identifies retained capped searches without inventing a fixed cap", () => {
+    const html = render(renderFind([success({ ...found, limit_reached: true })]))
+    expect(html).toContain("Conversion limit reached")
+    expect(html).not.toMatch(/2 MB|2.0 MB/)
+  })
+
+  it("keeps nearby matches whose excerpts start at the same position", () => {
+    const data = {
+      ...found,
+      count: 2,
+      matches: [
+        { offset: 0, excerpt: "Revenue grew. Revenue increased." },
+        { offset: 0, excerpt: "Revenue grew. Revenue increased." },
+      ],
+    }
+    const html = render(renderFind([success(data)]))
+    expect(html).toContain("2 matches")
+    expect(html.match(/<li /g)).toHaveLength(2)
+  })
+
+  it.each([undefined, null, [], { query: 12 }, { query: "" }, { query: "absent" }])(
+    "keeps excerpts readable without a matching query: %j",
+    (args) => {
+      const html = render(
+        renderResults([success(found)], "completed", "sharepoint_find_in_file", args)
+      )
+      expect(html).toContain("Annual REVENUE increased.")
+      expect(html).not.toContain("<strong>")
+    }
+  )
+
+  it.each(["javascript:alert(1)", "data:text/html,unsafe", "//example.com/file", "invalid"])(
+    "omits unsafe citations: %s",
+    (web_url) => {
+      const html = render(renderFind([success({ ...found, web_url: node(web_url) })]))
+      expect(html).toContain("Monthly report.txt")
+      expect(html).not.toContain("Open in SharePoint")
+      expect(html).not.toContain(`href="${web_url}"`)
+    }
+  )
+
+  it("projects only public display fields", () => {
+    const data = {
+      ...found,
+      connection_id: "private-connection",
+      "@microsoft.graph.downloadUrl": "https://example.com/private-download",
+      matches: [{ offset: 3145728, excerpt: node("REVENUE"), secret: "private-secret" }],
+    }
+    expect(parseFindResults(data)).toEqual({
+      name: "Monthly report.txt",
+      webUrl: item.web_url.content,
+      hasMore: false,
+      limitReached: false,
+      matches: [{ offset: 3145728, excerpt: "REVENUE" }],
+    })
+    expect(render(renderFind([success(data)]))).not.toMatch(
+      /praxis_untrusted|source_ref|opaque-drive-id|3145728|private-connection|private-download|private-secret/
+    )
+  })
+
+  it("retains errors, partial results, empty results, and loading copy", () => {
+    const html = render(renderFind([success(found), failure]))
+    expect(html).toContain("Monthly report.txt")
+    expect(html).toContain(failure.error_message)
+    expect(render(renderFind([failure]))).toContain(failure.error_message)
+    expect(render(renderFind([]))).toContain("No library returned a search result.")
+    expect(render(renderResults([], "running", "sharepoint_find_in_file"))).toContain(
+      "Searching file…"
+    )
+  })
+
+  it.each([
+    { name: null },
+    { web_url: {} },
+    { total_bytes: undefined },
+    { total_bytes: -1 },
+    { total_bytes: Infinity },
+    { total_bytes: 0.5 },
+    { total_bytes: "4194304" },
+    { limit_reached: undefined },
+    { limit_reached: "false" },
+    { count: "1" },
+    { count: -1 },
+    { count: 2 },
+    { has_more: undefined },
+    { has_more: "false" },
+    { matches: null },
+    { matches: [null] },
+    { matches: [{}] },
+    { matches: [{ offset: -1, excerpt: "text" }] },
+    { matches: [{ offset: 0.5, excerpt: "text" }] },
+    { matches: [{ offset: "0", excerpt: "text" }] },
+    { matches: [{ offset: 4194304, excerpt: "text" }] },
+    { matches: [{ offset: 0, excerpt: {} }] },
+    { matches: [{ offset: 0, excerpt: { ...node("text"), source_ref: null } }] },
+    {
+      matches: Array.from({ length: 26 }, (_, offset) => ({ offset, excerpt: "text" })),
+      count: 26,
+    },
+  ])("falls back for malformed find results: %j", (fields) => {
+    expect(renderFind([success({ ...found, ...fields })])).toBeNull()
   })
 })
 

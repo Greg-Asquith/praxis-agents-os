@@ -150,7 +150,9 @@ forbid one provider directory importing another.
   `defineIntegrationResultPresenter` for tools that return one document. Reads
   render nothing for failed or malformed activities so the default row shows
   the error. An optional `renderFailed` callback renders provider recovery
-  details for failed entries inside a valid fan-out result.
+  details for failed entries inside a valid fan-out result. The result renderer
+  receives the raw tool arguments as its third parameter; provider guards must
+  validate them before use, such as when emphasising a literal search query.
 - `write-presenter.tsx`: `defineIntegrationWriteVariant` and
   `createIntegrationWritePresenter`. This seam owns approval merging,
   validation precedence, provenance, lifecycle states, and settled fan-out

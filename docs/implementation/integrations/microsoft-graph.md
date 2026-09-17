@@ -233,12 +233,22 @@ retain their existing thread execution.
 The file-content presenter uses the shared read shell and sanitised Markdown
 renderer. It shows the filename, content type, formatted size, and an
 **Open in SharePoint** citation guarded by the shared HTTP URL validator.
-Truncated content carries a **64 KiB limit reached** badge. Long content scrolls
-within the result card. Provider error entries retain their recovery copy;
-malformed display fields fall back to the default tool row. Only display fields
-enter the view, excluding reference metadata and download annotations. Window
-position, corrected continuation copy, and find-result presentation remain
-pending in the next frontend slice.
+Partial windows show their size and position using the shared byte formatter.
+A **More content available** badge means another window follows. Retained
+capped results show **Conversion limit reached** independently. Complete
+files omit the position line. Long content scrolls within the result card.
+
+The find presenter echoes the literal query and shows the filename, guarded
+citation, and match count. It distinguishes no matches from a bounded first
+set of matches. Excerpts render as escaped plain text with the first matching
+phrase emphasised case-insensitively. Whole-document results show no conversion
+limit notice, including for matches beyond 2 MiB. Retained capped searches
+show **Conversion limit reached** without assuming a fixed size limit.
+
+Both views preserve provider recovery copy and fall back to the default tool
+row for malformed display fields. Only display fields enter the views;
+reference metadata, download annotations, and model continuation hints stay
+out. Raw byte offsets do not appear in operator copy.
 
 Metadata validation errors retain the owning operation: `search_files`,
 `list_folder`, `get_item`, `read_file`, `find_in_file`, or `open_link`.
