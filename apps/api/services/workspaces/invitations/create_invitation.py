@@ -16,6 +16,7 @@ from models.workspace import WorkspaceInvitation, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.security import SecurityEventType
+from services.workspaces.invitations.delete_invitation import delete_invitation
 from services.workspaces.schemas import (
     WorkspaceInvitationCreateRequest,
     WorkspaceInvitationCreateResponse,
@@ -70,6 +71,27 @@ async def create_invitation(
             conflicting_resource="workspace_membership",
         )
 
+    now = datetime.now(UTC)
+    expired_invitation = await db.scalar(
+        select(WorkspaceInvitation)
+        .where(
+            WorkspaceInvitation.workspace_id == workspace_id,
+            WorkspaceInvitation.email == payload.email,
+            WorkspaceInvitation.accepted_at.is_(None),
+            WorkspaceInvitation.deleted.is_(False),
+            WorkspaceInvitation.expires_at <= now,
+        )
+        .with_for_update()
+    )
+    if expired_invitation is not None:
+        await delete_invitation(
+            db,
+            request=request,
+            actor=actor,
+            workspace_id=workspace_id,
+            invitation_id=expired_invitation.id,
+        )
+
     raw_token = WorkspaceInvitation.generate_token()
     invitation = WorkspaceInvitation(
         workspace_id=workspace_id,
@@ -77,7 +99,7 @@ async def create_invitation(
         role=payload.role.value,
         invited_by=actor.id,
         token_hash=WorkspaceInvitation.hash_raw_token(raw_token),
-        expires_at=datetime.now(UTC) + timedelta(days=payload.expires_in_days),
+        expires_at=now + timedelta(days=payload.expires_in_days),
     )
     db.add(invitation)
     try:
