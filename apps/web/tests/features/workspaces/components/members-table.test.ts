@@ -41,7 +41,10 @@ describe("MembersTable", () => {
   it("renders removal in mobile and desktop rows while hiding your own action", () => {
     const html = renderToStaticMarkup(
       createElement(MembersTableContent, {
-        memberships: [membership, { ...membership, id: "membership-2", user_id: "user-2", user_display_name: "Dana" }],
+        memberships: [
+          membership,
+          { ...membership, id: "membership-2", user_id: "user-2", user_display_name: "Dana" },
+        ],
         workspaceName: "Praxis",
         currentUserId: membership.user_id,
         onRemove: vi.fn(),

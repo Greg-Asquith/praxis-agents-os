@@ -28,14 +28,17 @@ describe("workspace member removal permissions", () => {
     [null, false, false],
     [null, true, false],
   ])("checks role %s with super admin %s", (role, isSuperAdmin, expected) => {
-    expect(
-      canRemoveWorkspaceMembers({ ...workspace, current_user_role: role }, isSuperAdmin)
-    ).toBe(expected)
+    expect(canRemoveWorkspaceMembers({ ...workspace, current_user_role: role }, isSuperAdmin)).toBe(
+      expected
+    )
   })
 
   it.each([false, true])("protects personal workspaces with super admin %s", (isSuperAdmin) => {
     expect(
-      canRemoveWorkspaceMembers({ ...workspace, is_personal: true, current_user_role: "owner" }, isSuperAdmin)
+      canRemoveWorkspaceMembers(
+        { ...workspace, is_personal: true, current_user_role: "owner" },
+        isSuperAdmin
+      )
     ).toBe(false)
   })
 })
