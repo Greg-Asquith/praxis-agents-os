@@ -1356,13 +1356,26 @@ async def test_platform_ingestion_admission_is_maintenance_only(db_session_facto
                 )
             ).one()
         ) == (True, True)
-        assert (
-            await db.scalar(
+        maintenance_role = await db.scalar(
+            sa.text(
+                "SELECT pg_get_userbyid(relowner) FROM pg_class "
+                "WHERE oid = 'public.platform_ingestion_usage'::regclass"
+            )
+        )
+        policies = (
+            await db.execute(
                 sa.text(
-                    "SELECT count(*) FROM pg_policies WHERE tablename = 'platform_ingestion_usage'"
+                    "SELECT policyname, roles, cmd, qual, with_check FROM pg_policies "
+                    "WHERE schemaname = 'public' AND tablename = 'platform_ingestion_usage'"
                 )
             )
-            == 0
+        ).all()
+        assert [tuple(policy) for policy in policies] == [
+            ("maintenance_access", [maintenance_role], "ALL", "true", "true")
+        ]
+        assert not await db.scalar(
+            sa.text("SELECT pg_has_role('praxis_app', :maintenance_role, 'MEMBER')"),
+            {"maintenance_role": maintenance_role},
         )
         async with db_session_factory() as runtime:
             await set_session_tenant_context(runtime, workspace_id=uuid4())
