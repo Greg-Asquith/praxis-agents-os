@@ -17,6 +17,7 @@ from .utils import (
     file_error,
     untrusted,
 )
+from .write_utils import item_version
 
 
 async def read_item_window(
@@ -48,6 +49,7 @@ async def read_item_window(
         raise conversion_error(operation="read_file") from None
     window = conversion.window
     result.update(
+        version=item_version(item, operation="read_file"),
         source=conversion.source,
         limit_reached=False,
         markdown=untrusted(drive_id, item_id, window.content, max_bytes),

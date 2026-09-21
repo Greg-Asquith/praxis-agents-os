@@ -63,6 +63,9 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         )
     }
     expected = {
+        "sharepoint_create_folder": ("write", "external", "approval", True),
+        "sharepoint_write_file": ("write", "external", "approval", True),
+        "sharepoint_update_file": ("write", "external", "approval", True),
         "sharepoint_list_folder": ("read", "internal", "auto", False),
         "sharepoint_search_files": ("read", "internal", "auto", False),
         "sharepoint_read_file": ("read", "internal", "auto", False),

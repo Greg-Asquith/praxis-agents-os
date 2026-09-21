@@ -14,6 +14,7 @@ class SharePointSettings(BaseSettings):
     SHAREPOINT_OAUTH_TENANT: str = ""
     SHAREPOINT_DISCOVERY_MAX_SITES: int = Field(default=50, ge=1, le=200)
     SHAREPOINT_FILE_MAX_DOWNLOAD_BYTES: int = Field(default=52_428_800, ge=1, le=104_857_600)
+    SHAREPOINT_FILE_MAX_UPLOAD_BYTES: int = Field(default=52_428_800, ge=1, le=262_144_000)
     SHAREPOINT_FILE_MAX_MARKDOWN_BYTES: int = Field(default=2_097_152, ge=65_536, le=10_485_760)
 
     model_config = SettingsConfigDict(

@@ -1,0 +1,10 @@
+{
+  "id": "folder",
+  "name": "Reports",
+  "size": 0,
+  "eTag": "\"folder-1\"",
+  "folder": {"childCount": 0},
+  "lastModifiedDateTime": "2026-09-17T12:00:00Z",
+  "webUrl": "https://example.sharepoint.com/sites/Finance/Documents/Reports",
+  "parentReference": {"driveId": "drive", "id": "parent", "path": "/drives/drive/root:"}
+}

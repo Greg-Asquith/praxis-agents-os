@@ -1034,6 +1034,7 @@ async def test_google_ads_approval_canonicalization_rejects_stale_target(monkeyp
         actor=object(),
         workspace=object(),
         active_context=ResolvedActiveContext(entries=(entry,)),
+        tool_definition=GOOGLE_ADS_UPDATE_CAMPAIGN_STATUS_DEFINITION,
     )
     reference = _campaign_reference(entry, "10").model_dump(mode="json")
     authorized = SimpleNamespace(

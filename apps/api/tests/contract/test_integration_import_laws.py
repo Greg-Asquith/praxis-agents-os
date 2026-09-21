@@ -3,7 +3,10 @@
 import ast
 from pathlib import Path
 
+import pytest
+
 API_ROOT = Path(__file__).resolve().parents[2]
+ALLOWED_PROVIDER_SERVICE_MODULES = {"services.files.contract"}
 ALLOWED_PROVIDER_SERVICE_PREFIXES = (
     "services.agents.runtime.context",
     "services.agents.runtime.tools",
@@ -13,6 +16,12 @@ ALLOWED_PROVIDER_SERVICE_PREFIXES = (
     "services.jobs.registry",
     "services.secrets",
 )
+
+
+def _is_published_service_seam(module: str) -> bool:
+    return module in ALLOWED_PROVIDER_SERVICE_MODULES or module.startswith(
+        ALLOWED_PROVIDER_SERVICE_PREFIXES
+    )
 
 
 def _imports(path: Path) -> list[str]:
@@ -71,10 +80,24 @@ def test_provider_packages_only_import_published_service_seams() -> None:
         offenders.extend(
             (str(path.relative_to(API_ROOT)), value)
             for value in _imports(path)
-            if value.startswith("services.")
-            and not value.startswith(ALLOWED_PROVIDER_SERVICE_PREFIXES)
+            if value.startswith("services.") and not _is_published_service_seam(value)
         )
     assert offenders == []
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "services.files",
+        "services.files.utils",
+        "services.files.upload",
+        "services.files.contract_private",
+        "services.files.contract.private",
+    ],
+)
+def test_file_policy_seam_does_not_publish_other_file_services(module: str) -> None:
+    assert _is_published_service_seam("services.files.contract")
+    assert not _is_published_service_seam(module)
 
 
 def test_provider_packages_do_not_recreate_shared_operation_process_helpers() -> None:

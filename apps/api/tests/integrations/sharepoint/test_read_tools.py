@@ -15,13 +15,16 @@ from integrations.sharepoint import PROVIDER
 from integrations.sharepoint.operations.utils import item_result
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.settings import sharepoint_settings
+from integrations.sharepoint.tools.create_folder import DEFINITION as CREATE_DEFINITION
 from integrations.sharepoint.tools.find_in_file import DEFINITION as FIND_DEFINITION
 from integrations.sharepoint.tools.list_folder import DEFINITION, sharepoint_list_folder
 from integrations.sharepoint.tools.open_link import DEFINITION as LINK_DEFINITION
 from integrations.sharepoint.tools.read_file import DEFINITION as READ_DEFINITION
 from integrations.sharepoint.tools.schemas import FolderOutput
 from integrations.sharepoint.tools.search_files import DEFINITION as SEARCH_DEFINITION
+from integrations.sharepoint.tools.update_file import DEFINITION as UPDATE_DEFINITION
 from integrations.sharepoint.tools.utils import bounded_output, sharepoint_available
+from integrations.sharepoint.tools.write_file import DEFINITION as WRITE_DEFINITION
 from services.agents.runtime.code_mode.stubs import render_tool_stub
 from services.agents.runtime.tools.contract import validate_definition
 from services.agents.runtime.untrusted import UntrustedNode, frame_untrusted_content
@@ -35,6 +38,9 @@ def test_registration_schema_and_code_mode_stub(monkeypatch):
         SEARCH_DEFINITION,
         READ_DEFINITION,
         FIND_DEFINITION,
+        CREATE_DEFINITION,
+        WRITE_DEFINITION,
+        UPDATE_DEFINITION,
         LINK_DEFINITION,
     )
     validate_definition(DEFINITION)

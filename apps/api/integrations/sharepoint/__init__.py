@@ -19,6 +19,8 @@ SHAREPOINT_OAUTH_SCOPES = (
     "User.Read",
     "Files.Read.All",
     "Sites.Read.All",
+    "Files.ReadWrite.All",
+    "Sites.ReadWrite.All",
 )
 
 
@@ -44,7 +46,7 @@ PROVIDER = IntegrationProviderPlugin(
             "Your organization's administrator must configure and approve SharePoint before "
             "you connect."
         ),
-        capability_flags=frozenset({"read"}),
+        capability_flags=frozenset({"read", "write"}),
         event_delivery="none",
     ),
     discover_resources=discover_resources,

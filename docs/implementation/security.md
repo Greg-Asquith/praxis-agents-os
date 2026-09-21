@@ -35,12 +35,36 @@ The following contracts apply in this area:
   OAuth matches a provider-verified email (Google, GitHub's verified-email
   result, or Microsoft UPN), while password registration requires the raw
   invitation token. Full OAuth sign-in auto-accepts matching invitations.
+- Creating an invitation for the same workspace and email revokes an expired,
+  unaccepted invitation before issuing a fresh link. Both operations share a
+  transaction and retain their audit records. The old link stays invalid.
+  Unexpired pending invitations still prevent duplicates. The pending list
+  excludes expired invitations.
 - When `ARTIFACT_ORIGIN` is set, `ArtifactHostMiddleware` partitions routes by
   host: the artifact host serves only `/artifacts/view/*` and
   `/artifacts/shared/*`, and every other host refuses those paths.
 - Preserve auditability for sensitive operations. Workspace, security,
   approval, credential, notification, and schedule flows should leave enough
   context to debug later.
+
+## Remove workspace members
+
+In **Workspace Settings > Members**, workspace owners, admins, and super
+admins can click **Remove** beside another member and confirm the person
+and workspace. Super admins must belong to the workspace, regardless of
+their workspace role. Personal workspaces have no removal controls.
+The Members table does not offer self-removal.
+
+The existing `DELETE /api/v1/workspaces/{workspace_id}/memberships/{membership_id}`
+endpoint removes the membership and clears that workspace as the person's
+default. It retains their account, other workspace memberships, and existing
+workspace content. The member list refreshes after removal. Failed requests
+keep the confirmation open with the API error.
+
+The API rejects removal of the last active owner and changes to personal
+workspaces. It records workspace audit and security events. Ordinary members
+and read-only members can leave through this endpoint, but cannot remove
+other members.
 
 ## Microsoft login tenant
 

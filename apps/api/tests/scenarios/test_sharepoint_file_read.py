@@ -120,6 +120,7 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
         node = data["matches"][0]["excerpt"]
         assert data["matches"][0]["offset"] >= 0
     else:
+        assert data["version"] == '"version-1"'
         assert data["source"] == source and not data["truncated"]
         node = data["markdown"]
         assert data["offset"] == 0

@@ -1,0 +1,5 @@
+{
+  "uploadUrl": "https://example.sharepoint.com/upload?token=PRIVATE_UPLOAD_SECRET",
+  "expirationDateTime": "2026-09-17T12:30:00Z",
+  "nextExpectedRanges": ["0-"]
+}

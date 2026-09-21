@@ -25,6 +25,19 @@ _MAILBOX_UNAVAILABLE_CODES = frozenset({"MailboxNotEnabledForRESTAPI", "ErrorInv
 _REAUTHORIZATION_CODES = frozenset({50076, 50079, 53003, 50173, 700082, 70008, 65001, 50105})
 _CLIENT_CREDENTIAL_CODES = frozenset({7000215, 7000222})
 _AADSTS_PREFIX = re.compile(r"^AADSTS(?P<code>\d+):")
+_WRITE_ERRORS = {
+    409: ("name_exists", "A file with this name exists. Replace it or choose another name."),
+    412: ("version_conflict", "The item changed. Read it again before replacing it."),
+    416: (
+        "invalid_range",
+        "The upload range was rejected. Check the upload status before continuing.",
+    ),
+    423: ("locked", "The item is locked. Try again after the lock is released."),
+    507: (
+        "quota_exceeded",
+        "There is insufficient storage. Free space before trying again.",
+    ),
+}
 
 
 def classify_entra_token_error(payload: dict[str, object]) -> str | None:
@@ -49,6 +62,14 @@ def graph_response_error(
     if request_id:
         logger.debug("Microsoft Graph request failed", extra={"request_id": request_id})
     code = _graph_error_code(response)
+    write_error = graph_write_error(
+        response,
+        provider_key=provider_key,
+        operation=operation,
+        name_conflict=code == "nameAlreadyExists",
+    )
+    if write_error is not None:
+        return write_error
     context = {
         "provider_key": provider_key,
         "operation": operation,
@@ -69,6 +90,45 @@ def graph_response_error(
     if code == "activityLimitReached" and response.status_code != 429:
         return IntegrationRateLimitError("Microsoft Graph rate limit exceeded", **context)
     return None
+
+
+def graph_write_error(
+    response: httpx2.Response, *, provider_key: str, operation: str, name_conflict: bool
+) -> IntegrationValidationError | None:
+    """Classifies write conflicts without retaining provider response content."""
+    if response.status_code == 409 and not name_conflict:
+        return None
+    detail = _WRITE_ERRORS.get(response.status_code)
+    if detail is None:
+        return None
+    error_code, message = detail
+    return IntegrationValidationError(
+        message,
+        provider_key=provider_key,
+        operation=operation,
+        error_code=error_code,
+        failure_disposition=IntegrationFailureDisposition.REJECTED,
+    )
+
+
+def upload_response_error(
+    response: httpx2.Response, *, provider_key: str, operation: str
+) -> IntegrationError | None:
+    """Classifies a signed upload response without logging its identifiers."""
+    if response.status_code == 404:
+        return IntegrationNotFoundError(
+            "The upload session expired. Start the upload again.",
+            provider_key=provider_key,
+            operation=operation,
+            error_code="upload_session_expired",
+            failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
+        )
+    return graph_write_error(
+        response,
+        provider_key=provider_key,
+        operation=operation,
+        name_conflict=_graph_error_code(response) == "nameAlreadyExists",
+    )
 
 
 def _entra_error_code(payload: dict[str, object]) -> int | None:

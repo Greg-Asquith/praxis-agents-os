@@ -47,8 +47,14 @@ Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 | Edit published platform Artifacts directly or through agents _(enforced)_                       | —         | ✓      | ✓     | ✓     |
 | Create/revoke artifact share links _(enforced)_                                                 | —         | —      | ✓     | ✓     |
 | View audit log _(enforced: MANAGER)_                                                            | —         | —      | ✓     | ✓     |
+| Remove other workspace members _(enforced; super-admin exception below)_                        | —         | —      | ✓     | ✓     |
 | View security events _(enforced: super-admin only — `security_events` has no workspace column)_ | —         | —      | —     | —     |
 | Configure agent tool policies _(enforced: EDITOR via agents)_                                   | —         | ✓      | ✓     | ✓     |
+
+Super admins can remove other members of a team workspace they belong to,
+regardless of their workspace role. Personal workspaces and the last active
+owner remain protected. Removal retains the account and other workspace
+memberships and records audit and security events. _(enforced)_
 
 Published platform Artifact updates use the initiating user's live editor
 authority, including during delegated and resumed agent execution. The save

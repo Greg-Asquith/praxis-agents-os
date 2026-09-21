@@ -218,6 +218,7 @@ def _drive_resource(
         external_id=drive_id,
         display_name=display_name,
         parent_external_id=site_id or None,
-        writable=False,
+        writable=True,
+        required_write_scopes=("Files.ReadWrite.All", "Sites.ReadWrite.All"),
         permissions_metadata=metadata,
     )

@@ -2,20 +2,20 @@
 
 """Authorize tool fields and dispatch entity-reference lookups."""
 
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError, NotFoundError
+from core.exceptions.general import AppValidationError
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agents.runtime.entity_references.domain import EntityChoice
+from services.agents.runtime.entity_references.domain import EntityChoice, ScopedEntityReference
 from services.agents.runtime.entity_references.registry import (
     EntityResolverDefinition,
     get_entity_resolver,
@@ -24,6 +24,7 @@ from services.agents.runtime.entity_references.schemas import (
     EntityReferenceLookupRequest,
     EntityReferenceLookupResponse,
 )
+from services.agents.runtime.entity_references.utils import resolve_conversation_agent
 from services.agents.runtime.tools.registry import (
     build_runtime_tools,
     resolve_runtime_tool_definition,
@@ -42,6 +43,7 @@ from services.tools import get_disabled_tools
 
 if TYPE_CHECKING:
     from services.agents.runtime.context import RuntimeDeps
+    from services.agents.runtime.tools.contract import RuntimeToolDefinition
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,8 @@ class EntityResolverContext:
     agent: Agent
     run: AgentRun | None
     active_context: ResolvedActiveContext
+    tool_definition: "RuntimeToolDefinition | None" = None
+    tool_call_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,7 +125,7 @@ async def _search_with_failure_audit(
 ):
     try:
         return await authorized.resolver.search(
-            authorized.context,
+            _lookup_context(authorized.context),
             search,
             dependent_args,
             page_size,
@@ -138,6 +142,7 @@ async def _resolve_with_failure_audit(
     values: list[Any],
     dependent_args: dict[str, Any],
 ):
+    await _require_reference_write_access(authorized, values)
     try:
         return await authorized.resolver.resolve(
             authorized.context,
@@ -147,6 +152,64 @@ async def _resolve_with_failure_audit(
     except Exception as exc:
         await _audit_external_resolver_failure(authorized, operation="resolve", error=exc)
         raise
+
+
+def _lookup_context(context: EntityResolverContext) -> EntityResolverContext:
+    definition = context.tool_definition
+    binding = definition.integration_binding if definition else None
+    if binding is None or not binding.requires_write:
+        return context
+    entries = context.active_context.compatible_entries(binding)
+    scope_counts = Counter(entry.external_id for entry in entries)
+    return replace(
+        context,
+        active_context=replace(
+            context.active_context,
+            entries=tuple(
+                entry
+                for entry in entries
+                if entry.write_allowed and scope_counts[entry.external_id] == 1
+            ),
+        ),
+    )
+
+
+async def _require_reference_write_access(
+    authorized: AuthorizedEntityField, values: list[Any]
+) -> None:
+    context = authorized.context
+    definition = context.tool_definition
+    binding = definition.integration_binding if definition else None
+    if binding is None or not binding.requires_write:
+        return
+    entries = context.active_context.compatible_entries(binding)
+    for value in values:
+        try:
+            reference = authorized.resolver.reference_adapter().validate_python(value)
+        except ValueError:
+            continue
+        if not isinstance(reference, ScopedEntityReference):
+            continue
+        matching = [entry for entry in entries if entry.external_id == reference.provider_scope_id]
+        if len(matching) != 1 or matching[0].write_allowed:
+            continue
+        from services.integrations.operations import record_integration_write_denial_for_tool
+
+        if context.run is None:
+            raise RuntimeError("Integration write resolution requires an active run")
+        await record_integration_write_denial_for_tool(
+            definition,
+            matching[0],
+            workspace_id=context.workspace.id,
+            agent=context.agent,
+            run=context.run,
+            tool_call_id=context.tool_call_id,
+        )
+        raise AppValidationError(
+            "This resource does not permit writes. Choose a writable target.",
+            field=authorized.field_key,
+            details={"error_code": "write_not_permitted"},
+        )
 
 
 async def _audit_external_resolver_failure(
@@ -313,6 +376,7 @@ async def authorize_entity_field(
     tool_name: str,
     field_key: str,
     run: AgentRun | None = None,
+    tool_call_id: str | None = None,
 ) -> AuthorizedEntityField:
     conversation = await get_conversation_for_actor(
         db,
@@ -320,41 +384,7 @@ async def authorize_entity_field(
         workspace=workspace,
         conversation_id=conversation_id,
     )
-    if run is not None and (
-        run.conversation_id != conversation.id or run.workspace_id != workspace.id or run.deleted
-    ):
-        raise AppValidationError(
-            "Agent run is not available in this conversation",
-            field="run_id",
-            details={"run_id": str(run.id)},
-        )
-    if run is None:
-        run = await db.scalar(
-            select(AgentRun)
-            .where(
-                AgentRun.conversation_id == conversation.id,
-                AgentRun.workspace_id == workspace.id,
-                AgentRun.deleted == False,  # noqa: E712
-            )
-            .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
-            .limit(1)
-        )
-    agent_id = run.agent_id if run is not None else conversation.active_agent_id
-    if agent_id is None:
-        raise NotFoundError("Conversation agent not found", resource_type="agent")
-    agent = await db.scalar(
-        select(Agent).where(
-            Agent.id == agent_id,
-            Agent.workspace_id == workspace.id,
-            Agent.deleted == False,  # noqa: E712
-        )
-    )
-    if agent is None:
-        raise NotFoundError(
-            "Conversation agent not found",
-            resource_type="agent",
-            resource_id=str(agent_id),
-        )
+    run, agent = await resolve_conversation_agent(db, conversation, workspace, run)
     active_context = (
         await resolve_active_context(db, run=run, user=actor, workspace=workspace)
         if run is not None
@@ -421,6 +451,8 @@ async def authorize_entity_field(
             agent=agent,
             run=run,
             active_context=active_context,
+            tool_definition=definition,
+            tool_call_id=tool_call_id,
         ),
         resolver=resolver,
         field_key=field.key,

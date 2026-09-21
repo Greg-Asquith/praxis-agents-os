@@ -48,6 +48,13 @@ set. A second run compares the application before making changes. When you add
 a permission, rerun the script, grant consent, and deploy the matching code.
 Existing connections receive the permission on token refresh.
 
+For SharePoint writes, grant administrator consent for `Files.ReadWrite.All`
+and `Sites.ReadWrite.All` before deploying code that requests them. Reconnect
+SharePoint and refresh its libraries to enable writes. Connections missing
+either write permission retain read-only libraries. Writes also require your
+SharePoint account to have access to the destination and require approval in
+Praxis. The permissions remain delegated to the signed-in account.
+
 ### Optional: restrict who can connect
 
 To keep unassigned or guest accounts from connecting, turn on **Assignment
@@ -104,7 +111,8 @@ Microsoft Entra admin center.
      `User.Read`, `Calendars.ReadWrite`, `Calendars.Read.Shared`,
      `MailboxSettings.Read`, and `People.Read`.
    - SharePoint: `openid`, `profile`, `email`, `offline_access`, `User.Read`,
-     `Files.Read.All`, and `Sites.Read.All`.
+     `Files.Read.All`, `Sites.Read.All`, `Files.ReadWrite.All`, and
+     `Sites.ReadWrite.All`.
 
 6. For a single-tenant deployment, click **Grant admin consent for
    TENANT_NAME**.

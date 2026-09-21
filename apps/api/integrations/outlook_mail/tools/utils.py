@@ -2,10 +2,6 @@
 
 """Outlook context binding, credentials, and bounded result helpers."""
 
-import asyncio
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 from pydantic_core import to_json
@@ -26,7 +22,6 @@ from services.audit_events import (
     terminal_applied_operation_detail,
 )
 from services.integrations.connections.utils import refresh_oauth_credential
-from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.credentials import (
     ensure_fresh_credential,
@@ -35,6 +30,10 @@ from services.integrations.credentials import (
 from services.integrations.microsoft_graph import MicrosoftGraphClient
 from services.integrations.operations import IntegrationAuditOutcome
 from services.integrations.utils import integration_failure_code
+from services.integrations.write_lifecycle import (
+    IntegrationWriteCallbacks,
+    PreparedIntegrationWrite,
+)
 
 from ..operations.utils import MailWriteState, untrusted
 from ..references import OutlookMessageReference
@@ -50,40 +49,17 @@ OUTLOOK_MAIL_WRITE_BINDING = IntegrationToolBinding(
 )
 RESULTS_FIELD = (ToolFieldPresentation(key="results", label="Mailboxes", format="list"),)
 MAX_RESULT_BYTES = 768 * 1024
+PreparedMailWrite = PreparedIntegrationWrite
 
 
-@dataclass(frozen=True)
-class PreparedMailWrite:
-    pending: PendingIntegrationOperationDetail
-    mutate: Callable[[], Awaitable[None]]
-
-
-@dataclass
-class MailWriteCallbacks:
-    """Supplies preparation and outcome callbacks to the shared audit runner."""
-
-    entry: ResolvedContextEntry
-    state: MailWriteState
-    prepare_operation: Callable[[], Awaitable[PreparedMailWrite]]
-    _prepared: PreparedMailWrite | None = field(default=None, init=False)
-
-    async def prepare(self) -> PendingIntegrationOperationDetail:
-        self._prepared = await self.prepare_operation()
-        return self._prepared.pending
-
-    async def execute(self) -> IntegrationAuditOutcome[dict]:
-        prepared = self._prepared
-        if prepared is None:
-            raise RuntimeError("Outlook write preparation did not complete.")
-        # The shared runner persists pending intent before invoking this callback.
-        try:
-            await prepared.mutate()
-        except asyncio.CancelledError as exc:
-            attach_write_cancellation(exc, prepared.pending, self.state)
-            raise
-        except Exception as exc:
-            return failed_write_outcome(self.entry, prepared.pending, self.state, exc)
-        return successful_write_outcome(self.entry, prepared.pending, self.state)
+class MailWriteCallbacks(IntegrationWriteCallbacks):
+    def __init__(self, entry, state, prepare_operation):
+        super().__init__(
+            prepare_operation=prepare_operation,
+            successful=lambda pending: successful_write_outcome(entry, pending, state),
+            failed=lambda pending, exc: failed_write_outcome(entry, pending, state, exc),
+            cancelled=lambda exc, pending: attach_write_cancellation(exc, pending, state),
+        )
 
 
 def bounded_output(results) -> dict:

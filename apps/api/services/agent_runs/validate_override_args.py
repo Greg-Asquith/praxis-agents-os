@@ -60,6 +60,7 @@ async def validate_and_canonicalize_override_args(
         definition=definition,
         effective_args=effective_args,
         tool_name=tool_name,
+        tool_call_id=getattr(tool_call, "tool_call_id", None),
     )
     return effective_args if override_args is not None or effective_args != original_args else None
 
@@ -155,6 +156,7 @@ async def _canonicalize_entity_fields(
     definition: "RuntimeToolDefinition",
     effective_args: dict[str, Any],
     tool_name: str,
+    tool_call_id: str | None,
 ) -> None:
     from services.agents.runtime.entity_references.service import (
         authorize_entity_field,
@@ -191,6 +193,7 @@ async def _canonicalize_entity_fields(
             tool_name=tool_name,
             field_key=field.key,
             run=run,
+            tool_call_id=tool_call_id,
         )
         canonical = await resolve_authorized_references(
             authorized,

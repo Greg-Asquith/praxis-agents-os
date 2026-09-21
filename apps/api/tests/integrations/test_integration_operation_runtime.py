@@ -429,6 +429,76 @@ async def test_external_write_cannot_disable_durable_evidence(synthetic_provider
     assert called is False
 
 
+@pytest.mark.parametrize("failure_stage", ["prepare", "pending_audit"])
+async def test_write_before_pending_failure_stays_undispatched(
+    synthetic_provider, monkeypatch, failure_stage
+):
+    entry = _entry()
+    failure = ValueError("preflight failed")
+    detail = _pending_detail(entry)
+    prepare = AsyncMock(return_value=detail)
+    audit = AsyncMock(return_value=uuid4())
+    if failure_stage == "prepare":
+        prepare.side_effect = failure
+    else:
+        audit.side_effect = [failure, uuid4()]
+    execute = AsyncMock()
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+
+    with pytest.raises(ValueError) as raised:
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            prepare_pending_operation=prepare,
+        )
+
+    assert raised.value is failure
+    assert failure.failure_disposition is IntegrationFailureDisposition.NOT_DISPATCHED
+    execute.assert_not_awaited()
+    terminal = audit.await_args_list[-1].kwargs
+    assert terminal["status"] is AuditStatus.FAILURE
+    assert terminal["related_event_id"] is None
+    assert terminal["operation_detail"] == (detail if failure_stage == "pending_audit" else None)
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_ambiguous_exception_retains_terminal_evidence(
+    synthetic_provider, monkeypatch, cancelled
+):
+    entry = _entry()
+    pending_event_id = uuid4()
+    audit = AsyncMock(return_value=pending_event_id)
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    error = asyncio.CancelledError() if cancelled else ValueError("response lost")
+    error.failure_disposition = IntegrationFailureDisposition.AMBIGUOUS
+    error.operation_detail = _unverified_detail(entry)
+    execute = AsyncMock(side_effect=error)
+
+    with pytest.raises(type(error)) as raised:
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    assert raised.value is error
+    terminal = audit.await_args_list[-1].kwargs
+    assert terminal["status"] is AuditStatus.UNVERIFIED
+    assert terminal["error_code"] == "unverified_mutation"
+    assert terminal["operation_detail"] is error.operation_detail
+    assert terminal["related_event_id"] == pending_event_id
+
+
 async def test_operation_rejects_provider_binding_mismatch(synthetic_provider) -> None:
     entry = _entry()
     mismatched = ResolvedContextEntry(

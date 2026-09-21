@@ -14,7 +14,7 @@ from services.agents.runtime.untrusted import UntrustedNode
 from ..references import SharePointDriveItemReference
 
 ITEM_SELECT = (
-    "id,name,size,file,folder,package,lastModifiedDateTime,webUrl,parentReference,remoteItem"
+    "id,name,size,file,folder,package,lastModifiedDateTime,webUrl,parentReference,remoteItem,eTag"
 )
 MAX_CITATION_URL_CHARS = 8192
 MAX_MARKDOWN_BYTES = 64 * 1024

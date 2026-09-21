@@ -350,6 +350,22 @@ async def test_every_first_party_eligible_schema_renders() -> None:
         assert await session.feed_run("1") == 1
 
 
+def test_sharepoint_write_stubs_preserve_versions_and_typed_outcomes() -> None:
+    definitions = {item.name: item for item in SHAREPOINT_TOOL_DEFINITIONS}
+    for action in ("create_folder", "write_file", "update_file"):
+        definition = definitions[f"sharepoint_{action}"]
+        rendered = render_tool_stub(definition)
+        assert "-> SharePointWriteOutput" in rendered
+        assert "VersionToken = str" in rendered
+        assert "version: VersionToken" in rendered
+        assert "outcome: Literal['applied', 'failed', 'unverified']" in rendered
+        assert definition.supports_approval and not definition.supports_auto
+    update = render_tool_stub(definitions["sharepoint_update_file"])
+    assert "expected_version: VersionToken" in update
+    assert "content: TextContent" in update
+    assert "version: VersionToken" in render_tool_stub(definitions["sharepoint_read_file"])
+
+
 async def test_keyword_output_fields_compile_and_are_consumable_in_monty() -> None:
     output = create_model("MessageOutput", **{"from": (str, ...)})
 

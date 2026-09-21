@@ -138,7 +138,7 @@ folder item table and its public-field validation. Error entries retain their
 copy alongside successful libraries. Malformed fields, inconsistent counts,
 and pages above 25 items fall back to the default tool row.
 
-All three read tools use the audited context runners and work in Code Mode. Known
+All five read tools use the audited context runners and work in Code Mode. Known
 references resolve by ID within exactly one selected drive, with at most 25
 exact values per request. Larger requests fail before credentials or HTTP.
 The listing tool's optional `folder` entity field authorises name lookup through
@@ -177,7 +177,7 @@ annotation before it reaches `download_item`. Ordinary metadata reads retain
 `sharepoint_read_file` accepts a UTF-8 byte `offset` (default zero) and
 `max_bytes` (4-65,536, default 65,536). Its result contains `name`, normalised
 `content_type`, downloaded `size_bytes`, `modified_at`, `web_url`, `markdown`,
-`offset`, `end_offset`, `total_bytes`, `truncated`, `limit_reached`, and `source`
+`offset`, `end_offset`, `total_bytes`, `truncated`, `limit_reached`, `version`, and `source`
 (`text` or `converted`). `truncated` means more content follows this window.
 The continuation `hint` names the next offset and the find tool. An offset
 past the total or inside a character reports `invalid_offset` with the total.
@@ -279,7 +279,8 @@ makes at most one logical metadata request, with the shared read retry policy.
 Microsoft documents write permissions for that endpoint, but a tenant check
 with only the existing read-only SharePoint grant successfully resolved an
 already accessible file URL. Tenant policy and item permissions can still deny
-a sharing link. No write scope is requested.
+a sharing link. Link resolution requests no additional write scope. The
+connection grant includes the write permissions described below.
 
 Link resolution checks every selected library on the resolving connection.
 Only a local file or folder in that set returns a reference. A result from
@@ -316,6 +317,101 @@ are excluded from the view.
 
 Fetching original Office files into Files, editing them, and saving them back
 to SharePoint is pending. Markdown reads do not provide that workflow.
+
+## SharePoint writes
+
+Select a writable library in Active Context to use these approval-gated tools:
+
+- `sharepoint_create_folder` creates a folder under an optional parent folder.
+- `sharepoint_write_file` saves UTF-8 text as a new file in an optional folder.
+- `sharepoint_update_file` replaces a text file using its reference and the
+  `version` returned by `sharepoint_read_file` as `expected_version`.
+
+Each tool targets one library and works through direct calls and Code Mode.
+Without a folder reference, exactly one writable library must be selected.
+References must belong to an unambiguous selected drive. Read-only resources
+produce the shared write-denial audit before credentials or provider requests.
+Automatic execution is unavailable. Dedicated write-result presenters are
+pending; the server declares editable name, destination, and text fields for
+approval, and keeps the replacement file and version locked. Approval prompts
+name the reviewed library. Creation prompts identify its root as the default
+when no folder is chosen, so an edited folder can select another library.
+The library label remains plain text, separate from replayable arguments.
+
+The existing SharePoint connection requests delegated `Files.ReadWrite.All`
+and `Sites.ReadWrite.All` alongside its read scopes. Grant administrator consent
+before deploying the expanded manifest, then reconnect and refresh discovery.
+Both granted write scopes are required for a drive to be writable. Connections
+with only the read grant retain their read tools. The signed-in person's
+SharePoint permissions still bound access.
+
+Names are 1-255 characters and reject SharePoint's reserved names, path
+separators, control characters, and leading or trailing spaces or dots.
+A name conflict reports `name_exists`; creation never renames or replaces an
+existing item. Text must be non-empty, contain valid UTF-8, and contain no
+control characters except newline and tab. The shared file contract selects
+text types by extension and rejects Office files as text destinations.
+Replacements also use its normalised MIME lookup and editable flag. Invalid
+or unsupported provider MIME values fail before pending intent.
+`FILES_MAX_TEXT_EDIT_BYTES` bounds the UTF-8 text at 2 MiB by default.
+`SHAREPOINT_FILE_MAX_UPLOAD_BYTES` separately defaults to 50 MiB and accepts
+1-262,144,000 bytes. Workspace File sources and copies remain pending.
+
+Every file write uses an upload session, including small text files. Replacement
+preparation reads the scoped metadata and checks the reviewed `eTag` before
+pending intent. Execution checks it again and sends `If-Match` when creating
+the session. A mismatch reports `version_conflict` and asks for a fresh read.
+The version is a bounded opaque token; pass it unchanged. Invalid session
+responses and replacement metadata fail as undispatched content mutations.
+Failures after a possible commit retain an unverified outcome.
+
+The shared Graph client consumes signed upload URLs with `upload_fragment`,
+`upload_status`, and `cancel_upload`. It pins public DNS addresses, strips
+inherited bearer tokens and cookies, refuses redirects, suppresses HTTP
+logging for the task, and retains no signed URLs in errors or public results.
+Fragments are sequential and at most 10 MiB. A failed non-final fragment can
+resume from the server's expected offset at most three times, after cancellable
+delays of one, two, and four seconds. A failed upload before the final fragment
+attempts to cancel its session. Cancellation during
+the final fragment retains an uncertain outcome and is never replayed.
+
+Committed files are checked against their byte count and locally computed
+QuickXorHash. Missing or mismatched evidence reports `unverified_mutation`.
+An ambiguous final response triggers one session-status read and one scoped
+metadata read. A final upload response acknowledging the committed item is
+required to attribute a write to this attempt. Missing ranges mean the session
+is incomplete. A missing session can mean completion or expiry, and a failed
+status lookup provides no commit evidence. Matching destination size and hash,
+even with a changed version, cannot distinguish this upload from another
+writer. An unchanged replacement version also cannot confirm a replacement.
+All lost-response reconciliation outcomes therefore remain
+`unverified_mutation`, including a disappeared session with matching content.
+Validated metadata and a single off-thread hash comparison retain observations
+for inspection, without marking a commit or claiming unacknowledged bytes.
+The final fragment is never replayed.
+Session expiry reports `upload_session_expired`; a `409 nameAlreadyExists`
+response reports `name_exists`. Other 409 responses retain a generic rejection.
+A version conflict reports `version_conflict`, a lock reports `locked`, and
+exhausted storage reports `quota_exceeded`.
+
+Pending intent contains the library, action, byte count, content type, and
+expected version, excluding file names and text. Terminal evidence retains
+the item reference, versions before and after, transfer progress, commit state,
+and hash verification. Reconciliation also records whether session status is
+incomplete, missing, unavailable, or unknown. Provider metadata in results
+retains untrusted framing.
+The shared `write_lifecycle.py` helper handles preparation, execution, and
+cancellation for SharePoint and Outlook; provider callbacks build their own
+evidence while the existing audit runner owns persistence.
+
+Direct and Code Mode calls return uncertain writes as `unverified_mutation`
+entries with correlated terminal operation evidence. The invocation completes
+and the run can continue. This completion does not confirm the external write.
+Another write requires a fresh approval; automatic mutation replay is forbidden.
+
+Live tenant qualification of conditional sessions, commit conflicts, hashes,
+and completed-session status remains unverified. The maintainer waived that
+implementation prerequisite on 17 September 2026.
 
 ## Outlook Mail writes
 

@@ -1,6 +1,6 @@
 # apps/api/services/files/contract.py
 
-"""File type contract shared by file services and future UI code."""
+"""Canonical file-type policy published to file services and integration providers."""
 
 from dataclasses import dataclass
 from enum import StrEnum

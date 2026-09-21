@@ -331,10 +331,14 @@ loader.py` (dynamically, by configured key).
    domain vocabulary), `services/secrets/` ops,
    `services/agents/runtime/tools/` contract + decorator,
    `services/jobs/registry.py` solely to register a provider-owned handler,
+   `services/files/contract.py` for the canonical file-type inventory and
+   policy lookups,
    `core/exceptions/`, `core/settings`, and `utils/`. Nothing else in
    `services/` without adding the seam to this list first.
+   The file-policy permission covers that exact module only. File storage,
+   upload, revision, and other file-service operations remain private.
 3. `integrations.PROVIDER_A` never imports `integrations.PROVIDER_B`.
-4. Enforcement: a dedicated test (`tests/integrations/test_import_laws.py`)
+4. Enforcement: a dedicated test (`tests/contract/test_integration_import_laws.py`)
    walks the AST of both trees and asserts 1–3. It runs in the default
    suite so violations fail CI, not review.
 
@@ -692,16 +696,20 @@ Gmail and Outlook share the provider-neutral preview query and content loader
 in `components/tool-ui/`; provider wrappers own metadata
 chips and message presentation.
 
-Outlook deliberately retains per-tool execution closures for its multi-request
-writes. The shared operation runner remains the only audit and durability
-owner. Outlook's outcome builders translate its known draft, patch, and send
-effects, while each closure keeps preparation and cancellation explicit.
-A generic extraction would need separate success, failure, and cancellation
-callbacks plus access to prepared provider state. That expands the shared
-runner's contract without another provider using that shape. Defer lifecycle
-consolidation until a second provider needs the same partial-effect contract;
-then extract through the shared runner and verify both providers. Do not add
-an Outlook audit runner to hide these closures.
+Outlook and SharePoint retain per-tool preparation closures and use the
+provider-neutral `services/integrations/write_lifecycle.py` for prepared
+execution, cancellation, and outcome callbacks. The audit runner remains the
+only owner of pending and terminal persistence. The lifecycle helper imports
+no provider and branches on no provider key; each package owns its state and
+outcome evidence.
+
+SharePoint contributes three approval-gated external writes: folder creation,
+text-file creation, and version-pinned text replacement. Discovery requires
+both delegated write scopes before marking drives writable. Upload sessions
+use public-address pinning without bearer tokens or diagnostic URLs. Byte counts
+and QuickXorHash verify commits; uncertain outcomes are retained without
+replay. Read results expose the opaque version needed for replacement.
+Write presenters, workspace File sources, and copies remain pending.
 
 BigQuery demonstrates the checklist end to end. Its package under
 `integrations/bigquery/` contributes a workspace-owned service-account

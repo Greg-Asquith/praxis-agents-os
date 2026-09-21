@@ -117,6 +117,7 @@ async def test_google_vertex_eval_judges_use_the_application_model_factory(
 ) -> None:
     monkeypatch.setenv("EVALS_MODEL", "google:gemini-3.1-pro")
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)

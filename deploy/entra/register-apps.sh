@@ -123,7 +123,7 @@ provider_scopes() {
       printf '%s\n' openid profile email offline_access User.Read Calendars.ReadWrite Calendars.Read.Shared MailboxSettings.Read People.Read
       ;;
     sharepoint)
-      printf '%s\n' openid profile email offline_access User.Read Files.Read.All Sites.Read.All
+      printf '%s\n' openid profile email offline_access User.Read Files.Read.All Sites.Read.All Files.ReadWrite.All Sites.ReadWrite.All
       ;;
   esac
 }

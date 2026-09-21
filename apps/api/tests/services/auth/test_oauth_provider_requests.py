@@ -48,6 +48,9 @@ def _assert_safe_diagnostics(
     records = [record for record in caplog.records if record.name == OAUTH_RETRY_LOGGER]
     assert records
     assert all(record.exc_info is None for record in records)
+    assert all(SENTINEL not in repr(vars(record)) for record in records)
+    assert all(type(record.attempt) is int for record in records)
+    assert all(type(record.max_attempts) is int for record in records)
     assert any(
         record.provider == "google"
         and record.operation == "test_operation"

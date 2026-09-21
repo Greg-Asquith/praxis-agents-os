@@ -16,8 +16,10 @@ import httpx2
 
 from core.exceptions.integration import (
     IntegrationAuthError,
+    IntegrationConnectionError,
     IntegrationDownloadTooLargeError,
     IntegrationFailureDisposition,
+    IntegrationTimeoutError,
     IntegrationValidationError,
 )
 from core.settings import settings
@@ -29,8 +31,9 @@ from services.integrations.http import (
 )
 
 from .download_logging import suppress_download_logging
-from .errors import graph_response_error
+from .errors import graph_response_error, upload_response_error
 from .pacing import paced_request
+from .preauthenticated import PreauthenticatedFileAuth
 
 GRAPH_API_BASE_URL = "https://graph.microsoft.com/v1.0"
 AccessTokenFn = Callable[[bool], Awaitable[str]]
@@ -251,6 +254,99 @@ class MicrosoftGraphClient:
             token = await resolve_before_dispatch(lambda: self._access_token(True))
             return await download(token)
 
+    async def upload_fragment(
+        self, url: str, data: bytes, *, operation: str, offset: int, total: int
+    ) -> dict[str, Any]:
+        """Sends one exact byte range without retrying an upload or commit."""
+        if offset < 0 or not data or offset + len(data) > total:
+            raise ValueError("Microsoft Graph upload range must fit the declared file size")
+        return await self._upload_request(
+            "PUT",
+            url,
+            operation=operation,
+            headers={
+                "Content-Length": str(len(data)),
+                "Content-Range": f"bytes {offset}-{offset + len(data) - 1}/{total}",
+                "Content-Type": "application/octet-stream",
+            },
+            data=data,
+        )
+
+    async def upload_status(self, url: str, *, operation: str) -> dict[str, Any]:
+        """Reads an upload session once without bearer credentials."""
+        return await self._upload_request("GET", url, operation=operation)
+
+    async def cancel_upload(self, url: str, *, operation: str) -> None:
+        """Cancels an upload session once without bearer credentials."""
+        await self._upload_request("DELETE", url, operation=operation)
+
+    async def _upload_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        operation: str,
+        headers: dict[str, str] | None = None,
+        data: bytes | None = None,
+    ) -> dict[str, Any]:
+        try:
+            pinned_url, original_host = await resolve_before_dispatch(
+                lambda: self._public_download_target(url, operation=operation)
+            )
+        except asyncio.CancelledError as exc:
+            exc.failure_disposition = IntegrationFailureDisposition.NOT_DISPATCHED
+            raise
+        request_headers = {
+            "Accept": "application/json",
+            "Host": self._host_header(pinned_url, original_host),
+            "User-Agent": self._user_agent(),
+            **(headers or {}),
+        }
+
+        async def consume(response: httpx2.Response) -> dict[str, Any]:
+            if method == "DELETE" and response.status_code == 204:
+                return {}
+            expected = {"PUT": {200, 201, 202}, "GET": {200}, "DELETE": {204}}[method]
+            if response.status_code not in expected:
+                raise self._response_error(operation, policy=IntegrationRequestPolicy.MUTATION)
+            await response.aread()
+            try:
+                payload = response.json()
+            except ValueError:
+                raise self._response_error(
+                    operation, policy=IntegrationRequestPolicy.MUTATION
+                ) from None
+            if not isinstance(payload, dict):
+                raise self._response_error(operation, policy=IntegrationRequestPolicy.MUTATION)
+            payload.pop("uploadUrl", None)
+            payload.pop("@microsoft.graph.downloadUrl", None)
+            return payload
+
+        with suppress_download_logging():
+            try:
+                return await consume_stream_with_retries(
+                    method,
+                    pinned_url,
+                    operation=operation,
+                    provider_key=self._provider_key,
+                    policy=IntegrationRequestPolicy.MUTATION,
+                    consume=consume,
+                    client=self._client,
+                    attempt_context=lambda: self._request_attempt(request_headers),
+                    include_original_error=False,
+                    response_error_mapper=lambda response: upload_response_error(
+                        response, provider_key=self._provider_key, operation=operation
+                    ),
+                    headers=request_headers,
+                    content=data,
+                    auth=PreauthenticatedFileAuth(),
+                    extensions={"sni_hostname": original_host},
+                    follow_redirects=False,
+                )
+            except (IntegrationConnectionError, IntegrationTimeoutError) as exc:
+                exc.error_code = "upload_interrupted"
+                raise
+
     async def _request(
         self,
         method: str,
@@ -289,8 +385,8 @@ class MicrosoftGraphClient:
             raise self._response_error(operation, policy=policy)
         try:
             return response.json()
-        except ValueError as exc:
-            raise self._response_error(operation, policy=policy, original_error=exc) from exc
+        except ValueError:
+            raise self._response_error(operation, policy=policy) from None
 
     async def _send(
         self,
@@ -369,6 +465,7 @@ class MicrosoftGraphClient:
                     else None
                 ),
                 headers=download_headers,
+                auth=PreauthenticatedFileAuth(),
                 extensions={"sni_hostname": original_host},
                 follow_redirects=False,
                 timeout=settings.INTEGRATIONS_HTTP_TIMEOUT_SECONDS,
@@ -468,13 +565,11 @@ class MicrosoftGraphClient:
         operation: str,
         *,
         policy: IntegrationRequestPolicy = IntegrationRequestPolicy.READ,
-        original_error: Exception | None = None,
     ) -> IntegrationValidationError:
         return IntegrationValidationError(
             "Microsoft Graph returned an invalid response",
             provider_key=self._provider_key,
             operation=operation,
-            original_error=original_error,
             failure_disposition=(
                 IntegrationFailureDisposition.AMBIGUOUS
                 if policy is not IntegrationRequestPolicy.READ

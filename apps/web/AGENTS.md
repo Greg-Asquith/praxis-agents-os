@@ -82,18 +82,18 @@ Build for a non-technical operator:
 Before editing a domain, read its implementation reference. Paths in this
 table are relative to this file:
 
-| Change area                                                  | Required reference                                                                            |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Integration connections, recovery, or provider presenters    | [Integration guide and provider references](../../docs/implementation/integrations/README.md) |
-| Outlook mail approvals, results, or shared email previews    | [Microsoft Graph](../../docs/implementation/integrations/microsoft-graph.md)                  |
-| Conversation streaming, recovery, context, or schedules      | [Agent runs](../../docs/implementation/agent-runs.md)                                         |
-| Approval fields, entity editors, tool results, or artifacts  | [Tool dispatch](../../docs/implementation/tool-dispatch.md)                                   |
-| Workflow rows and nested approval replay                     | [Code Mode](../../docs/implementation/code-mode.md)                                           |
-| Native tool results, generated files, or classifier settings | [Native helper tools](../../docs/implementation/native-tools.md)                              |
-| File links and uploads                                       | [Storage and files](../../docs/implementation/storage-and-files.md)                           |
-| Authentication redirects or audit presentation               | [Security](../../docs/implementation/security.md)                                             |
-| Knowledge Base imports or refresh                            | [Knowledge sources](../../docs/implementation/knowledge-sources.md)                           |
-| Model transport labels                                       | [Model providers](../../docs/implementation/model-providers.md)                               |
+| Change area                                                       | Required reference                                                                            |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Integration connections, recovery, or provider presenters         | [Integration guide and provider references](../../docs/implementation/integrations/README.md) |
+| Microsoft Graph approvals, file results, or shared email previews | [Microsoft Graph](../../docs/implementation/integrations/microsoft-graph.md)                  |
+| Conversation streaming, recovery, context, or schedules           | [Agent runs](../../docs/implementation/agent-runs.md)                                         |
+| Approval fields, entity editors, tool results, or artifacts       | [Tool dispatch](../../docs/implementation/tool-dispatch.md)                                   |
+| Workflow rows and nested approval replay                          | [Code Mode](../../docs/implementation/code-mode.md)                                           |
+| Native tool results, generated files, or classifier settings      | [Native helper tools](../../docs/implementation/native-tools.md)                              |
+| File links and uploads                                            | [Storage and files](../../docs/implementation/storage-and-files.md)                           |
+| Authentication redirects or audit presentation                    | [Security](../../docs/implementation/security.md)                                             |
+| Knowledge Base imports or refresh                                 | [Knowledge sources](../../docs/implementation/knowledge-sources.md)                           |
+| Model transport labels                                            | [Model providers](../../docs/implementation/model-providers.md)                               |
 
 ## Verification
 

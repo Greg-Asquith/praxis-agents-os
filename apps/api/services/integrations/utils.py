@@ -1,12 +1,14 @@
 # apps/api/services/integrations/utils.py
 
-"""Credential-key derivation and fingerprint helpers."""
+"""Credential derivation and integration audit helpers."""
 
 import asyncio
 import base64
 import hashlib
 import re
-from typing import Final
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Final, Literal
+from uuid import UUID
 
 from cryptography.fernet import Fernet, MultiFernet
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,12 +19,32 @@ from core.exceptions.integration import (
     IntegrationFailureDisposition,
 )
 from core.settings import settings
+from services.audit_events import (
+    AuditStatus,
+    IntegrationOperationDetail,
+    PendingIntegrationOperationDetail,
+    TerminalIntegrationOperationDetail,
+)
 from services.secrets import resolve_secret
 from services.secrets.domain import SecretReference
 from utils.security import create_hmac_signature, derive_purpose_key
 
+if TYPE_CHECKING:
+    from services.integrations.operations import IntegrationAuditOutcome
+
 TOKEN_PURPOSE: Final = "praxis:credential-tokens:v1"
 FINGERPRINT_PURPOSE: Final = "praxis:principal-fingerprint:v1"
+
+_TERMINAL_AUDIT_STATUSES = frozenset(
+    {
+        AuditStatus.SUCCESS,
+        AuditStatus.PARTIAL,
+        AuditStatus.FAILURE,
+        AuditStatus.UNVERIFIED,
+        AuditStatus.DENIED,
+    }
+)
+
 
 _root_key_strings: tuple[str, ...] | None = None
 _load_lock = asyncio.Lock()
@@ -159,3 +181,82 @@ def integration_failure_code(exc: BaseException) -> str:
     if isinstance(code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code):
         return code
     return exc.__class__.__name__
+
+
+def validate_integration_audit_input(
+    durable: bool,
+    pending_operation_detail: PendingIntegrationOperationDetail | None,
+    prepare_pending_operation: Callable[[], Awaitable[PendingIntegrationOperationDetail]] | None,
+) -> None:
+    """Validates pending intent before starting operation audit tracking."""
+    if pending_operation_detail is not None and prepare_pending_operation is not None:
+        raise ValueError("Pass pending operation detail directly or prepare it, not both")
+    if durable and pending_operation_detail is None and prepare_pending_operation is None:
+        raise ValueError("External integration writes require pending operation detail")
+    if (
+        durable
+        and prepare_pending_operation is None
+        and not isinstance(pending_operation_detail, PendingIntegrationOperationDetail)
+    ):
+        raise ValueError("External integration writes require pending-phase operation detail")
+
+
+def validate_integration_audit_outcome[T](
+    outcome: "IntegrationAuditOutcome[T]", durable: bool
+) -> None:
+    """Validates terminal evidence before recording an operation outcome."""
+    if outcome.status not in _TERMINAL_AUDIT_STATUSES:
+        raise ValueError("Integration audit outcomes must have a terminal status")
+    if durable and outcome.operation_detail is None:
+        raise ValueError("Successful external integration writes require terminal evidence")
+    if outcome.operation_detail is not None and not isinstance(
+        outcome.operation_detail, TerminalIntegrationOperationDetail
+    ):
+        raise ValueError("Integration audit outcomes require terminal-phase operation detail")
+    if outcome.status != AuditStatus.UNVERIFIED and outcome.unverified_result is not None:
+        raise ValueError("Only unverified integration outcomes may retain result data")
+
+
+def integration_exception_evidence(
+    exc: BaseException,
+    pending_detail: object,
+    *,
+    durable: bool,
+    pending_event_id: UUID | None,
+) -> tuple[Literal[AuditStatus.UNVERIFIED, AuditStatus.FAILURE], IntegrationOperationDetail | None]:
+    """Preserves failure disposition and chooses the available audit evidence."""
+    if isinstance(exc, asyncio.CancelledError):
+        disposition = getattr(
+            exc, "failure_disposition", IntegrationFailureDisposition.NOT_DISPATCHED
+        )
+        if durable:
+            exc.failure_disposition = disposition
+    else:
+        disposition = getattr(exc, "failure_disposition", None)
+        if durable and disposition is None:
+            disposition = (
+                IntegrationFailureDisposition.AMBIGUOUS
+                if pending_event_id is not None
+                else IntegrationFailureDisposition.NOT_DISPATCHED
+            )
+            exc.failure_disposition = disposition
+    detail = _exception_operation_detail(exc, pending_detail)
+    status = (
+        AuditStatus.UNVERIFIED
+        if disposition is IntegrationFailureDisposition.AMBIGUOUS
+        and isinstance(detail, TerminalIntegrationOperationDetail)
+        else AuditStatus.FAILURE
+    )
+    return status, detail
+
+
+def _exception_operation_detail(
+    exc: BaseException,
+    pending_detail: object,
+) -> IntegrationOperationDetail | None:
+    detail = getattr(exc, "operation_detail", None)
+    if isinstance(detail, TerminalIntegrationOperationDetail):
+        return detail
+    if isinstance(pending_detail, PendingIntegrationOperationDetail):
+        return pending_detail
+    return None

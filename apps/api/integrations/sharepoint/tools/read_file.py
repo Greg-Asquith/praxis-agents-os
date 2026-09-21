@@ -79,7 +79,8 @@ DEFINITION = RuntimeToolDefinition(
         "Continue from end_offset while truncated is true. Each window downloads and converts "
         "the file again; sharepoint_find_in_file finds the relevant offset with fewer reads "
         "than paging through a large document. Images, folders, packages, and files above "
-        "the download limit are unsupported."
+        "the download limit are unsupported. Returns the opaque version required by "
+        "sharepoint_update_file; pass it unchanged as expected_version."
     ),
     provider="sharepoint",
     label="Read SharePoint file",

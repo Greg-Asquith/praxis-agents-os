@@ -6,15 +6,35 @@ import pytest
 from pydantic import ValidationError
 
 from core.settings import Settings
+from services.embeddings.registry import get_embedding_model
 from tests.support.settings import production_settings
 
 
 def test_embedding_settings_defaults() -> None:
+    fields = Settings.model_fields
+    info = get_embedding_model(
+        fields["EMBEDDINGS_PROVIDER"].default,
+        fields["EMBEDDINGS_MODEL"].default,
+    )
+
+    assert fields["EMBEDDINGS_DIMENSIONS"].default == 1024
+    assert fields["EMBEDDINGS_DIMENSIONS"].default <= info.native_dimensions
+
+
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [("google", "gemini-embedding-2"), ("openai", "text-embedding-3-small")],
+)
+def test_embedding_settings_use_environment_configuration(
+    monkeypatch: pytest.MonkeyPatch, provider: str, model: str
+) -> None:
+    monkeypatch.setenv("EMBEDDINGS_PROVIDER", provider)
+    monkeypatch.setenv("EMBEDDINGS_MODEL", model)
+
     resolved = Settings()
 
-    assert resolved.EMBEDDINGS_PROVIDER == "openai"
-    assert resolved.EMBEDDINGS_MODEL == "text-embedding-3-small"
-    assert resolved.EMBEDDINGS_DIMENSIONS == 1024
+    assert provider == resolved.EMBEDDINGS_PROVIDER
+    assert model == resolved.EMBEDDINGS_MODEL
 
 
 @pytest.mark.parametrize("dimensions", [511, 1025])

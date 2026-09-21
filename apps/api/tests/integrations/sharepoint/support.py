@@ -26,6 +26,7 @@ def file_metadata(**changes):
     return {
         **fixture("children.json")["value"][0],
         "name": "notes.txt",
+        "eTag": '"version-1"',
         "size": 1,
         "file": {"mimeType": "text/plain"},
         "@microsoft.graph.downloadUrl": DOWNLOAD_URL,

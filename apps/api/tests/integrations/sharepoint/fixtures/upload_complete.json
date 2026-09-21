@@ -1,0 +1,13 @@
+{
+  "id": "file",
+  "name": "notes.txt",
+  "size": 4,
+  "eTag": "\"version-1\"",
+  "file": {
+    "mimeType": "text/plain",
+    "hashes": {"quickXorHash": "dCgDHugAAAAAAAAABAAAAAAAAAA="}
+  },
+  "lastModifiedDateTime": "2026-09-17T12:00:00Z",
+  "webUrl": "https://example.sharepoint.com/sites/Finance/Documents/notes.txt",
+  "parentReference": {"driveId": "drive", "id": "root", "path": "/drives/drive/root:"}
+}

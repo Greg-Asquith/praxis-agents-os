@@ -63,6 +63,66 @@ async def test_run_discovery_is_idempotent_and_persists_permissions(
     ]
 
 
+@pytest.mark.parametrize(
+    ("write_scopes", "writable"),
+    [
+        ((), False),
+        (("Files.ReadWrite.All",), False),
+        (("Sites.ReadWrite.All",), False),
+        (("Files.ReadWrite.All", "Sites.ReadWrite.All"), True),
+    ],
+)
+async def test_sharepoint_discovery_requires_both_write_scopes(
+    db_session: AsyncSession,
+    discovery_connection: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+    write_scopes: tuple[str, ...],
+    writable: bool,
+) -> None:
+    from integrations.sharepoint.discover_resources import _drive_resource
+
+    connection = discovery_connection["connection"]
+    plugin = PROVIDER_PLUGINS[connection.provider_key]
+    monkeypatch.setitem(
+        PROVIDER_PLUGINS,
+        connection.provider_key,
+        replace(plugin, manifest=replace(plugin.manifest, resource_types=("sharepoint_drive",))),
+    )
+    discovery_connection["provider"]["resources"] = [
+        _drive_resource(
+            {"id": "drive-personal", "name": "OneDrive"},
+            site=None,
+            followed=False,
+            personal=True,
+        ),
+        _drive_resource(
+            {"id": "drive-documents", "name": "Documents"},
+            site={"id": "site-1", "displayName": "Team"},
+            followed=True,
+            personal=False,
+        ),
+    ]
+
+    async def resolve_oauth(*_args, **_kwargs):
+        return "test-secret", frozenset(("Files.Read.All", "Sites.Read.All", *write_scopes)), None
+
+    module = __import__(
+        "services.integrations.discovery.run_discovery",
+        fromlist=["_resolve_credential_value"],
+    )
+    monkeypatch.setattr(module, "_resolve_credential_value", resolve_oauth)
+    result = await run_discovery(db_session, connection_id=connection.id)
+    resources = list(
+        await db_session.scalars(
+            select(IntegrationResource).where(IntegrationResource.connection_id == connection.id)
+        )
+    )
+    assert result.status == "succeeded"
+    assert len(resources) == 2
+    assert all(resource.resource_type == "sharepoint_drive" for resource in resources)
+    assert all(resource.writable is writable for resource in resources)
+
+
 async def test_partial_discovery_reconciles_resources_and_keeps_degraded_reason(
     db_session: AsyncSession,
     discovery_connection: dict[str, object],

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
+from ..operations.write_utils import VersionToken
 from ..references import SharePointDriveItemReference
 
 type UntrustedText = str | UntrustedNode
@@ -74,6 +75,7 @@ class SharePointFileData(BaseModel):
     hint: str | None = None
     truncated: bool
     source: Literal["converted", "text"]
+    version: VersionToken
 
 
 class SharePointFileEntry(IntegrationFanOutEntry):
@@ -123,3 +125,24 @@ class SharePointFindEntry(IntegrationFanOutEntry):
 
 class SharePointFindOutput(IntegrationFanOutOutput):
     results: list[SharePointFindEntry]
+
+
+class WrittenDriveItem(DriveItem):
+    version: VersionToken
+
+
+class SharePointWriteData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item: WrittenDriveItem | None
+    outcome: Literal["applied", "failed", "unverified"]
+    error_code: str | None = None
+    detail: str | None = None
+
+
+class SharePointWriteEntry(IntegrationFanOutEntry):
+    data: SharePointWriteData | None = None
+
+
+class SharePointWriteOutput(IntegrationFanOutOutput):
+    results: list[SharePointWriteEntry]

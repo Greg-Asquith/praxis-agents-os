@@ -29,6 +29,11 @@ from ..settings import sharepoint_settings
 SHAREPOINT_DRIVE_BINDING = IntegrationToolBinding(
     provider_keys=frozenset({"sharepoint"}), resource_types=frozenset({"sharepoint_drive"})
 )
+SHAREPOINT_DRIVE_WRITE_BINDING = IntegrationToolBinding(
+    provider_keys=SHAREPOINT_DRIVE_BINDING.provider_keys,
+    resource_types=SHAREPOINT_DRIVE_BINDING.resource_types,
+    requires_write=True,
+)
 RESULTS_FIELD = (ToolFieldPresentation(key="results", label="Libraries", format="list"),)
 MAX_RESULT_BYTES = 768 * 1024
 

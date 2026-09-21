@@ -208,6 +208,21 @@ direct and Code Mode execution for reads and find excerpts. These tests
 establish mechanical containment; live-model resistance to document
 instructions remains unverified.
 
+SharePoint writes require a selected writable drive, operator approval,
+pending intent, and terminal evidence. Validated model arguments and operator
+edits provide write content; fetched document text cannot authorise a write.
+Approval arguments do not add provider document content. File references and
+reviewed versions remain locked for replacement. Resume checks the live version
+before pending intent, and the upload session sends the same `If-Match` token.
+Provider strings in returned items retain `sharepoint_drive_item` framing.
+Signed upload URLs remain transient transport data, outside tool results,
+approval fields, audit evidence, logs, and retained exceptions. Public-address
+pinning, credential stripping, and redirect refusal apply to every fragment,
+status read, and cancellation. Missing commit hashes and ambiguous final
+requests produce unverified evidence without automatic replay. Direct and
+Code Mode approval scenarios exercise the common dispatch boundary. Live
+tenant qualification remains unverified after the maintainer waived it.
+
 Outlook write results frame provider web links as `outlook_message` nodes.
 Send-draft review data remains application-only presentation evidence, with
 HTML sanitised in the shared preview frame. A resumed send uses the retained

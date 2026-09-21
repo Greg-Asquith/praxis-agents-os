@@ -33,9 +33,9 @@ The following contracts apply in this area:
   output model, and enforces that serialised budget. Keep provider-side fields
   bounded by the tool's product limits and exclude credentials or other
   application-only metadata at the source.
-- Tool exceptions end the run unless dispatch can prove they had no external
-  effect. An `IntegrationError` whose failure disposition is rejected or not
-  dispatched, or any non-ambiguous integration error from a read tool, is
+- Tool exceptions that reach dispatch end the run unless dispatch can prove
+  they had no external effect. An `IntegrationError` whose failure disposition
+  is rejected or not dispatched, or any non-ambiguous integration error from a read tool, is
   audited as a failed invocation and then raised to the model as a retry
   carrying the sanitised `user_message`, so the model can correct its request
   or report the failure. Ambiguous mutations and unverified-mutation errors
@@ -47,6 +47,12 @@ The following contracts apply in this area:
   and reloaded transcript show it as a failed call. Provider presenters must
   render failed and unknown activities themselves instead of parsing the
   message as a result.
+- Integration context runners isolate provider failures inside result envelopes.
+  An `unverified_mutation` entry retains correlated unverified operation evidence,
+  while dispatch completes the invocation and the run can continue, including
+  in Code Mode. Invocation or run completion does not confirm the external
+  write. Another external write still requires its own applicable approval;
+  an uncertain mutation must not be replayed automatically.
 - Opaque tool targets use the runtime entity-reference contract. Internal
   resolvers stay under `services/agents/runtime/entity_references`; concrete
   provider reference models and resolvers stay in their provider package and
@@ -64,6 +70,13 @@ The following contracts apply in this area:
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorised immediately before resume.
+  Entity lookups carry the calling tool's integration binding. Write pickers
+  search writable resources only; exact resolution rejects read-only targets
+  before resolving credentials or fetching provider metadata. The same shared
+  `write_not_permitted` audit records cover dispatch and approval resolution,
+  including permission loss after review. A rejected resume leaves the approval
+  pending so the operator can choose an authorised target or deny the request.
+  Read tools can still resolve targets in read-only resources.
   A tool may add trusted display-only approval arguments from resolved runtime
   context; persist them as presentation metadata and keep the original tool
   arguments as the only replayable execution payload.

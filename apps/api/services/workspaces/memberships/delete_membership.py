@@ -8,6 +8,7 @@ from fastapi import Request
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.dependencies import is_super_admin_email
 from core.exceptions.auth import AuthorizationError
 from models.user import User
 from services.audit_events import AuditAction, AuditResourceType
@@ -46,8 +47,11 @@ async def delete_membership(
         membership_id=membership_id,
         lock=True,
     )
-    # Managers can remove anyone; other members may only remove themselves (leave).
-    if membership.user_id != actor.id and actor_membership.role not in MANAGER_ROLES:
+    if (
+        membership.user_id != actor.id
+        and actor_membership.role not in MANAGER_ROLES
+        and not is_super_admin_email(actor.email)
+    ):
         raise AuthorizationError("Requires higher level role")
 
     # Lock entity rows first, then the workspace serialization point.

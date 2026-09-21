@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from core.exceptions.integration import (
     IntegrationAuthError,
@@ -14,7 +15,7 @@ from core.exceptions.integration import (
     IntegrationValidationError,
 )
 from integrations.sharepoint import PROVIDER, SHAREPOINT_OAUTH_SCOPES
-from integrations.sharepoint.settings import sharepoint_settings
+from integrations.sharepoint.settings import SharePointSettings, sharepoint_settings
 from services.integrations.plugin import IntegrationDiscoveryResult
 
 FIXTURES = Path(__file__).with_name("fixtures")
@@ -27,7 +28,15 @@ def _fixture(name: str) -> dict[str, object]:
 def test_sharepoint_manifest() -> None:
     assert PROVIDER.manifest.oauth_scopes == SHAREPOINT_OAUTH_SCOPES
     assert PROVIDER.manifest.resource_types == ("sharepoint_drive",)
-    assert PROVIDER.manifest.capability_flags == frozenset({"read"})
+    assert PROVIDER.manifest.capability_flags == frozenset({"read", "write"})
+    assert {"Files.ReadWrite.All", "Sites.ReadWrite.All"}.issubset(SHAREPOINT_OAUTH_SCOPES)
+
+
+def test_sharepoint_upload_limit() -> None:
+    assert SharePointSettings(_env_file=None).SHAREPOINT_FILE_MAX_UPLOAD_BYTES == 52_428_800
+    for limit in (0, 262_144_001):
+        with pytest.raises(ValidationError):
+            SharePointSettings(_env_file=None, SHAREPOINT_FILE_MAX_UPLOAD_BYTES=limit)
 
 
 async def test_sharepoint_discovers_onedrive_then_followed_and_accessible_sites(
@@ -71,6 +80,11 @@ async def test_sharepoint_discovers_onedrive_then_followed_and_accessible_sites(
     ]
     assert resources[1].permissions_metadata["followed"] is True
     assert resources[2].permissions_metadata["followed"] is False
+    assert all(resource.writable for resource in resources)
+    assert all(
+        resource.required_write_scopes == ("Files.ReadWrite.All", "Sites.ReadWrite.All")
+        for resource in resources
+    )
     assert client_options["pacing_key"] == "connection-key"
     assert client_options["client"] is not None
 
