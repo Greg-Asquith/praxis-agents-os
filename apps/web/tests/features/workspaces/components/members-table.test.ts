@@ -1,6 +1,6 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { MembersTableContent } from "@/features/workspaces/components/members-table"
 
@@ -36,6 +36,24 @@ describe("MembersTable", () => {
     expect(html).toContain("No members yet")
     expect(html).toContain("Workspace members will appear here after they accept access.")
     expect(html).not.toContain("<table")
+  })
+
+  it("renders removal in mobile and desktop rows while hiding your own action", () => {
+    const html = renderToStaticMarkup(
+      createElement(MembersTableContent, {
+        memberships: [membership, { ...membership, id: "membership-2", user_id: "user-2", user_display_name: "Dana" }],
+        workspaceName: "Praxis",
+        currentUserId: membership.user_id,
+        onRemove: vi.fn(),
+      })
+    )
+
+    expect(html.match(/aria-label="Remove Dana from workspace"/g)).toHaveLength(2)
+    expect(html).not.toContain('aria-label="Remove Ada Lovelace from workspace"')
+  })
+
+  it("omits removal actions when management is unavailable", () => {
+    expect(renderMembers([membership])).not.toContain("Remove")
   })
 })
 
