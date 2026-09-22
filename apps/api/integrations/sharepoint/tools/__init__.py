@@ -2,6 +2,7 @@
 
 """SharePoint tool definitions."""
 
+from .copy_to_files import DEFINITION as COPY_TO_FILES
 from .create_folder import DEFINITION as CREATE_FOLDER
 from .find_in_file import DEFINITION as FIND_IN_FILE
 from .list_folder import DEFINITION as LIST_FOLDER
@@ -19,5 +20,6 @@ TOOL_DEFINITIONS = (
     CREATE_FOLDER,
     WRITE_FILE,
     UPDATE_FILE,
+    COPY_TO_FILES,
     OPEN_LINK,
 )

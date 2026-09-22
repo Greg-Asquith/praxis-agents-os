@@ -366,8 +366,15 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         definition.effect == TOOL_EFFECT_WRITE
         and not is_external_write
         and definition.egress != TOOL_EGRESS_NONE
+        and not (
+            definition.egress == TOOL_EGRESS_PROVIDER_QUERY
+            and definition.integration_binding is not None
+            and not definition.integration_binding.requires_write
+        )
     ):
-        raise RuntimeError("Internal-only write runtime tools must use none egress")
+        raise RuntimeError(
+            "Internal-only write runtime tools require none egress or a read-only integration query"
+        )
     _validate_integration_binding(definition)
     _validate_presentation(definition)
 

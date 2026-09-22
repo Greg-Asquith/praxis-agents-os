@@ -3,6 +3,7 @@
 """Unit tests for the runtime tool registry contract."""
 
 import ast
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, get_args, get_type_hints
 from uuid import uuid4
@@ -340,6 +341,22 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             egress="provider_query",
         ),
         RuntimeToolDefinition(
+            name="bad_internal_write_binding",
+            function=_noop,
+            description="Internal write cannot use a writable integration query.",
+            effect=TOOL_EFFECT_WRITE,
+            egress="provider_query",
+            integration_binding=replace(GOOGLE_ADS_BINDING, requires_write=True),
+        ),
+        RuntimeToolDefinition(
+            name="bad_internal_write_url",
+            function=_noop,
+            description="Internal write cannot send arbitrary URLs.",
+            effect=TOOL_EFFECT_WRITE,
+            egress="arbitrary_url",
+            integration_binding=GOOGLE_ADS_BINDING,
+        ),
+        RuntimeToolDefinition(
             name="run_script",
             function=_noop,
             description="Machinery cannot be wrapped.",
@@ -379,6 +396,14 @@ def test_validate_definition_rejects_invalid_invariants(
             function=_noop,
             description="Internal write.",
             effect=TOOL_EFFECT_WRITE,
+        ),
+        RuntimeToolDefinition(
+            name="valid_internal_write_query",
+            function=_noop,
+            description="Reads an integration and saves a workspace copy.",
+            effect=TOOL_EFFECT_WRITE,
+            egress="provider_query",
+            integration_binding=GOOGLE_ADS_BINDING,
         ),
         RuntimeToolDefinition(
             name="valid_external_write",

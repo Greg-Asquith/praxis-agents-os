@@ -73,6 +73,7 @@ from services.agents.runtime.staged_tool_content import (
 )
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
+    TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_POLICY_APPROVAL,
     RuntimeToolDefinition,
@@ -576,6 +577,19 @@ async def dispatch_tool_execution(
             },
         )
 
+    local_integration_write = (
+        definition is not None
+        and definition.integration_binding is not None
+        and definition.effect == TOOL_EFFECT_WRITE
+        and definition.effect_scope == TOOL_EFFECT_SCOPE_INTERNAL
+    )
+    if local_integration_write:
+        try:
+            await ctx.deps.db.commit()
+        except BaseException:
+            await _rollback_failed_tool_transaction(ctx.deps)
+            raise
+
     await record_invocation(
         deps=ctx.deps,
         tool_name=tool_name,
@@ -594,7 +608,8 @@ async def dispatch_tool_execution(
         result_original_chars=result_size.original_chars,
         **taint_audit,
     )
-    await ctx.deps.db.commit()
+    if not local_integration_write:
+        await ctx.deps.db.commit()
     return result
 
 

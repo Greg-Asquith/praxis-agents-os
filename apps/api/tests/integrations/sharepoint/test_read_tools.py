@@ -15,6 +15,7 @@ from integrations.sharepoint import PROVIDER
 from integrations.sharepoint.operations.utils import item_result
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.settings import sharepoint_settings
+from integrations.sharepoint.tools.copy_to_files import DEFINITION as COPY_DEFINITION
 from integrations.sharepoint.tools.create_folder import DEFINITION as CREATE_DEFINITION
 from integrations.sharepoint.tools.find_in_file import DEFINITION as FIND_DEFINITION
 from integrations.sharepoint.tools.list_folder import DEFINITION, sharepoint_list_folder
@@ -41,6 +42,7 @@ def test_registration_schema_and_code_mode_stub(monkeypatch):
         CREATE_DEFINITION,
         WRITE_DEFINITION,
         UPDATE_DEFINITION,
+        COPY_DEFINITION,
         LINK_DEFINITION,
     )
     validate_definition(DEFINITION)

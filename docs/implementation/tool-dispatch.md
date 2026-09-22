@@ -248,3 +248,17 @@ metadata, original proposals, and override history remain private. Nested
 workflow children with `pending` or `awaiting_approval` status are excluded.
 Suspended Code Mode traces live in private run metadata; the normal runtime
 persists the completed trace only after the workflow settles.
+
+## Internal File imports from providers
+
+An internal write can use `provider_query` egress only with an integration
+binding that does not require write access. This supports copying provider
+bytes into workspace Files through the normal policy, envelope, and audit
+paths. Other internal writes retain `none` egress. External writes still
+require `external_write` egress and their existing approval rules.
+
+Internal integration writes record returned operation outcomes in the local
+mutation transaction. Exception failure audits remain independent. Dispatch records invocation completion after that transaction
+commits. A rolled-back File import therefore retains no successful operation
+evidence. External-write pending and terminal evidence retain independent
+durability, including uncertain provider outcomes.

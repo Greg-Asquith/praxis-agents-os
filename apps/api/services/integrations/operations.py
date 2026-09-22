@@ -11,6 +11,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic_ai import RunContext
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.integration import (
     IntegrationFailureDisposition,
@@ -20,6 +21,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
+    TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_EXTERNAL_WRITE,
     RuntimeToolDefinition,
@@ -143,6 +145,12 @@ async def run_audited_integration_operation[T](
             entry,
             tool_name=tool_name,
             operation=operation,
+            db=(
+                ctx.deps.db
+                if definition.effect == TOOL_EFFECT_WRITE
+                and definition.effect_scope == TOOL_EFFECT_SCOPE_INTERNAL
+                else None
+            ),
             status=outcome.status,
             external_ref=outcome.external_ref,
             operation_detail=outcome.operation_detail,
@@ -181,7 +189,26 @@ async def _record_terminal_operation(
     latency_ms: int | None = None,
     transport: TransportAttemptCounter | None = None,
     raise_on_error: bool,
+    db: AsyncSession | None = None,
 ) -> None:
+    if db is not None:
+        await _record_operation(
+            ctx,
+            entry,
+            tool_name=tool_name,
+            operation=operation,
+            status=status,
+            external_ref=external_ref,
+            error_code=error_code,
+            operation_detail=operation_detail,
+            related_event_id=related_event_id,
+            latency_ms=latency_ms,
+            transport=transport,
+            raise_on_error=True,
+            db=db,
+        )
+        return
+
     async def record() -> None:
         try:
             async with asyncio.timeout(_TERMINAL_AUDIT_FINALIZE_TIMEOUT_SECONDS):
@@ -325,6 +352,7 @@ async def _record_operation(
     latency_ms: int | None = None,
     transport: TransportAttemptCounter | None = None,
     raise_on_error: bool = False,
+    db: AsyncSession | None = None,
 ) -> UUID | None:
     observed_transport = transport is not None and transport.requests > 0
     return await record_integration_operation_audit_event(
@@ -347,4 +375,5 @@ async def _record_operation(
         http_requests=transport.requests if observed_transport else None,
         http_attempts=transport.attempts if observed_transport else None,
         raise_on_error=raise_on_error,
+        **({"db": db} if db is not None else {}),
     )

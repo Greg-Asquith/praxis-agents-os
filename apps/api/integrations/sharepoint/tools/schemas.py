@@ -3,11 +3,13 @@
 """Typed SharePoint listing, search, file content, and link results."""
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
+from services.integrations.files import FileReference
 
 from ..operations.write_utils import VersionToken
 from ..references import SharePointDriveItemReference
@@ -84,6 +86,27 @@ class SharePointFileEntry(IntegrationFanOutEntry):
 
 class SharePointFileOutput(IntegrationFanOutOutput):
     results: list[SharePointFileEntry]
+
+
+class SharePointCopyData(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reference: FileReference
+    file_id: UUID
+    revision_id: UUID
+    name: UntrustedText
+    content_type: UntrustedText
+    size_bytes: int = Field(ge=0)
+    source: DriveItem
+    version: VersionToken
+
+
+class SharePointCopyEntry(IntegrationFanOutEntry):
+    data: SharePointCopyData | None = None
+
+
+class SharePointCopyOutput(IntegrationFanOutOutput):
+    results: list[SharePointCopyEntry]
 
 
 class SharePointLibraryHint(BaseModel):

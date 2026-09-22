@@ -3,11 +3,12 @@
 """Create a logical file and its first immutable revision."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.files import File, FileFolder, FileRevision
+from models.files import File, FileFolder, FileRevision, FileUpload
 from models.workspace import Workspace
 from services.files.contract import require_matching_pair
 from services.files.revision_actor import FileRevisionActor
@@ -18,7 +19,7 @@ from services.files.utils import (
     sha256_hex,
 )
 from services.storage.factory import get_storage_provider
-from services.storage.utils import put_new_object_with_cleanup
+from services.storage.utils import await_copy_mutation, put_new_object_with_cleanup
 
 
 @dataclass(frozen=True)
@@ -39,8 +40,13 @@ async def create_file_with_revision(
     actor: FileRevisionActor,
     folder_id: UUID | None = None,
     resolved_folder: FileFolder | None = None,
+    reservation: FileUpload | None = None,
 ) -> FileRevisionWriteResult:
-    """Create a file through the shared immutable-revision seam."""
+    """Creates a File and writes its first immutable revision.
+
+    A reservation must be committed and locked by the caller until final commit
+    or rollback. Its consumption commits atomically with the File.
+    """
     actor.validate()
     contract = require_matching_pair(content_type, extension)
     if folder_id is not None and resolved_folder is not None:
@@ -56,10 +62,20 @@ async def create_file_with_revision(
             folder_id=folder_id,
             for_update=True,
         )
-    file_id = uuid4()
-    revision_id = uuid4()
+    file_id = reservation.file_id if reservation is not None else uuid4()
+    revision_id = reservation.revision_id if reservation is not None else uuid4()
     object_key = revision_object_key(workspace.id, file_id, revision_id, extension)
     content_hash = sha256_hex(content)
+    if reservation is not None and (
+        reservation.workspace_id != workspace.id
+        or reservation.scope != "workspace"
+        or reservation.consumed_at is not None
+        or reservation.object_key != object_key
+        or reservation.content_type != contract.content_type
+        or reservation.declared_size_bytes != len(content)
+        or reservation.declared_content_hash != content_hash
+    ):
+        raise ValueError("File content must match its workspace reservation")
     file = File(
         id=file_id,
         workspace_id=workspace.id,
@@ -95,10 +111,23 @@ async def create_file_with_revision(
     file.revision_count = 1
     await db.flush()
     await db.refresh(file)
-    await put_new_object_with_cleanup(
-        get_storage_provider(),
-        private_ref_from_key(object_key),
-        content,
-        content_type=contract.content_type,
-    )
+    provider = get_storage_provider()
+    ref = private_ref_from_key(object_key)
+    if reservation is None:
+        await put_new_object_with_cleanup(
+            provider, ref, content, content_type=contract.content_type
+        )
+    else:
+        # Keep the reservation locked until any in-flight provider write has settled.
+        await await_copy_mutation(
+            provider.put_object(
+                ref,
+                content,
+                content_type=contract.content_type,
+                cache_control="private, no-store",
+                overwrite=False,
+            )
+        )
+        reservation.consumed_at = datetime.now(UTC)
+        await db.flush()
     return FileRevisionWriteResult(file=file, revision=revision, bytes_written=len(content))

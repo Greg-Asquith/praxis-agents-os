@@ -360,10 +360,27 @@ def test_sharepoint_write_stubs_preserve_versions_and_typed_outcomes() -> None:
         assert "version: VersionToken" in rendered
         assert "outcome: Literal['applied', 'failed', 'unverified']" in rendered
         assert definition.supports_approval and not definition.supports_auto
+        if action != "create_folder":
+            assert "content: TextContent | None = None" in rendered
+            assert "source: FileReference | None = None" in rendered
+            assert "class FileReference(TypedDict):" in rendered
     update = render_tool_stub(definitions["sharepoint_update_file"])
     assert "expected_version: VersionToken" in update
-    assert "content: TextContent" in update
     assert "version: VersionToken" in render_tool_stub(definitions["sharepoint_read_file"])
+
+
+def test_sharepoint_copy_stub_returns_typed_file_and_version() -> None:
+    definition = next(
+        item for item in SHAREPOINT_TOOL_DEFINITIONS if item.name == "sharepoint_copy_to_files"
+    )
+    rendered = render_tool_stub(definition)
+    assert "class FileReference(TypedDict):" in rendered
+    assert "reference: FileReference" in rendered
+    assert "version: VersionToken" in rendered
+    assert "class SharePointDriveItemReference(TypedDict):" in rendered
+    assert "folder: str | None = None" in rendered
+    assert definition.code_eligible
+    compile(rendered, "sharepoint_copy.pyi", "exec")
 
 
 async def test_keyword_output_fields_compile_and_are_consumable_in_monty() -> None:

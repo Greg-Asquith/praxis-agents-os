@@ -17,6 +17,11 @@ from integrations.outlook_calendar.settings import outlook_calendar_settings
 from integrations.outlook_mail.settings import outlook_mail_settings
 from integrations.sharepoint.settings import sharepoint_settings
 from services.agents.runtime.entity_references.registry import ENTITY_RESOLVERS
+from services.agents.runtime.tools.contract import (
+    RuntimeToolDefinition,
+    ToolFieldPresentation,
+    ToolPresentation,
+)
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.loader import _validate_plugin, load_enabled_providers
 from services.integrations.manifest import (
@@ -565,6 +570,60 @@ def test_loader_requires_a_registered_valid_metadata_sync_handler() -> None:
     )
     with pytest.raises(RuntimeError, match="handler is not registered"):
         _validate_plugin(missing_handler, expected_key="example")
+
+
+@pytest.mark.parametrize(
+    ("entity_kind", "file_resolver_owner", "allowed"),
+    [
+        ("file", "core", True),
+        ("agent", "core", False),
+        ("example_item", "core", False),
+        ("file", "missing", False),
+        ("file", "example", False),
+    ],
+)
+def test_loader_allows_only_core_file_argument_fields_without_provider_resolvers(
+    monkeypatch: pytest.MonkeyPatch,
+    entity_kind: str,
+    file_resolver_owner: str,
+    allowed: bool,
+) -> None:
+    if file_resolver_owner == "missing":
+        monkeypatch.delitem(ENTITY_RESOLVERS, "file")
+    elif file_resolver_owner != "core":
+        monkeypatch.setitem(
+            ENTITY_RESOLVERS,
+            "file",
+            replace(ENTITY_RESOLVERS["file"], provider_key=file_resolver_owner),
+        )
+
+    async def use_entity(source: str) -> str:
+        return source
+
+    plugin = IntegrationProviderPlugin(
+        manifest=_api_key_manifest(),
+        discover_resources=None,
+        tool_definitions=(
+            RuntimeToolDefinition(
+                name="example_use_entity",
+                provider="example",
+                function=use_entity,
+                description="Uses an entity.",
+                presentation=ToolPresentation(
+                    arg_fields=(
+                        ToolFieldPresentation(
+                            key="source", label="Source", format="entity", entity_kind=entity_kind
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    if allowed:
+        assert _validate_plugin(plugin, expected_key="example") is None
+    else:
+        with pytest.raises(RuntimeError, match=f"provider-owned resolvers: {entity_kind}"):
+            _validate_plugin(plugin, expected_key="example")
 
 
 def test_loader_validates_provider_preview_definitions() -> None:

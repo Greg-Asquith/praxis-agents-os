@@ -6,6 +6,8 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from services.integrations.files import FileReference
+
 from ..operations.write_utils import ItemName, TextContent, VersionToken, text_content_type
 from ..references import SharePointDriveItemReference
 
@@ -17,22 +19,30 @@ class CreateFolderInput(BaseModel):
     parent: SharePointDriveItemReference | None = None
 
 
-class WriteFileInput(BaseModel):
+class FileContentInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    content: TextContent | None = None
+    source: FileReference | None = None
+
+    @model_validator(mode="after")
+    def validate_content_source(self) -> Self:
+        if (self.content is None) == (self.source is None):
+            raise ValueError("Provide either content or a source File.")
+        return self
+
+
+class WriteFileInput(FileContentInput):
     name: ItemName
-    content: TextContent
     folder: SharePointDriveItemReference | None = None
 
     @model_validator(mode="after")
     def validate_text_name(self) -> Self:
-        text_content_type(self.name, operation="write_file")
+        if self.content is not None:
+            text_content_type(self.name, operation="write_file")
         return self
 
 
-class UpdateFileInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-
+class UpdateFileInput(FileContentInput):
     file: SharePointDriveItemReference
     expected_version: VersionToken
-    content: TextContent

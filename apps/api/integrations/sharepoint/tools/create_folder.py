@@ -42,7 +42,7 @@ async def sharepoint_create_folder(
     args = validate_input(CreateFolderInput, {"name": name, "parent": parent})
     entry = write_entry(ctx.deps, args.parent)
 
-    async def prepare(client, state):
+    async def prepare(client, state, _source):
         parent_id = await require_parent(
             client, drive_id=entry.external_id, reference=args.parent, operation="create_folder"
         )

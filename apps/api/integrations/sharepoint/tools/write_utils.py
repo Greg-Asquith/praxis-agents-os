@@ -32,6 +32,7 @@ from services.integrations.write_lifecycle import (
     PreparedIntegrationWrite,
 )
 
+from ..operations.file_source import load_file_source, resolve_file_source
 from ..operations.get_item import get_item
 from ..operations.utils import file_error, item_kind
 from ..operations.write_utils import DriveWriteState
@@ -60,7 +61,7 @@ def write_entry(deps, reference=None):
     return entry
 
 
-def mutation_display_args(input_model, deps, args: dict) -> dict:
+async def mutation_display_args(input_model, deps, args: dict) -> dict:
     values = validate_input(input_model, args)
     reference = (
         getattr(values, "file", None)
@@ -68,12 +69,19 @@ def mutation_display_args(input_model, deps, args: dict) -> dict:
         or getattr(values, "parent", None)
     )
     entry = write_entry(deps, reference)
-    if hasattr(values, "content"):
+    if getattr(values, "content", None) is not None:
         content_bytes(values.content)
-    return values.model_dump(mode="json") | {
+    display = values.model_dump(mode="json") | {
         "_library": entry.display_name[:500],
         "_target": target_identity(entry),
     }
+
+    if getattr(values, "source", None) is not None:
+        source = await resolve_file_source(
+            deps.db, workspace=deps.workspace, reference=values.source
+        )
+        display["_source"] = source.approval_details()
+    return display
 
 
 def target_identity(entry) -> dict[str, str]:
@@ -275,14 +283,22 @@ class DriveWriteCallbacks(IntegrationWriteCallbacks):
         )
 
 
-async def run_drive_write(ctx, *, entry, action, prepare, reference=None):
+async def run_drive_write(ctx, *, entry, action, prepare, reference=None, source=None):
     async def operation(entry):
         state = DriveWriteState()
 
         async def prepare_operation():
             verify_approved_target(ctx, entry, reference)
+            source_file = None
+            if source is not None:
+                source_file = await load_file_source(
+                    ctx.deps.db,
+                    workspace=ctx.deps.workspace,
+                    reference=source,
+                    pinned=approved_display_args(ctx).get("_source"),
+                )
             client = await drive_client(ctx, entry)
-            return await prepare(client, state)
+            return await prepare(client, state, source_file)
 
         callbacks = DriveWriteCallbacks(entry, state, prepare_operation)
         return await run_audited_integration_operation(

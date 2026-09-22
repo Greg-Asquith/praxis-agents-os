@@ -223,6 +223,17 @@ requests produce unverified evidence without automatic replay. Direct and
 Code Mode approval scenarios exercise the common dispatch boundary. Live
 tenant qualification remains unverified after the maintainer waived it.
 
+SharePoint workspace File sources retain their reviewed File, revision, and
+content hash server-side. Execution checks visibility, workspace ownership,
+type, size, and the current revision before provider access, then verifies the
+stored bytes. Model-authored labels and replay arguments cannot replace this
+pin. Copies into Files use only selected-library reads and the normal internal
+write policy. Original bytes remain in private storage; result names and
+citations retain SharePoint provenance. Signed URLs never enter File metadata
+or audit evidence. Direct and Code Mode fixture scenarios cover changed local
+revisions, remote version conflicts, and uncertain commits. Manual Office
+preservation checks remain the maintainer's responsibility.
+
 Outlook write results frame provider web links as `outlook_message` nodes.
 Send-draft review data remains application-only presentation evidence, with
 HTML sanitised in the shared preview frame. A resumed send uses the retained

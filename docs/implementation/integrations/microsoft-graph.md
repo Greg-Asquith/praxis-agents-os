@@ -164,13 +164,14 @@ Images and other unsupported types report `unsupported_type`.
 `SHAREPOINT_FILE_MAX_DOWNLOAD_BYTES` defaults to 52,428,800 bytes (50 MiB) and
 accepts 1-104,857,600 bytes. Metadata above the limit fails before download;
 the same limit applies while streaming, even when metadata understates the size.
-Both failures report `too_large`. Only `download_item` requests
-`@microsoft.graph.downloadUrl` through `get_item`, consumes it through
-`get_bytes`, and removes it from returned metadata. The URL is not persisted
-or returned by the tool. Download metadata omits `$select` because SharePoint
+Both failures report `too_large`. The shared `download_utils` helper serves
+`download_item` and `copy_item`. It requests `@microsoft.graph.downloadUrl`
+through `get_item`, consumes it through `get_bytes`, and removes it from
+returned metadata. The URL is not persisted or returned by the tool.
+Download metadata omits `$select` because SharePoint
 can suppress the download annotation when selected metadata fields are present.
 The response is still filtered to the explicit item fields and the one download
-annotation before it reaches `download_item`. Ordinary metadata reads retain
+annotation before it reaches the download helper. Ordinary metadata reads retain
 `$select` and exclude download annotations. This follows Microsoft's
 [pre-authenticated download contract](https://learn.microsoft.com/en-us/graph/api/driveitem-get-content).
 
@@ -315,17 +316,21 @@ it is never activated as a link. Malformed resolved items fall back to the
 default tool row. References, provenance metadata, and download annotations
 are excluded from the view.
 
-Fetching original Office files into Files, editing them, and saving them back
-to SharePoint is pending. Markdown reads do not provide that workflow.
+The backend tools support copying original Office files into Files, editing
+them through `run_code`, and saving an approved replacement to SharePoint.
+Source selection and copy presentation remain pending. Manual Office format
+preservation and live tenant behaviour remain unverified.
 
 ## SharePoint writes
 
 Select a writable library in Active Context to use these approval-gated tools:
 
 - `sharepoint_create_folder` creates a folder under an optional parent folder.
-- `sharepoint_write_file` saves UTF-8 text as a new file in an optional folder.
-- `sharepoint_update_file` replaces a text file using its reference and the
-  `version` returned by `sharepoint_read_file` as `expected_version`.
+- `sharepoint_write_file` saves text or a workspace File as a new file in an
+  optional folder.
+- `sharepoint_update_file` replaces a file using its reference and the
+  `version` returned by `sharepoint_read_file` or `sharepoint_copy_to_files`
+  as `expected_version`.
 
 Each tool targets one library and works through direct calls and Code Mode.
 Without a folder reference, exactly one writable library must be selected.
@@ -382,11 +387,11 @@ A name conflict reports `name_exists`; creation never renames or replaces an
 existing item. Text must be non-empty, contain valid UTF-8, and contain no
 control characters except newline and tab. The shared file contract selects
 text types by extension and rejects Office files as text destinations.
-Replacements also use its normalised MIME lookup and editable flag. Invalid
+Text replacements also use its normalised MIME lookup and editable flag. Invalid
 or unsupported provider MIME values fail before pending intent.
 `FILES_MAX_TEXT_EDIT_BYTES` bounds the UTF-8 text at 2 MiB by default.
 `SHAREPOINT_FILE_MAX_UPLOAD_BYTES` separately defaults to 50 MiB and accepts
-1-262,144,000 bytes. Workspace File sources and copies remain pending.
+1-262,144,000 bytes.
 
 Every file write uses an upload session, including small text files. Replacement
 preparation reads the scoped metadata and checks the reviewed `eTag` before
@@ -443,6 +448,74 @@ Another write requires a fresh approval; automatic mutation replay is forbidden.
 Live tenant qualification of conditional sessions, commit conflicts, hashes,
 and completed-session status remains unverified. The maintainer waived that
 implementation prerequisite on 17 September 2026.
+
+### Workspace File sources and copies
+
+The write and replace tools accept exactly one of `content` or `source`.
+`content` retains the text-only rules. `source` is a core `FileReference`
+resolved through workspace visibility and immutable revision storage. Sources
+must belong to the active workspace; copy a platform File into the workspace
+before using it. The file contract validates the source type and extension,
+and empty or oversized sources fail before storage or SharePoint access.
+A new name must match the source type. A replacement must retain the remote
+file's MIME type;
+a mismatch reports `type_mismatch` before pending intent or upload.
+
+Approval display evidence retains the File name, type, size, and the exact
+`file_id`, `revision_id`, and `content_hash`. Execution checks the retained pin
+against the current visible revision before resolving SharePoint credentials.
+A missing or changed pin reports `source_changed`; missing or inaccessible
+Files report `source_unavailable`. The shared storage reader checks metadata,
+bounds streamed bytes by the retained revision size, and verifies SHA-256.
+Contradictory bytes report `source_changed`. A source change requires a fresh
+proposal and approval. The source field stays locked; editable selection needs
+a server-retained review pin. The source approval presenter and picker remain
+pending.
+
+`sharepoint_copy_to_files` downloads original bytes from one selected library
+and saves a new workspace File. It requires only the read binding, uses
+`provider_query` egress, and follows the native File write policy: automatic
+by default, with approval supported. Run envelopes and tool policies still
+apply through dispatch. Copying is an internal write and grants no SharePoint
+write permission. All file-contract types are accepted, including images and
+video. Both metadata and streamed bytes are bounded by the smaller of the
+SharePoint download cap and the file category limit. Downloaded bytes must
+match the exact source size and any supplied QuickXorHash or SHA-1 digest.
+Missing optional hashes are accepted. Contradictory content reports
+`source_changed` before any local reservation, folder, File, or link is created.
+
+An optional `folder` names a workspace Files folder and creates it when absent.
+The copy uses an agent revision actor, links the File to the conversation,
+and returns its typed reference, revision, size, type, and source `version`.
+Audit evidence retains the drive/item source, `eTag`, File ID, and revision ID.
+Names and citations retain SharePoint provenance; bytes and signed URLs never
+enter tool output. Copied Files use ordinary workspace visibility, retention,
+and immutable revision rules. The copy presenter remains pending.
+
+Before writing bytes, the copy reserves its destination in an independent
+tenant transaction. The caller locks that reservation through storage writes
+and final commit. Cancellation waits for the provider write to settle before
+releasing the lock. Rollback leaves the reservation for expiry cleanup; failed
+deletion retains it for another sweep. The File, consumed reservation, and
+operation success audit commit together, so a lost commit response cannot
+expose a committed copy to cleanup. Invocation completion follows that commit.
+
+To edit and save an Office document through the backend tools:
+
+1. Call `sharepoint_copy_to_files` with the selected document reference.
+2. Edit the returned File through `run_code`. The file bridge appends a
+   revision to that File; the SharePoint document remains unchanged.
+3. Call `sharepoint_update_file` with the original SharePoint reference,
+   the copied `version` as `expected_version`, and the edited File as `source`.
+4. Review and approve the replacement. Check the returned outcome and citation.
+   A version conflict requires a fresh copy or read and another review.
+   An unverified outcome requires checking SharePoint before another save.
+
+Failed saves retain the edited workspace revision. Fixture scenarios verify
+original-byte copying, revision editing, exact uploaded bytes, local and remote
+conflicts, and ambiguous commits through direct tools and Code Mode. The
+maintainer performs manual deck/workbook editing and Office checks separately;
+format preservation and live tenant behaviour remain unverified here.
 
 ## Outlook Mail writes
 

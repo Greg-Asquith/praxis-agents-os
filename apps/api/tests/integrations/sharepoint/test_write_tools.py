@@ -37,7 +37,11 @@ ARGS = {
     "write_file": {"name": NAME, "content": CONTENT},
     "update_file": {"file": FILE, "expected_version": '"version-1"', "content": CONTENT},
 }
-WRITES = tuple(definition for definition in TOOL_DEFINITIONS if definition.effect == "write")
+WRITES = tuple(
+    definition
+    for definition in TOOL_DEFINITIONS
+    if definition.effect_scope == "external" and definition.effect == "write"
+)
 
 
 def writable(drive_id="drive"):
@@ -88,7 +92,7 @@ async def invoke(name, *, args=None, entries=None):
     ctx = context(*(entries if entries is not None else [writable()]))
     ctx.tool_name = f"sharepoint_{name}"
     values = ARGS[name] if args is None else args
-    ctx.reviewed_display = module.DEFINITION.approval_display_args(ctx.deps, values)
+    ctx.reviewed_display = await module.DEFINITION.approval_display_args(ctx.deps, values)
     return await getattr(module, ctx.tool_name)(ctx, **values)
 
 
@@ -106,7 +110,7 @@ def test_write_contracts_and_code_mode_schemas(definition):
     for field in definition.presentation.arg_fields:
         if field.key == "content":
             assert field.format == "multiline" and field.editable
-        if field.key in {"file", "expected_version"}:
+        if field.key in {"file", "expected_version", "source"}:
             assert not field.editable
 
 
@@ -200,7 +204,7 @@ async def test_cleared_destination_uses_the_reviewed_library_root(provider, name
     selected = writable()
     ctx = context(entry("readonly"), selected)
     ctx.tool_name = f"sharepoint_{name}"
-    ctx.reviewed_display = module.DEFINITION.approval_display_args(
+    ctx.reviewed_display = await module.DEFINITION.approval_display_args(
         ctx.deps, {**ARGS[name], field: FOLDER}
     )
 
@@ -217,7 +221,7 @@ async def test_cleared_destination_cannot_choose_between_writable_libraries(prov
     module = importlib.import_module(f"integrations.sharepoint.tools.{name}")
     ctx = context(writable(), writable("other"))
     ctx.tool_name = f"sharepoint_{name}"
-    ctx.reviewed_display = module.DEFINITION.approval_display_args(
+    ctx.reviewed_display = await module.DEFINITION.approval_display_args(
         ctx.deps, {**ARGS[name], field: FOLDER}
     )
 
@@ -235,7 +239,7 @@ async def test_cleared_destination_requires_review_when_root_binding_changes(
 ):
     module = importlib.import_module(f"integrations.sharepoint.tools.{name}")
     selected = writable()
-    reviewed = module.DEFINITION.approval_display_args(
+    reviewed = await module.DEFINITION.approval_display_args(
         context(selected).deps, {**ARGS[name], field: FOLDER}
     )
     changed = {
@@ -423,16 +427,16 @@ async def test_parent_validation_preserves_owning_operation(provider, action, fi
 
 
 @pytest.mark.parametrize("definition", WRITES, ids=lambda value: value.name)
-def test_approval_display_uses_validated_inputs_and_library_without_provider_reads(
+async def test_approval_display_uses_validated_inputs_and_library_without_provider_reads(
     provider, definition
 ):
     name = definition.name.removeprefix("sharepoint_")
-    display = definition.approval_display_args(context(writable()).deps, ARGS[name])
+    display = await definition.approval_display_args(context(writable()).deps, ARGS[name])
     assert display["_library"] == "Documents"
     assert display.get("content") == ARGS[name].get("content")
     assert display.get("name") == ARGS[name].get("name")
     with pytest.raises(ModelRetry):
-        definition.approval_display_args(
+        await definition.approval_display_args(
             context(writable()).deps, {**ARGS[name], "unknown": "private"}
         )
     provider.factory.assert_not_awaited()

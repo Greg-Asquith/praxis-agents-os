@@ -6,8 +6,15 @@ from unittest.mock import patch
 import httpx2
 import pytest
 
-from core.exceptions.integration import IntegrationConnectionError, IntegrationFailureDisposition
-from tests.integrations.sharepoint.support import graph
+from core.exceptions.integration import (
+    IntegrationConnectionError,
+    IntegrationFailureDisposition,
+    IntegrationValidationError,
+)
+from integrations.sharepoint.operations.upload_session import UploadTarget, run_upload_session
+from integrations.sharepoint.operations.write_utils import DriveWriteState
+from integrations.sharepoint.tools.write_utils import failed_write_outcome, pending_write_detail
+from tests.integrations.sharepoint.support import entry, graph
 from tests.integrations.sharepoint.test_write_tools import (
     CONTENT,
     NAME,
@@ -26,6 +33,34 @@ def terminal_evidence(provider, *, status):
     assert detail.effect_counts.unverified == int(status == "unverified")
     assert all(marker not in str(terminal) for marker in (CONTENT, NAME, "PRIVATE_UPLOAD_SECRET"))
     return detail.outcome_groups[0].outcomes[0].effects[0].fields
+
+
+async def test_empty_upload_is_a_known_failure_without_a_session(provider):
+    state = DriveWriteState()
+    target = UploadTarget(
+        drive_id="drive",
+        session_path="/drives/drive/root:/notes.txt:/createUploadSession",
+        item_path="/drives/drive/root:/notes.txt",
+        operation="write_file",
+    )
+    with pytest.raises(IntegrationValidationError) as caught:
+        await run_upload_session(provider.client, target=target, data=b"", state=state)
+    assert caught.value.error_code == "empty_content"
+    assert caught.value.failure_disposition is IntegrationFailureDisposition.NOT_DISPATCHED
+    selected = entry()
+    outcome = failed_write_outcome(
+        selected, pending_write_detail(selected, action="write_file"), state, caught.value
+    )
+    assert str(outcome.status) == "failure"
+    assert outcome.value["outcome"] == "failed"
+    assert outcome.value["error_code"] == "empty_content"
+    assert outcome.operation_detail.effect_counts.failed == 1
+    assert outcome.operation_detail.effect_counts.unverified == 0
+    assert not state.session_created and not state.committed and state.bytes_sent == 0
+    provider.client.post.assert_not_awaited()
+    provider.client.upload_fragment.assert_not_awaited()
+    provider.client.upload_status.assert_not_awaited()
+    provider.client.cancel_upload.assert_not_awaited()
 
 
 @pytest.mark.parametrize("name", ["write_file", "update_file"])

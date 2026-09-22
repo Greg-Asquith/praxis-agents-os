@@ -171,11 +171,19 @@ def _validate_plugin(
                 f"{resolver.entity_kind}"
             )
         resolver_kinds.add(resolver.entity_kind)
+    from services.agents.runtime.entity_references.registry import get_entity_resolver
+
+    file_resolver = get_entity_resolver("file")
     declared_entity_kinds = {
         field.entity_kind
         for definition in plugin.tool_definitions
         for field in definition.presentation.arg_fields
         if field.entity_kind is not None
+        and not (
+            field.entity_kind == "file"
+            and file_resolver is not None
+            and file_resolver.provider_key is None
+        )
     }
     from services.agents.runtime.tools.contract import integration_reference_types
 

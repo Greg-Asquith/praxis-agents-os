@@ -43,6 +43,10 @@ The following contracts apply in this area:
   Every fixed integration tool declares an operation-specific output model;
   dynamic objects are limited to report/query rows and provider-defined record
   field values.
+  Returned internal integration-write outcomes share the local mutation
+  transaction; invocation completion follows its commit. Exception failure
+  audits remain independent. External writes retain independent
+  pending and terminal evidence.
   Pending integration-operation evidence contains requested intent only;
   successful writes must return the one canonical terminal detail with exactly
   aligned intent outcomes and concrete provider effects. Terminal operation
@@ -77,6 +81,14 @@ The following contracts apply in this area:
   delegates persistence to the shared runner.
 
 ## Transport safety and entity resolvers
+
+`services/integrations/files/` provides workspace File source resolution,
+bounded revision reads, and copy creation with durable storage reservations.
+Provider packages use these operations and the published `FileReference`
+type instead of importing private File, storage, or core resolver services.
+Providers retain their content policy, approval pins, and audited operation
+scope. Copy creation requires the caller's audited transaction to cover the
+File, conversation link, and success evidence.
 
 The following contracts apply in this area:
 

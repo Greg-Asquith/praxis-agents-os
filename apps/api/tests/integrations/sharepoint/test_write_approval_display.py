@@ -16,7 +16,11 @@ from services.agents.runtime.staged_tool_content import (
 )
 from tests.integrations.sharepoint.support import context, entry
 
-WRITES = tuple(definition for definition in TOOL_DEFINITIONS if definition.effect == "write")
+WRITES = tuple(
+    definition
+    for definition in TOOL_DEFINITIONS
+    if definition.effect_scope == "external" and definition.effect == "write"
+)
 LABEL = '<img src=x onerror="alert(1)"> [Library](javascript:alert(1)) {_target}'
 ARGS = {
     "sharepoint_create_folder": {"name": "Reports"},

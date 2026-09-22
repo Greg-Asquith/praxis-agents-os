@@ -342,6 +342,14 @@ loader.py` (dynamically, by configured key).
    walks the AST of both trees and asserts 1–3. It runs in the default
    suite so violations fail CI, not review.
 
+`services/integrations/files/` publishes workspace File source resolution,
+bounded revision reads, and File-copy creation for integration tools. It owns
+private File and storage access, reservation locking, filename handling, and
+conversation linking. Providers retain their type and size policy, reviewed
+pins, and operation audit evidence. The shared seam also exports the core
+`FileReference` type. Providers do not import private File, storage, or entity
+resolver modules directly.
+
 Engine-owned vendor seams live under `services/integrations/` only when more
 than one provider package needs the same transport behavior. The Microsoft
 Graph seam owns global-cloud Entra authority validation, delegated identity,
@@ -704,12 +712,21 @@ no provider and branches on no provider key; each package owns its state and
 outcome evidence.
 
 SharePoint contributes three approval-gated external writes: folder creation,
-text-file creation, and version-pinned text replacement. Discovery requires
+file creation from text or workspace Files, and version-pinned replacement. Discovery requires
 both delegated write scopes before marking drives writable. Upload sessions
 use public-address pinning without bearer tokens or diagnostic URLs. Byte counts
 and QuickXorHash verify commits; uncertain outcomes are retained without
 replay. Read results expose the opaque version needed for replacement.
-Write presenters, workspace File sources, and copies remain pending.
+Three write presenters cover folders and text writes. Backend File sources
+retain the approved revision and hash; copies create immutable workspace Files
+through a read binding. Source and copy presenters remain pending.
+
+The loader permits an integration argument field to use the registered,
+core-owned `file` resolver. Every other entity kind retains the provider-owned
+resolver requirement. The runtime tool contract permits `provider_query`
+egress for an internal write only with a read-only integration binding.
+These shared changes support File imports without provider-specific branches
+or external-write permission changes.
 
 BigQuery demonstrates the checklist end to end. Its package under
 `integrations/bigquery/` contributes a workspace-owned service-account

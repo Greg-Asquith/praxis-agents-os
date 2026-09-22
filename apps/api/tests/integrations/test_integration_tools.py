@@ -66,6 +66,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "sharepoint_create_folder": ("write", "external", "approval", True),
         "sharepoint_write_file": ("write", "external", "approval", True),
         "sharepoint_update_file": ("write", "external", "approval", True),
+        "sharepoint_copy_to_files": ("write", "internal", "auto", False),
         "sharepoint_list_folder": ("read", "internal", "auto", False),
         "sharepoint_search_files": ("read", "internal", "auto", False),
         "sharepoint_read_file": ("read", "internal", "auto", False),
@@ -153,6 +154,9 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "notion_update_page_properties": ("write", "external", "approval", True),
     }
     assert set(definitions) == set(expected)
+    copy_to_files = definitions["sharepoint_copy_to_files"]
+    assert copy_to_files.code_eligible
+    assert copy_to_files.supports_auto and copy_to_files.supports_approval
     assert definitions["google_search_console_request_indexing"].supports_auto is False
     denylisted = {
         "account_id",

@@ -227,9 +227,11 @@ async def run_upload_session(
     state: DriveWriteState,
 ) -> dict:
     if not data:
-        raise file_error(
+        error = file_error(
             "Enter non-empty file content.", "empty_content", operation=target.operation
         )
+        error.failure_disposition = IntegrationFailureDisposition.NOT_DISPATCHED
+        raise error
     url = await _create_session(client, target=target)
     state.session_created = True
     try:

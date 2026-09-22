@@ -3,9 +3,11 @@
 """Save file to SharePoint through the shared approval and audit runtime."""
 
 from functools import partial
+from pathlib import PurePosixPath
 
 from pydantic_ai import RunContext
 
+from core.exceptions.general import AppValidationError
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -16,8 +18,11 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.files.contract import require_matching_pair
+from services.integrations.files import FileReference
 
 from ..operations.upload_item import upload_item
+from ..operations.utils import file_error
 from ..operations.write_utils import ItemName, TextContent, text_content_type
 from ..references import SharePointDriveItemReference
 from .mutations import WriteFileInput
@@ -38,15 +43,31 @@ from .write_utils import (
 async def sharepoint_write_file(
     ctx: RunContext[RuntimeDeps],
     name: ItemName,
-    content: TextContent,
+    content: TextContent | None = None,
     folder: SharePointDriveItemReference | None = None,
+    source: FileReference | None = None,
 ) -> dict:
-    args = validate_input(WriteFileInput, {"name": name, "content": content, "folder": folder})
-    data = content_bytes(args.content)
-    content_type = text_content_type(args.name, operation="write_file")
+    args = validate_input(
+        WriteFileInput, {"name": name, "content": content, "folder": folder, "source": source}
+    )
+    text_data = content_bytes(args.content) if args.content is not None else None
     entry = write_entry(ctx.deps, args.folder)
 
-    async def prepare(client, state):
+    async def prepare(client, state, source_file):
+        data = source_file.data if source_file is not None else text_data
+        content_type = (
+            source_file.revision.content_type
+            if source_file is not None
+            else text_content_type(args.name, operation="write_file")
+        )
+        try:
+            require_matching_pair(content_type, PurePosixPath(args.name).suffix)
+        except AppValidationError:
+            raise file_error(
+                "Choose a name with an extension matching the source File type.",
+                "type_mismatch",
+                operation="write_file",
+            ) from None
         parent_id = await require_parent(
             client, drive_id=entry.external_id, reference=args.folder, operation="write_file"
         )
@@ -67,14 +88,19 @@ async def sharepoint_write_file(
         return PreparedDriveWrite(pending, mutate)
 
     return await run_drive_write(
-        ctx, entry=entry, action="write_file", prepare=prepare, reference=args.folder
+        ctx,
+        entry=entry,
+        action="write_file",
+        prepare=prepare,
+        reference=args.folder,
+        source=args.source,
     )
 
 
 DEFINITION = RuntimeToolDefinition(
     name="sharepoint_write_file",
     function=sharepoint_write_file,
-    description="Creates a text file in a selected writable SharePoint library after approval. Use a text extension (.txt, .md, .csv, .json, or .html). Without a folder, select exactly one writable library. Existing names fail; use sharepoint_update_file to replace a file.",
+    description="Creates a file in a selected writable SharePoint library after approval. Provide either text content with a text extension, or a source workspace File reference. The name extension must match the source type. Without a folder, select exactly one writable library. Existing names fail; use sharepoint_update_file to replace a file.",
     provider="sharepoint",
     label="Save file to SharePoint",
     code_eligible=True,
@@ -97,7 +123,7 @@ DEFINITION = RuntimeToolDefinition(
         failed_label="Could not save to SharePoint",
         approval_title="Save file to SharePoint",
         approve_label="Save file",
-        approval_prompt="Save this text as a new file. If no folder is chosen, use the root of SharePoint library {_library}. No existing file is replaced.",
+        approval_prompt="Save the reviewed content as a new file. If no folder is chosen, use the root of SharePoint library {_library}. No existing file is replaced.",
         arg_fields=(
             ToolFieldPresentation(
                 key="name", label="Name", format="text", editable=True, secondary=False
@@ -112,6 +138,14 @@ DEFINITION = RuntimeToolDefinition(
             ),
             ToolFieldPresentation(
                 key="content", label="Content", format="multiline", editable=True, secondary=False
+            ),
+            ToolFieldPresentation(
+                key="source",
+                label="Source File",
+                format="entity",
+                editable=False,
+                secondary=True,
+                entity_kind="file",
             ),
         ),
         result_fields=RESULTS_FIELD,
