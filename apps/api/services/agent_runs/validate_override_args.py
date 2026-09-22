@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
@@ -49,6 +50,13 @@ async def validate_and_canonicalize_override_args(
         effective_args=effective_args,
         tool_name=tool_name,
     )
+    if definition.approval_input_model is not None:
+        try:
+            definition.approval_input_model.model_validate(effective_args)
+        except ValidationError as exc:
+            raise AppValidationError(
+                "Check the content and source File before approving.", field="override_args"
+            ) from exc
     _validate_scalar_override(definition, effective_args=effective_args)
     _validate_record_fields(definition, effective_args=effective_args)
     await _canonicalize_entity_fields(

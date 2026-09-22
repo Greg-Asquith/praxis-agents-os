@@ -335,6 +335,11 @@ def _project_leaf(
         "delegation_call_id": delegation.parent_tool_call_id if delegation else None,
         "name": leaf.call.tool_name,
         "args_digest": proposal_digest(leaf.call.args_as_dict()),
+        **(
+            {"reviewed_args_digest": proposal_digest(leaf.metadata["reviewed_args"])}
+            if "reviewed_args" in leaf.metadata
+            else {}
+        ),
         "presentation_digest": proposal_digest(fields["args"]),
         "taint_digest": proposal_digest(
             {

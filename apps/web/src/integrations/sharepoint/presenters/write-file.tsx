@@ -7,5 +7,6 @@ export const sharePointWriteFilePresenter = sharePointWritePresenter({
   tool: "sharepoint_write_file",
   copy: { verb: "Save", object: "file", effect: "saved" },
   parseArgs: sharePointWriteFileArgs,
-  prompt: "Save this text as a new file in the selected destination. No existing file is replaced.",
+  prompt:
+    "Save the reviewed content as a new file in the selected destination. No existing file is replaced.",
 })

@@ -2,6 +2,7 @@
 
 import { SharePointWriteOutcome } from "@/integrations/sharepoint/components/write-outcome"
 import { SharePointWriteSummary } from "@/integrations/sharepoint/components/write-summary"
+import { SharePointFileSource } from "@/integrations/sharepoint/components/file-source"
 import {
   validateSharePointWriteArgs,
   type SharePointWriteArgs,
@@ -35,9 +36,15 @@ export function sharePointWritePresenter({
       parseArgs,
       prompt,
       validateArgs: (value) => validateSharePointWriteArgs(parseArgs(value)),
-      renderSummary: (value) => {
+      renderInvalidDraft: true,
+      renderSummary: (value, _fallback, _onFieldEdit, disabled, controls) => {
         const args = parseArgs(value)
-        return args ? <SharePointWriteSummary args={args} tool={tool} /> : null
+        return args ? (
+          <div className="grid gap-3">
+            <SharePointWriteSummary args={args} tool={tool} />
+            <SharePointFileSource args={args} controls={controls} disabled={disabled} />
+          </div>
+        ) : null
       },
     },
     parseResult: sharePointWriteResult,

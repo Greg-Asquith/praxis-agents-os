@@ -11,6 +11,7 @@ import { sharePointSearchFilesPresenter } from "@/integrations/sharepoint/presen
 import { sharePointCreateFolderPresenter } from "@/integrations/sharepoint/presenters/create-folder"
 import { sharePointWriteFilePresenter } from "@/integrations/sharepoint/presenters/write-file"
 import { sharePointUpdateFilePresenter } from "@/integrations/sharepoint/presenters/update-file"
+import { sharePointCopyToFilesPresenter } from "@/integrations/sharepoint/presenters/copy-to-files"
 
 export default {
   catalogDescription: "Let agents find, read, and save files in SharePoint and OneDrive.",
@@ -26,5 +27,6 @@ export default {
     sharePointCreateFolderPresenter,
     sharePointWriteFilePresenter,
     sharePointUpdateFilePresenter,
+    sharePointCopyToFilesPresenter,
   ],
 } satisfies IntegrationUiModule

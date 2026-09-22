@@ -100,9 +100,9 @@ function catalogModel({
 }
 
 const modelCatalog: ModelCatalogResponse = {
-  defaults: { agent_model: "openai:gpt-5.6-luna" },
+  defaults: { agent_model: "openai:gpt-6-luna" },
   models: [
-    catalogModel({ displayName: "GPT-5.6 Luna", id: "openai:gpt-5.6-luna", modelType: "standard" }),
+    catalogModel({ displayName: "GPT-6 Luna", id: "openai:gpt-6-luna", modelType: "standard" }),
     catalogModel({ displayName: "GPT-5.4 Nano", id: "openai:gpt-5.4-nano", modelType: "light" }),
     catalogModel({
       displayName: "Claude Fable 5",
@@ -152,7 +152,7 @@ const modelCatalog: ModelCatalogResponse = {
       model_count: 2,
       model_type_defaults: {
         light: "openai:gpt-5.4-nano",
-        standard: "openai:gpt-5.6-luna",
+        standard: "openai:gpt-6-luna",
       },
       provider: "openai",
     },
@@ -422,7 +422,7 @@ describe("simple model selection", () => {
   it("orders available model types and omits types the provider lacks", () => {
     expect(buildModelTypeOptions(modelCatalog, "google")).toEqual([
       {
-        description: "Workspace default (OpenAI · GPT-5.6 Luna).",
+        description: "Workspace default (OpenAI · GPT-6 Luna).",
         label: "Automatic (recommended)",
         value: "automatic",
       },
@@ -458,7 +458,7 @@ describe("simple model selection", () => {
   })
 
   it("maps model types and Automatic to the stored selection", () => {
-    expect(modelSelectionForType(modelCatalog, "openai", "standard")).toBe("openai:gpt-5.6-luna")
+    expect(modelSelectionForType(modelCatalog, "openai", "standard")).toBe("openai:gpt-6-luna")
     expect(modelSelectionForType(modelCatalog, "anthropic", "light")).toBe(
       "anthropic:claude-haiku-4-5"
     )

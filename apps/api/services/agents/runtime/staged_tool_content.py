@@ -145,7 +145,7 @@ def tool_replay_args_for_editing(
     if isinstance(metadata, Mapping) and isinstance(
         metadata.get(_DISPLAY_ARGS_METADATA_KEY), Mapping
     ):
-        return _mapping_args(args)
+        return _mapping_args(metadata.get("reviewed_args", args))
     if tool_name != WRITE_FILE_TOOL_NAME:
         return None
     mapped_args = _mapping_args(args)

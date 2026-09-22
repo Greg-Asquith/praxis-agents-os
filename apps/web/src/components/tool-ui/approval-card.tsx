@@ -137,7 +137,7 @@ export function ToolApprovalDecisionCard({
             setIsDeclining(false)
           }}
           onDecline={() => {
-            if (controls.error && isDecided) {
+            if (controls.error) {
               controls.onDecisionChange({
                 decision: "pending",
                 edits: controls.decision.edits,

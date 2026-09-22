@@ -19,6 +19,7 @@ export type ToolApprovalDecisionControls = {
   error: string | null
   onDecisionChange: (decision: ApprovalDecision) => void
   onRetry: () => void
+  onReview?: () => void
   pendingCount: number
   submitting: boolean
 }

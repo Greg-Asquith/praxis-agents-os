@@ -24,8 +24,14 @@ const RECOVERY: Record<string, string> = {
     "The upload session expired. Check the library before preparing a new upload.",
   invalid_range:
     "The upload range was rejected. Check the file in SharePoint before preparing a new upload.",
-  unsupported_type: "Choose a text file for text content, and a folder as the destination.",
+  unsupported_type:
+    "Choose a supported File type and a valid destination. Text content needs a text file.",
   too_large: "The file exceeds the upload limit. Use a smaller file.",
+  source_changed:
+    "The workspace File changed after review. Ask the agent to prepare it for approval again.",
+  source_unavailable: "The workspace File is unavailable. Choose another File or upload it again.",
+  type_mismatch: "Match the source File type to the new filename or the file being replaced.",
+  empty_content: "Choose a File with content before saving.",
   unverified_mutation:
     "The change could not be confirmed. Check the library in SharePoint before trying again.",
 }

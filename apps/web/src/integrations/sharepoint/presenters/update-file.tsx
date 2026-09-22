@@ -8,5 +8,5 @@ export const sharePointUpdateFilePresenter = sharePointWritePresenter({
   copy: { verb: "Update", object: "file", effect: "replaced" },
   parseArgs: sharePointUpdateFileArgs,
   prompt:
-    "Replace this file with the reviewed text. SharePoint keeps the previous version. A changed version stops the replacement.",
+    "Replace this file with the reviewed content. SharePoint keeps the previous version. A changed version stops the replacement.",
 })

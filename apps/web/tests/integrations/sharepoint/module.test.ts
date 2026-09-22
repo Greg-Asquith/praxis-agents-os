@@ -6,7 +6,7 @@ import sharePointModule from "@/integrations/sharepoint"
 import { testMicrosoftIntegrationModule } from "../microsoft-module-contract"
 
 describe("SharePoint integration module", () => {
-  it("registers all eight SharePoint read and write presenters", () => {
+  it("registers all nine SharePoint read and write presenters", () => {
     expect(sharePointModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
       "sharepoint_list_folder",
       "sharepoint_search_files",
@@ -16,6 +16,7 @@ describe("SharePoint integration module", () => {
       "sharepoint_create_folder",
       "sharepoint_write_file",
       "sharepoint_update_file",
+      "sharepoint_copy_to_files",
     ])
   })
 

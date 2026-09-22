@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from core.database import maintenance_async_db_session
-from core.exceptions.general import AppValidationError
+from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.exceptions.integration import (
     IntegrationConnectionError,
     IntegrationFailureDisposition,
@@ -28,7 +28,9 @@ from models.agent_run import AgentRun
 from models.files import File, FileFolder, FileReference, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.schemas import AgentRunResumeDecision
+from services.agent_runs.get_approval_state import get_agent_run_approval_state
+from services.agent_runs.review_approval import review_agent_run_approval
+from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunReviewApprovalRequest
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.entity_references.domain import FileReference as SourceReference
@@ -434,7 +436,18 @@ async def _compile_source_decision(session_factory, context, decision):
 
 
 @pytest.mark.parametrize("nested", [False, True], ids=["direct", "code_mode"])
-@pytest.mark.parametrize("outcome", ["applied", "source_changed", "deleted", "substituted"])
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "applied",
+        "source_changed",
+        "deleted",
+        "substituted",
+        "reviewed",
+        "reviewed_changed",
+        "reviewed_revision",
+    ],
+)
 async def test_file_source_approval_uses_real_core_authorisation(
     db_session_factory, monkeypatch, document_storage, nested, outcome
 ):
@@ -492,7 +505,7 @@ async def test_file_source_approval_uses_real_core_authorisation(
             stored = await db.get(File, file.id)
             stored.deleted = True
             await db.commit()
-    elif outcome == "substituted":
+    elif outcome in {"substituted", "reviewed", "reviewed_changed"}:
         substitute, _ = await _source_file(context, _edited_workbook())
         decision.override_args = args | {
             "source": SourceReference(entity_id=substitute.id, label="Replacement").model_dump(
@@ -500,11 +513,31 @@ async def test_file_source_approval_uses_real_core_authorisation(
             )
         }
 
+    if outcome == "reviewed_revision":
+        await _append_revision(db_session_factory, context, file.id, _edited_workbook())
+        substitute = file
+        decision.override_args = args
+    if outcome in {"reviewed", "reviewed_changed", "reviewed_revision"}:
+        reviewed = await _review_source(db_session_factory, context, decision.override_args)
+        assert reviewed.approvals[0].replay_args["source"]["entity_id"] == str(substitute.id)
+        decision.override_args = None
+        file = substitute
+        content = _edited_workbook()
+        provider.upload_fragment.return_value = file_metadata(
+            name="saved.xlsx",
+            size=len(content),
+            parentReference={"driveId": "drive", "path": "/drives/drive/root:"},
+            file={"mimeType": XLSX, "hashes": {"quickXorHash": quickxorhash(content)}},
+        )
+        pin = reviewed.approvals[0].args["_source"]
+        if outcome == "reviewed_changed":
+            await _append_revision(db_session_factory, context, file.id, WORKBOOK.read_bytes())
+
     if outcome in {"deleted", "substituted"}:
         with pytest.raises(AppValidationError) as caught:
             await resume_scenario(db_session_factory, context, model=model, decisions=[decision])
         if outcome == "substituted":
-            assert caught.value.details["locked_fields"] == ["source"]
+            assert caught.value.details["error_code"] == "approval_review_required"
         else:
             assert caught.value.field == "source"
         credentials.assert_not_awaited()
@@ -544,7 +577,7 @@ async def test_file_source_approval_uses_real_core_authorisation(
     operations = [
         row for row in completed.audit_rows if row.details.get("provider_operation") == "write_file"
     ]
-    if outcome == "source_changed":
+    if outcome in {"source_changed", "reviewed_changed"}:
         assert [row.status for row in operations] == ["failure"]
         assert operations[0].details["error_code"] == "source_changed"
         credentials.assert_not_awaited()
@@ -598,24 +631,96 @@ async def test_unavailable_file_sources_cannot_produce_usable_approval(
     decision = AgentRunResumeDecision(
         tool_call_id="save:1" if nested else "save", decision="approved"
     )
-    if visibility == "platform":
-        completed = await resume_scenario(
-            db_session_factory, context, model=model, decisions=[decision]
-        )
-        assert completed.run.status == "completed"
-        operations = [
-            row
-            for row in completed.audit_rows
-            if row.details.get("provider_operation") == "write_file"
-        ]
-        assert [row.status for row in operations] == ["failure"]
-        assert operations[0].details["error_code"] == "ModelRetry"
-        assert "The approved details are unavailable" in str(
-            [message.parts for message in completed.messages]
-        )
-    else:
-        with pytest.raises(AppValidationError) as caught:
-            await resume_scenario(db_session_factory, context, model=model, decisions=[decision])
-        assert caught.value.field == "source"
+    with pytest.raises(AppValidationError) as caught:
+        await resume_scenario(db_session_factory, context, model=model, decisions=[decision])
+    assert caught.value.field == "source"
     credentials.assert_not_awaited()
     storage.assert_not_called()
+
+
+async def _review_source(session_factory, context, args):
+    from copy import deepcopy
+
+    async with session_factory() as db:
+        actor = await db.get(User, context.user_id)
+        workspace = await db.get(Workspace, context.workspace_id)
+        membership = await db.scalar(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == workspace.id,
+                WorkspaceMembership.user_id == actor.id,
+            )
+        )
+        pending = await db.get(AgentRun, context.run_id)
+        original = deepcopy(pending.metadata_json)
+        original_updated_at = pending.updated_at
+        projection = await get_agent_run_approval_state(
+            db, actor=actor, workspace=workspace, run_id=pending.id
+        )
+        payload = AgentRunReviewApprovalRequest(
+            approval_id=projection.approvals[0].approval_id,
+            approval_revision=projection.approval_revision,
+            override_args=args,
+        )
+        for field in ("_source", "reviewed_args"):
+            with pytest.raises(AppValidationError):
+                await review_agent_run_approval(
+                    db,
+                    actor=actor,
+                    workspace=workspace,
+                    membership=membership,
+                    run_id=pending.id,
+                    payload=payload.model_copy(
+                        update={"override_args": args | {field: {"revision_id": str(uuid4())}}}
+                    ),
+                )
+            assert pending.metadata_json == original
+        with pytest.raises(NotFoundError):
+            await review_agent_run_approval(
+                db,
+                actor=User(id=uuid4()),
+                workspace=workspace,
+                membership=membership,
+                run_id=pending.id,
+                payload=payload,
+            )
+        with pytest.raises(NotFoundError):
+            await review_agent_run_approval(
+                db,
+                actor=actor,
+                workspace=Workspace(id=uuid4()),
+                membership=membership,
+                run_id=pending.id,
+                payload=payload,
+            )
+        updated = await review_agent_run_approval(
+            db,
+            actor=actor,
+            workspace=workspace,
+            membership=membership,
+            run_id=pending.id,
+            payload=payload,
+        )
+        assert updated.approval_revision != projection.approval_revision
+        await db.refresh(pending)
+        assert pending.updated_at == original_updated_at
+        state = pending.metadata_json["approval_state"]
+        assert state["message_history"] == original["approval_state"]["message_history"]
+        assert (
+            state["deferred_tool_requests"]["approvals"]
+            == original["approval_state"]["deferred_tool_requests"]["approvals"]
+        )
+        assert pending.metadata_json.get("code_mode_state") == original.get("code_mode_state")
+        with pytest.raises(ConflictError):
+            await review_agent_run_approval(
+                db,
+                actor=actor,
+                workspace=workspace,
+                membership=membership,
+                run_id=pending.id,
+                payload=payload,
+            )
+        reloaded = await get_agent_run_approval_state(
+            db, actor=actor, workspace=workspace, run_id=pending.id
+        )
+        assert reloaded == updated
+        return updated

@@ -70,10 +70,12 @@ describe("SharePoint write argument parsing", () => {
       { expected_version: null },
       { expected_version: "" },
       { expected_version: undefined },
-      { content: null },
     ]) {
       expect(sharePointUpdateFileArgs({ ...base, ...patch })).toBeNull()
     }
+    expect(validateSharePointWriteArgs(sharePointUpdateFileArgs({ ...base, content: null }))).toBe(
+      "Enter text content or choose a workspace File."
+    )
   })
 
   it("uses the reviewed library only for the matching drive", () => {

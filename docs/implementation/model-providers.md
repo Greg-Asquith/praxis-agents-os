@@ -14,6 +14,67 @@ pickup. Direct providers share the retrying HTTP client
 embedding adapters use the same transport. Vertex partner authentication and
 endpoint-bound Mistral clients also use HTTPX2.
 
+### GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5
+
+The catalogue exposes these models through the existing agent model selector.
+The following specifications come from the providers' documentation, checked
+on 22 September 2026. Token prices are USD per million tokens for standard
+processing, before regional premiums:
+
+| Model and API ID | Context / maximum output | Input / cache read / cache write / output | Knowledge cutoff |
+| --- | --- | --- | --- |
+| [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), `gpt-6-sol` | 1,050,000 / 128,000 | $2 / $0.20 / $2.50 / $10 | 20 April 2026 |
+| [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), `gpt-6-luna` | 1,050,000 / 128,000 | $0.10 / $0.01 / $0.125 / $0.50 | 18 May 2026 |
+| [Claude Opus 5.5](https://platform.claude.com/docs/en/models/opus-5-5/overview), `claude-opus-5-5` | 1,000,000 / 128,000 | $4 / $0.20 / $5 / $20 | June 2026 |
+
+All three accept text and images, return text, and support streaming, tools,
+and structured output. Sol targets demanding coding and agent work; Luna
+targets focused, high-volume tasks. Both accept up to 922,000 input tokens.
+Their reasoning efforts are `none`, `low`, `medium` (default), `high`, `xhigh`,
+and `max`. Praxis uses Responses, which supports reasoning with tools.
+Chat Completions permits their function calls only with reasoning disabled.
+The SDK maps the UI's `minimal` effort to `low` and removes incompatible
+sampling settings while reasoning is active.
+
+For both OpenAI models, prompts above 272,000 input tokens double input and
+cache rates and multiply output rates by 1.5 for the entire request. Batch
+and Flex halve standard rates; Fast doubles them. Regional processing adds
+10%, and EU data residency requires Standard processing. Praxis usage estimates
+use base rates; request-specific premiums and discounts are pending.
+
+Opus 5.5 uses adaptive thinking with `medium` default effort. Its five-minute
+cache writes cost $5; one-hour writes cost $8. Cache reads cost 5% of base input.
+Its ID has no date suffix, including on Google Cloud. Use an enabled Model
+Garden model with `ANTHROPIC_VERTEX_LOCATION=global`, `us`, or `eu` and the
+configured project. Regional availability and account access require provider
+verification; catalogue visibility alone does not prove access.
+
+Pydantic AI 2.42 lacks these release profiles. The factory supplies scoped
+profiles through `provider_model_profile` in `utils.py`. Sol and Luna reuse
+the documented GPT-5.6 Responses capabilities, including optional reasoning,
+encrypted reasoning replay, message phases, and prompt caching. Opus disables
+forced tool choice, uses native JSON schemas for structured output, and enables
+the SDK's recovery for thinking blocks bound to an earlier conversation prefix.
+Remove these overrides when upstream profiles cover the same contracts.
+
+The [Opus migration guide](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide)
+documents its request restrictions. Explicit disabled or budget-based thinking
+fails locally. The UI's disabled-thinking preference only applies where a
+provider supports it, so Opus continues thinking. Catalogue defaults request
+summarised thinking so progress text remains visible. Thinking blocks retain
+their signatures through tool results; after a prefix-binding rejection, the
+SDK retries once with its documented stale-block recovery and emits a warning.
+Explicit forced tool choice fails locally. Provider computer-use tools remain
+outside Praxis's governed tool catalogue.
+
+The provider type defaults are Sol for OpenAI **Powerful**, Luna for OpenAI
+**Standard**, and Opus 5.5 for Anthropic **Powerful**. Existing saved agent model
+selections remain explicit. GPT-6 Luna is also the default for unpinned agents,
+conversation names, history summaries, Knowledge Base annotations, native
+classification, and the OpenAI web-search fallback. Environment overrides take
+precedence. Restart API and worker processes after updating local settings, or
+follow the deployment runbook for a deployed environment.
+
 ### Google Vertex and Anthropic Vertex
 
 Google Vertex model and embedding calls share a

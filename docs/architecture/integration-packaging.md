@@ -717,9 +717,13 @@ both delegated write scopes before marking drives writable. Upload sessions
 use public-address pinning without bearer tokens or diagnostic URLs. Byte counts
 and QuickXorHash verify commits; uncertain outcomes are retained without
 replay. Read results expose the opaque version needed for replacement.
-Three write presenters cover folders and text writes. Backend File sources
-retain the approved revision and hash; copies create immutable workspace Files
-through a read binding. Source and copy presenters remain pending.
+Three write presenters cover folders, text content, and workspace File sources.
+The File picker requires explicit server-retained review of a changed selection
+before approval. Execution retains the reviewed revision and hash. Copies create
+immutable workspace Files through a read binding; their presenter uses the
+shared read-result seam, which also supports settled internal writes. Its source
+citation uses the shared URL guard and its saved File link uses a validated ID.
+The module registers nine presenters.
 
 The loader permits an integration argument field to use the registered,
 core-owned `file` resolver. Every other entity kind retains the provider-owned

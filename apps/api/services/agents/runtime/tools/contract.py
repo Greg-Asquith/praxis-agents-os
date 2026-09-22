@@ -254,6 +254,8 @@ class RuntimeToolDefinition:
         ]
         | None
     ) = None
+    approval_review_fields: tuple[str, ...] = ()
+    approval_input_model: type[BaseModel] | None = None
     presentation: ToolPresentation = ToolPresentation()
     _serialized_input_schema: dict[str, Any] | None = dataclass_field(
         default=None,
@@ -502,6 +504,20 @@ def _validate_nested_integration_parameter(
 
 def _validate_presentation(definition: RuntimeToolDefinition) -> None:
     presentation = definition.presentation
+    review_fields = set(definition.approval_review_fields)
+    reviewable_fields = {
+        field.key
+        for field in presentation.arg_fields
+        if field.editable and field.format == "entity" and field.entity_kind
+    }
+    if review_fields and (
+        len(review_fields) != len(definition.approval_review_fields)
+        or not review_fields.issubset(reviewable_fields)
+        or definition.approval_display_args is None
+    ):
+        raise RuntimeError(
+            "Approval review fields require unique editable entity arguments and display projection"
+        )
     if presentation.icon not in VALID_TOOL_ICONS:
         raise RuntimeError(
             f"Runtime tool presentation icon must be one of the known tokens, got {presentation.icon!r}"

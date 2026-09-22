@@ -7,14 +7,14 @@ import {
 import type { ModelCatalogResponse } from "@/features/models/types"
 
 const catalog: ModelCatalogResponse = {
-  defaults: { agent_model: "openai:gpt-5.6-luna" },
+  defaults: { agent_model: "openai:gpt-6-luna" },
   models: [
     {
       context_window: 128_000,
       default_settings: {},
-      display_name: "GPT-5.6 Luna",
-      id: "openai:gpt-5.6-luna",
-      model: "gpt-5.6-luna",
+      display_name: "GPT-6 Luna",
+      id: "openai:gpt-6-luna",
+      model: "gpt-6-luna",
       model_type: "standard",
       provider: "openai",
       supports_structured_output: true,
@@ -41,7 +41,7 @@ const catalog: ModelCatalogResponse = {
       configured: true,
       display_name: "OpenAI",
       model_count: 1,
-      model_type_defaults: { standard: "openai:gpt-5.6-luna" },
+      model_type_defaults: { standard: "openai:gpt-6-luna" },
       provider: "openai",
     },
     {
@@ -60,13 +60,13 @@ describe("formatAgentModel", () => {
       formatAgentModel({ azure_deployment: null, model: null, model_provider: null }, catalog, {
         showDefaultLabel: false,
       })
-    ).toBe("OpenAI · GPT-5.6 Luna")
+    ).toBe("OpenAI · GPT-6 Luna")
   })
 
   it("keeps the Default context label for other model pickers", () => {
     expect(
       formatAgentModel({ azure_deployment: null, model: null, model_provider: null }, catalog)
-    ).toBe("Default · OpenAI · GPT-5.6 Luna")
+    ).toBe("Default · OpenAI · GPT-6 Luna")
   })
 })
 
@@ -113,6 +113,6 @@ it.each([undefined, "direct", "google-cloud"] as const)(
     const suffix = transport === "google-cloud" ? " via Google Cloud" : ""
     const agent = { azure_deployment: null, model: null, model_provider: null }
     expect(formatAgentModelType(agent, transported)).toBe(`OpenAI${suffix} · Standard`)
-    expect(formatAgentModel(agent, transported)).toBe(`Default · OpenAI${suffix} · GPT-5.6 Luna`)
+    expect(formatAgentModel(agent, transported)).toBe(`Default · OpenAI${suffix} · GPT-6 Luna`)
   }
 )

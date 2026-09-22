@@ -190,6 +190,30 @@ It resolves direct and Code Mode approvals and never accepts replay arguments
 as evidence. Outlook send-draft uses this to check that the reviewed draft
 still matches the provider before sending.
 
+## Retained approval reviews
+
+Tools with `approval_review_fields` declare entity selections that require a
+fresh retained review before approval. The selected source and its revision
+must be reviewed together. `POST /agent-runs/{run_id}/review-approval` accepts
+the root run, current `approval_revision`, exact `approval_id`, and executable
+`override_args`. The actor must own the pending run family in the active
+workspace. The same family lock serialises review and resume. Reviews preserve
+the original expiry and record an audit event.
+
+The endpoint validates editable arguments and live entity access, then calls
+the tool's display callback. It retains `reviewed_args` separately from the
+original call and history, including Code Mode snapshots. Display metadata
+retains the pin; it is never an executable argument. The refreshed approval
+revision covers both sets of evidence. Resume defaults to the retained
+arguments and rejects unreviewed source identities. Tools may supply an
+`approval_input_model` for cross-field validation before review or resume.
+
+The client submits review only from an explicit action, then reloads the
+approval and transcript before accepting a decision. Shared transcripts have
+no review controls. Review failures leave approval pending and permit retry,
+correction, or decline. Optional multiline fields accept null so choosing a
+File can remove text content; an empty string remains a distinct edit.
+
 ## Scalar approval editors
 
 Editable string fields with declared options remain selectable when their

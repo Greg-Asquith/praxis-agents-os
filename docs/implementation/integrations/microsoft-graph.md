@@ -318,7 +318,7 @@ are excluded from the view.
 
 The backend tools support copying original Office files into Files, editing
 them through `run_code`, and saving an approved replacement to SharePoint.
-Source selection and copy presentation remain pending. Manual Office format
+Source approval cards and copy results use the shared presenters. Manual Office format
 preservation and live tenant behaviour remain unverified.
 
 ## SharePoint writes
@@ -467,10 +467,20 @@ against the current visible revision before resolving SharePoint credentials.
 A missing or changed pin reports `source_changed`; missing or inaccessible
 Files report `source_unavailable`. The shared storage reader checks metadata,
 bounds streamed bytes by the retained revision size, and verifies SHA-256.
-Contradictory bytes report `source_changed`. A source change requires a fresh
-proposal and approval. The source field stays locked; editable selection needs
-a server-retained review pin. The source approval presenter and picker remain
-pending.
+Contradictory bytes report `source_changed`. Approval cards show the reviewed
+File name, type, and size and use the existing workspace File picker.
+Choose exactly one of text content or a File. After changing the File, click
+**Review selected File**, check the refreshed details, then approve. This
+explicit review also lets you select the latest revision of the same File.
+Switching to text clears the File selection. HTML and Markdown text stay escaped.
+
+The review endpoint retains canonical executable arguments separately from the
+original model call and stores the source revision in server-owned display
+evidence. It locks the run family, checks the actor, workspace, pending leaf,
+approval revision, and original expiry, then refreshes the proposal. Direct,
+Code Mode, and delegated approvals use the same path. An older proposal or an
+unreviewed File selection cannot resume. Execution never accepts a source pin
+from replay arguments or recomputes the approved pin.
 
 `sharepoint_copy_to_files` downloads original bytes from one selected library
 and saves a new workspace File. It requires only the read binding, uses
@@ -490,7 +500,11 @@ and returns its typed reference, revision, size, type, and source `version`.
 Audit evidence retains the drive/item source, `eTag`, File ID, and revision ID.
 Names and citations retain SharePoint provenance; bytes and signed URLs never
 enter tool output. Copied Files use ordinary workspace visibility, retention,
-and immutable revision rules. The copy presenter remains pending.
+and immutable revision rules. The copy card shows the source item with a
+guarded **Open in SharePoint** citation and the saved File with an **Open in
+Files** link, name, type, and size. Failed copies show recovery guidance.
+Malformed results use the default row; private revision evidence and signed
+URLs remain excluded from the card.
 
 Before writing bytes, the copy reserves its destination in an independent
 tenant transaction. The caller locks that reservation through storage writes
@@ -500,7 +514,7 @@ deletion retains it for another sweep. The File, consumed reservation, and
 operation success audit commit together, so a lost commit response cannot
 expose a committed copy to cleanup. Invocation completion follows that commit.
 
-To edit and save an Office document through the backend tools:
+To edit and save an Office document:
 
 1. Call `sharepoint_copy_to_files` with the selected document reference.
 2. Edit the returned File through `run_code`. The file bridge appends a

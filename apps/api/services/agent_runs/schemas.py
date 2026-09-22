@@ -49,6 +49,14 @@ class AgentRunResumeRequest(BaseModel):
     )
 
 
+class AgentRunReviewApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approval_id: UUID
+    approval_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    override_args: dict[str, Any]
+
+
 class PendingDelegatedApprovalRead(BaseModel):
     parent_tool_call_id: str
     child_agent_id: UUID

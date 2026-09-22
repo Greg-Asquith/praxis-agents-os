@@ -110,7 +110,9 @@ def test_write_contracts_and_code_mode_schemas(definition):
     for field in definition.presentation.arg_fields:
         if field.key == "content":
             assert field.format == "multiline" and field.editable
-        if field.key in {"file", "expected_version", "source"}:
+        if field.key == "source":
+            assert field.editable and field.key in definition.approval_review_fields
+        if field.key in {"file", "expected_version"}:
             assert not field.editable
 
 

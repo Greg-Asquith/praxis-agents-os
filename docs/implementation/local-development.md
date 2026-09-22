@@ -89,5 +89,5 @@ To run opt-in live evaluations from the repository root, supply model and
 embedding credentials and select the model:
 
 ```bash
-EVALS_MODEL=openai:gpt-5.6-luna make evals
+EVALS_MODEL=openai:gpt-6-luna make evals
 ```

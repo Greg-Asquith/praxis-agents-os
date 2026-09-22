@@ -45,6 +45,7 @@ export function editableScalarOrListValue(
     return isStringList(value) ? [...value] : null
   }
   if (value == null && field.editable && field.options.length > 0) return ""
+  if (value == null && field.editable && field.secondary && field.format === "multiline") return ""
   return typeof value === "string" ? value : null
 }
 
@@ -78,6 +79,8 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function mergeStringEdit(original: unknown, edit: string, field?: ApprovalField): unknown {
+  if (original == null && field?.editable && field.secondary && field.format === "multiline")
+    return edit
   if (original == null && field?.editable && field.options.includes(edit)) return edit
   if (typeof original !== "string") return INVALID_EDIT
   if (field) return edit === original ? NO_CHANGE : edit

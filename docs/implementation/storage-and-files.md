@@ -548,6 +548,9 @@ Approval retains its File ID, revision ID, and content hash. Execution checks
 that the revision is still current and that stored bytes match it before any
 provider request. Empty sources fail before storage access. The shared storage
 reader checks metadata and bounds actual streamed bytes by the reviewed size
-before verifying SHA-256. Platform Files require a workspace copy first. The existing
+before verifying SHA-256. Changing a source through the approval File picker
+requires **Review selected File** before approval. The server retains that
+revision and rejects later source changes; it never selects a newer revision
+during execution. Platform Files require a workspace copy first. The existing
 `run_code` File bridge supplies the editing step; failed SharePoint saves keep
 the edited local revision. See the [document edit procedure](integrations/microsoft-graph.md#workspace-file-sources-and-copies).

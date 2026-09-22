@@ -264,7 +264,11 @@ describe("SharePoint write presenters", () => {
     ["quota_exceeded", "The library has no storage space left."],
     ["upload_session_expired", "The upload session expired."],
     ["invalid_range", "The upload range was rejected."],
-    ["unsupported_type", "Choose a text file for text content"],
+    ["unsupported_type", "Choose a supported File type"],
+    ["source_changed", "The workspace File changed after review"],
+    ["source_unavailable", "The workspace File is unavailable"],
+    ["type_mismatch", "Match the source File type"],
+    ["empty_content", "Choose a File with content"],
     ["too_large", "The file exceeds the upload limit."],
     ["unknown_error", "Safe server recovery"],
   ])("explains %s inside both failure envelopes", (code, copy) => {

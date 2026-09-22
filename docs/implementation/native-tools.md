@@ -9,7 +9,8 @@ isolation evidence and the re-probe policy.
 ## Web search
 
 Selecting Google without a model override uses `gemini-3.8-flash` for
-`web_search`. Omitting both provider and model retains the eligible agent model.
+`web_search`; selecting OpenAI uses `gpt-6-luna`. Omitting both provider and
+model retains the eligible agent model.
 Search results include the executed query, answer, and provider sources in the
 model-visible tool return, including queries edited during approval. Tool
 guidance tells the agent to resolve relative dates against the conversation
@@ -35,6 +36,11 @@ Selecting Google without a model override uses `gemini-3.8-flash` for
 The helper uses the shared Google model factory, including Vertex credentials
 and routing when `GOOGLE_VERTEX_AI=true`. The native `codeExecution` tool is
 included in that model request; there is no separate direct-API fallback.
+
+The registered GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5 models can use the
+existing eligible helper paths. Live capability, file-output, and sandbox
+network-isolation probes for these model versions remain pending. Earlier
+model probe results do not qualify these versions.
 
 Provider-native `run_code` is a separate helper-model tool for heavy
 computation, create-from-text document generation, and declared append-only
@@ -87,6 +93,9 @@ auditing, provider-file cleanup, and usage recording so a provider outage
 cannot fail the parent agent run.
 
 ## Classification and workspace tools
+
+The OpenAI classification default and provider fallback use `gpt-6-luna`.
+An explicit classifier model or environment override takes precedence.
 
 The following contracts apply in this area:
 

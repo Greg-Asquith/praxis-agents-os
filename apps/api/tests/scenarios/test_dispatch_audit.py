@@ -2,8 +2,10 @@
 
 """Dispatch and audit behavior through the real runtime lifecycle."""
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from models.agent import Agent
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -32,10 +34,21 @@ async def test_text_only_scenario_smoke(
     assert result.event_names()[-2:] == ["run.status", "done"]
 
 
+@pytest.mark.parametrize(
+    ("provider", "model_id"),
+    [("openai", "gpt-6-sol"), ("openai", "gpt-6-luna"), ("anthropic", "claude-opus-5-5")],
+)
 async def test_successful_tool_dispatch_writes_one_digest_only_audit(
     db_session_factory: async_sessionmaker[AsyncSession],
+    provider: str,
+    model_id: str,
 ) -> None:
     context = await build_scenario_agent(db_session_factory, tool_names=["test_add_numbers"])
+    async with db_session_factory() as db:
+        agent = await db.get(Agent, context.agent_id)
+        agent.model_provider = provider
+        agent.model = model_id
+        await db.commit()
     model = scripted_model(
         turns=[
             ToolTurn((ToolCall("test_add_numbers", {"a": 7, "b": 5}, "add-call"),)),

@@ -15,6 +15,13 @@ past usage retains its effective-dated estimates. Image output charges are
 outside the token table. The table scrolls within the modal and keeps its
 column headings visible. Click **Close** or press **Escape** to dismiss it.
 
+GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5 have base rates effective from
+22 September 2026. Historical model rates retain their original effective dates.
+See [model providers](model-providers.md#gpt-6-sol-gpt-6-luna-and-claude-opus-55)
+for prices and limits. Estimates use standard processing and five-minute cache
+writes. Long-context premiums, regional premiums, one-hour cache writes, and
+processing-tier adjustments are pending because the ledger aggregates requests.
+
 The following contracts apply in this area:
 
 - `ai_usage_events` is runtime append-only: `praxis_app` may select and insert,

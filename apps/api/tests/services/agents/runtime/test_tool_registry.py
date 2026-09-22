@@ -2083,3 +2083,29 @@ def test_image_model_presentation_tracks_selected_provider(
         "google": ["gemini-3.1-flash-image"],
         "openai": [openai_model],
     }
+
+
+@pytest.mark.parametrize("fault", ["unknown", "duplicate", "locked", "list", "projection"])
+def test_validate_definition_rejects_invalid_approval_review_fields(fault: str) -> None:
+    from integrations.sharepoint.tools.write_file import DEFINITION
+
+    definition = DEFINITION
+    if fault == "unknown":
+        definition = replace(definition, approval_review_fields=("missing",))
+    elif fault == "duplicate":
+        definition = replace(definition, approval_review_fields=("source", "source"))
+    elif fault == "projection":
+        definition = replace(definition, approval_display_args=None)
+    else:
+        fields = tuple(
+            replace(field, editable=False)
+            if fault == "locked"
+            else replace(field, format="entity_list")
+            for field in definition.presentation.arg_fields
+            if field.key == "source"
+        )
+        definition = replace(
+            definition, presentation=replace(definition.presentation, arg_fields=fields)
+        )
+    with pytest.raises(RuntimeError, match="Approval review fields"):
+        validate_definition(definition)

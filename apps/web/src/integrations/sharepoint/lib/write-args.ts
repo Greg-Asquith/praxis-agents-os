@@ -1,6 +1,12 @@
 // apps/web/src/integrations/sharepoint/lib/write-args.ts
 
 import { isOneOf, isRecord, optionalString, stringValue } from "@/lib/guards"
+import {
+  sharePointFileSource,
+  sharePointSourceDetails,
+  type SharePointFileSource,
+  type SharePointSourceDetails,
+} from "@/integrations/sharepoint/lib/file-source"
 
 type ItemReference = {
   driveId: string
@@ -15,6 +21,8 @@ export type SharePointWriteArgs = {
   name: string | null
   destination: ItemReference | null
   content: string | null
+  source: SharePointFileSource | null
+  sourceDetails: SharePointSourceDetails | null
 }
 
 const ITEM_KINDS = new Set(["file", "folder"] as const)
@@ -38,22 +46,14 @@ function itemReference(value: unknown): ItemReference | null {
   }
 }
 
-function replacementFields(value: Record<string, unknown>) {
-  const content = optionalString(value["content"])
-  if (!stringValue(value["expected_version"]) || content === null) return null
-  return { name: null, content }
-}
-
 function requiredWriteFields(
   value: Record<string, unknown>,
   field: SharePointWriteArgs["fieldKey"]
 ) {
-  if (field === "file") return replacementFields(value)
+  if (field === "file") return stringValue(value["expected_version"]) ? { name: null } : null
   const name = optionalString(value["name"])
   if (name === null) return null
-  if (field === "parent") return { name, content: null }
-  const content = optionalString(value["content"])
-  return content === null ? null : { name, content }
+  return { name }
 }
 
 function destinationLibrary(value: Record<string, unknown>, destination: ItemReference | null) {
@@ -73,10 +73,16 @@ function writeArgs(
   if (field === "file" && !destination) return null
   const fields = requiredWriteFields(value, field)
   if (!fields) return null
+  const source = sharePointFileSource(value["source"])
+  if (value["source"] != null && !source) return null
+  if (value["content"] != null && typeof value["content"] !== "string") return null
   return {
     fieldKey: field,
     library: destinationLibrary(value, destination),
     destination,
+    content: field === "parent" ? null : optionalString(value["content"]),
+    source,
+    sourceDetails: sharePointSourceDetails(value["_source"]),
     ...fields,
   }
 }
@@ -120,5 +126,12 @@ function contentError(content: string | null): string | null {
 
 export function validateSharePointWriteArgs(args: SharePointWriteArgs | null): string | null {
   if (!args) return "Review the name, destination, and content before approving."
-  return destinationError(args) ?? contentError(args.content)
+  const error = destinationError(args) ?? contentError(args.content)
+  if (error || args.fieldKey === "parent") return error
+  if (args.content !== null && args.source)
+    return "Choose either text content or a workspace File, not both."
+  if (args.content === null && !args.source) return "Enter text content or choose a workspace File."
+  if (args.source && args.source.id !== args.sourceDetails?.id)
+    return "Review the selected File before approving."
+  return null
 }

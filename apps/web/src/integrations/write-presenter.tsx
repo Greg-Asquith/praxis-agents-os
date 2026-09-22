@@ -6,6 +6,7 @@ import { approvalDisplayError, mergeApprovalArgs } from "@/components/tool-ui/ap
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
+import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-types"
 import {
   parseSettledFanOutData,
   type FanOutEntry,
@@ -35,7 +36,8 @@ type ApprovalSpec<Args> = {
     value: unknown,
     fallback: Args,
     onFieldEdit: (key: string, value: EditedValue) => void,
-    disabled: boolean
+    disabled: boolean,
+    controls: ToolApprovalDecisionControls
   ) => ReactNode
   title?: string | ((args: Args) => string)
   validateArgs?: (value: unknown) => string | null
@@ -337,7 +339,13 @@ function renderApproval<Args, Result>(
     >
       {refreshed?.error || displayError || (argsError && !variant.approval.renderInvalidDraft)
         ? null
-        : variant.approval.renderSummary?.(currentArgs, args, editField, customFieldsDisabled)}
+        : variant.approval.renderSummary?.(
+            currentArgs,
+            args,
+            editField,
+            customFieldsDisabled,
+            approvalDecision
+          )}
     </ToolApprovalDecisionCard>
   )
 }

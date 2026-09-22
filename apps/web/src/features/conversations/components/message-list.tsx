@@ -20,6 +20,7 @@ import {
 } from "@/features/conversations/components/message-row"
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
+import { useReviewApprovalMutation } from "@/features/conversations/api/review-approval"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 import { useToolLabels } from "@/features/tools/use-tool-labels"
 import type { RunInterruptionOutcome } from "@/features/conversations/run-error-copy"
@@ -76,6 +77,7 @@ function InteractiveMessageList({
 }: MessageListProps) {
   const toolLabel = useToolLabels()
   const presentationFor = useToolPresentations()
+  const reviewApproval = useReviewApprovalMutation(conversationId)
   const inlineApprovals = useInlineApprovals({
     activeRunId: timeline.approval?.runId ?? null,
     approvalRevision: timeline.approval?.revision ?? null,
@@ -84,6 +86,7 @@ function InteractiveMessageList({
     enabled: timeline.approval !== null,
     isSubmitting: isApprovalSubmitting,
     onSubmit: onApprovalSubmit,
+    onReview: reviewApproval.mutateAsync,
     presentationFor,
   })
   const approvalErrorMessage = approvalError ?? inlineApprovals.unavailableReason

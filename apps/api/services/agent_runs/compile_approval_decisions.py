@@ -92,8 +92,15 @@ async def compile_approval_decisions(
                 membership=membership,
                 run=owner,
                 tool_call=leaf.call,
-                override_args=decision.override_args,
+                override_args=(
+                    decision.override_args
+                    if decision.override_args is not None
+                    else leaf.metadata.get("reviewed_args")
+                ),
             )
+            from services.agent_runs.utils import validate_retained_review
+
+            validate_retained_review(leaf, canonical or leaf.call.args_as_dict())
         _add_leaf_result(result, node, decision, canonical)
     root_result = results_by_run.setdefault(root.id, DeferredToolResults())
     root_state = load_suspended_run_state(root)

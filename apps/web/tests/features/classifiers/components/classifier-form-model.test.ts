@@ -24,7 +24,7 @@ const classifier: Classifier = {
     { description: "Needs service recovery.", label: "Complaint" },
     { description: null, label: "Other" },
   ],
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   model_provider: "openai",
   name: "complaint_triage",
   updated_at: "2026-08-18T10:00:00Z",
@@ -37,9 +37,9 @@ const modelCatalog: ModelCatalogResponse = {
     {
       context_window: 100_000,
       default_settings: {},
-      display_name: "GPT 5.6 Luna",
-      id: "openai:gpt-5.6-luna",
-      model: "gpt-5.6-luna",
+      display_name: "GPT 6 Luna",
+      id: "openai:gpt-6-luna",
+      model: "gpt-6-luna",
       model_type: "standard",
       provider: "openai",
       supports_structured_output: true,
@@ -79,7 +79,7 @@ const modelCatalog: ModelCatalogResponse = {
       configured: true,
       display_name: "OpenAI",
       model_count: 2,
-      model_type_defaults: { standard: "openai:gpt-5.6-luna" },
+      model_type_defaults: { standard: "openai:gpt-6-luna" },
       provider: "openai",
     },
     {
@@ -164,7 +164,7 @@ describe("classifier form model", () => {
   it("offers automatic plus configured structured-output models only", () => {
     expect(buildClassifierModelOptions(modelCatalog, null)).toEqual([
       { label: "Automatic (recommended)", value: "automatic" },
-      { label: "OpenAI · GPT 5.6 Luna", value: "openai:gpt-5.6-luna" },
+      { label: "OpenAI · GPT 6 Luna", value: "openai:gpt-6-luna" },
     ])
   })
 })

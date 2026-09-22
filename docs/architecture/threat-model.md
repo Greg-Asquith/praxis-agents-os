@@ -227,7 +227,12 @@ SharePoint workspace File sources retain their reviewed File, revision, and
 content hash server-side. Execution checks visibility, workspace ownership,
 type, size, and the current revision before provider access, then verifies the
 stored bytes. Model-authored labels and replay arguments cannot replace this
-pin. Copies into Files use only selected-library reads and the normal internal
+pin. Changing the selected File requires an explicit retained review before
+approval. The review endpoint checks root ownership, workspace, the exact
+pending leaf, proposal revision, and expiry under the approval family lock.
+It preserves the original model call and stores executable edits separately
+from display evidence. Stale approvals cannot authorise the changed proposal.
+Copies into Files use only selected-library reads and the normal internal
 write policy. Original bytes remain in private storage; result names and
 citations retain SharePoint provenance. Signed URLs never enter File metadata
 or audit evidence. Direct and Code Mode fixture scenarios cover changed local

@@ -131,6 +131,8 @@ DEFINITION = RuntimeToolDefinition(
     integration_binding=SHAREPOINT_DRIVE_WRITE_BINDING,
     availability_check=sharepoint_available,
     approval_display_args=partial(mutation_display_args, UpdateFileInput),
+    approval_review_fields=("source",),
+    approval_input_model=UpdateFileInput,
     presentation=ToolPresentation(
         icon="sharepoint",
         running_label="Replacing SharePoint file",
@@ -156,13 +158,13 @@ DEFINITION = RuntimeToolDefinition(
                 secondary=False,
             ),
             ToolFieldPresentation(
-                key="content", label="Content", format="multiline", editable=True, secondary=False
+                key="content", label="Content", format="multiline", editable=True, secondary=True
             ),
             ToolFieldPresentation(
                 key="source",
                 label="Source File",
                 format="entity",
-                editable=False,
+                editable=True,
                 secondary=True,
                 entity_kind="file",
             ),
