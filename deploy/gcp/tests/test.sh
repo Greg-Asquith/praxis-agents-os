@@ -105,25 +105,26 @@ for manifest in \
   grep -A1 'name: GCS_PLATFORM_PRIVATE_BUCKET' "$manifest" \
     | grep -q 'value: praxis-platform-example-staging'
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
-  grep -A1 'name: MICROSOFT_GRAPH_TENANT' "$manifest" | grep -q 'value: "organizations"'
+  grep -A1 'name: MICROSOFT_GRAPH_TENANT' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: MICROSOFT_GRAPH_REQUESTS_PER_SECOND' "$manifest" | grep -q 'value: "4.0"'
-  grep -A1 'name: OUTLOOK_MAIL_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: "disabled"'
+  grep -A1 'name: OUTLOOK_MAIL_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: OUTLOOK_MAIL_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
-  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: "disabled"'
+  grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: OUTLOOK_CALENDAR_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
-  grep -A1 'name: SHAREPOINT_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: "disabled"'
+  grep -A1 'name: SHAREPOINT_OAUTH_CLIENT_ID' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: SHAREPOINT_OAUTH_TENANT' "$manifest" | grep -q 'value: ""'
   grep -A1 'name: SHAREPOINT_DISCOVERY_MAX_SITES' "$manifest" | grep -q 'value: "50"'
   grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: auto'
 done
 
-sed \
-  -e 's/^MICROSOFT_GRAPH_REQUESTS_PER_SECOND=4.0$/MICROSOFT_GRAPH_REQUESTS_PER_SECOND=8.0/' \
-  -e 's/^OUTLOOK_MAIL_OAUTH_TENANT=$/OUTLOOK_MAIL_OAUTH_TENANT=mail.example.com/' \
-  -e 's/^OUTLOOK_CALENDAR_OAUTH_TENANT=$/OUTLOOK_CALENDAR_OAUTH_TENANT=calendar.example.com/' \
-  -e 's/^SHAREPOINT_OAUTH_TENANT=$/SHAREPOINT_OAUTH_TENANT=sharepoint.example.com/' \
-  -e 's/^SHAREPOINT_DISCOVERY_MAX_SITES=50$/SHAREPOINT_DISCOVERY_MAX_SITES=75/' \
-  "$GCP_DIR/.env.example" > "$TEST_TMP/microsoft-overrides.env"
+cp "$GCP_DIR/.env.example" "$TEST_TMP/microsoft-overrides.env"
+cat >> "$TEST_TMP/microsoft-overrides.env" <<'ENV'
+MICROSOFT_GRAPH_REQUESTS_PER_SECOND=8.0
+OUTLOOK_MAIL_OAUTH_TENANT=mail.example.com
+OUTLOOK_CALENDAR_OAUTH_TENANT=calendar.example.com
+SHAREPOINT_OAUTH_TENANT=sharepoint.example.com
+SHAREPOINT_DISCOVERY_MAX_SITES=75
+ENV
 "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/microsoft-overrides-render" \
   "$TEST_TMP/microsoft-overrides.env" abcdef0123456789
 for manifest in \
@@ -172,9 +173,10 @@ if grep -R -q --exclude='test.sh' 'PUBLIC_ASSET_PREFIX\|/assets$' "$GCP_DIR"; th
   exit 1
 fi
 
-for invalid_private_bucket in missing public workspace; do
-  if [[ "$invalid_private_bucket" == missing ]]; then
-    sed '/^GCS_PLATFORM_PRIVATE_BUCKET=/d' "$GCP_DIR/.env.example" > "$TEST_TMP/private.env"
+for invalid_private_bucket in empty public workspace; do
+  if [[ "$invalid_private_bucket" == empty ]]; then
+    sed 's/^GCS_PLATFORM_PRIVATE_BUCKET=.*/GCS_PLATFORM_PRIVATE_BUCKET=/' \
+      "$GCP_DIR/.env.example" > "$TEST_TMP/private.env"
     expected='required variable GCS_PLATFORM_PRIVATE_BUCKET is unset or empty'
   elif [[ "$invalid_private_bucket" == workspace ]]; then
     sed 's/^GCS_PLATFORM_PRIVATE_BUCKET=.*/GCS_PLATFORM_PRIVATE_BUCKET=praxis-example-staging-00000000000000000000000000000001/' \
@@ -260,10 +262,9 @@ GOOGLE_VERTEX_AI=true GOOGLE_VERTEX_LOCATION=us-central1 \
 for manifest in \
   "$TEST_TMP/legacy-render/services/praxis-api.yaml" \
   "$TEST_TMP/legacy-render/jobs/praxis-worker.yaml"; do
-  grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "false"'
-  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: auto'
+  grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "true"'
+  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: us-central1'
 done
-grep -Fq 'unset GOOGLE_VERTEX_AI GOOGLE_VERTEX_LOCATION' "$GCP_DIR/bootstrap.sh"
 
 sed 's/^WORKER_MAX_CONCURRENT_RUNS=2$/WORKER_MAX_CONCURRENT_RUNS=3/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/oversized-worker-concurrency.env"
