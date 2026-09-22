@@ -86,6 +86,9 @@ def test_gemini_3_5_flash_lite_catalog_capabilities():
     ("provider", "model", "context_window"),
     [
         ("openai", "gpt-6-astra", 1_050_000),
+        ("openai", "gpt-6-sol", 1_050_000),
+        ("openai", "gpt-6-luna", 1_050_000),
+        ("anthropic", "claude-opus-5-5", 1_000_000),
         ("openai", "gpt-5.5", 1_050_000),
         ("openai", "gpt-5.4", 1_050_000),
         ("openai", "gpt-5.4-mini", 400_000),
@@ -160,8 +163,8 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
     assert providers[PROVIDER_OPENAI].model_count == len(response.models)
     assert providers[PROVIDER_OPENAI].model_type_defaults == {
         "max": "openai:gpt-6-astra",
-        "powerful": "openai:gpt-5.6-terra",
-        "standard": "openai:gpt-5.6-luna",
+        "powerful": "openai:gpt-6-sol",
+        "standard": "openai:gpt-6-luna",
         "light": "openai:gpt-5.4-nano",
     }
     assert providers[PROVIDER_ANTHROPIC].configured is False
@@ -215,10 +218,11 @@ def test_model_catalog_lists_documented_anthropic_vertex_models(monkeypatch):
     providers = {provider.provider: provider for provider in response.providers}
     assert providers[PROVIDER_ANTHROPIC].configured is True
     assert providers[PROVIDER_ANTHROPIC].transport == "google-cloud"
-    assert providers[PROVIDER_ANTHROPIC].model_count == 8
+    assert providers[PROVIDER_ANTHROPIC].model_count == 9
     assert {model.model for model in response.models} == {
         "claude-fable-5-1",
         "claude-fable-5",
+        "claude-opus-5-5",
         "claude-opus-4-8",
         "claude-opus-4-7",
         "claude-opus-4-6",
@@ -314,7 +318,7 @@ def test_model_catalog_uses_first_visible_model_for_each_provider_type(monkeypat
 
     assert providers[PROVIDER_ANTHROPIC].model_type_defaults == {
         "max": "anthropic:claude-fable-5-1",
-        "powerful": "anthropic:claude-opus-4-8",
+        "powerful": "anthropic:claude-opus-5-5",
         "standard": "anthropic:claude-sonnet-5",
         "light": "anthropic:claude-haiku-4-5",
     }
@@ -349,7 +353,7 @@ def test_model_catalog_excludes_deprecated_models_from_type_defaults(monkeypatch
     providers = {provider.provider: provider for provider in response.providers}
 
     assert newest_standard.qualified_id not in {model.id for model in response.models}
-    assert providers[PROVIDER_OPENAI].model_type_defaults["standard"] == ("openai:gpt-5.4-mini")
+    assert providers[PROVIDER_OPENAI].model_type_defaults["standard"] == ("openai:gpt-5.6-luna")
 
 
 # Resolution

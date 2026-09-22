@@ -32,6 +32,7 @@ from services.agents.models.domain import (
 )
 from services.agents.models.utils import (
     provider_api_key,
+    provider_model_profile,
     provider_transport,
     retrying_http_client,
 )
@@ -57,7 +58,12 @@ def build_model(spec: ResolvedModel) -> Model:
                 http_client=retrying_http_client(),
             )
         provider.client.max_retries = 0
-        return AnthropicModel(spec.transport_model, provider=provider, settings=model_settings)
+        return AnthropicModel(
+            spec.transport_model,
+            provider=provider,
+            profile=provider_model_profile(spec.provider, spec.transport_model),
+            settings=model_settings,
+        )
 
     if spec.provider == PROVIDER_OPENAI:
         provider = OpenAIProvider(
@@ -67,7 +73,10 @@ def build_model(spec: ResolvedModel) -> Model:
         )
         provider.client.max_retries = 0
         return OpenAIResponsesModel(
-            spec.transport_model, provider=provider, settings=model_settings
+            spec.transport_model,
+            provider=provider,
+            profile=provider_model_profile(spec.provider, spec.transport_model),
+            settings=model_settings,
         )
 
     if spec.provider == PROVIDER_GOOGLE:
@@ -101,6 +110,13 @@ def _google_provider(model: str) -> GoogleProvider:
 
 def _model_settings_for(spec: ResolvedModel):
     model_settings = dict(spec.settings)
+    if spec.provider == PROVIDER_ANTHROPIC and spec.model == "claude-opus-5-5":
+        thinking = model_settings.get("anthropic_thinking")
+        if isinstance(thinking, dict) and thinking.get("type") in {"disabled", "enabled"}:
+            raise ModelConfigurationError(
+                "Claude Opus 5.5 requires adaptive thinking. Choose a thinking effort instead.",
+                details={"provider": spec.provider, "model": spec.model},
+            )
     if spec.provider == PROVIDER_ANTHROPIC and settings.AGENT_PROMPT_CACHE_ENABLED:
         model_settings = {
             "anthropic_cache": True,

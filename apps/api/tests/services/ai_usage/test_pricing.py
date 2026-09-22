@@ -11,6 +11,26 @@ from services.ai_usage.pricing import find_image_output_price, find_price
 from services.embeddings.registry import list_embedding_models
 
 
+@pytest.mark.parametrize(
+    ("provider", "model", "rates"),
+    [
+        ("openai", "gpt-6-sol", ("2", "0.2", "2.5", "10")),
+        ("openai", "gpt-6-luna", ("0.1", "0.01", "0.125", "0.5")),
+        ("anthropic", "claude-opus-5-5", ("4", "0.2", "5", "20")),
+    ],
+)
+def test_september_22_model_prices(provider, model, rates):
+    assert find_price(provider, model, date(2026, 9, 21)) is None
+    price = find_price(provider, model, date(2026, 9, 22))
+    assert price is not None
+    assert (
+        price.input_usd_per_mtok,
+        price.cache_read_usd_per_mtok,
+        price.cache_write_usd_per_mtok,
+        price.output_usd_per_mtok,
+    ) == tuple(Decimal(rate) for rate in rates)
+
+
 def test_pricing_catalogue_returns_one_effective_rate_per_model() -> None:
     catalogue = get_model_pricing(date(2026, 9, 10))
     keys = [(price.provider, price.model) for price in catalogue.models]
@@ -110,7 +130,7 @@ def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
 
 
 def test_every_live_catalog_model_has_current_pricing() -> None:
-    on_date = date(2026, 9, 7)
+    on_date = date(2026, 9, 22)
     missing = [
         model.qualified_id
         for model in list_models()

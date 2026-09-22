@@ -228,7 +228,7 @@ def test_native_classifier_settings_defaults_and_bounds() -> None:
     resolved = Settings()
 
     assert resolved.NATIVE_CLASSIFIER_PROVIDER == "openai"
-    assert resolved.NATIVE_CLASSIFIER_MODEL == "gpt-5.6-luna"
+    assert resolved.NATIVE_CLASSIFIER_MODEL == "gpt-6-luna"
     assert resolved.NATIVE_CLASSIFIER_MAX_ITEMS == 500
     assert resolved.NATIVE_CLASSIFIER_MAX_ITEM_CHARS == 4_000
     assert resolved.NATIVE_CLASSIFIER_MAX_LABELS == 50
@@ -2170,7 +2170,7 @@ def test_classifier_resolution_falls_back_without_using_agent_model(
 
     resolved = classifier_tools.resolve_classifier_model()
 
-    assert (resolved.provider, resolved.model) == (PROVIDER_OPENAI, "gpt-5.6-luna")
+    assert (resolved.provider, resolved.model) == (PROVIDER_OPENAI, "gpt-6-luna")
 
 
 def test_classifier_resolution_rejects_invalid_overrides(
@@ -2234,7 +2234,7 @@ async def test_classifier_handler_returns_index_aligned_closed_labels(
         {"index": 1, "value": "Great service", "label": "praise"},
     ]
     assert output["model_provider"] == "openai"
-    assert output["model"] == "gpt-5.6-luna"
+    assert output["model"] == "gpt-6-luna"
 
 
 @pytest.mark.parametrize(

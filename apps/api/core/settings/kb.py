@@ -57,7 +57,7 @@ class KBSettingsMixin:
         description="Utility-model provider used for contextual chunk annotation.",
     )
     KB_ANNOTATION_MODEL: str = Field(
-        default="gpt-5.6-luna",
+        default="gpt-6-luna",
         min_length=1,
         max_length=128,
         description="Utility model used for contextual chunk annotation.",

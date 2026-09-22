@@ -53,7 +53,7 @@ from services.ai_usage.run_metered_helper import run_metered_helper
 from utils.validation import normalize_optional_text
 
 DEFAULT_CLASSIFIER_MODELS = {
-    PROVIDER_OPENAI: "gpt-5.6-luna",
+    PROVIDER_OPENAI: "gpt-6-luna",
     PROVIDER_ANTHROPIC: "claude-haiku-4-5",
     PROVIDER_GOOGLE: "gemini-3.5-flash-lite",
 }

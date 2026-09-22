@@ -223,7 +223,7 @@ class AgentRunSettingsMixin:
         description="Provider for the out-of-band conversation history summarizer.",
     )
     AGENT_HISTORY_SUMMARY_MODEL: str = Field(
-        default="gpt-5.6-luna",
+        default="gpt-6-luna",
         description="Model for the out-of-band conversation history summarizer.",
     )
     AGENT_PROMPT_IDENTITY_BUDGET: int = Field(

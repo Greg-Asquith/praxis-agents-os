@@ -34,6 +34,24 @@ _CATALOG: tuple[ModelInfo, ...] = (
     ),
     ModelInfo(
         provider=PROVIDER_OPENAI,
+        model="gpt-6-sol",
+        display_name="GPT-6 Sol",
+        context_window=1_050_000,
+        model_type="powerful",
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
+        model="gpt-6-luna",
+        display_name="GPT-6 Luna",
+        context_window=1_050_000,
+        model_type="standard",
+        supports_thinking=True,
+        supports_vision=True,
+    ),
+    ModelInfo(
+        provider=PROVIDER_OPENAI,
         model="gpt-5.6-sol",
         display_name="GPT-5.6 Sol",
         context_window=1_050_000,
@@ -125,6 +143,18 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_thinking=True,
         supports_vision=True,
+    ),
+    # https://platform.claude.com/docs/en/models/opus-5-5/overview
+    ModelInfo(
+        provider=PROVIDER_ANTHROPIC,
+        model="claude-opus-5-5",
+        vertex_model="claude-opus-5-5",
+        display_name="Claude Opus 5.5",
+        context_window=1_000_000,
+        model_type="powerful",
+        supports_thinking=True,
+        supports_vision=True,
+        default_settings={"anthropic_thinking": {"type": "adaptive", "display": "summarized"}},
     ),
     # Model Garden: Claude Opus 4.8 on Google Cloud.
     ModelInfo(

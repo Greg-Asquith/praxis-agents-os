@@ -34,7 +34,7 @@ class LLMSettingsMixin:
         description="Provider used when an agent does not specify model_provider.",
     )
     DEFAULT_MODEL: str = Field(
-        default="gpt-5.6-luna",
+        default="gpt-6-luna",
         description="Model used when an agent does not specify model.",
     )
 
@@ -44,7 +44,7 @@ class LLMSettingsMixin:
         description="Provider for the conversation-naming utility model.",
     )
     CONVERSATION_NAMING_MODEL: str = Field(
-        default="gpt-5.6-luna",
+        default="gpt-6-luna",
         description="Model used to generate conversation titles.",
     )
     NATIVE_CLASSIFIER_PROVIDER: str = Field(
@@ -52,7 +52,7 @@ class LLMSettingsMixin:
         description="Default provider for native classifier helper calls.",
     )
     NATIVE_CLASSIFIER_MODEL: str = Field(
-        default="gpt-5.6-luna",
+        default="gpt-6-luna",
         description="Default model for native classifier helper calls.",
     )
     NATIVE_CLASSIFIER_MAX_ITEMS: int = Field(

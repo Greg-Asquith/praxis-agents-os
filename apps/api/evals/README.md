@@ -10,7 +10,7 @@ they use paid model APIs, they stay outside pytest and never run as part of
 From the repository root, run the live-model evaluations:
 
 ```sh
-EVALS_MODEL=openai:gpt-5.6-luna OPENAI_API_KEY=... make evals
+EVALS_MODEL=openai:gpt-6-luna OPENAI_API_KEY=... make evals
 ```
 
 `EVALS_MODEL` must use `provider:model` form. The runner exits nonzero when the

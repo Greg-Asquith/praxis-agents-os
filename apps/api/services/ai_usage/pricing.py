@@ -51,6 +51,9 @@ def _price(
 # Standard OpenAI API rates as of 2026-08-13.
 # https://developers.openai.com/api/docs/models
 _OPENAI_PRICES = (
+    # GPT-6 Sol and Luna model pages (2026-09-22), Standard processing.
+    _price("openai", "gpt-6-sol", date(2026, 9, 22), "2", "0.2", "2.5", "10"),
+    _price("openai", "gpt-6-luna", date(2026, 9, 22), "0.1", "0.01", "0.125", "0.5"),
     # https://developers.openai.com/api/docs/models/gpt-6-astra (2026-09-07).
     _price("openai", "gpt-6-astra", date(2026, 9, 7), "10", "1", "12.5", "50"),
     _price("openai", "gpt-5.6-sol", date(2026, 7, 9), "5", "0.5", "6.25", "30"),
@@ -72,6 +75,8 @@ _OPENAI_PRICES = (
 # distinguishable in the usage ledger.
 # https://platform.claude.com/docs/en/about-claude/pricing
 _ANTHROPIC_PRICES = (
+    # https://platform.claude.com/docs/en/about-claude/pricing (2026-09-22).
+    _price("anthropic", "claude-opus-5-5", date(2026, 9, 22), "4", "0.2", "5", "20"),
     _price("anthropic", "claude-fable-5-1", date(2026, 9, 1), "10", "0.25", "12.5", "50"),
     _price("anthropic", "claude-fable-5", date(2026, 6, 9), "10", "1", "12.5", "50"),
     _price("anthropic", "claude-opus-4-8", date(2026, 5, 27), "5", "0.5", "6.25", "25"),
