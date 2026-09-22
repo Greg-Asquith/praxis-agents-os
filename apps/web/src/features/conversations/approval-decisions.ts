@@ -159,6 +159,9 @@ function buildMergedArgs(
 }
 
 function mergeEditedValue(original: unknown, edit: EditedValue, field?: ApprovalField): unknown {
+  if (field && !field.editable) return INVALID_EDIT
+  if (edit === null) return mergeClearedEntity(original, field)
+
   if (field?.format === "records") {
     const validity = recordRowsValidity(edit, field.columns, field.min_rows)
     if (!validity.isRecords || validity.error !== null || !Array.isArray(original)) {
@@ -190,6 +193,12 @@ function mergeEditedValue(original: unknown, edit: EditedValue, field?: Approval
   }
   if (Array.isArray(edit)) return mergeListEdit(original, edit, field)
   return mergeKeyValueEdit(original, edit)
+}
+
+function mergeClearedEntity(original: unknown, field?: ApprovalField): unknown {
+  if (field?.format !== "entity" || !field.editable || !field.secondary) return INVALID_EDIT
+  if (original == null) return NO_CHANGE
+  return isEntityReference(original) ? null : INVALID_EDIT
 }
 
 function mergeKeyValueEdit(original: unknown, edit: EditedValue): unknown {

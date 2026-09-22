@@ -330,3 +330,93 @@ async def test_authorized_lookup_preserves_reads_and_filters_write_choices(
                 expected = set()
             assert {choice.value["drive_id"] for choice in result.choices} == expected
             assert len(requests) == credential_factory.await_count == len(expected)
+
+
+@pytest.mark.parametrize("nested", [False, True], ids=["direct", "code_mode"])
+@pytest.mark.parametrize("field", ["folder", "parent"])
+@pytest.mark.parametrize("changed_library", [False, True], ids=["reviewed_root", "changed_root"])
+async def test_cleared_destination_resume_preserves_reviewed_root_binding(
+    db_session_factory, monkeypatch, nested, field, changed_library
+):
+    selected = replace(entry(), write_allowed=True)
+    active = AsyncMock(return_value=ResolvedActiveContext(entries=(selected,)))
+    definition = _configure(
+        monkeypatch, db_session_factory, DEFINITIONS[field], active, nested=nested
+    )
+    context = await build_scenario_agent(
+        db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
+    )
+    args = _arguments(field)
+    code_args = ", ".join(f"{key}={value!r}" for key, value in args.items())
+    call = (
+        ToolCall(
+            RUN_WORKFLOW_TOOL_NAME, {"code": f"await {definition.name}({code_args})"}, "workflow"
+        )
+        if nested
+        else ToolCall(definition.name, args, "write")
+    )
+    model = scripted_model(turns=[ToolTurn((call,)), "The request finished."])
+    suspended = await run_scenario(db_session_factory, context, model=model)
+    assert suspended.run.status == "awaiting_approval"
+    if changed_library:
+        active.return_value = ResolvedActiveContext(
+            entries=(replace(entry("other"), write_allowed=True),)
+        )
+
+    provider = AsyncMock()
+    if field == "parent":
+        provider.post.return_value = {
+            **fixture("children.json")["value"][1],
+            "id": "new-child",
+            "name": args["name"],
+            "eTag": '"version-2"',
+            "parentReference": {"driveId": "drive", "path": "/drives/drive/root:"},
+        }
+    else:
+        provider.post.return_value = {"uploadUrl": "https://example.sharepoint.com/upload"}
+        provider.upload_fragment.return_value = file_metadata(
+            id="new-child",
+            eTag='"version-2"',
+            size=4,
+            parentReference={"driveId": "drive", "path": "/drives/drive/root:"},
+            file={"mimeType": "text/plain", "hashes": {"quickXorHash": quickxorhash(b"Text")}},
+        )
+    credential_factory = AsyncMock(return_value=provider)
+    resolver_factory = AsyncMock()
+    monkeypatch.setattr(
+        "integrations.sharepoint.tools.write_utils.drive_client", credential_factory
+    )
+    monkeypatch.setattr(
+        "integrations.sharepoint.entity_resolvers.drive_item.drive_client_for_principal",
+        resolver_factory,
+    )
+    completed = await resume_scenario(
+        db_session_factory,
+        context,
+        model=model,
+        decisions=[
+            AgentRunResumeDecision(
+                tool_call_id="workflow:1" if nested else "write",
+                decision="approved",
+                override_args=args | {field: None},
+            )
+        ],
+    )
+    assert completed.run.status == "completed"
+    resolver_factory.assert_not_awaited()
+    operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
+    if changed_library:
+        assert [row.status for row in operations] == ["failure"]
+        assert operations[0].details["error_code"] == "ModelRetry"
+        assert "Prepare the action for approval again" in str(
+            [message.parts for message in completed.messages]
+        )
+        credential_factory.assert_not_awaited()
+        provider.post.assert_not_awaited()
+        provider.upload_fragment.assert_not_awaited()
+    else:
+        assert sorted(row.status for row in operations) == ["pending", "success"]
+        terminal = next(row for row in operations if row.status == "success")
+        assert terminal.details["external_ref"] == "drive:new-child"
+        assert provider.post.await_args.args[0].startswith("/drives/drive/root")
+        provider.get.assert_not_awaited()

@@ -1,6 +1,6 @@
 // apps/web/src/components/tool-ui/entity-field-input.tsx
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type Ref } from "react"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { LoaderCircleIcon } from "lucide-react"
 
@@ -39,6 +39,7 @@ export function EntityFieldInput({
   disabled,
   field,
   id,
+  inputRef,
   onChange,
   onValidityChange,
   toolName,
@@ -49,7 +50,8 @@ export function EntityFieldInput({
   disabled: boolean
   field: ApprovalField
   id: string
-  onChange: (value: EntityReferenceValue | EntityReferenceValue[]) => void
+  inputRef?: Ref<HTMLInputElement>
+  onChange: (value: EntityReferenceValue | EntityReferenceValue[] | null) => void
   onValidityChange: (key: string, valid: boolean) => void
   toolName: string
   value: unknown
@@ -62,6 +64,7 @@ export function EntityFieldInput({
     ...entityReferenceHydrationQueryOptions({
       conversationId,
       dependentArgs,
+      dependsOn: field.depends_on,
       exactValues: exactValues ?? [],
       fieldKey: field.key,
       toolName,
@@ -75,6 +78,7 @@ export function EntityFieldInput({
     ...entityReferenceSearchQueryOptions({
       conversationId,
       dependentArgs,
+      dependsOn: field.depends_on,
       fieldKey: field.key,
       search,
       toolName,
@@ -148,7 +152,12 @@ export function EntityFieldInput({
                   <ComboboxChipRemove aria-label={`Remove ${choice.label}`} />
                 </ComboboxChip>
               ))}
-              <ComboboxInput aria-label={`Search ${field.label}`} id={id} placeholder="Search…" />
+              <ComboboxInput
+                aria-label={`Search ${field.label}`}
+                id={id}
+                ref={inputRef}
+                placeholder="Search…"
+              />
             </ComboboxChips>
             <ComboboxTrigger aria-label={`Open ${field.label}`} />
           </ComboboxInputGroup>
@@ -158,21 +167,39 @@ export function EntityFieldInput({
         <Combobox<EntityChoice>
           {...rootProps}
           onValueChange={(nextChoice) => {
-            if (nextChoice) {
-              onChange(nextChoice.value)
-            }
+            if (nextChoice) onChange(nextChoice.value)
+            else if (field.editable && field.secondary) onChange(null)
           }}
           value={selected[0] ?? null}
         >
           <ComboboxInputGroup
             className={cn((unavailable || missingSelection) && "border-destructive/50")}
           >
-            <ComboboxInput aria-label={`Search ${field.label}`} id={id} placeholder="Search…" />
+            <ComboboxInput
+              aria-label={`Search ${field.label}`}
+              id={id}
+              ref={inputRef}
+              placeholder="Search…"
+            />
             <ComboboxTrigger aria-label={`Open ${field.label}`} />
           </ComboboxInputGroup>
           <ChoiceContent choices={choices} results={results} />
         </Combobox>
       )}
+      {!multiple && field.editable && field.secondary && value != null ? (
+        <Button
+          className="w-fit"
+          disabled={disabled}
+          onClick={() => {
+            onChange(null)
+          }}
+          size="sm"
+          type="button"
+          variant="ghost"
+        >
+          Clear {field.label}
+        </Button>
+      ) : null}
       {checking ? (
         <p className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
           <LoaderCircleIcon className="size-3 animate-spin motion-reduce:animate-none" />

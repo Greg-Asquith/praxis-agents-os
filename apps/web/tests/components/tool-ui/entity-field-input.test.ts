@@ -12,6 +12,7 @@ import {
   type EntityReferenceHydration,
 } from "@/components/tool-ui/entity-reference-queries"
 import type { EntityChoice } from "@/features/tools/types"
+import { setActiveWorkspaceSlug } from "@/lib/workspace"
 import { isRecord } from "@/lib/guards"
 import {
   getFetchRequest,
@@ -38,7 +39,7 @@ function renderEntityInput(value: unknown, choices: EntityChoice[] = []): string
   })
   const request: EntityReferenceHydration = {
     conversationId: "conversation-1",
-    dependentArgs: { file_id: value },
+    dependentArgs: {},
     exactValues: isRecord(value) ? [value] : [],
     fieldKey: "file_id",
     toolName: "read_file",
@@ -161,6 +162,79 @@ describe("EntityFieldInput", () => {
     expect(entitySearchEnabled({ disabled: true, open: false, search: "" })).toBe(false)
     expect(entitySearchEnabled({ disabled: false, open: false, search: "demo" })).toBe(false)
     expect(entitySearchEnabled({ disabled: true, open: true, search: "demo" })).toBe(true)
+  })
+
+  it("projects declared dependencies before caching and sending lookups", async () => {
+    const fetchStub = stubFetch(jsonResponse({ entity_kind: "file", choices: [] }))
+    const client = new QueryClient()
+    const base = {
+      conversationId: "conversation-1",
+      toolName: "read_file",
+      fieldKey: "file_id",
+      exactValues: [{ entity_id: "selected-file" }],
+      dependentArgs: { account: "first", content: "PRIVATE_CONTENT", name: "draft" },
+      dependsOn: ["account"],
+    }
+    setActiveWorkspaceSlug("first-workspace")
+    const first = entityReferenceHydrationQueryOptions(base)
+    const edited = entityReferenceHydrationQueryOptions({
+      ...base,
+      dependentArgs: { ...base.dependentArgs, content: "EDITED_CONTENT", name: "edited" },
+    })
+    expect(edited.queryKey).toEqual(first.queryKey)
+    expect(JSON.stringify(first.queryKey)).not.toMatch(/PRIVATE_CONTENT|content|draft/)
+    await client.fetchQuery(first)
+    expect(getJsonRequestBody(getFetchRequest(fetchStub).init)).toMatchObject({
+      dependent_args: { account: "first" },
+    })
+    expect(
+      entityReferenceHydrationQueryOptions({
+        ...base,
+        dependentArgs: { account: "second" },
+      }).queryKey
+    ).not.toEqual(first.queryKey)
+    expect(
+      entityReferenceHydrationQueryOptions({
+        ...base,
+        exactValues: [{ entity_id: "different-file" }],
+      }).queryKey
+    ).not.toEqual(first.queryKey)
+    for (const identity of [
+      { conversationId: "conversation-2" },
+      { toolName: "other_tool" },
+      { fieldKey: "other_field" },
+    ]) {
+      expect(entityReferenceHydrationQueryOptions({ ...base, ...identity }).queryKey).not.toEqual(
+        first.queryKey
+      )
+    }
+    setActiveWorkspaceSlug("second-workspace")
+    expect(entityReferenceHydrationQueryOptions(base).queryKey).not.toEqual(first.queryKey)
+    setActiveWorkspaceSlug(null)
+    const noDependencies = entityReferenceSearchQueryOptions({ ...base, dependsOn: [], search: "" })
+    expect(noDependencies.queryKey).toContainEqual({})
+    expect(JSON.stringify(noDependencies.queryKey)).not.toContain("PRIVATE_CONTENT")
+    client.clear()
+  })
+
+  it("filters search payloads while preserving explicit null dependencies", async () => {
+    const fetchStub = stubFetch(jsonResponse({ entity_kind: "file", choices: [] }))
+    const client = new QueryClient()
+    const query = entityReferenceSearchQueryOptions({
+      conversationId: "conversation-1",
+      toolName: "dependent_tool",
+      fieldKey: "target",
+      dependentArgs: { account: null, content: "PRIVATE_CONTENT" },
+      dependsOn: ["account", "omitted"],
+      search: "report",
+    })
+    await client.fetchInfiniteQuery(query)
+    expect(getJsonRequestBody(getFetchRequest(fetchStub).init)).toMatchObject({
+      dependent_args: { account: null },
+      search: "report",
+    })
+    expect(JSON.stringify(query.queryKey)).not.toContain("PRIVATE_CONTENT")
+    client.clear()
   })
 
   it("merges paged choices by identity", () => {

@@ -129,14 +129,16 @@ export function ApprovalRequestFields({
         const options = availableFieldOptions(field, lockedRecord, fields)
         const rawValue = args[field.key]
         const originalValue = editableValue(field, rawValue)
-        const editable = field.editable && originalValue !== null
+        const optionalEntity = field.format === "entity" && field.secondary
+        const editable =
+          field.editable && (originalValue !== null || (optionalEntity && rawValue == null))
         const value = clearedEntityFields.has(field.key)
           ? field.format === "entity_list"
             ? []
             : null
-          : originalValue === null
-            ? ""
-            : (decision.edits[field.key] ?? originalValue)
+          : Object.hasOwn(decision.edits, field.key)
+            ? decision.edits[field.key]
+            : originalValue
         const isEmptySecondary =
           field.secondary && field.format !== "boolean" && isEmptyEditedValue(value)
         const isRevealed = revealedFields.has(field.key)
@@ -215,7 +217,8 @@ export function ApprovalRequestFields({
                   className="h-auto px-1 py-0 text-xs"
                   disabled={disabled}
                   onClick={() => {
-                    onEditsChange(withoutEdit(decision.edits, field.key))
+                    if (optionalEntity) applyFieldEdit(field.key, null)
+                    else onEditsChange(withoutEdit(decision.edits, field.key))
                     setRevealedFields((current) => {
                       const next = new Set(current)
                       next.delete(field.key)
@@ -237,6 +240,7 @@ export function ApprovalRequestFields({
                 disabled={disabled}
                 field={field}
                 id={id}
+                inputRef={focusRef}
                 onChange={(nextValue) => {
                   applyFieldEdit(field.key, nextValue)
                 }}
@@ -458,13 +462,14 @@ function changeHandler(key: string, applyFieldEdit: (key: string, value: EditedV
 }
 
 function isEmptyEditedValue(value: unknown): boolean {
+  if (value == null) return true
   if (typeof value === "string") {
     return !value.trim()
   }
   if (Array.isArray(value)) {
     return value.length === 0
   }
-  return value !== null && typeof value === "object" && Object.keys(value).length === 0
+  return typeof value === "object" && Object.keys(value).length === 0
 }
 
 function isEditedKeyValue(value: unknown): value is EditedKeyValue {

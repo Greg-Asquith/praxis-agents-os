@@ -166,6 +166,15 @@ The following contracts apply in this area:
   searches can take seconds, so the field requests the default choice page as
   soon as it mounts and shows a loading row under the proposed target until
   the page arrives, instead of waiting for the operator to open the list.
+- Optional editable single-entity fields support selection from an absent or
+  null initial value and an explicit clear action. Clearing records a null
+  edit, distinct from removing an edit. Required and locked targets cannot
+  be cleared. Provider target binding still validates an implicit destination
+  when replay resumes.
+- Entity lookup payloads and cache keys contain only the field's declared
+  `depends_on` arguments. Unrelated name or content edits retain the selected
+  target and its verification state. Reference or dependency changes refresh
+  the lookup; keys retain workspace, conversation, tool, and field identity.
 - A failed approval submit keeps the error on the card and offers Decline
   beside Try Again. Decline reopens the request, so the operator can decline
   it or go back, correct the fields, and approve again.

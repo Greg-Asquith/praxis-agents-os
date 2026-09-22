@@ -685,3 +685,82 @@ it("keeps stale recovered or streamed proposals unavailable until their revision
   expect(approvalRevisionIsReady("new-round", "new-round")).toBe(true)
   expect(approvalRevisionIsReady(null, undefined)).toBe(true)
 })
+
+describe("optional entity approval edits", () => {
+  const reference = {
+    version: 1 as const,
+    entity_kind: "file",
+    entity_id: "folder-1",
+    label: "Reports",
+  }
+  const field: ApprovalField = {
+    key: "folder",
+    label: "Folder",
+    format: "entity",
+    editable: true,
+    secondary: true,
+    min_rows: 1,
+    options: [],
+    placeholder: "",
+    entity_kind: "file",
+  }
+
+  it.each([null, undefined, reference])("clears an optional entity from %j", (folder) => {
+    const args = folder === undefined ? { name: "notes.txt" } : { name: "notes.txt", folder }
+    expect(
+      buildResumeDecisions(
+        [{ tool_call_id: "write", name: "write_file", args }],
+        { write: { decision: "approved", message: "", edits: { folder: null } } },
+        () => [field]
+      )
+    ).toEqual([
+      {
+        tool_call_id: "write",
+        decision: "approved",
+        override_args: folder == null ? null : { name: "notes.txt", folder: null },
+      },
+    ])
+  })
+
+  it.each([
+    undefined,
+    { ...field, secondary: false },
+    { ...field, editable: false },
+    { ...field, format: "text" as const },
+    { ...field, format: "entity_list" as const },
+  ])("rejects clearing without an editable optional entity declaration: %j", (declaration) => {
+    expect(
+      buildResumeDecisions(
+        [{ tool_call_id: "write", name: "write_file", args: { folder: reference } }],
+        { write: { decision: "approved", message: "", edits: { folder: null } } },
+        () => (declaration ? [declaration] : undefined)
+      )
+    ).toBe("This request can no longer be edited. Refresh and try again.")
+  })
+
+  it.each([null, { ...reference, entity_id: "other-folder" }])(
+    "rejects a stale or injected locked entity edit %j",
+    (folder) => {
+      expect(
+        buildResumeDecisions(
+          [{ tool_call_id: "write", name: "write_file", args: { folder: reference } }],
+          { write: { decision: "approved", message: "", edits: { folder } } },
+          () => [{ ...field, editable: false }]
+        )
+      ).toBe("This request can no longer be edited. Refresh and try again.")
+    }
+  )
+
+  it.each(["folder-id", false, 1, [], {}])(
+    "rejects clearing a malformed entity value %j",
+    (folder) => {
+      expect(
+        buildResumeDecisions(
+          [{ tool_call_id: "write", name: "write_file", args: { folder } }],
+          { write: { decision: "approved", message: "", edits: { folder: null } } },
+          () => [field]
+        )
+      ).toBe("This request can no longer be edited. Refresh and try again.")
+    }
+  )
+})

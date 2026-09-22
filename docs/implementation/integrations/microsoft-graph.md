@@ -331,12 +331,43 @@ Each tool targets one library and works through direct calls and Code Mode.
 Without a folder reference, exactly one writable library must be selected.
 References must belong to an unambiguous selected drive. Read-only resources
 produce the shared write-denial audit before credentials or provider requests.
-Automatic execution is unavailable. Dedicated write-result presenters are
-pending; the server declares editable name, destination, and text fields for
-approval, and keeps the replacement file and version locked. Approval prompts
-name the reviewed library. Creation prompts identify its root as the default
-when no folder is chosen, so an edited folder can select another library.
+Automatic execution is unavailable. The three write presenters use the shared
+approval and outcome cards. The server declares editable name, destination,
+and multiline text fields, and keeps the replacement file and version locked.
+Approval cards identify the reviewed library and show its root as the default
+when no folder is chosen. **Add Folder** opens the destination picker for a
+root proposal. Clearing an optional folder returns to the reviewed root.
+An edited folder can select another library. Root execution still requires
+one unambiguous writable library matching the reviewed target. If clearing a
+folder cannot preserve that target, prepare a fresh proposal.
 The library label remains plain text, separate from replayable arguments.
+
+Approval cards use the existing conversation-scoped lookup to show the
+selected item, library, and path. Lookups reuse the entity editor query cache.
+SharePoint destination fields declare no sibling dependencies, so name and
+content edits send no lookup requests and stay out of lookup cache keys.
+Choice descriptions include a path relative to the library, bounded to 1,000
+characters with an ellipsis when shortened. A pending or unavailable path has
+explicit copy. An edited folder in another library replaces the original
+library label with a selected-item description until lookup completes.
+The shared entity editor verifies the selected destination.
+Name validation mirrors the server's character, length, and reserved-name
+rules. Empty text, invalid Unicode, and prohibited control characters block
+approval with a correction message. HTML and Markdown remain escaped text
+in the multiline editor. Replacement cards identify the file and explain
+that SharePoint keeps its previous version.
+
+Outcome cards show the public item name, parent location relative to the
+library, byte size, and an **Open in SharePoint** link through the shared HTTP
+URL guard. Root locations say **Library root**. Missing or unrecognised paths
+say **Location unavailable**. Graph routing prefixes and drive IDs stay out
+of these locations, including unverified outcomes. Version conflicts, name
+conflicts, locks, quota failures, expired sessions, invalid upload ranges,
+unsupported types, and size limits have recovery copy. Unverified outcomes
+remain unconfirmed and ask you to check the library before trying again.
+Private references, upload and download fields, versions, and provenance
+metadata stay out of the outcome view. Malformed results fall back to the
+default tool row. The module registers five read and three write presenters.
 
 The existing SharePoint connection requests delegated `Files.ReadWrite.All`
 and `Sites.ReadWrite.All` alongside its read scopes. Grant administrator consent

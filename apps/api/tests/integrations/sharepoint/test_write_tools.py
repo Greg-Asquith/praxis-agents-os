@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_write_tools.py
+
 """SharePoint write validation, scope selection, approvals, and audit evidence."""
 
 import importlib
@@ -101,6 +103,11 @@ def test_write_contracts_and_code_mode_schemas(definition):
     schema = definition.to_pydantic_tool().function_schema.json_schema
     assert set(schema["properties"]) == {field.key for field in definition.presentation.arg_fields}
     assert definition.approval_display_args is not None
+    for field in definition.presentation.arg_fields:
+        if field.key == "content":
+            assert field.format == "multiline" and field.editable
+        if field.key in {"file", "expected_version"}:
+            assert not field.editable
 
 
 @pytest.mark.parametrize("name", ARGS)
@@ -185,6 +192,67 @@ async def test_root_write_selects_only_writable_library(provider, name):
     result = await invoke(name, entries=[entry("readonly"), writable()])
     assert len(result["results"]) == 1 and result["results"][0]["data"]["outcome"] == "applied"
     assert provider.factory.await_args.args[1].external_id == "drive"
+
+
+@pytest.mark.parametrize("name,field", [("create_folder", "parent"), ("write_file", "folder")])
+async def test_cleared_destination_uses_the_reviewed_library_root(provider, name, field):
+    module = importlib.import_module(f"integrations.sharepoint.tools.{name}")
+    selected = writable()
+    ctx = context(entry("readonly"), selected)
+    ctx.tool_name = f"sharepoint_{name}"
+    ctx.reviewed_display = module.DEFINITION.approval_display_args(
+        ctx.deps, {**ARGS[name], field: FOLDER}
+    )
+
+    result = await getattr(module, ctx.tool_name)(ctx, **{**ARGS[name], field: None})
+
+    assert result["results"][0]["data"]["outcome"] == "applied"
+    assert provider.factory.await_args.args[1] == selected
+    assert provider.client.post.await_args.args[0].startswith("/drives/drive/root")
+    provider.client.get.assert_not_awaited()
+
+
+@pytest.mark.parametrize("name,field", [("create_folder", "parent"), ("write_file", "folder")])
+async def test_cleared_destination_cannot_choose_between_writable_libraries(provider, name, field):
+    module = importlib.import_module(f"integrations.sharepoint.tools.{name}")
+    ctx = context(writable(), writable("other"))
+    ctx.tool_name = f"sharepoint_{name}"
+    ctx.reviewed_display = module.DEFINITION.approval_display_args(
+        ctx.deps, {**ARGS[name], field: FOLDER}
+    )
+
+    with pytest.raises(ModelRetry, match="Select one writable SharePoint library"):
+        await getattr(module, ctx.tool_name)(ctx, **{**ARGS[name], field: None})
+
+    provider.factory.assert_not_awaited()
+    provider.client.post.assert_not_awaited()
+
+
+@pytest.mark.parametrize("name,field", [("create_folder", "parent"), ("write_file", "folder")])
+@pytest.mark.parametrize("change", ["drive", "resource", "connection"])
+async def test_cleared_destination_requires_review_when_root_binding_changes(
+    provider, name, field, change
+):
+    module = importlib.import_module(f"integrations.sharepoint.tools.{name}")
+    selected = writable()
+    reviewed = module.DEFINITION.approval_display_args(
+        context(selected).deps, {**ARGS[name], field: FOLDER}
+    )
+    changed = {
+        "drive": replace(selected, external_id="other"),
+        "resource": replace(selected, integration_resource_id=uuid4()),
+        "connection": replace(selected, connection_id=uuid4()),
+    }[change]
+    ctx = context(changed)
+    ctx.tool_name = f"sharepoint_{name}"
+    ctx.reviewed_display = reviewed
+
+    result = await getattr(module, ctx.tool_name)(ctx, **{**ARGS[name], field: None})
+
+    assert "Prepare the action for approval again" in result["results"][0]["error_message"]
+    provider.factory.assert_not_awaited()
+    provider.client.post.assert_not_awaited()
+    provider.client.upload_fragment.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

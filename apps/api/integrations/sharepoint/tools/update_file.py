@@ -126,7 +126,7 @@ DEFINITION = RuntimeToolDefinition(
                 secondary=False,
             ),
             ToolFieldPresentation(
-                key="content", label="Content", format="text", editable=True, secondary=False
+                key="content", label="Content", format="multiline", editable=True, secondary=False
             ),
         ),
         result_fields=RESULTS_FIELD,

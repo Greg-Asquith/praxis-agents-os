@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_entity_lookup.py
+
 """Application lookup authorises SharePoint fields before provider access."""
 
 from types import SimpleNamespace
@@ -9,6 +11,8 @@ import pytest
 
 from core.auth.sessions import session_manager
 from core.database import set_session_tenant_context
+from integrations.sharepoint.entity_resolvers.utils import item_choice
+from integrations.sharepoint.operations.utils import item_result
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.settings import sharepoint_settings
 from models.agent import Agent
@@ -25,6 +29,18 @@ from tests.factories import (
 )
 from tests.integrations.sharepoint.support import fixture, graph
 from tests.support.auth import bearer_headers
+
+
+@pytest.mark.parametrize("parent", ["/Finance/<img src=x>", "/" + "long" * 400])
+def test_choice_includes_bounded_path_without_drive_identifier(parent):
+    folder = fixture("children.json")["value"][1]
+    folder["parentReference"]["path"] = f"/drives/private-drive/root:{parent}"
+    item = item_result(folder, drive_id="drive", operation="get_item")
+    choice = item_choice(SimpleNamespace(display_name="Documents"), item)
+    assert choice.description.startswith("Folder\n" + parent[:100])
+    assert "private-drive" not in choice.description
+    assert len(choice.description) <= 1000
+    assert choice.description.endswith("…" if len(parent) > 1000 else "/Reports")
 
 
 @pytest.fixture
@@ -122,8 +138,8 @@ async def test_lookup_route_searches_selected_drive_with_acting_user(
         assert reference.label == reference.name == choice["label"]
         assert reference.scope_label == choice["scope_label"] == "Documents"
     assert {choice["description"] for choice in choices} == {
-        "Folder",
-        "File; choose a folder to list its contents.",
+        "Folder\n/Reports",
+        "File; choose a folder to list its contents.\n/Quarterly report.docx",
     }
     client.assert_awaited_once()
     principal = client.await_args.kwargs

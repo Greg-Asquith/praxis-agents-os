@@ -16,6 +16,7 @@ type LookupBase = {
   toolName: string
   fieldKey: string
   dependentArgs: Record<string, unknown>
+  dependsOn?: readonly string[] | undefined
 }
 
 export type EntityReferenceSearch = LookupBase & {
@@ -29,18 +30,27 @@ export type EntityReferenceHydration = LookupBase & {
 
 const entityReferenceQueryKeys = {
   ...baseEntityReferenceQueryKeys,
-  field: ({ conversationId, dependentArgs, fieldKey, toolName }: LookupBase) =>
+  field: ({ conversationId, dependentArgs, dependsOn, fieldKey, toolName }: LookupBase) =>
     [
       ...baseEntityReferenceQueryKeys.workspace(),
       conversationId,
       toolName,
       fieldKey,
-      dependentArgs,
+      entityDependentArgs(dependentArgs, dependsOn),
     ] as const,
   hydration: (request: EntityReferenceHydration) =>
     [...entityReferenceQueryKeys.field(request), "hydrate", request.exactValues] as const,
   search: (request: EntityReferenceSearch) =>
     [...entityReferenceQueryKeys.field(request), "search", request.search] as const,
+}
+
+function entityDependentArgs(
+  args: Record<string, unknown>,
+  dependsOn: readonly string[] = []
+): Record<string, unknown> {
+  return Object.fromEntries(
+    dependsOn.filter((key) => Object.hasOwn(args, key)).map((key) => [key, args[key]])
+  )
 }
 
 export async function lookupEntityReferences(
@@ -60,7 +70,7 @@ export async function lookupEntityReferences(
       body: {
         tool_name: request.toolName,
         field_key: request.fieldKey,
-        dependent_args: request.dependentArgs,
+        dependent_args: entityDependentArgs(request.dependentArgs, request.dependsOn),
         ...(request.search !== undefined ? { search: request.search } : {}),
         ...(request.exactValues !== undefined ? { exact_values: request.exactValues } : {}),
         ...(request.cursor ? { cursor: request.cursor } : {}),
