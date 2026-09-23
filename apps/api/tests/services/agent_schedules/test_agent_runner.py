@@ -437,6 +437,10 @@ async def test_worker_request_budget_is_cumulative_across_approval_resume(
         assert agent_run is not None
         assert agent_run.requests == 1
         assert agent_run.metadata_json["completion_contract"]["max_requests"] == 1
+        assert agent_run.input_tokens is not None
+        assert agent_run.output_tokens is not None
+        observed_total_tokens = agent_run.input_tokens + agent_run.output_tokens
+        assert observed_total_tokens > 0
         suspended_state = load_suspended_run_state(agent_run)
         tool_call_id = suspended_state.pending_tool_call_ids[0]
         run_id = agent_run.id
@@ -476,6 +480,8 @@ async def test_worker_request_budget_is_cumulative_across_approval_resume(
         assert agent_run.completion_json == {
             "error_code": "usage_limit_exceeded",
             "tripped_budget": {"kind": "requests", "limit": 1, "scope": "local"},
+            "observed_total_tokens": observed_total_tokens,
+            "requests": 1,
         }
         assert agent_run.metadata_json["effective_usage_limits"]["limits"]["request_limit"] == 1
 
