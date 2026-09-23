@@ -9,7 +9,9 @@ from core.settings import Settings
 def test_compaction_defaults_are_bounded() -> None:
     fields = Settings.model_fields
 
-    assert fields["AGENT_RUN_TOTAL_TOKENS_LIMIT"].default == 1_000_000
+    assert fields["AGENT_RUN_TOTAL_TOKENS_LIMIT"].default is None
+    assert fields["AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER"].default == 8
+    assert fields["AGENT_RUN_CACHED_TOKEN_WEIGHT"].default == 0.1
     assert fields["AGENT_HISTORY_CONTEXT_FRACTION"].default == 0.6
     assert fields["AGENT_HISTORY_SUMMARY_MAX_CHARS"].default == 2000
     assert fields["AZURE_OPENAI_CONTEXT_WINDOW"].default == 128_000
@@ -41,6 +43,25 @@ def test_context_fraction_rejects_out_of_range_values(fraction: float) -> None:
 def test_summary_cap_must_be_positive() -> None:
     with pytest.raises(ValidationError):
         Settings(AGENT_HISTORY_SUMMARY_MAX_CHARS=0)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("AGENT_RUN_TOTAL_TOKENS_LIMIT", 0),
+        ("AGENT_RUN_TOTAL_TOKENS_LIMIT", 2**53),
+        ("AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER", 0),
+        ("AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER", 1.5),
+        ("AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER", 2**53),
+        ("AGENT_RUN_CACHED_TOKEN_WEIGHT", -0.1),
+        ("AGENT_RUN_CACHED_TOKEN_WEIGHT", 1.1),
+        ("AGENT_RUN_CACHED_TOKEN_WEIGHT", float("nan")),
+        ("AGENT_RUN_CACHED_TOKEN_WEIGHT", float("inf")),
+    ],
+)
+def test_invalid_backstop_settings_are_rejected(field, value) -> None:
+    with pytest.raises(ValidationError, match=field):
+        Settings(**{field: value})
 
 
 @pytest.mark.parametrize(

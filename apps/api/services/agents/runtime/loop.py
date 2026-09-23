@@ -118,11 +118,18 @@ def build_runtime_agent(
         usage_limits=intersect_usage_limits(
             EffectiveUsageLimits(
                 request_limit=resolved_model.max_steps,
-                total_tokens_limit=settings.AGENT_RUN_TOTAL_TOKENS_LIMIT,
+                total_tokens_limit=(
+                    settings.AGENT_RUN_TOTAL_TOKENS_LIMIT
+                    if settings.AGENT_RUN_TOTAL_TOKENS_LIMIT is not None
+                    else model_context.context_window
+                    * settings.AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER
+                ),
+                cached_token_weight=settings.AGENT_RUN_CACHED_TOKEN_WEIGHT,
             ),
             EffectiveUsageLimits(
                 request_limit=completion_contract.max_requests,
                 total_tokens_limit=completion_contract.max_total_tokens,
+                cached_token_weight=settings.AGENT_RUN_CACHED_TOKEN_WEIGHT,
             )
             if completion_contract is not None
             else None,

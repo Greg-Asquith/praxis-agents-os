@@ -713,14 +713,40 @@ async def runtime_context(db_session: AsyncSession) -> RuntimeContext:
     )
 
 
+@pytest.mark.parametrize(
+    ("provider", "model", "window"),
+    [
+        ("openai", "gpt-6-luna", 1_050_000),
+        ("openai", "gpt-5.4-mini", 400_000),
+        ("azure", "example-deployment", 128_000),
+    ],
+)
+@pytest.mark.parametrize("override", [None, 12345])
+async def test_runtime_backstop_uses_resolved_window_or_absolute_override(
+    db_session, runtime_context, monkeypatch, provider, model, window, override
+) -> None:
+    agent = await db_session.get(Agent, runtime_context.agent_id)
+    agent.model_provider = provider
+    agent.model = model
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", override)
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER", 8)
+    monkeypatch.setattr(settings, "AGENT_RUN_CACHED_TOKEN_WEIGHT", 0.1)
+    monkeypatch.setattr(settings, "AZURE_OPENAI_CONTEXT_WINDOW", window)
+    runtime = build_runtime_agent(agent, model=TestModel())
+    assert runtime.usage_limits.total_tokens_limit == (override or 8 * window)
+    assert runtime.usage_limits.cached_token_weight == 0.1
+    assert runtime.usage_limits.request_limit == agent.max_steps
+
+
 async def test_execute_run_persists_messages_usage_and_events(
     db_session: AsyncSession,
     runtime_context: RuntimeContext,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 1_000_000)
     agent = await db_session.get(Agent, runtime_context.agent_id)
     assert agent is not None
     assert agent.max_steps is not None
-    assert settings.AGENT_RUN_TOTAL_TOKENS_LIMIT is not None
     assert (
         build_runtime_agent(
             agent,

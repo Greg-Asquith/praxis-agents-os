@@ -2,8 +2,9 @@
 
 """Composes absolute usage ceilings and preserves exhaustion ownership."""
 
-from dataclasses import fields
+from dataclasses import fields, replace
 from decimal import Decimal
+from math import ceil
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +12,7 @@ from pydantic_ai import UsageLimitExceeded
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 Ceiling = Annotated[int, Field(strict=True, ge=0, le=2**53 - 1)]
+CachedTokenWeight = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 EFFECTIVE_USAGE_LIMITS_KEY = "effective_usage_limits"
 
 
@@ -33,16 +35,21 @@ class EffectiveUsageLimits(BaseModel):
         | None
     ) = None
     count_tokens_before_request: bool = False
+    cached_token_weight: CachedTokenWeight = 1.0
 
     @classmethod
     def from_sdk(cls, limits: UsageLimits) -> "EffectiveUsageLimits":
         """Copies framework fields and rejects unreviewed SDK changes."""
-        if {field.name for field in fields(UsageLimits)} != set(cls.model_fields):
+        sdk_fields = set(cls.model_fields) - {"cached_token_weight"}
+        if {field.name for field in fields(UsageLimits)} != sdk_fields:
             raise RuntimeError("The framework usage-limit fields need review")
-        return cls.model_validate({name: getattr(limits, name) for name in cls.model_fields})
+        return cls.model_validate(
+            {name: getattr(limits, name) for name in sdk_fields}
+            | {"cached_token_weight": getattr(limits, "cached_token_weight", 1.0)}
+        )
 
     def to_sdk(self) -> UsageLimits:
-        return UsageLimits(**self.model_dump())
+        return RuntimeUsageLimits(self)
 
 
 class SavedUsageLimits(BaseModel):
@@ -60,6 +67,9 @@ def intersect_usage_limits(*limits: EffectiveUsageLimits | None) -> EffectiveUsa
     ceilings = {}
     for name in EffectiveUsageLimits.model_fields:
         supplied = [value[name] for value in values if value[name] is not None]
+        if name == "cached_token_weight":
+            ceilings[name] = max(supplied, default=1.0)
+            continue
         ceilings[name] = (
             any(supplied) if name == "count_tokens_before_request" else min(supplied, default=None)
         )
@@ -82,7 +92,8 @@ class RuntimeUsageLimits(UsageLimits):
     def __init__(
         self, effective: EffectiveUsageLimits, inherited: EffectiveUsageLimits | None = None
     ) -> None:
-        super().__init__(**effective.model_dump())
+        super().__init__(**effective.model_dump(exclude={"cached_token_weight"}))
+        self.cached_token_weight = effective.cached_token_weight
         self._inherited = inherited
 
     def _check(self, method: str, value: RunUsage | int, **kwargs: bool) -> None:
@@ -90,22 +101,28 @@ class RuntimeUsageLimits(UsageLimits):
         candidates = [(self._inherited.to_sdk(), True)] if self._inherited else []
         candidates.append((self, False))
         for limits, inherited in candidates:
-            try:
-                check(limits, value, **kwargs)
-            except UsageLimitExceeded as exc:
-                # Isolated framework checks identify the field without parsing exception text.
-                for name in EffectiveUsageLimits.model_fields:
-                    ceiling = getattr(limits, name)
-                    if ceiling is None or name == "count_tokens_before_request":
-                        continue
-                    isolated = UsageLimits(**{"request_limit": None, name: ceiling})
-                    try:
-                        check(isolated, value, **kwargs)
-                    except UsageLimitExceeded:
-                        raise BudgetLimitExceeded(
-                            kind=name, limit=ceiling, inherited=inherited
-                        ) from exc
-                raise
+            # Isolated SDK checks preserve raw input/output limits and typed attribution.
+            for field in fields(UsageLimits):
+                name = field.name
+                ceiling = getattr(limits, name)
+                if ceiling is None or name == "count_tokens_before_request":
+                    continue
+                observed = value
+                if name == "total_tokens_limit" and isinstance(value, RunUsage):
+                    cached = min(value.input_tokens, max(0, value.cache_read_tokens))
+                    observed = replace(
+                        value,
+                        input_tokens=value.input_tokens
+                        - cached
+                        + ceil(Decimal(str(limits.cached_token_weight)) * cached),
+                    )
+                isolated = UsageLimits(**{"request_limit": None, name: ceiling})
+                try:
+                    check(isolated, observed, **kwargs)
+                except UsageLimitExceeded as exc:
+                    raise BudgetLimitExceeded(
+                        kind=name, limit=ceiling, inherited=inherited
+                    ) from exc
 
     def check_before_request(self, usage: RunUsage) -> None:
         self._check("check_before_request", usage)

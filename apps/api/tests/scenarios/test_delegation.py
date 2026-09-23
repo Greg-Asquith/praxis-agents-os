@@ -53,16 +53,15 @@ async def code_mode_executor_cleanup() -> AsyncIterator[None]:
 
 
 @pytest.mark.parametrize("specialist_count", [1, 2])
-@pytest.mark.parametrize("unbounded_tokens", [False, True])
+@pytest.mark.parametrize("token_override", [None, 1_000_000])
 async def test_parent_delegates_to_child_run_and_receives_result(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
     effects: ScenarioEffects,
     specialist_count: int,
-    unbounded_tokens: bool,
+    token_override: int | None,
 ) -> None:
-    if unbounded_tokens:
-        monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", None)
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", token_override)
     context = await build_scenario_agent(committed_db_session_factory)
     children = [
         await add_scenario_delegate(
@@ -101,9 +100,8 @@ async def test_parent_delegates_to_child_run_and_receives_result(
     result = await run_scenario(committed_db_session_factory, context, model=model)
 
     assert result.output == "parent final"
-    assert (
-        result.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["total_tokens_limit"]
-        == settings.AGENT_RUN_TOTAL_TOKENS_LIMIT
+    assert result.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["total_tokens_limit"] == (
+        token_override or 3_200_000
     )
     async with committed_db_session_factory() as db:
         await set_session_tenant_context(db, workspace_id=context.workspace_id)
@@ -1062,6 +1060,66 @@ async def test_stricter_child_ceiling_returns_failure_while_parent_can_finish(
         assert child_run.outcome == "budget_exhausted"
         assert child_run.completion_json["tripped_budget"]["scope"] == "local"
         assert result.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 20
+
+
+@pytest.mark.parametrize("updated_weight", [0.0, 1.0])
+async def test_cached_budget_survives_delegated_approval_and_settings_changes(
+    committed_db_session_factory, monkeypatch, effects, updated_weight
+):
+    from pydantic_ai.usage import RequestUsage
+
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 700)
+    monkeypatch.setattr(settings, "AGENT_RUN_CACHED_TOKEN_WEIGHT", 0.1)
+    monkeypatch.setattr(
+        "pydantic_ai.models.function._estimate_usage",
+        lambda _messages: RequestUsage(input_tokens=1000, cache_read_tokens=900),
+    )
+    context = await build_scenario_agent(
+        committed_db_session_factory,
+        trigger="scheduled",
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+    child = await add_scenario_delegate(
+        committed_db_session_factory, context, tool_names=[effects.name]
+    )
+    requests = []
+    model = _delegation_model(
+        child_ids=[str(child.id)], write_tool=effects.name, seen_requests=requests
+    )
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+    parked = await run_scenario(committed_db_session_factory, context, model=model)
+    assert parked.run.status == "awaiting_approval"
+    assert len(requests) == 3
+    assert parked.run.usage_json["cache_read_tokens"] == 2700
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 7000)
+    monkeypatch.setattr(settings, "AGENT_RUN_CACHED_TOKEN_WEIGHT", updated_weight)
+    with pytest.raises(BudgetLimitExceeded) as error:
+        await resume_scenario(
+            committed_db_session_factory,
+            context,
+            model=model,
+            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+        )
+    assert error.value.kind == "total_tokens_limit"
+    assert error.value.inherited and error.value.limit == 700
+    assert len(requests) == 4
+    assert len(effects.calls) == 1
+    async with committed_db_session_factory() as db:
+        root = await db.get(AgentRun, context.run_id)
+        child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+        for run in (root, child_run):
+            assert run.outcome == "budget_exhausted"
+            saved = run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]
+            assert saved["total_tokens_limit"] == 700
+            assert saved["cached_token_weight"] == 0.1
+        events = list(
+            await db.scalars(
+                select(AIUsageEvent).where(AIUsageEvent.run_id.in_([root.id, child_run.id]))
+            )
+        )
+        assert sum(event.input_tokens for event in events) == 4000
+        assert sum(event.cache_read_tokens for event in events) == 3600
+        assert sum(event.requests for event in events) == 4
 
 
 async def test_inherited_streaming_token_overrun_preserves_mixed_model_ledger(

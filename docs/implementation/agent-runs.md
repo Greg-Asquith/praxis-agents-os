@@ -175,10 +175,27 @@ round-trip without numeric loss.
 
 ## Cumulative usage ceilings
 
+The default total-token backstop is eight times the resolved model context
+window, including the configured Azure deployment window.
+`AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER` changes that multiplier.
+`AGENT_RUN_TOTAL_TOKENS_LIMIT` supplies an absolute override; leaving it unset
+uses the derived ceiling. Schedule `max_total_tokens` can tighten this ceiling.
+Resolved ceilings must fit the safe JSON integer range, up to `2**53 - 1`.
+
+The comparison counts uncached input and output in full, plus cached input
+multiplied by `AGENT_RUN_CACHED_TOKEN_WEIGHT` (default `0.1`, range zero to one).
+Fractional totals round up for comparison with the integer ceiling. Cache
+writes count in full. Raw usage, cost accounting, and separate input/output
+ceilings remain unchanged. The request limit stays equal to the agent's
+`max_steps`, unless a schedule or inherited ceiling tightens it.
+
 Runtime preparation stores a validated, versioned `effective_usage_limits`
 snapshot in server-owned run metadata before model execution. Each continuation
 intersects saved ceilings with newly resolved settings and inherited limits.
 Settings edits can tighten an accepted run but cannot widen its saved ceilings.
+The snapshot also saves the cache weight. Continuations reuse that weight,
+and specialists inherit it with the parent's absolute ceiling. A snapshot
+without a cache weight retains full-token counting.
 Run creation rejects caller-supplied effective-budget metadata.
 
 The root worker restores cumulative usage once. Every specialist receives the

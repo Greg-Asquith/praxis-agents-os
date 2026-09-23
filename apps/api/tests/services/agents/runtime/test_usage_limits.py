@@ -19,8 +19,132 @@ from services.agents.runtime.usage_limits import (
 
 
 def test_supported_sdk_fields() -> None:
-    assert {field.name for field in fields(UsageLimits)} == set(EffectiveUsageLimits.model_fields)
-    assert EffectiveUsageLimits.from_sdk(UsageLimits()).to_sdk() == UsageLimits()
+    assert {field.name for field in fields(UsageLimits)} == (
+        set(EffectiveUsageLimits.model_fields) - {"cached_token_weight"}
+    )
+    effective = EffectiveUsageLimits.from_sdk(UsageLimits())
+    assert EffectiveUsageLimits.from_sdk(effective.to_sdk()) == effective
+
+
+@pytest.mark.parametrize("weight", [0.0, 0.1, 1.0])
+@pytest.mark.parametrize("method", ["check_tokens", "check_before_request"])
+def test_cached_weight_applies_only_to_total_without_changing_usage(weight, method) -> None:
+    from dataclasses import replace
+    from decimal import Decimal
+
+    usage = RunUsage(input_tokens=1000, cache_read_tokens=900, output_tokens=10, cost=Decimal("1"))
+    original = replace(usage)
+    total = 110 + int(900 * weight)
+    effective = EffectiveUsageLimits(total_tokens_limit=total, cached_token_weight=weight)
+    getattr(effective.to_sdk(), method)(usage)
+    with pytest.raises(BudgetLimitExceeded) as error:
+        getattr(effective.to_sdk(), method)(replace(usage, output_tokens=11))
+    assert error.value.kind == "total_tokens_limit"
+    assert usage == original
+    for field in ("input_tokens_limit", "output_tokens_limit", "cost_limit"):
+        limit = Decimal("0.5") if field == "cost_limit" else 1
+        limits = effective.model_copy(update={field: limit}).to_sdk()
+        with pytest.raises(BudgetLimitExceeded) as raw_error:
+            getattr(limits, "check_cost" if field == "cost_limit" else "check_tokens")(usage)
+        assert raw_error.value.kind == field
+
+
+def test_fractional_cached_token_exceeds_integer_ceiling() -> None:
+    limits = EffectiveUsageLimits(total_tokens_limit=1, cached_token_weight=0.1).to_sdk()
+    limits.check_tokens(RunUsage(input_tokens=10, cache_read_tokens=10))
+    with pytest.raises(BudgetLimitExceeded):
+        limits.check_tokens(RunUsage(input_tokens=11, cache_read_tokens=11))
+
+
+@pytest.mark.parametrize("weight", [-0.1, 1.1, float("inf"), float("nan"), "0.1", True])
+def test_snapshot_rejects_invalid_cached_weight(weight) -> None:
+    with pytest.raises(ValidationError):
+        SavedUsageLimits.model_validate({"limits": {"cached_token_weight": weight}})
+
+
+def test_old_snapshot_keeps_full_token_counting() -> None:
+    saved = SavedUsageLimits.model_validate({"version": 1, "limits": {"total_tokens_limit": 100}})
+    assert saved.limits.cached_token_weight == 1
+    with pytest.raises(BudgetLimitExceeded):
+        saved.limits.to_sdk().check_tokens(RunUsage(input_tokens=101, cache_read_tokens=100))
+
+
+def test_catalogue_defaults_fit_safe_json_integers() -> None:
+    from core.settings import Settings
+    from services.agents.models.registry import list_models
+
+    multiplier = Settings.model_fields["AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER"].default
+    for model in list_models(include_deprecated=True):
+        assert 0 < model.context_window * multiplier <= 2**53 - 1
+
+
+@pytest.mark.parametrize(("fraction", "expected_requests"), [(0.4, 20), (1.0, 9)])
+async def test_long_context_progress_and_runaway_boundary(fraction, expected_requests) -> None:
+    from pydantic_ai.messages import ToolCallPart
+    from pydantic_ai.usage import RequestUsage
+
+    window = 1_050_000
+    requests = []
+
+    def respond(messages, info):
+        requests.append(messages)
+        parts = [TextPart("Done")] if len(requests) == 20 else [ToolCallPart("advance", {})]
+        return ModelResponse(
+            parts=parts,
+            usage=RequestUsage(input_tokens=int(window * fraction) - 10, output_tokens=10),
+        )
+
+    agent = Agent(FunctionModel(respond), name="long_context_backstop")
+
+    @agent.tool_plain
+    def advance() -> str:
+        return "Continue"
+
+    limits = EffectiveUsageLimits(
+        request_limit=20, total_tokens_limit=8 * window, cached_token_weight=0.1
+    ).to_sdk()
+    if fraction == 0.4:
+        result = await agent.run("Complete 20 steps", usage_limits=limits)
+        assert result.output == "Done"
+    else:
+        with pytest.raises(BudgetLimitExceeded) as error:
+            await agent.run("Complete 20 steps", usage_limits=limits)
+        assert error.value.kind == "total_tokens_limit"
+    assert len(requests) == expected_requests
+
+
+async def test_restored_weighted_usage_keeps_absolute_inherited_boundary() -> None:
+    from types import SimpleNamespace
+
+    from pydantic_ai.usage import RequestUsage
+
+    from services.agents.runtime.run_persistence import restored_run_usage
+
+    saved = SavedUsageLimits(
+        limits=EffectiveUsageLimits(total_tokens_limit=200, cached_token_weight=0.1)
+    )
+    restored = SavedUsageLimits.model_validate_json(saved.model_dump_json()).limits
+    usage = restored_run_usage(
+        SimpleNamespace(usage_json={"input_tokens": 1000, "cache_read_tokens": 900, "requests": 1})
+    )
+    inherited = EffectiveUsageLimits.from_sdk(restored.to_sdk())
+    assert inherited == saved.limits
+    requests = []
+
+    def respond(messages, info):
+        requests.append(messages)
+        return ModelResponse(parts=[TextPart("Done")], usage=RequestUsage(output_tokens=11))
+
+    child = Agent(FunctionModel(respond), name="weighted_budget_child")
+    with pytest.raises(BudgetLimitExceeded) as error:
+        await child.run("Finish", usage=usage, usage_limits=RuntimeUsageLimits(restored, inherited))
+    assert error.value.inherited
+    assert error.value.limit == 200
+    assert len(requests) == 1
+    assert usage.input_tokens == 1000 and usage.cache_read_tokens == 900
+    assert usage.output_tokens == 11 and usage.requests == 2
+    with pytest.raises(BudgetLimitExceeded):
+        restored.to_sdk().check_before_request(usage)
 
 
 @pytest.mark.parametrize(

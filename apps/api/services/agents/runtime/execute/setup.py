@@ -393,9 +393,11 @@ async def build_agent_for_run(
         if EFFECTIVE_USAGE_LIMITS_KEY in metadata
         else None
     )
-    effective = intersect_usage_limits(
-        EffectiveUsageLimits.from_sdk(runtime_agent.usage_limits), saved, inherited_usage_limits
-    )
+    resolved = EffectiveUsageLimits.from_sdk(runtime_agent.usage_limits)
+    accepted = saved or inherited_usage_limits
+    if accepted is not None:
+        resolved = resolved.model_copy(update={"cached_token_weight": accepted.cached_token_weight})
+    effective = intersect_usage_limits(resolved, saved, inherited_usage_limits)
     runtime_agent = replace(
         runtime_agent, usage_limits=RuntimeUsageLimits(effective, inherited_usage_limits)
     )

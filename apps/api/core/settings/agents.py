@@ -99,12 +99,25 @@ class AgentRunSettingsMixin:
         description="Days before a parked approval expires; 0 disables expiry.",
     )
     AGENT_RUN_TOTAL_TOKENS_LIMIT: int | None = Field(
-        default=1_000_000,
+        default=None,
         gt=0,
+        le=2**53 - 1,
         description=(
-            "Maximum total (input+output) tokens per agent run; None disables the runaway-loop "
-            "backstop."
+            "Absolute weighted token ceiling per run; None derives it from the model context window."
         ),
+    )
+    AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER: int = Field(
+        default=8,
+        gt=0,
+        le=2**53 - 1,
+        description="Model context windows allowed by the default cumulative token backstop.",
+    )
+    AGENT_RUN_CACHED_TOKEN_WEIGHT: float = Field(
+        default=0.1,
+        ge=0,
+        le=1,
+        allow_inf_nan=False,
+        description="Weight of cached input tokens in the cumulative total-token backstop.",
     )
     AGENT_TOOL_RESULT_MAX_CHARS: int | None = Field(
         default=16_000,
