@@ -3,13 +3,16 @@
 import { isRecord } from "@/lib/guards"
 import { ApiError } from "@/lib/api/errors"
 import type { AgentRun } from "@/features/conversations/types"
+import type { StreamError } from "@/features/conversations/stream/protocol"
 
+const MODEL_PROVIDER_NOT_CONFIGURED = "model_provider_not_configured"
 const APPROVAL_EXPIRED = "approval_expired"
 const CODE_MODE_RECOVERY = "code_mode_resume_requires_recovery"
 const MAX_COMPLETED_ACTIONS = 25
 
 export type RunInterruptionOutcome = {
-  kind: "approval_expired" | "code_mode_recovery" | "run_recovery" | "budget_exhausted"
+  kind:
+    "approval_expired" | "code_mode_recovery" | "run_recovery" | "budget_exhausted" | "run_failed"
   title: string
   message: string
   completedActions: { id: string; toolName: string }[]
@@ -71,6 +74,24 @@ export function runInterruptionOutcome(run: AgentRun | null): RunInterruptionOut
     completedActions: evidence.actions,
     actionsTruncated: evidence.truncated,
   }
+}
+
+export function runFailureOutcome(run: AgentRun): RunInterruptionOutcome | null {
+  if (run.status !== "failed") return null
+  return (
+    runInterruptionOutcome(run) ?? {
+      kind: "run_failed",
+      title: "Run stopped",
+      message: formatStreamError({
+        code: run.error_code ?? "run_failed",
+        message:
+          run.error_message ??
+          "This run stopped before it finished. Send a new message to try again.",
+      }),
+      completedActions: [],
+      actionsTruncated: false,
+    }
+  )
 }
 
 export function approvalExpiryOutcome(run: AgentRun | null): string | null {
@@ -206,4 +227,14 @@ function recoveryEvidence(
     childConversations: children,
     actionsTruncated: raw["truncated"] === true || actions.length > MAX_COMPLETED_ACTIONS,
   }
+}
+
+export function formatStreamError(error: StreamError): string {
+  if (error.code === MODEL_PROVIDER_NOT_CONFIGURED) {
+    return (
+      `${error.message} Add the provider's API key to .local/targets/local.secrets.env ` +
+      "(Docker stack) or apps/api/.env (make dev), then restart the system."
+    )
+  }
+  return error.message
 }

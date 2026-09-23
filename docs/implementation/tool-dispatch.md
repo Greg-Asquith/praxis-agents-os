@@ -125,7 +125,9 @@ The following contracts apply in this area:
 - Calls without a recorded result use the same expandable card with a neutral
   **Stopped** badge when their run is terminal. This applies before custom
   tool presenters, so a missing result cannot appear successful. The expanded
-  card shows the run's reason without claiming that the tool failed.
+  card shows the run's reason without claiming that the tool failed. Saved
+  interrupted returns use **Stopped** with their recorded explanation, and
+  unrecognised outcome values remain **Unknown**.
 - Declined tool rows use the **Declined** badge, never **Failed**, and show the
   operator's reason when they provided one.
 - Approval presenters may consume server-owned display arguments prefixed with

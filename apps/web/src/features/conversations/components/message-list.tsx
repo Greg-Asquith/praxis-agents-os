@@ -2,7 +2,6 @@
 
 import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 
-import { Link } from "@tanstack/react-router"
 import { MessageSquareTextIcon } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -22,7 +21,7 @@ import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
 import { useReviewApprovalMutation } from "@/features/conversations/api/review-approval"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
-import { useToolLabels } from "@/features/tools/use-tool-labels"
+import { RunOutcomeAlert } from "@/features/conversations/components/run-outcome-alert"
 import type { RunInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import type { AgentRunResumeDecision } from "@/features/conversations/types"
 import type {
@@ -75,7 +74,6 @@ function InteractiveMessageList({
   streamError,
   onApprovalSubmit,
 }: MessageListProps) {
-  const toolLabel = useToolLabels()
   const presentationFor = useToolPresentations()
   const reviewApproval = useReviewApprovalMutation(conversationId)
   const inlineApprovals = useInlineApprovals({
@@ -159,49 +157,7 @@ function InteractiveMessageList({
             </div>
           )}
 
-          {runInterruption && (
-            <div className="w-full px-1 py-2">
-              <Alert variant="destructive">
-                <AlertTitle>{runInterruption.title}</AlertTitle>
-                <AlertDescription>
-                  <p>{runInterruption.message}</p>
-                  {runInterruption.completedActions.length > 0 ? (
-                    <div className="mt-2">
-                      <p className="font-medium">Completed Actions</p>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                        {runInterruption.completedActions.map((action) => (
-                          <li key={action.id}>{toolLabel(action.toolName)}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {runInterruption.uncertainActions?.length ? (
-                    <div className="mt-2">
-                      <p className="font-medium">Actions with an uncertain result</p>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                        {runInterruption.uncertainActions.map((action) => (
-                          <li key={action.id}>{toolLabel(action.toolName)}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {runInterruption.actionsTruncated ? (
-                    <p className="mt-1">More actions are recorded in the run transcripts.</p>
-                  ) : null}
-                  {runInterruption.childConversations?.map((childId, index) => (
-                    <Link
-                      key={childId}
-                      to="/conversations/$conversationId"
-                      params={{ conversationId: childId }}
-                      className="mt-1 block underline"
-                    >
-                      Review specialist conversation {index + 1}
-                    </Link>
-                  ))}
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
+          {runInterruption && <RunOutcomeAlert outcome={runInterruption} />}
 
           {streamError && streamError !== runInterruption?.message && (
             <div className="w-full px-1 py-2">
@@ -240,6 +196,9 @@ function TranscriptRenderItem({
   assistantLabel: string
   item: ConversationTimelineRow
 }) {
+  if (item.kind === "run-outcome") {
+    return <RunOutcomeAlert outcome={item.outcome} />
+  }
   if (item.kind === "pending-message") {
     return (
       <MessageRow

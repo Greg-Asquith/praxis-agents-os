@@ -40,6 +40,47 @@ function message(
 }
 
 describe("parseConversationMessages", () => {
+  it.each([
+    ["interrupted", "stopped"],
+    ["failed", "failed"],
+    ["denied", "denied"],
+    ["success", "completed"],
+    ["future-outcome", "unknown"],
+    [undefined, "completed"],
+  ])("maps a saved %s return to %s without claiming a different result", (outcome, status) => {
+    const reason = "Tool call ended without a recorded result because its run was interrupted."
+    const parsed = parseConversationMessages(
+      [
+        message(
+          "call",
+          "assistant",
+          1,
+          [{ part_kind: "tool-call", tool_call_id: "save", tool_name: "write_file" }],
+          { agent_run_id: "run-1" }
+        ),
+        message(
+          "return",
+          "tool",
+          2,
+          [
+            {
+              part_kind: "tool-return",
+              tool_call_id: "save",
+              tool_name: "write_file",
+              content: reason,
+              outcome,
+            },
+          ],
+          { agent_run_id: "run-1" }
+        ),
+      ],
+      run("run-1", "failed")
+    )
+    expect(parsed.flatMap((item) => item.toolActivities)).toMatchObject([
+      { id: "save", status, result: reason },
+    ])
+  })
+
   it.each(["failed", "cancelled", "completed"] as const)(
     "uses the page run map for an older %s run and preserves recorded results",
     (status) => {

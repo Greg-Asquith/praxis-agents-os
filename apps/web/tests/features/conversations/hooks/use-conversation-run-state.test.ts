@@ -1,7 +1,7 @@
+import { formatStreamError } from "@/features/conversations/run-error-copy"
 import { describe, expect, it } from "vitest"
 
 import {
-  formatStreamError,
   hasPersistedRunResponse,
   shouldRenderConversationStream,
 } from "@/features/conversations/hooks/use-conversation-run-state"

@@ -102,7 +102,7 @@ function project(approval: PendingToolApproval, nested: boolean) {
     ],
   })
   const activities = timeline.rows.flatMap((row) => {
-    if (row.kind === "pending-message") return []
+    if (row.kind === "pending-message" || row.kind === "run-outcome") return []
     if (row.kind === "assistant-turn") return row.messages.flatMap((item) => item.toolActivities)
     return row.message.toolActivities
   })

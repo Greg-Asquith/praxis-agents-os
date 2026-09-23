@@ -137,8 +137,15 @@ The following contracts apply in this area:
   tool results take precedence; **Failed** requires a failed result. The active
   run still controls live execution and approval waits. Without a run record,
   an unanswered call shows **Unknown**.
-  Mapping persisted interrupted returns and adding failure notices at older
-  run boundaries remain pending in plan 226 D2.
+  Saved returns with `outcome: "interrupted"` also show **Stopped**. Their
+  expanded card retains the recorded explanation. Unrecognised saved outcomes
+  show **Unknown** instead of implying success.
+- Failed runs show one notice after their last visible transcript row, even
+  when later turns exist or only the user prompt was saved. Notices use the
+  same error copy as live failures, including validated budget evidence and
+  recovery details. A visible live error or latest-run recovery banner
+  suppresses the historical notice for that run ID. Existing recovery banners
+  keep their placement. Shared viewers retain their existing presentation.
 - `message-parts/timeline.ts` is the pure projection owner for persisted
   messages, live stream activity, approvals, and optimistic user messages.
   Keep `MessageList` focused on rendering and interaction wiring.

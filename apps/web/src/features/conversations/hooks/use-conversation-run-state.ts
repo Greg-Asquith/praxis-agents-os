@@ -9,9 +9,7 @@ import type {
   PendingDelegatedApproval,
   PendingToolApproval,
 } from "@/features/conversations/types"
-import type { StreamError } from "@/features/conversations/stream/protocol"
-
-const MODEL_PROVIDER_NOT_CONFIGURED = "model_provider_not_configured"
+import { formatStreamError } from "@/features/conversations/run-error-copy"
 
 type UseConversationRunStateParams = {
   activeRun: AgentRun | null
@@ -156,23 +154,13 @@ export function useConversationRunState({
     pendingDelegations,
     shouldRenderStream,
     streamError:
-      shouldRenderStream && streamConversationId === conversationId
+      shouldRenderStream && streamConversationId === conversationId && streamErrorValue
         ? formatStreamError(streamErrorValue)
         : null,
     streamMessages,
     streamToolCalls,
     visibleStreamApprovals,
   }
-}
-
-export function formatStreamError(error: StreamError | null): string | null {
-  if (error?.code === MODEL_PROVIDER_NOT_CONFIGURED) {
-    return (
-      `${error.message} Add the provider's API key to .local/targets/local.secrets.env ` +
-      "(Docker stack) or apps/api/.env (make dev), then restart the system."
-    )
-  }
-  return error?.message ?? null
 }
 
 function getPendingApprovals({

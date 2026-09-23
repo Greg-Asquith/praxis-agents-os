@@ -6,6 +6,8 @@ import {
   conversationApprovalExpiryOutcome,
   conversationRunInterruptionOutcome,
   runInterruptionOutcome,
+  runFailureOutcome,
+  formatStreamError,
   tokenBudgetMessage,
 } from "@/features/conversations/run-error-copy"
 import { ApiError } from "@/lib/api/errors"
@@ -236,5 +238,24 @@ describe("approval reservation conflicts", () => {
   ])("distinguishes %s without asking for another submission", (code, message) => {
     const error = new ApiError({ status: 409, message: "Conflict", problem: { code } })
     expect(approvalConflictMessage(error)).toContain(message)
+  })
+})
+
+describe("historical run failure copy", () => {
+  it.each(["provider_error", "model_provider_not_configured", "timeout", "future_error"])(
+    "uses the live error copy for %s",
+    (code) => {
+      const run = failedRun(code)
+      run.error_message = "The model could not finish this run."
+      expect(runFailureOutcome(run)?.message).toBe(
+        formatStreamError({ code, message: run.error_message })
+      )
+    }
+  )
+
+  it("gives an explicit fallback when no reason was saved", () => {
+    expect(runFailureOutcome({ ...failedRun("unknown"), error_message: null })?.message).toBe(
+      "This run stopped before it finished. Send a new message to try again."
+    )
   })
 })

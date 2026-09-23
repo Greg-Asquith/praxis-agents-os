@@ -1,5 +1,9 @@
 // apps/web/src/features/conversations/message-parts/timeline.ts
 
+import {
+  runFailureOutcome,
+  type RunInterruptionOutcome,
+} from "@/features/conversations/run-error-copy"
 import { shouldShowLiveActivity } from "@/features/conversations/live-activity-visibility"
 import { buildLiveToolActivities } from "@/features/conversations/live-tool-activities"
 import { groupConversationRenderItems } from "@/features/conversations/message-parts/group-render-items"
@@ -37,7 +41,9 @@ export type AssistantLiveTimelinePart =
   { kind: "text"; message: ChatMessageDraft } | { kind: "tool"; activity: ToolActivity }
 
 export type ConversationTimelineRow =
-  ConversationRenderItem | { kind: "pending-message"; id: string; message: PendingUserMessage }
+  | ConversationRenderItem
+  | { kind: "pending-message"; id: string; message: PendingUserMessage }
+  | { kind: "run-outcome"; id: string; agentRunId: string; outcome: RunInterruptionOutcome }
 
 type ConversationTimelineStream = {
   approvals: ApprovalState[]
@@ -54,6 +60,7 @@ export type ConversationTimelineInput = {
   conversationId: string
   messages: ConversationMessage[]
   runs?: Readonly<Record<string, AgentRun>>
+  visibleRunNoticeIds?: readonly string[]
   pendingDelegations: PendingDelegatedApproval[]
   pendingUserMessages: PendingUserMessage[]
   pendingWorkflows?: PendingWorkflowState[]
@@ -87,7 +94,8 @@ export function projectConversationTimeline({
   assistantAgentId,
   conversationId,
   messages,
-  runs,
+  runs = {},
+  visibleRunNoticeIds = [],
   pendingDelegations,
   pendingUserMessages,
   pendingWorkflow,
@@ -230,7 +238,7 @@ export function projectConversationTimeline({
     stream.conversationId
   )
   const rows: ConversationTimelineRow[] = [
-    ...groupConversationRenderItems(parsedMessages),
+    ...insertRunOutcomes(groupConversationRenderItems(parsedMessages), runs, visibleRunNoticeIds),
     ...visiblePendingUserMessages.map((message) => ({
       id: `pending-message:${message.clientMessageId}`,
       kind: "pending-message" as const,
@@ -300,4 +308,26 @@ function orphanApprovalActivity(approval: PendingToolApproval, agentRunId: strin
     activity.delegate = delegate
   }
   return activity
+}
+
+function insertRunOutcomes(
+  items: ConversationRenderItem[],
+  runs: Readonly<Record<string, AgentRun>>,
+  visibleRunNoticeIds: readonly string[]
+): ConversationTimelineRow[] {
+  const lastRows = new Map<string, string>()
+  for (const item of items) {
+    const runId = item.kind === "assistant-turn" ? item.agentRunId : item.message.agentRunId
+    if (runId) lastRows.set(runId, item.id)
+  }
+  const suppressed = new Set(visibleRunNoticeIds)
+  return items.flatMap((item): ConversationTimelineRow[] => {
+    const runId = item.kind === "assistant-turn" ? item.agentRunId : item.message.agentRunId
+    if (!runId || suppressed.has(runId) || lastRows.get(runId) !== item.id) return [item]
+    const run = runs[runId]
+    const outcome = run ? runFailureOutcome(run) : null
+    return outcome
+      ? [item, { kind: "run-outcome", id: `run-outcome:${runId}`, agentRunId: runId, outcome }]
+      : [item]
+  })
 }

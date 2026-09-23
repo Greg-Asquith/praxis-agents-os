@@ -177,6 +177,10 @@ function ConversationDetail({
         conversationId,
         messages,
         runs,
+        visibleRunNoticeIds: [
+          ...(runInterruption && latestRun ? [latestRun.id] : []),
+          ...(streamError && stream.runId ? [stream.runId] : []),
+        ],
         pendingDelegations,
         pendingUserMessages,
         pendingWorkflow:
@@ -213,6 +217,9 @@ function ConversationDetail({
       conversationId,
       messages,
       runs,
+      runInterruption,
+      latestRun,
+      streamError,
       pendingApprovals,
       pendingDelegations,
       pendingUserMessages,
@@ -323,7 +330,7 @@ function ConversationDetail({
                 isApprovalLoading={approvalStateQuery.isLoading}
                 isApprovalSubmitting={isResumingRun}
                 onApprovalSubmit={handleApprovalSubmit}
-                streamError={streamError}
+                streamError={runInterruption && latestRun?.id === stream.runId ? null : streamError}
                 timeline={timeline}
               />
             ) : null}

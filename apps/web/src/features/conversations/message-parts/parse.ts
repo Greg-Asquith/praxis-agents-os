@@ -745,7 +745,10 @@ function statusFromOutcome(outcome: string | null | undefined): ToolActivityStat
   if (outcome === "denied") {
     return "denied"
   }
-  return "completed"
+  if (outcome === "interrupted") {
+    return "stopped"
+  }
+  return outcome == null || outcome === "success" ? "completed" : "unknown"
 }
 
 function normalizeRole(role: string): ParsedMessageRole {
