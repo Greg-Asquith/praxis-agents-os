@@ -183,6 +183,7 @@ async def test_run_report_compiles_request_and_types_rows_aggregates_and_metadat
             },
         }
     )
+    client.payload["rows"] = client.payload["rows"][:2]
     request = GoogleAnalyticsRunReportInput(
         metrics=["sessions", "engagementRate", "badMetric"],
         dimensions=["country"],
@@ -217,14 +218,13 @@ async def test_run_report_compiles_request_and_types_rows_aggregates_and_metadat
         client,
         property_id="123",
         request=request,
-        max_rows=1000,
     )
 
     path, call = client.calls[0]
     assert path == "properties/123:runReport"
     assert call["operation"] == "run_report"
     assert call["policy"] is IntegrationRequestPolicy.READ
-    assert call["json"]["limit"] == 3
+    assert call["json"]["limit"] == 2
     assert call["json"]["offset"] == 4
     assert call["json"]["dateRanges"][1]["name"] == "previous"
     assert call["json"]["metricAggregations"] == ["TOTAL", "MAXIMUM", "MINIMUM"]
@@ -246,9 +246,7 @@ async def test_run_report_compiles_request_and_types_rows_aggregates_and_metadat
     ]
     assert result["row_count"] == 4213
     assert result["truncated"] is True
-    assert result["truncation_note"] == (
-        "Showing 2 of 4,213 rows; add filters, aggregate, or narrow the date range."
-    )
+    assert result["truncation_note"] == ("Returned 2 of 4,213 rows starting at offset 4.")
     assert result["totals"][0]["sessions"] == 18
     assert result["maximums"][0]["engagementRate"] == 0.75
     assert result["minimums"][0]["sessions"] == 1
@@ -283,7 +281,6 @@ async def test_run_report_shapes_empty_response() -> None:
         client,
         property_id="123",
         request=request,
-        max_rows=1000,
     )
 
     assert result["rows"] == []
@@ -351,7 +348,8 @@ async def test_list_report_fields_filters_bounds_and_omits_deprecated_aliases() 
     assert "deprecatedApiNames" not in result["dimensions"][0]
     path, call = client.calls[0]
     assert path == "properties/123/metadata"
-    assert call == {
+    assert call["max_response_bytes"] > 0
+    assert {key: value for key, value in call.items() if key != "max_response_bytes"} == {
         "operation": "list_report_fields",
         "policy": IntegrationRequestPolicy.READ,
     }
@@ -404,7 +402,6 @@ async def test_report_operations_fail_closed_on_non_object_response(operation: s
                         )
                     ],
                 ),
-                max_rows=1000,
             )
         else:
             await list_report_fields(

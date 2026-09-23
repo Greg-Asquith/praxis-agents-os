@@ -144,7 +144,7 @@ def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:
     assert "async def google_ads_run_report(*, query: str) -> GoogleAdsRunReportOutput" in rendered
     assert "one fan-out entry per selected account" in rendered
     assert "`data.rows`" in rendered
-    assert "mirrors the GAQL SELECT paths" in rendered
+    assert "mirrors the selected GAQL paths as nested lowerCamelCase objects" in rendered
 
 
 def test_google_ads_report_field_stubs_are_typed_and_versioned() -> None:
@@ -172,7 +172,7 @@ def test_google_ads_report_field_stubs_are_typed_and_versioned() -> None:
     assert "field_count: int" in listed
     assert (
         "async def google_ads_list_report_fields(*, resource: str, "
-        "search: str | None = None, limit: int = 50) "
+        "search: str | None = None, limit: int | None = None) "
         "-> GoogleAdsListReportFieldsOutput"
     ) in listed
 

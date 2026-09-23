@@ -67,11 +67,6 @@ class IntegrationsSettingsMixin:
         gt=0,
         description="Maximum UTF-8 byte size returned by an integration content preview.",
     )
-    INTEGRATION_REPORT_MAX_ROWS: int = Field(
-        default=1000,
-        gt=0,
-        description="Maximum rows returned by one integration report operation.",
-    )
     INTEGRATIONS_EVENT_RECEIPT_MAX_BYTES: int = Field(
         default=1_048_576,
         gt=0,

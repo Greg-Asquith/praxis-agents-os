@@ -26,7 +26,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
-from services.integrations.report_results import REPORT_RESULT_GUIDANCE
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
 
 from ..operations.run_report import run_report
 from .schemas import (
@@ -85,9 +85,12 @@ async def google_analytics_run_report(
         Field(description="Metric or dimension ordering rules."),
     ] = None,
     limit: Annotated[
-        int,
-        Field(ge=1, description="Maximum rows returned per selected property."),
-    ] = 100,
+        int | None,
+        Field(
+            ge=1,
+            description="Set only for a requested top-N or limited report; omit for all available rows.",
+        ),
+    ] = None,
     offset: Annotated[int, Field(ge=0, description="Zero-based provider row offset.")] = 0,
     metric_aggregations: Annotated[
         list[GoogleAnalyticsMetricAggregation] | None,
@@ -111,6 +114,8 @@ async def google_analytics_run_report(
         keep_empty_rows=keep_empty_rows,
     )
 
+    result_budget = ReportResultBudget("google_analytics", "run_report")
+
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await google_analytics_client(ctx, entry)
@@ -118,7 +123,7 @@ async def google_analytics_run_report(
                 client,
                 property_id=entry.external_id,
                 request=request,
-                max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
+                max_response_bytes=result_budget.remaining,
             )
             return IntegrationAuditOutcome(result)
 
@@ -130,7 +135,9 @@ async def google_analytics_run_report(
             execute=execute,
         )
 
-    results = await run_context_fan_out(ctx, binding=GOOGLE_ANALYTICS_BINDING, operation=operation)
+    results = await run_context_fan_out(
+        ctx, binding=GOOGLE_ANALYTICS_BINDING, operation=operation, result_budget=result_budget
+    )
     return {"results": serialize_fan_out_results(results)}
 
 
@@ -141,8 +148,6 @@ def _validated_request(**values: Any) -> GoogleAnalyticsRunReportInput:
     validate_field_selection(metrics, dimensions)
     if not 1 <= len(date_ranges) <= 4:
         raise ModelRetry("Provide between 1 and 4 Google Analytics date ranges.")
-    if values["limit"] > settings.INTEGRATION_REPORT_MAX_ROWS:
-        raise ModelRetry(f"Set limit to {settings.INTEGRATION_REPORT_MAX_ROWS} rows or fewer.")
     for item in date_ranges:
         for label, value in (("start_date", item.start_date), ("end_date", item.end_date)):
             if not _valid_date_token(value):
@@ -190,13 +195,15 @@ DEFINITION = RuntimeToolDefinition(
     name="google_analytics_run_report",
     function=google_analytics_run_report,
     description=(
-        "Run a bounded read-only report for every Google Analytics property selected in Active "
+        "Run a read-only report for every Google Analytics property selected in Active "
         "Context. Results are per selected property. Use google_analytics_list_report_fields for "
         "exact standard and custom API names. Dates accept YYYY-MM-DD, NdaysAgo, today, and "
         "yesterday; date-based reports commonly lag 24-48 hours, so prefer yesterday as the end "
         "date. Each successful result exposes typed rows, total row_count, truncated and "
         "truncation_note fields, and metadata.sampled with sampling notes."
         " Check metadata.active_metric_restrictions before interpreting zero metric values."
+        " Omit limit to retrieve every available page in one tool call. Set limit only for a "
+        "requested top-N report, and offset only for an explicitly requested starting position."
     )
     + REPORT_RESULT_GUIDANCE,
     provider="google_analytics",

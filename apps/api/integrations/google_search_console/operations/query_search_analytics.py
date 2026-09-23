@@ -1,10 +1,11 @@
 # apps/api/integrations/google_search_console/operations/query_search_analytics.py
 
-"""Run a bounded Search Analytics query for one site."""
+"""Run a complete Search Analytics query for one site."""
 
 from typing import Any
 
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.report_results import ReportResultBudget, report_result_max_bytes
 
 from ..client import GoogleSearchConsoleClient, site_path
 from ..tools.schemas import GoogleSearchConsoleSearchAnalyticsInput
@@ -19,10 +20,19 @@ async def query_search_analytics(
     *,
     site_url: str,
     request: GoogleSearchConsoleSearchAnalyticsInput,
-    max_rows: int,
+    max_response_bytes: int | None = None,
 ) -> dict[str, Any]:
-    """Returns typed, bounded search-performance rows for one site."""
-    requested_rows = min(request.row_limit, max_rows, MAX_SEARCH_ANALYTICS_ROWS)
+    """Retrieve every available page unless an explicit row limit is requested."""
+    requested_rows = (
+        min(request.row_limit, MAX_SEARCH_ANALYTICS_ROWS)
+        if request.row_limit is not None
+        else MAX_SEARCH_ANALYTICS_ROWS
+    )
+    budget = ReportResultBudget(
+        "google_search_console",
+        "query_search_analytics",
+        maximum=max_response_bytes if max_response_bytes is not None else report_result_max_bytes(),
+    )
     body: dict[str, Any] = {
         "startDate": request.start_date,
         "endDate": request.end_date,
@@ -48,33 +58,54 @@ async def query_search_analytics(
             }
         ]
 
-    payload = await client.webmasters_post(
-        f"{site_path(site_url)}/searchAnalytics/query",
-        operation="query_search_analytics",
-        policy=IntegrationRequestPolicy.READ,
-        json=body,
-    )
-    if not isinstance(payload, dict):
-        raise invalid_response("query_search_analytics")
-    raw_rows = payload.get("rows", [])
-    if not isinstance(raw_rows, list):
-        raise invalid_response("query_search_analytics")
-
-    rows = [
-        _shape_row(item, dimensions=request.dimensions, site_url=site_url)
-        for item in raw_rows[:requested_rows]
-    ]
-    truncated = len(raw_rows) >= requested_rows
+    rows: list[dict[str, Any]] = []
+    previous_rows = None
+    aggregation = None
+    truncated = False
+    while True:
+        payload = await client.webmasters_post(
+            f"{site_path(site_url)}/searchAnalytics/query",
+            operation="query_search_analytics",
+            policy=IntegrationRequestPolicy.READ,
+            json=dict(body),
+            max_response_bytes=budget.remaining,
+        )
+        budget.add(payload)
+        if not isinstance(payload, dict) or not isinstance(payload.get("rows", []), list):
+            raise invalid_response("query_search_analytics")
+        raw_rows = payload.get("rows", [])
+        page_aggregation = bounded_text(payload.get("responseAggregationType"))
+        if aggregation is None:
+            aggregation = page_aggregation
+        elif page_aggregation and page_aggregation != aggregation:
+            raise invalid_response("query_search_analytics")
+        if raw_rows and raw_rows == previous_rows:
+            raise invalid_response("query_search_analytics")
+        rows.extend(
+            _shape_row(item, dimensions=request.dimensions, site_url=site_url) for item in raw_rows
+        )
+        if len(raw_rows) < body["rowLimit"]:
+            break
+        if request.row_limit is not None and len(rows) >= request.row_limit:
+            truncated = True
+            break
+        previous_rows = raw_rows
+        body["startRow"] = request.start_row + len(rows)
+        body["rowLimit"] = (
+            min(MAX_SEARCH_ANALYTICS_ROWS, request.row_limit - len(rows))
+            if request.row_limit is not None
+            else MAX_SEARCH_ANALYTICS_ROWS
+        )
     return {
         "rows": rows,
         "row_count": len(rows),
         "truncated": truncated,
         "truncation_note": (
-            "The result may contain more rows. Page with start_row or add filters."
+            "Stopped at the requested row limit; additional provider rows may exist."
             if truncated
             else None
         ),
-        "response_aggregation_type": bounded_text(payload.get("responseAggregationType")),
+        "response_aggregation_type": aggregation or "",
         "start_date": request.start_date,
         "end_date": request.end_date,
         "search_type": request.search_type,

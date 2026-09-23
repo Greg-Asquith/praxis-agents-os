@@ -58,6 +58,12 @@ receive a conversation reference, while declared edits retain the source
 file's existing folder and references. The dated provider-isolation
 probe record and re-probe policy live in `docs/architecture/governance.md`,
 not in the runtime module.
+
+Generated CSV, HTML, Markdown, and Mermaid outputs use the Artifact storage
+path. `ARTIFACT_MAX_CONTENT_BYTES` limits each output to 10 MiB (10,485,760
+UTF-8 bytes) by default. It also applies to Artifact creation and edits outside
+Run Code. Explicit environment overrides retain their configured limit.
+
 Inner sandbox executions are audited even when the helper run fails
 (calls without a return part audit as incomplete failures), provider
 downloads stream into a buffer bounded by `NATIVE_RUN_CODE_MAX_OUTPUT_FILES`

@@ -39,8 +39,16 @@ class BigQueryClient:
         operation: str,
         policy: IntegrationRequestPolicy,
         params: dict[str, Any] | None = None,
+        max_response_bytes: int | None = None,
     ) -> Any:
-        return await self._request("GET", path, operation=operation, policy=policy, params=params)
+        return await self._request(
+            "GET",
+            path,
+            operation=operation,
+            policy=policy,
+            params=params,
+            max_response_bytes=max_response_bytes,
+        )
 
     async def post(
         self,
@@ -50,8 +58,9 @@ class BigQueryClient:
         policy: IntegrationRequestPolicy,
         json: dict[str, Any],
         request_timeout: float | None = None,
+        max_response_bytes: int | None = None,
     ) -> Any:
-        kwargs: dict[str, Any] = {"json": json}
+        kwargs: dict[str, Any] = {"json": json, "max_response_bytes": max_response_bytes}
         if request_timeout is not None:
             kwargs["timeout"] = request_timeout
         return await self._request("POST", path, operation=operation, policy=policy, **kwargs)

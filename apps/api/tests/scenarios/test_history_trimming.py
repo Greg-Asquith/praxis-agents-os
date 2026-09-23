@@ -284,6 +284,7 @@ async def test_azure_history_uses_deployment_context_budget(
     monkeypatch.setattr(settings, "AGENT_HISTORY_KEEP_TURNS", 2)
     monkeypatch.setattr(settings, "AZURE_OPENAI_CONTEXT_WINDOW", 1)
     monkeypatch.setattr(settings, "AZURE_OPENAI_CHARS_PER_TOKEN", 4.0)
+    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 100_000)
     context = await build_scenario_agent(db_session_factory)
     async with db_session_factory() as db:
         agent = await db.get(Agent, context.agent_id)

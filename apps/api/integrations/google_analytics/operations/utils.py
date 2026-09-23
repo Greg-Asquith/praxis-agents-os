@@ -42,8 +42,7 @@ def compile_order_bys(order_bys: list[GoogleAnalyticsOrderBy] | None) -> list[di
 def shape_report_rows(
     payload: dict[str, Any],
     *,
-    requested_limit: int,
-    window_label: str = "date range",
+    offset: int = 0,
 ) -> dict[str, Any]:
     """Shape the row-bearing fields shared by standard and realtime reports."""
     dimension_headers = _dimension_headers(payload)
@@ -51,16 +50,15 @@ def shape_report_rows(
     rows = _rows(payload.get("rows"), dimension_headers, metric_headers)
     row_count = nonnegative_int(
         payload.get("rowCount"),
-        default=min(len(rows), requested_limit),
+        default=len(rows),
     )
-    truncated = len(rows) > requested_limit
+    truncated = offset + len(rows) < row_count
     return {
-        "rows": rows[:requested_limit],
+        "rows": rows,
         "row_count": row_count,
         "truncated": truncated,
         "truncation_note": (
-            f"Showing {min(len(rows), requested_limit):,} of {row_count:,} rows; add filters, "
-            f"aggregate, or narrow the {window_label}."
+            f"Returned {len(rows):,} of {row_count:,} rows starting at offset {offset:,}."
             if truncated
             else None
         ),

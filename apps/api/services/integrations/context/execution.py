@@ -7,11 +7,16 @@ from typing import TYPE_CHECKING, Any
 
 from core.exceptions.integration import (
     IntegrationError,
+    IntegrationReportTooLargeError,
     IntegrationUnverifiedMutationError,
 )
 from services.integrations.context.domain import ResolvedContextEntry
-from services.integrations.context.results import IntegrationContextResult
+from services.integrations.context.results import (
+    IntegrationContextResult,
+    serialize_fan_out_results,
+)
 from services.integrations.context.utils import sanitize_context_error
+from services.integrations.report_results import ReportResultBudget
 from services.integrations.utils import integration_failure_code
 
 if TYPE_CHECKING:
@@ -27,6 +32,7 @@ async def _run_authorized_entries[T](
     binding: "IntegrationToolBinding",
     selected: Sequence[tuple[ResolvedContextEntry, T]],
     operation: Callable[[ResolvedContextEntry, T], Awaitable[Any]],
+    result_budget: ReportResultBudget | None = None,
 ) -> list[IntegrationContextResult]:
     """Execute selected entries with one authorization and isolation loop."""
     from services.integrations.operations import _resolve_dispatched_integration_definition
@@ -36,12 +42,20 @@ async def _run_authorized_entries[T](
         raise RuntimeError("Context binding does not match the dispatched integration tool")
 
     results: list[IntegrationContextResult] = []
+
+    def append_result(result: IntegrationContextResult) -> None:
+        if result_budget is not None:
+            result_budget.add(
+                serialize_fan_out_results([result])[0], extra_bytes=int(bool(results))
+            )
+        results.append(result)
+
     for entry, operation_input in selected:
         if binding.requires_write and not entry.write_allowed:
             from services.integrations.operations import record_integration_write_denial
 
             await record_integration_write_denial(ctx, entry)
-            results.append(
+            append_result(
                 IntegrationContextResult(
                     entry=entry,
                     status="error",
@@ -52,8 +66,10 @@ async def _run_authorized_entries[T](
             continue
         try:
             data = await operation(entry, operation_input)
+        except IntegrationReportTooLargeError:
+            raise
         except Exception as exc:
-            results.append(
+            append_result(
                 IntegrationContextResult(
                     entry=entry,
                     status="error",
@@ -69,5 +85,5 @@ async def _run_authorized_entries[T](
                 )
             )
         else:
-            results.append(IntegrationContextResult(entry=entry, status="success", data=data))
+            append_result(IntegrationContextResult(entry=entry, status="success", data=data))
     return results

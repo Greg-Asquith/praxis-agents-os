@@ -1,11 +1,12 @@
 # apps/api/integrations/google_analytics/operations/list_report_fields.py
 
-"""List bounded report dimensions and metrics for one Analytics property."""
+"""List complete report dimensions and metrics for one Analytics property."""
 
 from typing import Any, Literal
 
 from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.report_results import report_result_max_bytes
 
 from ..client import GoogleAnalyticsClient
 
@@ -19,12 +20,16 @@ async def list_report_fields(
     search: str | None,
     kind: ReportFieldKind,
     custom_only: bool,
-    limit: int,
+    limit: int | None,
+    max_response_bytes: int | None = None,
 ) -> dict[str, Any]:
     payload = await client.data_get(
         f"properties/{property_id}/metadata",
         operation="list_report_fields",
         policy=IntegrationRequestPolicy.READ,
+        max_response_bytes=(
+            max_response_bytes if max_response_bytes is not None else report_result_max_bytes()
+        ),
     )
     if not isinstance(payload, dict):
         raise IntegrationValidationError(
@@ -50,7 +55,7 @@ async def list_report_fields(
         "metrics": metrics[:limit],
         "dimension_count": dimension_count,
         "metric_count": metric_count,
-        "truncated": dimension_count > limit or metric_count > limit,
+        "truncated": limit is not None and (dimension_count > limit or metric_count > limit),
     }
 
 

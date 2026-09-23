@@ -14,6 +14,7 @@ export function SearchAnalyticsResults({
 }) {
   return report.rows.length > 0 ? (
     <DataTable
+      pageSize={25}
       columns={report.columns}
       exportFilename={`search-console-${filenameStem(externalId, "site")}-analytics.csv`}
       rows={report.rows}

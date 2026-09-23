@@ -1,8 +1,10 @@
 """Retained results stay complete, hidden, and stable across real runtime turns."""
 
+import asyncio
 import importlib
 import json
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID
@@ -10,12 +12,13 @@ from uuid import UUID
 import pytest
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import set_session_tenant_context
 from core.exceptions.general import NotFoundError
 from core.settings import settings
 from models.conversation import Conversation
-from models.files import File, FileFolder, FileRevision
+from models.files import File, FileFolder, FileRevision, FileUpload
 from models.workspace import Workspace
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.entity_references.registry import get_entity_resolver
@@ -30,6 +33,8 @@ from services.files.get_files_processing_summary import get_files_processing_sum
 from services.files.list_files import list_files
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import file_revision_ref, get_visible_file
+from services.jobs.handlers.sweep_deleted_files import _purge_expired_uploads
+from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from tests.support.scenario import (
     ToolCall,
@@ -313,3 +318,140 @@ async def test_code_mode_receives_all_rows(db_session_factory, retained_tools):
     assert returned["content"] == {"total": 999_000, "rows": 1_000}
     async with db_session_factory() as db:
         assert await db.scalar(select(func.count()).select_from(File)) == 0
+
+
+@pytest.mark.parametrize(
+    "failure", ["link", "cancel_link", "write", "commit", "cancel_commit", "lost_commit", None]
+)
+async def test_retained_upload_ownership_survives_transaction_failure(
+    committed_db_session_factory, retained_tools, monkeypatch, failure
+):
+    factory = committed_db_session_factory
+    context = await build_scenario_agent(factory, tool_names=["retained_report"])
+    service = importlib.import_module("services.files.save_tool_result")
+    original_link = service.create_conversation_file_references
+    original_commit = AsyncSession.commit
+    provider = get_storage_provider()
+    original_put = provider.put_object
+
+    async def link(db, **kwargs):
+        await original_link(db, **kwargs)
+        if failure == "link":
+            raise RuntimeError("Reference unavailable")
+        if failure == "cancel_link":
+            raise asyncio.CancelledError
+        db.info["inject_retained_commit"] = True
+
+    async def commit(db):
+        if db.info.pop("inject_retained_commit", False):
+            if failure == "cancel_commit":
+                raise asyncio.CancelledError
+            if failure == "lost_commit":
+                await original_commit(db)
+            if failure in {"commit", "lost_commit"}:
+                raise RuntimeError("Commit response unavailable")
+        await original_commit(db)
+
+    async def put(*args, **kwargs):
+        await original_put(*args, **kwargs)
+        raise OSError("Write response unavailable")
+
+    monkeypatch.setattr(service, "create_conversation_file_references", link)
+    monkeypatch.setattr(AsyncSession, "commit", commit)
+    if failure == "write":
+        monkeypatch.setattr(provider, "put_object", put)
+    try:
+        result = await run_scenario(
+            factory,
+            context,
+            model=scripted_model(turns=[ToolTurn((ToolCall("retained_report", {}),)), "Done."]),
+        )
+        assert bool(result.tool_returns("retained_report")) == (failure is None)
+    except asyncio.CancelledError:
+        assert failure in {"cancel_link", "cancel_commit"}
+
+    committed = failure in {None, "lost_commit"}
+    async with factory() as db:
+        await set_session_tenant_context(
+            db, workspace_id=context.workspace_id, user_id=context.user_id
+        )
+        [reservation] = list(
+            await db.scalars(
+                select(FileUpload).where(FileUpload.workspace_id == context.workspace_id)
+            )
+        )
+        assert (reservation.consumed_at is not None) == committed
+        assert (await db.get(File, reservation.file_id) is not None) == committed
+        ref = make_storage_object_ref(StorageBucket.PRIVATE, reservation.object_key)
+        assert json.loads(await provider.get_object(ref)) == RESULT
+        reservation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await db.commit()
+        if not committed:
+            with monkeypatch.context() as patch:
+                patch.setattr(provider, "delete_object", AsyncMock(side_effect=OSError("Offline")))
+                await _purge_expired_uploads(db, now=datetime.now(UTC))
+                await db.commit()
+            assert await db.get(FileUpload, reservation.id) is not None
+            assert await provider.stat_object(ref) is not None
+        await _purge_expired_uploads(db, now=datetime.now(UTC))
+        await db.commit()
+        assert (await provider.stat_object(ref) is not None) == committed
+        assert (await db.get(FileUpload, reservation.id) is not None) == committed
+
+
+async def test_retained_cancelled_upload_keeps_cleanup_lock_until_write_finishes(
+    committed_db_session_factory, retained_tools, monkeypatch
+):
+    factory = committed_db_session_factory
+    context = await build_scenario_agent(factory, tool_names=["retained_report"])
+    provider = get_storage_provider()
+    original_put = provider.put_object
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    async def slow_put(*args, **kwargs):
+        stored = await original_put(*args, **kwargs)
+        started.set()
+        await finish.wait()
+        return stored
+
+    monkeypatch.setattr(provider, "put_object", slow_put)
+    task = asyncio.create_task(
+        run_scenario(
+            factory,
+            context,
+            model=scripted_model(turns=[ToolTurn((ToolCall("retained_report", {}),)), "Done."]),
+        )
+    )
+    try:
+        async with asyncio.timeout(15):
+            await started.wait()
+            task.cancel()
+            async with factory() as db:
+                await set_session_tenant_context(
+                    db, workspace_id=context.workspace_id, user_id=context.user_id
+                )
+                await _purge_expired_uploads(db, now=datetime.now(UTC) + timedelta(days=30))
+                await db.commit()
+                [reservation] = list(
+                    await db.scalars(
+                        select(FileUpload).where(FileUpload.workspace_id == context.workspace_id)
+                    )
+                )
+                ref = make_storage_object_ref(StorageBucket.PRIVATE, reservation.object_key)
+                assert await provider.stat_object(ref) is not None
+                assert not task.done()
+                task.cancel()
+                await asyncio.sleep(0)
+                assert not task.done()
+                finish.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                await _purge_expired_uploads(db, now=datetime.now(UTC) + timedelta(days=30))
+                await db.commit()
+                assert await provider.stat_object(ref) is None
+                assert await db.get(FileUpload, reservation.id) is None
+    finally:
+        finish.set()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

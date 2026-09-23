@@ -64,6 +64,7 @@ class GoogleSearchConsoleClient:
         policy: IntegrationRequestPolicy,
         json: dict[str, Any] | None = None,
         allow_empty: bool = False,
+        max_response_bytes: int | None = None,
     ) -> Any:
         return await self._request(
             "POST",
@@ -71,6 +72,7 @@ class GoogleSearchConsoleClient:
             path,
             operation=operation,
             policy=policy,
+            max_response_bytes=max_response_bytes,
             json=json,
             allow_empty=allow_empty,
         )

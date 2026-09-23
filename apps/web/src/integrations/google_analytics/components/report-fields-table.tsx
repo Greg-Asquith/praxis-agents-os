@@ -30,6 +30,7 @@ export function GoogleAnalyticsReportFieldsTable({
       <h3 className="text-sm font-medium">{label}</h3>
       {fields.length > 0 ? (
         <DataTable
+          pageSize={25}
           columns={FIELD_COLUMNS}
           exportFilename={`google-analytics-${externalId}-${kind}.csv`}
           rows={fields}

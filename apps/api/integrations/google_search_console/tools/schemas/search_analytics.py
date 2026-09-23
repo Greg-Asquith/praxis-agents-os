@@ -41,7 +41,7 @@ class GoogleSearchConsoleSearchAnalyticsInput(GoogleSearchConsoleStrictModel):
     search_type: GoogleSearchConsoleSearchType = "web"
     filters: list[GoogleSearchConsoleFilter] | None = Field(default=None, max_length=10)
     aggregation_type: GoogleSearchConsoleAggregationType = "auto"
-    row_limit: int = Field(default=100, ge=1)
+    row_limit: int | None = Field(default=None, ge=1)
     start_row: int = Field(default=0, ge=0)
     data_state: GoogleSearchConsoleDataState = "final"
 

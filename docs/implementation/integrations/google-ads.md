@@ -9,7 +9,7 @@ and [frontend module](../../../apps/web/src/integrations/google_ads/index.ts).
 
 ## Backend writes
 
-Google Ads contributes bounded report and field discovery plus approval-only
+Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
 campaign status, device bid adjustments, and campaign-budget creation,
@@ -20,12 +20,27 @@ through the shared mutation ledger.
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
 directs full-report calculations to the retained File through `run_code`.
-Provider row limits remain unchanged. See the
+Reports consume all `searchStream` batches without adding a GAQL `LIMIT` or
+discarding rows. An explicit query `LIMIT` remains unchanged; the tool description
+reserves it for requested limited or top-N reports. Large successful results
+retain every row in
+the saved File, with only the model and transcript preview shortened. The agent
+uses `read_file` or `run_code` to inspect that File instead of repeating the query.
+All selected accounts share the smaller of the agent-file and JSON-file byte
+limits. Each response stream uses the remaining allowance, and account metadata
+counts towards the complete result. Overflow stops further accounts and fails
+the report without returning partial data. The normal HTTP and tool timeouts
+still apply. See the
 [retained-result contract](../tool-dispatch.md#retained-results-and-artifacts).
 
 The report-field discovery tools run one audited operation against the first
 selected account and are designed so one call answers one question.
-`google_ads_list_report_fields` fetches every field of the resource once and
+`google_ads_list_report_fields` follows every field-search page and retains all
+matching fields, metrics, segments, and attribute resources by default. An explicit
+`limit` selects a subset of fields, metrics, and segments. The catalogue uses the
+same combined File byte limit as reports. Field discovery uses the shared
+saved-result preview and loads into its existing tool card.
+The list tool
 matches each space-separated search term locally, so `shared_set keyword`
 finds both `shared_criterion.shared_set` and `shared_criterion.keyword.text`.
 When no term matches, the tool returns the whole catalogue with

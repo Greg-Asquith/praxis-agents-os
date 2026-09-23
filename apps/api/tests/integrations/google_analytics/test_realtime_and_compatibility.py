@@ -91,6 +91,7 @@ async def test_realtime_operation_compiles_two_ranges_and_shapes_range_key() -> 
             "rowCount": 3,
         }
     )
+    client.payload["rows"] = client.payload["rows"][:2]
     request = GoogleAnalyticsRunRealtimeReportInput(
         metrics=["activeUsers"],
         dimensions=["country"],
@@ -121,14 +122,13 @@ async def test_realtime_operation_compiles_two_ranges_and_shapes_range_key() -> 
         client,
         property_id="123",
         request=request,
-        max_rows=1000,
     )
 
     path, call = client.calls[0]
     assert path == "properties/123:runRealtimeReport"
     assert call["operation"] == "run_realtime_report"
     assert call["policy"] is IntegrationRequestPolicy.READ
-    assert call["json"]["limit"] == 3
+    assert call["json"]["limit"] == 2
     assert call["json"]["minuteRanges"][1] == {
         "startMinutesAgo": 9,
         "endMinutesAgo": 5,
@@ -475,7 +475,6 @@ async def test_new_operations_fail_closed_on_non_object_response(operation: str)
                         GoogleAnalyticsMinuteRange(start_minutes_ago=29, end_minutes_ago=0)
                     ],
                 ),
-                max_rows=1000,
             )
         else:
             await check_report_fields(

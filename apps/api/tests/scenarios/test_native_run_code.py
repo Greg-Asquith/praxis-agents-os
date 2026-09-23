@@ -11,14 +11,17 @@ from pydantic_ai import DeferredToolResults, ToolApproved
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.settings import settings
+from models.artifacts import Artifact, ArtifactRevision
 from models.files import File, FileRevision
 from models.workspace import Workspace
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.tools.native import run_code as run_code_tools
+from services.artifacts.utils import artifact_revision_ref
 from services.files.append_file_revision import append_file_revision
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.revision_actor import FileRevisionActor
+from services.storage.factory import get_storage_provider
 from tests.support.google_native import mock_google_native
 from tests.support.scenario import (
     ToolCall,
@@ -239,6 +242,65 @@ async def test_run_code_approval_evidence_names_every_outbound_file(
     evidence = json.dumps(state.message_history, default=str)
     assert "payroll.xlsx" in evidence
     assert str(file_id) in evidence
+
+
+async def test_run_code_retains_csv_report_larger_than_one_mib(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    run_code_storage: None,
+) -> None:
+    _enable_openai(monkeypatch)
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["run_code"],
+        tool_policies={"run_code": "auto"},
+    )
+    content = (
+        "Search term,Campaign,Clicks\n" + f"{'search term ' * 20},Campaign,1\n" * 8_852
+    ).encode()
+    assert len(content) > 1024 * 1024
+
+    async def fake_execution(**kwargs):
+        return (
+            "Created [report](sandbox:/mnt/data/search-terms.csv).",
+            [
+                run_code_tools.CapturedSandboxFile(
+                    name="search-terms.csv", content=content, media_type="text/csv"
+                )
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(run_code_tools, "run_native_code_execution", fake_execution)
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn((ToolCall("run_code", {"task": "Export all search terms"}),)),
+                "The complete report is ready.",
+            ]
+        ),
+    )
+
+    assert result.run.status == "completed"
+    [tool_return] = result.tool_returns("run_code")
+    assert tool_return["content"]["skipped_outputs"] == []
+    [output] = tool_return["content"]["outputs"]
+    assert output["kind"] == "artifact"
+    assert output["size_bytes"] == len(content)
+    artifact_id = UUID(output["reference"]["entity_id"])
+    assert f"/artifacts/{artifact_id}" in tool_return["content"]["result"]
+    async with db_session_factory() as db:
+        artifact = await db.get(Artifact, artifact_id)
+        assert artifact is not None
+        assert artifact.workspace_id == context.workspace_id
+        assert artifact.conversation_id == context.conversation_id
+        revision = await db.get(ArtifactRevision, artifact.current_version_id)
+        assert revision is not None
+        assert revision.size_bytes == len(content)
+        stored = await get_storage_provider().get_object(artifact_revision_ref(revision.object_key))
+        assert stored == content
 
 
 async def test_run_code_declared_edit_appends_agent_revision(

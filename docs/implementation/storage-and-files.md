@@ -94,9 +94,25 @@ workspace access and row-level security still govern each lookup. The File
 audit records the source tool, call, conversation, run, revision, and hash.
 No raw tool data enters that audit record.
 
+Report tool cards contain **Open complete result**, its loading and retry
+controls, and completion status alongside the counts and table.
+It fetches the snapshot's original immutable revision through the existing
+workspace-authenticated revision list and content routes. The browser validates
+and renders the complete JSON through the same provider presenter, including
+pagination, copy, and CSV export. It does not send the operator to raw JSON or
+add the snapshot to Files discovery. Loading failures leave the preview visible
+and offer a retry. The preview and model history remain bounded independently
+of the expanded browser table.
+
 The smaller of `MAX_FILE_SIZE_DOCUMENT` and `MAX_FILE_SIZE_AGENT_FILE`
 bounds each snapshot. The caller's transaction owns the File, reference,
-and audit writes. No separate session or commit occurs in the save service.
+and audit writes. Before storage I/O, `reserve_file_revision` commits only
+cleanup ownership in an isolated tenant session. The caller locks that
+reservation until the File transaction settles. Interrupted writes finish
+before cancellation releases the lock. Rollback leaves an unconsumed
+reservation for the upload sweeper, including when immediate deletion is
+unavailable. A committed File consumes the reservation atomically, so a lost
+commit response cannot cause cleanup to delete its bytes.
 Existing File storage accounting and retention rules apply, including
 normal cleanup after deletion. Snapshots have no scratch expiry and do not
 expire between follow-up turns. Downgrading the internal-result marker

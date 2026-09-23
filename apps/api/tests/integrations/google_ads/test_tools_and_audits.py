@@ -113,7 +113,7 @@ def _read_ctx(*entries: ResolvedContextEntry, tool_name: str):
         {"resource": "campaign.id"},
         {"resource": "campaign", "search": "x" * 101},
         {"resource": "campaign", "limit": 0},
-        {"resource": "campaign", "limit": 101},
+        {"resource": "campaign", "limit": -1},
     ],
 )
 async def test_list_report_fields_rejects_invalid_input_before_dispatch(

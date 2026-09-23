@@ -44,6 +44,7 @@ class GoogleAdsClient:
         operation: str,
         policy: IntegrationRequestPolicy,
         login_customer_id: str | None = None,
+        max_response_bytes: int | None = None,
     ) -> Any:
         return await self._request(
             "GET",
@@ -51,6 +52,7 @@ class GoogleAdsClient:
             operation=operation,
             policy=policy,
             login_customer_id=login_customer_id,
+            max_response_bytes=max_response_bytes,
         )
 
     async def post(
@@ -61,6 +63,7 @@ class GoogleAdsClient:
         policy: IntegrationRequestPolicy,
         json: dict[str, Any],
         login_customer_id: str | None = None,
+        max_response_bytes: int | None = None,
     ) -> Any:
         return await self._request(
             "POST",
@@ -69,6 +72,7 @@ class GoogleAdsClient:
             policy=policy,
             login_customer_id=login_customer_id,
             json=json,
+            max_response_bytes=max_response_bytes,
         )
 
     async def _request(
@@ -127,6 +131,7 @@ class GoogleAdsClient:
         policy: IntegrationRequestPolicy,
         token: str,
         login_customer_id: str | None,
+        max_response_bytes: int | None = None,
         **kwargs: Any,
     ) -> httpx2.Response:
         headers = {
@@ -135,6 +140,7 @@ class GoogleAdsClient:
         }
         if login_customer_id:
             headers["login-customer-id"] = normalize_customer_id(login_customer_id)
+
         try:
             return await request_with_retries(
                 method,
@@ -142,6 +148,7 @@ class GoogleAdsClient:
                 operation=operation,
                 provider_key="google_ads",
                 policy=policy,
+                max_response_bytes=max_response_bytes,
                 client=self._client,
                 headers=headers,
                 validation_error_detail=lambda response: _google_ads_error_detail(

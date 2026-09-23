@@ -27,6 +27,7 @@ export function GoogleAnalyticsReportResults({
       <AggregateLines report={report} />
       {report.rows.length > 0 && report.columns.length > 0 ? (
         <DataTable
+          pageSize={25}
           columns={report.columns}
           exportFilename={`google-analytics-${externalId}-${realtime ? "realtime" : "report"}.csv`}
           rows={report.rows}

@@ -749,6 +749,35 @@ describe("parseConversationMessages", () => {
     )
   })
 
+  it("keeps retained-result metadata when joining a saved result to its call", () => {
+    const preview = { preview: true, file_id: "retained-file", lists: {} }
+    const parsed = parseConversationMessages([
+      message("call", "assistant", 1, [
+        {
+          part_kind: "tool-call",
+          tool_call_id: "report",
+          tool_name: "google_ads_run_report",
+          args: {},
+        },
+      ]),
+      message("result", "tool", 2, [
+        {
+          part_kind: "tool-return",
+          tool_call_id: "report",
+          tool_name: "google_ads_run_report",
+          outcome: "success",
+          content: preview,
+          metadata: { public_result: { results: [] }, result_preview: preview },
+        },
+      ]),
+    ])
+    expect(parsed[0]?.toolActivities[0]).toMatchObject({
+      result: { results: [] },
+      resultPreview: preview,
+      status: "completed",
+    })
+  })
+
   it.each([
     { name: "absent", metadata: {}, expected: { model_only: "must-not-leak" } },
     { name: "null", metadata: { public_result: null }, expected: null },

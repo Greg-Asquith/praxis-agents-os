@@ -173,7 +173,9 @@ class GoogleAnalyticsRunReportInput(GoogleAnalyticsStrictModel):
         default=None,
         description="Metric or dimension ordering rules.",
     )
-    limit: int = Field(default=100, ge=1, description="Maximum rows returned per property.")
+    limit: int | None = Field(
+        default=None, ge=1, description="Optional explicit row limit; omit for all available rows."
+    )
     offset: int = Field(default=0, ge=0, description="Zero-based provider row offset.")
     metric_aggregations: list[GoogleAnalyticsMetricAggregation] | None = Field(
         default=None,

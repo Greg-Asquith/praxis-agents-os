@@ -11,7 +11,6 @@ from pydantic_ai import ModelRetry
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 
 from core.exceptions.integration import IntegrationValidationError
-from core.settings import settings
 from integrations.google_search_console.operations.query_search_analytics import (
     MAX_SEARCH_ANALYTICS_ROWS,
     query_search_analytics,
@@ -90,7 +89,6 @@ async def test_query_compiles_every_argument_and_types_untrusted_rows() -> None:
         client,
         site_url="https://example.com/",
         request=request,
-        max_rows=1_000,
     )
 
     path, call = client.calls[0]
@@ -154,7 +152,6 @@ async def test_query_shapes_an_empty_response_without_claiming_truncation() -> N
             start_date="2026-08-01",
             end_date="2026-08-28",
         ),
-        max_rows=1_000,
     )
     assert result["rows"] == []
     assert result["row_count"] == 0
@@ -172,7 +169,6 @@ async def test_query_caps_the_provider_request_at_its_documented_limit() -> None
             end_date="2026-08-28",
             row_limit=MAX_SEARCH_ANALYTICS_ROWS + 1,
         ),
-        max_rows=MAX_SEARCH_ANALYTICS_ROWS + 1,
     )
 
     assert client.calls[0][1]["json"]["rowLimit"] == MAX_SEARCH_ANALYTICS_ROWS
@@ -205,7 +201,6 @@ async def test_query_rejects_malformed_provider_responses(payload: Any) -> None:
                 end_date="2026-08-28",
                 dimensions=["query"],
             ),
-            max_rows=1_000,
         )
 
 
@@ -225,7 +220,7 @@ async def test_query_rejects_malformed_provider_responses(payload: Any) -> None:
             "filtering",
         ),
         ({"search_type": "discover", "aggregation_type": "byProperty"}, "Discover"),
-        ({"row_limit": 1_001}, "1,000"),
+        ({"row_limit": 0}, "greater than or equal to 1"),
     ],
 )
 async def test_query_validation_returns_actionable_model_retry(
@@ -244,16 +239,17 @@ async def test_query_validation_returns_actionable_model_retry(
         )
 
 
-async def test_query_validation_enforces_the_provider_row_limit(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "INTEGRATION_REPORT_MAX_ROWS", MAX_SEARCH_ANALYTICS_ROWS + 1)
-
-    with pytest.raises(ModelRetry, match="25,000"):
-        await google_search_console_query_search_analytics(
-            _context(),
-            start_date="2026-08-01",
-            end_date="2026-08-28",
-            row_limit=MAX_SEARCH_ANALYTICS_ROWS + 1,
-        )
+def test_query_validation_accepts_a_limit_spanning_multiple_provider_pages():
+    request = validated_search_analytics_request(
+        start_date="2026-08-01",
+        end_date="2026-08-28",
+        dimensions=[],
+        filters=None,
+        aggregation_type="auto",
+        search_type="web",
+        row_limit=MAX_SEARCH_ANALYTICS_ROWS + 1,
+    )
+    assert request.row_limit == MAX_SEARCH_ANALYTICS_ROWS + 1
 
 
 def _context() -> Any:

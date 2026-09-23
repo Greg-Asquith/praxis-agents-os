@@ -41,6 +41,7 @@ class GoogleAnalyticsClient:
         operation: str,
         policy: IntegrationRequestPolicy,
         params: dict[str, Any] | None = None,
+        max_response_bytes: int | None = None,
     ) -> Any:
         return await self._request(
             "GET",
@@ -48,6 +49,7 @@ class GoogleAnalyticsClient:
             path,
             operation=operation,
             policy=policy,
+            max_response_bytes=max_response_bytes,
             params=params,
         )
 
@@ -58,6 +60,7 @@ class GoogleAnalyticsClient:
         operation: str,
         policy: IntegrationRequestPolicy,
         json: dict[str, Any],
+        max_response_bytes: int | None = None,
     ) -> Any:
         return await self._request(
             "POST",
@@ -65,6 +68,7 @@ class GoogleAnalyticsClient:
             path,
             operation=operation,
             policy=policy,
+            max_response_bytes=max_response_bytes,
             json=json,
         )
 

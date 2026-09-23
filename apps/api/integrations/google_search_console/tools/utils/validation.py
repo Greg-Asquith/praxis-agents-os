@@ -8,9 +8,6 @@ from typing import Any
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 
-from core.settings import settings
-
-from ...operations.query_search_analytics import MAX_SEARCH_ANALYTICS_ROWS
 from ..schemas import GoogleSearchConsoleSearchAnalyticsInput
 
 
@@ -28,9 +25,6 @@ def validated_search_analytics_request(
     dimensions = values["dimensions"]
     if len(dimensions) != len(set(dimensions)):
         raise ModelRetry("Remove duplicate Search Console dimensions.")
-    max_rows = min(settings.INTEGRATION_REPORT_MAX_ROWS, MAX_SEARCH_ANALYTICS_ROWS)
-    if values["row_limit"] > max_rows:
-        raise ModelRetry(f"Set row_limit to {max_rows:,} rows or fewer.")
     filters = values.get("filters") or []
     has_page = "page" in dimensions or any(item.dimension == "page" for item in filters)
     if values["aggregation_type"] == "byProperty" and has_page:

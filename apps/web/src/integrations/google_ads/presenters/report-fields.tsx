@@ -1,5 +1,10 @@
 // apps/web/src/integrations/google_ads/presenters/report-fields.tsx
 
+import type { ReactNode } from "react"
+
+import { parseResultPreview } from "@/components/tool-ui/result-preview"
+import { ResultPreviewNotice } from "@/components/tool-ui/result-preview-notice"
+import { RetainedResult } from "@/components/tool-ui/retained-result"
 import { ChevronDownIcon } from "lucide-react"
 
 import {
@@ -21,7 +26,6 @@ import { isNonEmptyString, isNonNegativeInteger, isRecord } from "@/lib/guards"
 
 const LIST_TOOL = "google_ads_list_report_fields"
 const GET_TOOL = "google_ads_get_report_field"
-const MAX_VALUES = 100
 const MAX_EXACT_FIELDS = 10
 
 const FIELD_COLUMNS: DataColumn[] = [
@@ -87,17 +91,43 @@ export const googleAdsReportFieldsPresenter: ToolRowPresenter = {
     if (activity.status === "failed" || activity.status === "unknown") {
       return reportFieldsFailure(activity, defaultOpen)
     }
-    if (activity.name === LIST_TOOL) {
-      const result = parseListReportFields(activity.result)
-      return result
-        ? listReportFieldsResult(defaultOpen, result, listReportFieldSearch(activity.args))
-        : null
+    const envelope = parseResultPreview(activity.result)
+    const preview = envelope ?? parseResultPreview(activity.resultPreview)
+    const data = envelope?.data ?? activity.result
+    const parse = activity.name === LIST_TOOL ? parseListReportFields : parseGetReportFields
+    if (!parse(data)) return null
+    const renderResult = (visibleData: unknown, _incomplete: boolean, control?: ReactNode) => {
+      const notice = (
+        <>
+          {control}
+          {preview ? <ResultPreviewNotice data={visibleData} preview={preview} /> : null}
+        </>
+      )
+      if (activity.name === LIST_TOOL) {
+        const result = parseListReportFields(visibleData)
+        return result
+          ? listReportFieldsResult(
+              defaultOpen,
+              result,
+              listReportFieldSearch(activity.args),
+              notice
+            )
+          : null
+      }
+      const result = parseGetReportFields(visibleData)
+      return result ? getReportFieldsResult(defaultOpen, result, notice) : null
     }
-    if (activity.name === GET_TOOL) {
-      const result = parseGetReportFields(activity.result)
-      return result ? getReportFieldsResult(defaultOpen, result) : null
-    }
-    return null
+    return envelope ? (
+      <RetainedResult
+        key={envelope.fileId}
+        preview={envelope}
+        validate={(value) => parse(value) !== null}
+      >
+        {renderResult}
+      </RetainedResult>
+    ) : (
+      renderResult(data, false)
+    )
   },
 }
 
@@ -164,7 +194,8 @@ function reportFieldsArgDetails(activity: ToolActivity) {
 function listReportFieldsResult(
   defaultOpen: boolean,
   result: ListReportFields,
-  search: string | null
+  search: string | null,
+  notice: ReactNode
 ) {
   const rows = result.fields.map(fieldRow)
   const fieldsShortened = rows.length < result.fieldCount
@@ -194,10 +225,11 @@ function listReportFieldsResult(
       trailing={<ReportFieldsDone />}
     >
       <div className="grid min-w-0 gap-4">
+        {notice}
         {copyableName("Resource", result.resource)}
         {searchMissed ? (
           <p className="text-muted-foreground text-sm">
-            Nothing matched “{search}”, so every field, metric, and segment is shown instead.
+            Nothing matched “{search}”, so the complete catalogue is available instead.
           </p>
         ) : null}
         {rows.length > 0 ? (
@@ -227,8 +259,8 @@ function listReportFieldsResult(
         ) : null}
         {compatibilityShortened ? (
           <p className="text-warning-foreground text-xs">
-            One or more compatibility lists are shortened. Refine the search to narrow metrics and
-            segments.
+            One or more compatibility lists are shortened. The counts below show how many values are
+            currently displayed.
           </p>
         ) : null}
         <div className="grid gap-2">
@@ -260,7 +292,7 @@ function listReportFieldsResult(
   )
 }
 
-function getReportFieldsResult(defaultOpen: boolean, result: GetReportFields) {
+function getReportFieldsResult(defaultOpen: boolean, result: GetReportFields, notice: ReactNode) {
   const found = result.fields.map((field) => field.name)
   return (
     <ToolResultCard
@@ -278,6 +310,7 @@ function getReportFieldsResult(defaultOpen: boolean, result: GetReportFields) {
       trailing={<ReportFieldsDone />}
     >
       <div className="grid min-w-0 gap-4">
+        {notice}
         {result.fields.map((field) => reportFieldDetail(field, result.apiVersion))}
         {result.missing.length > 0
           ? nameCollection({
@@ -443,9 +476,9 @@ function parseListReportFields(value: unknown): ListReportFields | null {
     typeof value["truncated"] !== "boolean"
   )
     return null
-  const attributeResources = parseBoundedNames(value["attribute_resources"])
-  const metrics = parseBoundedNames(value["metrics"])
-  const segments = parseBoundedNames(value["segments"])
+  const attributeResources = parseNames(value["attribute_resources"])
+  const metrics = parseNames(value["metrics"])
+  const segments = parseNames(value["segments"])
   const fields = parseFields(value["fields"])
   if (
     !attributeResources ||
@@ -550,7 +583,6 @@ function parseReportFieldDetail(value: unknown): ReportFieldDetail | null {
 }
 
 function parseFields(values: unknown[]): ReportField[] | null {
-  if (values.length > MAX_VALUES) return null
   const fields: ReportField[] = []
   for (const value of values) {
     const field = parseField(value)
@@ -581,11 +613,6 @@ function parseField(value: unknown): ReportField | null {
     selectable: value["selectable"],
     sortable: value["sortable"],
   }
-}
-
-function parseBoundedNames(values: unknown[]): string[] | null {
-  if (values.length > MAX_VALUES) return null
-  return parseNames(values)
 }
 
 function parseNames(values: unknown[]): string[] | null {

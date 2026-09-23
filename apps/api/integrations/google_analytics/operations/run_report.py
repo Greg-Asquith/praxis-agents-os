@@ -1,11 +1,12 @@
 # apps/api/integrations/google_analytics/operations/run_report.py
 
-"""Run a bounded Google Analytics report for one property."""
+"""Run a complete Google Analytics report for one property."""
 
 from typing import Any
 
 from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.report_results import ReportResultBudget, report_result_max_bytes
 
 from ..client import GoogleAnalyticsClient
 from ..tools.schemas import GoogleAnalyticsRunReportInput
@@ -22,9 +23,14 @@ async def run_report(
     *,
     property_id: str,
     request: GoogleAnalyticsRunReportInput,
-    max_rows: int,
+    max_response_bytes: int | None = None,
 ) -> dict[str, Any]:
-    requested_rows = min(request.limit, max_rows)
+    budget = ReportResultBudget(
+        "google_analytics",
+        "run_report",
+        maximum=max_response_bytes if max_response_bytes is not None else report_result_max_bytes(),
+    )
+    page_size = 10_000
     body: dict[str, Any] = {
         "metrics": [{"name": name} for name in request.metrics],
         "dimensions": [{"name": name} for name in request.dimensions],
@@ -40,7 +46,7 @@ async def run_report(
             }
             for item in request.date_ranges
         ],
-        "limit": requested_rows + 1,
+        "limit": min(request.limit, page_size) if request.limit is not None else page_size,
         "offset": request.offset,
         "keepEmptyRows": request.keep_empty_rows,
     }
@@ -56,21 +62,55 @@ async def run_report(
     if request.metric_aggregations:
         body["metricAggregations"] = request.metric_aggregations
 
-    payload = await client.data_post(
-        f"properties/{property_id}:runReport",
-        operation="run_report",
-        policy=IntegrationRequestPolicy.READ,
-        json=body,
-    )
-    if not isinstance(payload, dict):
-        raise IntegrationValidationError(
-            "Google Analytics returned an invalid report response",
-            provider_key="google_analytics",
+    combined: dict[str, Any] | None = None
+    rows: list[Any] = []
+    previous_rows = None
+    while True:
+        payload = await client.data_post(
+            f"properties/{property_id}:runReport",
             operation="run_report",
+            policy=IntegrationRequestPolicy.READ,
+            json=dict(body),
+            max_response_bytes=budget.remaining,
         )
-
-    result = shape_report_rows(payload, requested_limit=requested_rows)
-    result["metadata"] = _metadata(payload.get("metadata"), request)
+        budget.add(payload)
+        if not isinstance(payload, dict) or not isinstance(payload.get("rows", []), list):
+            raise IntegrationValidationError(
+                "Google Analytics returned an invalid report response",
+                provider_key="google_analytics",
+                operation="run_report",
+            )
+        page_rows = payload.get("rows", [])
+        if combined is None:
+            combined = dict(payload)
+        elif any(
+            payload.get(key) != combined.get(key)
+            for key in ("dimensionHeaders", "metricHeaders", "rowCount", "metadata")
+        ):
+            raise IntegrationValidationError(
+                "Google Analytics report changed during pagination. Retry the report.",
+                provider_key="google_analytics",
+                operation="run_report",
+            )
+        total = nonnegative_int(payload.get("rowCount"), default=len(page_rows))
+        target = max(0, total - request.offset)
+        if request.limit is not None:
+            target = min(target, request.limit)
+        if (not page_rows and len(rows) < target) or (page_rows and page_rows == previous_rows):
+            raise IntegrationValidationError(
+                "Google Analytics pagination did not advance. No partial report was returned.",
+                provider_key="google_analytics",
+                operation="run_report",
+            )
+        rows.extend(page_rows)
+        if len(rows) >= target:
+            break
+        previous_rows = page_rows
+        body["offset"] = request.offset + len(rows)
+        body["limit"] = min(page_size, target - len(rows))
+    combined["rows"] = rows
+    result = shape_report_rows(combined, offset=request.offset)
+    result["metadata"] = _metadata(combined.get("metadata"), request)
     return result
 
 

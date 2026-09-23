@@ -214,6 +214,14 @@ def max_size_bytes(entry: FileContractEntry) -> int:
         raise RuntimeError(f"Missing file size setting: {entry.max_size_setting}") from exc
 
 
+def tool_result_max_size_bytes() -> int:
+    """Returns the shared retrieval and storage limit for a retained JSON result."""
+    return min(
+        settings.MAX_FILE_SIZE_AGENT_FILE,
+        max_size_bytes(contract_for_content_type("application/json")),
+    )
+
+
 def is_ingestible(content_type: str) -> bool:
     """Return whether the file type should be extracted to markdown."""
     return contract_for_content_type(content_type).ingestible

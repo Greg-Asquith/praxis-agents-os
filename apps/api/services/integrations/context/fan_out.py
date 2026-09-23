@@ -12,6 +12,7 @@ from services.integrations.context.execution import _run_authorized_entries
 from services.integrations.context.results import IntegrationContextResult
 from services.integrations.context.schemas import MAX_ACTIVE_CONTEXT_TARGETS
 from services.integrations.manifest import PROVIDER_MANIFESTS
+from services.integrations.report_results import ReportResultBudget
 
 if TYPE_CHECKING:
     from pydantic_ai import RunContext
@@ -25,6 +26,7 @@ async def run_context_fan_out(
     *,
     binding: "IntegrationToolBinding",
     operation: Callable[[ResolvedContextEntry], Awaitable[Any]],
+    result_budget: ReportResultBudget | None = None,
 ) -> list[IntegrationContextResult]:
     """Run an operation once per compatible entry and isolate failures."""
     active_context = ctx.deps.active_context
@@ -48,9 +50,12 @@ async def run_context_fan_out(
     async def execute(entry: ResolvedContextEntry, _operation_input: None) -> Any:
         return await operation(entry)
 
+    if result_budget is not None:
+        result_budget.add({"results": []})
     return await _run_authorized_entries(
         ctx,
         binding=binding,
         selected=tuple((entry, None) for entry in entries),
         operation=execute,
+        result_budget=result_budget,
     )

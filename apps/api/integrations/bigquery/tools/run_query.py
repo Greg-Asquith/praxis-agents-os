@@ -17,6 +17,7 @@ from services.agents.runtime.tools.contract import (
     ToolPresentation,
 )
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE
 from services.integrations.table_scopes.domain import (
     TableCoordinate,
     TableNamespace,
@@ -107,8 +108,6 @@ async def bigquery_run_query(
                 labels=query_labels(ctx),
                 request_id=str(ctx.deps.run.id),
                 max_bytes_billed=bigquery_settings.BIGQUERY_MAX_BYTES_BILLED,
-                max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
-                max_result_chars=bigquery_settings.BIGQUERY_MAX_RESULT_CHARS,
                 timeout_seconds=bigquery_settings.BIGQUERY_QUERY_TIMEOUT_SECONDS,
                 query_parameters=query_parameters,
                 permitted_tables=permitted_tables,
@@ -199,11 +198,13 @@ DEFINITION = RuntimeToolDefinition(
     name="bigquery_run_query",
     function=bigquery_run_query,
     description=(
-        "Run exactly one bounded GoogleSQL SELECT query. Active BigQuery datasets define which "
+        "Run exactly one GoogleSQL SELECT query and retrieve every result page. Active BigQuery datasets define which "
         "tables that query may reference; the query is not repeated for each dataset. "
         "Use fully qualified backticked `project.dataset.table` names. Some tables may have "
-        "operator-defined row filters, so results can contain a subset of the table's rows."
-    ),
+        "operator-defined row filters, so results can contain a subset of the table's rows. "
+        "Add SQL LIMIT only for a requested top-N or limited result."
+    )
+    + REPORT_RESULT_GUIDANCE,
     provider="bigquery",
     label="Run BigQuery Query",
     code_eligible=True,
@@ -212,6 +213,8 @@ DEFINITION = RuntimeToolDefinition(
     takes_ctx=True,
     timeout=bigquery_settings.BIGQUERY_QUERY_TIMEOUT_SECONDS + 15,
     output_model=BigQueryRunQueryOutput,
+    max_public_result_chars=settings.AGENT_STRUCTURED_RESULT_MAX_CHARS,
+    preview_list_path="rows",
     integration_binding=BIGQUERY_BINDING,
     presentation=ToolPresentation(
         icon="bigquery",

@@ -89,7 +89,9 @@ class GoogleAnalyticsRunRealtimeReportInput(GoogleAnalyticsStrictModel):
         default=None,
         description="Metric or dimension ordering rules.",
     )
-    limit: int = Field(default=100, ge=1, description="Maximum rows returned per property.")
+    limit: int | None = Field(
+        default=None, ge=1, description="Optional explicit row limit; omit for all available rows."
+    )
     metric_aggregations: list[GoogleAnalyticsMetricAggregation] | None = Field(
         default=None,
         max_length=3,

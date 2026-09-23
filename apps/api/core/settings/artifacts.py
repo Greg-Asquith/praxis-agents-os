@@ -14,7 +14,7 @@ class ArtifactSettingsMixin:
     ARTIFACT_SHARE_MAX_TTL_DAYS: int = Field(default=30, ge=1, le=30)
     ARTIFACT_VIEW_URL_TTL_SECONDS: int = Field(default=300, ge=1, le=3600)
     ARTIFACT_MAX_CONTENT_BYTES: int = Field(
-        default=1_048_576,
+        default=10_485_760,
         ge=1024,
         le=10_485_760,
     )

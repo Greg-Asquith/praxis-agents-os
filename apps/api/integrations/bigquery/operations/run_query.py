@@ -1,6 +1,6 @@
 # apps/api/integrations/bigquery/operations/run_query.py
 
-"""Authorize and run one bounded GoogleSQL query through BigQuery dry-run metadata."""
+"""Authorize and run one GoogleSQL query through BigQuery dry-run metadata."""
 
 import json
 from collections.abc import Mapping
@@ -11,11 +11,22 @@ from urllib.parse import quote
 from pydantic_ai import ModelRetry
 
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.report_results import ReportResultBudget
 
 MAX_AUTHORIZED_REFERENCES = 49
 
 
 class BigQueryQueryClient(Protocol):
+    async def get(
+        self,
+        path: str,
+        *,
+        operation: str,
+        policy: IntegrationRequestPolicy,
+        params: dict[str, Any] | None = None,
+        max_response_bytes: int | None = None,
+    ) -> Any: ...
+
     async def post(
         self,
         path: str,
@@ -24,6 +35,7 @@ class BigQueryQueryClient(Protocol):
         policy: IntegrationRequestPolicy,
         json: dict[str, Any],
         request_timeout: float | None = None,
+        max_response_bytes: int | None = None,
     ) -> Any: ...
 
 
@@ -43,8 +55,6 @@ async def run_query(
     labels: Mapping[str, str],
     request_id: str,
     max_bytes_billed: int,
-    max_rows: int,
-    max_result_chars: int,
     timeout_seconds: int,
     query_parameters: tuple[dict[str, object], ...] | None = None,
     permitted_tables: frozenset[tuple[str, str, str]] | None = None,
@@ -130,7 +140,7 @@ async def run_query(
         "useLegacySql": False,
         "useQueryCache": True,
         "maximumBytesBilled": str(max_bytes_billed),
-        "maxResults": max_rows + 1,
+        "maxResults": 10_000,
         "timeoutMs": timeout_seconds * 1000,
         "jobTimeoutMs": str(timeout_seconds * 1000),
         "location": location,
@@ -140,12 +150,14 @@ async def run_query(
     if query_parameters is not None:
         execution_query["parameterMode"] = "NAMED"
         execution_query["queryParameters"] = list(query_parameters)
+    budget = ReportResultBudget("bigquery", "run_query")
     response = await client.post(
         f"projects/{quote(billing_project_id, safe='')}/queries",
         operation="run_query",
         policy=IntegrationRequestPolicy.READ,
         json=execution_query,
         request_timeout=timeout_seconds + 5,
+        max_response_bytes=budget.remaining,
     )
     _raise_query_errors(response)
     if response.get("jobComplete") is not True:
@@ -153,12 +165,52 @@ async def run_query(
             f"The BigQuery job did not complete within {timeout_seconds} seconds. "
             "Narrow the query and try again."
         )
-    return _query_result(
-        response,
-        max_rows=max_rows,
-        max_result_chars=max_result_chars,
-        row_filters_applied=bool(query_parameters),
-    )
+    budget.add(response)
+    result = _query_result(response, row_filters_applied=bool(query_parameters))
+    page_token = response.get("pageToken")
+    job = response.get("jobReference", {})
+    seen_tokens: set[str] = set()
+    while page_token:
+        if (
+            not isinstance(page_token, str)
+            or page_token in seen_tokens
+            or not isinstance(job, dict)
+            or not job.get("jobId")
+            or job.get("projectId", billing_project_id) != billing_project_id
+            or job.get("location", location) != location
+        ):
+            raise ModelRetry(
+                "BigQuery returned invalid pagination metadata. No partial report was returned."
+            )
+        seen_tokens.add(page_token)
+        page = await client.get(
+            f"projects/{quote(billing_project_id, safe='')}/queries/{quote(str(job['jobId']), safe='')}",
+            operation="get_query_results",
+            policy=IntegrationRequestPolicy.READ,
+            params={"pageToken": page_token, "location": location, "maxResults": 10_000},
+            max_response_bytes=budget.remaining,
+        )
+        budget.add(page)
+        _raise_query_errors(page)
+        if not isinstance(page, dict) or page.get("jobComplete") is not True:
+            raise ModelRetry(
+                "BigQuery returned an incomplete result page. No partial report was returned."
+            )
+        if page.get("schema", response.get("schema")) != response.get("schema"):
+            raise ModelRetry("BigQuery changed its result schema during pagination.")
+        if "jobReference" in page and page["jobReference"] != job:
+            raise ModelRetry("BigQuery returned results for a different job.")
+        shaped = _query_result(
+            {**response, **page, "rows": page.get("rows", [])},
+            row_filters_applied=bool(query_parameters),
+        )
+        result["rows"].extend(shaped["rows"])
+        page_token = page.get("pageToken")
+    if len(result["rows"]) != result["total_rows"]:
+        raise ModelRetry(
+            "BigQuery returned fewer rows than its reported total. No partial report was returned."
+        )
+    return result
 
 
 def _is_information_schema_reference(dataset_id: str, table_id: str) -> bool:
@@ -253,8 +305,6 @@ def _raise_query_errors(payload: Any) -> None:
 def _query_result(
     payload: dict[str, Any],
     *,
-    max_rows: int,
-    max_result_chars: int,
     row_filters_applied: bool,
 ) -> dict[str, Any]:
     schema = payload.get("schema")
@@ -264,17 +314,16 @@ def _query_result(
     rows = raw_rows if isinstance(raw_rows, list) else []
     total_rows = _nonnegative_int(payload.get("totalRows"))
     total_rows = total_rows if total_rows is not None else len(rows)
-    truncated = len(rows) > max_rows or total_rows > max_rows or bool(payload.get("pageToken"))
     result: dict[str, Any] = {
         "rows": [],
         "total_rows": total_rows,
-        "truncated": truncated,
+        "truncated": False,
         "total_bytes_processed": _nonnegative_int(payload.get("totalBytesProcessed")) or 0,
         "cache_hit": bool(payload.get("cacheHit")),
         "row_filters_applied": row_filters_applied,
     }
-    bounded_rows: list[dict[str, str | None]] = []
-    for raw_row in rows[:max_rows]:
+    complete_rows: list[dict[str, str | None]] = []
+    for raw_row in rows:
         cells = raw_row.get("f") if isinstance(raw_row, dict) else None
         values = cells if isinstance(cells, list) else []
         row = {
@@ -285,12 +334,8 @@ def _query_result(
             )
             for column_name, cell in zip(column_names, values, strict=False)
         }
-        candidate = {**result, "rows": [*bounded_rows, row]}
-        if _serialized_chars(candidate) > max_result_chars:
-            result["truncated"] = True
-            break
-        bounded_rows.append(row)
-    result["rows"] = bounded_rows
+        complete_rows.append(row)
+    result["rows"] = complete_rows
     return result
 
 
@@ -309,10 +354,6 @@ def _cell_text(value: Any) -> str:
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
     return str(value)
-
-
-def _serialized_chars(value: object) -> int:
-    return len(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str))
 
 
 def _nonnegative_int(value: Any) -> int | None:

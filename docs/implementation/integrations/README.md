@@ -101,6 +101,17 @@ The following contracts apply in this area:
   disposition to the shared audit runner. Unknown mutation failures and
   in-flight cancellation are ambiguous, close correlated evidence as
   `unverified_mutation`, and must not be replayed automatically.
+  Streamed requests buffer at most 64 KiB of error content before invoking
+  provider error parsers. Oversized error bodies use the parser's fallback;
+  status and retry headers remain available.
+  Report retrieval can bound successful response streams by the retained JSON
+  File byte limit. Report tools share one allowance across selected accounts,
+  including normalised rows, account metadata, and error envelopes. Each
+  account's response streams and pages use the remaining allowance. Overflow
+  stops further pages and accounts, then fails the whole invocation, including
+  nested Code Mode calls. Ordinary provider failures remain isolated per
+  account. Source page sizes do not impose an application row cap; transcript
+  previews are applied later.
 - Provider packages keep each entity resolver in its own module under an
   `entity_resolvers/` tree, with one module per entity kind. The package
   `__init__.py` only composes exported resolver definitions so provider

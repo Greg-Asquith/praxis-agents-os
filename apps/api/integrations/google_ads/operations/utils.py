@@ -9,7 +9,6 @@ from typing import Any
 
 from integrations.google_ads.constants import GOOGLE_ADS_INT64_MAX
 
-_LIMIT_PATTERN = re.compile(r"\bLIMIT\s+(\d+)\b", re.IGNORECASE)
 _ENTITY_ID_FIELD_PATTERN = re.compile(r"[a-z][a-z0-9_]*\.(?:id|[a-z][a-z0-9_]*_id)")
 _RECOMMENDATION_RESOURCE_PATTERN = re.compile(
     r"^customers/(?P<customer_id>\d{1,32})/recommendations/[A-Za-z0-9_.~-]{1,256}$"
@@ -128,91 +127,6 @@ def entity_id_boundary_filter(
         raise ValueError("Google Ads entity minimum id is outside the int64 range")
     operator = ">=" if inclusive else ">"
     return f"{field} {operator} {minimum_id}"
-
-
-def bounded_query(query: str, *, max_rows: int) -> str:
-    """Ask Google for at most one row beyond the model-visible cap."""
-    request_limit = max_rows + 1
-    normalized = _without_comments(query).strip().rstrip(";").rstrip()
-    masked = _mask_quoted_values(normalized)
-    matches = list(_LIMIT_PATTERN.finditer(masked))
-    terminal_match = matches[-1] if matches and not masked[matches[-1].end() :].strip() else None
-    effective_limit = (
-        min(int(terminal_match.group(1)), request_limit)
-        if terminal_match is not None
-        else request_limit
-    )
-
-    # Remove every clause-like LIMIT outside quoted values. This turns a misplaced
-    # LIMIT into a single provider-enforced terminal clause instead of trusting the
-    # first LIMIT-looking token in model-authored text.
-    for match in reversed(matches):
-        normalized = normalized[: match.start()].rstrip() + " " + normalized[match.end() :].lstrip()
-    return f"{normalized.rstrip()} LIMIT {effective_limit}"
-
-
-def _without_comments(query: str) -> str:
-    """Remove SQL-style comments while preserving quoted GAQL values."""
-    output: list[str] = []
-    index = 0
-    quote: str | None = None
-    while index < len(query):
-        character = query[index]
-        following = query[index + 1] if index + 1 < len(query) else ""
-        if quote is not None:
-            output.append(character)
-            if character == "\\" and following:
-                output.append(following)
-                index += 2
-                continue
-            if character == quote:
-                quote = None
-            index += 1
-            continue
-        if character in {"'", '"'}:
-            quote = character
-            output.append(character)
-            index += 1
-            continue
-        if (character == "-" and following == "-") or character == "#":
-            newline = query.find("\n", index)
-            if newline == -1:
-                break
-            output.append("\n")
-            index = newline + 1
-            continue
-        if character == "/" and following == "*":
-            comment_end = query.find("*/", index + 2)
-            if comment_end == -1:
-                break
-            output.append(" ")
-            index = comment_end + 2
-            continue
-        output.append(character)
-        index += 1
-    return "".join(output)
-
-
-def _mask_quoted_values(query: str) -> str:
-    """Mask quoted values so clause matching only examines GAQL syntax."""
-    masked = list(query)
-    index = 0
-    quote: str | None = None
-    while index < len(query):
-        character = query[index]
-        if quote is None:
-            if character in {"'", '"'}:
-                quote = character
-                masked[index] = " "
-        else:
-            masked[index] = " "
-            if character == "\\" and index + 1 < len(query):
-                masked[index + 1] = " "
-                index += 1
-            elif character == quote:
-                quote = None
-        index += 1
-    return "".join(masked)
 
 
 def operation_index(location: Any) -> int | None:

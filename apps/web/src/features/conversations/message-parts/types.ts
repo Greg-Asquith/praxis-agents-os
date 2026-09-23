@@ -49,6 +49,7 @@ export type ToolActivity = {
   decisionReason?: string
   delegate?: DelegationToolActivity
   result?: unknown
+  resultPreview?: unknown
   resultExcerpt?: string
   outcome?: string | null
   script?: CodeModeScriptActivity

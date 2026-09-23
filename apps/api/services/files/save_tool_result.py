@@ -7,15 +7,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from core.exceptions.general import AppValidationError
-from core.settings import settings
 from services.audit_events import AuditAction, AuditActorType, AuditResourceType
 from services.audit_events.operations import safe_record_operation_audit_event
-from services.files.contract import contract_for_content_type, max_size_bytes
+from services.files.contract import tool_result_max_size_bytes
 from services.files.create_conversation_file_references import create_conversation_file_references
 from services.files.create_file_with_revision import (
     FileRevisionWriteResult,
     create_file_with_revision,
 )
+from services.files.reserve_file_revision import reserve_file_revision
 from services.files.revision_actor import FileRevisionActor
 
 if TYPE_CHECKING:
@@ -31,16 +31,22 @@ async def save_tool_result(
     content: bytes,
 ) -> FileRevisionWriteResult:
     """Saves an internal JSON snapshot inside the caller's transaction."""
-    maximum = min(
-        settings.MAX_FILE_SIZE_AGENT_FILE,
-        max_size_bytes(contract_for_content_type("application/json")),
-    )
+    maximum = tool_result_max_size_bytes()
     if len(content) > maximum:
         raise AppValidationError(
             f"Tool result contains {len(content):,} bytes; the storage limit is {maximum:,} bytes. "
             "Narrow the query and try again.",
             field="result",
         )
+    reservation = await reserve_file_revision(
+        deps.db,
+        workspace_id=deps.workspace.id,
+        user_id=deps.user.id,
+        name=name,
+        content=content,
+        content_type="application/json",
+        extension=".json",
+    )
     saved = await create_file_with_revision(
         deps.db,
         workspace=deps.workspace,
@@ -49,6 +55,7 @@ async def save_tool_result(
         content_type="application/json",
         extension=".json",
         actor=FileRevisionActor(agent_id=deps.agent.id),
+        reservation=reservation,
     )
     saved.file.is_tool_result = True
     await deps.db.flush()

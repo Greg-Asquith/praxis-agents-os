@@ -213,7 +213,7 @@ async def test_query_rejects_persistent_routines_before_execution() -> None:
     assert len(client.calls) == 1
 
 
-async def test_query_stamps_labels_location_and_caps_rows() -> None:
+async def test_query_stamps_labels_location_and_retains_rows() -> None:
     client = _QueryClient(
         dry_run=_dry_run(total_bytes=512),
         query_response={
@@ -227,21 +227,20 @@ async def test_query_stamps_labels_location_and_caps_rows() -> None:
             "totalRows": "2",
             "totalBytesProcessed": "512",
             "cacheHit": True,
-            "pageToken": "more",
         },
     )
 
-    result = await _run_operation(client, max_rows=1)
+    result = await _run_operation(client)
     BigQueryRunQueryOutput.model_validate(result)
 
     assert result["total_rows"] == 2
-    assert result["truncated"] is True
-    assert len(result["rows"]) == 1
+    assert result["truncated"] is False
+    assert len(result["rows"]) == 2
     query_request = client.calls[1]
     assert query_request["path"] == "projects/analytics/queries"
     assert query_request["json"]["location"] == "EU"
     assert query_request["json"]["maximumBytesBilled"] == "1024"
-    assert query_request["json"]["maxResults"] == 2
+    assert query_request["json"]["maxResults"] == 10_000
     assert query_request["json"]["labels"] == {
         "praxis_workspace": "workspace",
         "praxis_agent": "agent",
@@ -288,8 +287,6 @@ async def test_query_sends_row_filter_parameters_to_dry_run_and_execution() -> N
         labels={},
         request_id="request-id",
         max_bytes_billed=1024,
-        max_rows=10,
-        max_result_chars=16_000,
         timeout_seconds=60,
         query_parameters=parameters,
         permitted_tables=frozenset({("analytics", "marketing", "campaign_daily")}),
@@ -323,8 +320,6 @@ async def test_query_reports_no_filter_when_enforcement_emits_no_parameters() ->
         labels={},
         request_id="request-id",
         max_bytes_billed=1024,
-        max_rows=10,
-        max_result_chars=16_000,
         timeout_seconds=60,
         query_parameters=(),
         permitted_tables=frozenset({("analytics", "marketing", "campaign_daily")}),
@@ -351,8 +346,6 @@ async def test_query_rejects_dry_run_reference_outside_permitted_tables() -> Non
             labels={},
             request_id="request-id",
             max_bytes_billed=1024,
-            max_rows=10,
-            max_result_chars=16_000,
             timeout_seconds=60,
             query_parameters=(),
             permitted_tables=frozenset({("analytics", "marketing", "campaign_daily")}),
@@ -361,7 +354,7 @@ async def test_query_rejects_dry_run_reference_outside_permitted_tables() -> Non
     assert len(client.calls) == 1
 
 
-async def test_query_bounds_structured_result_characters() -> None:
+async def test_query_retains_large_cells_for_shared_result_storage() -> None:
     client = _QueryClient(
         dry_run=_dry_run(),
         query_response={
@@ -374,11 +367,11 @@ async def test_query_bounds_structured_result_characters() -> None:
         },
     )
 
-    result = await _run_operation(client, max_result_chars=1000)
+    result = await _run_operation(client)
 
-    assert result["rows"] == []
+    assert result["rows"] == [{"large_value": "x" * 5000}]
     assert result["total_rows"] == 1
-    assert result["truncated"] is True
+    assert result["truncated"] is False
 
 
 async def test_query_tool_rejects_multiple_bigquery_connections_before_provider_io() -> None:
@@ -594,8 +587,6 @@ async def _run_operation(
     client: "_QueryClient",
     *,
     max_bytes: int = 1024,
-    max_rows: int = 10,
-    max_result_chars: int = 16_000,
 ):
     return await run_query(
         client,
@@ -615,8 +606,6 @@ async def _run_operation(
         },
         request_id="00000000-0000-0000-0000-000000000089",
         max_bytes_billed=max_bytes,
-        max_rows=max_rows,
-        max_result_chars=max_result_chars,
         timeout_seconds=60,
     )
 
@@ -677,6 +666,7 @@ class _QueryClient:
         policy: IntegrationRequestPolicy,
         json: dict,
         request_timeout: float | None = None,
+        max_response_bytes: int | None = None,
     ):
         self.calls.append(
             {

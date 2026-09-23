@@ -24,7 +24,7 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 from services.integrations.read_audit import read_operation_detail
-from services.integrations.report_results import REPORT_RESULT_GUIDANCE
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
 
 from ..operations.run_realtime_report import run_realtime_report
 from .schemas import (
@@ -90,9 +90,12 @@ async def google_analytics_run_realtime_report(
         Field(description="Metric or dimension ordering rules."),
     ] = None,
     limit: Annotated[
-        int,
-        Field(ge=1, description="Maximum rows returned per selected property."),
-    ] = 100,
+        int | None,
+        Field(
+            ge=1,
+            description="Set only for a requested top-N or limited report; omit for all available rows.",
+        ),
+    ] = None,
     metric_aggregations: Annotated[
         list[GoogleAnalyticsMetricAggregation] | None,
         Field(description="Optional TOTAL, MINIMUM, or MAXIMUM metric rows."),
@@ -109,6 +112,8 @@ async def google_analytics_run_realtime_report(
         metric_aggregations=metric_aggregations,
     )
 
+    result_budget = ReportResultBudget("google_analytics", "run_realtime_report")
+
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await google_analytics_client(ctx, entry)
@@ -116,7 +121,7 @@ async def google_analytics_run_realtime_report(
                 client,
                 property_id=entry.external_id,
                 request=request,
-                max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
+                max_response_bytes=result_budget.remaining,
             )
             return IntegrationAuditOutcome(
                 result,
@@ -147,7 +152,9 @@ async def google_analytics_run_realtime_report(
             execute=execute,
         )
 
-    results = await run_context_fan_out(ctx, binding=GOOGLE_ANALYTICS_BINDING, operation=operation)
+    results = await run_context_fan_out(
+        ctx, binding=GOOGLE_ANALYTICS_BINDING, operation=operation, result_budget=result_budget
+    )
     return {"results": serialize_fan_out_results(results)}
 
 
@@ -158,8 +165,6 @@ def _validated_request(**values: Any) -> GoogleAnalyticsRunRealtimeReportInput:
     validate_field_selection(metrics, dimensions)
     if minute_ranges is not None and not 1 <= len(minute_ranges) <= 2:
         raise ModelRetry("Provide one or two Google Analytics realtime minute ranges.")
-    if values["limit"] > settings.INTEGRATION_REPORT_MAX_ROWS:
-        raise ModelRetry(f"Set limit to {settings.INTEGRATION_REPORT_MAX_ROWS} rows or fewer.")
     for item in minute_ranges or []:
         if not 0 <= item.start_minutes_ago <= 29 or not 0 <= item.end_minutes_ago <= 29:
             raise ModelRetry("Set realtime minute bounds between 0 and 29 minutes ago.")
@@ -186,13 +191,17 @@ DEFINITION = RuntimeToolDefinition(
     name="google_analytics_run_realtime_report",
     function=google_analytics_run_realtime_report,
     description=(
-        "Run a bounded read-only report over the last 30 minutes for every Google Analytics "
+        "Run a read-only report over the last 30 minutes for every Google Analytics "
         "property selected in Active Context. Prefer realtime metrics activeUsers, "
         "screenPageViews, eventCount, and keyEvents with dimensions unifiedScreenName, country, "
         "city, deviceCategory, eventName, minutesAgo, and platform. Standard-report dimensions "
         "such as date and sessionSource are not valid here. For custom minute ranges, "
         "start_minutes_ago is the older boundary and must be greater than or equal to "
         "end_minutes_ago; the last 30 minutes is 29 through 0. Results are per selected property."
+        " Omit limit to request all available rows up to the API maximum of 250,000. "
+        "Set limit only for a requested top-N report. If the API still truncates the result, "
+        "disclose that source limitation; do not attempt offset pagination, which realtime "
+        "reports do not support."
     )
     + REPORT_RESULT_GUIDANCE,
     provider="google_analytics",

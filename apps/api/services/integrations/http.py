@@ -27,6 +27,7 @@ from core.exceptions.integration import (
     IntegrationNotFoundError,
     IntegrationPermissionError,
     IntegrationRateLimitError,
+    IntegrationReportTooLargeError,
     IntegrationTimeoutError,
     IntegrationValidationError,
 )
@@ -98,11 +99,41 @@ async def request_with_retries(
     validation_error_detail: Callable[[httpx2.Response], str | None] | None = None,
     response_error_mapper: Callable[[httpx2.Response], IntegrationError | None] | None = None,
     attempt_context: Callable[[], AbstractAsyncContextManager[None]] | None = None,
+    max_response_bytes: int | None = None,
     **kwargs: Any,
 ) -> httpx2.Response:
     """Issue one bounded provider request and map failures to typed errors."""
     if not isinstance(policy, IntegrationRequestPolicy):
         raise TypeError("policy must be an IntegrationRequestPolicy")
+    if max_response_bytes is not None:
+
+        async def consume(response: httpx2.Response) -> httpx2.Response:
+            body = bytearray()
+            async for chunk in response.aiter_bytes():
+                if len(body) + len(chunk) > max_response_bytes:
+                    raise IntegrationReportTooLargeError(
+                        "The report exceeds the file size limit. No partial report was returned. "
+                        "Request fewer fields or a shorter date range.",
+                        provider_key=provider_key,
+                        operation=operation,
+                    )
+                body.extend(chunk)
+            return httpx2.Response(response.status_code, content=bytes(body))
+
+        return await consume_stream_with_retries(
+            method,
+            url,
+            operation=operation,
+            provider_key=provider_key,
+            policy=policy,
+            consume=consume,
+            client=client,
+            validation_error_detail=validation_error_detail,
+            response_error_mapper=response_error_mapper,
+            attempt_context=attempt_context,
+            include_original_error=False,
+            **kwargs,
+        )
     kwargs.setdefault("timeout", settings.INTEGRATIONS_HTTP_TIMEOUT_SECONDS)
     if client is not None:
         return await _request_with_client(
@@ -239,6 +270,22 @@ async def _consume_stream_with_client[T](
         async with guard, client.stream(method, url, **kwargs) as response:
             if response.status_code < 400:
                 return _SuccessfulAttempt(await consume(response))
+            if validation_error_detail is not None or response_error_mapper is not None:
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(body) + len(chunk) > 65_536:
+                        body.clear()
+                        break
+                    body.extend(chunk)
+                headers = httpx2.Headers(response.headers)
+                headers.pop("Content-Encoding", None)
+                headers.pop("Content-Length", None)
+                response = httpx2.Response(
+                    response.status_code,
+                    content=bytes(body),
+                    headers=headers,
+                    request=response.request,
+                )
             _raise_response_error(
                 response,
                 operation=operation,

@@ -52,6 +52,7 @@ from services.artifacts.schemas import (
     ArtifactReadToolResult,
     ArtifactToolResult,
 )
+from services.artifacts.utils import validate_artifact_content
 from tests.factories import (
     build_artifact,
     build_artifact_revision,
@@ -400,6 +401,22 @@ async def test_platform_artifact_approval_cannot_replace_the_reviewed_version() 
             override_args={**args, "expected_current_version_id": str(uuid4())},
         )
     assert error.value.details["locked_fields"] == ["expected_current_version_id"]
+
+
+def test_artifact_default_limit_accepts_ten_mib_and_rejects_larger_utf8_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ARTIFACT_MAX_CONTENT_BYTES", raising=False)
+    maximum = Settings(_env_file=None).ARTIFACT_MAX_CONTENT_BYTES
+    assert maximum == 10 * 1024 * 1024
+    monkeypatch.setattr(settings, "ARTIFACT_MAX_CONTENT_BYTES", maximum)
+    content = "é" * (maximum // 2)
+    assert (
+        len(validate_artifact_content(artifact_type="csv", title="Report", content=content))
+        == maximum
+    )
+    with pytest.raises(AppValidationError, match="Artifact content is too large"):
+        validate_artifact_content(artifact_type="csv", title="Report", content=content + "a")
 
 
 @pytest.mark.parametrize(

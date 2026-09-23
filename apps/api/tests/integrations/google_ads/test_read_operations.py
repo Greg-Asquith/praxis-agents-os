@@ -26,7 +26,6 @@ from integrations.google_ads.operations.list_report_fields import list_report_fi
 from integrations.google_ads.operations.list_shared_sets import list_shared_sets
 from integrations.google_ads.operations.run_report import run_report
 from integrations.google_ads.operations.utils import (
-    bounded_query,
     escape_gaql_like_literal,
     stream_rows,
 )
@@ -144,7 +143,7 @@ async def test_list_report_fields_returns_bounded_sorted_catalog() -> None:
     assert client.calls[1]["json"] == {
         "query": (
             "SELECT name, category, data_type, selectable, filterable, sortable, "
-            "is_repeated WHERE name LIKE 'campaign.%' ORDER BY name LIMIT 2000"
+            "is_repeated WHERE name LIKE 'campaign.%' ORDER BY name"
         )
     }
 
@@ -192,7 +191,7 @@ async def test_list_report_fields_matches_each_search_term_locally() -> None:
     assert result["truncated"] is False
     assert client.calls[1]["json"]["query"] == (
         "SELECT name, category, data_type, selectable, filterable, sortable, "
-        "is_repeated WHERE name LIKE 'shared_criterion.%' ORDER BY name LIMIT 2000"
+        "is_repeated WHERE name LIKE 'shared_criterion.%' ORDER BY name"
     )
 
 
@@ -219,7 +218,7 @@ async def test_list_report_fields_returns_the_whole_catalog_when_no_term_matches
     assert len(client.calls) == 2
 
 
-async def test_list_report_fields_treats_a_partial_provider_page_as_truncated() -> None:
+async def test_list_report_fields_rejects_a_partial_provider_page() -> None:
     client = _ReportFieldClient(
         resource_payload=_report_field("campaign", category="RESOURCE", data_type="MESSAGE"),
         search_payload={
@@ -228,13 +227,11 @@ async def test_list_report_fields_treats_a_partial_provider_page_as_truncated() 
         },
     )
 
-    result = await list_report_fields(client, resource="campaign", search=None, limit=50)
-
-    assert result["field_count"] == 1
-    assert result["truncated"] is True
+    with pytest.raises(IntegrationValidationError, match="complete report field catalogue"):
+        await list_report_fields(client, resource="campaign", search=None, limit=50)
 
 
-async def test_list_report_fields_bounds_compatibility_and_uses_conservative_fallback() -> None:
+async def test_list_report_fields_retains_compatibility_and_uses_conservative_fallback() -> None:
     client = _ReportFieldClient(
         resource_payload=_report_field(
             "campaign",
@@ -257,8 +254,8 @@ async def test_list_report_fields_bounds_compatibility_and_uses_conservative_fal
     result = await list_report_fields(client, resource="campaign", search="", limit=2)
 
     assert result["attribute_resource_count"] == 101
-    assert len(result["attribute_resources"]) == 100
-    assert result["compatibility_truncated"] is True
+    assert len(result["attribute_resources"]) == 101
+    assert result["compatibility_truncated"] is False
     assert result["metric_count"] == 3
     assert result["segment_count"] == 3
     assert result["field_count"] == 2
@@ -272,8 +269,8 @@ async def test_list_report_fields_bounds_compatibility_and_uses_conservative_fal
         ("campaign.name", None, 50, "report resource"),
         ("Campaign", None, 50, "report resource"),
         ("campaign", "x" * 101, 50, "must not exceed 100"),
-        ("campaign", None, 0, "between 1 and 100"),
-        ("campaign", None, 101, "between 1 and 100"),
+        ("campaign", None, 0, "must be positive"),
+        ("campaign", None, True, "must be positive"),
     ],
 )
 async def test_list_report_fields_rejects_invalid_inputs_before_dispatch(
@@ -321,7 +318,7 @@ async def test_list_report_fields_accepts_an_empty_search_response() -> None:
     assert result["truncated"] is False
 
 
-async def test_list_report_fields_treats_a_next_page_as_truncated_without_a_count() -> None:
+async def test_list_report_fields_rejects_a_repeated_page_token() -> None:
     client = _ReportFieldClient(
         resource_payload=_report_field("campaign", category="RESOURCE", data_type="MESSAGE"),
         search_payload={
@@ -330,10 +327,8 @@ async def test_list_report_fields_treats_a_next_page_as_truncated_without_a_coun
         },
     )
 
-    result = await list_report_fields(client, resource="campaign", search=None, limit=2)
-
-    assert result["field_count"] == 1
-    assert result["truncated"] is True
+    with pytest.raises(IntegrationValidationError, match="complete report field catalogue"):
+        await list_report_fields(client, resource="campaign", search=None, limit=2)
 
 
 @pytest.mark.parametrize(
@@ -533,47 +528,31 @@ async def test_get_report_fields_rejects_a_bare_string() -> None:
     client.get.assert_not_awaited()
 
 
-async def test_report_caps_rows_without_model_framing() -> None:
-    client = _OperationClient(
-        [{"results": [{"campaign": {"name": "one"}}, {"campaign": {"name": "two"}}]}]
-    )
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT campaign.name FROM campaign",
+        "SELECT campaign.name FROM campaign LIMIT 2000",
+        "SELECT campaign.name FROM campaign WHERE campaign.name = 'LIMIT 1'",
+    ],
+)
+async def test_report_preserves_query_and_every_streamed_row(query: str) -> None:
+    rows = [{"campaign": {"name": str(index)}} for index in range(1_500)]
+    client = _OperationClient([{"results": rows[:800]}, {"results": rows[800:]}])
     result = await run_report(
         client,
         customer_id="333",
         currency_code="GBP",
         login_customer_id="111",
-        query="SELECT campaign.name FROM campaign",
-        max_rows=1,
+        query=query,
+        max_response_bytes=1_000_000,
     )
     assert result["currency_code"] == "GBP"
-    assert result["row_count"] == 1
-    assert result["truncated"] is True
-    assert result["rows"][0]["campaign"]["name"] == "one"
-    assert client.last_json["query"].endswith("LIMIT 2")
-
-
-@pytest.mark.parametrize(
-    ("query", "expected"),
-    [
-        (
-            "SELECT campaign.id FROM campaign WHERE campaign.name = 'LIMIT 1'",
-            "SELECT campaign.id FROM campaign WHERE campaign.name = 'LIMIT 1' LIMIT 3",
-        ),
-        ("SELECT campaign.id FROM campaign -- LIMIT 1", "SELECT campaign.id FROM campaign LIMIT 3"),
-        (
-            "SELECT campaign.id FROM campaign /* LIMIT 1 */",
-            "SELECT campaign.id FROM campaign LIMIT 3",
-        ),
-        (
-            "SELECT campaign.id FROM campaign LIMIT 1 ORDER BY campaign.id",
-            "SELECT campaign.id FROM campaign ORDER BY campaign.id LIMIT 3",
-        ),
-        ("SELECT campaign.id FROM campaign LIMIT 2", "SELECT campaign.id FROM campaign LIMIT 2"),
-        ("SELECT campaign.id FROM campaign LIMIT 20", "SELECT campaign.id FROM campaign LIMIT 3"),
-    ],
-)
-def test_bounded_query_enforces_one_terminal_clause(query: str, expected: str) -> None:
-    assert bounded_query(query, max_rows=2) == expected
+    assert result["row_count"] == 1_500
+    assert result["truncated"] is False
+    assert result["truncation_note"] is None
+    assert result["rows"] == rows
+    assert client.last_json["query"] == query
 
 
 def test_stream_rows_stops_collecting_at_budget() -> None:
@@ -972,3 +951,36 @@ async def test_list_shared_sets_rejects_invalid_type_identifiers(
             shared_set_type=shared_set_type,
             limit=1,
         )
+
+
+async def test_list_report_fields_retains_all_pages_and_compatibility_by_default() -> None:
+    fields = [_report_field(f"campaign.field_{index:04}") for index in range(2101)]
+    client = SimpleNamespace(
+        get=AsyncMock(
+            return_value=_report_field(
+                "campaign",
+                category="RESOURCE",
+                data_type="MESSAGE",
+                attributeResources=[f"resource_{index:03}" for index in range(101)],
+                metrics=[f"metrics.value_{index:03}" for index in range(201)],
+                segments=[f"segments.value_{index:03}" for index in range(201)],
+            )
+        ),
+        post=AsyncMock(
+            side_effect=[
+                {"results": fields[:2000], "nextPageToken": "last", "totalResultsCount": "2101"},
+                {"results": fields[2000:], "totalResultsCount": "2101"},
+            ]
+        ),
+    )
+    result = await list_report_fields(client, resource="campaign", search=None)
+    assert GoogleAdsListReportFieldsOutput.model_validate(result)
+    assert len(result["fields"]) == 2101
+    assert len(result["metrics"]) == len(result["segments"]) == 201
+    assert len(result["attribute_resources"]) == 101
+    assert result["truncated"] is False
+    assert result["compatibility_truncated"] is False
+    calls = client.post.await_args_list
+    assert "LIMIT" not in calls[0].kwargs["json"]["query"]
+    assert calls[1].kwargs["json"]["pageToken"] == "last"
+    assert calls[1].kwargs["max_response_bytes"] < calls[0].kwargs["max_response_bytes"]

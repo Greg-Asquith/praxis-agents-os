@@ -1,6 +1,6 @@
 # apps/api/integrations/google_ads/operations/list_report_fields.py
 
-"""List bounded Google Ads fields and compatibility for one report resource."""
+"""List complete Google Ads fields and compatibility for one report resource."""
 
 import re
 from collections.abc import Mapping
@@ -8,14 +8,12 @@ from typing import Any
 
 from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.report_results import ReportResultBudget
 
 from ..client import GOOGLE_ADS_API_VERSION, GoogleAdsClient
 from .get_report_field import parse_report_field, raise_for_missing_report_field
 
 _RESOURCE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
-_COMPATIBILITY_LIMIT = 100
-# Resources expose a few hundred fields, so one request holds a whole resource for local search.
-_FIELD_REQUEST_LIMIT = 2000
 _OPERATION = "list_report_fields"
 
 
@@ -24,17 +22,20 @@ async def list_report_fields(
     *,
     resource: str,
     search: str | None,
-    limit: int,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     normalized_resource = validate_report_resource(resource)
     normalized_search = normalize_report_field_search(search)
     validate_report_field_limit(limit)
 
+    budget = ReportResultBudget("google_ads", _OPERATION)
     resource_payload = await client.get(
         f"googleAdsFields/{normalized_resource}",
         operation=_OPERATION,
         policy=IntegrationRequestPolicy.READ,
+        max_response_bytes=budget.remaining,
     )
+    budget.add(resource_payload)
     raise_for_missing_report_field(
         resource_payload,
         normalized_resource,
@@ -48,16 +49,7 @@ async def list_report_fields(
             operation=_OPERATION,
         )
 
-    search_payload = await client.post(
-        "googleAdsFields:search",
-        operation=_OPERATION,
-        policy=IntegrationRequestPolicy.READ,
-        json={"query": _field_query(normalized_resource)},
-    )
-    all_fields, fields_truncated = _parse_search_response(
-        search_payload,
-        resource=normalized_resource,
-    )
+    all_fields = await _all_resource_fields(client, normalized_resource, budget)
 
     terms = search_terms(normalized_search)
     fields = _matching_fields(all_fields, terms)
@@ -76,19 +68,17 @@ async def list_report_fields(
         "api_version": GOOGLE_ADS_API_VERSION,
         "resource": normalized_resource,
         "search_matched": search_matched,
-        "attribute_resources": attribute_resources[:_COMPATIBILITY_LIMIT],
+        "attribute_resources": attribute_resources,
         "attribute_resource_count": len(attribute_resources),
         "metrics": metrics[:limit],
         "metric_count": len(metrics),
         "segments": segments[:limit],
         "segment_count": len(segments),
-        "compatibility_truncated": len(attribute_resources) > _COMPATIBILITY_LIMIT,
+        "compatibility_truncated": False,
         "fields": fields[:limit],
         "field_count": len(fields),
-        "truncated": fields_truncated
-        or len(fields) > limit
-        or len(metrics) > limit
-        or len(segments) > limit,
+        "truncated": limit is not None
+        and any(len(values) > limit for values in (fields, metrics, segments)),
     }
 
 
@@ -122,15 +112,58 @@ def search_terms(search: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(search.casefold().split()))
 
 
-def validate_report_field_limit(value: int) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 100:
-        raise ValueError("Google Ads report field limit must be between 1 and 100")
+def validate_report_field_limit(value: int | None) -> None:
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+        raise ValueError("Google Ads report field limit must be positive")
 
 
 def _field_query(resource: str) -> str:
     return (
         "SELECT name, category, data_type, selectable, filterable, sortable, is_repeated "
-        f"WHERE name LIKE '{resource}.%' ORDER BY name LIMIT {_FIELD_REQUEST_LIMIT}"
+        f"WHERE name LIKE '{resource}.%' ORDER BY name"
+    )
+
+
+async def _all_resource_fields(
+    client: GoogleAdsClient, resource: str, budget: ReportResultBudget
+) -> list[dict[str, Any]]:
+    body = {"query": _field_query(resource)}
+    fields: list[dict[str, Any]] = []
+    tokens: set[str] = set()
+    received = 0
+    total: int | None = None
+    while True:
+        payload = await client.post(
+            "googleAdsFields:search",
+            operation=_OPERATION,
+            policy=IntegrationRequestPolicy.READ,
+            json=dict(body),
+            max_response_bytes=budget.remaining,
+        )
+        budget.add(payload)
+        fields.extend(_parse_search_response(payload, resource=resource))
+        received += len(payload.get("results", []))
+        page_total = _total_results_count(payload.get("totalResultsCount"))
+        if page_total is not None:
+            if total is not None and page_total != total:
+                raise _incomplete_catalogue()
+            total = page_total
+        token = payload.get("nextPageToken")
+        if not token:
+            if total is not None and received != total:
+                raise _incomplete_catalogue()
+            return sorted(fields, key=lambda item: item["name"])
+        if token in tokens:
+            raise _incomplete_catalogue()
+        tokens.add(token)
+        body["pageToken"] = token
+
+
+def _incomplete_catalogue() -> IntegrationValidationError:
+    return IntegrationValidationError(
+        "Google Ads did not return a complete report field catalogue. No partial result was returned.",
+        provider_key="google_ads",
+        operation=_OPERATION,
     )
 
 
@@ -138,7 +171,7 @@ def _parse_search_response(
     payload: Any,
     *,
     resource: str,
-) -> tuple[list[dict[str, Any]], bool]:
+) -> list[dict[str, Any]]:
     if not isinstance(payload, Mapping):
         raise IntegrationValidationError(
             "Google Ads returned an invalid report field search response",
@@ -185,9 +218,7 @@ def _parse_search_response(
             provider_key="google_ads",
             operation=_OPERATION,
         )
-    total = _total_results_count(payload.get("totalResultsCount"))
-    truncated = bool(next_page_token) or (total is not None and total > len(raw_results))
-    return fields, truncated
+    return fields
 
 
 def _total_results_count(value: Any) -> int | None:

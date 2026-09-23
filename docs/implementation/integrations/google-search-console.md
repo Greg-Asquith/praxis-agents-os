@@ -15,7 +15,7 @@ actions use the same connection. Discovery
 canonicalises each verified property's scheme and host while retaining its
 path in the external ID, and maps
 Search Console permission levels to read-only or writable resources. The
-provider package contributes code-eligible reads for bounded Search Analytics
+provider package contributes code-eligible reads for Search Analytics
 rows, up to 200 submitted sitemaps per selected site, and indexed-status
 inspection for up to ten requested URLs. Inspection routes each URL to the
 longest matching selected URL-prefix property before falling back to a
@@ -40,6 +40,21 @@ structured-result limit and previews only site row lists on overflow.
 Its description distinguishes provider pagination from retained-result
 inspection and directs calculations over saved rows to `run_code`.
 See the [retained-result contract](../tool-dispatch.md#retained-results-and-artifacts).
+
+Search Analytics fetches successive provider pages internally, using at most
+25,000 rows per request. Omitting `row_limit` retrieves every available page;
+an explicit value requests a limited result and may span multiple pages.
+`start_row` remains an explicit starting position. Repeated pages fail instead
+of looping or returning a partial report. Streamed responses and combined pages
+share the retained JSON File byte limit across all selected sites. Normalised
+rows, provenance, site metadata, and errors count towards the combined result.
+Overflow stops further pages and sites, then fails the whole invocation.
+Normal tool timeouts still apply.
+
+All retrieved rows reach the saved result before runtime previewing. This
+does not remove [Search Console's source-data limits](https://developers.google.com/webmaster-tools/v1/searchanalytics/query):
+query- and page-grouped data can omit rows at Google's side. Do not equate
+retrieving every available page with access to every underlying search event.
 
 ### Indexing API
 

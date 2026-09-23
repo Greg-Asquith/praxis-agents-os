@@ -10,7 +10,7 @@ from integrations.google_ads.operations.get_report_field import REPORT_FIELD_BAT
 
 from .base import GoogleAdsStrictModel
 
-type GoogleAdsFieldNames = Annotated[list[str], Field(max_length=100)]
+type GoogleAdsFieldNames = list[str]
 
 
 class GoogleAdsReportFieldSummary(GoogleAdsStrictModel):
@@ -34,7 +34,7 @@ class GoogleAdsListReportFieldsOutput(GoogleAdsStrictModel):
     segments: GoogleAdsFieldNames
     segment_count: int = Field(ge=0)
     compatibility_truncated: bool
-    fields: Annotated[list[GoogleAdsReportFieldSummary], Field(max_length=100)]
+    fields: list[GoogleAdsReportFieldSummary]
     field_count: int = Field(ge=0)
     truncated: bool
 

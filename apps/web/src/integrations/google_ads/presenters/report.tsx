@@ -14,13 +14,14 @@ export const googleAdsReportPresenter = defineIntegrationReadPresenter(googleAds
   heading: "Run Google Ads Report",
   parseResult: parseGoogleAdsReport,
   progressLabel: "Running Google Ads report…",
-  render: (report, entry) =>
+  render: (report, entry, _args, preview) =>
     report.rows.length > 0 && report.columns.length > 0 ? (
       <DataTable
+        pageSize={25}
         columns={report.columns}
         exportFilename={`google-ads-${entry.externalId}-report.csv`}
         rows={report.rows}
-        showTotals
+        showTotals={!preview}
         truncationNote={report.truncationNote}
       />
     ) : (

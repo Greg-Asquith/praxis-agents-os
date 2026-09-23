@@ -151,6 +151,10 @@ The complete JSON snapshot and its File audit commit before dispatch
 records successful delivery. Save failures produce a retry for these
 read-only calls. The invocation audit records original and delivered sizes
 and `result_file_id`. No rows are discarded from a saved snapshot.
+An independently committed upload reservation owns cleanup before the write.
+The File transaction consumes it atomically. Failed or cancelled transactions
+leave that reservation available to the existing upload sweeper; uncertain
+commit outcomes do not trigger speculative object deletion.
 
 `read_file` accepts the envelope's typed reference and byte offsets.
 Configured native `run_code` helpers accept it through `file_ids`, subject
@@ -168,19 +172,57 @@ The live event carries the bounded envelope. `result_preview` metadata
 retains the same envelope for transcript presentation. A complete
 `public_result` remains available only within its explicitly declared
 budget; it never enters model context. The preview also respects that
-budget when declared. Provider-specific preview tables and row-count
-labels are pending.
+budget when declared. The shared read presenter unwraps previews for provider
+validation and retains per-account counts for rows and field lists. Saved
+transcripts prefer `public_result` and keep `result_preview` when merging a
+result into its call.
 
-Google Ads reports, Analytics standard and realtime reports, Analytics field
-discovery, and Search Console Search Analytics declare their public budget
+Google Ads reports and field discovery, Analytics standard and realtime reports,
+Analytics field discovery, Search Analytics, and BigQuery show previews in their existing tables. **Open complete
+result** appears inside the relevant tool card, beside its counts and table.
+Loading, retry, and completion messages stay inside that card. The action
+loads the saved JSON into the same presenter through the authenticated
+Files revision APIs. It reads revision one, which the snapshot pins, rather
+than a later edited revision. Queries are scoped to the user and workspace.
+Loaded data must match the retained list counts and pass the provider's normal
+result parser. Loading and failed reads preserve the preview; failures offer
+a retry. No complete-result fetch runs until the operator opens it.
+
+Tables paginate 25 rows at a time. Copy and CSV export include all rows loaded
+into the table, so a preview exports only its preview rows. Opening the complete
+result includes every retained row. Preview counts refer to returned rows;
+provider pagination notes remain separate. Google Ads hides calculated table
+totals for previews. Analytics keeps provider-supplied aggregates and sampling
+notes. Complete results already present in the transcript need no extra fetch.
+This browser-only expansion does not replace bounded model history.
+
+Google Ads reports and field discovery, Analytics standard and realtime reports,
+Analytics field discovery, Search Console Search Analytics, and BigQuery declare their public budget
 from `AGENT_STRUCTURED_RESULT_MAX_CHARS` when the catalogue loads. Row-report
 tools select `results.*.data.rows`, preserving headers, aggregates, sampling
-metadata, account identities, and errors. Analytics field discovery uses
-automatic list discovery to preview both dimensions and metrics.
+metadata, account identities, and errors. BigQuery selects its root `rows`
+list. Analytics and Ads field discovery use automatic list discovery to preview
+their field and compatibility lists.
 Their shared descriptions direct complete-data calculations to an available,
 permitted `run_code` helper and explain its provider input limits.
-Provider row limits and pagination remain separate from retained previews:
-the snapshot contains every returned row, not unrequested provider pages.
+The model-facing envelope instructs the agent to read saved rows through the
+File reference and use list totals as saved-item counts.
+The envelope and report descriptions prohibit repeated or split source queries
+solely to bypass that preview. Further inspection uses `read_file`; calculations
+use `run_code` with the retained reference. These instructions describe the
+agent's data access, independently of the browser's complete-result control.
+If an analysis helper cannot handle the saved data, the agent explains that
+limitation instead of refetching it. Source pagination depends on provider
+metadata, not on the difference between preview and saved-item counts.
+Google Ads reports fetch every streamed row without adding a query limit.
+Analytics standard reports, Search Analytics, and BigQuery collect provider
+pages internally before returning a complete result to dispatch. Explicit
+top-N limits remain supported. Analytics field discovery returns all matching
+fields by default. Realtime Analytics requests the provider's maximum and
+discloses any remaining source truncation because the API has no pagination.
+The former shared report-row cap and BigQuery result-character cap are removed.
+Existing File byte limits and tool timeouts remain; oversized or incomplete
+retrieval fails rather than silently dropping rows from a saved report.
 
 The following contracts apply in this area:
 

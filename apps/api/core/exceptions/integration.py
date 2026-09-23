@@ -165,6 +165,10 @@ class IntegrationDownloadTooLargeError(IntegrationValidationError):
     """Reports a download exceeding its declared or streamed byte limit."""
 
 
+class IntegrationReportTooLargeError(IntegrationValidationError):
+    """Stops report retrieval when the complete result exceeds its byte limit."""
+
+
 class IntegrationPermissionError(IntegrationError):
     """Raised when the integration denies access (403)."""
 

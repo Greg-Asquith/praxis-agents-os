@@ -31,6 +31,7 @@ export const bigQueryQueryPresenter = defineIntegrationResultPresenter(bigQueryP
       {result.rows.length > 0 && result.columns.length > 0 ? (
         <DataTable
           columns={result.columns}
+          pageSize={25}
           exportFilename="bigquery-results.csv"
           rows={result.rows}
           truncationNote={

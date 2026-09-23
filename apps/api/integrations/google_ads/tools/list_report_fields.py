@@ -8,6 +8,7 @@ from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.integration import IntegrationNotFoundError
+from core.settings import settings
 from integrations.google_ads.client import GOOGLE_ADS_API_VERSION
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
@@ -22,6 +23,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE
 
 from ..operations.list_report_fields import (
     list_report_fields,
@@ -60,15 +62,14 @@ async def google_ads_list_report_fields(
         ),
     ] = None,
     limit: Annotated[
-        int,
+        int | None,
         Field(
             ge=1,
-            le=100,
             description="Maximum matching fields, metrics, and segments returned per collection.",
         ),
-    ] = 50,
+    ] = None,
 ) -> dict[str, Any]:
-    """Returns bounded report fields and compatibility for one GAQL resource."""
+    """Returns report fields and compatibility for one GAQL resource."""
     try:
         normalized_resource = validate_report_resource(resource)
         normalized_search = normalize_report_field_search(search)
@@ -107,14 +108,17 @@ DEFINITION = RuntimeToolDefinition(
     name="google_ads_list_report_fields",
     function=google_ads_list_report_fields,
     description=(
-        f"List bounded Google Ads {GOOGLE_ADS_API_VERSION} attributes, compatible metrics, and "
+        f"List Google Ads {GOOGLE_ADS_API_VERSION} attributes, compatible metrics, and "
         "compatible segments for one GAQL FROM resource in a single call. `search` terms match "
         "independently. When none match, the full lists are returned and `search_matched` is "
         "false. Fields of any resource in `attribute_resources` (for example shared_set.name "
         "when querying shared_criterion) are selectable too and need no separate lookup. Use "
         "the returned names to construct a query, then call google_ads_run_report to execute "
-        "it. Do not confirm fields one at a time afterwards."
-    ),
+        "it. Omit limit to retrieve all matching fields, metrics, and segments. "
+        "Set limit only for an explicitly requested subset. "
+        "Do not confirm fields one at a time afterwards."
+    )
+    + REPORT_RESULT_GUIDANCE,
     provider="google_ads",
     label="List Google Ads Report Fields",
     code_eligible=True,
@@ -125,6 +129,7 @@ DEFINITION = RuntimeToolDefinition(
     supports_auto=True,
     supports_approval=False,
     timeout=30,
+    max_public_result_chars=settings.AGENT_STRUCTURED_RESULT_MAX_CHARS,
     output_model=GoogleAdsListReportFieldsOutput,
     configurable=False,
     auto_mount=True,

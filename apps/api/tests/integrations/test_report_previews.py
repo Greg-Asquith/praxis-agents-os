@@ -64,13 +64,16 @@ ANALYTICS_DATA = {
         ),
     ],
 )
-def test_report_preview_keeps_provider_metadata_and_failed_accounts(definition, row, metadata):
+@pytest.mark.parametrize("provider_truncated", [False, True])
+def test_report_preview_keeps_provider_metadata_and_failed_accounts(
+    definition, row, metadata, provider_truncated
+):
     data = {
         **metadata,
         "rows": [row] * 1_000,
         "row_count": 1_000,
-        "truncated": True,
-        "truncation_note": "Provider page limit reached.",
+        "truncated": provider_truncated,
+        "truncation_note": "Provider page limit reached." if provider_truncated else None,
     }
     entry = {
         "provider_key": definition.provider,
@@ -102,6 +105,7 @@ def test_report_preview_keeps_provider_metadata_and_failed_accounts(definition, 
     projected = definition.output_model.model_validate(preview["data"]).model_dump(mode="json")
     assert original == before
     assert preview["lists"] == {"results.0.data.rows": {"total": 1_000, "shown": 50}}
+    assert "Check provider metadata in data" in preview["hint"]
     assert len(result_json(preview)) <= 12_000
     assert projected["results"][1] == original["results"][1]
     assert projected["results"][0]["data"] == {

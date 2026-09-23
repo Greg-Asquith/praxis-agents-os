@@ -23,7 +23,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
-from services.integrations.report_results import REPORT_RESULT_GUIDANCE
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
 
 from ..operations.run_report import run_report
 from .schemas import GoogleAdsRunReportOutput
@@ -52,6 +52,7 @@ async def google_ads_run_report(
     normalized_query = query.strip()
     if not normalized_query.upper().startswith("SELECT"):
         raise ModelRetry("google_ads_run_report requires a GAQL SELECT query.")
+    result_budget = ReportResultBudget("google_ads", "run_report")
 
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
@@ -62,7 +63,7 @@ async def google_ads_run_report(
                 currency_code=str(entry.permissions_metadata.get("currency_code", "")),
                 login_customer_id=login_customer_id(entry),
                 query=normalized_query,
-                max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
+                max_response_bytes=result_budget.remaining,
             )
             return IntegrationAuditOutcome(result)
 
@@ -74,7 +75,9 @@ async def google_ads_run_report(
             execute=execute,
         )
 
-    results = await run_context_fan_out(ctx, binding=GOOGLE_ADS_BINDING, operation=operation)
+    results = await run_context_fan_out(
+        ctx, binding=GOOGLE_ADS_BINDING, operation=operation, result_budget=result_budget
+    )
     return {"results": serialize_fan_out_results(results)}
 
 
@@ -82,10 +85,13 @@ DEFINITION = RuntimeToolDefinition(
     name="google_ads_run_report",
     function=google_ads_run_report,
     description=(
-        "Run a bounded read-only GAQL report for the Google Ads accounts selected in Active "
+        "Run a read-only GAQL report for the Google Ads accounts selected in Active "
         "Context. The result has `results`, one fan-out entry per selected account; inspect each "
         "entry's `status` and `error_message`, then read successful rows from `data.rows`. "
         "`data` also contains `currency_code`, `row_count`, `truncated`, and `truncation_note`. "
+        "All rows matching the query are retrieved; no automatic row cap is added. "
+        "Only add a GAQL LIMIT when the request calls for a limited or top-N report. "
+        "Large results are saved in full and only the raw result preview is shortened. "
         "Each row mirrors the selected GAQL paths as nested lowerCamelCase objects: selecting "
         "`campaign.id` and `metrics.clicks` yields `row['campaign']['id']` and "
         "`row['metrics']['clicks']`. When unsure of names, call google_ads_list_report_fields "

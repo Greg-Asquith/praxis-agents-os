@@ -130,6 +130,7 @@ export function parseConversationMessages(
             ...activityWithPendingWorkflow,
             outcome: result.outcome ?? null,
             result: result.result,
+            ...(result.resultPreview !== undefined ? { resultPreview: result.resultPreview } : {}),
             status: result.status,
             ...(script ? { script: { ...script, status: result.status } } : {}),
           }
@@ -355,6 +356,9 @@ function parseConversationMessage(message: ConversationMessage): ParsedConversat
         status: approvalMetadata?.decision === "denied" ? "denied" : statusFromOutcome(outcome),
         name,
         result: hasPublicResult ? partMetadata["public_result"] : part["content"],
+        ...(partMetadata?.["result_preview"] !== undefined
+          ? { resultPreview: partMetadata["result_preview"] }
+          : {}),
         outcome,
         ...(script ? { script } : {}),
         ...(toolKind ? { toolKind } : {}),

@@ -5,7 +5,7 @@
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import RunContext
 
 from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
@@ -23,7 +23,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
-from services.integrations.report_results import REPORT_RESULT_GUIDANCE
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
 
 from ..operations.list_report_fields import list_report_fields
 from .schemas import GoogleAnalyticsListReportFieldsOutput
@@ -50,13 +50,15 @@ async def google_analytics_list_report_fields(
         Field(description="Return only custom dimensions or metrics."),
     ] = False,
     limit: Annotated[
-        int,
-        Field(ge=1, le=200, description="Maximum fields returned per kind and property."),
-    ] = 50,
+        int | None,
+        Field(
+            ge=1,
+            description="Optional explicit field limit per kind; omit for all matching fields.",
+        ),
+    ] = None,
 ) -> dict[str, Any]:
-    if not 1 <= limit <= 200:
-        raise ModelRetry("Set limit between 1 and 200 report fields per kind.")
     normalized_search = (search or "").strip() or None
+    result_budget = ReportResultBudget("google_analytics", "list_report_fields")
 
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
@@ -68,6 +70,7 @@ async def google_analytics_list_report_fields(
                 kind=kind,
                 custom_only=custom_only,
                 limit=limit,
+                max_response_bytes=result_budget.remaining,
             )
             return IntegrationAuditOutcome(result)
 
@@ -79,7 +82,9 @@ async def google_analytics_list_report_fields(
             execute=execute,
         )
 
-    results = await run_context_fan_out(ctx, binding=GOOGLE_ANALYTICS_BINDING, operation=operation)
+    results = await run_context_fan_out(
+        ctx, binding=GOOGLE_ANALYTICS_BINDING, operation=operation, result_budget=result_budget
+    )
     return {"results": serialize_fan_out_results(results)}
 
 
@@ -91,7 +96,8 @@ DEFINITION = RuntimeToolDefinition(
         "property selected in Active Context. Results are per selected property and can be "
         "searched or limited to custom fields. Use the returned api_name values in "
         "google_analytics_run_report, and check metric blocked_reasons before interpreting "
-        "zero values."
+        "zero values. Omit limit to retrieve every matching field; set it only for an explicitly "
+        "requested limited list."
     )
     + REPORT_RESULT_GUIDANCE,
     provider="google_analytics",

@@ -25,7 +25,7 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 from services.integrations.read_audit import read_operation_detail
-from services.integrations.report_results import REPORT_RESULT_GUIDANCE
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
 
 from ..operations.query_search_analytics import query_search_analytics
 from .schemas import (
@@ -66,9 +66,12 @@ async def google_search_console_query_search_analytics(
         Field(description="How Search Console aggregates rows."),
     ] = "auto",
     row_limit: Annotated[
-        int,
-        Field(ge=1, description="Maximum rows returned per selected site."),
-    ] = 100,
+        int | None,
+        Field(
+            ge=1,
+            description="Set only for a requested top-N or limited report; omit to fetch all available pages.",
+        ),
+    ] = None,
     start_row: Annotated[
         int,
         Field(ge=0, description="Zero-based provider row offset."),
@@ -90,6 +93,8 @@ async def google_search_console_query_search_analytics(
         data_state=data_state,
     )
 
+    result_budget = ReportResultBudget("google_search_console", "query_search_analytics")
+
     async def operation(entry: ResolvedContextEntry) -> Any:
         async def execute() -> Any:
             client = await google_search_console_client(ctx, entry)
@@ -97,7 +102,7 @@ async def google_search_console_query_search_analytics(
                 client,
                 site_url=entry.external_id,
                 request=request,
-                max_rows=settings.INTEGRATION_REPORT_MAX_ROWS,
+                max_response_bytes=result_budget.remaining,
             )
             return IntegrationAuditOutcome(
                 result,
@@ -129,6 +134,7 @@ async def google_search_console_query_search_analytics(
         ctx,
         binding=GOOGLE_SEARCH_CONSOLE_BINDING,
         operation=operation,
+        result_budget=result_budget,
     )
     return {"results": serialize_fan_out_results(results)}
 
@@ -137,12 +143,13 @@ DEFINITION = RuntimeToolDefinition(
     name="google_search_console_query_search_analytics",
     function=google_search_console_query_search_analytics,
     description=(
-        "Query bounded organic-search performance for every Google Search Console site selected "
+        "Query organic-search performance for every Google Search Console site selected "
         "in Active Context. Use absolute YYYY-MM-DD dates covering no more than 16 months. Data "
         "usually lags two to three days, so end three days ago unless the user asks for recent "
         "partial data; use data_state='all' for that request. Row keys are named by dimension. "
-        "Page- and query-grouped results are top rows rather than complete totals. Page with "
-        "start_row or add filters when truncated is true."
+        "Page- and query-grouped results are top rows rather than complete totals. "
+        "Omit row_limit to fetch all available pages automatically; set it only for a requested "
+        "top-N report. Set start_row only for an explicitly requested starting position."
     )
     + REPORT_RESULT_GUIDANCE,
     provider="google_search_console",

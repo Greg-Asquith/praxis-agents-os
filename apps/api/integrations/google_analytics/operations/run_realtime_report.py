@@ -1,11 +1,12 @@
 # apps/api/integrations/google_analytics/operations/run_realtime_report.py
 
-"""Run a bounded Google Analytics realtime report for one property."""
+"""Run a complete Google Analytics realtime report for one property."""
 
 from typing import Any
 
 from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.report_results import report_result_max_bytes
 
 from ..client import GoogleAnalyticsClient
 from ..tools.schemas import GoogleAnalyticsRunRealtimeReportInput
@@ -17,9 +18,9 @@ async def run_realtime_report(
     *,
     property_id: str,
     request: GoogleAnalyticsRunRealtimeReportInput,
-    max_rows: int,
+    max_response_bytes: int | None = None,
 ) -> dict[str, Any]:
-    requested_rows = min(request.limit, max_rows)
+    requested_rows = min(request.limit, 250_000) if request.limit is not None else 250_000
     ranges = request.minute_ranges or []
     body: dict[str, Any] = {
         "metrics": [{"name": name} for name in request.metrics],
@@ -36,7 +37,7 @@ async def run_realtime_report(
             }
             for item in ranges
         ],
-        "limit": requested_rows + 1,
+        "limit": requested_rows,
     }
     dimension_filter = compile_filter_expression(request.dimension_filter)
     metric_filter = compile_filter_expression(request.metric_filter)
@@ -55,6 +56,9 @@ async def run_realtime_report(
         operation="run_realtime_report",
         policy=IntegrationRequestPolicy.READ,
         json=body,
+        max_response_bytes=(
+            max_response_bytes if max_response_bytes is not None else report_result_max_bytes()
+        ),
     )
     if not isinstance(payload, dict):
         raise IntegrationValidationError(
@@ -63,11 +67,13 @@ async def run_realtime_report(
             operation="run_realtime_report",
         )
 
-    result = shape_report_rows(
-        payload,
-        requested_limit=requested_rows,
-        window_label="minute range",
-    )
+    result = shape_report_rows(payload)
+    if result["truncated"] and requested_rows == 250_000:
+        result["truncation_note"] = (
+            "Google Analytics realtime returned fewer rows than its reported total. "
+            "The API supports at most 250,000 rows and does not support pagination. "
+            "All returned rows are retained; this is not a preview limit."
+        )
     result["window"] = [
         {
             "start_minutes_ago": item.start_minutes_ago,

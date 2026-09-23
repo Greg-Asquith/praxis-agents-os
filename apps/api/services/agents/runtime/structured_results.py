@@ -27,10 +27,15 @@ class StructuredResultPreview(BaseModel):
     data: JsonValue
     lists: dict[str, PreviewListCount]
     hint: str = (
-        "This is an incomplete preview. The complete returned JSON is saved internally under "
-        "file_id. Use read_file with file_id=file_reference and offset to inspect windows. "
-        "If run_code is available, pass file_ids=[file_reference]  to aggregate or filter all rows. "
-        "Use an OpenAI or Anthropic file bridge for inputs above Google's text limit. Never calculate whole-report totals from this preview."
+        "Use data to inspect the result's structure and metadata. "
+        "Read the full saved result through file_reference when you need rows beyond this preview. "
+        "Call read_file with file_id=file_reference and offset to inspect saved rows. "
+        "For filtering or calculations, call run_code with file_ids=[file_reference] when available. "
+        "Calculate whole-report totals from the saved result, never from preview rows. "
+        "Use each lists entry's total as its saved item count. Check provider metadata in data before "
+        "requesting another source page. Do not repeat or split the source query to recover "
+        "rows already saved. If you cannot read or process the saved result, report that "
+        "limitation instead of refetching it."
     )
 
 
