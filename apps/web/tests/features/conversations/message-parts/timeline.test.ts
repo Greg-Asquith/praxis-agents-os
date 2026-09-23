@@ -53,7 +53,7 @@ const scenarios: TimelineScenario[] = [
       transcriptRun: { id: "run-1", status: "failed" },
     }),
     select: (timeline) => transcriptActivities(timeline),
-    expected: [{ id: "call-1", status: "failed" }],
+    expected: [{ id: "call-1", status: "stopped" }],
   },
   {
     name: "uses a completed live result until persistence catches up",

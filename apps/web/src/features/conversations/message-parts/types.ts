@@ -9,7 +9,7 @@ export type ParsedAttachment = MessageAttachment
 type ToolActivityKind = "call" | "result" | "approval" | "retry" | "unknown"
 
 export type ToolActivityStatus =
-  "running" | "awaiting_approval" | "completed" | "failed" | "denied" | "unknown"
+  "running" | "awaiting_approval" | "completed" | "failed" | "stopped" | "denied" | "unknown"
 
 export type ToolApprovalDecision = "approved" | "denied"
 

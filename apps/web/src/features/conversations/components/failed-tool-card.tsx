@@ -22,15 +22,18 @@ export function FailedToolCard({
   label: string
   iconToken: string | null
 }) {
+  const stopped = activity.status === "stopped"
   const message =
     friendlyResultText(activity.result) ??
     friendlyResultText(activity.resultExcerpt) ??
-    "This attempt did not complete. No further error details were recorded."
+    (stopped
+      ? "The run ended before a result was recorded for this call. Its outcome is unconfirmed."
+      : "This attempt did not complete. No further error details were recorded.")
   const canAdjust = activity.kind === "retry" || activity.outcome === "retry"
 
   return (
     <ToolResultCard
-      ariaLabel={`${label} failed`}
+      ariaLabel={`${label} ${stopped ? "stopped" : "failed"}`}
       defaultOpen={defaultOpen}
       details={argFields.map((field) => ({ label: field.label, value: field.value }))}
       heading={
@@ -39,12 +42,12 @@ export function FailedToolCard({
           <span className="truncate">{label}</span>
         </span>
       }
-      trailing={<ActivityStatusBadge status="failed" />}
+      trailing={<ActivityStatusBadge status={stopped ? "stopped" : "failed"} />}
     >
       <div className="flex min-w-0 flex-col gap-3">
-        <Alert variant="destructive">
+        <Alert variant={stopped ? "default" : "destructive"}>
           <TriangleAlertIcon />
-          <AlertTitle>What went wrong</AlertTitle>
+          <AlertTitle>{stopped ? "Why this call stopped" : "What went wrong"}</AlertTitle>
           <AlertDescription className="wrap-anywhere whitespace-pre-wrap">
             {message}
           </AlertDescription>

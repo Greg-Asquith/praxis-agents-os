@@ -38,6 +38,7 @@ import type {
   PendingToolApproval,
   PendingWorkflowState,
 } from "@/features/conversations/types"
+import { runInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import { titleCaseToken } from "@/lib/format"
 import { isRecord, stringValue } from "@/lib/guards"
 
@@ -57,7 +58,8 @@ export function parseConversationMessages(
   liveResultsByCallIdentity?: ReadonlyMap<string, LiveToolResult>,
   pendingWorkflow?: PendingWorkflowState | null,
   pendingApprovals: PendingToolApproval[] = [],
-  pendingWorkflows: PendingWorkflowState[] = []
+  pendingWorkflows: PendingWorkflowState[] = [],
+  runs: Readonly<Record<string, AgentRun>> = {}
 ): ParsedConversationMessage[] {
   const parsed = messages.map(parseConversationMessage)
   const { consumedResultKeys, resultsByCallKey, retryCallKeys } = pairToolResults(parsed)
@@ -76,8 +78,6 @@ export function parseConversationMessages(
 
   const runAwaitsApproval = activeRun?.status === "awaiting_approval"
   const runIsExecuting = isRunStatusPolling(activeRun?.status)
-  const runStoppedBeforeToolResult =
-    activeRun?.status === "failed" || activeRun?.status === "cancelled"
 
   return parsed
     .map((message, messageIndex) => {
@@ -184,21 +184,18 @@ export function parseConversationMessages(
             status: "awaiting_approval" as const,
           }
         }
-        if (belongsToActiveRun && runStoppedBeforeToolResult) {
-          return (
-            stoppedWorkflowActivity(activityWithPendingWorkflow) ?? {
-              ...activityWithPendingWorkflow,
-              status: "failed" as const,
-            }
-          )
+        const run = activity.agentRunId ? runs[activity.agentRunId] : undefined
+        const runStatus = belongsToActiveRun ? activeRun.status : run?.status
+        if (runStatus === "failed" || runStatus === "cancelled" || runStatus === "completed") {
+          return {
+            ...activityWithPendingWorkflow,
+            status: "stopped" as const,
+            outcome: run?.outcome ?? null,
+            result: run ? (runInterruptionOutcome(run)?.message ?? run.error_message) : null,
+          }
         }
         if (!belongsToActiveRun || !runIsExecuting) {
-          return (
-            stoppedWorkflowActivity(activityWithPendingWorkflow) ?? {
-              ...activityWithPendingWorkflow,
-              status: "unknown" as const,
-            }
-          )
+          return { ...activityWithPendingWorkflow, status: "unknown" as const }
         }
         return activityWithPendingWorkflow
       })
@@ -550,27 +547,6 @@ export function codeModeScriptFromPendingWorkflow(
     output: null,
     reason: workflow.reason,
     status: "awaiting_approval",
-  }
-}
-
-// A workflow call the run never answered renders as a stopped workflow card,
-// not as a generic completed tool row.
-function stoppedWorkflowActivity(activity: ToolActivity): ToolActivity | null {
-  if (activity.name !== "run_workflow" || activity.script) {
-    return null
-  }
-  const args = isRecord(activity.args) ? activity.args : null
-  return {
-    ...activity,
-    status: "failed",
-    script: {
-      children: [],
-      code: args ? stringValue(args["code"]) : null,
-      error: null,
-      output: null,
-      reason: args ? stringValue(args["reason"]) : null,
-      status: "failed",
-    },
   }
 }
 

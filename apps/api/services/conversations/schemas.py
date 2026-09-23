@@ -100,6 +100,7 @@ class ConversationMessageRead(BaseModel):
 class ConversationMessagesResponse(BaseModel):
     access: Literal["owner", "viewer"] = "owner"
     messages: list[ConversationMessageRead]
+    runs: dict[UUID, AgentRunRead] = Field(default_factory=dict)
     total: int
     has_more: bool = False
 

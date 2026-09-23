@@ -53,6 +53,7 @@ export type ConversationTimelineInput = {
   assistantAgentId: string
   conversationId: string
   messages: ConversationMessage[]
+  runs?: Readonly<Record<string, AgentRun>>
   pendingDelegations: PendingDelegatedApproval[]
   pendingUserMessages: PendingUserMessage[]
   pendingWorkflows?: PendingWorkflowState[]
@@ -86,6 +87,7 @@ export function projectConversationTimeline({
   assistantAgentId,
   conversationId,
   messages,
+  runs,
   pendingDelegations,
   pendingUserMessages,
   pendingWorkflow,
@@ -122,7 +124,8 @@ export function projectConversationTimeline({
     liveResultsByCallIdentity,
     pendingWorkflow,
     approvals,
-    pendingWorkflows
+    pendingWorkflows,
+    runs
   )
   const transcriptToolIds = new Set(
     parsedMessages.flatMap((message) =>

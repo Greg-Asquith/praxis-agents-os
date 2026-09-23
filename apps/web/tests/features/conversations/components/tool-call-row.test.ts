@@ -29,6 +29,29 @@ const presentation: ToolPresentationEntry = {
 }
 
 describe("ToolCallRow lifecycle", () => {
+  it.each(["web_search", "write_file", "run_workflow", "delegate_to_agent", "unknown_tool"])(
+    "shows the stopped card instead of a success presenter for %s",
+    (name) => {
+      const activity: ToolActivity = {
+        id: "stopped-1",
+        name,
+        kind: "call",
+        status: "stopped",
+        result: "The run reached its limit.",
+      }
+      const collapsed = renderRow(activity)
+      expect(collapsed).toContain(">Stopped</span>")
+      expect(collapsed).toContain('aria-expanded="false"')
+      const expanded = renderRow(activity, false, [presentation], true)
+      expect(expanded).toContain("Why this call stopped")
+      expect(expanded).toContain("The run reached its limit.")
+      expect(expanded).not.toContain(">Done</span>")
+      expect(expanded).not.toContain(">Failed</span>")
+      const missingReason = renderRow({ ...activity, result: null }, true, [presentation], true)
+      expect(missingReason).toContain("Its outcome is unconfirmed.")
+    }
+  )
+
   it("renders a live web search with its query and search skeleton", () => {
     const html = renderRow(
       {

@@ -32,6 +32,7 @@ const page: ConversationMessagesResponse = {
       updated_at: "2026-09-09T12:00:00Z",
     },
   ],
+  runs: {},
   total: 2,
   has_more: true,
 }

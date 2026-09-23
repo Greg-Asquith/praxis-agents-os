@@ -19,6 +19,7 @@ import { filesQueryKeys } from "@/features/files/api/list-files"
 
 export const EMPTY_CONVERSATION_MESSAGES = {
   messages: [],
+  runs: {},
   total: 0,
 } satisfies ConversationMessagesResponse
 

@@ -128,6 +128,7 @@ describe("DelegationToolRow", () => {
             updated_at: "2026-09-08T20:47:00.000Z",
           },
         ],
+        runs: {},
         total: 1,
       }
     )

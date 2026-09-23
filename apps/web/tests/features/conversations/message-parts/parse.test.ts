@@ -40,7 +40,112 @@ function message(
 }
 
 describe("parseConversationMessages", () => {
-  it("marks an unresolved tool call as failed when its run failed", () => {
+  it.each(["failed", "cancelled", "completed"] as const)(
+    "uses the page run map for an older %s run and preserves recorded results",
+    (status) => {
+      const stoppedRun: AgentRun = {
+        id: "old-run",
+        status,
+        outcome: "budget_exhausted",
+        error_code: "usage_limit_exceeded",
+        error_message: "The run reached its limit.",
+        conversation_id: "conversation-1",
+        agent_id: "agent-1",
+        workspace_id: "workspace-1",
+        user_id: "user-1",
+        parent_run_id: null,
+        delegation_depth: 0,
+        trigger: "interactive",
+        model_name: null,
+        started_at: createdAt,
+        completed_at: null,
+        failed_at: createdAt,
+        lease_expires_at: null,
+        completion_json: null,
+        created_at: createdAt,
+        updated_at: createdAt,
+      }
+      const messages = [
+        message(
+          "old-call",
+          "assistant",
+          1,
+          [
+            { part_kind: "tool-call", tool_call_id: "unanswered", tool_name: "write_file" },
+            { part_kind: "tool-call", tool_call_id: "saved", tool_name: "write_file" },
+            { part_kind: "tool-call", tool_call_id: "error", tool_name: "write_file" },
+          ],
+          { agent_run_id: "old-run" }
+        ),
+        message(
+          "old-result",
+          "tool",
+          2,
+          [
+            {
+              part_kind: "tool-return",
+              tool_call_id: "saved",
+              tool_name: "write_file",
+              content: "Saved",
+              outcome: "success",
+            },
+            {
+              part_kind: "tool-return",
+              tool_call_id: "error",
+              tool_name: "write_file",
+              content: "Unavailable",
+              outcome: "failed",
+            },
+          ],
+          { agent_run_id: "old-run" }
+        ),
+        message(
+          "new-turn",
+          "assistant",
+          3,
+          [{ part_kind: "text", content: "Later turn complete" }],
+          { agent_run_id: "new-run" }
+        ),
+      ]
+      for (const transcriptRun of [null, run("new-run", "completed"), run("new-run", "running")]) {
+        const parsed = parseConversationMessages(
+          messages,
+          transcriptRun,
+          [],
+          undefined,
+          null,
+          [],
+          [],
+          { "old-run": stoppedRun }
+        )
+        expect(parsed[0]?.toolActivities).toMatchObject([
+          {
+            id: "unanswered",
+            status: "stopped",
+            outcome: "budget_exhausted",
+            result: "The run reached its limit.",
+          },
+          { id: "saved", status: "completed", result: "Saved" },
+          { id: "error", status: "failed", result: "Unavailable" },
+        ])
+      }
+      const missing = parseConversationMessages(messages, null, [], undefined, null, [], [], {})
+      expect(missing[0]?.toolActivities[0]?.status).toBe("unknown")
+      const executing = parseConversationMessages(
+        messages,
+        run("old-run", "running"),
+        [],
+        undefined,
+        null,
+        [],
+        [],
+        { "old-run": stoppedRun }
+      )
+      expect(executing[0]?.toolActivities[0]?.status).toBe("running")
+    }
+  )
+
+  it("marks an unresolved tool call as stopped when its run failed", () => {
     const parsed = parseConversationMessages(
       [
         message(
@@ -63,7 +168,7 @@ describe("parseConversationMessages", () => {
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
       id: "send-1",
-      status: "failed",
+      status: "stopped",
     })
   })
 
@@ -433,19 +538,17 @@ describe("parseConversationMessages", () => {
       ),
     ]
 
-    for (const activeRun of [null, run("run-1", "failed")]) {
-      const parsed = parseConversationMessages(dangling, activeRun)
-      expect(parsed[0]?.toolActivities[0]).toMatchObject({
-        name: "run_workflow",
-        status: "failed",
-        script: {
-          children: [],
-          code: "r = await tool()",
-          reason: "Adding keywords",
-          status: "failed",
-        },
-      })
-    }
+    expect(parseConversationMessages(dangling, null)[0]?.toolActivities[0]).toMatchObject({
+      name: "run_workflow",
+      status: "unknown",
+    })
+    expect(
+      parseConversationMessages(dangling, run("run-1", "failed"))[0]?.toolActivities[0]
+    ).toMatchObject({
+      name: "run_workflow",
+      status: "stopped",
+      args: { code: "r = await tool()", reason: "Adding keywords" },
+    })
   })
 
   it("rebuilds a suspended workflow from the typed approval-state contract fixture", () => {
@@ -624,7 +727,7 @@ describe("parseConversationMessages", () => {
     )
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
-      status: "failed",
+      status: "stopped",
       script: {
         children: [{ id: "workflow-1:1", status: "awaiting_approval" }],
         reason: "Share the update",

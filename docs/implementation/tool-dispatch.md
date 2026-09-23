@@ -122,6 +122,10 @@ The following contracts apply in this area:
   Missing error text gets an explicit fallback. Retry outcomes explain that
   the agent received the error and can adjust its next attempt; they do not
   claim a retry has started. Subsequent attempts retain their own activity rows.
+- Calls without a recorded result use the same expandable card with a neutral
+  **Stopped** badge when their run is terminal. This applies before custom
+  tool presenters, so a missing result cannot appear successful. The expanded
+  card shows the run's reason without claiming that the tool failed.
 - Declined tool rows use the **Declined** badge, never **Failed**, and show the
   operator's reason when they provided one.
 - Approval presenters may consume server-owned display arguments prefixed with

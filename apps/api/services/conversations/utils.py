@@ -19,6 +19,7 @@ from models.conversation import CONVERSATION_SOURCE_DELEGATED, Conversation, Con
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.domain import TERMINAL_RUN_STATUSES
+from services.agent_runs.schemas import AgentRunRead
 from services.audit_events.utils import request_audit_context
 from services.conversation_read_contract import (
     ConversationCapabilities,
@@ -29,6 +30,29 @@ from services.workspaces.utils import (
     READ_ROLES,
     require_workspace_role,
 )
+from utils.metadata import metadata_uuid
+
+
+async def load_message_runs(
+    db: AsyncSession, *, conversation: Conversation, messages: Sequence[ConversationMessage]
+) -> dict[UUID, AgentRunRead]:
+    """Load only runs referenced by this transcript page in its conversation."""
+    run_ids = {
+        run_id
+        for message in messages
+        if (run_id := metadata_uuid((message.metadata_json or {}).get("agent_run_id"))) is not None
+    }
+    if not run_ids:
+        return {}
+    runs = await db.scalars(
+        select(AgentRun).where(
+            AgentRun.workspace_id == conversation.workspace_id,
+            AgentRun.conversation_id == conversation.id,
+            AgentRun.id.in_(run_ids),
+            AgentRun.deleted.is_(False),
+        )
+    )
+    return {run.id: AgentRunRead.from_run(run) for run in runs}
 
 
 def build_interactive_run_metadata(

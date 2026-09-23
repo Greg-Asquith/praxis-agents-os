@@ -44,6 +44,7 @@ export const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
 ]
 
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {
+  if (props.activity.status === "stopped") return null
   for (const presenter of [
     ...TOOL_ROW_PRESENTERS,
     ...integrationToolRowPresenters(props.providerKey),

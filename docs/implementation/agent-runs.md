@@ -125,11 +125,25 @@ The following contracts apply in this area:
   `queued` run status means an
   interactive turn is waiting for API capacity; keep it in stream state and
   map it to persisted `pending` state wherever an `AgentRun` is required.
+- Each message page includes a `runs` map of `AgentRunRead` records for the
+  run IDs referenced by that page. One indexed query loads those IDs, scoped
+  to the authorised conversation and workspace. Deleted or missing runs are
+  omitted. Shared viewers retain the existing message projection, which hides
+  calls without saved results.
+- Unanswered calls from completed, failed, or cancelled runs show **Stopped**,
+  including older turns and delegated transcripts. Expanding the card shows
+  the saved run reason, with budget copy rebuilt from validated evidence.
+  Missing reasons state that the call's outcome is unconfirmed. Saved and live
+  tool results take precedence; **Failed** requires a failed result. The active
+  run still controls live execution and approval waits. Without a run record,
+  an unanswered call shows **Unknown**.
+  Mapping persisted interrupted returns and adding failure notices at older
+  run boundaries remain pending in plan 226 D2.
 - `message-parts/timeline.ts` is the pure projection owner for persisted
   messages, live stream activity, approvals, and optimistic user messages.
   Keep `MessageList` focused on rendering and interaction wiring.
 - The conversation active-run read also returns the latest run outcome so a
-  terminal approval expiry can mark its unresolved tool row failed and show
+  terminal approval expiry can mark its unresolved tool row stopped and show
   plain-language outcome copy without keeping the conversation blocked. It
   includes the active approval's expiry deadline; schedule one healing read at
   that deadline instead of polling throughout a days-long wait. An active run

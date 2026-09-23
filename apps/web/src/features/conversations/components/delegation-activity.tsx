@@ -26,7 +26,7 @@ export function DelegationActivity({
     refetchInterval: live ? LIVE_REFRESH_MS : false,
   })
   const activities = useMemo(
-    () => (data ? delegateToolActivities(data.messages, live) : []),
+    () => (data ? delegateToolActivities(data.messages, live, data.runs) : []),
     [data, live]
   )
 

@@ -135,7 +135,7 @@ function VisibleToolCallRow({
         title={normalizeOptionalText(ui?.approval_title) ?? title}
       />
     )
-  } else if (activity.status === "failed") {
+  } else if (activity.status === "failed" || activity.status === "stopped") {
     defaultRow = (
       <FailedToolCard
         activity={activity}

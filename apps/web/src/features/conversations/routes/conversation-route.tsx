@@ -121,7 +121,8 @@ function ConversationDetail({
   )
   const latestRun = activeRunQuery.data?.latest_run ?? null
   const runInterruption = conversationRunInterruptionOutcome(activeRun, latestRun)
-  const transcriptRun = activeRun ?? (runInterruption ? latestRun : null)
+  const transcriptRun = activeRun ?? latestRun
+  const runs = messagesQuery.data?.runs ?? EMPTY_CONVERSATION_MESSAGES.runs
   const [agentQuery, modelCatalogQuery] = useSuspenseQueries({
     queries: [agentQueryOptions(conversation.active_agent_id ?? ""), modelCatalogQueryOptions()],
   })
@@ -175,6 +176,7 @@ function ConversationDetail({
         assistantAgentId,
         conversationId,
         messages,
+        runs,
         pendingDelegations,
         pendingUserMessages,
         pendingWorkflow:
@@ -210,6 +212,7 @@ function ConversationDetail({
       assistantAgentId,
       conversationId,
       messages,
+      runs,
       pendingApprovals,
       pendingDelegations,
       pendingUserMessages,

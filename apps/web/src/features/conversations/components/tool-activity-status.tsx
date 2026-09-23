@@ -128,6 +128,9 @@ function statusLabel(status: ActivityStatus) {
   if (status === "failed") {
     return "Failed"
   }
+  if (status === "stopped") {
+    return "Stopped"
+  }
   if (status === "denied") {
     return "Declined"
   }

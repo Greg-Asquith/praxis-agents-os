@@ -15,7 +15,7 @@ from services.conversations.shared_projection import (
     load_completed_tool_calls,
     project_shared_message,
 )
-from services.conversations.utils import get_conversation_for_read
+from services.conversations.utils import get_conversation_for_read, load_message_runs
 
 
 async def list_conversation_messages(
@@ -86,6 +86,7 @@ async def list_conversation_messages(
     return ConversationMessagesResponse(
         access="viewer" if viewer else "owner",
         messages=message_reads,
+        runs=await load_message_runs(db, conversation=conversation, messages=messages),
         total=total or 0,
         has_more=has_more,
     )
