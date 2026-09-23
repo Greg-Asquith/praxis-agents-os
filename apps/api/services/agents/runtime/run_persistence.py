@@ -47,7 +47,15 @@ from services.agents.runtime.completion_contract import (
     completion_contract_from_run_metadata,
     validate_completion_json,
 )
+from services.agents.runtime.interrupted_history import (
+    TRANSCRIPT_INVOCATION_KEY,
+    InterruptedHistory,
+)
 from services.agents.runtime.load_context import load_run_context
+from services.agents.runtime.persist_interrupted_messages import (
+    InterruptedHistoryRetryRequiredError,
+    persist_interrupted_messages,
+)
 from services.agents.runtime.persistence import (
     persist_new_messages,
     without_initial_user_prompt,
@@ -133,6 +141,7 @@ async def persist_suspended_run(
         messages=staged.new_messages,
         client_message_id=client_message_id,
     )
+    _mark_persisted_invocation(run, usage_event)
     _mark_background_output_unread(
         run,
         conversation,
@@ -221,6 +230,7 @@ async def persist_successful_run(
             client_message_id=client_message_id,
             tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
         )
+        _mark_persisted_invocation(run, usage_event)
         await record_run_usage(db, run, usage_snapshot(terminal_result.usage))
         if usage_event is not None:
             await record_ai_usage_in_transaction(db, usage_event)
@@ -242,6 +252,7 @@ async def persist_successful_run(
         client_message_id=client_message_id,
         tool_approval_metadata_by_call_id=tool_approval_metadata_by_call_id,
     )
+    _mark_persisted_invocation(run, usage_event)
     _mark_background_output_unread(
         run,
         conversation,
@@ -281,6 +292,8 @@ async def persist_failed_run(
     completion_json: dict[str, Any] | None = None,
     metering: AgentRunMeteringContext | None = None,
     owner_instance_id: str | None = None,
+    interrupted_history: InterruptedHistory | None = None,
+    history_wait: float = 1.0,
 ) -> AgentRun | None:
     """Mark a started run failed without losing diagnostic state."""
     family = await lock_run_family(db, run_id=run_id)
@@ -300,6 +313,14 @@ async def persist_failed_run(
             await record_ai_usage_in_transaction(db, metering.event())
         await db.commit()
         return run
+    if interrupted_history is not None:
+        await persist_interrupted_messages(
+            db,
+            run=run,
+            history=interrupted_history,
+            invocation_id=owner_instance_id or run.owner_instance_id,
+            history_wait=history_wait,
+        )
     await record_agent_run_fallback(db, run=run, metering=metering)
     if is_terminal(run.status):
         await db.commit()
@@ -327,6 +348,8 @@ async def persist_cancelled_run(
     user_id: UUID,
     metering: AgentRunMeteringContext | None = None,
     owner_instance_id: str | None = None,
+    interrupted_history: InterruptedHistory | None = None,
+    history_wait: float = 1.0,
 ) -> AgentRun | None:
     """Mark a run cancelled in an isolated transaction without raising to unwind code."""
     try:
@@ -355,6 +378,14 @@ async def persist_cancelled_run(
                     await record_ai_usage_in_transaction(db, metering.event())
                 await db.commit()
                 return run
+            if interrupted_history is not None:
+                await persist_interrupted_messages(
+                    db,
+                    run=run,
+                    history=interrupted_history,
+                    invocation_id=owner_instance_id or run.owner_instance_id,
+                    history_wait=history_wait,
+                )
             await record_agent_run_fallback(db, run=run, metering=metering)
             if is_terminal(run.status):
                 await db.commit()
@@ -363,6 +394,8 @@ async def persist_cancelled_run(
             await settle_run_family(db, run_id=run.id, status="cancelled")
             await db.commit()
             return run
+    except InterruptedHistoryRetryRequiredError:
+        raise
     except Exception:
         logger.warning(
             "Failed to persist cancelled agent run",
@@ -414,3 +447,13 @@ def _mark_background_output_unread(
 ) -> None:
     if run.trigger in {RUN_TRIGGER_SCHEDULED, RUN_TRIGGER_EVENT} and persisted_messages_count > 0:
         conversation.unread = True
+
+
+def _mark_persisted_invocation(run: AgentRun, usage_event: AIUsageEventData | None) -> None:
+    invocation_id = (usage_event.details or {}).get("invocation_id") if usage_event else None
+    invocation_id = invocation_id or run.owner_instance_id
+    if invocation_id is not None:
+        run.metadata_json = {
+            **(run.metadata_json or {}),
+            TRANSCRIPT_INVOCATION_KEY: str(invocation_id),
+        }

@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent_run import AgentRun
+from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.sinks import EventSink
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 
@@ -25,6 +26,9 @@ async def settle_failure(
     metering: AgentRunMeteringContext | None,
     max_wait: float,
     owner_instance_id: str | None = None,
+    workspace_id: UUID | None = None,
+    user_id: UUID | None = None,
+    interrupted_history: InterruptedHistory | None = None,
 ) -> AgentRun | None:
     if metering is not None:
         metering.freeze()
@@ -38,6 +42,10 @@ async def settle_failure(
                 exc=exc,
                 metering=metering,
                 owner_instance_id=owner_instance_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                interrupted_history=interrupted_history,
+                history_wait=max_wait / 2,
             )
     except Exception:
         warn_accounting_incomplete(metering, run_id)

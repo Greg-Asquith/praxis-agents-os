@@ -14,6 +14,7 @@ from services.agents.runtime.execution_control import (
     ExecutionPhase,
     InterruptionReason,
 )
+from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.sinks import EventSink
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
 
@@ -33,6 +34,7 @@ async def settle_interruption(
     metering: AgentRunMeteringContext | None,
     max_wait: float,
     execution_control: ExecutionControl | None = None,
+    interrupted_history: InterruptedHistory | None = None,
 ) -> None:
     interrupted_usage = metering.event() if metering is not None else None
     human_cancel = is_agent_run_cancel_request(exc, run_id=run_id)
@@ -57,6 +59,8 @@ async def settle_interruption(
                 workspace_id=workspace_id,
                 user_id=user_id,
                 metering=metering,
+                interrupted_history=interrupted_history,
+                history_wait=max_wait / 2,
                 owner_instance_id=execution_control.owner_instance_id
                 if execution_control
                 else None,
@@ -70,6 +74,12 @@ async def settle_interruption(
                 reason=execution_control.reason,
                 owner_instance_id=execution_control.owner_instance_id,
                 metering=metering,
+                interrupted_history=(
+                    interrupted_history
+                    if execution_control.reason != InterruptionReason.PROCESS_SHUTDOWN
+                    else None
+                ),
+                history_wait=max_wait / 2,
             )
         elif interrupted_usage is not None:
             operation = finalize_interrupted_usage(interrupted_usage)

@@ -35,6 +35,10 @@ from services.agents.runtime.approval_events import (
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_policy_approval_request_audit_events
 from services.agents.runtime.execution_control import ExecutionInterruptedError, InterruptionReason
+from services.agents.runtime.interrupted_history import InterruptedHistory
+from services.agents.runtime.persist_interrupted_messages import (
+    InterruptedHistoryRetryRequiredError,
+)
 from services.agents.runtime.run_persistence import (
     persist_cancelled_run,
     persist_failed_run,
@@ -217,6 +221,10 @@ async def emit_failure_events(
     exc: Exception,
     metering: AgentRunMeteringContext | None = None,
     owner_instance_id: str | None = None,
+    workspace_id: UUID | None = None,
+    user_id: UUID | None = None,
+    interrupted_history: InterruptedHistory | None = None,
+    history_wait: float = 1.0,
 ) -> AgentRun | None:
     public_error = public_run_error(exc)
     logger.error(
@@ -230,15 +238,30 @@ async def emit_failure_events(
     )
     await db.rollback()
     if started:
-        failed_run = await persist_failed_run(
-            db,
-            run_id=run_id,
-            error_code=public_error.code,
-            error_message=public_error.message,
-            completion_json=public_error.completion_json,
-            metering=metering,
-            owner_instance_id=owner_instance_id,
-        )
+        if workspace_id is None or user_id is None:
+            raise RuntimeError("Failure settlement requires the run's tenant context")
+        for attempt_wait in (history_wait, 0.0):
+            try:
+                async with get_async_db_session_factory()() as settlement_db:
+                    await configure_async_db_session(settlement_db)
+                    await set_session_tenant_context(
+                        settlement_db, workspace_id=workspace_id, user_id=user_id
+                    )
+                    failed_run = await persist_failed_run(
+                        settlement_db,
+                        run_id=run_id,
+                        error_code=public_error.code,
+                        error_message=public_error.message,
+                        completion_json=public_error.completion_json,
+                        metering=metering,
+                        owner_instance_id=owner_instance_id,
+                        interrupted_history=interrupted_history,
+                        history_wait=attempt_wait,
+                    )
+                break
+            except InterruptedHistoryRetryRequiredError:
+                if attempt_wait == 0:
+                    raise
         if failed_run is not None:
             await emit_final_events(event_sink, failed_run)
             return failed_run
@@ -258,15 +281,25 @@ async def finalize_cancelled_run(
     user_id: UUID,
     metering: AgentRunMeteringContext | None = None,
     owner_instance_id: str | None = None,
+    interrupted_history: InterruptedHistory | None = None,
+    history_wait: float = 1.0,
 ) -> None:
     """Settles cancellation using an isolated persistence session."""
-    cancelled_run = await persist_cancelled_run(
-        run_id,
-        workspace_id=workspace_id,
-        user_id=user_id,
-        metering=metering,
-        owner_instance_id=owner_instance_id,
-    )
+    for attempt_wait in (history_wait, 0.0):
+        try:
+            cancelled_run = await persist_cancelled_run(
+                run_id,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                metering=metering,
+                owner_instance_id=owner_instance_id,
+                interrupted_history=interrupted_history,
+                history_wait=attempt_wait,
+            )
+            break
+        except InterruptedHistoryRetryRequiredError:
+            if attempt_wait == 0:
+                raise
     if cancelled_run is None:
         raise RuntimeError("Cancellation settlement did not complete")
     with suppress(Exception):
@@ -304,19 +337,29 @@ async def finalize_stopped_run(
     reason: InterruptionReason,
     owner_instance_id: str | None,
     metering: AgentRunMeteringContext | None = None,
+    interrupted_history: InterruptedHistory | None = None,
+    history_wait: float = 1.0,
 ) -> None:
     """Settles an interrupted invocation in its own tenant session."""
     error = public_run_error(ExecutionInterruptedError(reason))
-    async with get_async_db_session_factory()() as db:
-        await configure_async_db_session(db)
-        await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
-        run = await persist_failed_run(
-            db,
-            run_id=run_id,
-            error_code=error.code,
-            error_message=error.message,
-            metering=metering,
-            owner_instance_id=owner_instance_id,
-        )
-        if run is not None:
-            await emit_final_events(event_sink, run)
+    for attempt_wait in (history_wait, 0.0):
+        try:
+            async with get_async_db_session_factory()() as db:
+                await configure_async_db_session(db)
+                await set_session_tenant_context(db, workspace_id=workspace_id, user_id=user_id)
+                run = await persist_failed_run(
+                    db,
+                    run_id=run_id,
+                    error_code=error.code,
+                    error_message=error.message,
+                    metering=metering,
+                    owner_instance_id=owner_instance_id,
+                    interrupted_history=interrupted_history,
+                    history_wait=attempt_wait,
+                )
+                if run is not None:
+                    await emit_final_events(event_sink, run)
+            return
+        except InterruptedHistoryRetryRequiredError:
+            if attempt_wait == 0:
+                raise

@@ -124,6 +124,8 @@ async def admitted_setup(
                 exc=exc,
                 metering=None,
                 owner_instance_id=control.owner_instance_id,
+                workspace_id=control.workspace_id,
+                user_id=control.user_id,
                 max_wait=CANCEL_FINALIZE_TIMEOUT,
             )
         raise

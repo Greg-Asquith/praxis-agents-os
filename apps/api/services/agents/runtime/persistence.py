@@ -104,7 +104,9 @@ SYNTHESIZED_TOOL_RETURN_CONTENT = (
 )
 
 
-def close_dangling_tool_calls(messages: list[ModelMessage]) -> list[ModelMessage]:
+def close_dangling_tool_calls(
+    messages: list[ModelMessage], *, interrupted: bool = False
+) -> list[ModelMessage]:
     """Synthesize returns for tool calls that never got a recorded result.
 
     An interrupted run can persist a response whose tool calls have no matching
@@ -156,6 +158,7 @@ def close_dangling_tool_calls(messages: list[ModelMessage]) -> list[ModelMessage
                     content=SYNTHESIZED_TOOL_RETURN_CONTENT,
                     tool_call_id=part.tool_call_id,
                     timestamp=message.timestamp,
+                    outcome="interrupted" if interrupted else "success",
                 )
                 for part in calls_by_response.get(index, [])
                 if open_calls.get(part.tool_call_id) == index

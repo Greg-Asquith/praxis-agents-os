@@ -8,7 +8,7 @@ from dataclasses import replace
 from uuid import UUID, uuid4
 
 from pydantic_ai import Agent as PydanticAgent, DeferredToolResults
-from pydantic_ai.messages import ModelMessage, UserContent
+from pydantic_ai.messages import ModelMessage, ToolCallPart, UserContent
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from services.agent_runs.domain import (
     RUN_TRIGGER_DELEGATED,
     RUN_TRIGGER_INTERACTIVE,
 )
+from services.agents.runtime.approval_events import build_deferred_tool_result_metadata
 from services.agents.runtime.cancellation import (
     clear_agent_run_cancel_request,
 )
@@ -32,6 +33,7 @@ from services.agents.runtime.execution_control import (
     execution_control_for_run,
 )
 from services.agents.runtime.heartbeat import heartbeat_agent_run_lease, stop_agent_run_heartbeat
+from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.load_context import (
     load_actor_context,
     load_agent_skills,
@@ -100,6 +102,7 @@ async def execute_run(
     heartbeat_stop = asyncio.Event()
     heartbeat_task: asyncio.Task | None = None
     metering: AgentRunMeteringContext | None = None
+    interrupted_history: InterruptedHistory | None = None
 
     try:
         try:
@@ -223,25 +226,51 @@ async def execute_run(
 
                 # Tool calls share the run-scoped AsyncSession, which forbids concurrent use, so parallel tool calls from one model response run one at a time.
                 live_deferred_result_ids: set[str] = set()
-                built_agent.runtime_agent.usage_limits.check_tokens(usage_accumulator)
-                with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
-                    async with built_agent.runtime_agent.agent.run_stream_events(
-                        prepared.user_prompt,
-                        deps=prepared.deps,
-                        message_history=built_agent.history,
-                        deferred_tool_results=deferred_tool_results,
-                        conversation_id=str(conversation.id),
-                        usage_limits=built_agent.runtime_agent.usage_limits,
-                        usage=usage_accumulator,
-                    ) as stream:
-                        terminal_result = await consume_stream(
-                            stream,
+                messages_so_far: list[ModelMessage] = []
+                interrupted_history = InterruptedHistory(
+                    messages=messages_so_far,
+                    skip_initial_user_prompt=user_prompt_persisted,
+                    eager_tool_return_ids=eager_tool_return_ids,
+                    resumed_tool_calls=[
+                        part
+                        for message in built_agent.history
+                        for part in message.parts
+                        if isinstance(part, ToolCallPart)
+                        and deferred_tool_results is not None
+                        and part.tool_call_id in deferred_tool_results.approvals
+                    ],
+                )
+                try:
+                    built_agent.runtime_agent.usage_limits.check_tokens(usage_accumulator)
+                    with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
+                        async with built_agent.runtime_agent.agent.run_stream_events(
+                            prepared.user_prompt,
                             deps=prepared.deps,
-                            skills=skills,
-                            run=run,
+                            message_history=built_agent.history,
                             deferred_tool_results=deferred_tool_results,
-                            event_sink=event_sink,
-                            live_deferred_result_ids=live_deferred_result_ids,
+                            conversation_id=str(conversation.id),
+                            usage_limits=built_agent.runtime_agent.usage_limits,
+                            usage=usage_accumulator,
+                        ) as stream:
+                            terminal_result, _ = await consume_stream(
+                                stream,
+                                deps=prepared.deps,
+                                skills=skills,
+                                run=run,
+                                deferred_tool_results=deferred_tool_results,
+                                event_sink=event_sink,
+                                live_deferred_result_ids=live_deferred_result_ids,
+                                messages_so_far=messages_so_far,
+                            )
+                finally:
+                    if deferred_tool_results is not None:
+                        interrupted_history = replace(
+                            interrupted_history,
+                            tool_approval_metadata_by_call_id=build_deferred_tool_result_metadata(
+                                message_history=built_agent.history,
+                                new_messages=interrupted_history.prepared_messages(),
+                                deferred_tool_results=deferred_tool_results,
+                            ),
                         )
 
                 if terminal_result is None:
@@ -301,6 +330,9 @@ async def execute_run(
                 exc=exc,
                 metering=metering,
                 max_wait=CANCEL_FINALIZE_TIMEOUT,
+                workspace_id=run_workspace_id,
+                user_id=run_user_id,
+                interrupted_history=interrupted_history,
             )
             if isinstance(exc, BudgetLimitExceeded) and exc.inherited:
                 raise
@@ -319,6 +351,7 @@ async def execute_run(
                 execution_control=execution_control,
                 metering=metering,
                 max_wait=CANCEL_FINALIZE_TIMEOUT,
+                interrupted_history=interrupted_history,
             )
         raise
     finally:

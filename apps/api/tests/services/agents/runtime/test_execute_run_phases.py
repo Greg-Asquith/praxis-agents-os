@@ -186,7 +186,7 @@ async def test_post_start_stream_failure_persists_failed_run_and_event_order(
         )
     await db_session.rollback()
 
-    stored_run = await db_session.get(AgentRun, context.run_id)
+    stored_run = await db_session.get(AgentRun, context.run_id, populate_existing=True)
     assert stored_run is not None
     assert stored_run.status == RUN_STATUS_FAILED
     assert stored_run.error_code == "agent_run_failed"
@@ -286,6 +286,8 @@ async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
             user_id: UUID,
             metering=None,
             owner_instance_id=None,
+            interrupted_history=None,
+            history_wait=1.0,
         ):
             await asyncio.sleep(0.05)
             return await real_persist_cancelled_run(
@@ -294,6 +296,8 @@ async def test_cancelled_run_persists_cancelled_status_events_and_user_prompt(
                 user_id=user_id,
                 metering=metering,
                 owner_instance_id=owner_instance_id,
+                interrupted_history=interrupted_history,
+                history_wait=history_wait,
             )
 
         async def slow_stream(

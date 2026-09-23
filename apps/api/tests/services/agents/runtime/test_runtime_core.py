@@ -1215,7 +1215,7 @@ async def test_execute_run_total_token_limit_fails_cleanly(
         )
     await db_session.rollback()
 
-    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
+    stored_run = await db_session.get(AgentRun, runtime_context.run_id, populate_existing=True)
     assert stored_run is not None
     assert stored_run.status == RUN_STATUS_FAILED
     assert stored_run.error_code == "usage_limit_exceeded"

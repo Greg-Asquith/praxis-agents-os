@@ -790,3 +790,17 @@ async def test_create_rejects_caller_supplied_effective_budget(db_session, run_c
             trigger="interactive",
             metadata={"effective_usage_limits": snapshot},
         )
+
+
+@pytest.mark.parametrize("key", ["transcript_invocation_id", "interrupted_history_truncation"])
+async def test_create_rejects_caller_supplied_transcript_metadata(db_session, run_context, key):
+    with pytest.raises(CustomValueError, match="owned by run execution"):
+        await create_agent_run(
+            db_session,
+            conversation_id=run_context.conversation_id,
+            agent_id=run_context.agent_id,
+            workspace_id=run_context.workspace_id,
+            user_id=run_context.user_id,
+            trigger="interactive",
+            metadata={key: None},
+        )

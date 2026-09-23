@@ -3,12 +3,18 @@
 """Consume Pydantic AI stream events for execute_run."""
 
 from collections.abc import AsyncIterable, Sequence
+from contextlib import suppress
 from time import monotonic
 from typing import Any
 
 from pydantic_ai import DeferredToolResults
+from pydantic_ai.agent import AgentRunEvents
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
 )
@@ -36,55 +42,71 @@ async def consume_stream(
     deferred_tool_results: DeferredToolResults | None,
     event_sink: EventSink,
     live_deferred_result_ids: set[str] | None = None,
-) -> Any | None:
+    messages_so_far: list[ModelMessage] | None = None,
+) -> tuple[Any | None, list[ModelMessage]]:
+    if messages_so_far is None:
+        messages_so_far = []
     terminal_result = None
     state = EventTranslationState()
     deferred_tool_call_ids = (
         set(deferred_tool_results.approvals) if deferred_tool_results is not None else set()
     )
-    async for event in stream:
-        if isinstance(event, AgentRunResultEvent):
-            terminal_result = event.result
-            continue
-        if deferred_tool_results is not None and is_deferred_tool_resume_event(
-            event,
-            deferred_tool_call_ids=deferred_tool_call_ids,
-        ):
-            emitted_result_id = await emit_live_deferred_tool_event(
+    try:
+        async for event in stream:
+            if isinstance(event, (ModelRequest, ModelResponse)):
+                messages_so_far.append(event)
+                continue
+            if isinstance(event, AgentRunResultEvent):
+                terminal_result = event.result
+                continue
+            if deferred_tool_results is not None and is_deferred_tool_resume_event(
+                event,
+                deferred_tool_call_ids=deferred_tool_call_ids,
+            ):
+                emitted_result_id = await emit_live_deferred_tool_event(
+                    event_sink,
+                    event,
+                    deferred_tool_results=deferred_tool_results,
+                )
+                if emitted_result_id is not None and live_deferred_result_ids is not None:
+                    live_deferred_result_ids.add(emitted_result_id)
+                continue
+            part = getattr(event, "part", None)
+            if isinstance(part, NativeToolCallPart):
+                state.native_tool_calls[part.tool_call_id] = part
+                state.native_tool_call_started.setdefault(part.tool_call_id, monotonic())
+            elif isinstance(part, NativeToolReturnPart):
+                # Stream-observed wall time between call and return parts.
+                started = state.native_tool_call_started.pop(part.tool_call_id, None)
+                await record_native_tool_invocation_audit_event(
+                    deps=deps,
+                    call_part=state.native_tool_calls.pop(
+                        part.tool_call_id,
+                        None,
+                    ),
+                    return_part=part,
+                    latency_ms=(
+                        None if started is None else max(1, int((monotonic() - started) * 1000))
+                    ),
+                )
+            if (
+                isinstance(event, FunctionToolCallEvent)
+                and getattr(part, "tool_kind", None) == "capability-load"
+            ):
+                record_skill_activation(skills, part, run=run)
+            await emit_agent_stream_event(
                 event_sink,
                 event,
-                deferred_tool_results=deferred_tool_results,
+                run_id=str(run.id),
+                state=state,
             )
-            if emitted_result_id is not None and live_deferred_result_ids is not None:
-                live_deferred_result_ids.add(emitted_result_id)
-            continue
-        part = getattr(event, "part", None)
-        if isinstance(part, NativeToolCallPart):
-            state.native_tool_calls[part.tool_call_id] = part
-            state.native_tool_call_started.setdefault(part.tool_call_id, monotonic())
-        elif isinstance(part, NativeToolReturnPart):
-            # Stream-observed wall time between call and return parts.
-            started = state.native_tool_call_started.pop(part.tool_call_id, None)
-            await record_native_tool_invocation_audit_event(
-                deps=deps,
-                call_part=state.native_tool_calls.pop(
-                    part.tool_call_id,
-                    None,
-                ),
-                return_part=part,
-                latency_ms=(
-                    None if started is None else max(1, int((monotonic() - started) * 1000))
-                ),
-            )
-        if (
-            isinstance(event, FunctionToolCallEvent)
-            and getattr(part, "tool_kind", None) == "capability-load"
-        ):
-            record_skill_activation(skills, part, run=run)
-        await emit_agent_stream_event(
-            event_sink,
-            event,
-            run_id=str(run.id),
-            state=state,
-        )
-    return terminal_result
+    finally:
+        if isinstance(stream, AgentRunEvents):
+            try:
+                # Teardown adds partial responses and completed tool returns to history.
+                await stream.aclose()
+            finally:
+                # Cancellation can arrive before the SDK binds its run history.
+                with suppress(UserError):
+                    messages_so_far[:] = stream.new_messages()
+    return terminal_result, messages_so_far

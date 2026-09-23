@@ -301,6 +301,27 @@ cancellation remains explicitly supervised and owns its session until it exits;
 it cannot use the execution task's session. Python cancellation still
 propagates. Process shutdown settles usage without recording a human stop.
 
+Failed and cancelled turns retain the SDK's accumulated messages, including
+partial responses and completed tool results. Approval continuations keep
+their decision metadata and effective arguments. Unfinished tool calls receive
+an interrupted return, including calls saved before approval suspension.
+Eager user prompts and denied returns are written once.
+
+Failure persistence uses a fresh tenant session after the execution task rolls
+back. Transcript writes use part of the existing finalisation deadline. If a
+write times out, its savepoint rolls back and the terminal transaction queues
+`agent_runs.persist_interrupted_history`. The job retains the originating
+workspace, actor, and invocation; it cannot replace the verdict or replay tools.
+An invocation marker makes retries and competing finalisers idempotent.
+If query cancellation invalidates the history transaction, settlement opens a
+fresh session to queue the snapshot within the same overall deadline.
+
+Retry payloads have a four MiB limit, including messages and approval metadata.
+Oversized histories retain the latest messages that fit, with an omitted-message
+count in run metadata. Process shutdown preserves usage without persisting
+in-flight messages. Per-response checkpoints and failed-run usage columns
+are pending.
+
 Persistence precedes final stream events. A closed or detached stream does
 not prevent settlement. Exhausted accounting persistence produces bounded
 operational evidence containing the run, invocation, provider, model, and

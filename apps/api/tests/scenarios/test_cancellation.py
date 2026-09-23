@@ -448,6 +448,8 @@ async def test_cancellation_during_failure_settlement(
     failure_module = importlib.import_module("services.agents.runtime.execute.settle_failure")
     interruption = importlib.import_module("services.agents.runtime.execute.settle_interruption")
     original_failure = failure_module.emit_failure_events
+    finalisation = importlib.import_module("services.agents.runtime.execute.finalize")
+    original_persist_failure = finalisation.persist_failed_run
     original_cancel = interruption.finalize_cancelled_run
     original_stopped = interruption.finalize_stopped_run
     failure_barrier = ScenarioBarrier()
@@ -477,7 +479,6 @@ async def test_cancellation_during_failure_settlement(
                 expected = (run.status, run.error_code, run.error_message, run.completion_json)
         owner = asyncio.current_task()
         rollback = db.rollback
-        commit = db.commit
         first_rollback = True
 
         async def paused_rollback():
@@ -488,13 +489,25 @@ async def test_cancellation_during_failure_settlement(
                 await failure_barrier.pause()
             await rollback()
 
-        async def paused_commit():
-            await failure_barrier.pause()
-            await commit()
-
         monkeypatch.setattr(db, "rollback", paused_rollback)
         if boundary == "commit":
-            monkeypatch.setattr(db, "commit", paused_commit)
+            first_settlement = True
+
+            async def persist_failure(settlement_db, **persist_kwargs):
+                nonlocal first_settlement
+                assert settlement_db is not db
+                if first_settlement:
+                    first_settlement = False
+                    commit = settlement_db.commit
+
+                    async def paused_commit():
+                        await failure_barrier.pause()
+                        await commit()
+
+                    monkeypatch.setattr(settlement_db, "commit", paused_commit)
+                return await original_persist_failure(settlement_db, **persist_kwargs)
+
+            monkeypatch.setattr(finalisation, "persist_failed_run", persist_failure)
         return await original_failure(db, **kwargs)
 
     async def isolated_cancel(**kwargs):
