@@ -170,6 +170,7 @@ async def load_available_files(
                 FileReference.workspace_id == conversation.workspace_id,
                 FileReference.target_type == "conversation",
                 FileReference.target_id == conversation.id,
+                File.is_tool_result.is_(False),
                 visible_file_filter(conversation.workspace_id),
             )
             .order_by(FileReference.created_at.desc(), File.id.desc())

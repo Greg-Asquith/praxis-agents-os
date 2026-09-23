@@ -124,6 +124,17 @@ class AgentRunSettingsMixin:
         gt=0,
         description="Maximum free-text tool-result characters; None disables the bound.",
     )
+    AGENT_STRUCTURED_RESULT_MAX_CHARS: int = Field(
+        default=128_000,
+        ge=1_000,
+        description="Maximum structured read result characters sent directly to the model.",
+    )
+    AGENT_RESULT_PREVIEW_ROWS: int = Field(
+        default=50,
+        ge=1,
+        le=1_000,
+        description="Maximum preview rows per list in a retained tool result.",
+    )
     NATIVE_RUN_CODE_MAX_INPUT_BYTES: int = Field(
         default=2 * 1024 * 1024,
         ge=1,

@@ -76,6 +76,33 @@ For a clean local reset from the repository root, remove
 `apps/api/.local/storage` and re-upload development files; there is deliberately
 no compatibility read path.
 
+## Internal tool-result snapshots
+
+Oversized structured read results reuse private File revision storage with
+`is_tool_result = true`. Each snapshot contains the complete returned JSON,
+including provider limits, account identity, errors, and every returned row.
+It has no folder. Files listings, name searches, entity-picker searches,
+processing counts, and automatic conversation-file prompt listings exclude
+these snapshots. Explicitly created documents and deliverables remain visible.
+
+A conversation reference pins the initial revision. Authorised reads by
+reference, downloads, and native `run_code` input loading reuse the existing
+File paths. Retained text reads use the shared untrusted-content framing
+with server-derived File and revision provenance. Hidden storage is a
+discovery distinction, not a privacy scope:
+workspace access and row-level security still govern each lookup. The File
+audit records the source tool, call, conversation, run, revision, and hash.
+No raw tool data enters that audit record.
+
+The smaller of `MAX_FILE_SIZE_DOCUMENT` and `MAX_FILE_SIZE_AGENT_FILE`
+bounds each snapshot. The caller's transaction owns the File, reference,
+and audit writes. No separate session or commit occurs in the save service.
+Existing File storage accounting and retention rules apply, including
+normal cleanup after deletion. Snapshots have no scratch expiry and do not
+expire between follow-up turns. Downgrading the internal-result marker
+requires removing retained snapshots explicitly; downgrade does not expose
+them in the document library or delete them automatically.
+
 ## Platform-private storage
 
 `StorageBucket.PLATFORM_PRIVATE` resolves `platform/...` keys to a dedicated

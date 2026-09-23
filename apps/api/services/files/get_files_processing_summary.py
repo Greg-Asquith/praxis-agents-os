@@ -22,6 +22,7 @@ async def get_files_processing_summary(
         .where(
             File.workspace_id == workspace.id,
             File.deleted.is_(False),
+            File.is_tool_result.is_(False),
         )
         .group_by(File.processing_status)
     )

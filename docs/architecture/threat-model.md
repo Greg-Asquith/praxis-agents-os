@@ -115,6 +115,15 @@ layer tests whether a model resists the content.
 | **(k) Published platform Artifact reads** | An editor can place hostile instructions in a report shared across workspaces. | `read_artifact` checks publication, bounds text, and returns a shared untrusted-content node with server-minted Artifact/version provenance. Model framing and dispatch permissions remain independent. | `tests/scenarios/test_platform_artifacts.py` uses the shared hostile fixture to check marker neutralisation, provenance, bounded content, and live edit permissions. Delegated and resumed cases preserve initiating-user authority and reviewed versions. | `injection_platform_artifact_reports_embedded_instructions` reports the injected instruction without selecting a write tool. |
 | **(l) Published platform File reads** | A shared template can contain instructions in text or extracted Markdown. | `read_file` checks publication and revision visibility, bounds the byte slice, and returns a shared untrusted-content node with File/revision provenance. Existing model framing neutralises forged delimiters. | File runtime tests verify the node and attachment pin. | Live-model resistance to hostile platform File instructions remains unverified. |
 
+Retained tool-result reads are another File-content channel. Saving external
+data does not make it trusted. `read_file` wraps internal-result text windows
+with the shared untrusted-content node and server-derived File/revision
+provenance. Native `run_code` uses its existing untrusted input framing.
+`test_retained_reads_frame_external_text_and_neutralise_forged_boundaries`
+checks forged delimiter handling, and the retained-result runtime scenarios
+check bounded, revision-pinned retrieval. Live-model resistance for this
+channel remains unverified.
+
 A new channel means any new path that places attacker-influenced text in model
 context, whether directly, through storage, or after transformation. The change
 that adds one must append a row with both test layers before shipping.

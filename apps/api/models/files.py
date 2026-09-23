@@ -81,6 +81,7 @@ class File(BaseModel):
 
     __tablename__ = "files"
 
+    is_tool_result = Column(Boolean, nullable=False, server_default=text("false"))
     scope = Column(String(16), nullable=False, server_default=text("'workspace'"))
     is_published = Column(Boolean, nullable=False, server_default=text("false"))
     published_revision_id = Column(
@@ -115,6 +116,10 @@ class File(BaseModel):
     processing_attempts = Column(Integer, nullable=False, server_default=text("0"))
 
     __table_args__ = (
+        CheckConstraint(
+            "NOT is_tool_result OR (scope = 'workspace' AND folder_id IS NULL)",
+            name="files_tool_result_storage_check",
+        ),
         CheckConstraint(
             "(scope = 'workspace' AND workspace_id IS NOT NULL) OR "
             "(scope = 'platform' AND workspace_id IS NULL)",

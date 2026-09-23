@@ -131,6 +131,46 @@ The following contracts apply in this area:
 
 ## Retained results and artifacts
 
+Oversized direct structured read results use an internal File snapshot.
+`AGENT_STRUCTURED_RESULT_MAX_CHARS` defaults to 128,000 characters, and
+`AGENT_RESULT_PREVIEW_ROWS` defaults to 50 rows per list. A tool's
+`max_result_chars` overrides its value-type default. Write tools and Code
+Mode retain their existing separate bounds and evidence. Multimodal
+returns keep their existing transport rather than entering JSON storage.
+
+Dispatch validates the original output and the projected data against the
+tool's output model. A strict runtime envelope carries `preview: true`,
+`data`, per-list `total` and `shown` counts, and a typed `file_reference`.
+An optional `preview_list_path` selects a dotted list path, with `*` for
+fan-out entries. Automatic discovery preserves account envelopes and
+errors while previewing their nested lists. Scalar metadata stays intact.
+Results whose metadata and one row per non-empty list cannot fit produce
+a retry explaining that the query needs narrowing.
+
+The complete JSON snapshot and its File audit commit before dispatch
+records successful delivery. Save failures produce a retry for these
+read-only calls. The invocation audit records original and delivered sizes
+and `result_file_id`. No rows are discarded from a saved snapshot.
+
+`read_file` accepts the envelope's typed reference and byte offsets.
+Configured native `run_code` helpers accept it through `file_ids`, subject
+to their normal policies and upload limits. OpenAI and Anthropic mount
+input files; Google uses bounded inline text. Code Mode nested calls keep
+their complete computational inputs within the sandbox's existing limits.
+Only its bounded final answer enters model context.
+
+The first response contains the preview. Later requests reuse that saved
+value without rewriting history or regenerating references. Existing large
+historical results are unchanged. This preserves the existing prompt prefix
+with respect to this feature; it does not guarantee a provider cache hit.
+
+The live event carries the bounded envelope. `result_preview` metadata
+retains the same envelope for transcript presentation. A complete
+`public_result` remains available only within its explicitly declared
+budget; it never enters model context. The preview also respects that
+budget when declared. Provider-specific preview tables and row-count
+labels are pending.
+
 The following contracts apply in this area:
 
 - Complete transcript-only tool results may arrive through the persisted

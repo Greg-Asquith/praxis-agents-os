@@ -50,7 +50,7 @@ async def current_file_revision(
             file_id=file_id,
         )
         pin = None
-        if file.scope == ContentScope.PLATFORM:
+        if file.scope == ContentScope.PLATFORM or file.is_tool_result:
             pin = await conversation_file_revision_id(
                 ctx.deps.db,
                 workspace_id=ctx.deps.workspace.id,
@@ -95,6 +95,7 @@ def slice_text(
                 content=content,
             ).model_dump(mode="json")
             if metadata.get("scope") == ContentScope.PLATFORM
+            or metadata.get("source") == "tool_result"
             else content
         ),
     }
@@ -112,7 +113,7 @@ def file_metadata(file: File, revision: FileRevision, *, source: str) -> dict[st
     """Return common metadata for file read outputs."""
     return {
         "kind": "file",
-        "source": source,
+        "source": "tool_result" if file.is_tool_result else source,
         "scope": file.scope,
         "file_id": str(file.id),
         "revision_id": str(revision.id),

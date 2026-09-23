@@ -239,9 +239,11 @@ class RuntimeToolDefinition:
     output_model: type[BaseModel] | None = None
     """Declared output contract, enforced by the tool dispatch layer."""
     max_result_chars: int | None = None
-    """Optional free-text result bound overriding the runtime default."""
+    """Optional result bound overriding the runtime default for its value type."""
     max_public_result_chars: int | None = None
     """Maximum serialized characters allowed in explicit transcript-only output."""
+    preview_list_path: str | None = None
+    """Dot-separated list path, with * for fan-out entries, to preview on overflow."""
     configurable: bool = True
     auto_mount: bool = False
     always_allowed_when_mounted: bool = False
@@ -349,6 +351,13 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
         raise RuntimeError("Runtime tool max_result_chars must be greater than zero")
     if definition.max_public_result_chars is not None and definition.max_public_result_chars < 1:
         raise RuntimeError("Runtime tool max_public_result_chars must be greater than zero")
+    if definition.preview_list_path is not None and not re.fullmatch(
+        r"[A-Za-z_][A-Za-z0-9_]*(?:\.(?:[A-Za-z_][A-Za-z0-9_]*|\*))*",
+        definition.preview_list_path,
+    ):
+        raise RuntimeError(
+            "Runtime tool preview_list_path must be a dotted path with optional * segments"
+        )
     if (
         definition.effect == TOOL_EFFECT_READ
         and definition.effect_scope != TOOL_EFFECT_SCOPE_INTERNAL

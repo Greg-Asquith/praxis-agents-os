@@ -315,7 +315,7 @@ def _document_choice(document: KBDocument) -> EntityChoice:
 
 async def _search_files(ctx, search, _dependent_args, page_size, cursor):
     offset = _offset(cursor)
-    filters = [visible_file_filter(ctx.workspace.id)]
+    filters = [visible_file_filter(ctx.workspace.id), File.is_tool_result.is_(False)]
     pattern = _pattern(search)
     if pattern:
         filters.append(File.name.ilike(pattern, escape="\\"))

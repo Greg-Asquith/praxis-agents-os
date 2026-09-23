@@ -28,8 +28,10 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 from pydantic import ValidationError
 from pydantic_ai import (
@@ -42,10 +44,16 @@ from pydantic_ai import (
     ToolReturn,
 )
 from pydantic_ai.exceptions import ToolFailedError, ToolRetryError
-from pydantic_ai.messages import ModelMessage, NativeToolCallPart, NativeToolReturnPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    NativeToolCallPart,
+    NativeToolReturnPart,
+    is_multi_modal_content,
+)
 from pydantic_core import to_jsonable_python
 from sqlalchemy import select
 
+from core.exceptions.general import AppValidationError
 from core.exceptions.integration import (
     IntegrationError,
     IntegrationFailureDisposition,
@@ -71,6 +79,7 @@ from services.agents.runtime.staged_tool_content import (
     WRITE_FILE_TOOL_NAME,
     delete_staged_write_content,
 )
+from services.agents.runtime.structured_results import preview_structured_result, result_json
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
     TOOL_EFFECT_SCOPE_INTERNAL,
@@ -89,6 +98,7 @@ from services.audit_events.tool_events import (
     ToolAuditOutcome,
     record_tool_invocation_audit_event,
 )
+from services.files.save_tool_result import save_tool_result
 from services.integrations.context.utils import sanitize_context_error
 from services.workspaces.utils import EDITOR_ROLES
 from utils.json_safe import json_safe_value
@@ -133,6 +143,105 @@ class ResultSize:
     truncated: bool = False
     original_chars: int | None = None
     oversized: bool = False
+    file_id: str | None = None
+
+
+async def retain_structured_result(
+    ctx: Any,
+    definition: RuntimeToolDefinition | None,
+    result: Any,
+    *,
+    tool_name: str,
+    tool_call_id: str,
+    parent_tool_call_id: str | None,
+) -> tuple[Any, ResultSize] | None:
+    """Retains oversized direct read results before they enter model history."""
+    if (
+        tool_name == "run_workflow"
+        or parent_tool_call_id is not None
+        or (definition is not None and definition.effect == TOOL_EFFECT_WRITE)
+    ):
+        return None
+    value = result.return_value if isinstance(result, ToolReturn) else result
+    if is_multi_modal_content(value) or (
+        isinstance(value, list) and any(is_multi_modal_content(item) for item in value)
+    ):
+        return None
+    value = to_jsonable_python(value)
+    if not isinstance(value, (dict, list)):
+        return None
+    limit = (
+        definition.max_result_chars
+        if definition is not None and definition.max_result_chars is not None
+        else settings.AGENT_STRUCTURED_RESULT_MAX_CHARS
+    )
+    original = result_json(value)
+    if len(original) <= limit:
+        return None
+    public_limit = definition.max_public_result_chars if definition is not None else None
+    if public_limit is not None:
+        limit = min(limit, public_limit)
+    name = f"{tool_name[:180]}-{datetime.now(UTC):%Y%m%dT%H%M%S%f}.json"
+    try:
+        preview = preview_structured_result(
+            value,
+            limit=limit,
+            preview_rows=settings.AGENT_RESULT_PREVIEW_ROWS,
+            list_path=definition.preview_list_path if definition is not None else None,
+            file_id=UUID(int=0),
+            file_name=name,
+        )
+        validate_output(definition, preview["data"])
+    except ValueError as exc:
+        raise OutputContractError(
+            retry_message=f"The result is too large to deliver safely. {exc}", outcome="failed"
+        ) from exc
+    try:
+        saved = await save_tool_result(
+            ctx.deps,
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            name=name,
+            content=original.encode("utf-8"),
+        )
+    except AppValidationError as exc:
+        raise OutputContractError(
+            retry_message=f"The result is too large to deliver safely. {exc}", outcome="failed"
+        ) from exc
+    except Exception as exc:
+        raise OutputContractError(
+            retry_message=(
+                "The result is too large to deliver and its complete data could not be saved. "
+                "Narrow the query or try again."
+            ),
+            outcome="failed",
+        ) from exc
+    preview["file_id"] = str(saved.file.id)
+    preview["file_reference"]["entity_id"] = str(saved.file.id)
+    metadata = (
+        dict(result.metadata)
+        if isinstance(result, ToolReturn) and isinstance(result.metadata, dict)
+        else {}
+    )
+    public = metadata.get(PUBLIC_RESULT_METADATA_KEY, value)
+    if public_limit is not None and len(result_json(public)) <= public_limit:
+        metadata[PUBLIC_RESULT_METADATA_KEY] = public
+    else:
+        metadata.pop(PUBLIC_RESULT_METADATA_KEY, None)
+    # Streaming always uses the bounded envelope; the complete display channel stays governed.
+    metadata["result_preview"] = preview
+    bounded = ToolReturn(
+        return_value=preview,
+        metadata=metadata,
+        content=result.content if isinstance(result, ToolReturn) else None,
+    )
+    prepare_public_result(definition, bounded)
+    return bounded, ResultSize(
+        chars=len(result_json(preview)),
+        original_chars=len(original),
+        oversized=True,
+        file_id=str(saved.file.id),
+    )
 
 
 def digest_args(args: Mapping[str, Any] | None) -> tuple[str, int]:
@@ -528,6 +637,14 @@ async def dispatch_tool_execution(
         validate_output(definition, validation_result)
         if isinstance(result, ToolReturn):
             prepare_public_result(definition, result)
+        retained = await retain_structured_result(
+            ctx,
+            definition,
+            result,
+            tool_name=tool_name,
+            tool_call_id=tool_call_id,
+            parent_tool_call_id=parent_tool_call_id,
+        )
     except OutputContractError as exc:
         await record_invocation(
             deps=ctx.deps,
@@ -548,15 +665,18 @@ async def dispatch_tool_execution(
         await _rollback_failed_tool_transaction(ctx.deps)
         raise ModelRetry(exc.retry_message) from exc
 
-    bounded_result, result_size = truncate_result(
-        definition,
-        validation_result,
-        default_limit=settings.AGENT_TOOL_RESULT_MAX_CHARS,
-    )
-    if isinstance(result, ToolReturn):
-        result.return_value = bounded_result
+    if retained is not None:
+        result, result_size = retained
     else:
-        result = bounded_result
+        bounded_result, result_size = truncate_result(
+            definition,
+            validation_result,
+            default_limit=settings.AGENT_TOOL_RESULT_MAX_CHARS,
+        )
+        if isinstance(result, ToolReturn):
+            result.return_value = bounded_result
+        else:
+            result = bounded_result
     if result_size.truncated:
         logger.warning(
             "Truncated oversized tool result",
@@ -567,7 +687,7 @@ async def dispatch_tool_execution(
                 "result_original_chars": result_size.original_chars,
             },
         )
-    elif result_size.oversized:
+    elif result_size.oversized and result_size.file_id is None:
         logger.warning(
             "Oversized structured tool result exempt from truncation",
             extra={
@@ -583,11 +703,31 @@ async def dispatch_tool_execution(
         and definition.effect == TOOL_EFFECT_WRITE
         and definition.effect_scope == TOOL_EFFECT_SCOPE_INTERNAL
     )
-    if local_integration_write:
+    committed_result = local_integration_write or result_size.file_id is not None
+    if committed_result:
         try:
             await ctx.deps.db.commit()
-        except BaseException:
+        except BaseException as exc:
             await _rollback_failed_tool_transaction(ctx.deps)
+            if result_size.file_id is not None and isinstance(exc, Exception):
+                await record_invocation(
+                    deps=ctx.deps,
+                    tool_name=tool_name,
+                    tool_provider=tool_provider,
+                    status=AuditStatus.FAILURE,
+                    args=args,
+                    args_sha256=args_sha256,
+                    args_bytes=args_bytes,
+                    started=started,
+                    tool_call_id=tool_call_id,
+                    parent_tool_call_id=parent_tool_call_id,
+                    outcome="failed",
+                    error_code="ToolResultCommitError",
+                    **taint_audit,
+                )
+                raise ModelRetry(
+                    "The complete tool result could not be retained. Narrow the query or try again."
+                ) from exc
             raise
 
     await record_invocation(
@@ -606,9 +746,10 @@ async def dispatch_tool_execution(
         result_chars=result_size.chars if result_size.oversized else None,
         result_truncated=result_size.truncated if result_size.oversized else None,
         result_original_chars=result_size.original_chars,
+        result_file_id=result_size.file_id,
         **taint_audit,
     )
-    if not local_integration_write:
+    if not committed_result:
         await ctx.deps.db.commit()
     return result
 
@@ -810,6 +951,7 @@ async def record_invocation(
     result_chars: int | None = None,
     result_truncated: bool | None = None,
     result_original_chars: int | None = None,
+    result_file_id: str | None = None,
     parent_tool_call_id: str | None = None,
     derived_from_untrusted: bool | None = None,
     taint_sources: list[dict[str, str]] | None = None,
@@ -841,6 +983,7 @@ async def record_invocation(
         result_chars=result_chars,
         result_truncated=result_truncated,
         result_original_chars=result_original_chars,
+        result_file_id=result_file_id,
         parent_tool_call_id=parent_tool_call_id,
         derived_from_untrusted=derived_from_untrusted,
         taint_sources=taint_sources,

@@ -46,6 +46,8 @@ async def create_conversation_file_references(
             "file_revision_id": (
                 files_by_id[file_id].published_revision_id
                 if files_by_id[file_id].scope == ContentScope.PLATFORM
+                else files_by_id[file_id].current_revision_id
+                if files_by_id[file_id].is_tool_result
                 else None
             ),
             "created_by_user_id": created_by_user_id,

@@ -53,6 +53,7 @@ async def record_tool_invocation_audit_event(
     result_chars: int | None = None,
     result_truncated: bool | None = None,
     result_original_chars: int | None = None,
+    result_file_id: str | None = None,
     parent_tool_call_id: str | None = None,
     derived_from_untrusted: bool | None = None,
     taint_sources: list[dict[str, str]] | None = None,
@@ -127,6 +128,9 @@ async def record_tool_invocation_audit_event(
                             {"result_original_chars": result_original_chars}
                             if result_original_chars is not None
                             else {}
+                        ),
+                        **(
+                            {"result_file_id": result_file_id} if result_file_id is not None else {}
                         ),
                     }
                 ),

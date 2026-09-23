@@ -192,6 +192,12 @@ def public_function_tool_result(part: ToolReturnPart | RetryPromptPart) -> Any:
     if (
         isinstance(part, ToolReturnPart)
         and isinstance(part.metadata, dict)
+        and "result_preview" in part.metadata
+    ):
+        return to_jsonable_python(part.metadata["result_preview"])
+    if (
+        isinstance(part, ToolReturnPart)
+        and isinstance(part.metadata, dict)
         and "public_result" in part.metadata
     ):
         return to_jsonable_python(part.metadata["public_result"])

@@ -45,6 +45,7 @@ async def list_files(
         select(File)
         .outerjoin(FileRevision, FileRevision.id == selected_revision)
         .where(
+            File.is_tool_result.is_(False),
             visible_file_filter(workspace.id),
             (File.scope == "workspace") | visible_file_revision_filter(workspace.id),
         )
