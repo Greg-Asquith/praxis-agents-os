@@ -9,13 +9,20 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter, ModelResponse, ToolCallPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelResponse,
+    RetryPromptPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 
 from services.agents.runtime.approval_identity import MAX_PROPOSAL_BYTES
+from services.agents.runtime.checkpoint_messages import MessageCheckpoint
 from services.agents.runtime.persistence import (
     close_dangling_tool_calls,
-    without_initial_user_prompt,
-    without_tool_returns,
+    unpersisted_messages,
 )
 
 INTERRUPTED_HISTORY_JOB_KIND = "agent_runs.persist_interrupted_history"
@@ -31,22 +38,29 @@ class InterruptedHistory:
     eager_tool_return_ids: set[str] = field(default_factory=set)
     resumed_tool_calls: Sequence[ToolCallPart] = ()
     tool_approval_metadata_by_call_id: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    checkpoint: MessageCheckpoint = field(default_factory=MessageCheckpoint)
 
     def prepared_messages(self) -> list[ModelMessage]:
-        messages = (
-            without_initial_user_prompt(self.messages)
-            if self.skip_initial_user_prompt
-            else list(self.messages)
-        )
-        if self.resumed_tool_calls:
-            messages = [ModelResponse(parts=list(self.resumed_tool_calls)), *messages]
+        saved_calls = {part.tool_call_id: part for part in self.resumed_tool_calls}
+        for message in self.messages[: self.checkpoint.message_count]:
+            for part in message.parts:
+                if isinstance(part, ToolCallPart):
+                    saved_calls[part.tool_call_id] = part
+                elif isinstance(part, ToolReturnPart | RetryPromptPart):
+                    saved_calls.pop(part.tool_call_id, None)
+        messages = list(self.messages[self.checkpoint.message_count :])
+        if saved_calls:
+            messages = [ModelResponse(parts=list(saved_calls.values())), *messages]
         messages = close_dangling_tool_calls(messages, interrupted=True)
-        if self.resumed_tool_calls:
+        if saved_calls:
             messages = messages[1:]
         # Eager returns already have durable rows, including declined approvals.
-        return without_tool_returns(
-            [message for message in messages if message.parts],
-            tool_call_ids=self.eager_tool_return_ids,
+        return unpersisted_messages(
+            messages,
+            skip_initial_user_prompt=(
+                self.skip_initial_user_prompt and self.checkpoint.message_count == 0
+            ),
+            eager_tool_return_ids=self.eager_tool_return_ids,
         )
 
 

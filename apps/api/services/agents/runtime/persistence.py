@@ -406,6 +406,23 @@ def without_initial_user_prompt(messages: Sequence[ModelMessage]) -> list[ModelM
     return pending
 
 
+def unpersisted_messages(
+    messages: Sequence[ModelMessage],
+    *,
+    persisted_message_count: int = 0,
+    skip_initial_user_prompt: bool = False,
+    eager_tool_return_ids: set[str] | None = None,
+) -> list[ModelMessage]:
+    """Returns the suffix after checkpoints and eagerly saved parts."""
+    pending = list(messages[persisted_message_count:])
+    if skip_initial_user_prompt and persisted_message_count == 0:
+        pending = without_initial_user_prompt(pending)
+    return without_tool_returns(
+        [message for message in pending if message.parts],
+        tool_call_ids=eager_tool_return_ids or set(),
+    )
+
+
 def without_tool_returns(
     messages: Sequence[ModelMessage],
     *,

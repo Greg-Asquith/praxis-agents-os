@@ -1,26 +1,32 @@
 """In-flight SDK history survives failed and cancelled stream consumption."""
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import cast
 from uuid import uuid4
 
 import pytest
 from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
+from pydantic_ai.capabilities import Hooks
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     TextPart,
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import CompletedStreamedResponse
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from models.agent_run import AgentRun
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.execute.stream import consume_stream
+from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.sinks import CollectingSink
 
 
@@ -165,3 +171,65 @@ async def test_stream_keeps_request_and_response_events_without_sdk_handle() -> 
         await _consume(events(), messages)
 
     assert messages == [request, response]
+
+
+async def test_checkpoint_waits_for_native_tool_audit(monkeypatch) -> None:
+    from services.agents.runtime.execute import stream as stream_module
+
+    auditing = False
+    audit_count = 0
+    checkpoints = []
+
+    async def record(**_kwargs):
+        nonlocal auditing, audit_count
+        auditing = True
+        audit_count += 1
+        await asyncio.sleep(0.02)
+        auditing = False
+
+    async def checkpoint(*_args, **kwargs):
+        assert not auditing
+        checkpoints.append(kwargs["messages"])
+
+    class NativeModel(TestModel):
+        @asynccontextmanager
+        async def request_stream(self, _messages, _settings, parameters, run_context=None):
+            yield CompletedStreamedResponse(
+                ModelResponse(
+                    parts=[
+                        NativeToolCallPart("web_search", {"query": "docs"}, "search"),
+                        TextPart("Found the answer."),
+                        NativeToolReturnPart("web_search", "Found docs", "search"),
+                    ]
+                ),
+                model_request_parameters=parameters,
+                replay_events=True,
+            )
+
+    monkeypatch.setattr(stream_module, "record_native_tool_invocation_audit_event", record)
+    monkeypatch.setattr(stream_module, "checkpoint_messages", checkpoint)
+    agent = Agent(NativeModel())
+    hooks = Hooks()
+    run_id = uuid4()
+    messages = []
+    async with agent.run_stream_events("Find docs", capabilities=[hooks]) as stream:
+        await consume_stream(
+            stream,
+            deps=cast(
+                RuntimeDeps,
+                SimpleNamespace(
+                    db=None,
+                    conversation=None,
+                    execution_control=SimpleNamespace(owner_instance_id=str(uuid4())),
+                ),
+            ),
+            skills=(),
+            run=cast(AgentRun, SimpleNamespace(id=run_id)),
+            deferred_tool_results=None,
+            event_sink=CollectingSink(run_id=run_id, conversation_id=uuid4()),
+            messages_so_far=messages,
+            interrupted_history=InterruptedHistory(messages=messages),
+            checkpoint_hooks=hooks,
+        )
+    assert checkpoints
+    assert audit_count > 0

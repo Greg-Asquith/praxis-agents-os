@@ -96,7 +96,12 @@ choke point (`runtime/dispatch.py`), which owns per-invocation audit,
 policy/approval enforcement, run envelopes, and bounded tool results. Do
 not execute tool logic around it. Interactive turns release their database
 transaction before every model request and provider-backed helper call.
-Completed tool calls commit before the next request; retrying or invalid tool
+Completed model responses and tool-return requests checkpoint their messages and
+usage in a short transaction before the next execution step. The SDK node hook
+runs in the execution task, so checkpoints never use its database session
+concurrently with tools. Each checkpoint has a three-second deadline and checks
+the invocation owner under the existing family locks. Completed tool calls
+commit before the next request; retrying or invalid tool
 calls roll back their staged database work and reload runtime state before
 model continuation. `RunTaskRegistry` bounds admitted turns per API
 process and emits a transient `queued` stream status while a turn waits;
@@ -318,9 +323,17 @@ fresh session to queue the snapshot within the same overall deadline.
 
 Retry payloads have a four MiB limit, including messages and approval metadata.
 Oversized histories retain the latest messages that fit, with an omitted-message
-count in run metadata. Process shutdown preserves usage without persisting
-in-flight messages. Per-response checkpoints and failed-run usage columns
-are pending.
+count in run metadata. Process shutdown retains committed checkpoints without
+writing its in-flight suffix. A process crash loses only work after the latest
+checkpoint.
+
+An invocation-local message index excludes checkpointed rows from success,
+suspension, failure, cancellation, and retry-job writes. Eager prompts and denied
+returns retain their existing de-duplication. Approval decisions accompany
+checkpointed returns. Suspension stages `write_file` content once and replaces
+the checkpointed call arguments in place with the staged reference. Checkpoints
+update run-row usage through `usage_snapshot`; final failed-run usage settlement
+remains pending.
 
 Persistence precedes final stream events. A closed or detached stream does
 not prevent settlement. Exhausted accounting persistence produces bounded

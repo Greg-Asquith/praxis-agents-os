@@ -2,13 +2,16 @@
 
 """Consume Pydantic AI stream events for execute_run."""
 
+import asyncio
 from collections.abc import AsyncIterable, Sequence
 from contextlib import suppress
+from dataclasses import replace
 from time import monotonic
 from typing import Any
 
-from pydantic_ai import DeferredToolResults
+from pydantic_ai import Agent, DeferredToolResults, RunContext
 from pydantic_ai.agent import AgentRunEvents
+from pydantic_ai.capabilities import AgentNode, Hooks, NodeResult
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
@@ -23,14 +26,19 @@ from pydantic_ai.run import AgentRunResultEvent
 from models.agent_run import AgentRun
 from models.skills import Skill
 from services.agents.runtime.approval_events import (
+    build_deferred_tool_result_metadata,
     emit_live_deferred_tool_event,
     is_deferred_tool_resume_event,
 )
+from services.agents.runtime.checkpoint_messages import checkpoint_messages
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_native_tool_invocation_audit_event
 from services.agents.runtime.events import EventTranslationState, emit_agent_stream_event
+from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.sinks import EventSink
 from services.agents.runtime.skills import record_skill_activation
+
+CHECKPOINT_TIMEOUT = 3.0
 
 
 async def consume_stream(
@@ -43,14 +51,61 @@ async def consume_stream(
     event_sink: EventSink,
     live_deferred_result_ids: set[str] | None = None,
     messages_so_far: list[ModelMessage] | None = None,
+    checkpoint_hooks: Hooks | None = None,
+    interrupted_history: InterruptedHistory | None = None,
+    history: Sequence[ModelMessage] = (),
+    client_message_id: str | None = None,
 ) -> tuple[Any | None, list[ModelMessage]]:
     if messages_so_far is None:
         messages_so_far = []
     terminal_result = None
     state = EventTranslationState()
+    session_lock = asyncio.Lock()
     deferred_tool_call_ids = (
         set(deferred_tool_results.approvals) if deferred_tool_results is not None else set()
     )
+    if checkpoint_hooks is not None and interrupted_history is not None:
+
+        @checkpoint_hooks.on.after_node_run(timeout=CHECKPOINT_TIMEOUT)
+        async def checkpoint_node(
+            ctx: RunContext[RuntimeDeps], *, node: AgentNode, result: NodeResult
+        ) -> NodeResult:
+            if not isinstance(stream, AgentRunEvents) or not (
+                Agent.is_model_request_node(node) or Agent.is_call_tools_node(node)
+            ):
+                return result
+            messages = stream.new_messages()
+            if Agent.is_model_request_node(result):
+                # Tool returns enter SDK history only when the next model node starts.
+                messages = [
+                    *messages,
+                    replace(result.request, run_id=ctx.run_id, conversation_id=ctx.conversation_id),
+                ]
+            messages_so_far[:] = messages
+            async with session_lock:
+                await checkpoint_messages(
+                    deps.db,
+                    run=run,
+                    conversation=deps.conversation,
+                    owner_instance_id=deps.execution_control.owner_instance_id,
+                    messages=messages,
+                    checkpoint=interrupted_history.checkpoint,
+                    usage=ctx.usage,
+                    skip_initial_user_prompt=interrupted_history.skip_initial_user_prompt,
+                    eager_tool_return_ids=interrupted_history.eager_tool_return_ids,
+                    client_message_id=client_message_id,
+                    tool_approval_metadata_by_call_id=(
+                        build_deferred_tool_result_metadata(
+                            message_history=history,
+                            new_messages=messages,
+                            deferred_tool_results=deferred_tool_results,
+                        )
+                        if deferred_tool_results is not None
+                        else None
+                    ),
+                )
+            return result
+
     try:
         async for event in stream:
             if isinstance(event, (ModelRequest, ModelResponse)):
@@ -78,17 +133,18 @@ async def consume_stream(
             elif isinstance(part, NativeToolReturnPart):
                 # Stream-observed wall time between call and return parts.
                 started = state.native_tool_call_started.pop(part.tool_call_id, None)
-                await record_native_tool_invocation_audit_event(
-                    deps=deps,
-                    call_part=state.native_tool_calls.pop(
-                        part.tool_call_id,
-                        None,
-                    ),
-                    return_part=part,
-                    latency_ms=(
-                        None if started is None else max(1, int((monotonic() - started) * 1000))
-                    ),
-                )
+                async with session_lock:
+                    await record_native_tool_invocation_audit_event(
+                        deps=deps,
+                        call_part=state.native_tool_calls.pop(
+                            part.tool_call_id,
+                            None,
+                        ),
+                        return_part=part,
+                        latency_ms=(
+                            None if started is None else max(1, int((monotonic() - started) * 1000))
+                        ),
+                    )
             if (
                 isinstance(event, FunctionToolCallEvent)
                 and getattr(part, "tool_kind", None) == "capability-load"
@@ -108,5 +164,8 @@ async def consume_stream(
             finally:
                 # Cancellation can arrive before the SDK binds its run history.
                 with suppress(UserError):
-                    messages_so_far[:] = stream.new_messages()
+                    captured = stream.new_messages()
+                    # A failed checkpoint can precede the SDK appending its next request.
+                    if len(captured) >= len(messages_so_far):
+                        messages_so_far[:] = captured
     return terminal_result, messages_so_far

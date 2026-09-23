@@ -8,6 +8,7 @@ from dataclasses import replace
 from uuid import UUID, uuid4
 
 from pydantic_ai import Agent as PydanticAgent, DeferredToolResults
+from pydantic_ai.capabilities import Hooks
 from pydantic_ai.messages import ModelMessage, ToolCallPart, UserContent
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
@@ -241,6 +242,7 @@ async def execute_run(
                     ],
                 )
                 try:
+                    checkpoint_hooks = Hooks()
                     built_agent.runtime_agent.usage_limits.check_tokens(usage_accumulator)
                     with PydanticAgent.parallel_tool_call_execution_mode("sequential"):
                         async with built_agent.runtime_agent.agent.run_stream_events(
@@ -251,6 +253,7 @@ async def execute_run(
                             conversation_id=str(conversation.id),
                             usage_limits=built_agent.runtime_agent.usage_limits,
                             usage=usage_accumulator,
+                            capabilities=[checkpoint_hooks],
                         ) as stream:
                             terminal_result, _ = await consume_stream(
                                 stream,
@@ -261,6 +264,10 @@ async def execute_run(
                                 event_sink=event_sink,
                                 live_deferred_result_ids=live_deferred_result_ids,
                                 messages_so_far=messages_so_far,
+                                checkpoint_hooks=checkpoint_hooks,
+                                interrupted_history=interrupted_history,
+                                history=built_agent.history,
+                                client_message_id=client_message_id,
                             )
                 finally:
                     if deferred_tool_results is not None:
@@ -295,6 +302,7 @@ async def execute_run(
                     live_deferred_result_ids=live_deferred_result_ids,
                     eager_tool_return_ids=eager_tool_return_ids,
                     usage_event=usage_event,
+                    checkpoint=interrupted_history.checkpoint,
                 )
                 watermark_key = built_agent.runtime_agent.history_trimmer.watermark_key
                 if result.run.status == RUN_STATUS_COMPLETED and watermark_key is not None:
@@ -304,6 +312,7 @@ async def execute_run(
                         watermark_key=watermark_key,
                     )
             eager_message_count += 1 if eager_tool_return_ids else 0
+            eager_message_count += interrupted_history.checkpoint.row_count
             if eager_message_count == 0:
                 return result
             return ExecuteRunResult(

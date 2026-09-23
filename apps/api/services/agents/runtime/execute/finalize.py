@@ -32,6 +32,7 @@ from services.agents.runtime.approval_events import (
     build_deferred_tool_result_metadata,
     emit_deferred_tool_resume_events,
 )
+from services.agents.runtime.checkpoint_messages import MessageCheckpoint
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import record_policy_approval_request_audit_events
 from services.agents.runtime.execution_control import ExecutionInterruptedError, InterruptionReason
@@ -73,6 +74,7 @@ async def finalize_terminal_run(
     live_deferred_result_ids: Sequence[str] | set[str] = (),
     eager_tool_return_ids: set[str] | None = None,
     usage_event: AIUsageEventData | None = None,
+    checkpoint: MessageCheckpoint | None = None,
 ) -> ExecuteRunResult:
     if deferred_tool_results is not None:
         await emit_deferred_tool_resume_events(
@@ -95,6 +97,7 @@ async def finalize_terminal_run(
             skip_initial_user_prompt=skip_initial_user_prompt,
             eager_tool_return_ids=eager_tool_return_ids,
             usage_event=usage_event,
+            checkpoint=checkpoint,
         )
 
     return await finalize_successful_run(
@@ -109,6 +112,7 @@ async def finalize_terminal_run(
         skip_initial_user_prompt=skip_initial_user_prompt,
         eager_tool_return_ids=eager_tool_return_ids,
         usage_event=usage_event,
+        checkpoint=checkpoint,
     )
 
 
@@ -124,6 +128,7 @@ async def finalize_suspended_run(
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
     usage_event: AIUsageEventData | None = None,
+    checkpoint: MessageCheckpoint | None = None,
 ) -> ExecuteRunResult:
     deferred_tool_requests = terminal_result.output
     deferred_tool_requests = await add_approval_display_args(deps, deferred_tool_requests)
@@ -141,6 +146,7 @@ async def finalize_suspended_run(
         skip_initial_user_prompt=skip_initial_user_prompt,
         eager_tool_return_ids=eager_tool_return_ids,
         usage_event=usage_event,
+        checkpoint=checkpoint,
     )
     if suspended_run.status == RUN_STATUS_AWAITING_APPROVAL and deferred_tool_requests is not None:
         if suspended_run.parent_run_id is None:
@@ -172,6 +178,7 @@ async def finalize_successful_run(
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
     usage_event: AIUsageEventData | None = None,
+    checkpoint: MessageCheckpoint | None = None,
 ) -> ExecuteRunResult:
     tool_approval_metadata_by_call_id = (
         build_deferred_tool_result_metadata(
@@ -193,6 +200,7 @@ async def finalize_successful_run(
         skip_initial_user_prompt=skip_initial_user_prompt,
         eager_tool_return_ids=eager_tool_return_ids,
         usage_event=usage_event,
+        checkpoint=checkpoint,
     )
     await emit_final_events(event_sink, final_run)
 

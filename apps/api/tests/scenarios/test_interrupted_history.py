@@ -6,7 +6,13 @@ from dataclasses import replace
 
 import pytest
 from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied, UsageLimitExceeded
-from pydantic_ai.messages import ModelMessagesTypeAdapter, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import (
+    ModelMessagesTypeAdapter,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.usage import RequestUsage
 from sqlalchemy import select, text
 
@@ -332,6 +338,7 @@ async def test_cumulative_sql_timeout_queues_history_in_fresh_settlement_session
 
     async def interrupted_stream(*args, **kwargs):
         await consume(*args, **kwargs)
+        kwargs["messages_so_far"].append(ModelResponse(parts=[TextPart("Unsaved partial reply.")]))
         if human_cancel:
             raise asyncio.CancelledError(AGENT_RUN_CANCEL_REQUEST)
         raise RuntimeError("Model stopped after producing a response")
@@ -389,7 +396,7 @@ async def test_cumulative_sql_timeout_queues_history_in_fresh_settlement_session
                 )
             )
         )
-        assert [row.role for row in before] == ["user"]
+        assert [row.role for row in before] == ["user", "assistant"]
         for _ in range(2):
             await persist_interrupted_history(db, job)
             await db.commit()
@@ -400,10 +407,11 @@ async def test_cumulative_sql_timeout_queues_history_in_fresh_settlement_session
                 .order_by(ConversationMessage.sequence)
             )
         )
-        assert [row.role for row in rows] == ["user", "assistant"]
+        assert [row.role for row in rows] == ["user", "assistant", "assistant"]
         assert rows[1].parts["parts"][0]["content"] == (
             "The response survives the interrupted transaction."
         )
+        assert rows[2].parts["parts"][0]["content"] == "Unsaved partial reply."
         assert run.status == ("cancelled" if human_cancel else "failed")
 
 

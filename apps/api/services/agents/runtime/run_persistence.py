@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import TypeAdapter
 from pydantic_ai import DeferredToolRequests
+from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai.usage import RunUsage
 from pydantic_core import to_jsonable_python
 from sqlalchemy import select
@@ -21,7 +22,7 @@ from core.database import (
 )
 from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
-from models.conversation import Conversation
+from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.await_approval import mark_run_awaiting_approval
 from services.agent_runs.complete import complete_agent_run
 from services.agent_runs.domain import (
@@ -43,6 +44,7 @@ from services.agents.runtime.approval_state import (
     build_suspended_run_metadata,
     clear_suspended_run_metadata,
 )
+from services.agents.runtime.checkpoint_messages import MessageCheckpoint
 from services.agents.runtime.completion_contract import (
     completion_contract_from_run_metadata,
     validate_completion_json,
@@ -58,8 +60,7 @@ from services.agents.runtime.persist_interrupted_messages import (
 )
 from services.agents.runtime.persistence import (
     persist_new_messages,
-    without_initial_user_prompt,
-    without_tool_returns,
+    unpersisted_messages,
 )
 from services.agents.runtime.staged_tool_content import stage_write_file_approval_content
 from services.ai_usage.agent_run_accounting import AgentRunMeteringContext
@@ -82,6 +83,7 @@ async def persist_suspended_run(
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
     usage_event: AIUsageEventData | None = None,
+    checkpoint: MessageCheckpoint | None = None,
 ) -> tuple[AgentRun, int, DeferredToolRequests | None]:
     """Store messages and suspend a running run for human tool approval."""
     run, conversation, _agent = await load_run_context(
@@ -109,6 +111,7 @@ async def persist_suspended_run(
             skip_initial_user_prompt=skip_initial_user_prompt,
             eager_tool_return_ids=eager_tool_return_ids,
             usage_event=usage_event,
+            checkpoint=checkpoint,
         )
         return final_run, count, None
     if run.status != RUN_STATUS_RUNNING:
@@ -119,26 +122,47 @@ async def persist_suspended_run(
         )
 
     new_messages = terminal_result.new_messages()
-    messages_to_persist = (
-        without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
-    )
-    messages_to_persist = without_tool_returns(
-        messages_to_persist,
-        tool_call_ids=eager_tool_return_ids or set(),
-    )
     staged = await stage_write_file_approval_content(
         workspace_id=run.workspace_id,
         run_id=run.id,
-        new_messages=messages_to_persist,
+        new_messages=new_messages,
         all_messages=terminal_result.all_messages(),
         deferred_tool_requests=deferred_tool_requests,
     )
 
+    if checkpoint is not None:
+        staged_messages = ModelMessagesTypeAdapter.dump_python(staged.new_messages, mode="json")
+        staged_by_id = {
+            row_id: staged_message
+            for row_id, original, staged_message in zip(
+                checkpoint.row_ids,
+                ModelMessagesTypeAdapter.dump_python(new_messages, mode="json"),
+                staged_messages,
+                strict=False,
+            )
+            if row_id is not None and original != staged_message
+        }
+        rows = await db.scalars(
+            select(ConversationMessage).where(
+                ConversationMessage.id.in_(staged_by_id),
+                ConversationMessage.conversation_id == conversation.id,
+                ConversationMessage.workspace_id == run.workspace_id,
+            )
+        )
+        for row in rows:
+            if row.parts != staged_by_id[row.id]:
+                row.parts = staged_by_id[row.id]
+    messages_to_persist = unpersisted_messages(
+        staged.new_messages,
+        persisted_message_count=checkpoint.message_count if checkpoint else 0,
+        skip_initial_user_prompt=skip_initial_user_prompt,
+        eager_tool_return_ids=eager_tool_return_ids,
+    )
     persisted_messages = await persist_new_messages(
         db,
         conversation=conversation,
         run_id=run.id,
-        messages=staged.new_messages,
+        messages=messages_to_persist,
         client_message_id=client_message_id,
     )
     _mark_persisted_invocation(run, usage_event)
@@ -190,6 +214,7 @@ async def persist_successful_run(
     skip_initial_user_prompt: bool = False,
     eager_tool_return_ids: set[str] | None = None,
     usage_event: AIUsageEventData | None = None,
+    checkpoint: MessageCheckpoint | None = None,
 ) -> tuple[AgentRun, int]:
     """Store messages and complete a running run."""
     run, conversation, _agent = await load_run_context(
@@ -208,12 +233,11 @@ async def persist_successful_run(
         await db.commit()
         return run, 0
     new_messages = terminal_result.new_messages()
-    messages_to_persist = (
-        without_initial_user_prompt(new_messages) if skip_initial_user_prompt else new_messages
-    )
-    messages_to_persist = without_tool_returns(
-        messages_to_persist,
-        tool_call_ids=eager_tool_return_ids or set(),
+    messages_to_persist = unpersisted_messages(
+        new_messages,
+        persisted_message_count=checkpoint.message_count if checkpoint else 0,
+        skip_initial_user_prompt=skip_initial_user_prompt,
+        eager_tool_return_ids=eager_tool_return_ids,
     )
     if is_terminal(run.status):
         # Another actor settled the run mid-flight; keep its verdict but still
