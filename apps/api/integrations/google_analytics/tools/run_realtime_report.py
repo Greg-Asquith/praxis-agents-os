@@ -24,6 +24,7 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 from services.integrations.read_audit import read_operation_detail
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE
 
 from ..operations.run_realtime_report import run_realtime_report
 from .schemas import (
@@ -192,7 +193,8 @@ DEFINITION = RuntimeToolDefinition(
         "such as date and sessionSource are not valid here. For custom minute ranges, "
         "start_minutes_ago is the older boundary and must be greater than or equal to "
         "end_minutes_ago; the last 30 minutes is 29 through 0. Results are per selected property."
-    ),
+    )
+    + REPORT_RESULT_GUIDANCE,
     provider="google_analytics",
     label="Run Google Analytics Realtime Report",
     code_eligible=True,
@@ -201,6 +203,8 @@ DEFINITION = RuntimeToolDefinition(
     takes_ctx=True,
     timeout=30,
     output_model=GoogleAnalyticsRunRealtimeReportOutput,
+    max_public_result_chars=settings.AGENT_STRUCTURED_RESULT_MAX_CHARS,
+    preview_list_path="results.*.data.rows",
     integration_binding=GOOGLE_ANALYTICS_BINDING,
     availability_check=google_analytics_available,
     presentation=ToolPresentation(

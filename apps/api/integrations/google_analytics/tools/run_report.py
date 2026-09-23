@@ -26,6 +26,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE
 
 from ..operations.run_report import run_report
 from .schemas import (
@@ -196,7 +197,8 @@ DEFINITION = RuntimeToolDefinition(
         "date. Each successful result exposes typed rows, total row_count, truncated and "
         "truncation_note fields, and metadata.sampled with sampling notes."
         " Check metadata.active_metric_restrictions before interpreting zero metric values."
-    ),
+    )
+    + REPORT_RESULT_GUIDANCE,
     provider="google_analytics",
     label="Run Google Analytics Report",
     code_eligible=True,
@@ -205,6 +207,8 @@ DEFINITION = RuntimeToolDefinition(
     takes_ctx=True,
     timeout=60,
     output_model=GoogleAnalyticsRunReportOutput,
+    max_public_result_chars=settings.AGENT_STRUCTURED_RESULT_MAX_CHARS,
+    preview_list_path="results.*.data.rows",
     integration_binding=GOOGLE_ANALYTICS_BINDING,
     availability_check=google_analytics_available,
     presentation=ToolPresentation(

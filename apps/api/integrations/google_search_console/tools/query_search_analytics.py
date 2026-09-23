@@ -25,6 +25,7 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 from services.integrations.read_audit import read_operation_detail
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE
 
 from ..operations.query_search_analytics import query_search_analytics
 from .schemas import (
@@ -142,7 +143,8 @@ DEFINITION = RuntimeToolDefinition(
         "partial data; use data_state='all' for that request. Row keys are named by dimension. "
         "Page- and query-grouped results are top rows rather than complete totals. Page with "
         "start_row or add filters when truncated is true."
-    ),
+    )
+    + REPORT_RESULT_GUIDANCE,
     provider="google_search_console",
     label="Query Search Analytics",
     code_eligible=True,
@@ -151,6 +153,8 @@ DEFINITION = RuntimeToolDefinition(
     takes_ctx=True,
     timeout=60,
     output_model=GoogleSearchConsoleSearchAnalyticsOutput,
+    max_public_result_chars=settings.AGENT_STRUCTURED_RESULT_MAX_CHARS,
+    preview_list_path="results.*.data.rows",
     integration_binding=GOOGLE_SEARCH_CONSOLE_BINDING,
     presentation=ToolPresentation(
         icon="google_search_console",

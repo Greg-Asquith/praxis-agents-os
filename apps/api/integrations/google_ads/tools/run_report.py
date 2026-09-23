@@ -23,6 +23,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE
 
 from ..operations.run_report import run_report
 from .schemas import GoogleAdsRunReportOutput
@@ -85,14 +86,15 @@ DEFINITION = RuntimeToolDefinition(
         "Context. The result has `results`, one fan-out entry per selected account; inspect each "
         "entry's `status` and `error_message`, then read successful rows from `data.rows`. "
         "`data` also contains `currency_code`, `row_count`, `truncated`, and `truncation_note`. "
-        "Each row mirrors the GAQL SELECT paths as nested lowerCamelCase objects: selecting "
+        "Each row mirrors the selected GAQL paths as nested lowerCamelCase objects: selecting "
         "`campaign.id` and `metrics.clicks` yields `row['campaign']['id']` and "
         "`row['metrics']['clicks']`. When unsure of names, call google_ads_list_report_fields "
         "once per resource, and google_ads_get_report_field once with every name that needs "
         "enum values or compatibility checked. These lookups are optional and must not be "
         "repeated per field: run the query and correct it from any error message instead. "
         "Google Ads int64 values may be serialized as strings."
-    ),
+    )
+    + REPORT_RESULT_GUIDANCE,
     provider="google_ads",
     label="Run Google Ads Report",
     code_eligible=True,
@@ -101,6 +103,8 @@ DEFINITION = RuntimeToolDefinition(
     takes_ctx=True,
     timeout=60,
     output_model=GoogleAdsRunReportOutput,
+    max_public_result_chars=settings.AGENT_STRUCTURED_RESULT_MAX_CHARS,
+    preview_list_path="results.*.data.rows",
     integration_binding=GOOGLE_ADS_BINDING,
     availability_check=google_ads_available,
     presentation=ToolPresentation(

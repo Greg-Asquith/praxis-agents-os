@@ -17,6 +17,12 @@ amount updates, assignment, and unused-budget removal. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
 
+Reports declare the configured structured-result budget for transcript output
+and preview only account row lists on overflow. Shared retrieval guidance
+directs full-report calculations to the retained File through `run_code`.
+Provider row limits remain unchanged. See the
+[retained-result contract](../tool-dispatch.md#retained-results-and-artifacts).
+
 The report-field discovery tools run one audited operation against the first
 selected account and are designed so one call answers one question.
 `google_ads_list_report_fields` fetches every field of the resource once and

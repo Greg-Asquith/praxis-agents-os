@@ -171,6 +171,17 @@ budget; it never enters model context. The preview also respects that
 budget when declared. Provider-specific preview tables and row-count
 labels are pending.
 
+Google Ads reports, Analytics standard and realtime reports, Analytics field
+discovery, and Search Console Search Analytics declare their public budget
+from `AGENT_STRUCTURED_RESULT_MAX_CHARS` when the catalogue loads. Row-report
+tools select `results.*.data.rows`, preserving headers, aggregates, sampling
+metadata, account identities, and errors. Analytics field discovery uses
+automatic list discovery to preview both dimensions and metrics.
+Their shared descriptions direct complete-data calculations to an available,
+permitted `run_code` helper and explain its provider input limits.
+Provider row limits and pagination remain separate from retained previews:
+the snapshot contains every returned row, not unrequested provider pages.
+
 The following contracts apply in this area:
 
 - Complete transcript-only tool results may arrive through the persisted

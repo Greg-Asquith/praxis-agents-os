@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
+from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -22,6 +23,7 @@ from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
 )
+from services.integrations.report_results import REPORT_RESULT_GUIDANCE
 
 from ..operations.list_report_fields import list_report_fields
 from .schemas import GoogleAnalyticsListReportFieldsOutput
@@ -90,7 +92,8 @@ DEFINITION = RuntimeToolDefinition(
         "searched or limited to custom fields. Use the returned api_name values in "
         "google_analytics_run_report, and check metric blocked_reasons before interpreting "
         "zero values."
-    ),
+    )
+    + REPORT_RESULT_GUIDANCE,
     provider="google_analytics",
     label="List Google Analytics Report Fields",
     code_eligible=True,
@@ -99,6 +102,9 @@ DEFINITION = RuntimeToolDefinition(
     takes_ctx=True,
     timeout=60,
     output_model=GoogleAnalyticsListReportFieldsOutput,
+    max_public_result_chars=settings.AGENT_STRUCTURED_RESULT_MAX_CHARS,
+    # Automatic discovery previews both dimensions and metrics.
+    preview_list_path=None,
     integration_binding=GOOGLE_ANALYTICS_BINDING,
     availability_check=google_analytics_available,
     presentation=ToolPresentation(

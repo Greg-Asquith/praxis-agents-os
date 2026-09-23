@@ -22,6 +22,13 @@ metadata, and discovery must not add per-property enrichment calls. Its OAuth
 settings stay in the provider package
 and use a Google Cloud client isolated from every other Google service.
 
+Standard and realtime reports preview row lists while retaining headers,
+aggregates, and report metadata. Field discovery previews both dimensions
+and metrics. These tools declare their public budget from the configured
+structured-result limit and describe complete-data retrieval through Files
+and permitted native code helpers. See the
+[retained-result contract](../tool-dispatch.md#retained-results-and-artifacts).
+
 ## Frontend contracts
 
 Google Analytics contributes its logo, catalogue description,

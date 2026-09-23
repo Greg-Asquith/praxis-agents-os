@@ -35,6 +35,12 @@ The discovery callback accepts the credential value, principal label, and
 connection pacing key in the shared runner's positional order. The Search
 Console HTTP client uses the credential value to authenticate site discovery.
 
+Search Analytics declares its public budget from the configured
+structured-result limit and previews only site row lists on overflow.
+Its description distinguishes provider pagination from retained-result
+inspection and directs calculations over saved rows to `run_code`.
+See the [retained-result contract](../tool-dispatch.md#retained-results-and-artifacts).
+
 ### Indexing API
 
 `GOOGLE_SEARCH_CONSOLE_INDEXING_API_ENABLED` adds the `indexing` OAuth scope
