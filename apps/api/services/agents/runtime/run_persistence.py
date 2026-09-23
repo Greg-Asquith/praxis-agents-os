@@ -346,6 +346,8 @@ async def persist_failed_run(
             history_wait=history_wait,
         )
     await record_agent_run_fallback(db, run=run, metering=metering)
+    if metering is not None:
+        await record_run_usage(db, run, usage_snapshot(metering.usage))
     if is_terminal(run.status):
         await db.commit()
         return run
@@ -411,6 +413,8 @@ async def persist_cancelled_run(
                     history_wait=history_wait,
                 )
             await record_agent_run_fallback(db, run=run, metering=metering)
+            if metering is not None:
+                await record_run_usage(db, run, usage_snapshot(metering.usage))
             if is_terminal(run.status):
                 await db.commit()
                 return run

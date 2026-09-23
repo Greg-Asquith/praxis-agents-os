@@ -127,6 +127,11 @@ async def test_terminal_winner_controls_finalisation(
     async with committed_db_session_factory() as verify:
         run = await verify.get(AgentRun, context.run_id)
         assert (run.status, run.error_code, run.error_message, run.completion_json) == expected
+        [usage_event] = list(
+            await verify.scalars(select(AIUsageEvent).where(AIUsageEvent.run_id == context.run_id))
+        )
+        assert run.requests == run.usage_json["requests"] == usage_event.requests == 1
+        assert run.input_tokens == run.usage_json["input_tokens"] == usage_event.input_tokens
     assert not any(event.event == "tool.approval_required" for event in sink.events)
     assert sink.events[-1].data["status"] == expected[0]
     errors = [event for event in sink.events if event.event == "error"]

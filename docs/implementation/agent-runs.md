@@ -332,8 +332,15 @@ suspension, failure, cancellation, and retry-job writes. Eager prompts and denie
 returns retain their existing de-duplication. Approval decisions accompany
 checkpointed returns. Suspension stages `write_file` content once and replaces
 the checkpointed call arguments in place with the staged reference. Checkpoints
-update run-row usage through `usage_snapshot`; final failed-run usage settlement
-remains pending.
+update run-row usage through `usage_snapshot`. Failure and cancellation use the
+same snapshot conversion on the metering accumulator to save final token,
+request, and tool-call totals, including work after the last checkpoint.
+Run-row totals remain cumulative across approval continuations; ledger events
+retain each invocation's own usage. Settlement records usage even when another
+actor has already settled the run, without replacing that terminal verdict.
+A stale execution owner can record its ledger event but cannot overwrite the
+replacement owner's run-row totals. Without a metering context, settlement
+preserves the saved usage.
 
 Persistence precedes final stream events. A closed or detached stream does
 not prevent settlement. Exhausted accounting persistence produces bounded
