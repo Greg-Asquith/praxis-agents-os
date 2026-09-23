@@ -8,7 +8,7 @@ import type { RunOutcome } from "@/features/conversations/types"
 const OUTCOME_LABELS = {
   success: "Succeeded",
   gate_failed: "Checks failed",
-  budget_exhausted: "Token limit reached",
+  budget_exhausted: "Run limit reached",
   blocked: "Blocked",
   error: "Failed",
   cancelled: "Cancelled",

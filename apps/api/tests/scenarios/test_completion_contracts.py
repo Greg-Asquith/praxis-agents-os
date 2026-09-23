@@ -3,7 +3,7 @@
 import pytest
 from pydantic_ai import UsageLimitExceeded
 from pydantic_ai.messages import ModelRequest, UserPromptPart
-from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RequestUsage
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.agent_run import AgentRun
@@ -192,7 +192,12 @@ async def test_completion_report_tool_is_absent_without_required_contract(
 
 async def test_scheduled_token_budget_records_the_tripped_budget(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "pydantic_ai.models.function._estimate_usage",
+        lambda _messages: RequestUsage(input_tokens=1000, cache_read_tokens=900),
+    )
     context = await build_scenario_agent(
         committed_db_session_factory,
         trigger="scheduled",
@@ -205,11 +210,12 @@ async def test_scheduled_token_budget_records_the_tripped_budget(
         },
     )
 
+    model = scripted_model(turns=["Finished"])
     with pytest.raises(UsageLimitExceeded):
         await run_scenario(
             committed_db_session_factory,
             context,
-            model=TestModel(call_tools=[]),
+            model=model,
         )
 
     async with committed_db_session_factory() as db:
@@ -222,4 +228,10 @@ async def test_scheduled_token_budget_records_the_tripped_budget(
     assert run.completion_json == {
         "error_code": "usage_limit_exceeded",
         "tripped_budget": {"kind": "total_tokens", "limit": 1, "scope": "local"},
+        "observed_total_tokens": 191,
+        "requests": 1,
     }
+    assert run.error_message == (
+        "This run stopped after counting 191 tokens across 1 request; the limit for this run is 1. "
+        "Start a new conversation or shorten the context to continue."
+    )

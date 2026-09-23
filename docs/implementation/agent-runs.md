@@ -65,8 +65,9 @@ The following contracts apply in this area:
   must restore the run's persisted
   cumulative Pydantic AI usage so those limits apply across the whole generic
   run, not once per resume segment. A tripped limit fails the run with outcome
-  `budget_exhausted` and records only its allowlisted kind and limit in bounded
-  completion evidence. Budget declarations remain within the largest integer
+  `budget_exhausted` and records its allowlisted kind, limit, scope, and available
+  observed token and request counts in bounded completion evidence.
+  Budget declarations remain within the largest integer
   that round-trips losslessly through JSON and the TypeScript schedule editor.
   Parked approvals expire through the generic jobs harness after
   `AGENT_RUN_APPROVAL_EXPIRY_DAYS` (default 7; 0 disables), which fails the run,
@@ -166,8 +167,10 @@ disclosure. Criteria are one plain-language check per line; do not expose the
 underlying completion JSON or outcome codes in the form. Completion reports
 use the shared compact `ToolResultCard` pattern; keep evidence collapsed by
 default like other rich tool results. Optional request and total-token
-budgets share the same Advanced disclosure and use the platform defaults when
-blank. When the report requirement or a budget is removed, preserve unknown
+budgets share the same Advanced disclosure. A blank request budget uses the
+agent default; a blank token budget uses the default derived from the model,
+unless an administrator sets an absolute override.
+When the report requirement or a budget is removed, preserve unknown
 completion-contract extension data through schedule edits. Run history names
 the precise tripped budget when bounded evidence contains it. Keep persisted
 budget values within JavaScript's safe-integer range so API-created schedules
@@ -219,6 +222,21 @@ Token ceilings use observed provider usage. An already-streaming response can
 overshoot its ceiling before stopping; these limits are not a preflight token
 or monetary guarantee. Observed exhaustion stops further model/tool continuation.
 Invocation metering still records partial responses under each agent's model.
+
+For a total-token stop, `completion_json.observed_total_tokens` records the
+cache-weighted count checked against the ceiling, and `requests` records the
+cumulative request count. The typed exception copies these values at the
+failure boundary, including inherited specialist failures. Public counts are
+bounded to zero through `2**53 - 1`; they do not replace raw ledger usage.
+Exception text is never parsed for budget evidence.
+
+The live error message and reloaded transcript show the counted tokens, request
+count, and ceiling, followed by: "Start a new conversation or shorten the context
+to continue." Run history shows the same complete message on desktop and mobile.
+The frontend rebuilds it from validated completion evidence. Historical records
+without observed counts retain their saved message. A reloaded limit alert stays
+visible even when no transcript messages were saved, and an active run takes
+precedence over an older failure.
 
 Legacy runs without a saved snapshot acquire one from the limits resolved on
 their next execution, including any retained schedule contract. Historical

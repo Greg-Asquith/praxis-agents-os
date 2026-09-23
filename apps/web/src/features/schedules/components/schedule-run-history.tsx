@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useScheduleRunsQuery } from "@/features/schedules/api/list-schedule-runs"
+import { tokenBudgetMessage } from "@/features/conversations/run-error-copy"
 import { ScheduleRunStatusBadge } from "@/features/schedules/components/schedule-status-badges"
 import { hasActionableScheduleApproval } from "@/features/schedules/format"
 import type { AgentScheduleRun } from "@/features/schedules/types"
@@ -204,6 +205,15 @@ function ScheduleRunMobileRow({ run }: { run: AgentScheduleRun }) {
 }
 
 function RunError({ run }: { run: AgentScheduleRun }) {
+  const budgetMessage =
+    run.outcome === "budget_exhausted" ? tokenBudgetMessage(run.completion_json) : null
+  if (budgetMessage) {
+    return (
+      <span className="text-muted-foreground block max-w-md whitespace-normal">
+        {budgetMessage}
+      </span>
+    )
+  }
   if (!run.last_error_code && !run.last_error_message) {
     return <span className="text-muted-foreground">None</span>
   }

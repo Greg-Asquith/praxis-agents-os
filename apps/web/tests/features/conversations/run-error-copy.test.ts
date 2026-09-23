@@ -4,7 +4,9 @@ import {
   approvalExpiryOutcome,
   approvalConflictMessage,
   conversationApprovalExpiryOutcome,
+  conversationRunInterruptionOutcome,
   runInterruptionOutcome,
+  tokenBudgetMessage,
 } from "@/features/conversations/run-error-copy"
 import { ApiError } from "@/lib/api/errors"
 import type { AgentRun } from "@/features/conversations/types"
@@ -88,6 +90,67 @@ describe("approvalExpiryOutcome", () => {
     }
     expect(runInterruptionOutcome(truncated)?.completedActions).toHaveLength(25)
     expect(runInterruptionOutcome(truncated)?.actionsTruncated).toBe(true)
+  })
+})
+
+describe("token budget failures", () => {
+  const completion = {
+    tripped_budget: { kind: "total_tokens", limit: 1000000, scope: "inherited" },
+    observed_total_tokens: 1100000,
+    requests: 12,
+  }
+  const message =
+    "This run stopped after counting 1,100,000 tokens across 12 requests; the limit for this run is 1,000,000. " +
+    "Start a new conversation or shorten the context to continue."
+
+  it("rebuilds the persisted failure after reload and preserves active-run precedence", () => {
+    const run = {
+      ...failedRun("usage_limit_exceeded"),
+      outcome: "budget_exhausted" as const,
+      completion_json: completion,
+      error_message: "Old copy",
+    }
+    expect(conversationRunInterruptionOutcome(null, run)).toMatchObject({
+      kind: "budget_exhausted",
+      title: "Run limit reached",
+      message,
+    })
+    expect(conversationRunInterruptionOutcome({ ...run, status: "running" }, run)).toBeNull()
+  })
+
+  it("formats singular requests and zero limits", () => {
+    expect(tokenBudgetMessage({ ...completion, requests: 1 })).toContain("across 1 request;")
+    expect(
+      tokenBudgetMessage({ ...completion, tripped_budget: { kind: "total_tokens", limit: 0 } })
+    ).toContain("limit for this run is 0.")
+  })
+
+  it.each([null, "12", -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Infinity, true])(
+    "rejects invalid retained counts: %s",
+    (value) => {
+      expect(tokenBudgetMessage({ ...completion, observed_total_tokens: value })).toBeNull()
+      expect(tokenBudgetMessage({ ...completion, requests: value })).toBeNull()
+      expect(
+        tokenBudgetMessage({
+          ...completion,
+          tripped_budget: { kind: "total_tokens", limit: value },
+        })
+      ).toBeNull()
+    }
+  )
+
+  it("keeps legacy failures readable without inventing observed usage", () => {
+    const run = {
+      ...failedRun("usage_limit_exceeded"),
+      outcome: "budget_exhausted" as const,
+      completion_json: { tripped_budget: { kind: "total_tokens", limit: 1000 } },
+      error_message: "Saved limit message",
+    }
+    expect(tokenBudgetMessage(run.completion_json)).toBeNull()
+    expect(runInterruptionOutcome(run)?.message).toBe("Saved limit message")
+    expect(
+      tokenBudgetMessage({ ...completion, tripped_budget: { kind: "requests", limit: 20 } })
+    ).toBeNull()
   })
 })
 

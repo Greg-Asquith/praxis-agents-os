@@ -96,7 +96,7 @@ function InteractiveMessageList({
   const hasMessages =
     timeline.rows.length > 0 || hasInlineApprovals || timeline.liveActivity !== null
 
-  if (!hasMessages) {
+  if (!hasMessages && !runInterruption) {
     return (
       <div className="flex min-h-80 flex-col items-center justify-center p-8 text-center">
         <div className="bg-muted text-muted-foreground mb-4 flex size-10 items-center justify-center rounded-full">
@@ -203,7 +203,7 @@ function InteractiveMessageList({
             </div>
           )}
 
-          {streamError && (
+          {streamError && streamError !== runInterruption?.message && (
             <div className="w-full px-1 py-2">
               <Alert variant="destructive">
                 <AlertTitle>Stream failed</AlertTitle>

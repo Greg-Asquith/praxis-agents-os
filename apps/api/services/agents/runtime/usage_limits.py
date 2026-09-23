@@ -79,11 +79,17 @@ def intersect_usage_limits(*limits: EffectiveUsageLimits | None) -> EffectiveUsa
 class BudgetLimitExceeded(UsageLimitExceeded):
     """Identifies a ceiling at its framework check boundary."""
 
-    def __init__(self, *, kind: str, limit: int | Decimal, inherited: bool) -> None:
+    def __init__(
+        self, *, kind: str, limit: int | Decimal, inherited: bool, observed: RunUsage | int
+    ) -> None:
         super().__init__("The agent run reached its usage budget.")
         self.kind = kind
         self.limit = limit
         self.inherited = inherited
+        self.observed_total_tokens = (
+            observed.total_tokens if isinstance(observed, RunUsage) else None
+        )
+        self.requests = observed.requests if isinstance(observed, RunUsage) else None
 
 
 class RuntimeUsageLimits(UsageLimits):
@@ -121,7 +127,7 @@ class RuntimeUsageLimits(UsageLimits):
                     check(isolated, observed, **kwargs)
                 except UsageLimitExceeded as exc:
                     raise BudgetLimitExceeded(
-                        kind=name, limit=ceiling, inherited=inherited
+                        kind=name, limit=ceiling, inherited=inherited, observed=observed
                     ) from exc
 
     def check_before_request(self, usage: RunUsage) -> None:

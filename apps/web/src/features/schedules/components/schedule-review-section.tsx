@@ -171,7 +171,7 @@ export function ScheduleReviewSection({
                   value={state.maxRequests}
                 />
                 <BudgetField
-                  description="Maximum input and output tokens combined. Leave blank to use the platform default."
+                  description="Maximum tokens counted across all requests, with cached input weighted. Leave blank to use the default derived from the model, unless your administrator sets an override."
                   error={budgetErrors.totalTokens}
                   id="schedule-max-total-tokens"
                   label="Total token budget"

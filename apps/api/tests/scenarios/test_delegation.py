@@ -1109,6 +1109,13 @@ async def test_cached_budget_survives_delegated_approval_and_settings_changes(
         child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
         for run in (root, child_run):
             assert run.outcome == "budget_exhausted"
+            assert run.completion_json["requests"] == 4
+            assert run.completion_json["observed_total_tokens"] == error.value.observed_total_tokens
+            assert run.error_message == (
+                f"This run stopped after counting {error.value.observed_total_tokens:,} tokens "
+                "across 4 requests; the limit for this run is 700. "
+                "Start a new conversation or shorten the context to continue."
+            )
             saved = run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]
             assert saved["total_tokens_limit"] == 700
             assert saved["cached_token_weight"] == 0.1

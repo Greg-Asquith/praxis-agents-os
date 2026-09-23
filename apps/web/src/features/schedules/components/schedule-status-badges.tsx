@@ -10,7 +10,7 @@ import { titleCaseToken } from "@/lib/format"
 const RUN_OUTCOME_LABELS = {
   success: "Succeeded",
   gate_failed: "Checks failed",
-  budget_exhausted: "Token limit reached",
+  budget_exhausted: "Run limit reached",
   blocked: "Blocked",
   error: "Failed",
   cancelled: "Cancelled",

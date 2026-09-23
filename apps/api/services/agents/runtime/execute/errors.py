@@ -2,7 +2,6 @@
 
 """Map internal execute-run exceptions to the public failure contract."""
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,12 +26,6 @@ class PublicRunError:
     completion_json: dict[str, Any] | None = None
 
 
-_USAGE_LIMIT_PATTERN = re.compile(
-    r"(?:exceed|exceeded) the "
-    r"(?P<kind>request_limit|input_tokens_limit|output_tokens_limit|total_tokens_limit|tool_calls_limit) "
-    r"of (?P<limit>\d+)",
-    re.IGNORECASE,
-)
 _BUDGET_KINDS = {
     "request_limit": "requests",
     "input_tokens_limit": "input_tokens",
@@ -85,13 +78,19 @@ def public_run_error(exc: Exception) -> PublicRunError:
         )
     if isinstance(exc, UsageLimitExceeded):
         tripped_budget = _tripped_budget(exc)
+        completion = {
+            "error_code": "usage_limit_exceeded",
+            **({"tripped_budget": tripped_budget} if tripped_budget is not None else {}),
+        }
+        if isinstance(exc, BudgetLimitExceeded):
+            for name in ("observed_total_tokens", "requests"):
+                value = getattr(exc, name)
+                if type(value) is int:
+                    completion[name] = min(2**53 - 1, max(0, value))
         return PublicRunError(
             code="usage_limit_exceeded",
-            message=_usage_limit_message(tripped_budget),
-            completion_json={
-                "error_code": "usage_limit_exceeded",
-                **({"tripped_budget": tripped_budget} if tripped_budget is not None else {}),
-            },
+            message=_usage_limit_message(completion),
+            completion_json=completion,
         )
     if isinstance(exc, CodeModeResumeRequiresRecoveryError):
         return PublicRunError(
@@ -119,17 +118,24 @@ def _tripped_budget(exc: UsageLimitExceeded) -> dict[str, str | int] | None:
             "limit": exc.limit if isinstance(exc.limit, int) else str(exc.limit),
             "scope": "inherited" if exc.inherited else "local",
         }
-    match = _USAGE_LIMIT_PATTERN.search(str(exc))
-    if match is None:
-        return None
-    return {
-        "kind": _BUDGET_KINDS[match.group("kind").lower()],
-        "limit": int(match.group("limit")),
-    }
+    return None
 
 
-def _usage_limit_message(tripped_budget: dict[str, str | int] | None) -> str:
+def _usage_limit_message(completion: dict[str, Any]) -> str:
+    tripped_budget = completion.get("tripped_budget")
     kind = tripped_budget.get("kind") if tripped_budget is not None else None
+    if (
+        kind == "total_tokens"
+        and "observed_total_tokens" in completion
+        and "requests" in completion
+    ):
+        requests = completion["requests"]
+        noun = "request" if requests == 1 else "requests"
+        return (
+            f"This run stopped after counting {completion['observed_total_tokens']:,} tokens "
+            f"across {requests:,} {noun}; the limit for this run is {tripped_budget['limit']:,}. "
+            "Start a new conversation or shorten the context to continue."
+        )
     messages = {
         "requests": "The agent run stopped after reaching its request budget.",
         "input_tokens": "The agent run stopped after reaching its input token budget.",

@@ -1219,22 +1219,25 @@ async def test_execute_run_total_token_limit_fails_cleanly(
     assert stored_run is not None
     assert stored_run.status == RUN_STATUS_FAILED
     assert stored_run.error_code == "usage_limit_exceeded"
-    assert (
-        stored_run.error_message == "The agent run stopped after reaching its total token budget."
-    )
     assert stored_run.outcome == "budget_exhausted"
+    observed = stored_run.completion_json["observed_total_tokens"]
+    assert observed > 1
+    assert stored_run.error_message == (
+        f"This run stopped after counting {observed:,} tokens across 1 request; "
+        "the limit for this run is 1. "
+        "Start a new conversation or shorten the context to continue."
+    )
     assert stored_run.completion_json == {
         "error_code": "usage_limit_exceeded",
         "tripped_budget": {"kind": "total_tokens", "limit": 1, "scope": "local"},
+        "observed_total_tokens": observed,
+        "requests": 1,
     }
 
     event_names = [event.event for event in sink.events]
     assert event_names[-2:] == [EVENT_ERROR, EVENT_DONE]
     assert sink.events[-2].data["code"] == "usage_limit_exceeded"
-    assert (
-        sink.events[-2].data["message"]
-        == "The agent run stopped after reaching its total token budget."
-    )
+    assert sink.events[-2].data["message"] == stored_run.error_message
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
 
 

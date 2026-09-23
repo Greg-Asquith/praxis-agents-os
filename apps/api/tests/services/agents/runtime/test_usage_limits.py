@@ -9,6 +9,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.usage import RunUsage, UsageLimits
 
+from services.agents.runtime.execute.errors import public_run_error
 from services.agents.runtime.usage_limits import (
     BudgetLimitExceeded,
     EffectiveUsageLimits,
@@ -40,6 +41,7 @@ def test_cached_weight_applies_only_to_total_without_changing_usage(weight, meth
     with pytest.raises(BudgetLimitExceeded) as error:
         getattr(effective.to_sdk(), method)(replace(usage, output_tokens=11))
     assert error.value.kind == "total_tokens_limit"
+    assert error.value.observed_total_tokens == total + 1
     assert usage == original
     for field in ("input_tokens_limit", "output_tokens_limit", "cost_limit"):
         limit = Decimal("0.5") if field == "cost_limit" else 1
@@ -143,8 +145,39 @@ async def test_restored_weighted_usage_keeps_absolute_inherited_boundary() -> No
     assert len(requests) == 1
     assert usage.input_tokens == 1000 and usage.cache_read_tokens == 900
     assert usage.output_tokens == 11 and usage.requests == 2
+    public = public_run_error(error.value)
+    assert public.completion_json == {
+        "error_code": "usage_limit_exceeded",
+        "tripped_budget": {"kind": "total_tokens", "limit": 200, "scope": "inherited"},
+        "observed_total_tokens": 201,
+        "requests": 2,
+    }
+    assert public.message == (
+        "This run stopped after counting 201 tokens across 2 requests; "
+        "the limit for this run is 200. "
+        "Start a new conversation or shorten the context to continue."
+    )
     with pytest.raises(BudgetLimitExceeded):
         restored.to_sdk().check_before_request(usage)
+
+
+def test_budget_evidence_is_bounded_and_frozen_at_failure() -> None:
+    usage = RunUsage(input_tokens=2**60, requests=2**60)
+    with pytest.raises(BudgetLimitExceeded) as error:
+        EffectiveUsageLimits(total_tokens_limit=1).to_sdk().check_tokens(usage)
+    usage.input_tokens = 0
+    usage.requests = 0
+    evidence = public_run_error(error.value).completion_json
+    assert evidence["observed_total_tokens"] == 2**53 - 1
+    assert evidence["requests"] == 2**53 - 1
+
+
+def test_untyped_usage_error_does_not_parse_exception_text() -> None:
+    from pydantic_ai import UsageLimitExceeded
+
+    error = public_run_error(UsageLimitExceeded("Exceeded the total_tokens_limit of 100 (secret)"))
+    assert error.completion_json == {"error_code": "usage_limit_exceeded"}
+    assert error.message == "The agent run exceeded its configured usage limit."
 
 
 @pytest.mark.parametrize(

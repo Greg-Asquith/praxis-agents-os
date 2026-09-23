@@ -9,7 +9,7 @@ const CODE_MODE_RECOVERY = "code_mode_resume_requires_recovery"
 const MAX_COMPLETED_ACTIONS = 25
 
 export type RunInterruptionOutcome = {
-  kind: "approval_expired" | "code_mode_recovery" | "run_recovery"
+  kind: "approval_expired" | "code_mode_recovery" | "run_recovery" | "budget_exhausted"
   title: string
   message: string
   completedActions: { id: string; toolName: string }[]
@@ -29,6 +29,17 @@ export function runInterruptionOutcome(run: AgentRun | null): RunInterruptionOut
     }
   }
   if (run?.status !== "failed") return null
+  if (run.outcome === "budget_exhausted") {
+    return {
+      kind: "budget_exhausted",
+      title: "Run limit reached",
+      message:
+        tokenBudgetMessage(run.completion_json) ??
+        run.error_message ??
+        "This run reached its usage limit. Start a new conversation or shorten the context to continue.",
+      ...recoveryEvidence(run.completion_json?.["recovery"]),
+    }
+  }
   if (run.error_code === APPROVAL_EXPIRED) {
     return {
       kind: "approval_expired",
@@ -81,6 +92,25 @@ export function conversationRunInterruptionOutcome(
 ): RunInterruptionOutcome | null {
   if (activeRun !== null) return null
   return runInterruptionOutcome(latestRun)
+}
+
+export function tokenBudgetMessage(completion: Record<string, unknown> | null): string | null {
+  const budget = completion?.["tripped_budget"]
+  if (!isRecord(budget) || budget["kind"] !== "total_tokens") return null
+  const limit = budget["limit"]
+  const observed = completion?.["observed_total_tokens"]
+  const requests = completion?.["requests"]
+  if (!isUsageCount(limit) || !isUsageCount(observed) || !isUsageCount(requests)) return null
+  return (
+    `This run stopped after counting ${observed.toLocaleString("en-GB")} tokens across ` +
+    `${requests.toLocaleString("en-GB")} ${requests === 1 ? "request" : "requests"}; ` +
+    `the limit for this run is ${limit.toLocaleString("en-GB")}. ` +
+    "Start a new conversation or shorten the context to continue."
+  )
+}
+
+function isUsageCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
 }
 
 function completedActions(completion: Record<string, unknown> | null): {
