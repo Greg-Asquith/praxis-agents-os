@@ -237,7 +237,7 @@ async def test_download_errors_hide_url_and_refuse_redirects(status, caplog, fil
     assert "PRIVATE_DOWNLOAD_SECRET" not in evidence
 
 
-@pytest.mark.parametrize("text", ["界" * 30_000, "a" * 70_000])
+@pytest.mark.parametrize("text", ["界" * 30_000, "a" * 70_000], ids=["multibyte", "ascii"])
 async def test_unicode_output_is_bounded_with_full_citation(text):
     url = "https://example.sharepoint.com/" + "a" * 8000
 
