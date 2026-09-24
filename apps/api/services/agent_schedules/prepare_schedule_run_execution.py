@@ -31,8 +31,9 @@ from services.agents.runtime.completion_contract import (
 )
 from services.agents.runtime.execution_control import ExecutionControl, execution_control_for_run
 from services.conversations.naming import fallback_conversation_title
+from services.conversations.utils import default_conversation_visibility
 from services.integrations.context.schemas import ActiveContextTargets
-from services.workspaces.utils import get_active_membership
+from services.workspaces.utils import get_active_membership, get_workspace_or_raise
 from utils.dates import normalize_utc_datetime
 
 
@@ -239,6 +240,7 @@ async def _ensure_conversation(
             )
         return conversation
 
+    workspace = await get_workspace_or_raise(db, workspace_id=schedule.workspace_id)
     conversation = Conversation(
         user_id=schedule.user_id,
         workspace_id=schedule.workspace_id,
@@ -249,6 +251,7 @@ async def _ensure_conversation(
         schedule_run_id=schedule_run.id,
         active_agent_id=schedule.agent_id,
         agent_slug=agent.slug,
+        **default_conversation_visibility(workspace, shared_by_user_id=schedule.user_id),
         metadata_json={
             "schedule": {
                 "schedule_id": str(schedule.id),

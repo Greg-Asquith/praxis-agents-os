@@ -182,14 +182,18 @@ async def test_create_turn_stream_rejects_delegated_transcripts(
     assert response.json()["detail"] == "Delegated agent transcripts are read-only"
 
 
+@pytest.mark.parametrize("shared_by_default", [False, True])
 async def test_create_conversation_stream_creates_conversation_and_first_run(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
+    shared_by_default: bool,
 ) -> None:
     user, workspace, agent, _existing_conversation, headers = await _authenticated_context(
         db_session
     )
+    if shared_by_default:
+        workspace.conversations_shared_by_default = True
     credential = build_external_credential()
     connection = build_integration_connection(
         credential=credential,
@@ -311,9 +315,16 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
         .order_by(Conversation.created_at.desc())
     )
     assert created_conversation is not None
-    assert created_conversation.visibility == "private"
-    assert created_conversation.shared_at is None
-    assert created_conversation.shared_by_user_id is None
+    assert created_conversation.user_id == user.id
+    assert created_conversation.source == "direct"
+    if shared_by_default:
+        assert created_conversation.visibility == "workspace"
+        assert created_conversation.shared_at is not None
+        assert created_conversation.shared_by_user_id == user.id
+    else:
+        assert created_conversation.visibility == "private"
+        assert created_conversation.shared_at is None
+        assert created_conversation.shared_by_user_id is None
     assert created_conversation.agent_slug == agent.slug
     assert created_conversation.metadata_json == {
         "title": {"source": "model", "model": "function:title"}

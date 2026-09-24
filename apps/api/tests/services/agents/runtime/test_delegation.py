@@ -249,12 +249,15 @@ async def test_delegate_to_agent_enforces_envelope_depth_cap() -> None:
     assert result.error == "Delegation depth limit reached."
 
 
+@pytest.mark.parametrize("shared_by_default", [False, True])
 async def test_execute_run_can_delegate_to_child_agent_and_hide_child_from_list(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
+    shared_by_default: bool,
 ) -> None:
     runtime_context = await _create_committed_delegation_context(
         committed_db_session_factory,
+        shared_by_default=shared_by_default,
     )
     sink = CollectingSink(
         run_id=runtime_context.run_id,
@@ -950,10 +953,13 @@ async def _create_committed_delegation_context(
     child_tool_policies: dict[str, str] | None = None,
     trigger: str = "interactive",
     metadata: dict[str, object] | None = None,
+    shared_by_default: bool = False,
 ) -> DelegationRuntimeContext:
     async with session_factory() as db:
         user = build_user(email=f"runtime-delegation-{uuid4().hex}@example.com")
         workspace = build_workspace(slug=f"runtime-delegation-{uuid4().hex[:8]}")
+        if shared_by_default:
+            workspace.conversations_shared_by_default = True
         membership = build_workspace_membership(
             workspace_id=workspace.id,
             user_id=user.id,

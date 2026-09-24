@@ -46,6 +46,7 @@ from services.conversations.prune_failed import prune_failed_empty_conversation_
 from services.conversations.schemas import ConversationCreateRequest
 from services.conversations.utils import (
     build_interactive_run_metadata,
+    default_conversation_visibility,
     get_assignable_agent_for_workspace,
 )
 from services.files import create_conversation_file_references, resolve_chat_attachments
@@ -99,6 +100,7 @@ async def create_conversation_stream(
         active_agent_id=agent_id,
         agent_slug=agent_slug,
         metadata_json=_title_metadata(title),
+        **default_conversation_visibility(workspace, shared_by_user_id=actor.id),
     )
     db.add(conversation)
     await db.flush()

@@ -101,10 +101,19 @@ async def _schedule_context(
     return user, workspace, agent, schedule, schedule_run
 
 
+@pytest.mark.parametrize("shared_by_default", [False, True])
 async def test_prepare_claimed_run_creates_conversation_and_agent_run(
     db_session: AsyncSession,
+    shared_by_default: bool,
 ) -> None:
-    _user, _workspace, agent, schedule, schedule_run = await _schedule_context(db_session)
+    _user, workspace, agent, schedule, schedule_run = await _schedule_context(db_session)
+    agent_creator = build_user(email=f"schedule-agent-creator-{uuid4().hex}@example.com")
+    db_session.add(agent_creator)
+    await db_session.flush()
+    agent.created_by = agent_creator.id
+    if shared_by_default:
+        workspace.conversations_shared_by_default = True
+    await db_session.flush()
 
     prepared = await prepare_schedule_run_execution(
         db_session,
@@ -120,10 +129,17 @@ async def test_prepare_claimed_run_creates_conversation_and_agent_run(
 
     conversation = await db_session.get(Conversation, prepared.conversation_id)
     assert conversation is not None
+    await db_session.refresh(conversation)
     assert conversation.source == "scheduled"
-    assert conversation.visibility == "private"
-    assert conversation.shared_at is None
-    assert conversation.shared_by_user_id is None
+    assert conversation.user_id == schedule.user_id
+    if shared_by_default:
+        assert conversation.visibility == "workspace"
+        assert conversation.shared_at is not None
+        assert conversation.shared_by_user_id == schedule.user_id
+    else:
+        assert conversation.visibility == "private"
+        assert conversation.shared_at is None
+        assert conversation.shared_by_user_id is None
     assert conversation.schedule_id == schedule.id
     assert conversation.schedule_run_id == schedule_run.id
     assert conversation.active_agent_id == agent.id

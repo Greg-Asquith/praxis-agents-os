@@ -448,9 +448,14 @@ new owners. Stop all old executions before any replacement process starts.
 
 ## Workspace chat sharing
 
-Chats default to private. Owners can share team-workspace root chats through
+Chats default to private unless the team workspace enables
+`conversations_shared_by_default`. Direct and scheduled creation apply that
+setting through the same helper; delegated children stay private. Existing
+chats keep their visibility when the setting changes.
+Owners can share team-workspace root chats through
 `PUT /conversations/{id}/sharing`. `scope=workspace_shared` selects shared
-conversation discovery; the omitted scope remains owner-only. Detail and
+conversation discovery; `scope=all` combines own and shared root chats using
+the appropriate projection per owner. The omitted scope remains owner-only. Detail and
 message responses distinguish owner and viewer access. Viewer responses omit
 execution state and expose server-derived sharing and reply capabilities.
 Owner creation and title-update stream events, detail and list reads, and

@@ -37,6 +37,21 @@ async def update_workspace(
         allowed_roles=MANAGER_ROLES,
     )
     changed_fields: list[str] = []
+    audit_details = {}
+
+    if "conversations_shared_by_default" in payload.model_fields_set:
+        if payload.conversations_shared_by_default is None or workspace.is_personal:
+            raise AppValidationError(
+                "Conversation sharing requires a boolean value and a team workspace",
+                field="conversations_shared_by_default",
+            )
+        if payload.conversations_shared_by_default != workspace.conversations_shared_by_default:
+            audit_details["conversations_shared_by_default"] = {
+                "previous": workspace.conversations_shared_by_default,
+                "value": payload.conversations_shared_by_default,
+            }
+            workspace.conversations_shared_by_default = payload.conversations_shared_by_default
+            changed_fields.append("conversations_shared_by_default")
 
     if "name" in payload.model_fields_set:
         if payload.name is None:
@@ -81,7 +96,7 @@ async def update_workspace(
             resource_type=AuditResourceType.WORKSPACE,
             resource_id=workspace.id,
             actor=actor,
-            details={"fields": changed_fields, "slug": workspace.slug},
+            details={"fields": changed_fields, "slug": workspace.slug, **audit_details},
         )
         await db.refresh(workspace)
 

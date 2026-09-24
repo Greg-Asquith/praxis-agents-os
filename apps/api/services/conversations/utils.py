@@ -3,6 +3,7 @@
 """Helpers specific to the conversations service."""
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
 from uuid import UUID
@@ -23,6 +24,7 @@ from services.agent_runs.schemas import AgentRunRead
 from services.audit_events.utils import request_audit_context
 from services.conversation_read_contract import (
     ConversationCapabilities,
+    ConversationRead,
     SharedConversationRead,
 )
 from services.workspaces.utils import (
@@ -31,6 +33,53 @@ from services.workspaces.utils import (
     require_workspace_role,
 )
 from utils.metadata import metadata_uuid
+
+
+def default_conversation_visibility(
+    workspace: Workspace, *, shared_by_user_id: UUID
+) -> dict[str, Any]:
+    """Returns the initial sharing fields for a root conversation."""
+    if workspace.is_personal or not workspace.conversations_shared_by_default:
+        return {}
+    return {
+        "visibility": "workspace",
+        "shared_at": datetime.now(UTC),
+        "shared_by_user_id": shared_by_user_id,
+    }
+
+
+def project_conversation_list_row(
+    conversation: Conversation,
+    *,
+    actor: User,
+    workspace: Workspace,
+    membership: WorkspaceMembership,
+    viewer: bool,
+    owner_name: str | None,
+    agent_name: str | None,
+    active_run_id: UUID | None,
+    active_run_status: str | None,
+) -> ConversationRead | SharedConversationRead:
+    """Projects a list row with the requested read boundary."""
+    capabilities = conversation_capabilities(
+        conversation, actor=actor, workspace=workspace, membership=membership
+    )
+    if viewer:
+        return shared_conversation_read(
+            conversation,
+            owner_name=owner_name,
+            agent_name=agent_name,
+            active_run_status=active_run_status,
+            capabilities=capabilities,
+        )
+    return ConversationRead.from_projection(
+        conversation,
+        agent_name=agent_name,
+        active_run_id=active_run_id,
+        active_run_status=active_run_status,
+        owner_name=owner_name,
+        capabilities=capabilities,
+    )
 
 
 async def load_message_runs(

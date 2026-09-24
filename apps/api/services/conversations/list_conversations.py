@@ -4,7 +4,7 @@
 
 from typing import Literal
 
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent import Agent
@@ -17,11 +17,10 @@ from services.agent_runs.domain import (
     RUN_STATUS_PENDING,
     RUN_STATUS_RUNNING,
 )
-from services.conversations.schemas import ConversationRead, ConversationsListResponse
+from services.conversations.schemas import ConversationsListResponse
 from services.conversations.utils import (
-    conversation_capabilities,
+    project_conversation_list_row,
     shared_conversation_predicate,
-    shared_conversation_read,
 )
 from services.workspaces.utils import READ_ROLES, require_workspace_role
 from utils.pagination import paginate
@@ -38,19 +37,22 @@ async def list_conversations(
     workspace: Workspace,
     limit: int,
     offset: int,
-    scope: Literal["mine", "workspace_shared"] = "mine",
+    scope: Literal["mine", "workspace_shared", "all"] = "mine",
 ) -> ConversationsListResponse:
     _, membership = await require_workspace_role(
         db, actor=actor, workspace_id=workspace.id, allowed_roles=READ_ROLES
     )
+    audience = Conversation.user_id == actor.id
+    if scope == "workspace_shared":
+        audience = shared_conversation_predicate(workspace)
+    elif scope == "all":
+        audience = or_(audience, shared_conversation_predicate(workspace))
     filters = (
         Conversation.workspace_id == workspace.id,
-        Conversation.user_id == actor.id,
+        audience,
         Conversation.deleted == False,  # noqa: E712
         Conversation.source != CONVERSATION_SOURCE_DELEGATED,
     )
-    if scope == "workspace_shared":
-        filters = (shared_conversation_predicate(workspace),)
     active_runs = (
         select(
             AgentRun.id.label("active_run_id"),
@@ -108,25 +110,16 @@ async def list_conversations(
     )
     return ConversationsListResponse(
         conversations=[
-            shared_conversation_read(
+            project_conversation_list_row(
                 conversation,
+                actor=actor,
+                workspace=workspace,
+                membership=membership,
+                viewer=scope == "workspace_shared" or conversation.user_id != actor.id,
                 owner_name=owner_name,
-                agent_name=agent_name,
-                active_run_status=active_run_status,
-                capabilities=conversation_capabilities(
-                    conversation, actor=actor, workspace=workspace, membership=membership
-                ),
-            )
-            if scope == "workspace_shared"
-            else ConversationRead.from_projection(
-                conversation,
                 agent_name=agent_name,
                 active_run_id=active_run_id,
                 active_run_status=active_run_status,
-                owner_name=owner_name,
-                capabilities=conversation_capabilities(
-                    conversation, actor=actor, workspace=workspace, membership=membership
-                ),
             )
             for conversation, agent_name, active_run_id, active_run_status, owner_name in rows
         ],

@@ -20,7 +20,7 @@ async def list_conversations(
     workspace_context: CurrentWorkspaceDep,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
-    scope: Annotated[Literal["mine", "workspace_shared"], Query()] = "mine",
+    scope: Annotated[Literal["mine", "workspace_shared", "all"], Query()] = "mine",
 ) -> ConversationsListResponse:
     workspace, _membership = workspace_context
     return await list_conversations_service(
