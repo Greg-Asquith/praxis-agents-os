@@ -15,6 +15,7 @@ import {
   type ApiKeyConnectFormState,
 } from "@/features/integrations/components/api-key-connect-form-model"
 import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
+import { useIntegrationUiModule } from "@/integrations/registry"
 import { getErrorMessage } from "@/lib/api/errors"
 import { buildFieldErrors } from "@/lib/forms"
 
@@ -31,6 +32,8 @@ export function ApiKeyConnectForm({
   provider: IntegrationProvider
   replacementConnection?: IntegrationConnection
 }) {
+  const credentialLabel =
+    useIntegrationUiModule(provider.provider_key)?.credentialLabel ?? "API key"
   const [form, setForm] = useState<ApiKeyConnectFormState>(() => ({
     ...EMPTY_FORM,
     label: replacementConnection?.label ?? "",
@@ -46,7 +49,7 @@ export function ApiKeyConnectForm({
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-    const validation = validateApiKeyConnectForm(form)
+    const validation = validateApiKeyConnectForm(form, credentialLabel)
     setFieldErrors(buildFieldErrors(validation))
     if (validation.length > 0) {
       setForm((current) => ({ ...current, apiKey: "" }))
@@ -76,12 +79,14 @@ export function ApiKeyConnectForm({
     <>
       <DialogHeader>
         <DialogTitle>
-          {replacementConnection ? "Replace API key" : `Connect ${provider.display_name}`}
+          {replacementConnection
+            ? `Replace ${credentialLabel}`
+            : `Connect ${provider.display_name}`}
         </DialogTitle>
         <DialogDescription>
           {replacementConnection
-            ? `Enter a new key for ${replacementConnection.label}. We will check it in the background without changing the connection.`
-            : "Give this account a recognizable name, then enter the provider key. The key is stored securely and cannot be viewed again."}
+            ? `Enter a new ${credentialLabel} for ${replacementConnection.label}. It will be checked in the background without changing the connection.`
+            : `Give this account a recognisable name, then enter the ${credentialLabel}. It is stored securely and cannot be viewed again.`}
         </DialogDescription>
       </DialogHeader>
       <form
@@ -119,7 +124,7 @@ export function ApiKeyConnectForm({
             </Field>
           )}
           <Field data-invalid={Boolean(fieldErrors["integration-api-key"]) || undefined}>
-            <FieldLabel htmlFor={`api-key-${provider.provider_key}`}>API Key</FieldLabel>
+            <FieldLabel htmlFor={`api-key-${provider.provider_key}`}>{credentialLabel}</FieldLabel>
             <Input
               aria-invalid={Boolean(fieldErrors["integration-api-key"]) || undefined}
               autoComplete="off"
@@ -133,7 +138,7 @@ export function ApiKeyConnectForm({
             />
             <FieldDescription>
               <KeyRoundIcon className="mr-1 inline size-3.5" aria-hidden="true" />
-              Required fields: {provider.required_form_fields.join(", ") || "API key"}.
+              {credentialLabel} required.
             </FieldDescription>
             <FieldError>{fieldErrors["integration-api-key"]}</FieldError>
           </Field>
@@ -158,7 +163,7 @@ export function ApiKeyConnectForm({
               ? "Replacing"
               : "Connecting"
             : replacementConnection
-              ? "Replace API Key"
+              ? `Replace ${credentialLabel}`
               : "Connect"}
         </Button>
       </DialogFooter>

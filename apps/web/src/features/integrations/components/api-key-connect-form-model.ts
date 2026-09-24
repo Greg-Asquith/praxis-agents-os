@@ -7,7 +7,10 @@ export type ApiKeyConnectFormState = {
   apiKey: string
 }
 
-export function validateApiKeyConnectForm(state: ApiKeyConnectFormState): FormValidationEntry[] {
+export function validateApiKeyConnectForm(
+  state: ApiKeyConnectFormState,
+  credentialLabel = "API key"
+): FormValidationEntry[] {
   const errors: FormValidationEntry[] = []
   if (!state.label.trim()) {
     errors.push({
@@ -19,8 +22,8 @@ export function validateApiKeyConnectForm(state: ApiKeyConnectFormState): FormVa
   if (!state.apiKey.trim()) {
     errors.push({
       fieldId: "integration-api-key",
-      label: "API key",
-      message: "Enter the API key for this provider.",
+      label: credentialLabel,
+      message: `Enter the ${credentialLabel} for this provider.`,
     })
   }
   return errors

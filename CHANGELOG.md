@@ -8,6 +8,14 @@ Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 version is `0`, breaking API, schema, and configuration changes may ship in a
 minor release. Patch releases contain backward-compatible fixes only.
 
+## [Unreleased]
+
+### Added
+
+- Meta Ads workspace connections with System User access tokens, bounded ad
+  account discovery, permission-based writability, optional app-secret proof,
+  and setup guidance. Meta Ads agent tools are pending.
+
 ## [0.1.0] - 2026-07-28
 
 ### Added

@@ -71,7 +71,7 @@ def configure_test_environment() -> None:
     os.environ.setdefault(
         "INTEGRATIONS_ENABLED_PROVIDERS",
         '["gmail", "google_ads", "google_analytics", "google_search_console", "airtable", "bigquery", "notion", '
-        '"outlook_mail", "outlook_calendar", "sharepoint"]',
+        '"meta_ads", "outlook_mail", "outlook_calendar", "sharepoint"]',
     )
     os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-test")
     os.environ.setdefault("GOOGLE_API_KEY", "google-test")

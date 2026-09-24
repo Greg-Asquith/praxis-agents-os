@@ -150,6 +150,14 @@ bounded report rows, typed output validation, audit, write approvals, and run
 envelopes remain enforced; the operator explicitly rejected per-cell or
 per-result prompt-injection warnings for this provider.
 
+Meta Ads follows the Google Ads posture for typed account data. The provider
+foundation contributes discovery only, with no agent read tools. Its content
+boundary is recorded here:
+
+| Provider | Untrusted content | Treatment |
+| --- | --- | --- |
+| Meta Ads | Advertiser-controlled account and business names | Typed discovery metadata, without provenance nodes or model frames. Workspace scoping and permission checks remain enforced. Future ad-text or comment reads require provenance nodes and adversarial coverage before shipping. |
+
 **BigQuery exception (operator decision, 2026-07-28):** BigQuery datasets
 connected to Praxis are treated as operator-controlled databases. Cached
 schema descriptions and query result cells remain ordinary typed tool data

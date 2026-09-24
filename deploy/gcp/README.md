@@ -64,6 +64,9 @@ REGION=europe-west4              # = GCP_REGION
       `RUNTIME_SECRET_BINDINGS` (the example file shows the Google Ads set).
       Integrations read these values only from the environment, and the
       manifests pass through no other integration settings.
+- [ ] For agencies using Meta Ads with **Require App Secret**, bind and seed
+      `META_ADS_APP_SECRET=praxis-meta-ads-app-secret` in
+      `RUNTIME_SECRET_BINDINGS` with the agency's own app secret.
 - [ ] For OAuth-only access, set `EMAIL_AUTH_ENABLED=false`, enable at least
       one login provider, and fill its client ID and `/oauth/callback` redirect
       URI. Add its client secret to `RUNTIME_SECRET_BINDINGS`; for example,

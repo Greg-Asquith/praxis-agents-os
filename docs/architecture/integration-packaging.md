@@ -504,6 +504,7 @@ backend: a boundary, not a subfolder.
 ```ts
 export type IntegrationUiModule = {
   catalogDescription?: string;
+  credentialLabel?: string; // defaults to "API key"
   ConnectHelp?: ComponentType<{ provider: IntegrationProvider }>;
   Logo: ComponentType<SVGProps<SVGSVGElement>>; // also the tool-ui icon token equal to the provider key
   providerKey: string;
@@ -618,6 +619,15 @@ It must NOT touch: the registry/dispatch internals, the manifest module,
 the loader, the SSE protocol, the presentation schema, another provider,
 or any `features/` code. Reviewers hold the line here.
 
+The Meta Ads foundation has one explicit exception: a provider-neutral
+`credentialLabel` field on `IntegrationUiModule`, resolved through the registry.
+The six existing integration feature call sites are `add-account-button.tsx`,
+`api-key-connect-dialog.tsx`, `api-key-connect-form-model.ts`,
+`connection-row.tsx`, `connection-status.ts`, and `connection-status-badge.tsx`.
+They use the same label for connection, replacement, and recovery copy. Meta Ads
+sets **Access token**; other providers retain **API key**. This exception adds
+no provider branch or backend contract change.
+
 ## 9. Provider set
 
 Every provider with write tools configures `src/integrations/write-presenter.tsx`
@@ -640,14 +650,23 @@ late responses cannot replace another selection. Refreshes update display
 evidence without changing the operator's decision or executable edits.
 
 The shipped providers are Gmail, Google Ads, Airtable, BigQuery, Google
-Analytics, Notion, Outlook Mail, Outlook Calendar, and SharePoint. Each follows
-the section 8 checklist. There is no sample provider in product
+Analytics, Meta Ads, Notion, Outlook Mail, Outlook Calendar, and SharePoint.
+Each follows the section 8 checklist. There is no sample provider in product
 code: contract and loader tests use a suite-local test provider registered
 through the loader in test code — fixtures under the test tree — with provider
 HTTP (token/userinfo/discovery endpoints) mocked at the transport layer.
 Manual quality assurance uses real development credentials. Airtable's API key
-provides a convenient connection test. The engine's generic manifest-driven OAuth flow is the only token
-path; revisit only if a real provider cannot use it.
+provides a convenient connection test. OAuth providers use the engine's generic
+manifest-driven OAuth flow; pasted credentials use the shared API-key
+connection path.
+
+Meta Ads contributes workspace-owned System User token connections and bounded
+ad account discovery over its own asynchronous Graph client. It uses optional
+deployment app-secret proof and discovers writability from token permissions,
+account tasks, and active account status. Its web module supplies setup help,
+the Meta logo, and the credential label above. It contributes no tools,
+presenters, OAuth flow, or event delivery. Live agency qualification remains
+unverified after the maintainer accepted its assumptions for implementation.
 
 Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft
 Graph seam. Each provider has an isolated Entra application, settings,

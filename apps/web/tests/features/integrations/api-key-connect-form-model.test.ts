@@ -21,4 +21,14 @@ describe("validateApiKeyConnectForm", () => {
   it("accepts non-blank values", () => {
     expect(validateApiKeyConnectForm({ apiKey: "pat-secret", label: "Client base" })).toEqual([])
   })
+
+  it("uses the provider credential label for validation", () => {
+    expect(validateApiKeyConnectForm({ apiKey: "", label: "Agency" }, "Access token")).toEqual([
+      {
+        fieldId: "integration-api-key",
+        label: "Access token",
+        message: "Enter the Access token for this provider.",
+      },
+    ])
+  })
 })

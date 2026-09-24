@@ -1,0 +1,1 @@
+"""Meta Ads provider contracts."""

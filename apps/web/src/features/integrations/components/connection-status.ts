@@ -42,11 +42,13 @@ const CONNECTION_STATUS_PRESENTATIONS = {
 
 export function connectionStatusPresentation({
   authMode,
+  credentialLabel = "API key",
   discoveryStalled = false,
   status,
   supportsDiscovery = false,
 }: {
   authMode?: string | undefined
+  credentialLabel?: string
   discoveryStalled?: boolean
   status: string
   supportsDiscovery?: boolean
@@ -68,7 +70,7 @@ export function connectionStatusPresentation({
     if (authMode === "api_key") {
       return {
         action: "replace_credential",
-        label: "Replace API key",
+        label: `Replace ${credentialLabel}`,
         pending: false,
         variant: "destructive",
       }

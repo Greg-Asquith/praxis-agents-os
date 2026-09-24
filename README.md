@@ -75,6 +75,9 @@ The core platform is wired end to end (API, worker, and UI):
 - Integrations and context: Gmail, Google Ads, Google Analytics, and Google
   Search Console over OAuth; Airtable with API keys; and BigQuery, Google Ads,
   and Google Analytics with service-account connections.
+  [Meta Ads](docs/implementation/integrations/meta-ads.md) connects with a
+  System User access token and discovers ad accounts for active context and
+  Context Groups. Meta Ads agent tools are pending.
   Search Console connections discover verified properties for active context;
   agents can query bounded, typed organic-search performance, list submitted
   sitemap status, resubmit sitemaps with approval and read-after-write evidence,

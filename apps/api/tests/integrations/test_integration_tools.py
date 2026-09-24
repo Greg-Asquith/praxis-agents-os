@@ -24,6 +24,7 @@ from integrations.google_analytics.tools import (
 from integrations.google_search_console.tools import (
     TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
 )
+from integrations.meta_ads.tools import TOOL_DEFINITIONS as META_ADS_TOOL_DEFINITIONS
 from integrations.notion.tools import TOOL_DEFINITIONS as NOTION_TOOL_DEFINITIONS
 from integrations.outlook_mail.tools import TOOL_DEFINITIONS as OUTLOOK_MAIL_TOOL_DEFINITIONS
 from integrations.sharepoint.tools import TOOL_DEFINITIONS as SHAREPOINT_TOOL_DEFINITIONS
@@ -60,6 +61,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
             *NOTION_TOOL_DEFINITIONS,
             *OUTLOOK_MAIL_TOOL_DEFINITIONS,
             *SHAREPOINT_TOOL_DEFINITIONS,
+            *META_ADS_TOOL_DEFINITIONS,
         )
     }
     expected = {
@@ -753,3 +755,7 @@ async def _delete_committed_runtime_context(session_factory, context) -> None:
         await db.execute(delete(User).where(User.id == context.user_id))
         await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))
         await db.commit()
+
+
+def test_meta_ads_foundation_exports_no_agent_tools() -> None:
+    assert META_ADS_TOOL_DEFINITIONS == ()

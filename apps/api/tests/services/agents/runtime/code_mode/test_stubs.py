@@ -22,6 +22,7 @@ from integrations.google_analytics.tools import (
 from integrations.google_search_console.tools import (
     TOOL_DEFINITIONS as GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
 )
+from integrations.meta_ads.tools import TOOL_DEFINITIONS as META_ADS_TOOL_DEFINITIONS
 from integrations.sharepoint.tools import TOOL_DEFINITIONS as SHAREPOINT_TOOL_DEFINITIONS
 from services.agents.runtime.code_mode.stubs import (
     CodeModeCatalog,
@@ -314,6 +315,7 @@ async def test_every_first_party_eligible_schema_renders() -> None:
             *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
             *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
             *SHAREPOINT_TOOL_DEFINITIONS,
+            *META_ADS_TOOL_DEFINITIONS,
         )
         if definition.code_eligible
     }
@@ -529,3 +531,7 @@ def test_unsupported_schema_keyword_fails_closed() -> None:
 
     with pytest.raises(UnsupportedCodeModeSchemaError, match="unsupported schema keywords: not"):
         render_tool_stub(definition)
+
+
+def test_meta_ads_foundation_exports_no_agent_tools() -> None:
+    assert META_ADS_TOOL_DEFINITIONS == ()

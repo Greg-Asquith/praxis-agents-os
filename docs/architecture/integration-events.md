@@ -221,6 +221,7 @@ product decision.
 | Google Ads            | `none`                    | Google Ads has no push surface                                                                                    | Poll-only; do not create a webhook placeholder                |
 | Google Analytics      | `none`                    | Reporting data has no provider push surface                                                                       | Poll-only reporting data; do not create a webhook placeholder |
 | Google Search Console | `none`                    | Performance and index data have no provider push surface                                                          | Poll-only; do not create a webhook placeholder                |
+| Meta Ads | `none` | Connection discovery uses Graph reads; this foundation needs no event subscriptions | Poll-only foundation; Meta webhooks remain a later option |
 
 Gmail watch renewal and Airtable webhook refresh use registered job kinds, not
 API-process timers. Gmail renewal runs daily `[default — confirm at review]`,

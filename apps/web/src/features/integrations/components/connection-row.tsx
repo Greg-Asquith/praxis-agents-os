@@ -44,6 +44,7 @@ import {
   integrationOwnershipDescription,
 } from "@/features/integrations/format"
 import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
+import { useIntegrationUiModule } from "@/integrations/registry"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
 
@@ -58,6 +59,8 @@ export function ConnectionRow({
   connection: IntegrationConnection
   provider: IntegrationProvider
 }) {
+  const credentialLabel =
+    useIntegrationUiModule(provider.provider_key)?.credentialLabel ?? "API key"
   const testMutation = useTestConnectionMutation()
   const queryClient = useQueryClient()
   const refreshMutation = useRefreshConnectionMutation()
@@ -70,6 +73,7 @@ export function ConnectionRow({
   const discoveryStalled = discoveryNeedsRecovery(connection)
   const status = connectionStatusPresentation({
     authMode: connection.credential?.auth_mode,
+    credentialLabel,
     discoveryStalled,
     status: connection.status,
     supportsDiscovery: provider.requires_discovery,
@@ -148,7 +152,7 @@ export function ConnectionRow({
               {integrationOwnershipDescription(connection.owner_scope)} · Added{" "}
               {formatDateTime(connection.created_at)}
               {hasMultipleAuthModes && connection.credential
-                ? ` · ${integrationAuthModeLabel(connection.credential.auth_mode)}`
+                ? ` · ${connection.credential.auth_mode === "api_key" ? credentialLabel : integrationAuthModeLabel(connection.credential.auth_mode)}`
                 : ""}
             </p>
             {connection.duplicate_of_connection_ids.length > 0 ? (
@@ -227,7 +231,7 @@ export function ConnectionRow({
             >
               {connection.credential?.auth_mode === "service_account"
                 ? "Replace Service Account Key"
-                : "Replace API Key"}
+                : `Replace ${credentialLabel}`}
             </Button>
           ) : null}
           {canUseLifecycleActions ? (

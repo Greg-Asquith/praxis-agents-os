@@ -14,6 +14,7 @@ const MODULE_LOADERS: Record<string, IntegrationUiModuleLoader> = {
   google_ads: () => import("@/integrations/google_ads"),
   google_analytics: () => import("@/integrations/google_analytics"),
   google_search_console: () => import("@/integrations/google_search_console"),
+  meta_ads: () => import("@/integrations/meta_ads"),
   notion: () => import("@/integrations/notion"),
   outlook_calendar: () => import("@/integrations/outlook_calendar"),
   outlook_mail: () => import("@/integrations/outlook_mail"),

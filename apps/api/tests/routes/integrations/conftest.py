@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from cryptography.fernet import Fernet
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.sessions import session_manager
@@ -14,6 +15,7 @@ from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
 from integrations.google_analytics.settings import google_analytics_settings
 from integrations.google_search_console.settings import google_search_console_settings
+from integrations.meta_ads.settings import meta_ads_settings
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.integrations.manifest import PROVIDER_MANIFESTS, register_provider_manifest
@@ -31,6 +33,7 @@ def integration_route_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Ite
     from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
     from integrations.google_analytics import PROVIDER as GOOGLE_ANALYTICS_PROVIDER
     from integrations.google_search_console import PROVIDER as GOOGLE_SEARCH_CONSOLE_PROVIDER
+    from integrations.meta_ads import PROVIDER as META_ADS_PROVIDER
 
     original = dict(PROVIDER_MANIFESTS)
     original_plugins = dict(PROVIDER_PLUGINS)
@@ -43,9 +46,11 @@ def integration_route_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Ite
         GOOGLE_SEARCH_CONSOLE_PROVIDER,
         AIRTABLE_PROVIDER,
         BIGQUERY_PROVIDER,
+        META_ADS_PROVIDER,
     ):
         register_provider_plugin(plugin)
         register_provider_manifest(plugin.manifest)
+    monkeypatch.setattr(meta_ads_settings, "META_ADS_APP_SECRET", SecretStr("meta-test-secret"))
     monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_ID", "gmail-integration-client")
     monkeypatch.setattr(
         gmail_settings,
