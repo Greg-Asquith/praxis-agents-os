@@ -49,6 +49,7 @@ const target: Workspace = {
   name: "Team",
   icon_url: null,
   is_personal: false,
+  conversations_shared_by_default: false,
   status: "active",
   current_user_role: "read_only",
   created_at: "2026-09-09T12:00:00Z",

@@ -21,10 +21,12 @@ import {
 } from "@/features/conversations/components/conversation-starting-notice"
 import { useConversationWorkspace } from "@/features/conversations/conversation-workspace-context"
 import { useModelCatalogQuery } from "@/features/models/api/list-model-catalog"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 
 const MAX_AGENT_ICONS = 5
 
 export function NewConversationRoute() {
+  const { workspace } = useActiveWorkspace()
   const search = useRouterState({
     select: (state): { agent?: string; file?: string } => state.location.search,
   })
@@ -83,6 +85,11 @@ export function NewConversationRoute() {
       {activeAgents.length > 0 ? (
         <footer className="shrink-0">
           <div className="mx-auto w-full max-w-4xl px-4 pt-2 pb-4">
+            {!workspace.is_personal && workspace.conversations_shared_by_default && (
+              <p className="text-muted-foreground mb-2 text-sm">
+                Shared with everyone in {workspace.name}.
+              </p>
+            )}
             <NewConversationComposer
               key={search.file ?? "new"}
               fileId={search.file}

@@ -13,6 +13,8 @@ const state = vi.hoisted(
     failAfterLoaded: boolean
     queryEnabled: boolean[]
     composerProps: Record<string, unknown>
+    personal: boolean
+    sharedByDefault: boolean
   } => ({
     file: "file-1",
     pending: false,
@@ -21,8 +23,19 @@ const state = vi.hoisted(
     failAfterLoaded: false,
     queryEnabled: [],
     composerProps: {},
+    personal: false,
+    sharedByDefault: false,
   })
 )
+vi.mock("@/features/workspaces/components/use-active-workspace", () => ({
+  useActiveWorkspace: () => ({
+    workspace: {
+      name: "Example team",
+      is_personal: state.personal,
+      conversations_shared_by_default: state.sharedByDefault,
+    },
+  }),
+}))
 vi.mock("@tanstack/react-router", () => ({
   useRouterState: () => ({ file: state.file }),
 }))
@@ -75,6 +88,20 @@ beforeEach(() => {
   state.failAfterLoaded = false
   state.queryEnabled = []
   state.composerProps = {}
+  state.personal = false
+  state.sharedByDefault = false
+})
+
+it.each([
+  [false, true, true],
+  [false, false, false],
+  [true, true, false],
+  [true, false, false],
+])("shows the audience for personal=%s, default sharing=%s", (personal, shared, visible) => {
+  state.personal = personal
+  state.sharedByDefault = shared
+  const html = renderToStaticMarkup(createElement(NewConversationRoute))
+  expect(html.includes("Shared with everyone in Example team.")).toBe(visible)
 })
 
 it("passes the File read to the ordinary composer as a ready attachment", () => {

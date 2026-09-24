@@ -12,11 +12,11 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Separator } from "@/components/ui/separator"
 import type { AuthUser } from "@/features/auth/types"
-import type { Conversation } from "@/features/conversations/types"
+import type { ConversationDetail } from "@/features/conversations/types"
 import type { Workspace } from "@/features/workspaces/types"
 
 type MobileMenuProps = {
-  conversations: Conversation[]
+  conversations: ConversationDetail[]
   onSignOut: () => void
   pathname: string
   setWorkspaceBySlug: (slug: string) => void

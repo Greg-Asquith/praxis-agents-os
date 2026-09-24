@@ -20,6 +20,7 @@ const workspace: Workspace = {
   icon_url: null,
   id: "workspace-1",
   is_personal: true,
+  conversations_shared_by_default: false,
   name: "Personal workspace",
   slug: "personal",
   status: "active",

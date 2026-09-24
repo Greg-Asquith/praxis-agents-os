@@ -30,7 +30,7 @@ export function HomeRoute() {
   const { workspace } = useActiveWorkspace()
   useSuspenseQueries({
     queries: [
-      conversationsQueryOptions({ limit: 100 }),
+      conversationsQueryOptions({ limit: 100, scope: "mine" }),
       pendingApprovalsQueryOptions(),
       schedulesQueryOptions({ includeInactive: true, limit: 100 }),
       agentsQueryOptions({ includeInactive: false, limit: 100 }),
@@ -41,7 +41,7 @@ export function HomeRoute() {
   const { data: agentsData } = useAgentsQuery({ includeInactive: false, limit: 100 })
   const { data: modelCatalog } = useModelCatalogQuery()
   const { stream } = useConversationWorkspace()
-  const conversationsQuery = useConversationsQuery({ limit: 100 })
+  const conversationsQuery = useConversationsQuery({ limit: 100, scope: "mine" })
   const conversations = useMemo(
     () => sortConversations(conversationsQuery.data.conversations),
     [conversationsQuery.data.conversations]

@@ -6,7 +6,7 @@ import { ChevronRightIcon } from "lucide-react"
 
 import { getAgent } from "@/features/agents/api/get-agent"
 import { agentsQueryKeys } from "@/features/agents/api/list-agents"
-import type { Conversation } from "@/features/conversations/types"
+import type { ConversationDetail } from "@/features/conversations/types"
 import { integrationProvidersQueryOptions } from "@/features/integrations/api/list-providers"
 import { getSchedule } from "@/features/schedules/api/get-schedule"
 import { schedulesQueryKeys } from "@/features/schedules/api/list-schedules"
@@ -36,7 +36,7 @@ type BreadcrumbItem = {
 }
 
 type AppBreadcrumbsProps = {
-  conversations: Conversation[]
+  conversations: ConversationDetail[]
   pathname: string
   search?: unknown
 }
@@ -66,7 +66,9 @@ export function AppBreadcrumbs({ conversations, pathname, search }: AppBreadcrum
     enabled: folderId !== null,
   })
 
-  const conversationId = getEntityId(pathname, "conversations")
+  const conversationId = pathname.startsWith("/shared-chats/")
+    ? getPathSegments(pathname)[2]
+    : getEntityId(pathname, "conversations")
   const conversation = conversationId
     ? conversations.find((item) => item.id === conversationId)
     : null
@@ -165,7 +167,7 @@ function getBreadcrumbs({
       : [{ key: "agents", label: "Agents" }]
   }
 
-  if (section === "conversations") {
+  if (section === "conversations" || section === "shared-chats") {
     if (detail === "new") {
       return [
         { key: "conversations", label: "Conversations", to: "/conversations" },

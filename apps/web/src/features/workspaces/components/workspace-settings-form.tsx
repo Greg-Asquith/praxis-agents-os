@@ -14,8 +14,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { useDeleteWorkspaceMutation } from "@/features/workspaces/api/delete-workspace"
 import { useUpdateWorkspaceMutation } from "@/features/workspaces/api/update-workspace"
 import {
@@ -66,6 +73,7 @@ export function WorkspaceSettingsForm() {
 
   async function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!canManage) return
     setError(null)
 
     const formData = new FormData(event.currentTarget)
@@ -75,6 +83,9 @@ export function WorkspaceSettingsForm() {
         workspaceId: workspace.id,
         payload: {
           name: formString(formData, "name").trim(),
+          ...(!workspace.is_personal && {
+            conversations_shared_by_default: formData.has("conversations_shared_by_default"),
+          }),
         },
       })
 
@@ -136,7 +147,7 @@ export function WorkspaceSettingsForm() {
     <Card className="border-0! border-none! bg-transparent shadow-none ring-0">
       <CardHeader>
         <CardTitle>Workspace details</CardTitle>
-        <CardDescription>Update the name and icon for the active workspace.</CardDescription>
+        <CardDescription>Manage the details for the active workspace.</CardDescription>
       </CardHeader>
       <form
         key={`${workspace.id}:${workspace.updated_at}`}
@@ -199,6 +210,27 @@ export function WorkspaceSettingsForm() {
                 )}
               </div>
             </Field>
+            {!workspace.is_personal && (
+              <Field orientation="horizontal" data-disabled={!canManage}>
+                <FieldContent>
+                  <FieldLabel htmlFor="settings-default-sharing">
+                    Conversations shared by default
+                  </FieldLabel>
+                  <FieldDescription id="settings-default-sharing-description">
+                    New conversations in this workspace are shared with every member from the start.
+                    Existing conversations are unchanged. Owners can still stop sharing a
+                    conversation they own.
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  id="settings-default-sharing"
+                  name="conversations_shared_by_default"
+                  aria-describedby="settings-default-sharing-description"
+                  defaultChecked={workspace.conversations_shared_by_default}
+                  disabled={!canManage}
+                />
+              </Field>
+            )}
           </FieldGroup>
         </CardContent>
         <CardFooter className="justify-between gap-3">

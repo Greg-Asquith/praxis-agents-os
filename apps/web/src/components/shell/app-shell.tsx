@@ -29,9 +29,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     location.search
   )
   const { data: user } = useSuspenseQuery(currentUserQueryOptions())
-  const { data: conversationsData } = useConversationsQuery({ limit: 50 })
   const logoutMutation = useLogoutMutation()
   const { workspace, workspaces, setWorkspaceBySlug } = useActiveWorkspace()
+  const { data: conversationsData } = useConversationsQuery({
+    limit: 50,
+    scope: !workspace.is_personal && workspace.conversations_shared_by_default ? "all" : "mine",
+  })
 
   const signOut = useCallback(() => {
     logoutMutation.mutate(undefined, {

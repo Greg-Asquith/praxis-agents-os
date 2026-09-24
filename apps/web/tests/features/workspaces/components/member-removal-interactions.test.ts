@@ -92,6 +92,7 @@ beforeEach(() => {
     name: "Example Organisation",
     icon_url: null,
     is_personal: false,
+    conversations_shared_by_default: false,
     status: "active",
     current_user_role: "admin",
     created_at: "2026-09-21T09:00:00Z",

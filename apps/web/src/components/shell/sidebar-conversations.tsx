@@ -6,12 +6,12 @@ import { MessageSquarePlusIcon, MessageSquareTextIcon, ShieldAlertIcon } from "l
 import { Button } from "@/components/ui/button"
 import { microLabelClass } from "@/components/ui/stat"
 import { conversationAgentLabel } from "@/features/conversations/format"
-import type { Conversation } from "@/features/conversations/types"
+import type { ConversationDetail } from "@/features/conversations/types"
 import { formatCompactDate, formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 type SidebarConversationsProps = {
-  conversations: Conversation[]
+  conversations: ConversationDetail[]
   pathname: string
 }
 
@@ -60,15 +60,20 @@ function ConversationRow({
   conversation,
   isSelected,
 }: {
-  conversation: Conversation
+  conversation: ConversationDetail
   isSelected: boolean
 }) {
   const lastActivityAt = conversation.last_message_at ?? conversation.updated_at
 
   return (
     <Link
-      to="/conversations/$conversationId"
-      params={{ conversationId: conversation.id }}
+      to={
+        conversation.access === "viewer"
+          ? "/shared-chats/$workspaceId/$conversationId"
+          : "/conversations/$conversationId"
+      }
+      params={{ conversationId: conversation.id, workspaceId: conversation.workspace_id }}
+      aria-current={isSelected ? "page" : undefined}
       className={cn(
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex min-w-0 items-start gap-2 rounded-sm px-2 py-2 text-left transition-colors",
         isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -80,12 +85,12 @@ function ConversationRow({
             {conversation.title ?? "Untitled conversation"}
           </span>
           <span className="flex shrink-0 items-center gap-1">
-            {conversation.needs_approval && (
+            {conversation.access !== "viewer" && conversation.needs_approval && (
               <span aria-label="Needs approval" title="Needs approval">
                 <ShieldAlertIcon className="text-warning size-3.5" />
               </span>
             )}
-            {conversation.unread && (
+            {conversation.access !== "viewer" && conversation.unread && (
               <span aria-label="Unread" title="Unread">
                 <span aria-hidden className="bg-primary block size-2 rounded-full" />
               </span>
@@ -94,7 +99,9 @@ function ConversationRow({
         </span>
         <span className="flex min-w-0 items-center gap-2">
           <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-            {conversationAgentLabel(conversation)}
+            {conversation.access === "viewer"
+              ? (conversation.owner_name ?? "Shared with your workspace")
+              : conversationAgentLabel(conversation)}
           </span>
           <span
             className="text-muted-foreground shrink-0 text-xs whitespace-nowrap"
@@ -109,6 +116,9 @@ function ConversationRow({
 }
 
 function getSelectedConversationId(pathname: string) {
+  if (pathname.startsWith("/shared-chats/")) {
+    return pathname.split("/")[3] ?? null
+  }
   const [, maybeConversationId] = pathname.split("/conversations/")
   if (!maybeConversationId || maybeConversationId === "new") {
     return null

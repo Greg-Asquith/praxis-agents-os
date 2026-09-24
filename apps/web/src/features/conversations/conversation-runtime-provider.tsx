@@ -21,7 +21,7 @@ export function ConversationRuntimeProvider({ children }: { children: ReactNode 
 
 function ConversationRuntimeScope({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
-  const { data: conversationsData } = useConversationsQuery({ limit: 100 })
+  const { data: conversationsData } = useConversationsQuery({ limit: 100, scope: "mine" })
   const [pendingUserMessages, setPendingUserMessages] = useState<PendingUserMessage[]>([])
   const conversations = useMemo(
     () => sortConversations(conversationsData.conversations),

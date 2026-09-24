@@ -43,8 +43,8 @@ export type Conversation = {
   updated_at: string
 }
 
-export type ConversationsListResponse = {
-  conversations: Conversation[]
+export type ConversationsListResponse<T extends ConversationDetail = Conversation> = {
+  conversations: T[]
   total: number
   limit: number
   offset: number

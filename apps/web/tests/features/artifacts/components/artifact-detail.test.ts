@@ -67,6 +67,7 @@ const workspace: Workspace = {
   name: "Example Organisation",
   icon_url: null,
   is_personal: false,
+  conversations_shared_by_default: false,
   status: "active",
   current_user_role: "owner",
   created_at: artifact.created_at,

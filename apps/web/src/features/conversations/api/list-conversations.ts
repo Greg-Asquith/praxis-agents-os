@@ -8,13 +8,19 @@ import {
   type QueryClient,
 } from "@tanstack/react-query"
 
-import type { Conversation, ConversationsListResponse } from "@/features/conversations/types"
+import type {
+  Conversation,
+  ConversationDetail,
+  ConversationsListResponse,
+} from "@/features/conversations/types"
 import { createWorkspaceScopedQueryKeys } from "@/lib/workspace"
 import { apiRequest } from "@/lib/api/client"
 
-type ListConversationsParams = {
+type ConversationScope = "mine" | "all"
+type ListConversationsParams<Scope extends ConversationScope = ConversationScope> = {
   limit?: number
   offset?: number
+  scope?: Scope
 }
 
 const baseConversationsQueryKeys = createWorkspaceScopedQueryKeys("conversations")
@@ -23,7 +29,8 @@ export const conversationsQueryKeys = {
   all: baseConversationsQueryKeys.all,
   workspace: baseConversationsQueryKeys.workspace,
   lists: baseConversationsQueryKeys.lists,
-  list: (params: ListConversationsParams = {}) => baseConversationsQueryKeys.list(params),
+  list: (params: ListConversationsParams = {}) =>
+    baseConversationsQueryKeys.list({ ...params, scope: params.scope ?? "mine" }),
   detail: (conversationId: string) =>
     [...conversationsQueryKeys.workspace(), conversationId, "detail"] as const,
   messages: (conversationId: string) =>
@@ -36,9 +43,14 @@ export const conversationsQueryKeys = {
     [...conversationsQueryKeys.workspace(), "agent-runs", "pending-approvals"] as const,
 }
 
-async function listConversations({ limit = 100, offset = 0 }: ListConversationsParams = {}) {
-  return apiRequest<ConversationsListResponse>("/conversations/", {
-    query: { limit, offset },
+async function listConversations<Scope extends ConversationScope>(
+  params: ListConversationsParams<Scope>
+) {
+  const { limit = 100, offset = 0, scope = "mine" } = params
+  return apiRequest<
+    ConversationsListResponse<Scope extends "mine" ? Conversation : ConversationDetail>
+  >("/conversations/", {
+    query: { limit, offset, scope },
   })
 }
 
@@ -70,7 +82,9 @@ async function invalidateConversationQueries(queryClient: QueryClient, conversat
   await Promise.all(invalidations)
 }
 
-export function conversationsQueryOptions(params: ListConversationsParams = {}) {
+export function conversationsQueryOptions<Scope extends ConversationScope = "mine">(
+  params: ListConversationsParams<Scope> = {}
+) {
   return queryOptions({
     queryKey: conversationsQueryKeys.list(params),
     queryFn: () => listConversations(params),
@@ -78,7 +92,9 @@ export function conversationsQueryOptions(params: ListConversationsParams = {}) 
   })
 }
 
-export function useConversationsQuery(params: ListConversationsParams = {}) {
+export function useConversationsQuery<Scope extends ConversationScope = "mine">(
+  params: ListConversationsParams<Scope> = {}
+) {
   return useSuspenseQuery(conversationsQueryOptions(params))
 }
 

@@ -34,8 +34,22 @@ projection and capabilities. The scope is available with either setting value;
 it grants no additional read or execution authority. Personal workspaces retain
 owner-only results. Deleted chats and delegated children remain excluded.
 
-The settings switch, combined sidebar, and first-message audience notice are
-pending frontend work. The existing sidebar remains owner-only.
+In **Workspace Settings > Details**, team workspace owners and admins can
+change **Conversations shared by default** with the existing save action.
+Other members see the current value in a disabled switch. Personal workspaces
+hide the setting.
+
+When the setting is on, desktop and mobile sidebars request the combined scope.
+Owner rows keep their ordinary route, agent label, and unread and approval
+badges. Viewer rows show the owner's name and open the saved shared-chat route,
+without owner badges. Shared-chat titles also appear in the breadcrumbs.
+The home page and conversation runtime retain owner-only queries.
+
+Before the first message, the New Conversation page shows
+**Shared with everyone in WORKSPACE_NAME.** The Home composer is unchanged.
+Other members discover saved chats
+on the next sidebar refetch. The list has a 15-second stale time and refreshes
+on focus or remount when stale; there is no realtime fan-out or timed polling.
 
 ## Read and execution boundaries
 

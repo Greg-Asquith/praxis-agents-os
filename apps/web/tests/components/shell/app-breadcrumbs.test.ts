@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import { AppBreadcrumbs } from "@/components/shell/app-breadcrumbs"
+import type { ConversationDetail } from "@/features/conversations/types"
 
 vi.mock("@tanstack/react-query", () => ({
   queryOptions: (options: unknown) => options,
@@ -103,12 +104,38 @@ describe("getBreadcrumbs", () => {
       ["File Creation", undefined],
     ])
   })
+
+  it("resolves shared-chat titles from combined rows", () => {
+    const shared: ConversationDetail = {
+      id: "shared",
+      workspace_id: "team",
+      access: "viewer",
+      title: "Team research",
+      source: "direct",
+      agent_name: null,
+      last_message_at: null,
+      active_run_status: null,
+      created_at: "2026-09-24",
+      updated_at: "2026-09-24",
+      visibility: "workspace",
+      owner_name: "Alex",
+      capabilities: { can_reply: false, can_manage_sharing: false, can_stop_sharing: false },
+    }
+    expect(renderedBreadcrumbs("/shared-chats/team/shared", undefined, [shared])).toEqual([
+      ["Conversations", "/conversations"],
+      ["Team research", undefined],
+    ])
+  })
 })
 
-function renderedBreadcrumbs(pathname: string, search?: unknown) {
+function renderedBreadcrumbs(
+  pathname: string,
+  search?: unknown,
+  conversations: ConversationDetail[] = []
+) {
   const html = renderToStaticMarkup(
     createElement(AppBreadcrumbs, {
-      conversations: [],
+      conversations,
       pathname,
       ...(search === undefined ? {} : { search }),
     })

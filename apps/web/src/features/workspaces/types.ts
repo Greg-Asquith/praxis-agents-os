@@ -8,6 +8,7 @@ export type Workspace = {
   name: string
   icon_url: string | null
   is_personal: boolean
+  conversations_shared_by_default: boolean
   status: string
   current_user_role: WorkspaceRole | null
   created_at: string
@@ -29,6 +30,7 @@ export type WorkspaceCreateRequest = {
 }
 
 export type WorkspaceUpdateRequest = {
+  conversations_shared_by_default?: boolean
   name?: string | null
   slug?: string | null
 }
