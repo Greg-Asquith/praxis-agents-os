@@ -12,7 +12,7 @@ from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.execution import _run_authorized_entries
 
 
-def test_provider_contract_exposes_workspace_token_discovery_without_tools() -> None:
+def test_provider_contract_exposes_workspace_token_discovery_and_insights() -> None:
     manifest = PROVIDER.manifest
     assert manifest.provider_key == "meta_ads"
     assert manifest.display_name == "Meta Ads"
@@ -23,7 +23,8 @@ def test_provider_contract_exposes_workspace_token_discovery_without_tools() -> 
     assert manifest.requires_discovery is True
     assert manifest.capability_flags == frozenset({"read", "write", "spend"})
     assert manifest.event_delivery == "none"
-    assert PROVIDER.tool_definitions == TOOL_DEFINITIONS == ()
+    assert PROVIDER.tool_definitions == TOOL_DEFINITIONS
+    assert [tool.name for tool in TOOL_DEFINITIONS] == ["meta_ads_run_insights"]
     assert "meta_ads" in VALID_TOOL_ICONS
 
 

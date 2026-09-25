@@ -28,7 +28,7 @@ export type ToolFieldDefinition = {
 
 export type ToolFieldColumn = {
   default_value?: number | string | null
-  format?: "text" | "number" | "list" | "keyvalue"
+  format?: "text" | "number" | "list" | "keyvalue" | "scalar_or_list"
   key: string
   label: string
   max_entries?: number | null
@@ -248,6 +248,15 @@ function toolFieldRecordRows(
 
 function resolveRecordCell(value: unknown, column: ToolFieldColumn): string | null {
   if (value === undefined || value === null || value === "") return column.required ? null : "—"
+  if (column.format === "scalar_or_list" && Array.isArray(value)) {
+    if (
+      !value.every(
+        (item) => typeof item === "string" || (typeof item === "number" && Number.isFinite(item))
+      )
+    )
+      return null
+    return value.length === 0 ? "—" : value.join(", ")
+  }
   if (column.format === "list") {
     if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null
     return value.length === 0 ? "—" : value.join(", ")

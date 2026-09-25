@@ -2,7 +2,7 @@
 
 export type EditedScalar = string | number | boolean
 export type EditedKeyValue = Record<string, EditedScalar>
-export type EditedRecordCell = string | number | string[] | EditedKeyValue
+export type EditedRecordCell = string | number | (string | number)[] | EditedKeyValue
 type EditedRecord = Record<string, EditedRecordCell>
 export type EditedRecords = EditedRecord[]
 type EditedReference = Record<string, unknown>

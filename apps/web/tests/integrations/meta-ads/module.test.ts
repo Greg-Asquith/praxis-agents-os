@@ -10,12 +10,14 @@ import {
 } from "@/integrations/registry"
 
 describe("Meta Ads integration module", () => {
-  it("loads through the registry with its credential label and no presenters", async () => {
+  it("loads through the registry with its credential label and Insights presenter", async () => {
     await loadIntegrationUiModules(["meta_ads"])
 
     expect(integrationIcon("meta_ads")).toBe(metaAdsModule.Logo)
     expect(metaAdsModule.credentialLabel).toBe("Access token")
-    expect(integrationToolRowPresenters("meta_ads")).toEqual([])
+    expect(integrationToolRowPresenters("meta_ads").map((presenter) => presenter.key)).toEqual([
+      "meta_ads_run_insights",
+    ])
   })
 
   it("explains partner access, system user tasks, token permissions and revocation", () => {

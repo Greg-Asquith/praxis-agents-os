@@ -144,7 +144,7 @@ def _validate_record_fields(
 ) -> None:
     for field in definition.presentation.arg_fields:
         if field.format == "records" and field.editable:
-            if field.secondary and field.key not in effective_args:
+            if field.secondary and effective_args.get(field.key) is None:
                 continue
             _validate_records_override(
                 field_key=field.key,
@@ -317,6 +317,12 @@ def _validate_record_cell(
 
 
 def _record_cell_matches_format(column: "ToolFieldColumn", item: Any) -> bool:
+    if column.format == "scalar_or_list":
+        values = item if isinstance(item, list) else [item]
+        return all(
+            isinstance(value, str) or (type(value) in {int, float} and math.isfinite(value))
+            for value in values
+        )
     if column.format in {"text", "number"}:
         return not isinstance(item, bool) and isinstance(item, str | int | float)
     if column.format == "list":

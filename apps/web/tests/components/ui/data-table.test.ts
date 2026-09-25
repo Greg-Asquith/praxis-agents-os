@@ -102,6 +102,14 @@ describe("DataTable", () => {
     expect(totals?.["metrics.ctr"]).toBeCloseTo(0.3)
   })
 
+  it("formats explicit percentage points without guessing their scale", () => {
+    const column: DataColumn = { ...CTR_COLUMN, unit: "percentage-points" }
+    for (const value of [0, 0.5, 1, 12.5, 120]) {
+      expect(formatDataCell(column, value)).toBe(`${String(value)}%`)
+    }
+    expect(formatDataCell(CTR_COLUMN, 0.5)).toBe("50%")
+  })
+
   it("exports node content without frame markers or node JSON", () => {
     const exported = dataTableExport(COLUMNS, [
       {

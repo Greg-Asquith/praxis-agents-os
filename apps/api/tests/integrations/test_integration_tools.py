@@ -65,6 +65,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         )
     }
     expected = {
+        "meta_ads_run_insights": ("read", "internal", "auto", False),
         "sharepoint_create_folder": ("write", "external", "approval", True),
         "sharepoint_write_file": ("write", "external", "approval", True),
         "sharepoint_update_file": ("write", "external", "approval", True),
@@ -197,6 +198,7 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
         *NOTION_TOOL_DEFINITIONS,
         *OUTLOOK_MAIL_TOOL_DEFINITIONS,
         *SHAREPOINT_TOOL_DEFINITIONS,
+        *META_ADS_TOOL_DEFINITIONS,
     )
 
     for definition in definitions:
@@ -220,6 +222,16 @@ def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> N
             )
         if definition.name == "google_search_console_query_search_analytics":
             allowed_dynamic_markers.append(".properties.keys")
+        if definition.name == "meta_ads_run_insights":
+            allowed_dynamic_markers.extend(
+                (
+                    ".properties.keys",
+                    ".properties.metrics",
+                    ".properties.actions",
+                    ".properties.windows",
+                    ".MetaAdsInsightsAction.properties.breakdowns",
+                )
+            )
         if definition.name == "notion_query_data_source":
             allowed_dynamic_markers.append(".NotionRecordData.properties.properties")
         for path in _dynamic_object_paths(definition.output_model.model_json_schema()):
@@ -757,5 +769,5 @@ async def _delete_committed_runtime_context(session_factory, context) -> None:
         await db.commit()
 
 
-def test_meta_ads_foundation_exports_no_agent_tools() -> None:
-    assert META_ADS_TOOL_DEFINITIONS == ()
+def test_meta_ads_exports_only_the_insights_read_tool() -> None:
+    assert [tool.name for tool in META_ADS_TOOL_DEFINITIONS] == ["meta_ads_run_insights"]

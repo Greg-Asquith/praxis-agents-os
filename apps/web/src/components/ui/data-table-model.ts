@@ -23,7 +23,7 @@ export type DataColumn = {
   key: string
   kind: DataColumnKind
   label: string
-  unit?: "micros" | "milliseconds" | "seconds"
+  unit?: "micros" | "milliseconds" | "seconds" | "percentage-points"
   width?: number | "auto"
 }
 
@@ -52,7 +52,8 @@ export function formatDataCell(column: DataColumn, value: unknown): string {
     if (numeric === null) {
       return text
     }
-    const percent = Math.abs(numeric) <= 1 ? numeric : numeric / 100
+    const percent =
+      column.unit === "percentage-points" || Math.abs(numeric) > 1 ? numeric / 100 : numeric
     return new Intl.NumberFormat(undefined, {
       maximumFractionDigits: 2,
       style: "percent",

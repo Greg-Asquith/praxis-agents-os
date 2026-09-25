@@ -42,6 +42,7 @@ class ToolFieldPresentationRead(BaseModel):
 
 
 class ToolPresentationRead(BaseModel):
+    form_schema: dict[str, Any] | None = Field(default=None, exclude_if=lambda value: value is None)
     icon: str
     running_label: str
     completed_label: str
@@ -55,6 +56,7 @@ class ToolPresentationRead(BaseModel):
     @classmethod
     def from_presentation(cls, presentation: ToolPresentation) -> "ToolPresentationRead":
         return cls(
+            form_schema=presentation.form_schema,
             icon=presentation.icon,
             running_label=presentation.running_label,
             completed_label=presentation.completed_label,

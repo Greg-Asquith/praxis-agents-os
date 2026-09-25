@@ -1,10 +1,28 @@
 """Builds bounded Meta responses without live credentials."""
 
 from typing import Any
+from uuid import uuid4
 
 import httpx2
 
+from services.integrations.context.domain import ResolvedContextEntry
+
 TOKEN = "meta-test-access-token"
+
+
+def context_entry(account_id: str) -> ResolvedContextEntry:
+    return ResolvedContextEntry(
+        integration_resource_id=uuid4(),
+        provider_key="meta_ads",
+        resource_type="meta_ads_ad_account",
+        external_id=account_id,
+        display_name=f"Account {account_id}",
+        connection_id=uuid4(),
+        connection_label="Agency",
+        connection_status="active",
+        write_allowed=False,
+        permissions_metadata={"currency": "EUR", "timezone_name": "Europe/Paris"},
+    )
 
 
 async def static_token() -> str:

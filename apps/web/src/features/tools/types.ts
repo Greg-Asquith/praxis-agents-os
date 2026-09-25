@@ -60,6 +60,7 @@ export type EntityReferenceLookupResponse = {
 }
 
 export type ToolUi = {
+  form_schema?: unknown
   icon: string
   running_label: string
   completed_label: string

@@ -533,5 +533,19 @@ def test_unsupported_schema_keyword_fails_closed() -> None:
         render_tool_stub(definition)
 
 
-def test_meta_ads_foundation_exports_no_agent_tools() -> None:
-    assert META_ADS_TOOL_DEFINITIONS == ()
+def test_meta_ads_insights_stub_has_typed_rows_and_no_platform_ids() -> None:
+    definition = META_ADS_TOOL_DEFINITIONS[0]
+    rendered = render_tool_stub(definition)
+    assert (
+        "async def meta_ads_run_insights(*, fields: list[str], since: str, until: str" in rendered
+    )
+    assert "class MetaAdsInsightsFilter(TypedDict):" in rendered
+    assert "class MetaAdsInsightsData(TypedDict):" in rendered
+    assert "-> MetaAdsInsightsOutput" in rendered
+    assert "metrics: dict[str," in rendered
+    assert "actions: dict[str," in rendered
+    assert "windows: dict[str," in rendered
+    assert "integration_resource_id" not in rendered
+    assert "connection_id" not in rendered
+    assert definition.code_eligible
+    assert definition.preview_list_path == "results.*.data.rows"

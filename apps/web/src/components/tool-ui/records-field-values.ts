@@ -128,6 +128,12 @@ export function updateRecordCell(
 }
 
 function validRecordCell(value: unknown, format: NonNullable<ToolFieldColumn["format"]>): boolean {
+  if (format === "scalar_or_list") {
+    const values = Array.isArray(value) ? value : [value]
+    return values.every(
+      (item) => typeof item === "string" || (typeof item === "number" && Number.isFinite(item))
+    )
+  }
   if (format === "list")
     return Array.isArray(value) && value.every((item) => typeof item === "string")
   if (format === "keyvalue") {

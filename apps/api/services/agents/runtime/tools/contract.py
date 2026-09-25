@@ -37,7 +37,7 @@ ToolFieldFormat = Literal[
     "entity",
     "entity_list",
 ]
-ToolRecordCellFormat = Literal["text", "number", "list", "keyvalue"]
+ToolRecordCellFormat = Literal["text", "number", "list", "keyvalue", "scalar_or_list"]
 
 TOOL_POLICY_AUTO: ToolPolicy = "auto"
 TOOL_POLICY_APPROVAL: ToolPolicy = "approval"
@@ -203,6 +203,7 @@ class ToolPresentation:
     approve_label: str = ""
     arg_fields: tuple[ToolFieldPresentation, ...] = ()
     result_fields: tuple[ToolFieldPresentation, ...] = ()
+    form_schema: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -653,7 +654,7 @@ def _validate_record_column(column: ToolFieldColumn) -> None:
         raise RuntimeError("Runtime tool presentation record column required must be a boolean")
     if type(column.secondary) is not bool:
         raise RuntimeError("Runtime tool presentation record column secondary must be a boolean")
-    if column.format not in {"text", "number", "list", "keyvalue"}:
+    if column.format not in {"text", "number", "list", "keyvalue", "scalar_or_list"}:
         raise RuntimeError("Runtime tool presentation record columns must use a supported format")
     if column.options and column.format != "text":
         raise RuntimeError("Runtime tool presentation record column options require text format")

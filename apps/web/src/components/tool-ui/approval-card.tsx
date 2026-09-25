@@ -86,7 +86,7 @@ export function ToolApprovalDecisionCard({
     if (
       field.secondary &&
       !Object.hasOwn(controls.decision.edits, field.key) &&
-      (recordArgs === null || !Object.hasOwn(recordArgs, field.key))
+      recordArgs?.[field.key] == null
     ) {
       return false
     }

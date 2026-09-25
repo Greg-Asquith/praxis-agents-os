@@ -54,12 +54,27 @@ export function mergeScalarEdit(
   edit: EditedScalar,
   field?: ApprovalField
 ): unknown {
+  if (
+    field?.editable &&
+    field.options.includes(String(edit)) &&
+    (typeof edit === "string" || typeof edit === "number")
+  ) {
+    return Object.is(edit, original) ? NO_CHANGE : edit
+  }
   if (typeof edit === "string") return mergeStringEdit(original, edit, field)
   if (typeof edit === "boolean") {
     if (isOptionalBoolean(field, original)) return edit
     if (typeof original !== "boolean") return INVALID_EDIT
     return edit === original ? NO_CHANGE : edit
   }
+  if (
+    original == null &&
+    field?.editable &&
+    field.secondary &&
+    field.format === "number" &&
+    Number.isFinite(edit)
+  )
+    return edit
   if (!isFiniteNumber(original) || !Number.isFinite(edit)) return INVALID_EDIT
   if (Number.isInteger(original) && !Number.isInteger(edit)) return INVALID_EDIT
   return Object.is(edit, original) ? NO_CHANGE : edit
@@ -79,7 +94,12 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function mergeStringEdit(original: unknown, edit: string, field?: ApprovalField): unknown {
-  if (original == null && field?.editable && field.secondary && field.format === "multiline")
+  if (
+    original == null &&
+    field?.editable &&
+    field.secondary &&
+    ["text", "multiline"].includes(field.format)
+  )
     return edit
   if (original == null && field?.editable && field.options.includes(edit)) return edit
   if (typeof original !== "string") return INVALID_EDIT

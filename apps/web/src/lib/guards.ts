@@ -4,6 +4,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+export function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string")
+}
+
 export function normalizeRecord(value: unknown): Record<string, unknown> | null {
   if (isRecord(value)) {
     return value
@@ -46,6 +50,14 @@ export function isPositiveInteger(value: unknown): value is number {
 
 export function isDateTimeString(value: unknown): value is string {
   return typeof value === "string" && !Number.isNaN(Date.parse(value))
+}
+
+export function isDateString(value: unknown): value is string {
+  return (
+    isDateTimeString(value) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    new Date(value).toISOString().slice(0, 10) === value
+  )
 }
 
 export function isNullableString(value: unknown): value is string | null {

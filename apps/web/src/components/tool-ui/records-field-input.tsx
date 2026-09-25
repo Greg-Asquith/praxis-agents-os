@@ -229,7 +229,7 @@ function RecordCellInput({
   onChange: (value: EditedRecordCell) => void
   value: EditedRecordCell | undefined
 }) {
-  if (column.format === "list") {
+  if (column.format === "list" || (column.format === "scalar_or_list" && Array.isArray(value))) {
     return <RecordListCell {...{ column, disabled, id, onChange, value }} />
   }
   if (column.format === "keyvalue") {
@@ -259,7 +259,7 @@ function RecordListCell({ column, disabled, id, onChange, value }: RecordCellPro
       id={id}
       onChange={onChange}
       {...(column.placeholder ? { placeholder: column.placeholder } : {})}
-      value={Array.isArray(value) ? value : []}
+      value={Array.isArray(value) ? value.map(String) : []}
     />
   )
 }

@@ -1,0 +1,433 @@
+{
+  "$defs": {
+    "MetaAdsFilterOperator": {
+      "enum": [
+        "EQUAL",
+        "NOT_EQUAL",
+        "IN",
+        "NOT_IN",
+        "CONTAIN",
+        "NOT_CONTAIN",
+        "GREATER_THAN",
+        "LESS_THAN"
+      ],
+      "type": "string"
+    },
+    "MetaAdsFilterScalar": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "MetaAdsInsightsFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Field",
+          "type": "string",
+          "examples": [
+            "ad.effective_status",
+            "ad.id",
+            "ad.name",
+            "adset.effective_status",
+            "adset.id",
+            "adset.name",
+            "campaign.effective_status",
+            "campaign.id",
+            "campaign.name"
+          ]
+        },
+        "operator": {
+          "$ref": "#/$defs/MetaAdsFilterOperator",
+          "x-value-kinds": {
+            "EQUAL": "scalar",
+            "NOT_EQUAL": "scalar",
+            "IN": "list",
+            "NOT_IN": "list",
+            "CONTAIN": "text",
+            "NOT_CONTAIN": "text",
+            "GREATER_THAN": "number",
+            "LESS_THAN": "number"
+          }
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MetaAdsFilterScalar"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/MetaAdsFilterScalar"
+              },
+              "maxItems": 50,
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": ["field", "operator", "value"],
+      "title": "MetaAdsInsightsFilter",
+      "type": "object"
+    },
+    "MetaAdsInsightsLevel": {
+      "enum": ["account", "campaign", "adset", "ad"],
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "fields": {
+      "items": {
+        "maxLength": 128,
+        "type": "string",
+        "examples": [
+          "account_currency",
+          "account_id",
+          "account_name",
+          "action_values",
+          "actions",
+          "ad_click_actions",
+          "ad_id",
+          "ad_impression_actions",
+          "ad_name",
+          "adset_end",
+          "adset_id",
+          "adset_name",
+          "adset_start",
+          "advanced_actions_28d_view",
+          "advanced_reach_1d_lookback",
+          "advanced_reach_28d_lookback",
+          "advanced_reach_7d_lookback",
+          "age_targeting",
+          "anchor_event_attribution_setting",
+          "anchor_events_performance_indicator",
+          "attribution_setting",
+          "auction_bid",
+          "auction_competitiveness",
+          "auction_max_competitor_bid",
+          "average_purchases_conversion_value",
+          "buying_type",
+          "campaign_id",
+          "campaign_name",
+          "canvas_avg_view_percent",
+          "canvas_avg_view_time",
+          "catalog_segment_actions",
+          "catalog_segment_value",
+          "catalog_segment_value_mobile_purchase_roas",
+          "catalog_segment_value_omni_purchase_roas",
+          "catalog_segment_value_website_purchase_roas",
+          "clicks",
+          "configurable_attribution_action",
+          "configurable_attribution_actionvalue",
+          "configurable_audience_overlap_reach",
+          "configurable_audience_overlap_with_conv_action",
+          "configurable_audience_overlap_with_conv_converters",
+          "configurable_audience_overlap_with_conv_exposure_cost",
+          "configurable_audience_overlap_with_conv_exposure_impressions",
+          "configurable_audience_overlap_with_conv_exposure_reach",
+          "configurable_placement_ptc_conversions",
+          "configurable_placement_ptc_converters",
+          "configurable_placement_ptc_reach",
+          "configurable_reachbyfrequency_action",
+          "configurable_reachbyfrequency_converters_count",
+          "configurable_reachbyfrequency_impressions_cost",
+          "configurable_reachbyfrequency_impressions_count",
+          "configurable_reachbyfrequency_reach",
+          "conversion_lead_rate",
+          "conversion_leads",
+          "conversion_rate_ranking",
+          "conversion_values",
+          "conversions",
+          "converted_product_app_custom_event_fb_mobile_purchase",
+          "converted_product_app_custom_event_fb_mobile_purchase_value",
+          "converted_product_offline_purchase",
+          "converted_product_offline_purchase_value",
+          "converted_product_omni_purchase",
+          "converted_product_omni_purchase_values",
+          "converted_product_quantity",
+          "converted_product_value",
+          "converted_product_website_pixel_purchase",
+          "converted_product_website_pixel_purchase_value",
+          "converted_promoted_product_app_custom_event_fb_mobile_purchase",
+          "converted_promoted_product_app_custom_event_fb_mobile_purchase_value",
+          "converted_promoted_product_offline_purchase",
+          "converted_promoted_product_offline_purchase_value",
+          "converted_promoted_product_omni_purchase",
+          "converted_promoted_product_omni_purchase_values",
+          "converted_promoted_product_quantity",
+          "converted_promoted_product_value",
+          "converted_promoted_product_website_pixel_purchase",
+          "converted_promoted_product_website_pixel_purchase_value",
+          "cost_per_15_sec_video_view",
+          "cost_per_2_sec_continuous_video_view",
+          "cost_per_6_sec_video_view",
+          "cost_per_action_type",
+          "cost_per_ad_click",
+          "cost_per_conversion",
+          "cost_per_conversion_lead",
+          "cost_per_dda_countby_convs",
+          "cost_per_estimated_ad_recallers",
+          "cost_per_inline_link_click",
+          "cost_per_inline_post_engagement",
+          "cost_per_message_delivered",
+          "cost_per_one_thousand_ad_impression",
+          "cost_per_outbound_click",
+          "cost_per_thruplay",
+          "cost_per_unique_action_type",
+          "cost_per_unique_click",
+          "cost_per_unique_conversion",
+          "cost_per_unique_inline_link_click",
+          "cost_per_unique_outbound_click",
+          "cpc",
+          "cpm",
+          "cpp",
+          "created_time",
+          "creative_diversity_label",
+          "creative_diversity_score",
+          "creative_media_type",
+          "ctr",
+          "date_start",
+          "date_stop",
+          "dda_countby_convs",
+          "engagement_rate_ranking",
+          "estimated_ad_recall_rate",
+          "estimated_ad_recall_rate_lower_bound",
+          "estimated_ad_recall_rate_upper_bound",
+          "estimated_ad_recallers",
+          "estimated_ad_recallers_lower_bound",
+          "estimated_ad_recallers_upper_bound",
+          "frequency",
+          "full_view_impressions",
+          "full_view_reach",
+          "gender_targeting",
+          "impressions",
+          "inline_link_click_ctr",
+          "inline_link_clicks",
+          "inline_post_engagement",
+          "instagram_profile_follow",
+          "instagram_profile_visits",
+          "instagram_upcoming_event_reminders_set",
+          "instant_experience_clicks_to_open",
+          "instant_experience_clicks_to_start",
+          "instant_experience_outbound_clicks",
+          "interactive_component_tap",
+          "labels",
+          "landing_page_view_actions_per_link_click",
+          "landing_page_view_per_link_click",
+          "landing_page_view_per_purchase_rate",
+          "location",
+          "marketing_messages_click_rate_benchmark",
+          "marketing_messages_cost_per_delivered",
+          "marketing_messages_cost_per_link_btn_click",
+          "marketing_messages_delivered",
+          "marketing_messages_delivery_rate",
+          "marketing_messages_link_btn_click",
+          "marketing_messages_link_btn_click_rate",
+          "marketing_messages_media_view_rate",
+          "marketing_messages_phone_call_btn_click_rate",
+          "marketing_messages_quick_reply_btn_click",
+          "marketing_messages_quick_reply_btn_click_rate",
+          "marketing_messages_read",
+          "marketing_messages_read_rate",
+          "marketing_messages_read_rate_benchmark",
+          "marketing_messages_sent",
+          "marketing_messages_spend",
+          "marketing_messages_spend_currency",
+          "messages_delivered",
+          "messages_delivered_ctr",
+          "mobile_app_purchase_roas",
+          "msa_seller_budget",
+          "multi_event_conversion_attribution_setting",
+          "objective",
+          "onsite_conversion_messaging_detected_purchase_deduped",
+          "opportunity_score_l4",
+          "optimization_goal",
+          "outbound_clicks",
+          "outbound_clicks_ctr",
+          "place_page_name",
+          "playable_average_game_length",
+          "playable_game_start_rate",
+          "product_group_retailer_id",
+          "product_retailer_id",
+          "product_views",
+          "purchase_per_landing_page_view",
+          "purchase_roas",
+          "purchases_per_link_click",
+          "qualifying_question_qualify_answer_rate",
+          "quality_ranking",
+          "reach",
+          "read_rate",
+          "result_values_performance_indicator",
+          "shop_clicks",
+          "shops_assisted_purchases",
+          "social_spend",
+          "social_spend_impressions",
+          "spend",
+          "total_card_view",
+          "total_postbacks",
+          "total_postbacks_detailed",
+          "total_postbacks_detailed_v4",
+          "unique_actions",
+          "unique_clicks",
+          "unique_conversions",
+          "unique_ctr",
+          "unique_inline_link_click_ctr",
+          "unique_inline_link_clicks",
+          "unique_link_clicks",
+          "unique_link_clicks_ctr",
+          "unique_outbound_clicks",
+          "unique_outbound_clicks_ctr",
+          "unique_video_continuous_2_sec_watched_actions",
+          "unique_video_view_15_sec",
+          "updated_time",
+          "video_15_sec_watched_actions",
+          "video_30_sec_watched_actions",
+          "video_6_sec_watched_actions",
+          "video_avg_time_watched_actions",
+          "video_continuous_2_sec_watched_actions",
+          "video_p100_watched_actions",
+          "video_p25_watched_actions",
+          "video_p50_watched_actions",
+          "video_p75_watched_actions",
+          "video_p95_watched_actions",
+          "video_play_actions",
+          "video_thruplay_watched_actions",
+          "video_time_watched_actions",
+          "video_view_per_impression",
+          "website_ctr",
+          "website_purchase_roas",
+          "wish_bid"
+        ]
+      },
+      "maxItems": 30,
+      "minItems": 1,
+      "title": "Fields",
+      "type": "array"
+    },
+    "since": {
+      "title": "Since",
+      "type": "string"
+    },
+    "until": {
+      "title": "Until",
+      "type": "string"
+    },
+    "level": {
+      "enum": ["account", "campaign", "adset", "ad"],
+      "type": "string",
+      "$ref": "#/$defs/MetaAdsInsightsLevel",
+      "default": "campaign"
+    },
+    "breakdowns": {
+      "items": {
+        "type": "string",
+        "enum": [
+          "age",
+          "country",
+          "device_platform",
+          "gender",
+          "impression_device",
+          "platform_position",
+          "publisher_platform",
+          "region"
+        ]
+      },
+      "maxItems": 3,
+      "title": "Breakdowns",
+      "type": "array"
+    },
+    "action_breakdowns": {
+      "items": {
+        "type": "string",
+        "enum": ["action_destination", "action_device", "action_type"]
+      },
+      "maxItems": 3,
+      "title": "Action Breakdowns",
+      "type": "array"
+    },
+    "attribution_windows": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string",
+            "enum": ["1d_click", "1d_ev", "1d_view", "28d_click", "7d_click"]
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attribution Windows"
+    },
+    "time_increment": {
+      "anyOf": [
+        {
+          "enum": ["all_days", "monthly"],
+          "type": "string"
+        },
+        {
+          "maximum": 90,
+          "minimum": 1,
+          "type": "integer"
+        }
+      ],
+      "default": "all_days",
+      "title": "Time Increment"
+    },
+    "filters": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/MetaAdsInsightsFilter"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Filters"
+    },
+    "sort": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sort",
+      "x-directions": ["ascending", "descending"]
+    },
+    "limit": {
+      "default": 100,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer",
+      "maximum": 1000
+    }
+  },
+  "required": ["fields", "since", "until"],
+  "title": "MetaAdsInsightsInput",
+  "type": "object"
+}

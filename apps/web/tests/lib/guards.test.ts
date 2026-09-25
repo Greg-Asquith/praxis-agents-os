@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  isDateString,
   isDateTimeString,
   isNonNegativeInteger,
   isNullableString,
@@ -63,6 +64,23 @@ describe("numeric and date guards", () => {
     expect(isDateTimeString("2026-08-14T10:00:00Z")).toBe(true)
     expect(isDateTimeString("not-a-date")).toBe(false)
     expect(isDateTimeString(0)).toBe(false)
+  })
+
+  it("accepts valid date-only strings, including leap days", () => {
+    expect(isDateString("2026-09-24")).toBe(true)
+    expect(isDateString("2024-02-29")).toBe(true)
+    for (const value of [
+      "2026-02-29",
+      "2026-04-31",
+      "2026-9-24",
+      "2026-09-24T00:00:00Z",
+      "September 24, 2026",
+      "",
+      null,
+      0,
+    ]) {
+      expect(isDateString(value)).toBe(false)
+    }
   })
 
   it("accepts strings and explicit null for nullable string fields", () => {

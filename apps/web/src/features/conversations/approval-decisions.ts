@@ -164,7 +164,11 @@ function mergeEditedValue(original: unknown, edit: EditedValue, field?: Approval
 
   if (field?.format === "records") {
     const validity = recordRowsValidity(edit, field.columns, field.min_rows)
-    if (!validity.isRecords || validity.error !== null || !Array.isArray(original)) {
+    if (
+      !validity.isRecords ||
+      validity.error !== null ||
+      (!Array.isArray(original) && !(original == null && field.secondary))
+    ) {
       return INVALID_EDIT
     }
     return structurallyEqual(edit, original) ? NO_CHANGE : edit
@@ -196,6 +200,9 @@ function mergeEditedValue(original: unknown, edit: EditedValue, field?: Approval
 }
 
 function mergeClearedValue(original: unknown, field?: ApprovalField): unknown {
+  if (field?.format === "list" && field.editable && field.secondary) {
+    return original == null ? NO_CHANGE : Array.isArray(original) ? null : INVALID_EDIT
+  }
   if (field?.format === "multiline" && field.editable && field.secondary) {
     return original == null ? NO_CHANGE : typeof original === "string" ? null : INVALID_EDIT
   }

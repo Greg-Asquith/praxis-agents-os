@@ -120,6 +120,18 @@ Record fields may declare a platform-bounded `min_rows`, and each declared
 column may be marked `required`; approval preflight enforces those constraints
 before a deferred tool resumes.
 
+The platform also supports `scalar_or_list` record cells for provider filters
+whose value type depends on an operator. These cells preserve text, finite
+numbers, and lists of those scalars through review and resume. They reject
+objects and booleans. Optional record fields may be omitted or null.
+
+`ToolPresentation.form_schema` carries optional provider-owned JSON Schema in
+the existing tool-presentations response. Custom forms consume backend choices,
+defaults, and limits without copying provider catalogues into the web app.
+Provider-specific `x-` annotations stay inside the provider presenter. This
+platform extension adds no provider branches to shared rendering or dispatch.
+Editable-field declarations and server validation still govern approval.
+
 A provider package supplies: manifest data, a discovery function,
 operation clients, one-module-per-tool definitions (with bindings and presentations),
 optional preview definitions, tests — and optionally a small web UI module.
@@ -664,8 +676,10 @@ Meta Ads contributes workspace-owned System User token connections and bounded
 ad account discovery over its own asynchronous Graph client. It uses optional
 deployment app-secret proof and discovers writability from token permissions,
 account tasks, and active account status. Its web module supplies setup help,
-the Meta logo, and the credential label above. It contributes no tools,
-presenters, OAuth flow, or event delivery. Live agency qualification remains
+the Meta logo, and the credential label above. `meta_ads_run_insights` contributes
+a bounded read tool and presenter through the shared fan-out, audit, and
+retained-result seams. Other reads, writes, OAuth, and event delivery remain
+pending. Live agency qualification remains
 unverified after the maintainer accepted its assumptions for implementation.
 
 Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft

@@ -67,6 +67,13 @@ The following contracts apply in this area:
   annotate it with a `Field` description, because Pydantic AI otherwise unwraps
   that parameter and the model sends its fields without the wrapper key that
   approvals and presenters read.
+- `ToolPresentation.form_schema` optionally publishes provider-owned JSON
+  Schema through `GET /tools/presentations`. Custom approval presenters read
+  choices, defaults, and bounds from this metadata. Providers build it from
+  their request contracts and may include provider-owned `x-` annotations for
+  controls. It does not grant edit permission or replace server validation;
+  `arg_fields` still declares the editable arguments. Providers that require
+  this metadata must show recovery guidance when it is unavailable.
 - Approval overrides are governed by the server-owned field declarations:
   locked values cannot change, and entity values must be structured references
   that are reauthorised immediately before resume.
@@ -90,8 +97,11 @@ The following contracts apply in this area:
   required-value rules.
   Editable `records` fields also enforce their declared minimum row count and
   required columns before resume, even when the operator approves without edits.
-  An omitted secondary records field stays optional; when present, it must meet
-  the same declared constraints.
+  A secondary records field stays optional when omitted or null; a supplied
+  list must meet the same declared constraints. Declared `scalar_or_list`
+  record cells accept text, finite numbers, or lists of those values. They
+  reject booleans and nested objects. Provider forms can use these cells for
+  filter values that vary by operator.
   A `code_eligible=True` write backed by a provider batch operation must expose
   that operation as one bounded list-shaped call with a faithful editable
   presentation. The complete reviewed row set is the consent boundary; do not

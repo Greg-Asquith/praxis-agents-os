@@ -1,7 +1,7 @@
 # apps/api/integrations/meta_ads/tools/__init__.py
 
-"""Meta Ads tool contributions; account tools are pending."""
+"""Meta Ads tool contributions."""
 
-from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from .run_insights import DEFINITION as RUN_INSIGHTS
 
-TOOL_DEFINITIONS: tuple[RuntimeToolDefinition, ...] = ()
+TOOL_DEFINITIONS = (RUN_INSIGHTS,)

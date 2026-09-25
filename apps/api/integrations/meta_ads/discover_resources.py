@@ -25,9 +25,7 @@ _ACCOUNT_STATUSES = {
     201: "ANY_ACTIVE",
     202: "ANY_CLOSED",
 }
-_ACCOUNT_FIELDS = (
-    "id,account_id,name,currency,timezone_name,account_status,user_tasks"
-)
+_ACCOUNT_FIELDS = "id,account_id,name,currency,timezone_name,account_status,user_tasks"
 
 
 async def discover_resources(

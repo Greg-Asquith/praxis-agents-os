@@ -2,8 +2,9 @@
 
 """Resolve workspace credentials through the shared secret store."""
 
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import RunContext
 
+from core.exceptions.integration import IntegrationAuthError
 from services.agents.runtime.context import RuntimeDeps
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.credentials import get_usable_connection_credential
@@ -30,7 +31,9 @@ async def meta_ads_client_for_principal(
             db, connection_id=entry.connection_id, actor=actor, workspace=workspace
         )
         if credential.auth_mode != "api_key":
-            raise ModelRetry("Replace the Meta Ads access token to reconnect.")
+            raise IntegrationAuthError(
+                "Replace the Meta Ads access token to reconnect.", provider_key="meta_ads"
+            )
         token = await resolve_secret(
             db,
             SecretReference(
@@ -42,7 +45,13 @@ async def meta_ads_client_for_principal(
             actor_id=actor.id,
         )
         if not token.strip():
-            raise ModelRetry("Replace the Meta Ads access token to reconnect.")
+            raise IntegrationAuthError(
+                "Replace the Meta Ads access token to reconnect.", provider_key="meta_ads"
+            )
         return token
 
     return MetaAdsClient(access_token, app_secret=meta_ads_settings.META_ADS_APP_SECRET)
+
+
+def meta_ads_available() -> bool:
+    return True

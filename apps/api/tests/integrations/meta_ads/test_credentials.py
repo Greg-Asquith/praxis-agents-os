@@ -9,7 +9,6 @@ from uuid import uuid4
 import httpx2
 import pytest
 from pydantic import SecretStr
-from pydantic_ai import ModelRetry
 
 from core.exceptions.integration import IntegrationAuthError
 from integrations.meta_ads.settings import meta_ads_settings
@@ -130,6 +129,6 @@ async def test_unusable_credentials_fail_before_transport(
     client = await meta_ads_client_for_principal(
         context.db, actor=context.actor, workspace=context.workspace, entry=context.entry
     )
-    with pytest.raises(ModelRetry, match="reconnect"):
+    with pytest.raises(IntegrationAuthError, match="reconnect"):
         await client.graph_get("me", operation="identity", policy=IntegrationRequestPolicy.READ)
     request.assert_not_awaited()

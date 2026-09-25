@@ -6,6 +6,7 @@ import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const Combobox = ComboboxPrimitive.Root
+const ComboboxCollection = ComboboxPrimitive.Collection
 
 function ComboboxInputGroup({ className, ...props }: ComboboxPrimitive.InputGroup.Props) {
   return (
@@ -132,6 +133,7 @@ function ComboboxChipRemove({ className, ...props }: ComboboxPrimitive.ChipRemov
 
 export {
   Combobox,
+  ComboboxCollection,
   ComboboxChip,
   ComboboxChipRemove,
   ComboboxChips,
