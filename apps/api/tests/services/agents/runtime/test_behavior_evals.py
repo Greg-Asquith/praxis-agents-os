@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import SecretStr
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.evaluators.llm_as_a_judge import GradingOutput
@@ -40,10 +41,16 @@ def test_configured_model_uses_runtime_vertex_configuration(
     assert _configured_model() == ("meta", "llama-probe")
 
 
-async def test_dataset_uses_case_judges_and_programmatic_output_formats(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    judge_model = FunctionModel(lambda _messages, _info: "pass", model_name="eval-judge-probe")
+def _passing_judge(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+    grade = GradingOutput(reason="The response satisfies the rubric.", pass_=True, score=1)
+    args = grade.model_dump(by_alias=True)
+    if info.output_tools:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, args)])
+    return ModelResponse(parts=[TextPart(grade.model_dump_json(by_alias=True))])
+
+
+async def test_dataset_uses_case_judges_and_programmatic_output_formats() -> None:
+    judge_model = FunctionModel(_passing_judge, model_name="eval-judge-probe")
     dataset = _load_dataset(judge_model)
     cases = {case.name: case for case in dataset.cases}
 
@@ -87,13 +94,6 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats(
         "hostile_conversation_span.txt"
     )
 
-    async def pass_judgment(*_args, **_kwargs) -> GradingOutput:
-        return GradingOutput(reason="The response satisfies the rubric.", pass_=True, score=1)
-
-    monkeypatch.setattr(
-        "pydantic_evals.evaluators.llm_as_a_judge.judge_input_output",
-        pass_judgment,
-    )
     judgment = await judges[0].evaluate(
         SimpleNamespace(inputs={"prompt": "Who are you?"}, output=EvalOutput("Praxis"))
     )

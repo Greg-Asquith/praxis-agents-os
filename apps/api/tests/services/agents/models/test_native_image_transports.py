@@ -107,7 +107,7 @@ async def test_google_image_adapter_preserves_media_and_transport(
     parts = body["contents"][0]["parts"]
     assert len(parts) == 1 + len(media)
     for part, source in zip(parts[1:], media, strict=True):
-        assert part["inlineData"]["mime_type" if vertex else "mimeType"] == source.media_type
+        assert part["inlineData"]["mime_type"] == source.media_type
         assert base64.urlsafe_b64decode(part["inlineData"]["data"]) == source.data
     assert body["generationConfig"]["responseModalities"] == ["IMAGE"]
     assert body["generationConfig"]["imageConfig"]["aspectRatio"] == "3:2"

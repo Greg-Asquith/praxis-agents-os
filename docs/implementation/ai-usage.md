@@ -101,7 +101,7 @@ a separate counter without deleting prior accounting.
 
 ## Invocation settlement
 
-Image tools retain their existing invocation meters. Pydantic AI 2.42's
+Image tools retain their existing invocation meters. Pydantic AI 2.50's
 direct image adapters return usage only after accepting image output. Empty
 OpenAI responses and empty or content-filtered Google responses can contain
 usage that the adapters discard when raising. Switching to result-only

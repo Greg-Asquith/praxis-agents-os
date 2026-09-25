@@ -14,7 +14,6 @@ import httpx2 as httpx
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles.anthropic import anthropic_model_profile
-from pydantic_ai.profiles.openai import openai_model_profile
 from pydantic_ai.retries import wait_retry_after
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -42,16 +41,11 @@ _PROVIDER_KEY_SETTING = {
 
 
 def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
-    """Supplies release profiles missing from Pydantic AI 2.42."""
-    if provider == PROVIDER_OPENAI and model in {"gpt-6-sol", "gpt-6-luna"}:
-        # Sol and Luna retain GPT-5.6's optional reasoning and Responses features.
-        return openai_model_profile("gpt-5.6-sol")
+    """Supplies release profile settings missing from Pydantic AI 2.50."""
     if provider == PROVIDER_ANTHROPIC and model == "claude-opus-5-5":
         return {
             **(anthropic_model_profile(model) or {}),
             "thinking_always_enabled": True,
-            "anthropic_supports_forced_tool_choice": False,
-            "anthropic_binds_thinking_blocks": True,
             "default_structured_output_mode": "native",
         }
     return None

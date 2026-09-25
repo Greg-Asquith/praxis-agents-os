@@ -49,13 +49,11 @@ Garden model with `ANTHROPIC_VERTEX_LOCATION=global`, `us`, or `eu` and the
 configured project. Regional availability and account access require provider
 verification; catalogue visibility alone does not prove access.
 
-Pydantic AI 2.42 lacks these release profiles. The factory supplies scoped
-profiles through `provider_model_profile` in `utils.py`. Sol and Luna reuse
-the documented GPT-5.6 Responses capabilities, including optional reasoning,
-encrypted reasoning replay, message phases, and prompt caching. Opus disables
-forced tool choice, uses native JSON schemas for structured output, and enables
-the SDK's recovery for thinking blocks bound to an earlier conversation prefix.
-Remove these overrides when upstream profiles cover the same contracts.
+Pydantic AI 2.50 profiles cover Sol and Luna, and cover Opus's disabled
+forced tool choice and thinking-block recovery. The factory adds the remaining
+Opus settings through `provider_model_profile` in `utils.py`: thinking always
+enabled and native JSON schemas for structured output. Remove the override
+when the upstream Opus profile covers both.
 
 The [Opus migration guide](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide)
 documents its request restrictions. Explicit disabled or budget-based thinking
@@ -135,10 +133,10 @@ including their status and body; connection failures remain connection
 failures. Run failures persist and emit the same safe `model_rate_limited`
 message for HTTP 429, without provider bodies or project details.
 
-The API locks Pydantic AI, slim, evals, and graph to 2.42.0, with OpenAI
-3.10.0, Anthropic 1.4.0, and Google Gen AI 2.22.0. The manifest retains minimum
+The API locks Pydantic AI, slim, evals, and graph to 2.50.0, with OpenAI
+3.19.2, Anthropic 1.8.0, and Google Gen AI 2.25.0. The manifest retains minimum
 version ranges. It explicitly selects Pydantic AI's `retries` extra and
-Tenacity because the transport imports their retry APIs. The 2.42 retries
+Tenacity because the transport imports their retry APIs. The 2.50 retries
 module still imports legacy HTTPX for upstream deprecated transports, so that
 package remains a transitive runtime dependency. Application provider clients
 have no legacy HTTPX exception. Framework tests can retain legacy HTTPX where
@@ -151,7 +149,7 @@ retry owner. Rerun adapter request-count tests for future SDK upgrades.
 
 ## Content-filter failures
 
-Azure Chat Completions uses the shared OpenAI adapter. Pydantic AI 2.42.0
+Azure Chat Completions uses the shared OpenAI adapter. Pydantic AI 2.50.0
 maps an HTTP 400 `content_filter` response to a filtered result for ordinary
 requests. Its streaming path instead raises an internal `TypeError` while
 handling that result. Praxis settles the run as failed with its generic safe

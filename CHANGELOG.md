@@ -23,6 +23,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   returns conversion names alongside unchanged metrics and IDs, including
   Code Mode and retained results. Change history and writes are pending.
 
+### Security
+
+- Pydantic AI 2.50 keeps instructions, exceptions, and output templates out of
+  agent spans when trace content is disabled (GHSA-4x9p-g9wm-8q7f). Provider
+  SDKs and model pricing data update with it.
+
 ## [0.1.0] - 2026-07-28
 
 ### Added
