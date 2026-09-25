@@ -23,6 +23,15 @@ minor release. Patch releases contain backward-compatible fixes only.
   returns conversion names alongside unchanged metrics and IDs, including
   Code Mode and retained results. Change history and writes are pending.
 
+### Changed
+
+- Code Mode runs on Monty 1.0. Scripts can read the clock, use random values,
+  and import `base64`, `copy`, `functools`, and `time`. Sleeps return at once.
+  Scripts paused for approval before the upgrade cannot resume: read-only
+  scripts return a failure the agent can redraft, and scripts with completed
+  changes need operator recovery. Agent guidance for Code Mode now covers when
+  to use a workflow, when to use `run_code` instead, and the configured limits.
+
 ### Security
 
 - Pydantic AI 2.50 keeps instructions, exceptions, and output templates out of

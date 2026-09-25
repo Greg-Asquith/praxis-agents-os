@@ -12,14 +12,27 @@ from typing import Any
 
 from pydantic_ai.toolsets import FunctionToolset
 
+from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolPolicy
 
-_SANDBOX_GUIDANCE = """Run one short tool workflow in the restricted Python sandbox.
-Use wrapped functions for data work and direct tools for conversation-shaped actions. Prefer one
-workflow per task. Call every wrapped function with `await` and keyword arguments, and leave the
-workflow's answer as the last expression. The signatures below are reference documentation; do
-not redefine them.
+_SANDBOX_GUIDANCE = """Run one short Python workflow that calls your tools and processes their results in a
+restricted sandbox.
+
+Use a workflow when a task needs several tool calls or work between them: looping over accounts,
+campaigns, date ranges, or records; feeding identifiers from one result into later calls; or
+filtering, joining, aggregating, ranking, comparing periods, and calculating totals, rates, or
+changes. Prefer one workflow per task over a chain of direct calls. Call a tool directly when one
+call answers the question, when the tool is not listed below, or for conversation-shaped actions.
+This sandbox cannot read or create files; use `run_code`, when available, for spreadsheets,
+presentations, documents, charts, or heavy computation over file contents.
+
+Call every wrapped function with `await` and keyword arguments, and leave the workflow's answer as
+the last expression. The signatures below are reference documentation; do not redefine them.
+Governed nested calls execute serially; `asyncio.gather` does not make them parallel. A failed
+nested call raises `RuntimeError`, so catch it to report partial failures. A call that needs
+approval pauses the workflow until the operator decides, then resumes where it stopped; a denied
+call raises `PermissionError`.
 
 Treat wrapped-tool results as intermediate variables, not as the workflow answer. Use Python to
 filter, join, aggregate, rank, branch, or derive identifiers and arguments for later calls. Return
@@ -27,13 +40,17 @@ only compact, decision-ready data with relevant counts and caveats. Do not merel
 independent tool responses or return whole raw payloads unless the user explicitly requests raw
 data and the payload is already small. For fan-out results, inspect each result entry's `data`;
 the outer `results` length is the number of resources queried, not the number of provider rows.
-Do not return samples that still contain a whole fan-out entry. Governed nested calls execute
-serially; `asyncio.gather` does not make them parallel.
+Do not return samples that still contain a whole fan-out entry.
 
-The pinned sandbox supports classes, decorators, async code, and type-checked signatures. Allowed
-imports are asyncio, collections, dataclasses, datetime, itertools, json, math, os, pathlib, re,
-sys, typing, and unicodedata. It has no network modules or third-party imports. Environment,
-wall-clock, and filesystem access are unavailable because no OS handler or mount is provided."""
+The pinned sandbox supports classes, dataclasses, decorators, async code, f-strings, `str.format`,
+and type-checked signatures. Allowed imports are asyncio, base64, binascii, collections, copy,
+dataclasses, datetime, functools, itertools, json, math, os, pathlib, random, re, sys, time,
+typing, and unicodedata; use built-ins and `math` for statistics. It has no network modules or
+third-party imports, and environment and filesystem access are unavailable. `datetime.now()`
+reads the current UTC time. Sleeps return immediately, so do not poll or wait.
+
+Each workflow allows at most {max_calls} wrapped calls and {timeout} seconds. Keep the final value under
+{result_kb} KB of JSON; printed output is capped at {output_chars} characters."""
 
 _SCHEMA_METADATA_KEYS = frozenset(
     {
@@ -101,7 +118,13 @@ class CodeModeCatalog:
 def render_run_workflow_description(stub_text: str) -> str:
     """Render the tool description and sandbox truth from the same catalog source."""
     catalog = stub_text or "# No wrapped functions are available for this run."
-    return f"{_SANDBOX_GUIDANCE}\n\nAvailable wrapped functions:\n```python\n{catalog}\n```"
+    guidance = _SANDBOX_GUIDANCE.format(
+        max_calls=settings.AGENT_CODE_MODE_MAX_NESTED_CALLS,
+        timeout=f"{settings.AGENT_CODE_MODE_TIMEOUT_SECONDS:g}",
+        result_kb=settings.AGENT_CODE_MODE_RESULT_MAX_BYTES // 1024,
+        output_chars=f"{settings.AGENT_CODE_MODE_OUTPUT_MAX_CHARS:,}",
+    )
+    return f"{guidance}\n\nAvailable wrapped functions:\n```python\n{catalog}\n```"
 
 
 def render_tool_stub(definition: RuntimeToolDefinition) -> str:

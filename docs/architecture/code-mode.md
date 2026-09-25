@@ -94,7 +94,7 @@ signatures, and deterministic catalogue assembly. Fields named with Python
 keywords use functional `TypedDict` syntax, preserving their exact wire names.
 
 The 62 eligible first-party definitions compile individually and together.
-The combined catalogue passes the pinned Monty 0.0.21 type checker. Tests also
+The combined catalogue passes the pinned Monty 1.0.0 type checker. Tests also
 consume a keyword-named output and reject an invalid operation on its declared
 type. Upstream compiles 60 of those definitions individually; Outlook message
 read and search fail on `from`. Future schema or provider additions must rerun
@@ -107,10 +107,12 @@ pool of `pydantic-monty` subprocess workers (`code_mode/executor.py`). The
 interpreter receives **no ambient authority**: no OS handler, mount, network,
 credentials, database, workspace filesystem, or third-party imports. Its only
 external functions are the generated stubs for that run's eligible tools.
-Environment, wall-clock, and filesystem access fail; network modules are not
-importable. The import allowlist is a small stdlib subset (`asyncio`,
-`collections`, `dataclasses`, `datetime`, `itertools`, `json`, `math`, `os`,
-`pathlib`, `re`, `sys`, `typing`, `unicodedata`). The sandbox does support
+Environment and filesystem access fail; network modules are not importable.
+Scripts can read the worker's UTC clock and draw random values. Sleeps return
+immediately, so a script cannot hold a pool worker idle. The import allowlist
+is a small stdlib subset (`asyncio`, `base64`, `binascii`, `collections`,
+`copy`, `dataclasses`, `datetime`, `functools`, `itertools`, `json`, `math`,
+`os`, `pathlib`, `random`, `re`, `sys`, `time`, `typing`, `unicodedata`). The sandbox does support
 classes, decorators, async code, and type-checked signatures.
 
 Wrapped tool implementations keep their ordinary host/network authority — the
@@ -341,10 +343,13 @@ client-first.
 ## Guidance has one source per audience
 
 Model-facing guidance is generated with the stub catalog from the same source
-as the signatures and output contracts (`code_mode/stubs.py`): direct tools
-for conversation-shaped acts, wrapped functions for data work, short scripts,
-the last expression is the result, intermediate results are variables to
-reduce — not payloads to return. Sandbox syntax and stdlib claims come from
+as the signatures and output contracts (`code_mode/stubs.py`): workflows for
+multi-call loops, chained identifiers, and calculations; direct tools for
+single calls and conversation-shaped acts; `run_code` for files; the last
+expression is the result; intermediate results are variables to reduce, not
+payloads to return. It names the exceptions failed and denied nested calls
+raise, and renders the call, time, result, and output limits from the
+`AGENT_CODE_MODE_*` settings. Sandbox syntax and stdlib claims come from
 verified probes of the pinned interpreter
 (`tests/services/agents/runtime/code_mode/test_monty_probes.py`), not
 hand-maintained prose, so guidance cannot drift from what the sandbox actually

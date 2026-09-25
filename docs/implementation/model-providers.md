@@ -140,7 +140,7 @@ Tenacity because the transport imports their retry APIs. The 2.50 retries
 module still imports legacy HTTPX for upstream deprecated transports, so that
 package remains a transitive runtime dependency. Application provider clients
 have no legacy HTTPX exception. Framework tests can retain legacy HTTPX where
-required. Monty remains 0.0.21.
+required. Monty is pinned to 1.0.0.
 
 The local retry wrapper remains necessary to return an exhausted response
 with its unread body intact. SDKs translate that final response into their

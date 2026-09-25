@@ -11,6 +11,7 @@ from pydantic import BaseModel, create_model
 from pydantic_ai.function_signature import FunctionSignature
 from pydantic_monty import AsyncMonty, MontyTypingError
 
+from core.settings import settings
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS as GMAIL_TOOL_DEFINITIONS
@@ -110,25 +111,42 @@ def test_output_definitions_unify_shared_types_and_prefix_only_conflicts() -> No
 
 def test_catalog_description_uses_probe_pinned_workflow_guidance() -> None:
     catalog = CodeModeCatalog.build(((SCHEMA_MATRIX_DEFINITION, "auto"),))
+    description = " ".join(catalog.tool_description.split())
 
     assert catalog.tool_names == ("schema_matrix",)
-    assert "Run one short tool workflow" in catalog.tool_description
-    assert "classes, decorators, async code, and type-checked signatures" in (
-        catalog.tool_description
+    assert "Run one short Python workflow" in description
+    assert "feeding identifiers from one result into later calls" in description
+    assert "Call a tool directly when one call answers the question" in description
+    assert "cannot read or create files; use `run_code`" in description
+    assert "Prefer one workflow per task" in description
+    assert "results as intermediate variables" in description
+    assert "filter, join, aggregate, rank, branch" in description
+    assert "Do not merely collect independent tool responses" in description
+    assert "outer `results` length is the number of resources queried" in description
+    assert "Do not return samples that still contain a whole fan-out entry" in description
+    assert "`asyncio.gather` does not make them parallel" in description
+    assert "A failed nested call raises `RuntimeError`" in description
+    assert "a denied call raises `PermissionError`" in description
+    assert "classes, dataclasses, decorators, async code, f-strings, `str.format`" in description
+    assert "asyncio, base64, binascii, collections, copy, dataclasses, datetime" in description
+    assert "environment and filesystem access are unavailable" in description
+    assert "`datetime.now()` reads the current UTC time" in description
+    assert "Sleeps return immediately" in description
+
+
+def test_catalog_description_states_configured_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_MAX_NESTED_CALLS", 12)
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_TIMEOUT_SECONDS", 30.0)
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_RESULT_MAX_BYTES", 16_384)
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_OUTPUT_MAX_CHARS", 4_000)
+
+    description = " ".join(
+        CodeModeCatalog.build(((SCHEMA_MATRIX_DEFINITION, "auto"),)).tool_description.split()
     )
-    assert "asyncio, collections, dataclasses" in catalog.tool_description
-    assert "Environment,\nwall-clock, and filesystem access are unavailable" in (
-        catalog.tool_description
-    )
-    assert "one\nworkflow per task" in catalog.tool_description
-    assert "results as intermediate variables" in catalog.tool_description
-    assert "filter, join, aggregate, rank, branch" in catalog.tool_description
-    assert "Do not merely collect\nindependent tool responses" in catalog.tool_description
-    assert "outer `results` length is the number of resources queried" in (catalog.tool_description)
-    assert "Do not return samples that still contain a whole fan-out entry" in (
-        catalog.tool_description
-    )
-    assert "`asyncio.gather` does not make them parallel" in catalog.tool_description
+
+    assert "at most 12 wrapped calls and 30 seconds" in description
+    assert "under 16 KB of JSON" in description
+    assert "capped at 4,000 characters" in description
 
 
 def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:

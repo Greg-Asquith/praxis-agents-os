@@ -30,6 +30,13 @@ synthetic staged object under its rebound owner reference. Keep these saved
 bytes when changing serializers; regenerating them with the current runtime
 would erase their upgrade coverage.
 
+Monty snapshots do not load across Monty versions, so each Monty upgrade
+re-captures only `code_mode_state.snapshot_b64` and `monty_version`. Run the
+saved `code` through `MontyExecutor.execute`, raise `ApprovalRequired` at call
+number `executed_call_count`, and store the returned snapshot. Leave every
+other field unchanged. The snapshots were last re-captured with Monty 1.0.0 on
+25 September 2026.
+
 The upgrade scenarios also mutate copies to represent unsupported versions,
 ambiguous histories, terminal children, and stale tabs. Running state with a
 retained approval but no reservation represents the old acceptance boundary:

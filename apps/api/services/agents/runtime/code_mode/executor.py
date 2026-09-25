@@ -16,6 +16,7 @@ from pydantic_monty import (
     AsyncMonty,
     ExternalSettledResult,
     MontyComplete,
+    OSPolicy,
     ResourceLimits,
 )
 
@@ -23,6 +24,9 @@ from core.settings import settings
 
 ExternalFunction = Callable[..., Awaitable[Any]]
 PendingSettlement = Callable[[], Awaitable[ExternalSettledResult]]
+
+# Sleeps return at once so a script cannot hold a pool worker idle.
+_OS_POLICY: OSPolicy = {"sleep": "zero"}
 
 
 @dataclass(frozen=True)
@@ -85,7 +89,7 @@ class MontyExecutor:
         self._request_timeout_seconds = request_timeout_seconds
         self._output_max_chars = output_max_chars
         self._limits: ResourceLimits = {
-            "max_duration_secs": timeout_seconds,
+            "max_feed_duration_secs": timeout_seconds,
             "max_memory": memory_max_bytes,
             "max_recursion_depth": max_recursion_depth,
             "gc_interval": gc_interval,
@@ -119,7 +123,7 @@ class MontyExecutor:
         pool = await self._get_pool()
         output = _BoundedOutput(self._output_max_chars)
         async with asyncio.timeout(timeout_seconds or self._timeout_seconds):
-            async with pool.checkout(limits=self._limits) as session:
+            async with pool.checkout(limits=self._limits, os_policy=_OS_POLICY) as session:
                 worker_pid = session.worker_pid
                 if worker_pid is not None:
                     self._active_worker_pids.add(worker_pid)
@@ -160,7 +164,8 @@ class MontyExecutor:
         output.truncated = prior_output_truncated
         async with asyncio.timeout(timeout_seconds):
             async with pool.checkout(
-                limits={**self._limits, "max_duration_secs": timeout_seconds}
+                limits={**self._limits, "max_feed_duration_secs": timeout_seconds},
+                os_policy=_OS_POLICY,
             ) as session:
                 restored = await session.load_snapshot(
                     snapshot_bytes,

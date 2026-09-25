@@ -399,8 +399,9 @@ contract, bounds, and audit record. The bridge reaches those controls only
 through Pydantic AI's prepared inner `ToolManager`; direct dispatch calls or a
 separate Praxis copy of tool-layer validation is a review failure.
 
-The Monty interpreter receives no filesystem, environment, clock, network,
-database, credential, OS handler, or mount. Wrapped host tools retain their
+The Monty interpreter receives no filesystem, environment, network, database,
+credential, OS handler, or mount. It reads only the worker's UTC clock and
+random source, and its sleeps return immediately. Wrapped host tools retain their
 normal authority, which is why eligibility never substitutes for dispatch.
 Nested execution is serial and every value crossing the interpreter boundary
 is independently JSON-safe and byte-bounded.

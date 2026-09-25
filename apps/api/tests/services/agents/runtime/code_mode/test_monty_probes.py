@@ -8,6 +8,7 @@ from pydantic_monty import (
     AsyncFunctionSnapshot,
     AsyncFutureSnapshot,
     AsyncMonty,
+    ClassInstance,
     ExternalSettledResult,
     MontyComplete,
     MontyConversionError,
@@ -43,9 +44,9 @@ def _assert_runtime_error(error: MontyRuntimeError, expected_type: type[BaseExce
 
 
 def test_exact_monty_packages_are_installed() -> None:
-    assert version("pydantic-monty") == "0.0.21"
-    assert version("pydantic-monty-client") == "0.0.21"
-    assert version("pydantic-monty-runtime") == "0.0.21"
+    assert version("pydantic-monty") == "1.0.0"
+    assert version("pydantic-monty-client") == "1.0.0"
+    assert version("pydantic-monty-runtime") == "1.0.0"
 
 
 async def test_feed_run_calls_sync_and_async_external_functions() -> None:
@@ -186,16 +187,22 @@ async def test_checkout_timeout_bounds_pool_wait() -> None:
 async def test_language_surface_and_stdlib_allowlist() -> None:
     allowed_modules = (
         "asyncio",
+        "base64",
+        "binascii",
         "collections",
+        "copy",
         "dataclasses",
         "datetime",
+        "functools",
         "itertools",
         "json",
         "math",
         "os",
         "pathlib",
+        "random",
         "re",
         "sys",
+        "time",
         "typing",
         "unicodedata",
     )
@@ -232,7 +239,6 @@ await counter.doubled()
     ("code", "expected_type"),
     [
         ("import os\nos.getenv('HOME')", RuntimeError),
-        ("import datetime\ndatetime.datetime.now()", RuntimeError),
         ("import pathlib\npathlib.Path('/etc/passwd').read_text()", PermissionError),
         ("import socket", ModuleNotFoundError),
     ],
@@ -248,10 +254,23 @@ async def test_host_access_is_unavailable_without_handlers(
     _assert_runtime_error(exc_info.value, expected_type)
 
 
+async def test_string_formatting_is_supported() -> None:
+    code = "value = 0.256\n(f'{value:.1%}', '{:,}'.format(12345), '%s-%d' % ('a', 2))"
+    async with AsyncMonty() as pool, pool.checkout() as session:
+        assert await session.feed_run(code) == ("25.6%", "12,345", "a-2")
+
+
+async def test_clock_and_zero_sleep_policy() -> None:
+    code = "import asyncio, datetime, time\ntime.sleep(5)\nawait asyncio.sleep(5)\ndatetime.datetime.now().year"
+    async with AsyncMonty() as pool, pool.checkout(os_policy={"sleep": "zero"}) as session:
+        async with asyncio.timeout(2):
+            assert await session.feed_run(code) >= 2026
+
+
 @pytest.mark.parametrize(
     ("limits", "code", "expected_type"),
     [
-        ({"max_duration_secs": 0.01}, "while True:\n    pass", TimeoutError),
+        ({"max_feed_duration_secs": 0.01}, "while True:\n    pass", TimeoutError),
         (
             {"max_memory": 10_000},
             "try:\n    [value for value in range(100_000)]\nexcept MemoryError:\n    'caught'",
@@ -271,9 +290,12 @@ async def test_resource_limit_semantics(
 ) -> None:
     assert ResourceLimits.__optional_keys__ == {
         "gc_interval",
-        "max_duration_secs",
+        "max_feed_duration_secs",
         "max_memory",
         "max_recursion_depth",
+        "max_suspensions",
+        "max_total_sleep_secs",
+        "max_turn_duration_secs",
     }
     assert ResourceLimits.__required_keys__ == set()
 
@@ -343,16 +365,27 @@ async def test_integrated_manual_driver_retains_pre_call_snapshot() -> None:
         (b"binary", b"binary"),
         ((1, 2), (1, 2)),
         ({1, 2}, {1, 2}),
-        (ProbeRecord(value=42), ProbeRecord(value=42)),
     ],
 )
 async def test_supported_boundary_values(value: object, expected: object) -> None:
-    async with AsyncMonty() as pool, pool.checkout(dataclass_registry=[ProbeRecord]) as session:
+    async with AsyncMonty() as pool, pool.checkout() as session:
         assert await session.feed_run("value", inputs={"value": value}) == expected
 
 
-@pytest.mark.parametrize("value", [bytearray(b"binary"), complex(1, 2)])
+async def test_wrapped_class_instances_return_the_host_object() -> None:
+    record = ProbeRecord(value=42)
+    async with AsyncMonty() as pool, pool.checkout() as session:
+        returned, attribute = await session.feed_run(
+            "(value, value.value)",
+            inputs={"value": ClassInstance(record, eager_attrs="all")},
+        )
+
+    assert returned is record
+    assert attribute == 42
+
+
+@pytest.mark.parametrize("value", [bytearray(b"binary"), complex(1, 2), ProbeRecord(value=42)])
 async def test_unsupported_boundary_values(value: object) -> None:
-    async with AsyncMonty() as pool, pool.checkout(dataclass_registry=[ProbeRecord]) as session:
+    async with AsyncMonty() as pool, pool.checkout() as session:
         with pytest.raises(MontyConversionError):
             await session.feed_run("value", inputs={"value": value})
