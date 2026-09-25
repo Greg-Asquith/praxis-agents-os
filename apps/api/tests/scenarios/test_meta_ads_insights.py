@@ -71,11 +71,12 @@ async def test_insights_dispatch_preserves_complete_report(
             "account_id": "111",
             "account_name": "Example account",
             "campaign_id": str(index),
-            "campaign_name": f"Campaign {index}: " + "Example campaign " * 5,
+            "campaign_name": f"Campaign {index}: " + "Example campaign " * 2,
             "date_start": today,
             "date_stop": today,
             "spend": "2.50",
             "impressions": str(index),
+            "actions": [{"action_type": "offsite_conversion.custom.901", "value": "2"}],
             **(
                 {
                     "objective": "OUTCOME_SALES",
@@ -104,6 +105,8 @@ async def test_insights_dispatch_preserves_complete_report(
     def respond(request):
         requests.append(request)
         assert request.method == "GET"
+        if request.url.path == f"/{META_GRAPH_API_VERSION}/act_111/customconversions":
+            return httpx2.Response(200, json={"data": [{"id": "901", "name": "Qualified lead"}]})
         if request.url.path == f"/{META_GRAPH_API_VERSION}/act_222/insights":
             return httpx2.Response(
                 400,
@@ -136,6 +139,7 @@ async def test_insights_dispatch_preserves_complete_report(
     fields = [
         "spend",
         "impressions",
+        "actions",
         "objective",
         "quality_ranking",
         "outbound_clicks",
@@ -154,6 +158,9 @@ async def test_insights_dispatch_preserves_complete_report(
         "data = report['results'][0]['data']\n"
         "{'rows': len(data['rows']), 'impressions': sum(row['metrics']['impressions'] "
         "for row in data['rows']), 'currency': data['currency'], "
+        "'conversion_names': list(set(row['actions']['actions'][0]['custom_conversion_name'] "
+        "for row in data['rows'])), "
+        "'conversion_total': sum(row['actions']['actions'][0]['value'] for row in data['rows']), "
         "'first_objective': data['rows'][0]['keys']['objective'], "
         "'second_objective': data['rows'][1]['keys']['objective'], "
         "'first_outbound': data['rows'][0]['actions']['outbound_clicks'], "
@@ -187,7 +194,7 @@ async def test_insights_dispatch_preserves_complete_report(
         )
 
     assert result.run.status == "completed"
-    assert len(requests) == (3 if failure in {"query", "authentication"} else 2), [
+    assert len(requests) == (4 if failure in {"query", "authentication"} else 3), [
         part.content
         for message in seen[-1][0]
         for part in message.parts
@@ -208,10 +215,18 @@ async def test_insights_dispatch_preserves_complete_report(
         result.tool_returns(RUN_WORKFLOW_TOOL_NAME if nested else DEFINITION.name)
     )
     if nested:
+        assert result.tool_returns(RUN_WORKFLOW_TOOL_NAME), [
+            part.content
+            for message in seen[-1][0]
+            for part in message.parts
+            if isinstance(part, RetryPromptPart)
+        ]
         assert result.tool_returns(RUN_WORKFLOW_TOOL_NAME)[0]["content"] == {
             "rows": 1_500,
             "impressions": 1_124_250,
             "currency": "EUR",
+            "conversion_names": ["Qualified lead"],
+            "conversion_total": 3_000,
             "first_objective": None,
             "second_objective": "OUTCOME_SALES",
             "first_outbound": [],
@@ -234,6 +249,7 @@ async def test_insights_dispatch_preserves_complete_report(
     assert preview["preview"] is True
     assert preview["lists"] == {"results.0.data.rows": {"total": 1_500, "shown": 10}}
     data = preview["data"]["results"][0]["data"]
+    assert data["rows"][0]["actions"]["actions"][0]["custom_conversion_name"] == "Qualified lead"
     assert data["rows"][0]["keys"]["objective"] is None
     assert data["rows"][1]["keys"]["objective"] == "OUTCOME_SALES"
     assert data["rows"][0]["actions"]["outbound_clicks"] == []
@@ -267,6 +283,12 @@ async def test_insights_dispatch_preserves_complete_report(
     assert full["rows"][-1]["keys"]["campaign_id"] == "1499"
     assert sum(row["metrics"]["impressions"] for row in full["rows"]) == 1_124_250
     assert sum(row["metrics"]["spend"] for row in full["rows"]) == 3_750
+    assert all(
+        row["actions"]["actions"][0]["custom_conversion_name"] == "Qualified lead"
+        and row["actions"]["actions"][0]["custom_conversion_id"] == "901"
+        for row in full["rows"]
+    )
+    assert sum(row["actions"]["actions"][0]["value"] for row in full["rows"]) == 3_000
     assert len(saved) > 12_000
 
     followup = await run_scenario(
@@ -280,8 +302,8 @@ async def test_insights_dispatch_preserves_complete_report(
                             "read_file",
                             {
                                 "file_id": preview["file_reference"],
-                                "offset": len(saved) - 1_000,
-                                "max_bytes": 1_000,
+                                "offset": len(saved) - 2_000,
+                                "max_bytes": 2_000,
                             },
                         ),
                     )
@@ -293,3 +315,177 @@ async def test_insights_dispatch_preserves_complete_report(
     )
     assert followup.run.status == "completed"
     assert "1499" in str(followup.tool_returns("read_file")[0]["content"])
+
+
+@pytest.mark.parametrize("nested", [False, True])
+async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
+    db_session_factory, monkeypatch, insights_runtime, nested
+):
+    from integrations.meta_ads.tools import TOOL_DEFINITIONS
+
+    definitions = [item for item in TOOL_DEFINITIONS if item.name != DEFINITION.name]
+    for definition in definitions:
+        monkeypatch.setitem(
+            RUNTIME_TOOL_CATALOG,
+            definition.name,
+            replace(definition, availability_check=lambda: True),
+        )
+    monkeypatch.setattr(
+        "services.agents.runtime.execute.setup.resolve_active_context",
+        AsyncMock(
+            return_value=ResolvedActiveContext(entries=(context_entry("111"), context_entry("222")))
+        ),
+    )
+    requests = []
+
+    def respond(request):
+        path = request.url.path.removeprefix(f"/{META_GRAPH_API_VERSION}/")
+        requests.append(path)
+        assert request.method == "GET"
+        if path.startswith("act_222"):
+            return httpx2.Response(400, json={"error": {"code": 190, "message": "Expired token"}})
+        if path == "act_111":
+            payload = {"name": "Account name", "currency": "EUR", "account_status": 1}
+        elif path == "act_111/campaigns":
+            payload = {"data": [{"id": "801", "name": "Campaign name", "status": "PAUSED"}]}
+        else:
+            assert path == "act_111/customconversions"
+            payload = {
+                "data": [{"id": "901", "name": "Conversion name", "description": "Private rule"}]
+            }
+        return httpx2.Response(200, json=payload)
+
+    context = await build_scenario_agent(
+        db_session_factory, tool_names=[item.name for item in definitions], code_mode_enabled=nested
+    )
+    calls = [
+        ToolCall("meta_ads_get_accounts", {}),
+        ToolCall("meta_ads_list_objects", {"object_type": "campaign"}),
+        ToolCall("meta_ads_list_custom_conversions", {}),
+    ]
+    if nested:
+        calls = [
+            ToolCall(
+                RUN_WORKFLOW_TOOL_NAME,
+                {
+                    "code": "accounts = await meta_ads_get_accounts()\n"
+                    "objects = await meta_ads_list_objects(object_type='campaign')\n"
+                    "conversions = await meta_ads_list_custom_conversions()\n"
+                    "{'accounts': accounts, 'objects': objects, 'conversions': conversions}"
+                },
+            )
+        ]
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        provider = MetaAdsClient(AsyncMock(return_value="test-meta-token"), client=http)
+        for module in ("get_accounts", "list_objects", "list_custom_conversions"):
+            monkeypatch.setattr(
+                f"integrations.meta_ads.tools.{module}.meta_ads_client",
+                AsyncMock(return_value=provider),
+            )
+        result = await run_scenario(
+            db_session_factory,
+            context,
+            model=scripted_model(turns=[ToolTurn(tuple(calls)), "Account details ready."]),
+        )
+    assert result.run.status == "completed"
+    if nested:
+        returned = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)[0]["content"]
+        reports = [returned[key] for key in ("accounts", "objects", "conversions")]
+    else:
+        reports = [result.tool_returns(call.name)[0]["content"] for call in calls]
+    for report in reports:
+        assert [item["status"] for item in report["results"]] == ["success", "error"], report
+        assert report["results"][1]["error_code"] == "IntegrationAuthError"
+    assert reports[0]["results"][0]["data"]["name"] == "Account name"
+    assert reports[1]["results"][0]["data"]["objects"][0]["name"] == "Campaign name"
+    assert reports[2]["results"][0]["data"]["conversions"][0]["name"] == "Conversion name"
+    operations = [row for row in result.audit_rows if row.resource_type == "integration_resource"]
+    assert len(operations) == 6
+    assert [row.status for row in operations].count("success") == 3
+    expected_fields = {
+        "get_account": {"account_count": 1},
+        "list_objects": {
+            "object_type": "campaign",
+            "statuses": ["ACTIVE", "PAUSED"],
+            "object_count": 1,
+        },
+        "list_custom_conversions": {"conversion_count": 1},
+    }
+    for row in operations:
+        if row.status == "success":
+            fields = row.details["operation_detail"]["intent_groups"][0]["items"][0]["fields"]
+            assert fields == expected_fields[row.details["provider_operation"]]
+    details = json.dumps([row.details for row in operations])
+    for text in (
+        "Account name",
+        "Campaign name",
+        "Conversion name",
+        "Private rule",
+        "test-meta-token",
+    ):
+        assert text not in details
+    assert sorted(requests) == sorted(
+        [
+            f"act_{account}{suffix}"
+            for account in ("111", "222")
+            for suffix in ("", "/campaigns", "/customconversions")
+        ]
+    )
+
+
+@pytest.mark.parametrize("tool", ["list_objects", "list_custom_conversions"])
+async def test_account_listings_retain_complete_named_results(
+    db_session_factory, monkeypatch, insights_runtime, tool
+):
+    from integrations.meta_ads.tools import TOOL_DEFINITIONS
+
+    definition = next(item for item in TOOL_DEFINITIONS if item.name == f"meta_ads_{tool}")
+    monkeypatch.setitem(
+        RUNTIME_TOOL_CATALOG,
+        definition.name,
+        replace(definition, availability_check=lambda: True, max_public_result_chars=12_000),
+    )
+    records = [{"id": str(index + 1), "name": f"Named item {index}"} for index in range(500)]
+    key = "objects" if tool == "list_objects" else "conversions"
+    args = {"limit": 500, **({"object_type": "campaign"} if key == "objects" else {})}
+
+    def respond(request):
+        edge = "campaigns" if key == "objects" else "customconversions"
+        assert request.url.path == f"/{META_GRAPH_API_VERSION}/act_111/{edge}"
+        offset = int(request.url.params.get("after", "0"))
+        limit = int(request.url.params["limit"])
+        payload = {"data": records[offset : offset + limit]}
+        if offset + limit < len(records):
+            payload["paging"] = {
+                "next": f"https://graph.facebook.com{request.url.path}?after={offset + limit}"
+            }
+        return httpx2.Response(200, json=payload)
+
+    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        provider = MetaAdsClient(AsyncMock(return_value="test-meta-token"), client=http)
+        monkeypatch.setattr(
+            f"integrations.meta_ads.tools.{tool}.meta_ads_client", AsyncMock(return_value=provider)
+        )
+        result = await run_scenario(
+            db_session_factory,
+            context,
+            model=scripted_model(
+                turns=[ToolTurn((ToolCall(definition.name, args),)), "The full list is saved."]
+            ),
+        )
+    assert result.run.status == "completed"
+    preview = result.tool_returns(definition.name)[0]["content"]
+    assert preview["preview"] is True
+    assert preview["lists"] == {f"results.0.data.{key}": {"total": 500, "shown": 10}}
+    assert preview["data"]["results"][0]["data"][key][0]["name"] == "Named item 0"
+    async with db_session_factory() as db:
+        await set_session_tenant_context(
+            db, workspace_id=context.workspace_id, user_id=context.user_id
+        )
+        file = await db.get(File, UUID(preview["file_id"]))
+        revision = await db.get(FileRevision, file.current_revision_id)
+        saved = await get_storage_provider().get_object(file_revision_ref(revision))
+    full = json.loads(saved)["results"][0]["data"][key]
+    assert len(full) == 500
+    assert full[-1]["name"] == "Named item 499"

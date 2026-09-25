@@ -19,16 +19,16 @@ def test_throttle_is_per_account_and_expires(monkeypatch: pytest.MonkeyPatch) ->
     now = 10.0
     monkeypatch.setattr(throttle, "monotonic", lambda: now)
     throttle.record_usage("123", _headers())
-    throttle.ensure_account_available("456")
+    throttle.ensure_account_available("456", operation="run_insights")
     with pytest.raises(IntegrationRateLimitError, match="2 minutes") as caught:
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     assert caught.value.failure_disposition == IntegrationFailureDisposition.NOT_DISPATCHED
     assert caught.value.provider_key == "meta_ads"
     now = 71
     with pytest.raises(IntegrationRateLimitError, match="1 minute"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 130
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_account_usage_reset_is_in_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,9 +39,9 @@ def test_account_usage_reset_is_in_seconds(monkeypatch: pytest.MonkeyPatch) -> N
     assert "2 minutes" in throttle.throttle_message(headers)
     now = 89
     with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 90
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_business_insights_usage_and_longest_wait_are_used() -> None:
@@ -61,23 +61,23 @@ def test_business_insights_usage_and_longest_wait_are_used() -> None:
     }
     throttle.record_usage("123", headers)
     with pytest.raises(IntegrationRateLimitError, match="3 minutes"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_below_limit_and_missing_wait_do_not_block() -> None:
     throttle.record_usage("123", _headers(utilisation=99))
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
     throttle.record_usage("456", {"X-FB-Ads-Insights-Throttle": '{"acc_id_util_pct": 100}'})
-    throttle.ensure_account_available("456")
+    throttle.ensure_account_available("456", operation="run_insights")
 
 
 def test_valid_update_clears_throttle_and_missing_headers_preserve_it() -> None:
     throttle.record_usage("123", _headers())
     throttle.record_usage("123", {})
     with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     throttle.record_usage("123", _headers(utilisation=20, minutes=0))
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 @pytest.mark.parametrize(
@@ -102,7 +102,7 @@ def test_malformed_headers_are_ignored(raw: str) -> None:
         ("x-fb-ads-insights-throttle", "x-ad-account-usage", "x-business-use-case-usage"), raw
     )
     throttle.record_usage("123", headers)
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
     assert "few minutes" in throttle.throttle_message(headers)
 
 
@@ -119,12 +119,12 @@ def test_idle_eviction_retains_known_throttle_window(monkeypatch: pytest.MonkeyP
     throttle.record_usage("idle", _headers(utilisation=20, minutes=0))
     throttle.record_usage("blocked", _headers(minutes=10))
     now = 301
-    throttle.ensure_account_available("idle")
+    throttle.ensure_account_available("idle", operation="run_insights")
     assert "idle" not in throttle._accounts
     with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("blocked")
+        throttle.ensure_account_available("blocked", operation="run_insights")
     now = 602
-    throttle.ensure_account_available("blocked")
+    throttle.ensure_account_available("blocked", operation="run_insights")
     assert "blocked" not in throttle._accounts
 
 
@@ -137,7 +137,7 @@ def test_capacity_evicts_least_recently_used_account(monkeypatch: pytest.MonkeyP
     throttle.record_usage("second", _headers())
     now = 2
     with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("first")
+        throttle.ensure_account_available("first", operation="run_insights")
     now = 3
     throttle.record_usage("third", _headers())
     assert set(throttle._accounts) == {"first", "third"}
@@ -152,7 +152,7 @@ def test_app_insights_limit_also_blocks_the_observed_account():
         },
     )
     with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_healthy_account_header_cannot_shorten_an_active_insights_cooldown(monkeypatch):
@@ -167,9 +167,9 @@ def test_healthy_account_header_cannot_shorten_an_active_insights_cooldown(monke
         },
     )
     with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 120.0
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 def _account_headers(utilisation=100, seconds=120):
@@ -192,9 +192,9 @@ def test_expired_quota_is_not_revived_by_another_healthy_quota(monkeypatch, init
     monkeypatch.setattr(throttle, "monotonic", lambda: now)
     throttle.record_usage("123", initial)
     now = 121.0
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
     throttle.record_usage("123", healthy)
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 @pytest.mark.parametrize(
@@ -212,9 +212,9 @@ def test_overlapping_quota_deadlines_remain_independent(monkeypatch, initial, ot
     throttle.record_usage("123", other)
     now = 121.0
     with pytest.raises(IntegrationRateLimitError, match="4 minutes"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 310.0
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 @pytest.mark.parametrize(
@@ -231,9 +231,9 @@ def test_healthy_partial_update_cannot_extend_independent_cooldown(monkeypatch, 
     now = 10.0
     throttle.record_usage("123", healthy)
     with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 120.0
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_shorter_saturated_update_does_not_shorten_same_quota(monkeypatch):
@@ -244,9 +244,9 @@ def test_shorter_saturated_update_does_not_shorten_same_quota(monkeypatch):
     throttle.record_usage("123", _headers(minutes=1))
     now = 299.0
     with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 300.0
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_healthy_account_wait_does_not_qualify_saturated_insights():
@@ -257,7 +257,7 @@ def test_healthy_account_wait_does_not_qualify_saturated_insights():
             **_account_headers(20, 600),
         },
     )
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_healthy_insights_account_does_not_clear_app_limit(monkeypatch):
@@ -272,9 +272,9 @@ def test_healthy_insights_account_does_not_clear_app_limit(monkeypatch):
     )
     throttle.record_usage("123", _headers(utilisation=20, minutes=10))
     with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 120.0
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 @pytest.mark.parametrize(
@@ -292,7 +292,7 @@ def test_unrelated_business_wait_does_not_qualify_saturated_insights(entry):
             "X-Business-Use-Case-Usage": json.dumps({"123": [entry]}),
         },
     )
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")
 
 
 def test_healthy_business_entry_does_not_extend_saturated_entry(monkeypatch):
@@ -320,6 +320,6 @@ def test_healthy_business_entry_does_not_extend_saturated_entry(monkeypatch):
         },
     )
     with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
     now = 120.0
-    throttle.ensure_account_available("123")
+    throttle.ensure_account_available("123", operation="run_insights")

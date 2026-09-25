@@ -362,7 +362,7 @@ async def test_throttle_codes_fail_without_retry_and_include_wait(code, monkeypa
     assert caught.value.failure_disposition == IntegrationFailureDisposition.REJECTED
     assert caught.value.user_message.count("trace-throttle") == 1
     with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("123")
+        throttle.ensure_account_available("123", operation="run_insights")
 
 
 async def test_http_429_also_fails_without_retry(monkeypatch) -> None:
@@ -397,8 +397,8 @@ async def test_success_records_usage_for_account_and_background_report(
             path, operation="run_insights", policy=READ, usage_account_id=usage_account_id
         )
     with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123")
-    throttle.ensure_account_available("456")
+        throttle.ensure_account_available("123", operation="run_insights")
+    throttle.ensure_account_available("456", operation="run_insights")
 
 
 async def test_background_post_retries_read_with_bearer_and_computed_proof(

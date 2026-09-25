@@ -35,7 +35,7 @@ from ..settings import meta_ads_settings
 from ..throttle import ensure_account_available
 from .schemas.insights import MetaAdsInsightsFilter, MetaAdsInsightsLevel, MetaAdsInsightsOutput
 from .utils.audit import insights_audit_detail
-from .utils.bindings import META_ADS_BINDING
+from .utils.bindings import META_ADS_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client
 from .utils.form_schema import INSIGHTS_FORM_SCHEMA
 from .utils.validation import validated_insights_request
@@ -89,7 +89,7 @@ async def meta_ads_run_insights(
                 if remaining <= 0:
                     raise TimeoutError
                 async with asyncio.timeout(remaining):
-                    ensure_account_available(entry.external_id)
+                    ensure_account_available(entry.external_id, operation="run_insights")
                     client = await meta_ads_client(ctx, entry)
                     result = await run_insights(
                         client,
@@ -146,6 +146,10 @@ DEFINITION = RuntimeToolDefinition(
         "impressions, clicks, reach, frequency, cpc, cpm, ctr, actions, action_values, "
         "cost_per_action_type and purchase_roas. Keys hold identity, breakdown, and supported text values; "
         "metrics hold numbers; actions map fields to action_type, value and attribution windows. "
+        "Custom conversions also include custom_conversion_id and custom_conversion_name from "
+        "one account-scoped lookup. A null name means unresolved metadata, not zero conversions; "
+        "use the ID and result notes. Numbers and attribution remain unchanged. Do not sum "
+        "overlapping action types into a conversion total. "
         "Object and histogram fields are unsupported; unknown field names are provider-validated. "
         "Money is in major units of data.currency; ctr is percentage points. Recent values can "
         "change for 28 days. Attribution uses each ad set's Ads Manager setting unless explicit "
@@ -237,6 +241,6 @@ DEFINITION = RuntimeToolDefinition(
                 ),
             ),
         ),
-        result_fields=(ToolFieldPresentation(key="results", label="Results", format="list"),),
+        result_fields=RESULTS_FIELD,
     ),
 )

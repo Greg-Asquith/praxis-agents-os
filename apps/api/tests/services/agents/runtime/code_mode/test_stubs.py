@@ -545,7 +545,45 @@ def test_meta_ads_insights_stub_has_typed_rows_and_no_platform_ids() -> None:
     assert "metrics: dict[str," in rendered
     assert "actions: dict[str," in rendered
     assert "windows: dict[str," in rendered
+    assert "custom_conversion_id: NotRequired[MetaAdsId | None]" in rendered
+    assert "custom_conversion_name: NotRequired[MetaAdsText | None]" in rendered
     assert "integration_resource_id" not in rendered
     assert "connection_id" not in rendered
     assert definition.code_eligible
     assert definition.preview_list_path == "results.*.data.rows"
+
+
+@pytest.mark.parametrize(
+    "name,output,fields",
+    [
+        (
+            "meta_ads_get_accounts",
+            "MetaAdsAccountsOutput",
+            ["spend_cap_remaining: MetaAdsMoney | None", "timezone_name: MetaAdsText | None"],
+        ),
+        (
+            "meta_ads_list_objects",
+            "MetaAdsObjectsOutput",
+            ["object_count: int", "currency: str", "objects: list["],
+        ),
+        (
+            "meta_ads_list_custom_conversions",
+            "MetaAdsCustomConversionsOutput",
+            [
+                "conversion_count: int",
+                "conversions: list[",
+                "is_archived: NotRequired[bool | None]",
+            ],
+        ),
+    ],
+)
+def test_meta_ads_discovery_stubs_have_typed_account_data(name, output, fields) -> None:
+    definition = next(item for item in META_ADS_TOOL_DEFINITIONS if item.name == name)
+    rendered = render_tool_stub(definition)
+    assert f"async def {name}(" in rendered
+    assert f"-> {output}" in rendered
+    for field in fields:
+        assert field in rendered
+    assert "integration_resource_id" not in rendered
+    assert "connection_id" not in rendered
+    assert definition.code_eligible

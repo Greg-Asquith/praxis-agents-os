@@ -17,6 +17,9 @@ describe("Meta Ads integration module", () => {
     expect(metaAdsModule.credentialLabel).toBe("Access token")
     expect(integrationToolRowPresenters("meta_ads").map((presenter) => presenter.key)).toEqual([
       "meta_ads_run_insights",
+      "meta_ads_get_accounts",
+      "meta_ads_list_objects",
+      "meta_ads_list_custom_conversions",
     ])
   })
 

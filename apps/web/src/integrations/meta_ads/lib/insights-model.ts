@@ -2,6 +2,7 @@
 
 import type { DataColumn, DataRow } from "@/components/ui/data-table"
 import { isMoneyField } from "@/integrations/meta_ads/lib/money"
+import { UNRESOLVED_CONVERSION_NAME } from "@/integrations/meta_ads/lib/read-models"
 import { titleCaseToken } from "@/lib/format"
 import {
   isDateString,
@@ -110,7 +111,8 @@ function parseActions(
         !isRecord(item) ||
         typeof item["action_type"] !== "string" ||
         !isNullableFiniteNumber(item["value"]) ||
-        !isRecord(item["windows"])
+        !isRecord(item["windows"]) ||
+        !validCustomConversion(item)
       )
         return false
       const breakdowns = parseActionBreakdowns(item["breakdowns"])
@@ -122,7 +124,9 @@ function parseActions(
       const context = breakdowns
         .map(([name, value]) => `${titleCaseToken(name, name)}: ${value ?? "Not available"}`)
         .join(", ")
-      const label = `${titleCaseToken(field, field)}: ${titleCaseToken(item["action_type"], item["action_type"])}${context ? ` (${context})` : ""}`
+      const actionLabel =
+        customConversionLabel(item) ?? titleCaseToken(item["action_type"], item["action_type"])
+      const label = `${titleCaseToken(field, field)}: ${actionLabel}${context ? ` (${context})` : ""}`
       row[key] = item["value"]
       columns.set(key, metricColumn(key, field, label, currency))
       for (const [window, amount] of Object.entries(item["windows"])) {
@@ -163,4 +167,33 @@ function metricColumn(key: string, field: string, label: string, currency: strin
     ...(kind === "currency" ? { currencyCode: currency } : {}),
     ...(kind === "percent" ? { unit: "percentage-points" as const } : {}),
   }
+}
+
+function customConversionLabel(item: Record<string, unknown>): string | null {
+  const id =
+    typeof item["custom_conversion_id"] === "string"
+      ? item["custom_conversion_id"]
+      : typeof item["action_type"] === "string"
+        ? /^offsite_conversion\.custom\.(\d+)$/.exec(item["action_type"])?.[1]
+        : undefined
+  if (!id) return null
+  const name =
+    typeof item["custom_conversion_name"] === "string" && item["custom_conversion_name"].trim()
+      ? item["custom_conversion_name"]
+      : UNRESOLVED_CONVERSION_NAME
+  return `${name} (ID: ${id})`
+}
+
+// A name requires an ID, and the ID must match the action type it came from.
+function validCustomConversion(item: Record<string, unknown>): boolean {
+  const id = item["custom_conversion_id"]
+  const name = item["custom_conversion_name"]
+  const hasName = name !== undefined && name !== null
+  if (id === undefined || id === null) return !hasName
+  return (
+    typeof id === "string" &&
+    /^[0-9]{1,128}$/.test(id) &&
+    item["action_type"] === `offsite_conversion.custom.${id}` &&
+    (!hasName || (typeof name === "string" && name.length <= 512))
+  )
 }

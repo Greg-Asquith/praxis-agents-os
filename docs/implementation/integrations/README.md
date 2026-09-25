@@ -14,8 +14,8 @@ Use these focused references for provider behaviour:
 - [BigQuery](bigquery.md): discovery, schema cache, query bounds, and row scopes.
 - [Google Analytics](google-analytics.md): property discovery and reporting.
 - [Google Search Console](google-search-console.md): site routing and indexing writes.
-- [Meta Ads](meta-ads.md): System User tokens, ad account discovery, and
-  app-secret setup, and bounded Insights reporting.
+- [Meta Ads](meta-ads.md): System User tokens, account discovery and overview,
+  app-secret setup, object listing, and Insights with custom conversion names.
 - [Notion](notion.md): personal grants, bounded reads, and approved writes.
 - [Microsoft Graph](microsoft-graph.md): Entra connections, discovery, Outlook tools, and SharePoint file tools.
 

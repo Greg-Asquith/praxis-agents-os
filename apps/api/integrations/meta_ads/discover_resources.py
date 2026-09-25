@@ -11,20 +11,9 @@ from services.integrations.plugin import DiscoveredIntegrationResource, Integrat
 from utils.metadata import metadata_str
 
 from .client import MetaAdsClient, normalize_ad_account_id
+from .operations.values import ACCOUNT_STATUSES
 from .settings import meta_ads_settings
 
-_ACCOUNT_STATUSES = {
-    1: "ACTIVE",
-    2: "DISABLED",
-    3: "UNSETTLED",
-    7: "PENDING_RISK_REVIEW",
-    8: "PENDING_SETTLEMENT",
-    9: "IN_GRACE_PERIOD",
-    100: "PENDING_CLOSURE",
-    101: "CLOSED",
-    201: "ANY_ACTIVE",
-    202: "ANY_CLOSED",
-}
 _ACCOUNT_FIELDS = "id,account_id,name,currency,timezone_name,account_status,user_tasks"
 
 
@@ -126,7 +115,7 @@ def _resource(
         permissions_metadata={
             "currency": (metadata_str(account.get("currency")) or "").strip(),
             "timezone_name": (metadata_str(account.get("timezone_name")) or "").strip(),
-            "account_status": _ACCOUNT_STATUSES.get(status_code, "UNKNOWN"),
+            "account_status": ACCOUNT_STATUSES.get(status_code, "UNKNOWN"),
             "business_id": (metadata_str(business.get("id")) or "").strip(),
             "business_name": (metadata_str(business.get("name")) or "").strip(),
             "tasks": tasks,

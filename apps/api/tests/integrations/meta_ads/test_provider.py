@@ -24,7 +24,12 @@ def test_provider_contract_exposes_workspace_token_discovery_and_insights() -> N
     assert manifest.capability_flags == frozenset({"read", "write", "spend"})
     assert manifest.event_delivery == "none"
     assert PROVIDER.tool_definitions == TOOL_DEFINITIONS
-    assert [tool.name for tool in TOOL_DEFINITIONS] == ["meta_ads_run_insights"]
+    assert [tool.name for tool in TOOL_DEFINITIONS] == [
+        "meta_ads_run_insights",
+        "meta_ads_get_accounts",
+        "meta_ads_list_objects",
+        "meta_ads_list_custom_conversions",
+    ]
     assert "meta_ads" in VALID_TOOL_ICONS
 
 

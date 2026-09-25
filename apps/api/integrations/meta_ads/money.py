@@ -81,8 +81,12 @@ def amount_to_minor(amount: str | int | Decimal, currency: str) -> int:
     return int(minor)
 
 
+def is_supported_currency(currency: str) -> bool:
+    return currency in _SUPPORTED
+
+
 def _decimal_places(currency: str) -> int:
-    if currency not in _SUPPORTED:
+    if not is_supported_currency(currency):
         raise ValueError("Meta Ads currency is unsupported.")
     return 0 if currency in _OFFSET_ONE else 2
 

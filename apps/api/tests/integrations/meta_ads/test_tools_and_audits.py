@@ -206,7 +206,7 @@ async def test_known_throttle_is_audited_without_resolving_credentials(monkeypat
     )
     monkeypatch.setattr("integrations.meta_ads.tools.run_insights.meta_ads_client", client)
 
-    def unavailable(account_id):
+    def unavailable(account_id, *, operation):
         raise IntegrationRateLimitError("Try again in 5 minutes.", provider_key="meta_ads")
 
     monkeypatch.setattr(
@@ -348,7 +348,9 @@ async def test_execution_deadline_preserves_completed_accounts_and_audits_unstar
     assert audit.await_count == 3
 
 
-@pytest.mark.parametrize("phase", ["credentials", "submission", "retry", "polling", "paging"])
+@pytest.mark.parametrize(
+    "phase", ["credentials", "submission", "retry", "polling", "paging", "conversion_lookup"]
+)
 async def test_complete_account_budget_covers_every_wait(monkeypatch, phase):
     import asyncio
     import importlib
@@ -386,6 +388,23 @@ async def test_complete_account_budget_covers_every_wait(monkeypatch, phase):
         if "act_111" in path:
             return httpx2.Response(
                 200, json={"data": [{"spend": "5", "date_start": TODAY, "date_stop": TODAY}]}
+            )
+        if phase == "conversion_lookup":
+            if path.endswith("/customconversions"):
+                await stall()
+            return httpx2.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "actions": [
+                                {"action_type": "offsite_conversion.custom.901", "value": "2"}
+                            ],
+                            "date_start": TODAY,
+                            "date_stop": TODAY,
+                        }
+                    ]
+                },
             )
         if phase == "retry":
             return httpx2.Response(503, headers={"Retry-After": "5"}, json={"error": {"code": 2}})
@@ -426,10 +445,18 @@ async def test_complete_account_budget_covers_every_wait(monkeypatch, phase):
         toolset = FunctionToolset([replace(DEFINITION, timeout=0.5).to_pydantic_tool()])
         tool = (await toolset.get_tools(ctx))[DEFINITION.name]
         result = await toolset.call_tool(
-            DEFINITION.name, {"fields": ["spend"], "since": TODAY, "until": TODAY}, ctx, tool
+            DEFINITION.name,
+            {
+                "fields": ["actions"] if phase == "conversion_lookup" else ["spend"],
+                "since": TODAY,
+                "until": TODAY,
+            },
+            ctx,
+            tool,
         )
     assert [item["status"] for item in result["results"]] == ["success", "error", "error"]
-    assert result["results"][0]["data"]["rows"][0]["metrics"]["spend"] == 5
+    if phase != "conversion_lookup":
+        assert result["results"][0]["data"]["rows"][0]["metrics"]["spend"] == 5
     assert [item["error_code"] for item in result["results"][1:]] == [
         "meta_ads_insights_deadline"
     ] * 2
@@ -582,3 +609,68 @@ def test_account_audit_reserve_covers_shared_finalisation_bound():
     module = importlib.import_module("integrations.meta_ads.tools.run_insights")
     assert module._AUDIT_SECONDS_PER_ACCOUNT >= operations._TERMINAL_AUDIT_FINALIZE_TIMEOUT_SECONDS
     assert DEFINITION.timeout - module._EXECUTION_SECONDS >= 15
+
+
+@pytest.mark.parametrize(
+    "tool_name,preview_path",
+    [
+        ("meta_ads_get_accounts", None),
+        ("meta_ads_list_objects", "results.*.data.objects"),
+        ("meta_ads_list_custom_conversions", "results.*.data.conversions"),
+    ],
+)
+def test_account_read_tools_use_shared_governance(tool_name, preview_path):
+    from integrations.meta_ads.tools import TOOL_DEFINITIONS
+
+    definition = next(item for item in TOOL_DEFINITIONS if item.name == tool_name)
+    assert definition.timeout == 60
+    assert definition.effect == "read"
+    assert definition.egress == "provider_query"
+    assert definition.default_policy == "auto"
+    assert definition.code_eligible
+    assert definition.preview_list_path == preview_path
+    assert definition.integration_binding.resource_types == frozenset({"meta_ads_ad_account"})
+    if preview_path:
+        assert definition.max_public_result_chars > 0
+        assert definition.description.endswith(REPORT_RESULT_GUIDANCE)
+
+
+@pytest.mark.parametrize(
+    "module_name,tool_name,operation_name,args",
+    [
+        ("get_accounts", "meta_ads_get_accounts", "get_account", {}),
+        ("list_objects", "meta_ads_list_objects", "list_objects", {"object_type": "campaign"}),
+        (
+            "list_custom_conversions",
+            "meta_ads_list_custom_conversions",
+            "list_custom_conversions",
+            {},
+        ),
+    ],
+)
+async def test_account_read_throttle_fails_before_resolving_credentials(
+    monkeypatch, module_name, tool_name, operation_name, args
+):
+    import importlib
+
+    module = importlib.import_module(f"integrations.meta_ads.tools.{module_name}")
+    audit = AsyncMock(return_value=uuid4())
+    client = AsyncMock()
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    monkeypatch.setattr(module, "meta_ads_client", client)
+
+    def unavailable(account_id, *, operation):
+        assert operation == operation_name
+        raise IntegrationRateLimitError("Try again in 5 minutes.", provider_key="meta_ads")
+
+    monkeypatch.setattr(module, "ensure_account_available", unavailable)
+    ctx = _ctx(context_entry("111"))
+    ctx.tool_name = tool_name
+    result = await getattr(module, tool_name)(ctx, **args)
+    assert result["results"][0]["status"] == "error"
+    assert "5 minutes" in result["results"][0]["error_message"]
+    client.assert_not_awaited()
+    assert audit.await_args.kwargs["status"] == "failure"
+    assert audit.await_args.kwargs["error_code"] == "IntegrationRateLimitError"

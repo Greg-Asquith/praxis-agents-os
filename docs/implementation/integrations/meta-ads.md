@@ -2,9 +2,9 @@
 
 Meta Ads connects a workspace to the ad accounts assigned to an agency's Meta
 system user. Discovered accounts can join active context and Context Groups.
-Agents can run bounded Insights reports on selected accounts. Account overview,
-object listing, change history, writes, Facebook sign-in, and event delivery
-are pending.
+Agents can run bounded Insights reports, read account totals, list advertising
+objects, and discover custom conversions on selected accounts. Change history,
+writes, Facebook sign-in, and event delivery are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -126,7 +126,8 @@ cannot shorten its active deadline. An expired restriction cannot be revived
 by another quota's reset time. Same-response wait-only account or Insights
 business headers can qualify Insights utilisation; healthy quotas and other
 business-use-case types cannot. Saturated usage without a usable wait does
-not block locally. Malformed usage headers are ignored.
+not block locally. Malformed usage headers are ignored. All four read tools
+check the account cooldown before provider requests.
 
 The Marketing API access tier is separate from permission access. In the
 agency's App Dashboard, check the Marketing API access tier. If it is
@@ -176,7 +177,9 @@ action lists, and report dates. Text fields such as `objective`,
 `optimization_goal`, and `quality_ranking` remain plain data, bounded to 512
 characters. Missing text and metrics remain null; missing action lists remain
 empty lists. Each action retains its action type, value, attribution
-windows, and requested device or destination breakdown values. Money metrics
+windows, and requested device or destination breakdown values. Custom actions
+also carry nullable `custom_conversion_id` and `custom_conversion_name` fields.
+Money metrics
 stay in major currency units; Insights spend is never divided by 100. Counts
 are integers and rates remain decimal numbers. CTR is percentage points.
 Account currency and time zone come from discovery metadata. Missing metadata
@@ -262,7 +265,9 @@ coefficients longer than 256 digits, absolute exponents above 256, and integer
 expansion beyond 256 digits before scaling or integer conversion. Conversion
 does not depend on Decimal rounding precision and cannot silently underflow
 to zero. These helpers are separate from Insights metrics, which already use
-major currency units. Account and budget operation callers remain pending.
+major currency units. Account totals, object budgets, and bids use these
+helpers and return exact decimal strings in major units. Their presenters
+format those strings in the account currency.
 
 ### Insights qualification
 
@@ -274,6 +279,72 @@ Deterministic tests exercise the planned contracts; they do not qualify a
 live Meta account. Attempts to retrieve the official Insights reference,
 breakdowns, and best-practices pages returned HTTP 429. The rules above remain
 implementation assumptions until live qualification confirms them.
+
+## Account and object reads
+
+`meta_ads_get_accounts` reads the live name, status, disable reason, currency,
+time zone, amount spent, spend cap, balance, and minimum daily budget for each
+selected account. Status codes become labels. A zero spend cap means no cap;
+when both amounts exist, `spend_cap_remaining` is the cap minus amount spent.
+The account card shows the amount spent against the cap.
+
+`meta_ads_list_objects` lists campaigns, ad sets, or ads. It defaults to active
+and paused delivery states, including parent-paused states for child objects.
+Explicit statuses can include archived or deleted objects. Optional parent
+IDs are numeric lists of at most 50 values. `campaign_ids` filters ad sets or
+ads; `adset_ids` filters ads. `name_contains` applies a name substring filter.
+The default limit is 100, with a maximum of 500 objects and 10 pages per
+account. Truncated results retain the returned rows with `truncated=true`.
+
+Objects include names, configured and effective status, objective or
+optimisation goal, bid strategy, budgets, bids, schedules, and parent IDs when
+available. Schedule times are ISO 8601 with the offset Meta returns, for
+example `2026-09-01T00:00:00+01:00`. Ad sets without their own budget identify
+the campaign as the budget holder; ads have no separate budget. The provider operation also accepts
+exact object IDs for later write verification, still through the selected
+account's edge. Write tools remain pending.
+
+These reads use the existing credential, authorisation, fan-out, and audit
+paths with read policy, a 60-second tool timeout, and Code Mode support.
+One account's error leaves other account results available. Object and custom
+conversion lists use the same internal retained-result Files and preview
+expansion as Insights. Audits include counts, object type, and status filters;
+they exclude provider names, amounts, name filters, and conversion metadata.
+
+## Custom conversion names
+
+`meta_ads_list_custom_conversions` reads `id`, `name`, `description`,
+`is_archived`, and `is_unavailable` from the selected account's
+`customconversions` edge. Text is bounded to 512 characters and missing
+metadata remains null. Discovery defaults to 100 conversions, with a maximum
+of 500 and 10 pages. Its notes identify a row or pagination limit.
+
+Insights recognises `offsite_conversion.custom.ID` action types with numeric
+IDs. It uses the same bounded account lookup once per report, only when custom
+actions exist. The lookup shares the report's byte and execution limits and
+has no cross-account cache. Names reach the agent, Code Mode, retained Files,
+table cells, and row details. IDs remain stable keys and appear alongside names
+so conversions with duplicate names stay distinct. Archived conversions retain
+their names when Meta supplies them.
+
+Missing, inaccessible, or out-of-limit metadata leaves the name null and adds
+an unresolved-name note. The presenter labels these conversions as unresolved
+and retains their IDs. Counts, values, costs, attribution windows, action
+dimensions, and action types remain unchanged. Authentication, throttling,
+cancellation, and report deadlines retain their normal error behaviour.
+Byte-limit failures stop retrieval. Do not add overlapping action types to
+derive a conversion total.
+
+On 25 September 2026, inspection of Meta's official
+[custom conversion model](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/customconversion.py)
+and [account SDK](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adaccount.py)
+confirms the requested metadata fields and account edge. These definitions do
+not establish live permissions or action-ID mapping. The official action-stats
+reference returned HTTP 429. The maintainer extends the live-check waiver to
+slice B: account totals, paused-ad-set budgets, custom conversion availability
+and action-ID mapping, and mixed-provider manual checks remain unverified.
+The numeric custom-action mapping remains an implementation assumption until
+designated live Meta responses confirm it.
 
 ## Version upgrades
 

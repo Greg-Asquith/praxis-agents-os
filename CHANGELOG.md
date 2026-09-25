@@ -17,7 +17,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   and setup guidance.
 - Meta Ads Insights reports with typed metrics and actions, bounded background
   fallback, account-specific throttle handling, Code Mode, and retained-result
-  previews. Other Meta reads and writes are pending.
+  previews.
+- Meta Ads account overview, filtered campaign, ad set and ad listings with
+  budgets in account currency, and custom conversion discovery. Insights
+  returns conversion names alongside unchanged metrics and IDs, including
+  Code Mode and retained results. Change history and writes are pending.
 
 ## [0.1.0] - 2026-07-28
 

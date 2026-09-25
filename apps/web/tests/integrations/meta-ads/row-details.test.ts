@@ -7,6 +7,7 @@ import { MetaAdsInsightsResults } from "@/integrations/meta_ads/components/insig
 import { parseMetaAdsInsights } from "@/integrations/meta_ads/lib/insights-model"
 
 import { insightsData, insightsRow } from "./fixtures"
+import { customAction } from "./read-fixtures"
 
 vi.mock("react", async (original) => {
   const module = await original<typeof ReactModule>()
@@ -30,6 +31,46 @@ vi.mock("@/components/ui/sheet", () => {
 afterEach(() => vi.clearAllMocks())
 
 describe("Meta Ads Insights row details", () => {
+  it("shows resolved and unresolved custom conversion names with distinct IDs in cells and details", () => {
+    const report = parseMetaAdsInsights(
+      insightsData({
+        rows: [
+          insightsRow({
+            actions: {
+              actions: [
+                customAction({ custom_conversion_name: "<b>Qualified lead</b>" }),
+                customAction({
+                  action_type: "offsite_conversion.custom.902",
+                  custom_conversion_id: "902",
+                  custom_conversion_name: "<b>Qualified lead</b>",
+                }),
+                customAction({
+                  action_type: "offsite_conversion.custom.903",
+                  custom_conversion_id: "903",
+                  custom_conversion_name: null,
+                }),
+              ],
+            },
+          }),
+        ],
+      })
+    )
+    if (!report) throw new Error("Invalid fixture")
+    vi.mocked(useState).mockImplementationOnce(() => [report.rows[0], vi.fn()])
+    const html = renderToStaticMarkup(
+      createElement(MetaAdsInsightsResults, { report, externalId: "123" })
+    )
+    const table = html.slice(html.indexOf("<table"), html.indexOf("</table>"))
+    const details = html.slice(html.indexOf("<aside"), html.indexOf("</aside>"))
+    for (const section of [table, details]) {
+      expect(section).toContain("&lt;b&gt;Qualified lead&lt;/b&gt; (ID: 901)")
+      expect(section).toContain("&lt;b&gt;Qualified lead&lt;/b&gt; (ID: 902)")
+      expect(section).toContain("Custom conversion (name unavailable) (ID: 903)")
+      expect(section).toContain("Action Device: mobile")
+      expect(section).toContain("1d Click")
+      expect(section).not.toContain("<b>Qualified lead</b>")
+    }
+  })
   it.each(["EUR", "JPY", ""])(
     "uses the same currency, CTR, and ROAS formatting in cells and details for %j",
     (currency) => {

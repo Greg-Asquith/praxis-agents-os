@@ -66,6 +66,9 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
     }
     expected = {
         "meta_ads_run_insights": ("read", "internal", "auto", False),
+        "meta_ads_get_accounts": ("read", "internal", "auto", False),
+        "meta_ads_list_objects": ("read", "internal", "auto", False),
+        "meta_ads_list_custom_conversions": ("read", "internal", "auto", False),
         "sharepoint_create_folder": ("write", "external", "approval", True),
         "sharepoint_write_file": ("write", "external", "approval", True),
         "sharepoint_update_file": ("write", "external", "approval", True),
@@ -769,5 +772,10 @@ async def _delete_committed_runtime_context(session_factory, context) -> None:
         await db.commit()
 
 
-def test_meta_ads_exports_only_the_insights_read_tool() -> None:
-    assert [tool.name for tool in META_ADS_TOOL_DEFINITIONS] == ["meta_ads_run_insights"]
+def test_meta_ads_exports_the_implemented_read_tools() -> None:
+    assert {tool.name for tool in META_ADS_TOOL_DEFINITIONS} == {
+        "meta_ads_run_insights",
+        "meta_ads_get_accounts",
+        "meta_ads_list_objects",
+        "meta_ads_list_custom_conversions",
+    }

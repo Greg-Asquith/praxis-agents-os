@@ -13,7 +13,7 @@ from core.exceptions.integration import IntegrationValidationError
 from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.report_results import ReportResultBudget, report_result_max_bytes
 
-from ..client import MetaAdsClient, ad_account_path, next_cursor
+from ..client import MetaAdsClient, ad_account_path
 from ..insights_fields import ACTION_FIELDS, COUNT_FIELDS, TEXT_FIELDS
 from ..throttle import ensure_account_available
 from ..tools.schemas.insights import (
@@ -23,11 +23,14 @@ from ..tools.schemas.insights import (
     MetaAdsInsightsRow,
 )
 from ..tools.utils.validation import months_before
+from .enrich_custom_conversions import enrich_custom_conversions
+from .paging import read_pages
 from .values import bounded_string, invalid_response, numeric_value
 
 _READ = IntegrationRequestPolicy.READ
 _OPERATION = "run_insights"
 _RETAINED_METRICS = frozenset({"reach", "frequency", "cpp"})
+_PAGE_SIZE = 1000
 _NARROW_REPORT = "Narrow the date range, level, or breakdowns and try again."
 
 
@@ -42,7 +45,7 @@ async def run_insights(
 ) -> MetaAdsInsightsData:
     limit = min(request.limit, max_rows)
     if limit < 1 or poll_seconds <= 0:
-        raise invalid_response("Meta Ads report limits must be positive.")
+        raise invalid_response("Meta Ads report limits must be positive.", operation=_OPERATION)
     budget = ReportResultBudget(
         "meta_ads",
         _OPERATION,
@@ -52,17 +55,21 @@ async def run_insights(
     path = f"{ad_account_path(account_id)}/insights"
     mode: Literal["direct", "background"] = "direct"
     try:
-        rows, truncated = await _read_pages(client, path, params, account_id, limit, budget)
+        rows, truncated = await _read_rows(client, path, params, account_id, limit, budget)
     except IntegrationValidationError as exc:
         if exc.error_code != "meta_ads_insights_too_large":
             raise
         mode = "background"
         job_path = await _background_report(client, path, params, account_id, poll_seconds, budget)
-        rows, truncated = await _read_pages(
-            client, job_path, {"limit": min(limit, 1000)}, account_id, limit, budget
+        rows, truncated = await _read_rows(client, job_path, {}, account_id, limit, budget)
+    typed_rows = [_row(row, request, fields) for row in rows]
+    notes.extend(
+        await enrich_custom_conversions(
+            client, account_id=account_id, rows=typed_rows, budget=budget
         )
+    )
     return MetaAdsInsightsData(
-        rows=[_row(row, request, fields) for row in rows],
+        rows=typed_rows,
         row_count=len(rows),
         truncated=truncated,
         truncation_note=f"The report reached its {limit}-row or pagination limit."
@@ -114,7 +121,7 @@ def _parameters(
         "level": request.level,
         "time_range": json.dumps({"since": request.since, "until": request.until}),
         "time_increment": request.time_increment,
-        "limit": min(limit, 1000),
+        "limit": min(limit, _PAGE_SIZE),
     }
     if request.breakdowns:
         params["breakdowns"] = ",".join(request.breakdowns)
@@ -132,7 +139,7 @@ def _parameters(
     return params, fields, notes
 
 
-async def _read_pages(
+async def _read_rows(
     client: MetaAdsClient,
     path: str,
     params: dict[str, Any],
@@ -140,38 +147,18 @@ async def _read_pages(
     limit: int,
     budget: ReportResultBudget,
 ) -> tuple[list[dict[str, Any]], bool]:
-    rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    query = dict(params)
-    while True:
-        ensure_account_available(account_id)
-        payload = await client.graph_get(
-            path,
-            params=query,
-            operation=_OPERATION,
-            policy=_READ,
-            max_response_bytes=budget.remaining,
-            usage_account_id=account_id,
-        )
-        budget.add(payload)
-        page = payload.get("data")
-        if not isinstance(page, list) or any(not isinstance(row, dict) for row in page):
-            raise invalid_response("Meta Ads returned invalid Insights rows.")
-        paging = payload.get("paging", {})
-        if not isinstance(paging, dict):
-            raise invalid_response("Meta Ads returned invalid pagination.")
-        next_url = paging.get("next")
-        remaining = limit - len(rows)
-        rows.extend(page[:remaining])
-        if len(rows) >= limit:
-            return rows, bool(next_url) or len(page) > remaining
-        if not next_url:
-            return rows, False
-        cursor = next_cursor(next_url, path, _OPERATION)
-        if cursor in seen or not page:
-            return rows, True
-        seen.add(cursor)
-        query.update(after=cursor, limit=min(limit - len(rows), 1000))
+    # Each non-final page holds at least one row, so the limit bounds the page count.
+    return await read_pages(
+        client,
+        path=path,
+        account_id=account_id,
+        params=params,
+        limit=limit,
+        budget=budget,
+        operation=_OPERATION,
+        page_size=_PAGE_SIZE,
+        max_pages=limit,
+    )
 
 
 async def _background_report(
@@ -182,7 +169,7 @@ async def _background_report(
     poll_seconds: float,
     budget: ReportResultBudget,
 ) -> str:
-    ensure_account_available(account_id)
+    ensure_account_available(account_id, operation=_OPERATION)
     payload = await client.graph_post(
         path,
         data=params,
@@ -193,13 +180,15 @@ async def _background_report(
     budget.add(payload)
     report_id = payload.get("report_run_id")
     if not isinstance(report_id, str) or not re.fullmatch(r"[0-9]+", report_id):
-        raise invalid_response("Meta Ads returned an invalid background report.")
+        raise invalid_response(
+            "Meta Ads returned an invalid background report.", operation=_OPERATION
+        )
     deadline = time.monotonic() + poll_seconds
     delay = 1
     while (remaining := deadline - time.monotonic()) > 0:
         try:
             async with asyncio.timeout(remaining):
-                ensure_account_available(account_id)
+                ensure_account_available(account_id, operation=_OPERATION)
                 status = await client.graph_get(
                     report_id,
                     params={"fields": "async_status,async_percent_completion"},
@@ -214,17 +203,19 @@ async def _background_report(
         state = status.get("async_status")
         if state in {"Job Failed", "Job Skipped"}:
             raise invalid_response(
-                f"Meta Ads could not complete the background report. {_NARROW_REPORT}"
+                f"Meta Ads could not complete the background report. {_NARROW_REPORT}",
+                operation=_OPERATION,
             )
         if (
             state == "Job Completed"
-            and numeric_value(status.get("async_percent_completion")) == 100
+            and numeric_value(status.get("async_percent_completion"), operation=_OPERATION) == 100
         ):
             return f"{report_id}/insights"
         await asyncio.sleep(min(delay, max(0, deadline - time.monotonic())))
         delay = min(delay * 2, 5)
     raise invalid_response(
-        f"Meta Ads did not complete the background report in time. {_NARROW_REPORT}"
+        f"Meta Ads did not complete the background report in time. {_NARROW_REPORT}",
+        operation=_OPERATION,
     )
 
 
@@ -236,7 +227,9 @@ def _row(
         | set(request.breakdowns)
         | (TEXT_FIELDS.intersection(fields) - {"date_start", "date_stop"})
     )
-    keys = {field: bounded_string(raw.get(field)) for field in sorted(key_fields)}
+    keys = {
+        field: bounded_string(raw.get(field), operation=_OPERATION) for field in sorted(key_fields)
+    }
     metrics: dict[str, int | float | None] = {}
     actions: dict[str, list[MetaAdsInsightsAction]] = {}
     for field in fields:
@@ -246,7 +239,7 @@ def _row(
         if field in ACTION_FIELDS:
             actions[field] = _actions(value, request)
         else:
-            metrics[field] = numeric_value(value, count=field in COUNT_FIELDS)
+            metrics[field] = numeric_value(value, count=field in COUNT_FIELDS, operation=_OPERATION)
     return MetaAdsInsightsRow(
         keys=keys,
         metrics=metrics,
@@ -261,7 +254,9 @@ def _row_date(value: Any) -> str:
         if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
             raise ValueError
     except ValueError:
-        raise invalid_response("Meta Ads returned an invalid report date.") from None
+        raise invalid_response(
+            "Meta Ads returned an invalid report date.", operation=_OPERATION
+        ) from None
     return value
 
 
@@ -269,22 +264,24 @@ def _actions(value: Any, request: MetaAdsInsightsInput) -> list[MetaAdsInsightsA
     if value is None:
         return []
     if not isinstance(value, list) or len(value) > 1000:
-        raise invalid_response("Meta Ads returned invalid action values.")
+        raise invalid_response("Meta Ads returned invalid action values.", operation=_OPERATION)
     result = []
     for item in value:
         if not isinstance(item, dict) or not isinstance(item.get("action_type"), str):
-            raise invalid_response("Meta Ads returned an invalid action type.")
+            raise invalid_response(
+                "Meta Ads returned an invalid action type.", operation=_OPERATION
+            )
         result.append(
             MetaAdsInsightsAction(
-                action_type=bounded_string(item["action_type"], 256),
-                value=numeric_value(item.get("value")),
+                action_type=bounded_string(item["action_type"], operation=_OPERATION, maximum=256),
+                value=numeric_value(item.get("value"), operation=_OPERATION),
                 windows={
-                    window: numeric_value(item.get(window))
+                    window: numeric_value(item.get(window), operation=_OPERATION)
                     for window in request.attribution_windows or []
                     if window in item
                 },
                 breakdowns={
-                    field: bounded_string(item.get(field))
+                    field: bounded_string(item.get(field), operation=_OPERATION)
                     for field in request.action_breakdowns
                     if field != "action_type"
                 },

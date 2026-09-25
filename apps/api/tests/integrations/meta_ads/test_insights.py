@@ -170,6 +170,8 @@ async def test_every_parameter_and_action_window_is_preserved():
     assert result.rows[0].keys["age"] == "25-34"
     assert result.rows[0].actions["actions"][0].model_dump() == {
         "action_type": "purchase",
+        "custom_conversion_id": None,
+        "custom_conversion_name": None,
         "value": 4.0,
         "windows": {"1d_click": 3.0},
         "breakdowns": {},
@@ -323,16 +325,18 @@ async def test_byte_budget_stops_before_next_page():
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "1e9999", True, {}, "not a number"])
 def test_invalid_metrics_fail_instead_of_becoming_zero(value):
     with pytest.raises(IntegrationValidationError):
-        numeric_value(value)
+        numeric_value(value, operation="run_insights")
 
 
 def test_blank_counts_and_decimal_values():
-    assert numeric_value("") is None
-    assert numeric_value(None) is None
-    assert numeric_value("9007199254740993", count=True) == 9007199254740993
-    assert numeric_value("0.52") == 0.52
+    assert numeric_value("", operation="run_insights") is None
+    assert numeric_value(None, operation="run_insights") is None
+    assert (
+        numeric_value("9007199254740993", count=True, operation="run_insights") == 9007199254740993
+    )
+    assert numeric_value("0.52", operation="run_insights") == 0.52
     with pytest.raises(IntegrationValidationError):
-        numeric_value("1.5", count=True)
+        numeric_value("1.5", count=True, operation="run_insights")
 
 
 async def test_provider_names_are_bounded_and_remain_plain_text():
@@ -429,4 +433,4 @@ async def test_malformed_provider_reports_fail(payload):
 @pytest.mark.parametrize("value", ["1e10000", "1e1000000000", "-1e10000"])
 def test_count_exponents_are_bounded_before_integer_expansion(value):
     with pytest.raises(IntegrationValidationError, match="metric"):
-        numeric_value(value, count=True)
+        numeric_value(value, count=True, operation="run_insights")

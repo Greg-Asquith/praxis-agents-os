@@ -59,8 +59,8 @@ def record_usage(account_id: str, headers: Mapping[str, str]) -> None:
     state.last_used_at = now
 
 
-def ensure_account_available(account_id: str) -> None:
-    """Rejects an Insights request while a known account throttle remains active."""
+def ensure_account_available(account_id: str, *, operation: str) -> None:
+    """Rejects a request while a known account throttle remains active."""
     now = monotonic()
     _evict(now)
     state = _accounts.get(account_id)
@@ -71,7 +71,7 @@ def ensure_account_available(account_id: str) -> None:
         raise IntegrationRateLimitError(
             _message(state.regain_at - now),
             provider_key="meta_ads",
-            operation="run_insights",
+            operation=operation,
             failure_disposition=IntegrationFailureDisposition.NOT_DISPATCHED,
         )
 

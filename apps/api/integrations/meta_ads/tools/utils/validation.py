@@ -41,15 +41,21 @@ def absolute_date(value: str, argument: str) -> date:
     return parsed
 
 
+def validation_retry(exc: ValidationError) -> ModelRetry:
+    """Names the first invalid argument without echoing its value."""
+    error = exc.errors(include_url=False, include_input=False)[0]
+    argument = ".".join(str(part) for part in error["loc"])
+    message = error["msg"].rstrip(".")
+    return ModelRetry(f"Correct {argument}: {message}." if argument else f"{message}.")
+
+
 def validated_insights_request(
     *, max_rows: int, today: date | None = None, **values: Any
 ) -> MetaAdsInsightsInput:
     try:
         request = MetaAdsInsightsInput.model_validate(values)
     except ValidationError as exc:
-        error = exc.errors(include_url=False)[0]
-        argument = ".".join(str(part) for part in error["loc"])
-        raise ModelRetry(f"Correct {argument}: {error['msg']}.") from None
+        raise validation_retry(exc) from None
     validate_insights_request(request, max_rows=max_rows, today=today)
     return request
 
