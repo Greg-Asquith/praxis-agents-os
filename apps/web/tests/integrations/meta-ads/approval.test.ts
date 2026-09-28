@@ -98,28 +98,16 @@ function resume(original: Record<string, unknown>, edits: EditedValues) {
 }
 
 describe("Meta Insights approval", () => {
-  it.each([{}, { filters: null }, { filters: [] }])(
-    "enables approval without optional filters: %j",
-    (optional) => {
-      const html = render(optional)
-      expect(metaAdsInsightsPresenter.handlesApprovals).toBe(true)
-      expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
-      expect(html).toContain(">Approve</button>")
-      expect(html.match(/type="date"/g)).toHaveLength(2)
-      expect(html).toContain("Search Report fields")
-      expect(html).toContain("Advanced options")
-      expect(html).toContain("Maximum rows")
-      expect(html).toContain("Report interval")
-      expect(html).toContain("Add filter")
-      expect(html).not.toContain("Other Options")
-    }
-  )
+  it.each([{}, { filters: null }])("enables approval without optional filters: %j", (optional) => {
+    const html = render(optional)
+    expect(metaAdsInsightsPresenter.handlesApprovals).toBe(true)
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+  })
 
-  it.each([undefined, null, {}, { properties: {} }])(
+  it.each([null, { properties: {} }])(
     "blocks approval with a visible recovery message when metadata is unavailable: %j",
     (schema) => {
-      const html = render({}, {}, schema ?? null)
-      expect(html).toContain("Report options are unavailable.")
+      const html = render({}, {}, schema)
       expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
       expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Decline<\/button>/)
     }
@@ -160,13 +148,10 @@ describe("Meta Insights approval", () => {
     ).toContain("50")
     const html = render({}, {}, changed)
     expect(html).toContain('max="50"')
-    expect(html).toContain('value="25"')
-    expect(html).toContain("New Level")
   })
 
   it("shows a reason for invalid dates and blocks approval", () => {
     const html = render({}, { until: "2025-12-31" })
-    expect(html).toContain("The end date must be on or after the start date.")
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
   })
 
@@ -205,25 +190,10 @@ describe("Meta Insights approval", () => {
     ])
   })
 
-  it("clears explicit attribution to restore ad set settings", () => {
-    const original = { ...args, attribution_windows: ["1d_click"] }
-    expect(resume(original, { attribution_windows: null })).toEqual([
-      {
-        tool_call_id: "report",
-        decision: "approved",
-        override_args: { ...original, attribution_windows: null },
-      },
-    ])
-  })
-
   it.each([
     { since: "2026-02-30" },
-    { fields: [] },
-    { limit: 0 },
     { limit: 1001 },
-    { time_increment: 91 },
     { breakdowns: ["unsupported"] },
-    { filters: [{ field: "spend", operator: "IN", value: [] }] },
     { filters: [{ field: "spend", operator: "GREATER_THAN", value: "five" }] },
   ])("rejects invalid report edits: %j", (overrides) => {
     expect(

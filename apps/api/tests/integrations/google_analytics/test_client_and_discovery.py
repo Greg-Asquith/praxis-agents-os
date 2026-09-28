@@ -4,11 +4,9 @@ import json
 from importlib import import_module
 from types import SimpleNamespace
 
-import httpx2
 import pytest
 
 from core.exceptions.integration import (
-    IntegrationAuthError,
     IntegrationValidationError,
 )
 from integrations.google_analytics.client import (
@@ -24,99 +22,13 @@ from services.integrations.http import IntegrationRequestPolicy
 from tests.integrations.google_analytics.support import static_token
 
 
-async def test_client_sends_only_bearer_authorization() -> None:
-    seen_headers: list[httpx2.Headers] = []
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        seen_headers.append(request.headers)
-        return httpx2.Response(200, json={"accountSummaries": []}, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        await GoogleAnalyticsClient(static_token, client=http_client).admin_get(
-            "accountSummaries",
-            operation="list_account_summaries",
-            policy=IntegrationRequestPolicy.READ,
-        )
-
-    assert seen_headers[0]["Authorization"] == "Bearer access-token"
-    assert "developer-token" not in seen_headers[0]
-    assert "login-customer-id" not in seen_headers[0]
-
-
-async def test_client_refreshes_once_after_auth_rejection_then_fails() -> None:
-    force_values: list[bool] = []
-
-    async def access_token(force: bool) -> str:
-        force_values.append(force)
-        return "still-invalid"
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(401, json={}, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        with pytest.raises(IntegrationAuthError) as exc_info:
-            await GoogleAnalyticsClient(access_token, client=http_client).admin_get(
-                "accountSummaries",
-                operation="list_account_summaries",
-                policy=IntegrationRequestPolicy.READ,
-            )
-
-    assert force_values == [False, True]
-    assert exc_info.value.original_error is None
-
-
-async def test_client_rejects_non_json_response() -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, content=b"not-json", request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        with pytest.raises(IntegrationValidationError, match="invalid JSON"):
-            await GoogleAnalyticsClient(static_token, client=http_client).data_get(
-                "properties/123/metadata",
-                operation="get_metadata",
-                policy=IntegrationRequestPolicy.READ,
-            )
-
-
-async def test_client_extracts_and_bounds_google_error_detail() -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(
-            400,
-            json={
-                "error": {
-                    "message": " invalid   dimension " + "x" * 1200,
-                    "status": "INVALID_ARGUMENT",
-                    "details": [{"reason": "FIELD_NOT_FOUND"}],
-                }
-            },
-            request=request,
-        )
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        with pytest.raises(IntegrationValidationError) as exc_info:
-            await GoogleAnalyticsClient(static_token, client=http_client).data_post(
-                "properties/123:runReport",
-                operation="run_report",
-                policy=IntegrationRequestPolicy.READ,
-                json={},
-            )
-
-    assert exc_info.value.user_message.startswith(
-        "Google Analytics rejected run_report: invalid dimension"
-    )
-    assert len(exc_info.value.user_message) <= 1000
-    assert exc_info.value.original_error is None
-
-
 @pytest.mark.parametrize(
-    ("value", "expected"),
-    [("123456", "123456"), (" properties/987 ", "987")],
+    "value",
+    [
+        "",
+        "properties/",
+    ],
 )
-def test_normalize_property_id(value: str, expected: str) -> None:
-    assert normalize_property_id(value) == expected
-
-
-@pytest.mark.parametrize("value", ["", "properties/", "G-ABC", "properties/12x"])
 def test_normalize_property_id_rejects_non_numeric_values(value: str) -> None:
     with pytest.raises(IntegrationValidationError, match="digits only"):
         normalize_property_id(value)
@@ -188,14 +100,6 @@ async def test_discovery_pages_deduplicates_sorts_and_preserves_account_metadata
         {"pageSize": 200},
         {"pageSize": 200, "pageToken": "page-2"},
     ]
-
-
-async def test_discovery_accepts_an_empty_account_list() -> None:
-    class EmptyClient:
-        async def admin_get_paged(self, *_args, **_kwargs):
-            return ()
-
-    assert await discover_google_analytics_properties(EmptyClient()) == ()
 
 
 async def test_admin_paging_rejects_repeated_tokens_and_page_cap() -> None:

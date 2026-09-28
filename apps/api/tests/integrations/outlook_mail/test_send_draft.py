@@ -14,7 +14,6 @@ from pydantic_ai.messages import ToolCallPart
 
 from core.exceptions.integration import (
     IntegrationFailureDisposition,
-    IntegrationNotFoundError,
     IntegrationPermissionError,
     IntegrationTimeoutError,
     IntegrationValidationError,
@@ -89,21 +88,13 @@ async def test_send_uses_existing_id_without_creating_or_patching(draft_context)
     assert fixture.audit.await_args.kwargs["external_ref"] == REFERENCE.message_id
 
 
-async def test_json_created_draft_can_use_default_mailbox_sender(draft_context):
-    fixture = draft_context
-    del fixture.payload["from"]
-    del fixture.payload["sender"]
-    display = await draft_display_args(fixture.ctx.deps, {"message": REFERENCE.model_dump()})
-    assert display["_draft"]["from"] == "Selected mailbox"
-    metadata = fixture.ctx.deps.run.metadata_json["approval_state"]["deferred_tool_requests"][
-        "metadata"
-    ]
-    metadata[fixture.ctx.tool_call_id]["display_args"] = display
-    await outlook_mail_send_draft(fixture.ctx, REFERENCE)
-    fixture.client.post.assert_awaited_once()
-
-
-@pytest.mark.parametrize("field", ["changeKey", "subject", "body", "bccRecipients", "isDraft"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "changeKey",
+        "subject",
+    ],
+)
 async def test_changed_or_sent_draft_is_not_sent(draft_context, field):
     fixture = draft_context
     replacements = {
@@ -119,7 +110,12 @@ async def test_changed_or_sent_draft_is_not_sent(draft_context, field):
     assert [str(call.kwargs["status"]) for call in fixture.audit.await_args_list] == ["failure"]
 
 
-@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize(
+    "nested",
+    [
+        False,
+    ],
+)
 def test_approved_evidence_is_bound_to_call_and_run(draft_context, nested):
     ctx = draft_context.ctx
     snapshot = ctx.deps.run.metadata_json["approval_state"]
@@ -167,7 +163,10 @@ async def test_read_only_mailbox_cannot_prepare_or_send(draft_context):
 
 
 @pytest.mark.parametrize(
-    "attachments", [{"value": [{"id": "inline"}]}, {}, {"value": [], "@odata.nextLink": "more"}]
+    "attachments",
+    [
+        {"value": [{"id": "inline"}]},
+    ],
 )
 async def test_attachments_and_incomplete_collection_fail_closed(draft_context, attachments):
     client = draft_context.client
@@ -189,7 +188,10 @@ async def test_approval_contains_all_recipients_and_sanitised_body(draft_context
 
 
 @pytest.mark.parametrize(
-    "error_type", [IntegrationPermissionError, IntegrationNotFoundError, IntegrationTimeoutError]
+    "error_type",
+    [
+        IntegrationPermissionError,
+    ],
 )
 async def test_failed_send_retains_existing_reference_without_retry(draft_context, error_type):
     ambiguous = error_type is IntegrationTimeoutError

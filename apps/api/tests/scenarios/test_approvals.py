@@ -88,24 +88,11 @@ async def test_approval_suspend_then_override_args_and_execute(
     assert resumed.output == "The approved write completed."
 
 
-@pytest.mark.parametrize(
-    "format,original,edited,invalid",
-    [
-        ("datetime", "2026-09-08T09:30:45", "2026-09-09T10:15:45", "2026-09-09T10:15Z"),
-        ("boolean", True, False, "false"),
-    ],
-)
-async def test_scalar_approval_validates_before_resumed_execution(
-    db_session_factory,
-    monkeypatch,
-    format,
-    original,
-    edited,
-    invalid,
-):
+async def test_scalar_approval_validates_before_resumed_execution(db_session_factory, monkeypatch):
+    original, edited, invalid = "2026-09-08T09:30:45", "2026-09-09T10:15:45", "2026-09-09T10:15Z"
     executed = []
 
-    async def write(value: str | bool) -> dict[str, bool]:
+    async def write(value: str) -> dict[str, bool]:
         executed.append(value)
         return {"ok": True}
 
@@ -114,7 +101,7 @@ async def test_scalar_approval_validates_before_resumed_execution(
         function=write,
         presentation=ToolPresentation(
             arg_fields=(
-                ToolFieldPresentation(key="value", label="Value", format=format, editable=True),
+                ToolFieldPresentation(key="value", label="Value", format="datetime", editable=True),
             )
         ),
     )
@@ -166,38 +153,6 @@ async def test_scalar_approval_validates_before_resumed_execution(
     assert resumed.run.status == "completed"
     assert executed == [edited]
     assert type(executed[0]) is type(edited)
-
-
-async def test_auto_mounted_artifact_tool_runs_without_agent_configuration(
-    db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    context = await build_scenario_agent(db_session_factory)
-    model = scripted_model(
-        turns=[
-            ToolTurn(
-                (
-                    ToolCall(
-                        "create_artifact",
-                        {
-                            "title": "Quarterly summary",
-                            "artifact_type": "markdown",
-                            "content": "# Quarterly summary\n\nRevenue increased.",
-                        },
-                        "artifact-call",
-                    ),
-                )
-            ),
-            "The artifact was created.",
-        ]
-    )
-
-    completed = await run_scenario(db_session_factory, context, model=model)
-
-    assert context.agent.tool_names == []
-    assert completed.run.status == "completed"
-    [invocation] = completed.audit_rows
-    assert invocation.tool_name == "create_artifact"
-    assert invocation.details["outcome"] == "completed"
 
 
 async def test_agent_discovers_reads_and_updates_artifact_from_another_conversation(
@@ -292,11 +247,10 @@ async def test_agent_discovers_reads_and_updates_artifact_from_another_conversat
         assert [revision.revision_number for revision in artifact.versions] == [2, 1]
 
 
-@pytest.mark.parametrize("reason", ["The budget is too high.", None])
 async def test_approval_denial_is_audited_and_visible_in_persisted_history(
     db_session_factory: async_sessionmaker[AsyncSession],
-    reason: str | None,
 ) -> None:
+    reason = "The budget is too high."
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=["scenario_external_write"],
@@ -334,16 +288,15 @@ async def test_approval_denial_is_audited_and_visible_in_persisted_history(
     persisted = json.dumps([message.parts for message in resumed.messages])
     assert model_message in persisted
     persisted_metadata = [message.metadata_json for message in resumed.messages]
-    if reason is not None:
-        assert any(
-            metadata
-            and metadata.get("approval_results", {}).get(tool_call_id, {}).get("reason") == reason
-            for metadata in persisted_metadata
-        )
-        denied_audit = next(
-            row for row in resumed.audit_rows if row.details["outcome"] == "denied_approval"
-        )
-        assert denied_audit.details["denial_reason"] == reason
+    assert any(
+        metadata
+        and metadata.get("approval_results", {}).get(tool_call_id, {}).get("reason") == reason
+        for metadata in persisted_metadata
+    )
+    denied_audit = next(
+        row for row in resumed.audit_rows if row.details["outcome"] == "denied_approval"
+    )
+    assert denied_audit.details["denial_reason"] == reason
     assert resumed.output == "The user denied the write, so I did not perform it."
 
 

@@ -1,12 +1,9 @@
 from typing import Any
-from uuid import uuid4
 
 import pytest
-from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
 from core import observability
-from core.settings import Settings
 from tests.support.settings import production_settings
 
 
@@ -15,64 +12,9 @@ def test_settings_reject_agent_trace_content_in_production() -> None:
         production_settings(AGENT_TRACING_INCLUDE_CONTENT=True)
 
 
-def test_settings_allow_agent_trace_content_in_production_with_explicit_override() -> None:
-    settings = production_settings(
-        AGENT_TRACING_INCLUDE_CONTENT=True,
-        AGENT_TRACING_ALLOW_CONTENT_IN_PRODUCTION=True,
-    )
-
-    assert settings.AGENT_TRACING_INCLUDE_CONTENT is True
-    assert settings.AGENT_TRACING_ALLOW_CONTENT_IN_PRODUCTION is True
-
-
 def test_settings_reject_metrics_without_token_outside_dev() -> None:
     with pytest.raises(ValidationError, match="METRICS_TOKEN"):
         production_settings(METRICS_ENABLED=True)
-
-
-def test_settings_allow_metrics_with_token_outside_dev() -> None:
-    metrics_token = uuid4().hex
-    settings = production_settings(METRICS_ENABLED=True, METRICS_TOKEN=metrics_token)
-
-    assert settings.METRICS_ENABLED is True
-    assert metrics_token == settings.METRICS_TOKEN
-
-
-def test_settings_allow_agent_trace_content_outside_production() -> None:
-    settings = Settings(
-        ENVIRONMENT="local",
-        STORAGE_PROVIDER="local_fs",
-        EMAIL_PROVIDER="console",
-        SECRET_KEY="x" * 40,
-        ENCRYPTION_KEYS=Fernet.generate_key().decode(),
-        AGENT_TRACING_INCLUDE_CONTENT=True,
-    )
-
-    assert settings.AGENT_TRACING_INCLUDE_CONTENT is True
-
-
-def test_setup_agent_tracing_noops_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    configure_calls: list[dict[str, Any]] = []
-    instrument_calls: list[Any] = []
-
-    monkeypatch.setattr(observability, "_agent_tracing_configured", False)
-    monkeypatch.setattr(observability.settings, "AGENT_TRACING_ENABLED", False)
-    monkeypatch.setattr(
-        observability.logfire,
-        "configure",
-        lambda **kwargs: configure_calls.append(kwargs),
-    )
-    monkeypatch.setattr(
-        observability.PydanticAgent,
-        "instrument_all",
-        staticmethod(lambda instrument=True: instrument_calls.append(instrument)),
-    )
-
-    observability.setup_agent_tracing()
-
-    assert configure_calls == []
-    assert instrument_calls == []
-    assert observability._agent_tracing_configured is False
 
 
 def test_setup_agent_tracing_configures_once(monkeypatch: pytest.MonkeyPatch) -> None:

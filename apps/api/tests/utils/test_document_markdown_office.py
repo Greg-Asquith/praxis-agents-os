@@ -18,24 +18,9 @@ FIXTURES_DIR = Path(__file__).parents[1] / "fixtures" / "files"
             ("Deck Title Slide", "North", "Speaker note for the intro slide"),
         ),
         (
-            "sample.ppt",
-            "application/vnd.ms-powerpoint",
-            ("First slide text", "Second slide text", "Notes for the second slide"),
-        ),
-        (
-            "sample.docx",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ("Fixture Document", "Wide head", "Footnote after an astral character"),
-        ),
-        (
             "sample.doc",
             "application/msword",
             ("Fixture Document", "Wide head", "Footnote after an astral character"),
-        ),
-        (
-            "sample.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            ("Values", "fifteen and a half", "Merged Grid"),
         ),
         (
             "sample.xls",
@@ -67,8 +52,6 @@ async def test_convert_document_to_markdown_converts_office_fixture(
 @pytest.mark.parametrize(
     ("content_type", "expected_extension"),
     [
-        ("application/msword", ".doc"),
-        ("application/vnd.ms-powerpoint", ".ppt"),
         ("application/vnd.ms-excel", ".xls"),
     ],
 )

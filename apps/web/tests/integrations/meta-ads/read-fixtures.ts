@@ -71,3 +71,27 @@ export function customAction(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+export function activityRow(overrides: Record<string, unknown> = {}) {
+  return {
+    event_time: "2026-09-10T09:00:00+00:00",
+    event_type: "update_ad_set_budget",
+    translated_event_type: "Ad set budget updated",
+    object_type: "ADSET",
+    object_id: "201",
+    object_name: "Summer ad set",
+    actor_name: "Dana",
+    old_value: "1000",
+    new_value: "2500",
+    ...overrides,
+  }
+}
+export function activitiesData(overrides: Record<string, unknown> = {}) {
+  return {
+    events: [activityRow()],
+    event_count: 1,
+    truncated: false,
+    window_note: null,
+    timezone_name: "Europe/Paris",
+    ...overrides,
+  }
+}

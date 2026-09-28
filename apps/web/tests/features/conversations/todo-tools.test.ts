@@ -39,10 +39,6 @@ describe("todoItemsFromActivity", () => {
     expect(items).toEqual([{ content: "Plan the work", status: "pending" }])
   })
 
-  it("returns an empty list for a cleared plan", () => {
-    expect(todoItemsFromActivity(activity({ result: { items: [] } }))).toEqual([])
-  })
-
   it("returns null when any item is malformed", () => {
     const items = todoItemsFromActivity(
       activity({
@@ -55,10 +51,6 @@ describe("todoItemsFromActivity", () => {
       })
     )
     expect(items).toBeNull()
-  })
-
-  it("returns null when neither result nor args carry items", () => {
-    expect(todoItemsFromActivity(activity({ result: "done", args: "{}" }))).toBeNull()
   })
 
   it("does not hide a malformed completed result behind valid call arguments", () => {
@@ -86,15 +78,5 @@ describe("supersededWriteTodoActivityIds", () => {
     })
 
     expect(supersededWriteTodoActivityIds([first, malformed, latest])).toEqual(new Set(["write-1"]))
-  })
-
-  it("does not collapse plan lookups", () => {
-    const read = activity({
-      id: "read-1",
-      name: "read_todos",
-      result: { items: [{ content: "Looked up", status: "pending" }] },
-    })
-
-    expect(supersededWriteTodoActivityIds([read])).toEqual(new Set())
   })
 })

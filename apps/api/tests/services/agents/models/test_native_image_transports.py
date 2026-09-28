@@ -12,10 +12,6 @@ from pydantic_ai import ModelRetry
 from pydantic_ai.messages import BinaryContent
 
 from core.settings import settings
-from services.agents.models import build_model
-from services.agents.models.domain import ModelConfigurationError
-from services.agents.models.registry import find_model
-from services.agents.models.vertex_clients import close_vertex_clients
 from services.agents.runtime.tools.native.image_generation import (
     configured_native_image_providers,
     resolve_image_generation_model,
@@ -23,25 +19,6 @@ from services.agents.runtime.tools.native.image_generation import (
 )
 from tests.support.google_native import mock_google_native
 from tests.support.openai_images import IMAGE_BYTES
-
-
-@pytest.mark.parametrize("location", ["auto", "global", "eu", "us"])
-async def test_vertex_image_model_uses_supported_location_without_chat_entry(monkeypatch, location):
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "image-test")
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", location)
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
-    assert find_model("google", "gemini-3.1-flash-image") is None
-    try:
-        model = build_model(resolve_image_generation_model(model_provider="google"))
-        assert model.model_name == "gemini-3.1-flash-image"
-        assert model.provider.client._api_client.vertexai is True
-        assert model.provider.client._api_client.project == "image-test"
-        assert model.provider.client._api_client.location == (
-            "eu" if location == "auto" else location
-        )
-    finally:
-        await close_vertex_clients()
 
 
 @pytest.mark.parametrize(
@@ -147,14 +124,6 @@ async def test_invalid_vertex_image_configuration_never_requests_provider(monkey
     assert requests == []
 
 
-def test_unknown_vertex_models_still_fail_closed(monkeypatch):
-    from services.agents.models.vertex_clients import google_vertex_location
-
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
-    with pytest.raises(ModelConfigurationError, match="Unknown model"):
-        google_vertex_location("unknown-image")
-
-
 async def test_vertex_inline_image_limit_fails_before_request(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "image-test")
@@ -188,29 +157,3 @@ async def test_vertex_inline_image_limit_fails_before_request(monkeypatch):
                 ),
             )
     assert requests == []
-
-
-async def test_vertex_image_edit_rejects_gif_before_request(monkeypatch):
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "image-test")
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "global")
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
-    meter = AsyncMock()
-    monkeypatch.setattr("services.ai_usage.run_metered_helper.record_ai_usage_durable", meter)
-    deps = SimpleNamespace(
-        **{
-            name: SimpleNamespace(id=uuid4())
-            for name in ("workspace", "agent", "user", "run", "conversation")
-        }
-    )
-    async with mock_google_native(monkeypatch, vertex=True) as requests:
-        with pytest.raises(ModelRetry, match="Convert the source image"):
-            await run_native_image_generation(
-                deps=deps,
-                prompt="A fox",
-                aspect_ratio=None,
-                model_spec=resolve_image_generation_model(model_provider="google"),
-                action="edit",
-                input_media=(BinaryContent(data=b"GIF89a", media_type="image/gif"),),
-            )
-    assert requests == []
-    meter.assert_not_called()

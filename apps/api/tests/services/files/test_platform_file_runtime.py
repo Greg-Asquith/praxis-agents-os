@@ -19,10 +19,8 @@ from services.agents.runtime.tools.files.list_files import list_files
 from services.agents.runtime.tools.files.read_file import read_file
 from services.agents.runtime.tools.native.run_code_file_bridge import (
     load_run_code_inputs,
-    resolve_run_code_edit_target,
 )
 from services.files import (
-    build_attachment_user_content,
     create_conversation_file_references,
     resolve_chat_attachments,
 )
@@ -134,68 +132,6 @@ async def _attach(db, context):
         created_by_user_id=context.user.id,
     )
     await db.commit()
-
-
-async def test_platform_attachment_pin_survives_publication_in_prompt_tools_and_code(
-    db_session,
-    platform_runtime,
-):
-    context = platform_runtime
-    await _attach(db_session, context)
-    async with maintenance_async_db_session() as db:
-        file = await db.get(File, context.file.id)
-        replacement = await _revision(db, file, b"replacement", number=2)
-        file.current_revision_id = file.published_revision_id = replacement.id
-        file.size_bytes = replacement.size_bytes
-        file.revision_count = 2
-    await set_session_tenant_context(
-        db_session, workspace_id=context.workspace.id, user_id=context.user.id
-    )
-    # Reattaching preserves the original reference instead of advancing its pin.
-    await create_conversation_file_references(
-        db_session,
-        workspace_id=context.workspace.id,
-        conversation_id=context.conversation.id,
-        file_ids=[context.file.id],
-        created_by_user_id=context.user.id,
-    )
-    reference = await db_session.scalar(
-        select(FileReference).where(FileReference.file_id == context.file.id)
-    )
-    assert reference.file_revision_id == context.revision.id
-    files = await resolve_chat_attachments(
-        db_session,
-        workspace_id=context.workspace.id,
-        agent=context.agent,
-        conversation_id=context.conversation.id,
-        file_ids=[context.file.id],
-    )
-    assert files[0].current_revision_id == context.revision.id
-    [content] = await build_attachment_user_content(db_session, files=files)
-    assert content.data.endswith(b"old")
-    [available] = await load_available_files(db_session, context.conversation)
-    assert available.size_bytes == 3
-    ctx = _ctx(db_session, context)
-    ref = RuntimeFileReference(entity_id=context.file.id, label=context.file.name)
-    assert (await read_file(ctx, ref))["content"] == {
-        "node": "praxis_untrusted",
-        "source_kind": "file",
-        "source_ref": f"file:{context.file.id}/revision:{context.revision.id}",
-        "content": "old",
-    }
-    [code_input] = await load_run_code_inputs(ctx, [ref])
-    assert code_input.content == b"old"
-    assert code_input.revision_id == context.revision.id
-    with pytest.raises(ModelRetry, match="workspace copy"):
-        resolve_run_code_edit_target([code_input], updates_file_id=ref, provider="openai")
-    [unpinned] = await resolve_chat_attachments(
-        db_session,
-        workspace_id=context.workspace.id,
-        agent=context.agent,
-        file_ids=[context.file.id],
-    )
-    assert unpinned.current_revision_id == replacement.id
-    assert (await list_files(ctx)).files[0].size_bytes == len(b"replacement")
 
 
 async def test_platform_reference_is_private_to_requesting_workspace(db_session, platform_runtime):

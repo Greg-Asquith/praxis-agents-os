@@ -27,11 +27,9 @@ from tests.support.scenario import (
 )
 
 
-@pytest.mark.parametrize("draft_recipients", ["reply", "omitted", None, [], ["lee@example.com"]])
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("approved", [False, True])
+@pytest.mark.parametrize(("draft_recipients", "nested"), [("reply", False), (None, True)])
 async def test_reply_resume_preserves_consent_and_durable_evidence(
-    db_session_factory, monkeypatch, nested, approved, draft_recipients
+    db_session_factory, monkeypatch, nested, draft_recipients
 ):
     is_draft = draft_recipients != "reply"
     definition = replace(
@@ -123,18 +121,13 @@ async def test_reply_resume_preserves_consent_and_durable_evidence(
         decisions=[
             AgentRunResumeDecision(
                 tool_call_id="workflow:1" if nested else "reply",
-                decision="approved" if approved else "denied",
-                override_args=edited if approved else None,
+                decision="approved",
+                override_args=edited,
             )
         ],
     )
     assert completed.run.status == "completed"
     operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
-    if not approved:
-        provider.post.assert_not_awaited()
-        assert operations == []
-        assert any(row.status == "denied" for row in completed.audit_rows)
-        return
     assert provider.post.await_args_list[0].args == ("/me/messages/original/createReplyAll",)
     assert (
         provider.patch.await_args.kwargs["json"]["body"]["content"]

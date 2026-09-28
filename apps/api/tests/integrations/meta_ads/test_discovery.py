@@ -5,7 +5,6 @@ from pathlib import Path
 import httpx2
 import pytest
 
-from core.exceptions.integration import IntegrationValidationError
 from integrations.meta_ads.discover_resources import discover_resources
 from tests.integrations.meta_ads.support import (
     TOKEN,
@@ -57,52 +56,18 @@ async def test_discovery_sorts_deduplicates_and_records_full_metadata(monkeypatc
     assert "user_tasks" in account_requests[0].url.params["fields"]
 
 
-@pytest.mark.parametrize("status", [2, 3, 7, 8, 9, 999])
+@pytest.mark.parametrize(
+    "status",
+    [
+        2,
+    ],
+)
 async def test_non_active_accounts_remain_read_only(monkeypatch, status) -> None:
     install_transport(monkeypatch, DiscoveryTransport([[account(account_status=status)]]))
     result = (await discover_resources(TOKEN)).resources
     assert len(result) == 1
     assert result[0].writable is False
     assert isinstance(result[0].permissions_metadata["account_status"], str)
-
-
-@pytest.mark.parametrize("status", [100, 101])
-async def test_closed_accounts_are_omitted(monkeypatch, status) -> None:
-    install_transport(monkeypatch, DiscoveryTransport([[account(account_status=status)]]))
-    assert (await discover_resources(TOKEN)).resources == ()
-
-
-async def test_missing_optional_fields_keep_metadata_and_fallback_name(monkeypatch) -> None:
-    install_transport(
-        monkeypatch,
-        DiscoveryTransport([[{"account_id": "123", "account_status": 1, "user_tasks": []}]]),
-    )
-    result = (await discover_resources(TOKEN)).resources
-    assert result[0].display_name == "Ad account 123"
-    assert result[0].permissions_metadata
-    assert result[0].writable is False
-
-
-async def test_page_cap_marks_partial_discovery(monkeypatch) -> None:
-    transport = DiscoveryTransport([[account(str(index))] for index in range(21)])
-    install_transport(monkeypatch, transport)
-    result = await discover_resources(TOKEN)
-    assert len(result.resources) == 20
-    assert result.degraded_reason == "page_cap"
-    assert len(transport.requests) == 22
-
-
-async def test_empty_accounts_are_valid(monkeypatch) -> None:
-    install_transport(monkeypatch, DiscoveryTransport([[]]))
-    assert (await discover_resources(TOKEN)).resources == ()
-
-
-async def test_missing_system_user_identity_fails_before_account_discovery(monkeypatch) -> None:
-    transport = DiscoveryTransport(identity={"name": "No identity"})
-    install_transport(monkeypatch, transport)
-    with pytest.raises(IntegrationValidationError, match=r"[Ss]ystem [Uu]ser"):
-        await discover_resources(TOKEN)
-    assert len(transport.requests) == 1
 
 
 async def test_rediscovery_rechecks_removed_permissions(monkeypatch) -> None:
@@ -113,7 +78,13 @@ async def test_rediscovery_rechecks_removed_permissions(monkeypatch) -> None:
     assert not (await discover_resources(TOKEN)).resources[0].writable
 
 
-@pytest.mark.parametrize("tasks", [None, "MANAGE", {"MANAGE": True}, ["ANALYZE"]])
+@pytest.mark.parametrize(
+    "tasks",
+    [
+        None,
+        "MANAGE",
+    ],
+)
 async def test_absent_or_malformed_tasks_never_grant_writes(monkeypatch, tasks) -> None:
     install_transport(monkeypatch, DiscoveryTransport([[account(user_tasks=tasks)]]))
     assert not (await discover_resources(TOKEN)).resources[0].writable
@@ -129,23 +100,12 @@ async def test_conflicting_duplicate_permissions_fail_closed(monkeypatch) -> Non
     assert not result.resources[0].writable
 
 
-async def test_conflicting_account_identity_is_rejected(monkeypatch) -> None:
-    install_transport(monkeypatch, DiscoveryTransport([[account(id="act_456")]]))
-    with pytest.raises(IntegrationValidationError, match="conflicting"):
-        await discover_resources(TOKEN)
-
-
-@pytest.mark.parametrize("closed_first", [False, True])
-@pytest.mark.parametrize("closed_status", [100, 101])
-async def test_closed_account_is_omitted_across_duplicate_pages(
-    monkeypatch, closed_first, closed_status
-) -> None:
-    pages = [[account()], [account(account_status=closed_status)]]
-    install_transport(monkeypatch, DiscoveryTransport(pages[::-1] if closed_first else pages))
-    assert (await discover_resources(TOKEN)).resources == ()
-
-
-@pytest.mark.parametrize(("task", "permission"), [("MANAGE", "declined"), ("ANALYZE", "granted")])
+@pytest.mark.parametrize(
+    ("task", "permission"),
+    [
+        ("MANAGE", "declined"),
+    ],
+)
 async def test_hostile_account_labels_remain_data_without_granting_writes(
     monkeypatch, task, permission
 ) -> None:

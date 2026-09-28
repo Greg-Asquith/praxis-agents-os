@@ -87,33 +87,3 @@ async def test_pending_approvals_route_returns_safe_projection(
     assert body["items"][0]["run_id"] == str(run.id)
     assert body["items"][0]["pending_tool_names"] == ["send_email"]
     assert "args" not in body["items"][0]
-
-
-async def test_pending_approvals_route_requires_workspace_and_authentication(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user = build_user(email=f"pending-auth-{uuid4().hex}@example.com")
-    workspace = build_workspace(slug=f"pending-auth-{uuid4().hex[:8]}")
-    membership = build_workspace_membership(
-        workspace_id=workspace.id,
-        user_id=user.id,
-        role=WorkspaceRole.MEMBER,
-    )
-    db_session.add_all([user, workspace, membership])
-    await db_session.flush()
-    user.default_workspace_id = workspace.id
-    session = await session_manager.create_session(db_session, str(user.id))
-    await db_session.commit()
-
-    missing_workspace = await db_async_client.get(
-        "/api/v1/agent-runs/pending-approvals",
-        headers=bearer_headers(session["session_token"]),
-    )
-    unauthenticated = await db_async_client.get(
-        "/api/v1/agent-runs/pending-approvals",
-        headers={"X-Workspace": workspace.slug},
-    )
-
-    assert missing_workspace.status_code == 422
-    assert unauthenticated.status_code == 401

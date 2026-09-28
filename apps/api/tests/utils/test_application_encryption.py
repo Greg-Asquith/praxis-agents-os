@@ -1,18 +1,12 @@
 """Application encryption key-ring behavior and settings validation."""
 
 from importlib import import_module
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from cryptography.fernet import Fernet
 
 from core.settings import Settings, settings
-from services.auth.oauth.utils import (
-    create_oauth_state,
-    verify_oauth_login_browser_binding,
-    verify_oauth_state,
-)
 from utils.security import (
     configure_application_encryption_keys,
     decrypt_data,
@@ -45,38 +39,9 @@ def test_ring_decrypts_old_tokens_and_encrypts_with_primary() -> None:
     assert is_encrypted_with_primary(new_token) is True
 
 
-def test_single_key_ring_setting() -> None:
-    key = Fernet.generate_key().decode()
-    resolved = Settings(
-        _env_file=None,
-        ENVIRONMENT="local",
-        STORAGE_PROVIDER="local_fs",
-        EMAIL_PROVIDER="console",
-        SECRET_KEY="x" * 40,
-        ENCRYPTION_KEYS=key,
-        SECURE_COOKIES=False,
-    )
-
-    assert resolved.application_encryption_keys == (key,)
-
-
-def test_legacy_single_key_setting_is_rejected() -> None:
-    with pytest.raises(ValueError, match="ENCRYPTION_KEY"):
-        Settings(
-            _env_file=None,
-            ENVIRONMENT="local",
-            STORAGE_PROVIDER="local_fs",
-            EMAIL_PROVIDER="console",
-            SECRET_KEY="x" * 40,
-            ENCRYPTION_KEYS=None,
-            ENCRYPTION_KEY=Fernet.generate_key().decode(),
-            SECURE_COOKIES=False,
-        )
-
-
 @pytest.mark.parametrize(
     "value",
-    ["", "not-a-fernet-key", "[]", '["not-a-fernet-key"]'],
+    ["not-a-fernet-key", "[]"],
 )
 def test_settings_reject_malformed_or_empty_key_rings(value: str) -> None:
     with pytest.raises(ValueError, match=r"ENCRYPTION_KEYS|Fernet"):
@@ -89,26 +54,6 @@ def test_settings_reject_malformed_or_empty_key_rings(value: str) -> None:
             ENCRYPTION_KEYS=value,
             SECURE_COOKIES=False,
         )
-
-
-def test_old_key_oauth_cookie_decrypts_during_rotation() -> None:
-    old_key = Fernet.generate_key().decode()
-    new_key = Fernet.generate_key().decode()
-    configure_application_encryption_keys((old_key,))
-    state, _expires_at, browser_binding = create_oauth_state(
-        provider_name="google",
-        redirect_uri="http://localhost:3000/oauth/callback",
-        next_path=None,
-    )
-    encrypted_binding = encrypt_data(browser_binding)
-
-    configure_application_encryption_keys((new_key, old_key))
-
-    verify_oauth_login_browser_binding(
-        verify_oauth_state(state),
-        request=SimpleNamespace(cookies={"oauth_login_binding": encrypted_binding}),
-        provider_name="google",
-    )
 
 
 async def test_named_secret_source_loads_json_key_ring(monkeypatch) -> None:

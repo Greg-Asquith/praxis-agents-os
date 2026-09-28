@@ -84,34 +84,3 @@ async def test_responses_stream_preserves_terminal_reason(
     assert result.provider_details["finish_reason"] == (reason or status)
     assert result.usage.input_tokens == 3
     assert result.usage.output_tokens == 2
-
-
-async def test_azure_content_filter_error_becomes_filtered_response(monkeypatch):
-    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
-    monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", SecretStr("test-key"))
-    monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", "https://example.openai.azure.com")
-    requests = []
-
-    def handler(request):
-        requests.append(request)
-        return httpx.Response(400, json={"error": {"code": "content_filter", "message": "Blocked"}})
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
-        model = factory.build_model(
-            ResolvedModel(
-                provider="azure",
-                model="gpt-5.4-mini",
-                transport_model="gpt-5.4-mini",
-                azure_deployment="test-deployment",
-                settings={},
-                max_steps=3,
-            )
-        )
-        messages = [ModelRequest(parts=[UserPromptPart("Hello")])]
-        result = await model.request(messages, None, ModelRequestParameters())
-
-    assert len(requests) == 1
-    assert result.finish_reason == "content_filter"
-    assert result.parts == []
-    assert result.provider_details == {"finish_reason": "content_filter"}

@@ -12,7 +12,7 @@ async function listTableScopes(connectionId: string) {
   )
 }
 
-export function tableScopesQueryOptions(connectionId: string) {
+function tableScopesQueryOptions(connectionId: string) {
   return queryOptions({
     queryKey: integrationsQueryKeys.tableScopes(connectionId),
     queryFn: () => listTableScopes(connectionId),

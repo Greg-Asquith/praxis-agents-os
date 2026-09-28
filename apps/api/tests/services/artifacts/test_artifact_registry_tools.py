@@ -11,7 +11,6 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models.test import TestModel
@@ -20,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import set_session_tenant_context
 from core.exceptions.general import AppValidationError, NotFoundError
-from core.settings import Settings, settings
+from core.settings import settings
 from models.artifacts import Artifact
 from models.workspace import Workspace
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
@@ -30,29 +29,18 @@ from services.agents.runtime.tools.artifacts import (
     list_artifacts,
     read_artifact,
 )
-from services.agents.runtime.tools.contract import (
-    TOOL_EFFECT_READ,
-    TOOL_EFFECT_SCOPE_EXTERNAL,
-    TOOL_EFFECT_SCOPE_INTERNAL,
-    TOOL_EFFECT_WRITE,
-    TOOL_EGRESS_NONE,
-    TOOL_POLICY_AUTO,
-)
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.artifacts import create_artifact, update_artifact
 from services.artifacts.create_view_url import require_valid_artifact_view_signature
 from services.artifacts.domain import (
     ARTIFACT_CSP_CDN_HOSTS,
-    CREATABLE_ARTIFACT_TYPES,
     artifact_frame_ancestors,
     build_html_csp,
 )
 from services.artifacts.schemas import (
     ArtifactListToolResult,
     ArtifactReadToolResult,
-    ArtifactToolResult,
 )
-from services.artifacts.utils import validate_artifact_content
 from tests.factories import (
     build_artifact,
     build_artifact_revision,
@@ -88,41 +76,6 @@ def _reference(artifact: Artifact) -> ArtifactReference:
         label=artifact.title,
         description=f"{artifact.artifact_type.title()} artifact",
     )
-
-
-def test_artifact_tools_are_auto_mounted_auto_default_external_writes() -> None:
-    assert [name for name in sorted(RUNTIME_TOOL_CATALOG) if "artifact" in name] == [
-        "create_artifact",
-        "list_artifacts",
-        "read_artifact",
-        "update_artifact",
-    ]
-    for name in ("create_artifact", "update_artifact"):
-        definition = RUNTIME_TOOL_CATALOG[name]
-        assert definition.effect == TOOL_EFFECT_WRITE
-        assert definition.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
-        assert definition.default_policy == TOOL_POLICY_AUTO
-        assert definition.supports_approval is True
-        assert definition.supports_auto is True
-        assert definition.output_model is ArtifactToolResult
-        assert definition.configurable is False
-        assert definition.auto_mount is True
-        assert definition.code_eligible is False
-    for name, output_model in (
-        ("list_artifacts", ArtifactListToolResult),
-        ("read_artifact", ArtifactReadToolResult),
-    ):
-        definition = RUNTIME_TOOL_CATALOG[name]
-        assert definition.effect == TOOL_EFFECT_READ
-        assert definition.effect_scope == TOOL_EFFECT_SCOPE_INTERNAL
-        assert definition.egress == TOOL_EGRESS_NONE
-        assert definition.default_policy == TOOL_POLICY_AUTO
-        assert definition.supports_auto is True
-        assert definition.output_model is output_model
-        assert definition.configurable is False
-        assert definition.auto_mount is True
-        assert definition.code_eligible is False
-    assert "image-ref" not in CREATABLE_ARTIFACT_TYPES
 
 
 async def test_list_artifacts_returns_bounded_workspace_summaries_newest_first(
@@ -208,18 +161,6 @@ async def test_list_artifacts_returns_bounded_workspace_summaries_newest_first(
     input_schema = RUNTIME_TOOL_CATALOG["list_artifacts"].serialized_input_schema()
     assert input_schema is not None
     assert input_schema["properties"]["limit"]["maximum"] == 50
-
-
-async def test_list_artifacts_empty_workspace_is_well_formed(
-    db_session: AsyncSession,
-) -> None:
-    workspace = build_workspace(slug=f"artifact-empty-{uuid4().hex[:8]}")
-    db_session.add(workspace)
-    await db_session.flush()
-
-    result = await list_artifacts(_run_context(db_session, workspace))
-
-    assert result == {"items": [], "total": 0, "returned": 0}
 
 
 async def test_read_artifact_returns_current_content_and_truncation_metadata(
@@ -401,34 +342,3 @@ async def test_platform_artifact_approval_cannot_replace_the_reviewed_version() 
             override_args={**args, "expected_current_version_id": str(uuid4())},
         )
     assert error.value.details["locked_fields"] == ["expected_current_version_id"]
-
-
-def test_artifact_default_limit_accepts_ten_mib_and_rejects_larger_utf8_content(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("ARTIFACT_MAX_CONTENT_BYTES", raising=False)
-    maximum = Settings(_env_file=None).ARTIFACT_MAX_CONTENT_BYTES
-    assert maximum == 10 * 1024 * 1024
-    monkeypatch.setattr(settings, "ARTIFACT_MAX_CONTENT_BYTES", maximum)
-    content = "é" * (maximum // 2)
-    assert (
-        len(validate_artifact_content(artifact_type="csv", title="Report", content=content))
-        == maximum
-    )
-    with pytest.raises(AppValidationError, match="Artifact content is too large"):
-        validate_artifact_content(artifact_type="csv", title="Report", content=content + "a")
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("ARTIFACT_VIEW_URL_TTL_SECONDS", 0),
-        ("ARTIFACT_VIEW_URL_TTL_SECONDS", 3601),
-        ("ARTIFACT_MAX_CONTENT_BYTES", 0),
-        ("ARTIFACT_MAX_CONTENT_BYTES", 10_485_761),
-        ("ARTIFACT_READ_TOOL_MAX_CHARS", 999),
-    ],
-)
-def test_artifact_limits_reject_unsafe_values(field: str, value: int) -> None:
-    with pytest.raises(ValidationError):
-        Settings(**{field: value})

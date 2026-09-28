@@ -104,70 +104,6 @@ describe("Google Ads positive keyword update presenter", () => {
     }
   )
 
-  it.each(["source", "SOURCE"])("rejects duplicate custom parameter key %s", (key) => {
-    for (const field of ["before", "requested"]) {
-      const before = {
-        ...state("PAUSED", "1.25", ["https://example.com/old"]),
-        url_custom_parameters: [{ key: "source", value: "before" }],
-      }
-      const requested = {
-        ...state("ENABLED", null, []),
-        url_custom_parameters: [{ key: "source", value: "two" }],
-      }
-      const row = {
-        ...resultRow("updated", before, requested),
-        keyword: {
-          ...resultRow("updated", before, requested).keyword,
-          url_custom_parameters: requested.url_custom_parameters,
-        },
-        requested_fields: ["status", "cpc_bid", "final_urls", "url_custom_parameters"],
-        update_mask: "status,cpcBidMicros,finalUrls,urlCustomParameters",
-      }
-      expect(renderResult({ updated: [row] })).toContain("Download Report CSV")
-      expect(
-        renderResult({
-          updated: [
-            {
-              ...row,
-              [field]: {
-                ...(field === "before" ? before : requested),
-                url_custom_parameters: [
-                  { key: "source", value: "one" },
-                  { key, value: "two" },
-                ],
-              },
-            },
-          ],
-        })
-      ).not.toContain("Download Report CSV")
-    }
-  })
-
-  it.each([{ source: "retained" }, [{ key: "source", value: "retained" }]])(
-    "accepts object and array custom parameter states %j",
-    (parameters) => {
-      const before = {
-        ...state("PAUSED", "1.25", ["https://example.com/old"]),
-        url_custom_parameters: parameters,
-      }
-      const requested = { ...state("ENABLED", null, []), url_custom_parameters: parameters }
-      const row = resultRow("updated", before, requested)
-      expect(
-        renderResult({
-          updated: [
-            {
-              ...row,
-              keyword: {
-                ...row.keyword,
-                url_custom_parameters: [{ key: "source", value: "retained" }],
-              },
-            },
-          ],
-        })
-      ).toContain("Download Report CSV")
-    }
-  )
-
   it.each([
     { requested_fields: ["status", "status"], update_mask: "status,status" },
     { requested_fields: ["status"], update_mask: "finalUrls" },
@@ -199,13 +135,8 @@ describe("Google Ads positive keyword update presenter", () => {
   })
 
   it.each([
-    undefined,
     null,
-    {},
-    [],
-    [null],
     [{ customer_id: "1234567890", label: "Account", currency_code: "bad" }],
-    [{ customer_id: "1234567890", label: "", currency_code: "GBP" }],
     [{ customer_id: "1234567890", label: "   ", currency_code: "GBP" }],
     [{ customer_id: "1234567890", label: "Account", currency_code: "GBP" }],
   ])("uses shared account eligibility for %j", (accounts) => {
@@ -218,64 +149,6 @@ describe("Google Ads positive keyword update presenter", () => {
     expect(args !== null).toBe(shared.has("1234567890"))
     if (args) expect(args.accounts).toEqual(shared)
   })
-
-  it("shows selected keyword labels as failure chips", () => {
-    const html = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(
-        props(
-          activity("failed", {
-            keywords: [keyword("PAUSED")],
-            patches: [{ status: "ENABLED" }],
-            _account_currencies: [
-              { customer_id: "1234567890", currency_code: "GBP", label: "Shop" },
-            ],
-          })
-        )
-      )
-    )
-    expect(html).toMatch(/data-slot="badge"[^>]*>running shoes/)
-  })
-
-  it("separates confirmed state from requested state without arrows", () => {
-    const before = state("PAUSED", "1.25", ["https://example.com/old"])
-    const requested = state("ENABLED", null, [])
-    const html = renderResult({ updated: [resultRow("updated", before, requested)] })
-    expect(html).toContain(">Before<")
-    expect(html).toContain(">After<")
-    expect(html).toContain(">Requested<")
-    expect(html).not.toContain("→")
-    const failed = renderResult({ failed: [resultRow("failed", before, requested)] })
-    const cells = failed.match(/<td[\s\S]*?<\/td>/g) ?? []
-    expect(cells.some((cell) => cell.includes(">Unverified<"))).toBe(true)
-  })
-
-  it.each(["utm_source=my-campaign", "MiXeD_{lpurl}", "ENABLED", "PAUSED"])(
-    "preserves the literal suffix %s in approval comparisons and exported result cells",
-    (suffix) => {
-      const approval = render(
-        googleAdsUpdatePositiveKeywordsPresenter.render(
-          props(
-            activity("awaiting_approval", {
-              keywords: [keyword("PAUSED")],
-              patches: [{ final_url_suffix: suffix }],
-            }),
-            approvalControls()
-          )
-        )
-      )
-      expect(approval).toContain(`>${suffix}<`)
-      const before = state("PAUSED", "1.25", ["https://example.com/old"])
-      const row = {
-        ...resultRow("updated", before, { ...before, final_url_suffix: suffix }),
-        keyword: { ...keyword("PAUSED"), final_url_suffix: suffix },
-        requested_fields: ["final_url_suffix"],
-        update_mask: "finalUrlSuffix",
-      }
-      const html = renderResult({ updated: [row] })
-      expect(html).toContain(`Final URL suffix: ${suffix}`)
-      expect(html).toContain("Download Report CSV")
-    }
-  )
 
   it("rejects contradictory per-outcome counts even when their total matches", () => {
     const row = resultRow(
@@ -299,93 +172,6 @@ describe("Google Ads positive keyword update presenter", () => {
     )
   })
 
-  it("accepts matching criterion IDs in different ad groups", () => {
-    const row = resultRow(
-      "updated",
-      state("PAUSED", "1.25", ["https://example.com/old"]),
-      state("ENABLED", null, [])
-    )
-    expect(
-      renderResult({ updated: [row, { ...row, keyword: { ...row.keyword, ad_group_id: "21" } }] })
-    ).toContain("Download Report CSV")
-  })
-  it("keeps fixed keyword rows compact until advanced fields are opened", () => {
-    const html = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(
-        props(
-          activity("awaiting_approval", {
-            keywords: [keyword("ENABLED")],
-            patches: [{ status: "PAUSED" }],
-          }),
-          approvalControls()
-        )
-      )
-    )
-
-    expect(html).toContain("Status")
-    expect(html).toContain("More fields")
-    expect(html).toContain("CPC bid")
-    expect(html).not.toContain("Final URLs")
-    expect(html).not.toContain("Add Row")
-    expect(html).not.toContain("Remove row")
-  })
-
-  it("shows exact guarded before and requested values for every requested field", () => {
-    const html = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(
-        props(
-          activity("awaiting_approval", {
-            keywords: [keyword("PAUSED")],
-            patches: [
-              {
-                cpc_bid: "",
-                final_urls: [],
-                status: "ENABLED",
-                tracking_url_template: "",
-              },
-            ],
-          }),
-          approvalControls()
-        )
-      )
-    )
-
-    expect(html).toContain("Proposed keyword changes")
-    expect(html).toContain("running shoes")
-    expect(html).toContain("Search · Shoes")
-    expect(html).toContain("CPC bid")
-    expect(html).toContain("1.25")
-    expect(html).toContain("Cleared")
-    expect(html).not.toContain("Changing match type requires two separate approvals")
-    expect(html).toContain("Less fields")
-    expect(html).toContain("UK account")
-    expect(html).toContain("GBP")
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
-  })
-
-  it("renders nullable bid adjustments as row-specific number inputs", () => {
-    const html = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(
-        props(
-          activity("awaiting_approval", {
-            keywords: [keyword("PAUSED")],
-            patches: [{ bid_modifier: "" }],
-          }),
-          approvalControls()
-        )
-      )
-    )
-
-    expect(html).toContain(
-      'aria-label="Bid adjustment for running shoes, Exact, in Search · Shoes, account 1234567890"'
-    )
-    expect(html).toMatch(
-      /<input[^>]*type="number"[^>]*aria-label="Bid adjustment for running shoes[^>]*value=""/
-    )
-    expect(html).not.toContain("Changed. ")
-    expect(html).not.toContain("Cleared")
-  })
-
   it("locks every fixed-row editor while approval is submitting", () => {
     const html = render(
       googleAdsUpdatePositiveKeywordsPresenter.render(
@@ -402,22 +188,6 @@ describe("Google Ads positive keyword update presenter", () => {
     expect(html).not.toContain('role="checkbox"')
     expect(html).toMatch(/<input[^>]*disabled=""[^>]*aria-label="CPC bid for running shoes/)
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Status for running shoes/)
-  })
-
-  it("paginates the fixed approval rows without discarding edits", () => {
-    const keywords = Array.from({ length: 30 }, (_value, index) => keywordAt(index))
-    const patches = keywords.map(() => ({ status: "PAUSED" }))
-    const html = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(
-        props(activity("awaiting_approval", { keywords, patches }), approvalControls())
-      )
-    )
-
-    expect(html).toContain("1 of 2")
-    expect(html).toContain("keyword 024")
-    expect(html).not.toContain("keyword 025")
-    expect(html).not.toContain("Add Row")
-    expect(html).not.toContain("Remove row")
   })
 
   it("replaces one positional patch without changing any other keyword association", () => {
@@ -454,7 +224,7 @@ describe("Google Ads positive keyword update presenter", () => {
     expect(render(missingPatch)).toContain("can&#x27;t be approved")
   })
 
-  it.each([{}, { cpc_bid: "2." }, { final_urls: ["not-a-url"] }, { bid_modifier: 20 }])(
+  it.each([{}, { cpc_bid: "2." }])(
     "keeps recoverable invalid draft %j mounted while blocking approval",
     (patch) => {
       const controls = {
@@ -480,48 +250,8 @@ describe("Google Ads positive keyword update presenter", () => {
       expect(html).toContain("Provide one valid change row")
       expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
       if ("cpc_bid" in patch) expect(html).toContain('value="2."')
-      if ("final_urls" in patch) expect(html).toContain("not-a-url")
     }
   )
-
-  it("distinguishes match variants and account scopes in accessible control names", () => {
-    const html = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(
-        props(
-          activity("awaiting_approval", {
-            keywords: [
-              keyword("PAUSED"),
-              { ...keyword("PAUSED"), criterion_id: "91", match_type: "PHRASE" },
-            ],
-            patches: [{ status: "ENABLED" }, { status: "ENABLED" }],
-          }),
-          approvalControls()
-        )
-      )
-    )
-    expect(html).toContain("Status for running shoes, Exact, in Search · Shoes, account 1234567890")
-    expect(html).toContain(
-      "Status for running shoes, Phrase, in Search · Shoes, account 1234567890"
-    )
-    expect(html).toContain(">Current<")
-    expect(html).toContain(">Proposed<")
-  })
-
-  it("allows destination inheritance for independent URL settings", () => {
-    const html = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(
-        props(
-          activity("awaiting_approval", {
-            keywords: [{ ...keyword("PAUSED"), final_urls: [], final_url_suffix: "src=ads" }],
-            patches: [{ status: "ENABLED" }],
-          }),
-          approvalControls()
-        )
-      )
-    )
-    expect(html).toContain("Proposed keyword changes")
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
-  })
 
   it("renders exact before and requested settings with partial outcomes", () => {
     const before = state("PAUSED", "1.25", ["https://example.com/old"])
@@ -556,24 +286,11 @@ describe("Google Ads positive keyword update presenter", () => {
       )
     )
 
-    expect(html).toContain("Update Google Ads Keywords")
-    expect(html).toContain("Criterion cannot be changed.")
-    expect(html).toContain("Status: Paused")
-    expect(html).toContain("Status: Enabled")
     expect(html).toContain("CPC bid: 1.25 GBP")
     expect(html).toContain("Download Report CSV")
   })
 
-  it("keeps denied, loading, malformed, and unverified states distinct", () => {
-    const denied = activity("denied", {
-      keywords: [keyword("PAUSED")],
-      patches: [{ status: "ENABLED" }],
-    })
-    denied.decisionReason = "Keep this keyword paused."
-    const deniedHtml = render(googleAdsUpdatePositiveKeywordsPresenter.render(props(denied)))
-    const loadingHtml = render(
-      googleAdsUpdatePositiveKeywordsPresenter.render(props(activity("running", null)))
-    )
+  it("keeps malformed and unverified states distinct", () => {
     const malformedHtml = render(
       googleAdsUpdatePositiveKeywordsPresenter.render(
         props({ ...activity("completed", null), result: { results: [entry({ bad: true })] } })
@@ -597,8 +314,6 @@ describe("Google Ads positive keyword update presenter", () => {
       )
     )
 
-    expect(deniedHtml).toContain("declined")
-    expect(loadingHtml).toContain("Updating keywords…")
     expect(malformedHtml).toContain("couldn&#x27;t confirm")
     expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads updated")
     expect(unverifiedHtml).not.toContain("provider transport detail")
@@ -718,16 +433,6 @@ function keyword(status: "ENABLED" | "PAUSED") {
     tracking_url_template: null,
     url_custom_parameters: [],
     version: 1,
-  }
-}
-
-function keywordAt(index: number) {
-  const text = `keyword ${String(index).padStart(3, "0")}`
-  return {
-    ...keyword("ENABLED"),
-    criterion_id: String(index + 1),
-    label: text,
-    text,
   }
 }
 

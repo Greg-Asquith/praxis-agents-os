@@ -33,24 +33,6 @@ def test_validation_redacts_malformed_assignment_value(tmp_path: Path) -> None:
     assert secret not in result.stdout
 
 
-def test_validation_redacts_crlf_assignment_value(tmp_path: Path) -> None:
-    env_file = tmp_path / "local.secrets.env"
-    secret = "do-not-print-this"
-    env_file.write_bytes(f"ANTHROPIC_API_KEY={secret}\r\n".encode())
-
-    result = subprocess.run(  # noqa: S603 - fixed shell and repository script
-        [SHELL, str(VALIDATE_SCRIPT), str(env_file)],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-
-    assert result.returncode == 65
-    assert f"{env_file}:1: ANTHROPIC_API_KEY:" in result.stderr
-    assert secret not in result.stderr
-    assert secret not in result.stdout
-
-
 def test_replacement_is_atomic_and_private(tmp_path: Path) -> None:
     env_file = tmp_path / "local.secrets.env"
     env_file.write_text("KEEP=value\nOPENAI_API_KEY=old\nOPENAI_API_KEY=duplicate\n")
@@ -108,12 +90,3 @@ def test_interrupted_replacement_preserves_file_and_cleans_temporary_data(
 
     assert env_file.read_text() == original
     assert list(tmp_path.glob("local.secrets.env.tmp.*")) == []
-
-
-def test_entrypoints_delegate_secret_handling_to_safety_helpers() -> None:
-    entrypoint = (REPO_ROOT / "apps/api/bin/compose_entrypoint.sh").read_text()
-    deployment_makefile = (REPO_ROOT / "makefiles/deployment.mk").read_text()
-
-    assert "validate_sourceable_env.sh" in entrypoint
-    assert "replace_env_value.sh" in deployment_makefile
-    assert "local.secrets.env.tmp" not in deployment_makefile

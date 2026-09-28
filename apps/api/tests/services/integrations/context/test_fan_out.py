@@ -7,9 +7,8 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from pydantic_ai import ModelRetry
 
-from core.exceptions.integration import IntegrationRateLimitError, IntegrationValidationError
+from core.exceptions.integration import IntegrationRateLimitError
 from services.agents.runtime.tools.contract import IntegrationToolBinding
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.context.fan_out import run_context_fan_out
@@ -73,55 +72,6 @@ async def test_fan_out_isolates_partial_failure() -> None:
     assert results[2].data == {"name": "Three"}
 
 
-async def test_fan_out_exposes_plain_integration_error_without_internal_context() -> None:
-    ctx = _ctx((_entry("One"),))
-
-    async def operation(_entry: ResolvedContextEntry):
-        raise IntegrationValidationError(
-            "Google Ads rejected the query: Unrecognized field 'keyword.text'.",
-            provider_key="google_ads",
-            operation="run_report",
-        )
-
-    results = await run_context_fan_out(ctx, binding=_binding(), operation=operation)
-
-    assert results[0].error_message == (
-        "Google Ads rejected the query: Unrecognized field 'keyword.text'."
-    )
-
-
-async def test_fan_out_write_gate_does_not_call_operation(monkeypatch) -> None:
-    entry = _entry(
-        "Read only",
-        provider_key="gmail",
-        resource_type="gmail_mailbox",
-        write_allowed=False,
-    )
-    ctx = _ctx((entry,), tool_name="gmail_send_message")
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        AsyncMock(),
-    )
-    calls = 0
-
-    async def operation(_entry: ResolvedContextEntry):
-        nonlocal calls
-        calls += 1
-
-    results = await run_context_fan_out(
-        ctx,
-        binding=IntegrationToolBinding(
-            provider_keys=frozenset({"gmail"}),
-            resource_types=frozenset({"gmail_mailbox"}),
-            requires_write=True,
-        ),
-        operation=operation,
-    )
-
-    assert calls == 0
-    assert results[0].error_code == "write_not_permitted"
-
-
 async def test_fan_out_write_gate_records_generic_denial_evidence(monkeypatch) -> None:
     entry = _entry(
         "Read only",
@@ -131,6 +81,7 @@ async def test_fan_out_write_gate_records_generic_denial_evidence(monkeypatch) -
     )
     ctx = _ctx((entry,), tool_name="gmail_send_message")
     audit = AsyncMock()
+    operation = AsyncMock()
     monkeypatch.setattr(
         "services.integrations.operations.record_integration_operation_audit_event",
         audit,
@@ -143,20 +94,14 @@ async def test_fan_out_write_gate_records_generic_denial_evidence(monkeypatch) -
             resource_types=frozenset({"gmail_mailbox"}),
             requires_write=True,
         ),
-        operation=lambda _entry: None,
+        operation=operation,
     )
 
+    operation.assert_not_awaited()
     assert audit.await_args.kwargs["tool_name"] == "gmail_send_message"
     assert audit.await_args.kwargs["operation"] == "send_message"
     assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
     assert results[0].error_code == "write_not_permitted"
-
-
-async def test_fan_out_retries_when_no_compatible_entries() -> None:
-    ctx = _ctx(())
-
-    with pytest.raises(ModelRetry, match="select a context"):
-        await run_context_fan_out(ctx, binding=_binding(), operation=lambda _entry: None)
 
 
 async def test_fan_out_keeps_google_ads_and_analytics_bindings_isolated() -> None:

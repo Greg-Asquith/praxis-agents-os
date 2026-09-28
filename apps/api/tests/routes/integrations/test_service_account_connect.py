@@ -17,7 +17,7 @@ from tests.routes.integrations.conftest import create_identity
 
 @pytest.mark.parametrize(
     "provider_key",
-    ["google_ads", "google_analytics", "bigquery"],
+    ["bigquery"],
 )
 async def test_service_account_is_persisted_by_reference_only(
     db_session: AsyncSession,
@@ -68,52 +68,6 @@ async def test_service_account_is_persisted_by_reference_only(
     assert private_key not in caplog.text
 
 
-async def test_google_search_console_rejects_service_account_connection(
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    response = await db_async_client.post(
-        "/api/v1/integrations/connections/service-account",
-        headers=integration_identity["headers"],
-        json={
-            "provider_key": "google_search_console",
-            "label": "Client Search",
-            "service_account_json": json.dumps(
-                {
-                    "type": "service_account",
-                    "client_email": "agent@example.iam.gserviceaccount.com",
-                    "private_key": "hidden",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                }
-            ),
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == (
-        "Service-account provider is not enabled | "
-        "provider=google_search_console | operation=connect_service_account"
-    )
-    assert "hidden" not in response.text
-
-
-async def test_service_account_rejects_missing_client_email(
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    response = await db_async_client.post(
-        "/api/v1/integrations/connections/service-account",
-        headers=integration_identity["headers"],
-        json={
-            "provider_key": "google_ads",
-            "label": "Invalid",
-            "service_account_json": json.dumps({"private_key": "hidden"}),
-        },
-    )
-    assert response.status_code == 400
-    assert "hidden" not in response.text
-
-
 async def test_service_account_rejects_another_workspaces_secret_reference(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -162,30 +116,3 @@ async def test_service_account_rejects_another_workspaces_secret_reference(
     assert response.status_code == 400
     assert "not authorized for this workspace" in response.text
     assert foreign_email not in response.text
-
-
-async def test_member_cannot_connect_workspace_service_account(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    _user, _workspace, _membership, headers = await create_identity(
-        db_session,
-        role=WorkspaceRole.MEMBER,
-        workspace=integration_identity["workspace"],
-    )
-    response = await db_async_client.post(
-        "/api/v1/integrations/connections/service-account",
-        headers=headers,
-        json={
-            "provider_key": "google_ads",
-            "label": "Denied",
-            "service_account_json": json.dumps(
-                {
-                    "client_email": "agent@example.iam.gserviceaccount.com",
-                    "private_key": "hidden",
-                }
-            ),
-        },
-    )
-    assert response.status_code == 403

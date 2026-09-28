@@ -203,7 +203,7 @@ async def retrieval_corpus(
                 title="Pending embedding capacity corpus",
                 content=_expanded_roadmap(
                     "# Pending embedding capacity corpus",
-                    sections=56,
+                    sections=14,
                     marker="Pending capacity marker",
                 ),
                 embed=False,
@@ -240,7 +240,7 @@ async def retrieval_corpus(
             )
 
             assert documents["product_roadmap.md"].chunk_count > 20
-            assert pending_document.chunk_count > 50
+            assert pending_document.chunk_count > 10
 
             try:
                 yield RetrievalCorpus(

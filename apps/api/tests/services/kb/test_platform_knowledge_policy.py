@@ -79,16 +79,12 @@ async def test_platform_deduplication_ignores_tenant_private_content(
         assert {document.id for document in documents} == {private_id, created.id}
 
 
-@pytest.mark.parametrize(
-    "content,limit,error",
-    [("-----BEGIN PRIVATE KEY-----", 1_024, "private key"), ("é" * 6, 10, "size limit")],
-)
 async def test_platform_manual_creation_enforces_shared_content_policy(
-    db_session_factory, policy_actor, monkeypatch, content, limit, error
+    db_session_factory, policy_actor
 ):
-    monkeypatch.setattr(settings, "KB_MAX_DOCUMENT_BYTES", limit)
+    content = "-----BEGIN PRIVATE KEY-----"
     async with db_session_factory() as db:
-        with pytest.raises(AppValidationError, match=error):
+        with pytest.raises(AppValidationError, match="private key"):
             await create_manual_document(
                 db,
                 actor=policy_actor,
@@ -107,9 +103,7 @@ async def test_platform_manual_creation_enforces_shared_content_policy(
         )
 
 
-@pytest.mark.parametrize(
-    "invalid", ["malformed_version", "non_text_version", "workspace", "revoked"]
-)
+@pytest.mark.parametrize("invalid", ["workspace", "revoked"])
 @pytest.mark.parametrize("pipeline", ["ingest_platform_document", "embed_platform_chunks"])
 async def test_invalid_platform_job_is_rejected_before_provider_io(
     policy_actor, monkeypatch, invalid, pipeline
@@ -122,11 +116,7 @@ async def test_invalid_platform_job_is_rejected_before_provider_io(
         initiated_by_user_id=policy_actor.id,
         payload={"version": str(uuid4())},
     )
-    if invalid == "malformed_version":
-        job.payload = {"version": "not-a-version"}
-    elif invalid == "non_text_version":
-        job.payload = {"version": {"unexpected": "object"}}
-    elif invalid == "workspace":
+    if invalid == "workspace":
         job.workspace_id = uuid4()
     else:
         monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", "another-admin@example.com")

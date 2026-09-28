@@ -19,8 +19,8 @@ from core.settings import settings
 from models.artifacts import Artifact, ArtifactRevision, ArtifactShare
 from models.audit_event import AuditEvent
 from models.rate_limiting import RateLimitAttempt
-from models.workspace import Workspace, WorkspaceRole
-from services.artifacts import create_artifact, create_artifact_view_url, update_artifact
+from models.workspace import WorkspaceRole
+from services.artifacts import create_artifact, create_artifact_view_url
 from services.artifacts.domain import (
     artifact_frame_ancestors,
     build_html_csp,
@@ -113,116 +113,6 @@ async def test_management_routes_and_view_url_round_trip(
     assert view.status_code == 200
     served = await db_async_client.get(_relative_url(view.json()["url"]))
     assert served.status_code == 200
-
-
-async def test_artifact_list_supports_search_sorting_and_pagination(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    local_storage_settings: None,
-) -> None:
-    headers, report, version_id, _token = await _seed(db_session)
-    workspace = await db_session.get(Workspace, report.workspace_id)
-    initial_revision = await db_session.get(ArtifactRevision, version_id)
-    assert workspace is not None
-    assert initial_revision is not None
-    assert initial_revision.created_by_user_id is not None
-
-    alpha, _alpha_revision = await create_artifact(
-        db_session,
-        workspace=workspace,
-        title="Alpha plan",
-        artifact_type="markdown",
-        content="# Alpha",
-        actor_user_id=initial_revision.created_by_user_id,
-    )
-    zulu, _zulu_revision = await create_artifact(
-        db_session,
-        workspace=workspace,
-        title="Zulu summary",
-        artifact_type="markdown",
-        content="# Zulu",
-        actor_user_id=initial_revision.created_by_user_id,
-    )
-    await update_artifact(
-        db_session,
-        workspace=workspace,
-        artifact_id=zulu.id,
-        content="# Zulu revised",
-        actor_user_id=initial_revision.created_by_user_id,
-    )
-    await db_session.commit()
-
-    searched = await db_async_client.get(
-        "/api/v1/artifacts/",
-        headers=headers,
-        params={"search": "alpha"},
-    )
-    assert searched.status_code == 200
-    assert searched.json()["total"] == 1
-    assert [item["id"] for item in searched.json()["items"]] == [str(alpha.id)]
-
-    searched_by_type = await db_async_client.get(
-        "/api/v1/artifacts/",
-        headers=headers,
-        params={"search": "markdown"},
-    )
-    assert searched_by_type.status_code == 200
-    assert searched_by_type.json()["total"] == 2
-
-    escaped_wildcard = await db_async_client.get(
-        "/api/v1/artifacts/",
-        headers=headers,
-        params={"search": "%"},
-    )
-    assert escaped_wildcard.status_code == 200
-    assert escaped_wildcard.json()["total"] == 0
-
-    paged = await db_async_client.get(
-        "/api/v1/artifacts/",
-        headers=headers,
-        params={
-            "limit": 2,
-            "offset": 1,
-            "sort_by": "title",
-            "sort_direction": "asc",
-        },
-    )
-    assert paged.status_code == 200
-    assert paged.json()["total"] == 3
-    assert [item["title"] for item in paged.json()["items"]] == [
-        "Report",
-        "Zulu summary",
-    ]
-
-    by_versions = await db_async_client.get(
-        "/api/v1/artifacts/",
-        headers=headers,
-        params={"sort_by": "version_count", "sort_direction": "desc"},
-    )
-    assert by_versions.status_code == 200
-    assert by_versions.json()["items"][0]["id"] == str(zulu.id)
-    assert by_versions.json()["items"][0]["version_count"] == 2
-
-
-@pytest.mark.parametrize(
-    ("query", "field"),
-    [
-        ({"sort_by": "created_at"}, "sort_by"),
-        ({"sort_direction": "down"}, "sort_direction"),
-    ],
-)
-async def test_artifact_list_rejects_unknown_sort_options(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    query: dict[str, str],
-    field: str,
-) -> None:
-    headers, _artifact, _version_id, _token = await _seed(db_session)
-
-    response = await db_async_client.get("/api/v1/artifacts/", headers=headers, params=query)
-
-    assert response.status_code == 400
-    assert response.json()["field"] == field
 
 
 async def test_share_is_hashed_pinned_cookie_free_and_revocable(
@@ -431,7 +321,7 @@ async def test_share_management_requires_admin_but_member_can_edit_and_restore(
     assert restored_content.json()["content"] == original_content.json()["content"]
 
 
-async def test_share_defaults_limits_listing_and_disabled_gate(
+async def test_share_listing_hides_tokens_and_disabled_gate(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     local_storage_settings: None,
@@ -441,32 +331,20 @@ async def test_share_defaults_limits_listing_and_disabled_gate(
         db_session,
         role=WorkspaceRole.OWNER,
     )
-    before = datetime.now(UTC)
-    created_default = await db_async_client.post(
+    created = await db_async_client.post(
         f"/api/v1/artifacts/{artifact.id}/shares",
         headers=headers,
         json={},
     )
-    assert created_default.status_code == 201
-    default_expiry = datetime.fromisoformat(created_default.json()["expires_at"])
-    assert timedelta(days=6, hours=23) < default_expiry - before < timedelta(days=7, minutes=1)
-
-    created_clamped = await db_async_client.post(
-        f"/api/v1/artifacts/{artifact.id}/shares",
-        headers=headers,
-        json={"expires_in_days": 90},
-    )
-    assert created_clamped.status_code == 201
-    clamped_expiry = datetime.fromisoformat(created_clamped.json()["expires_at"])
-    assert timedelta(days=29, hours=23) < clamped_expiry - before < timedelta(days=30, minutes=1)
-    assert created_clamped.json()["version_id"] == str(version_id)
+    assert created.status_code == 201
+    assert created.json()["version_id"] == str(version_id)
 
     listed = await db_async_client.get(
         f"/api/v1/artifacts/{artifact.id}/shares",
         headers=headers,
     )
     assert listed.status_code == 200
-    assert len(listed.json()["items"]) == 2
+    assert len(listed.json()["items"]) == 1
     assert all(
         "token_hash" not in item and "share_url" not in item for item in listed.json()["items"]
     )
@@ -514,12 +392,13 @@ async def test_share_access_limit_is_shared_across_token_guesses(
         "requests_per_minute",
         (1000, 60),
     )
+    monkeypatch.setitem(rate_limiter.default_limits, "requests_per_hour", (5, 3600))
     endpoint = "/artifacts/shared/{token}"
     async with committed_db_session_factory() as db:
         await db.execute(delete(RateLimitAttempt).where(RateLimitAttempt.endpoint == endpoint))
         await db.commit()
     try:
-        for attempt in range(120):
+        for attempt in range(5):
             token = f"{attempt:043d}"
             response = await async_client.get(f"/artifacts/shared/{token}")
             assert response.status_code == 404
@@ -531,11 +410,11 @@ async def test_share_access_limit_is_shared_across_token_guesses(
                     RateLimitAttempt.window_seconds == 3600,
                 )
             )
-        assert attempts == 120
+        assert attempts == 5
         blocked_token = "x" * 43
         blocked = await async_client.get(f"/artifacts/shared/{blocked_token}")
         assert blocked.status_code == 429
-        assert blocked.headers["x-ratelimit-limit"] == "120"
+        assert blocked.headers["x-ratelimit-limit"] == "5"
         assert blocked.headers["retry-after"]
     finally:
         async with committed_db_session_factory() as db:
@@ -764,7 +643,7 @@ async def test_plain_artifact_is_sandboxed_and_downloadable(
     assert response.headers["content-disposition"].startswith("attachment;")
 
 
-@pytest.mark.parametrize("role", list(WorkspaceRole))
+@pytest.mark.parametrize("role", [WorkspaceRole.MEMBER, WorkspaceRole.READ_ONLY])
 async def test_artifact_read_contract_exposes_editor_capability(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

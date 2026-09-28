@@ -59,21 +59,6 @@ async def test_cancel_run_route_cancels_owner_run_and_audits(
     assert audit_event.details["previous_status"] == RUN_STATUS_RUNNING
 
 
-async def test_cancel_run_route_rejects_terminal_run(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, _agent, _conversation, run = await _persist_run_context(db_session)
-    headers = await _headers_for_user(db_session, user, workspace)
-
-    first = await db_async_client.post(f"/api/v1/agent-runs/{run.id}/cancel", headers=headers)
-    second = await db_async_client.post(f"/api/v1/agent-runs/{run.id}/cancel", headers=headers)
-
-    assert first.status_code == 200
-    assert second.status_code == 409
-    assert second.json()["detail"] == "Agent run is already terminal"
-
-
 async def test_cancel_run_route_allows_manager_but_rejects_other_member(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

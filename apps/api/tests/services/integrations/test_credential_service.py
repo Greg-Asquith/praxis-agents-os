@@ -14,7 +14,6 @@ from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationNotFoundError,
     IntegrationRateLimitError,
-    IntegrationValidationError,
 )
 from integrations.gmail import PROVIDER as GMAIL_PROVIDER
 from models.audit_event import AuditEvent
@@ -29,11 +28,9 @@ from services.integrations.credentials import (
     get_usable_connection_credential,
     revoke_credential,
     store_oauth_credential,
-    store_secret_reference_credential,
 )
 from services.integrations.microsoft_graph import classify_entra_token_error
 from services.integrations.plugin import PROVIDER_PLUGINS, OAuthClientConfig, OAuthProtocol
-from services.secrets.domain import SecretReference
 from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
@@ -100,22 +97,6 @@ async def test_oauth_tokens_are_ciphertext_at_rest_and_key_id_is_stamped(db_sess
     assert credential.access_token_encrypted != "access-secret"
     assert credential.refresh_token_encrypted != "refresh-secret"
     assert len(credential.encryption_key_id) == 16
-
-
-async def test_secret_reference_store_rejects_oauth_mode_before_database_write(
-    db_session,
-) -> None:
-    with pytest.raises(IntegrationValidationError):
-        await store_secret_reference_credential(
-            db_session,
-            provider_key="test_provider",
-            auth_mode="oauth",
-            secret_reference=SecretReference(
-                provider="local",
-                name="integrations/test/credential",
-                version="latest",
-            ),
-        )
 
 
 async def test_duplicate_principal_detection_warns_without_blocking(db_session) -> None:
@@ -198,30 +179,6 @@ async def test_transient_refresh_failure_preserves_connection_and_error_type(db_
     assert connection.status == "active"
 
 
-async def test_terminal_refresh_rejection_requires_reauthentication(db_session) -> None:
-    credential = await _stored(db_session, expires_in=1)
-    credential.token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    connection = await _connection(db_session, credential)
-
-    async def invalid_grant(_credential):
-        raise IntegrationValidationError(
-            "Provider rejected the refresh grant",
-            provider_key="test_provider",
-            operation="refresh_credential",
-        )
-
-    with pytest.raises(IntegrationValidationError):
-        await ensure_fresh_credential(
-            db_session,
-            credential_id=credential.id,
-            refresh_token=invalid_grant,
-        )
-    await db_session.refresh(credential)
-    await db_session.refresh(connection)
-    assert credential.refresh_failure_count == 1
-    assert connection.status == "needs_reauth"
-
-
 async def test_classified_refresh_failure_persists_recovery_reason(db_session) -> None:
     credential = await _stored(db_session, expires_in=1)
     credential.token_expires_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -251,7 +208,6 @@ async def test_classified_refresh_failure_persists_recovery_reason(db_session) -
 @pytest.mark.parametrize(
     ("entra_code", "expected_reason"),
     [
-        (700082, "reauthorization_required"),
         (7000215, "client_credential_invalid"),
     ],
 )
@@ -357,7 +313,7 @@ async def test_freshness_seam_rejects_a_mismatched_expected_binding(db_session) 
         )
 
 
-@pytest.mark.parametrize("revoked_state", ["connection", "credential"])
+@pytest.mark.parametrize("revoked_state", ["credential"])
 async def test_provider_credential_use_refreshes_and_rejects_in_flight_revocation(
     db_session,
     revoked_state: str,

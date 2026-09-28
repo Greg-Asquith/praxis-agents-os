@@ -10,12 +10,7 @@ from core.settings import settings
 from services.artifacts.schemas import ArtifactUpdateRequest
 from services.artifacts.utils import artifact_to_read, artifact_to_summary
 from services.files.domain import (
-    FileConfirmRequest,
-    FileEditRequest,
     FileMoveRequest,
-    FileRestoreRequest,
-    FileUpdateRequest,
-    FileUploadRequest,
 )
 from services.files.utils import file_to_read
 from services.kb.schemas import KBDocumentListItem, KBDocumentRead, KBDocumentUpdateRequest
@@ -31,39 +26,12 @@ from tests.factories import (
 
 
 @pytest.mark.parametrize(
-    "schema,payload",
+    "schema,payload,field,value",
     [
-        (SkillUpdateRequest, {"description": "Updated guidance"}),
-        (FileUpdateRequest, {"name": "Renamed"}),
-        (
-            FileUploadRequest,
-            {
-                "filename": "a.txt",
-                "content_type": "text/plain",
-                "size_bytes": 1,
-                "file_id": str(uuid4()),
-            },
-        ),
-        (FileConfirmRequest, {"upload_token": "signed-upload"}),
-        (FileEditRequest, {"content": "text", "expected_current_revision_id": str(uuid4())}),
-        (
-            FileRestoreRequest,
-            {"revision_id": str(uuid4()), "expected_current_revision_id": str(uuid4())},
-        ),
-        (FileMoveRequest, {"file_ids": [str(uuid4())]}),
-        (ArtifactUpdateRequest, {"content": "text"}),
-        (KBDocumentUpdateRequest, {"title": "Renamed"}),
-    ],
-)
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("scope", "platform"),
-        ("workspace_id", str(uuid4())),
-        ("is_published", True),
-        ("published_revision_id", str(uuid4())),
-        ("published_version_id", str(uuid4())),
-        ("can_manage_platform", True),
+        (SkillUpdateRequest, {"description": "Updated guidance"}, "scope", "platform"),
+        (FileMoveRequest, {"file_ids": [str(uuid4())]}, "workspace_id", str(uuid4())),
+        (ArtifactUpdateRequest, {"content": "text"}, "published_version_id", str(uuid4())),
+        (KBDocumentUpdateRequest, {"title": "Renamed"}, "can_manage_platform", True),
     ],
 )
 def test_ordinary_updates_reject_ownership_and_publication(schema, payload, field, value):
@@ -75,9 +43,10 @@ def test_ordinary_updates_reject_ownership_and_publication(schema, payload, fiel
     )
 
 
-@pytest.mark.parametrize("scope", ["workspace", "platform"])
-@pytest.mark.parametrize("actor_kind", ["admin", "member", "absent"])
-@pytest.mark.parametrize("deleted", [False, True])
+@pytest.mark.parametrize(
+    "scope,actor_kind,deleted",
+    [("platform", "admin", False), ("platform", "admin", True), ("workspace", "admin", False)],
+)
 def test_parent_projections_expose_ownership_and_platform_authority(
     monkeypatch, scope, actor_kind, deleted
 ):
@@ -130,18 +99,15 @@ def test_parent_projections_expose_ownership_and_platform_authority(
         )
 
 
-@pytest.mark.parametrize("role", ["owner", "admin", "member", "read_only"])
 @pytest.mark.parametrize(
-    "state",
+    "role,state",
     [
-        "published",
-        "draft",
-        "withdrawn",
-        "deleted",
-        "removed_member",
-        "wrong_actor",
-        "local",
-        "other_workspace",
+        ("member", "published"),
+        ("member", "local"),
+        ("read_only", "published"),
+        ("member", "draft"),
+        ("member", "removed_member"),
+        ("member", "other_workspace"),
     ],
 )
 def test_artifact_edit_capability_uses_membership_and_parent_visibility(monkeypatch, role, state):

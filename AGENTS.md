@@ -69,6 +69,46 @@ Preserve these boundaries in every change:
 - For GCP bootstrap and deployment, use an explicit `ENV_FILE` and preserve
   the bootstrap's typed approval gate. Read `deploy/gcp/README.md` first.
 
+## Tests
+
+Write tests that catch real regressions, and keep the suites fast. Every test
+must fail for a plausible bug that no other test already catches.
+
+Test these thoroughly, with one focused case per distinct rule:
+
+- Security boundaries: workspace isolation and row-level security, auth,
+  sessions, CSRF, rate limits, credentials, approvals, delegation, audit
+  records, and handling of untrusted content. Include the denial path, not
+  only the allowed path.
+- Logic that can break silently, such as parsers, reducers, formatting of
+  money and numbers, scope rewriting, idempotency, and resume or retry without
+  duplicate effects.
+- Provider boundaries: what we send to and accept from external APIs, with
+  one representative case per operation family.
+- Runtime behaviour, with one deterministic scenario per distinct behaviour.
+
+Don't add these:
+
+- Assertions on copy, labels, headings, or long lists of `toContain` checks
+  over rendered HTML. One smoke render per presenter family is enough.
+- Tests of constants, enums, registry listings, settings defaults, schema
+  shapes, or framework behaviour such as FastAPI routing, Pydantic validation,
+  or React rendering.
+- Tests that assert mock call sequences instead of outcomes.
+- The same rule proved again at another layer. Test it once, as close to the
+  behaviour as you can, usually in a service test or scenario.
+- Parametrize or `it.each` matrices that exercise the same code path. Pick one
+  to three representative cases, favouring the security-relevant ones.
+- Copies of a generic contract test for each provider, tool, or storage
+  backend.
+- Tests for legacy data or backfill paths. No production deployment exists yet.
+- Real sleeps or retry backoff. Patch the clock, shorten the setting, or use a
+  status that doesn't retry.
+
+When you change code, update or remove the tests it affects instead of adding
+new ones beside them. Before you add a test, check whether an existing test
+already covers the rule.
+
 ## Repository and verification
 
 `apps/api` contains the FastAPI backend and separate Python worker.

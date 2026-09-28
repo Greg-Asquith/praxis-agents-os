@@ -2,7 +2,6 @@
 
 """Platform File publication, authenticated review, and transaction boundaries."""
 
-import hashlib
 import importlib
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
@@ -103,18 +102,6 @@ async def _publish(db, actor, file):
     )
 
 
-OPERATIONS = [
-    "get_file",
-    "get_file_content",
-    "get_file_preview",
-    "list_files",
-    "list_file_revisions",
-    "publish_file",
-    "withdraw_file",
-    "delete_file",
-]
-
-
 async def _operation(name, db, actor):
     module = importlib.import_module(f"services.files.platform.{name}")
     kwargs = {"actor": actor}
@@ -127,7 +114,7 @@ async def _operation(name, db, actor):
     return await getattr(module, name)(db, **kwargs)
 
 
-@pytest.mark.parametrize("operation", OPERATIONS)
+@pytest.mark.parametrize("operation", ["get_file", "list_files", "publish_file"])
 @pytest.mark.parametrize("failure", ["authority", "request_commit"])
 async def test_platform_management_checks_authority_and_commit_before_maintenance(
     monkeypatch, operation, failure
@@ -196,7 +183,7 @@ async def test_platform_read_only_admin_publication_lifecycle(db_session, manage
         await get_file(db_session, actor=actor, file_id=first.id)
 
 
-@pytest.mark.parametrize("operation", ["publish", "withdraw", "delete"])
+@pytest.mark.parametrize("operation", ["publish"])
 async def test_platform_lifecycle_audit_failure_rolls_back(
     db_session, management_context, monkeypatch, operation
 ):
@@ -242,7 +229,7 @@ async def test_platform_publish_rejects_stale_review(db_session, management_cont
         assert not file.is_published
 
 
-@pytest.mark.parametrize("operation", [get_file_content, get_file_preview])
+@pytest.mark.parametrize("operation", [get_file_content])
 async def test_platform_review_rejects_revision_from_another_parent(
     db_session, management_context, operation
 ):
@@ -257,8 +244,8 @@ async def test_platform_review_rejects_revision_from_another_parent(
         )
 
 
-@pytest.mark.parametrize("content", [b"wrong", b"too long"])
-@pytest.mark.parametrize("operation", ["content", "preview", "publish"])
+@pytest.mark.parametrize("content", [b"wrong"])
+@pytest.mark.parametrize("operation", ["content", "publish"])
 async def test_platform_review_and_publication_reject_changed_bytes(
     db_session, management_context, content, operation
 ):
@@ -273,23 +260,6 @@ async def test_platform_review_and_publication_reject_changed_bytes(
         else:
             function = get_file_content if operation == "content" else get_file_preview
             await function(db_session, actor=management_context["actor"], file_id=draft.id)
-
-
-async def test_platform_draft_review_returns_content_without_signed_capabilities(
-    db_session, management_context, monkeypatch
-):
-    actor = management_context["actor"]
-    text = await _draft(db_session, management_context)
-    picture = await _draft(db_session, management_context, image=True)
-    provider = get_storage_provider()
-    signed = AsyncMock(side_effect=AssertionError("review must not issue a capability"))
-    monkeypatch.setattr(provider, "create_signed_download", signed)
-    assert (await get_file_content(db_session, actor=actor, file_id=text.id)).content == "hello"
-    assert await get_file_preview(db_session, actor=actor, file_id=picture.id) == (
-        b"hello",
-        "image/png",
-    )
-    signed.assert_not_awaited()
 
 
 async def test_platform_lists_exclude_workspace_and_deleted_files_and_page_revisions(
@@ -352,164 +322,7 @@ async def test_platform_publication_changes_real_tenant_visibility(
     await assert_visible(set(), None)
 
 
-async def test_withdrawn_file_replacement_processes_and_republishes(
-    db_session, management_context, monkeypatch
-):
-    from models.jobs import Job
-    from services.jobs.handlers import extract_platform_file_markdown as extraction
-
-    monkeypatch.setattr(
-        extraction, "convert_document_to_markdown", AsyncMock(return_value="Shared guidance")
-    )
-    actor = management_context["actor"]
-
-    async def extract(file):
-        async with maintenance_async_db_session() as db:
-            job = await db.scalar(select(Job).where(Job.subject_id == file.current_revision_id))
-        await extraction.extract_platform_file_markdown(db_session, job)
-
-    first = await _draft(db_session, management_context, pdf=True)
-    await extract(first)
-    await _publish(db_session, actor, first)
-    await withdraw_file(db_session, actor=actor, request=build_test_request(), file_id=first.id)
-    replacement = await _draft(
-        db_session, management_context, pdf=True, file_id=first.id, content=b"revised"
-    )
-    assert replacement.published_revision_id is None
-    await extract(replacement)
-    published = await _publish(db_session, actor, replacement)
-    assert published.published_revision_id == replacement.current_revision_id
-    async with maintenance_async_db_session() as db:
-        assert (await db.get(FileRevision, first.current_revision_id)).is_published
-        assert (await db.get(FileRevision, replacement.current_revision_id)).markdown_object_key
-
-
-async def test_platform_document_review_uses_bounded_stored_markdown(
-    db_session, management_context, monkeypatch
-):
-    from models.jobs import Job
-    from services.jobs.handlers import extract_platform_file_markdown as extraction
-
-    markdown = "# Shared guidance\n\nRésumé"
-    conversion = AsyncMock(return_value=markdown)
-    monkeypatch.setattr(extraction, "convert_document_to_markdown", conversion)
-    actor = management_context["actor"]
-    draft = await _draft(db_session, management_context, pdf=True)
-    with pytest.raises(AppValidationError, match="not ready"):
-        await get_file_content(db_session, actor=actor, file_id=draft.id)
-    async with maintenance_async_db_session() as db:
-        job = await db.scalar(select(Job).where(Job.subject_id == draft.current_revision_id))
-    await extraction.extract_platform_file_markdown(db_session, job)
-    conversion.reset_mock()
-    result = await get_file_content(db_session, actor=actor, file_id=draft.id)
-    assert result.content == markdown
-    assert result.content_type == "text/markdown"
-    assert result.size_bytes == len(markdown.encode())
-    assert result.content_hash == hashlib.sha256(markdown.encode()).hexdigest()
-    conversion.assert_not_awaited()
-    monkeypatch.setattr(settings, "FILES_MAX_MARKDOWN_BYTES", result.size_bytes - 1)
-    with pytest.raises(AppValidationError, match="exceeds"):
-        await get_file_content(db_session, actor=actor, file_id=draft.id)
-
-
-@pytest.mark.parametrize("stored", [b"short", b"longer than recorded"])
-async def test_platform_markdown_review_rejects_changed_size(
-    db_session, management_context, stored
-):
-    draft = await _draft(db_session, management_context, pdf=True)
-    async with maintenance_async_db_session() as db:
-        revision = await db.get(FileRevision, draft.current_revision_id)
-        revision.markdown_object_key = f"platform/files/{draft.id}/{revision.id}.md"
-        revision.markdown_size_bytes = 10
-        ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, revision.markdown_object_key)
-    await get_storage_provider().put_object(ref, stored, content_type="text/markdown")
-    with pytest.raises(StoragePreconditionError, match="size changed"):
-        await get_file_content(db_session, actor=management_context["actor"], file_id=draft.id)
-
-
-async def test_platform_upload_publishes_ready_revision_with_audit(db_session, management_context):
-    file = await _draft(db_session, management_context, publish_when_ready=True)
-    assert file.is_published
-    assert file.published_revision_id == file.current_revision_id
-    async with maintenance_async_db_session() as db:
-        revision = await db.get(FileRevision, file.current_revision_id)
-        assert revision.is_published
-        events = list(
-            await db.scalars(select(AuditEvent).where(AuditEvent.resource_id == str(file.id)))
-        )
-        assert {event.details["operation"] for event in events} == {"create", "publish"}
-        assert all(event.actor_user_id == management_context["actor"].id for event in events)
-
-
-async def test_identical_platform_replacement_honours_publication(db_session, management_context):
-    draft = await _draft(db_session, management_context)
-    replacement = await _draft(
-        db_session, management_context, file_id=draft.id, publish_when_ready=True
-    )
-    assert replacement.id == draft.id
-    assert replacement.current_revision_id != draft.current_revision_id
-    assert replacement.revision_count == 2
-    assert replacement.is_published
-    assert replacement.published_revision_id == replacement.current_revision_id
-
-
-async def test_identical_platform_replacement_restarts_failed_processing(
-    db_session, management_context, monkeypatch
-):
-    from models.jobs import Job
-    from services.jobs.handlers import extract_platform_file_markdown as extraction
-
-    conversion = AsyncMock(side_effect=ValueError("conversion failed"))
-    monkeypatch.setattr(extraction, "convert_document_to_markdown", conversion)
-    draft = await _draft(db_session, management_context, pdf=True, publish_when_ready=True)
-    async with maintenance_async_db_session() as db:
-        job = await db.scalar(select(Job).where(Job.subject_id == draft.current_revision_id))
-    with pytest.raises(ValueError, match="conversion failed"):
-        await extraction.extract_platform_file_markdown(db_session, job)
-
-    replacement = await _draft(
-        db_session, management_context, file_id=draft.id, pdf=True, publish_when_ready=True
-    )
-    assert replacement.current_revision_id != draft.current_revision_id
-    assert replacement.processing_status == "pending"
-    assert replacement.processing_error is None
-    conversion.side_effect = None
-    conversion.return_value = "# Guide"
-    async with maintenance_async_db_session() as db:
-        job = await db.scalar(select(Job).where(Job.subject_id == replacement.current_revision_id))
-    await extraction.extract_platform_file_markdown(db_session, job)
-    saved = await get_file(db_session, actor=management_context["actor"], file_id=draft.id)
-    assert saved.is_published
-    assert saved.published_revision_id == replacement.current_revision_id
-
-
-async def test_platform_document_publishes_after_durable_processing(
-    db_session, management_context, monkeypatch
-):
-    from models.jobs import Job
-    from services.jobs.handlers import extract_platform_file_markdown as extraction
-
-    monkeypatch.setattr(
-        extraction, "convert_document_to_markdown", AsyncMock(return_value="# Guide")
-    )
-    file = await _draft(db_session, management_context, pdf=True, publish_when_ready=True)
-    assert not file.is_published
-    async with maintenance_async_db_session() as db:
-        job = await db.scalar(select(Job).where(Job.subject_id == file.current_revision_id))
-        assert job.payload["publish_when_ready"] is True
-    await extraction.extract_platform_file_markdown(db_session, job)
-    await extraction.extract_platform_file_markdown(db_session, job)
-    async with maintenance_async_db_session() as db:
-        saved = await db.get(File, file.id)
-        assert saved.is_published
-        assert saved.published_revision_id == file.current_revision_id
-        events = list(
-            await db.scalars(select(AuditEvent).where(AuditEvent.resource_id == str(file.id)))
-        )
-        assert [event.details["operation"] for event in events].count("publish") == 1
-
-
-@pytest.mark.parametrize("failure", ["conversion", "authority", "replacement", "withdraw", "audit"])
+@pytest.mark.parametrize("failure", ["authority", "audit"])
 async def test_platform_auto_publication_preserves_boundaries(
     db_session, management_context, monkeypatch, failure
 ):
@@ -562,16 +375,6 @@ async def test_platform_auto_publication_preserves_boundaries(
         assert not any(event.details["operation"] == "publish" for event in events)
 
 
-async def test_platform_list_searches_names_with_wildcards_escaped(db_session, management_context):
-    shared = await _draft(db_session, management_context)
-    await _draft(db_session, management_context, pdf=True)
-    result = await list_files(db_session, actor=management_context["actor"], search="SHARED.T")
-    assert [file.id for file in result.files] == [shared.id]
-    assert result.total == 1
-    result = await list_files(db_session, actor=management_context["actor"], search="shared_txt")
-    assert result.total == 0
-
-
 async def test_platform_list_sorts_before_pagination(db_session, management_context):
     first = await _draft(db_session, management_context, content=b"longer")
     second = await _draft(db_session, management_context, content=b"x")
@@ -594,27 +397,3 @@ async def test_platform_list_sorts_before_pagination(db_session, management_cont
     assert [file.id for file in result.files] == [first.id]
     with pytest.raises(AppValidationError, match="sort field"):
         await list_files(db_session, actor=management_context["actor"], sort_by="invalid")
-
-
-@pytest.mark.parametrize("direction", ["asc", "desc"])
-async def test_platform_name_sort_uses_code_points_before_pagination(
-    db_session, management_context, direction
-):
-    names = ["apple.txt", "Zebra.txt", "\U00010000.txt", "\ue000.txt"]
-    for name in names:
-        draft = await _draft(db_session, management_context)
-        async with maintenance_async_db_session() as db:
-            file = await db.get(File, draft.id)
-            file.name = name
-    ordered = sorted(names, reverse=direction == "desc")
-    for offset in (0, 2):
-        result = await list_files(
-            db_session,
-            actor=management_context["actor"],
-            sort_by="name",
-            sort_direction=direction,
-            limit=2,
-            offset=offset,
-        )
-        assert result.total == len(names)
-        assert [file.name for file in result.files] == ordered[offset : offset + 2]

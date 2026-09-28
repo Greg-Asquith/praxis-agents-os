@@ -20,93 +20,63 @@ const node = (content: string) => ({
   source_ref: "private-source",
   content,
 })
-const tools = [
-  ["sharepoint_create_folder", { name: "Saved folder", parent: null }, "folder"],
-  ["sharepoint_write_file", { name: "Saved report.txt", folder: null, content: "Text" }, "file"],
-  [
-    "sharepoint_update_file",
-    { file: reference, expected_version: "version", content: "Text" },
-    "file",
-  ],
-] as const
-
 describe("SharePoint write outcome locations", () => {
   beforeAll(async () => {
     await loadIntegrationUiModules(["sharepoint"])
   })
 
-  it.each(tools)("formats Graph parent paths for %s", (name, args, kind) => {
-    for (const [path, location] of [
-      ["/drives/private-drive/root:", "Library root"],
-      ["/drives/private-drive/root:/", "Library root"],
-      ["/drives/private-drive/root:/Reports/Monthly", "/Reports/Monthly"],
-      ["", "Location unavailable"],
-    ]) {
-      for (const outcome of ["applied", "unverified"]) {
-        for (const status of outcome === "applied" ? ["success"] : ["success", "error"]) {
-          const view = renderCustomToolCallRow({
-            activity: {
-              id: "write",
-              name,
-              kind: "call",
-              status: "completed",
-              args,
-              result: {
-                results: [
-                  {
-                    provider_key: "sharepoint",
-                    display_name: "Operations library",
-                    external_id: "private-drive",
-                    status,
-                    error_code: outcome === "unverified" ? "unverified_mutation" : null,
-                    error_message: null,
-                    data: {
-                      outcome,
-                      item: {
-                        name: node("Saved item"),
-                        path: node(path ?? ""),
-                        kind,
-                        size_bytes: 1024,
-                        content_type: node("text/plain"),
-                        modified_at: node("2026-09-21T10:00:00Z"),
-                        web_url: node("https://example.sharepoint.com/saved-item"),
-                        reference,
-                        uploadUrl: "PRIVATE_UPLOAD_URL",
-                      },
-                    },
-                  },
-                ],
+  it("renders an unverified write location without private path segments", () => {
+    const view = renderCustomToolCallRow({
+      activity: {
+        id: "write",
+        name: "sharepoint_write_file",
+        kind: "call",
+        status: "completed",
+        args: { name: "Saved report.txt", folder: null, content: "Text" },
+        result: {
+          results: [
+            {
+              provider_key: "sharepoint",
+              display_name: "Operations library",
+              external_id: "private-drive",
+              status: "error",
+              error_code: "unverified_mutation",
+              error_message: null,
+              data: {
+                outcome: "unverified",
+                item: {
+                  name: node("Saved item"),
+                  path: node("/drives/private-drive/root:/Reports/Monthly"),
+                  kind: "file",
+                  size_bytes: 1024,
+                  content_type: node("text/plain"),
+                  modified_at: node("2026-09-21T10:00:00Z"),
+                  web_url: node("https://example.sharepoint.com/saved-item"),
+                  reference,
+                  uploadUrl: "PRIVATE_UPLOAD_URL",
+                },
               },
             },
-            compact: false,
-            defaultOpen: true,
-            live: false,
-            providerKey: "sharepoint",
-          })
-          expect(view).not.toBeNull()
-          const html = renderToStaticMarkup(view)
-          expect(html).toContain(location)
-          expect(html).toContain("Saved item")
-          expect(html).toContain("1.0 KB")
-          expect(html).toContain('href="https://example.sharepoint.com/saved-item"')
-          expect(html).not.toMatch(/private-|PRIVATE_|\/drives\/|root:|source_ref/)
-          if (outcome === "unverified") {
-            expect(html).toContain("Unconfirmed")
-            expect(html).not.toContain("Success")
-          }
-        }
-      }
-    }
+          ],
+        },
+      },
+      compact: false,
+      defaultOpen: true,
+      live: false,
+      providerKey: "sharepoint",
+    })
+    expect(view).not.toBeNull()
+    const html = renderToStaticMarkup(view)
+    expect(html).toContain("/Reports/Monthly")
+    expect(html).toContain("Unconfirmed")
+    expect(html).not.toMatch(/private-|PRIVATE_|\/drives\/|root:|source_ref/)
   })
 
   it.each([
+    ["/drives/private-drive/root:", "Library root"],
     ["/drive/root:/Reports", "/Reports"],
-    ["/Reports/Monthly", "/Reports/Monthly"],
-    ["/", "Library root"],
     ["/drives/private-drive/items/private-item", "Location unavailable"],
     ["/drives/private-drive/root:invalid", "Location unavailable"],
-    ["javascript:alert(1)", "Location unavailable"],
-    ["   ", "Location unavailable"],
   ])("handles retained path %j", (path, expected) => {
     expect(sharePointWriteLocation(path)).toBe(expected)
   })

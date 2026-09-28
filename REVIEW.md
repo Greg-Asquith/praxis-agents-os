@@ -90,6 +90,9 @@ work. Ordered roughly by risk: a tenancy leak matters more than a naming nit.
 
 - Test coverage is proportional to risk, with auth, permissions, audit records,
   scheduling, migrations, approvals, and provider boundaries taking priority.
+- New tests follow the Tests section in `AGENTS.md`: each one catches a
+  plausible bug that no other test does, and none assert copy, constants,
+  mock call order, or duplicate matrices.
 - Tests live in the right place: `apps/api/tests/<intent>/` on the backend,
   `apps/web/tests/` mirroring source paths on the frontend, never colocated
   under `src/`.

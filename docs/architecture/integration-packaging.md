@@ -677,12 +677,12 @@ ad account discovery over its own asynchronous Graph client. It uses optional
 deployment app-secret proof and discovers writability from token permissions,
 account tasks, and active account status. Its web module supplies setup help,
 the Meta logo, and the credential label above. `meta_ads_run_insights`,
-`meta_ads_get_accounts`, `meta_ads_list_objects`, and
-`meta_ads_list_custom_conversions` contribute bounded read tools and presenters
-through the shared fan-out and audit seams. Insights, objects, and conversions
-use retained results. Insights resolves custom conversion names within each
-account's report budget. `meta_ads_list_activities`, writes, OAuth, and event
-delivery remain pending. Live agency qualification remains
+`meta_ads_get_accounts`, `meta_ads_list_objects`,
+`meta_ads_list_custom_conversions`, and `meta_ads_list_activities` contribute
+bounded read tools and presenters through the shared fan-out and audit seams.
+Insights, objects, conversions, and change history use retained results.
+Insights resolves custom conversion names within each account's report budget.
+Writes, OAuth, and event delivery remain pending. Live agency qualification remains
 unverified after the maintainer accepted its assumptions for implementation.
 
 Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft

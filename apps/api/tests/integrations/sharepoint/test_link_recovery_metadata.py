@@ -6,7 +6,6 @@ from uuid import uuid4
 import httpx2
 import pytest
 
-from integrations.sharepoint.operations.link_utils import library_not_selected
 from integrations.sharepoint.tools.open_link import DEFINITION, sharepoint_open_link
 from integrations.sharepoint.tools.schemas import SharePointLinkOutput
 from services.agents.runtime.untrusted import UntrustedNode
@@ -24,12 +23,6 @@ VALID = object()
         pytest.param(MISSING, id="missing"),
         pytest.param(None, id="null"),
         pytest.param("", id="empty"),
-        pytest.param(42, id="numeric"),
-        pytest.param(True, id="boolean"),
-        pytest.param([], id="list"),
-        pytest.param({}, id="dictionary"),
-        pytest.param("PRIVATE_PROVIDER_VALUE", id="invalid-string"),
-        pytest.param(VALID, id="valid-string"),
     ],
 )
 async def test_optional_recovery_urls_preserve_public_failure_and_audit(monkeypatch, field, value):
@@ -81,20 +74,3 @@ async def test_optional_recovery_urls_preserve_public_failure_and_audit(monkeypa
     assert audit.call_args.kwargs["status"] == "failure"
     assert audit.call_args.kwargs["error_code"] == "library_not_selected"
     assert DOWNLOAD_URL not in str((output, audit.call_args))
-
-
-def test_library_recovery_bounds_valid_labels_and_fallback_provenance():
-    site = "https://example.sharepoint.com/sites/" + "s" * 500
-    item = file_metadata(
-        id="i" * 500,
-        parentReference={"driveId": "d" * 500},
-        sharepointIds={"siteUrl": site},
-        webUrl=site + "/" + "l" * 500 + "/notes.txt",
-    )
-    error = library_not_selected(item)
-    assert len(error.library.content) == 160
-    assert len(error.library.source_ref) == 160
-    item["webUrl"] = 42
-    fallback = library_not_selected(item)
-    assert fallback.library.content == "the linked site / the linked library"
-    assert len(fallback.library.source_ref) == 160

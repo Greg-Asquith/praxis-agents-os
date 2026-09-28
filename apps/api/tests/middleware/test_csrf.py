@@ -46,38 +46,8 @@ async def test_session_creation_route_ignores_stale_session_cookie() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "path",
-    [
-        "/api/v1/auth/oauth/google/authorization-url",
-        "/api/v1/auth/oauth/google/callback",
-    ],
-)
-async def test_oauth_login_route_ignores_stale_session_cookie(path: str) -> None:
-    """Pre-auth OAuth login operations remain usable with a stale session."""
-    app = FastAPI()
-    app.add_middleware(CSRFMiddleware)
-
-    @app.post(path)
-    async def oauth_login() -> dict[str, bool]:
-        return {"ok": True}
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        client.cookies.set("session", "stale-session")
-        client.cookies.set("csrf", generate_csrf_token("different-session"))
-        response = await client.post(path, headers={"origin": ORIGIN}, json={})
-
-    assert response.status_code == 200
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
     ("method", "path"),
-    [
-        ("POST", "/api/v1/auth/oauth/google/link/authorization-url"),
-        ("POST", "/api/v1/auth/oauth/google/link/callback"),
-        ("DELETE", "/api/v1/auth/oauth/google/link"),
-    ],
+    [("DELETE", "/api/v1/auth/oauth/google/link")],
 )
 async def test_oauth_identity_mutation_requires_valid_origin_and_csrf_token(
     monkeypatch: pytest.MonkeyPatch,

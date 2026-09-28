@@ -34,26 +34,6 @@ def result(name, content, **kwargs):
     }
 
 
-def test_normal_completed_tool_contract_is_preserved():
-    content = {"rows": [{"name": "Report", "value": 2}], "metadata": {"currency": "GBP"}}
-    parts = [
-        {
-            "part_kind": "tool-call",
-            "tool_name": "example_tool",
-            "tool_call_id": "call",
-            "args": {"query": "report"},
-        },
-        result("example_tool", content, metadata={"public_result": content}),
-        {"part_kind": "text", "content": "Here is your report."},
-    ]
-    projected = project_shared_message(message(parts))
-    assert projected.parts["parts"][0] == parts[0]
-    assert projected.parts["parts"][1] == {**parts[1], "args": {"query": "report"}}
-    assert projected.parts["parts"][2] == parts[2]
-    assert projected.metadata_json == {"agent_run_id": "run"}
-    assert projected.error_json is None
-
-
 def test_model_and_approval_metadata_are_not_transcript_content():
     row = message(
         [

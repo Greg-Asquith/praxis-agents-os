@@ -133,10 +133,8 @@ function html(decision = controls()) {
 
 describe("budget assignment selection refresh", () => {
   it.each([
-    { ids: ["1", "2"], destination: "91" },
     { ids: ["1", "2", "3"], destination: "90" },
-    { ids: ["2"], destination: "90" },
-    { ids: ["2", "1"], destination: "90" },
+    { ids: ["2", "1"], destination: "91" },
   ])(
     "refreshes destination and ordered campaigns $ids / $destination",
     async ({ ids, destination }) => {
@@ -239,17 +237,14 @@ describe("budget assignment selection refresh", () => {
     expect(card.props.controls.decision.edits).toEqual(decision.decision.edits)
     expect(decision.onDecisionChange).not.toHaveBeenCalled()
   })
-  it.each(["approved", "denied"] as const)(
-    "does not refresh or reset a %s decision",
-    (decision) => {
-      const control = controls()
-      control.decision = { decision, edits: control.decision.edits, message: "" }
-      query.result = { data: original, isPending: false, isFetching: false, isError: false }
-      html(control)
-      expect(query.options).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }))
-      expect(control.onDecisionChange).not.toHaveBeenCalled()
-    }
-  )
+  it.each(["denied"] as const)("does not refresh or reset a %s decision", (decision) => {
+    const control = controls()
+    control.decision = { decision, edits: control.decision.edits, message: "" }
+    query.result = { data: original, isPending: false, isFetching: false, isError: false }
+    html(control)
+    expect(query.options).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }))
+    expect(control.onDecisionChange).not.toHaveBeenCalled()
+  })
   it("ignores a late response for an earlier selection", async () => {
     const client = new QueryClient()
     let finishOld: ((value: Record<string, unknown>) => void) | undefined

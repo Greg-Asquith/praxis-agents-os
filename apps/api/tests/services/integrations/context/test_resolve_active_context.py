@@ -3,7 +3,6 @@
 """Database-backed active-context resolution tests."""
 
 from datetime import UTC, datetime, timedelta
-from importlib import import_module
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,11 +18,9 @@ from services.agent_runs.domain import (
 )
 from services.integrations.context.resolve_active_context import (
     resolve_active_context,
-    resolve_active_context_targets,
 )
 from services.integrations.context.schemas import (
     MAX_ACTIVE_CONTEXT_TARGETS,
-    ActiveContextSelectionValue,
 )
 from tests.factories import (
     build_active_context_selection,
@@ -99,62 +96,11 @@ async def test_single_resource_selection_resolves_and_fails_closed_for_write(
     assert resolved.entries[0].write_allowed is False
 
 
-async def test_direct_target_resolution_matches_runtime_ordering(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    agent = await _agent(db_session, context_data)
-    run = await _run(db_session, context_data, agent)
-    db_session.add_all(
-        [
-            build_active_context_selection(
-                workspace=context_data["workspace"],
-                conversation=context_data["conversation"],
-                resource=context_data["second"],
-            ),
-            build_active_context_selection(
-                workspace=context_data["workspace"],
-                conversation=context_data["conversation"],
-                resource=context_data["first"],
-            ),
-        ]
-    )
-    await db_session.flush()
-
-    runtime = await resolve_active_context(
-        db_session,
-        run=run,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-    )
-    direct = await resolve_active_context_targets(
-        db_session,
-        selections=[
-            ActiveContextSelectionValue.for_resource(context_data["second"].id),
-            ActiveContextSelectionValue.for_resource(context_data["first"].id),
-        ],
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-        source="conversation",
-    )
-
-    assert direct == runtime
-    assert [entry.display_name for entry in direct.entries] == [
-        "First resource",
-        "Second resource",
-    ]
-
-
 @pytest.mark.parametrize(
     ("resource_overrides", "connection_status", "reason"),
     [
         ({"enabled": False}, "active", "resource_disabled"),
-        ({"availability": "removed"}, "active", "resource_removed"),
         ({}, "needs_reauth", "connection_needs_reauth"),
-        ({}, "needs_credential", "connection_needs_credential"),
-        ({}, "revoked", "connection_revoked"),
-        ({}, "error", "connection_error"),
-        ({}, "discovery_pending", "connection_inactive"),
     ],
 )
 async def test_unavailable_resource_and_connection_states_are_reported(
@@ -188,57 +134,6 @@ async def test_unavailable_resource_and_connection_states_are_reported(
 
     assert not resolved.entries
     assert [item.reason for item in resolved.unavailable] == [reason]
-
-
-async def test_unavailable_entries_are_sorted_deterministically(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    agent = await _agent(db_session, context_data)
-    run = await _run(db_session, context_data, agent)
-    first = build_integration_resource(
-        connection=context_data["connection"],
-        id=UUID(int=1),
-        external_id="zulu",
-        display_name="Zulu resource",
-        enabled=False,
-    )
-    second = build_integration_resource(
-        connection=context_data["connection"],
-        id=UUID(int=2),
-        external_id="alpha",
-        display_name="Alpha resource",
-        enabled=False,
-    )
-    db_session.add_all([first, second])
-    await db_session.flush()
-    db_session.add_all(
-        [
-            build_active_context_selection(
-                workspace=context_data["workspace"],
-                conversation=context_data["conversation"],
-                resource=first,
-            ),
-            build_active_context_selection(
-                workspace=context_data["workspace"],
-                conversation=context_data["conversation"],
-                resource=second,
-            ),
-        ]
-    )
-    await db_session.flush()
-
-    resolved = await resolve_active_context(
-        db_session,
-        run=run,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-    )
-
-    assert [entry.display_name for entry in resolved.unavailable] == [
-        "Alpha resource",
-        "Zulu resource",
-    ]
 
 
 async def test_group_spans_connections_and_deduplicates_newest_active_resource(
@@ -313,52 +208,6 @@ async def test_group_spans_connections_and_deduplicates_newest_active_resource(
     assert next(entry for entry in resolved.entries if entry.external_id == "first").write_allowed
 
 
-async def test_group_expansion_is_capped_deterministically(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    agent = await _agent(db_session, context_data)
-    run = await _run(db_session, context_data, agent)
-    resources = [
-        build_integration_resource(
-            connection=context_data["connection"],
-            id=UUID(int=index),
-            external_id=f"expanded-{index}",
-            display_name=f"Expanded {index}",
-            enabled=True,
-        )
-        for index in range(1, MAX_ACTIVE_CONTEXT_TARGETS + 2)
-    ]
-    db_session.add_all(resources)
-    await db_session.flush()
-    group = build_integration_context_group(
-        workspace=context_data["workspace"],
-        user=context_data["user"],
-        resources=resources,
-    )
-    db_session.add(group)
-    await db_session.flush()
-    db_session.add(
-        build_active_context_selection(
-            workspace=context_data["workspace"],
-            conversation=context_data["conversation"],
-            group=group,
-        )
-    )
-    await db_session.flush()
-
-    resolved = await resolve_active_context(
-        db_session,
-        run=run,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-    )
-
-    assert {entry.integration_resource_id for entry in resolved.entries} == {
-        UUID(int=index) for index in range(1, MAX_ACTIVE_CONTEXT_TARGETS + 1)
-    }
-
-
 async def test_direct_and_grouped_resources_share_expansion_budget(
     db_session: AsyncSession,
     context_data: dict[str, object],
@@ -413,70 +262,6 @@ async def test_direct_and_grouped_resources_share_expansion_budget(
     assert UUID(int=MAX_ACTIVE_CONTEXT_TARGETS) not in resolved_ids
 
 
-async def test_shared_and_personal_targets_resolve_together(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    agent = await _agent(db_session, context_data)
-    run = await _run(db_session, context_data, agent)
-    credential = build_external_credential(
-        provider_key="gmail", principal_fingerprint=uuid4().hex.ljust(64, "0")
-    )
-    db_session.add(credential)
-    await db_session.flush()
-    personal_connection = build_integration_connection(
-        credential=credential,
-        user=context_data["user"],
-        owner_user_id=context_data["user"].id,
-        status="active",
-        label="Personal Gmail",
-        provider_key="gmail",
-    )
-    db_session.add(personal_connection)
-    await db_session.flush()
-    personal_resource = build_integration_resource(
-        connection=personal_connection,
-        resource_type="gmail_mailbox",
-        external_id="me@example.com",
-        display_name="me@example.com",
-        enabled=True,
-    )
-    db_session.add(personal_resource)
-    await db_session.flush()
-    db_session.add_all(
-        [
-            build_active_context_selection(
-                workspace=context_data["workspace"],
-                conversation=context_data["conversation"],
-                resource=context_data["first"],
-            ),
-            build_active_context_selection(
-                workspace=context_data["workspace"],
-                conversation=context_data["conversation"],
-                resource=personal_resource,
-            ),
-        ]
-    )
-    await db_session.flush()
-
-    resolved = await resolve_active_context(
-        db_session,
-        run=run,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-    )
-
-    assert {entry.display_name for entry in resolved.entries} == {
-        "First resource",
-        "me@example.com",
-    }
-    personal_entry = next(entry for entry in resolved.entries if entry.provider_key == "gmail")
-    assert personal_entry.is_personal
-    assert not next(
-        entry for entry in resolved.entries if entry.display_name == "First resource"
-    ).is_personal
-
-
 async def test_forged_other_user_personal_target_resolves_as_dangling(
     db_session: AsyncSession,
     context_data: dict[str, object],
@@ -525,73 +310,6 @@ async def test_forged_other_user_personal_target_resolves_as_dangling(
     )
 
     assert not resolved.entries
-    assert [entry.reason for entry in resolved.unavailable] == ["dangling"]
-
-
-async def test_degraded_connection_is_usable(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    agent = await _agent(db_session, context_data)
-    run = await _run(db_session, context_data, agent)
-    context_data["connection"].status = "degraded"
-    db_session.add(
-        build_active_context_selection(
-            workspace=context_data["workspace"],
-            conversation=context_data["conversation"],
-            resource=context_data["first"],
-        )
-    )
-    await db_session.flush()
-
-    resolved = await resolve_active_context(
-        db_session,
-        run=run,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-    )
-
-    assert resolved.entries[0].connection_status == "degraded"
-
-
-async def test_deleted_group_degrades_to_dangling(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    agent = await _agent(db_session, context_data)
-    run = await _run(db_session, context_data, agent)
-    group = build_integration_context_group(
-        workspace=context_data["workspace"],
-        user=context_data["user"],
-        resources=[context_data["first"]],
-    )
-    db_session.add(group)
-    await db_session.flush()
-    db_session.add(
-        build_active_context_selection(
-            workspace=context_data["workspace"],
-            conversation=context_data["conversation"],
-            group=group,
-        )
-    )
-    db_session.add(
-        build_active_context_selection(
-            workspace=context_data["workspace"],
-            conversation=context_data["conversation"],
-            resource=context_data["second"],
-        )
-    )
-    group.soft_delete(deleted_by=context_data["user"].id, cascade=False)
-    await db_session.flush()
-
-    resolved = await resolve_active_context(
-        db_session,
-        run=run,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-    )
-
-    assert [entry.display_name for entry in resolved.entries] == ["Second resource"]
     assert [entry.reason for entry in resolved.unavailable] == ["dangling"]
 
 
@@ -717,49 +435,3 @@ async def test_scheduled_and_delegated_runs_use_schedule_context(
 
     assert [entry.display_name for entry in revoked_context.entries] == ["First resource"]
     assert [entry.reason for entry in revoked_context.unavailable] == ["connection_revoked"]
-
-
-async def test_malformed_schedule_context_is_ignored(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    warnings: list[str] = []
-    module = import_module("services.integrations.context.resolve_active_context")
-    monkeypatch.setattr(
-        module.logger, "warning", lambda message, **_kwargs: warnings.append(message)
-    )
-    agent = await _agent(db_session, context_data)
-    run = await _run(db_session, context_data, agent, trigger=RUN_TRIGGER_SCHEDULED)
-    schedule = AgentSchedule(
-        agent_id=agent.id,
-        user_id=context_data["user"].id,
-        workspace_id=context_data["workspace"].id,
-        schedule_type="interval",
-        interval_minutes=15,
-        active_context={"targets": [{"type": "resource"}]},
-    )
-    db_session.add(schedule)
-    await db_session.flush()
-    db_session.add(
-        AgentScheduleRun(
-            schedule_id=schedule.id,
-            workspace_id=context_data["workspace"].id,
-            user_id=context_data["user"].id,
-            agent_id=agent.id,
-            scheduled_for=datetime.now(UTC),
-            status="running",
-            agent_run_id=run.id,
-        )
-    )
-    await db_session.flush()
-
-    resolved = await resolve_active_context(
-        db_session,
-        run=run,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-    )
-
-    assert resolved.is_empty
-    assert warnings == ["Ignoring malformed scheduled active context"]

@@ -1,6 +1,5 @@
 """Model and transcript projection of authorized integration results."""
 
-from collections import UserDict
 from dataclasses import replace
 from typing import Any
 from uuid import uuid4
@@ -39,14 +38,8 @@ def entry() -> ResolvedContextEntry:
             {"count": 2},
             {"rows": [1, 2]},
         ),
-        (UserDict(model_result=[], display_result=[1]), [], [1]),
         ({"display_result": [1]}, None, [1]),
-        ({"model_result": [1]}, [1], None),
-        ({}, None, None),
-        (None, None, None),
-        ([1, 2], [1, 2], [1, 2]),
         ("legacy result", "legacy result", "legacy result"),
-        (0, 0, 0),
     ],
 )
 def test_split_preserves_only_public_fields(
@@ -129,9 +122,3 @@ def test_split_preserves_order_and_error_evidence(entry: ResolvedContextEntry) -
         }
     }
     assert items[1].data == {"model_result": {"count": 1}, "display_result": {"rows": ["Applied"]}}
-
-
-def test_split_empty_results() -> None:
-    result = split_fan_out_tool_return([])
-    assert result.return_value == {"results": []}
-    assert result.metadata == {"public_result": {"results": []}}

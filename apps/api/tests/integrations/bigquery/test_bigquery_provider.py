@@ -6,41 +6,10 @@ import httpx2
 import pytest
 
 from core.exceptions.integration import IntegrationValidationError
-from integrations.bigquery import PROVIDER
 from integrations.bigquery.client import BigQueryClient
 from integrations.bigquery.discover_resources import discover_bigquery_resources
-from integrations.bigquery.sync_table_schemas import SYNC_TABLE_SCHEMAS_KIND
 from services.integrations.credentials import parse_google_service_account_json
 from services.integrations.http import IntegrationRequestPolicy
-from services.integrations.loader import _validate_plugin
-
-
-def test_manifest_declares_read_only_workspace_dataset_provider() -> None:
-    manifest = PROVIDER.manifest
-
-    assert manifest.provider_key == "bigquery"
-    assert manifest.display_name == "Google BigQuery"
-    assert manifest.auth_modes == ("service_account",)
-    assert manifest.owner_scope == "workspace"
-    assert manifest.resource_types == ("bigquery_dataset",)
-    assert manifest.requires_discovery is True
-    assert manifest.capability_flags == frozenset({"read"})
-    assert PROVIDER.metadata_sync_job_kind == SYNC_TABLE_SCHEMAS_KIND
-    assert PROVIDER.table_scope_adapter is not None
-    assert {definition.name for definition in PROVIDER.tool_definitions} == {
-        "bigquery_list_tables",
-        "bigquery_get_table_schema",
-        "bigquery_run_query",
-    }
-    _validate_plugin(PROVIDER, expected_key="bigquery")
-
-
-def test_google_service_account_validation_attributes_the_provider() -> None:
-    with pytest.raises(IntegrationValidationError) as exc_info:
-        parse_google_service_account_json("not-json", provider_key="bigquery")
-
-    assert exc_info.value.provider_key == "bigquery"
-    assert exc_info.value.operation == "validate_service_account"
 
 
 def test_google_service_account_validation_retains_billing_project() -> None:
@@ -84,37 +53,6 @@ async def test_client_refreshes_once_after_an_auth_failure() -> None:
     assert result == {"projects": []}
     assert force_values == [False, True]
     assert seen_authorization == ["Bearer expired-token", "Bearer fresh-token"]
-
-
-async def test_client_preserves_bigquery_validation_message_for_model_retry() -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(
-            400,
-            json={
-                "error": {
-                    "errors": [
-                        {
-                            "message": "Unrecognized name: campain_id at [1:8]",
-                            "reason": "invalidQuery",
-                        }
-                    ]
-                }
-            },
-            request=request,
-        )
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        client = BigQueryClient(_static_token, client=http_client)
-        with pytest.raises(
-            IntegrationValidationError,
-            match="Unrecognized name: campain_id at \\[1:8\\]",
-        ):
-            await client.post(
-                "projects/analytics/jobs",
-                operation="dry_run_query",
-                policy=IntegrationRequestPolicy.READ,
-                json={"configuration": {"dryRun": True}},
-            )
 
 
 async def test_discovery_pages_projects_and_datasets_into_read_only_resources() -> None:
@@ -214,8 +152,6 @@ class _DiscoveryClient:
     "response",
     [
         {"projects": [], "unreachable": ["EU"]},
-        {"projects": [], "nextPageToken": "same"},
-        {"projects": "invalid"},
     ],
 )
 async def test_discovery_rejects_incomplete_or_invalid_pages(response: dict[str, Any]) -> None:

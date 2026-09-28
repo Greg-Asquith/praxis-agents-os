@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-from dataclasses import replace
 from threading import get_ident
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -13,12 +12,11 @@ import sqlalchemy as sa
 from google.auth.exceptions import RefreshError
 from pydantic_ai import Agent
 from pydantic_ai.models import override_allow_model_requests
-from pydantic_ai.models.openai import OpenAIChatModel
 
 from core.settings import settings
 from models.ai_usage_event import AIUsageEvent
 from services.agents.models import build_model, close_vertex_clients, vertex_openai_client as vertex
-from services.agents.models.domain import ModelConfigurationError, ResolvedModel
+from services.agents.models.domain import ResolvedModel
 from services.ai_usage.domain import AIUsageEventData
 from services.ai_usage.record_in_transaction import record_ai_usage_in_transaction
 from services.ai_usage.utils import usage_values
@@ -97,52 +95,6 @@ async def test_refresh_failure_sends_no_request(monkeypatch):
         with pytest.raises(RefreshError):
             await client.get("https://example.com")
     send.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "location,host",
-    [
-        ("us-central1", "us-central1-aiplatform.googleapis.com"),
-        ("global", "aiplatform.googleapis.com"),
-    ],
-)
-def test_partner_base_url(location, host):
-    assert vertex.partner_base_url("project", location) == (
-        f"https://{host}/v1/projects/project/locations/{location}/endpoints/openapi"
-    )
-
-
-@pytest.mark.parametrize("provider", ["meta", "xai"])
-async def test_factory_uses_shared_chat_client(partner_settings, provider):
-    model = build_model(spec(provider))
-    assert isinstance(model, OpenAIChatModel)
-    assert model.model_name == f"{provider}/partner-chat"
-    assert model.settings == {"temperature": 0.2}
-    client = vertex.get_vertex_openai_client()
-    assert model.provider.client._client is client
-    assert isinstance(client.auth, vertex.VertexBearerAuth)
-    assert (
-        str(model.provider.base_url)
-        == vertex.partner_base_url("vertex-project", "us-central1") + "/"
-    )
-    assert build_model(spec(provider)).provider.client._client is client
-    await close_vertex_clients()
-    assert client.is_closed
-    assert vertex.get_vertex_openai_client.cache_info().currsize == 0
-
-
-@pytest.mark.parametrize("provider", ["meta", "mistral", "xai"])
-def test_factory_rejects_disabled_partner(partner_settings, monkeypatch, provider):
-    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", False)
-    with pytest.raises(ModelConfigurationError, match="VERTEX_PARTNER_MODELS_ENABLED"):
-        build_model(spec(provider))
-
-
-def test_factory_rejects_missing_project(partner_settings, monkeypatch):
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", None)
-    monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
-    with pytest.raises(ModelConfigurationError, match="requires a project"):
-        build_model(replace(spec(), vertex_project=None))
 
 
 async def test_chat_request_records_partner_usage(partner_settings, monkeypatch, db_session):

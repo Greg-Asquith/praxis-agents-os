@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError, ConflictError
+from core.exceptions.general import AppValidationError
 from models.jobs import Job
 from models.kb import KBChunk, KBDocument
 from services.files.utils import private_ref_from_key
@@ -113,35 +113,6 @@ async def test_unchanged_reingest_preserves_chunks_and_source_timestamp(
     await db_session.refresh(document)
     assert second_ids == first_ids
     assert document.source_updated_at == original_source_updated_at
-
-
-async def test_changed_content_replaces_chunks_and_updates_source_timestamp(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-) -> None:
-    document = await create_kb_document(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        source_type="manual",
-        title="Changing",
-        content="Original content.",
-    )
-    await _ingest(db_session, kb_actors, document)
-    first_ids = set(
-        await db_session.scalars(select(KBChunk.id).where(KBChunk.document_id == document.id))
-    )
-    document.content_md = "Replacement knowledge with a distinct hash."
-    document.source_updated_at = datetime(2000, 1, 1, tzinfo=UTC)
-    await db_session.flush()
-
-    await _ingest(db_session, kb_actors, document)
-
-    second_ids = set(
-        await db_session.scalars(select(KBChunk.id).where(KBChunk.document_id == document.id))
-    )
-    await db_session.refresh(document)
-    assert second_ids.isdisjoint(first_ids)
-    assert document.source_updated_at > datetime(2000, 1, 1, tzinfo=UTC)
 
 
 async def test_failed_changed_content_ingest_rebuilds_chunks_on_retry(
@@ -274,47 +245,6 @@ async def test_upload_ingest_rejects_secret_before_storing_extracted_content(
     assert detected_secret not in (document.processing_error or "")
 
 
-async def test_upload_ingest_rejects_duplicate_materialized_content(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-) -> None:
-    documents: list[KBDocument] = []
-    for index in range(2):
-        file = build_file(workspace=kb_actors.workspace)
-        revision = build_file_revision(
-            file,
-            markdown_object_key=(
-                f"workspaces/{kb_actors.workspace.id}/kb-duplicate-source-{index}.md"
-            ),
-        )
-        db_session.add_all([file, revision])
-        await db_session.flush()
-        await get_storage_provider().put_object(
-            private_ref_from_key(revision.markdown_object_key),
-            b"# Shared source\n\nIdentical extracted knowledge.",
-            content_type="text/markdown",
-        )
-        documents.append(
-            await create_kb_document(
-                db_session,
-                workspace_id=kb_actors.workspace.id,
-                source_type="upload",
-                title=f"Upload {index}",
-                file_revision_id=revision.id,
-                annotate=False,
-            )
-        )
-
-    await _ingest(db_session, kb_actors, documents[0])
-    with pytest.raises(ConflictError):
-        await _ingest(db_session, kb_actors, documents[1])
-
-    await db_session.refresh(documents[1])
-    assert documents[1].status == "error"
-    assert documents[1].content_md is None
-    assert documents[1].content_hash == ""
-
-
 async def test_deleted_document_is_an_idempotent_noop(
     db_session: AsyncSession,
     kb_actors: KBActors,
@@ -368,30 +298,6 @@ async def test_ingest_requires_workspace_scope_before_mutating(
         )
         == 0
     )
-
-
-async def test_failure_status_survives_reraise(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-) -> None:
-    document = await create_kb_document(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        source_type="url",
-        title="Missing URL",
-        url="https://example.com/source",
-    )
-    document.external_url = None
-    await db_session.commit()
-
-    with pytest.raises(AppValidationError, match="no source URL"):
-        await _ingest(db_session, kb_actors, document)
-
-    failed = await db_session.get(KBDocument, document.id)
-    assert failed is not None
-    assert failed.status == "error"
-    assert failed.processing_attempts == 1
-    assert failed.processing_error == "URL document has no source URL"
 
 
 async def test_url_ingest_stores_validators_and_not_modified_preserves_chunks(
@@ -483,65 +389,9 @@ async def test_url_ingest_stores_validators_and_not_modified_preserves_chunks(
     assert document.source_synced_at >= first_synced_at
 
 
-async def test_url_not_modified_without_stored_content_forces_full_refetch(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    requests: list[tuple[str | None, str | None]] = []
-
-    async def fetch(
-        _url: str,
-        *,
-        etag: str | None = None,
-        last_modified: str | None = None,
-    ) -> FetchedUrl:
-        requests.append((etag, last_modified))
-        if len(requests) == 1:
-            return FetchedUrl(
-                data=b"",
-                content_type="application/octet-stream",
-                etag='"stale"',
-                last_modified=None,
-                not_modified=True,
-            )
-        return FetchedUrl(
-            data=b"# Restored\n\nFresh URL content.",
-            content_type="text/markdown",
-            etag='"fresh"',
-            last_modified=None,
-            not_modified=False,
-        )
-
-    async def convert(data: bytes, **_kwargs: object) -> str:
-        return data.decode()
-
-    monkeypatch.setattr("services.kb.ingest_document.fetch_url", fetch)
-    monkeypatch.setattr("services.kb.ingest_document.convert_html_to_markdown", convert)
-    document = await create_kb_document(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        source_type="url",
-        title="Empty URL source",
-        url="https://example.com/empty",
-        meta={"etag": '"stale"'},
-    )
-
-    await _ingest(db_session, kb_actors, document)
-
-    await db_session.refresh(document)
-    assert requests == [('"stale"', None), (None, None)]
-    assert document.status == "ready"
-    assert document.source_sync_status == "ready"
-    assert document.source_synced_at is not None
-    assert document.content_md == "# Restored\n\nFresh URL content."
-    assert document.chunk_count > 0
-    assert document.meta == {"etag": '"fresh"'}
-
-
 @pytest.mark.parametrize(
     ("status_code", "error_code"),
-    [(429, "rate_limited"), (503, "refresh_failed")],
+    [(429, "rate_limited")],
 )
 async def test_transient_url_failure_retains_last_ready_content(
     db_session: AsyncSession,

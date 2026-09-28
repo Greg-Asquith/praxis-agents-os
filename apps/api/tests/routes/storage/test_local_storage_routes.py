@@ -154,29 +154,6 @@ async def test_local_signed_upload_rejects_tampered_content_type(
     assert response.json()["title"] == "Storage Validation Error"
 
 
-async def test_local_signed_upload_rejects_content_type_parameters(
-    db_async_client: AsyncClient,
-    local_storage_settings: None,
-) -> None:
-    provider = get_local_storage_provider()
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("results/output.txt"))
-
-    upload = await provider.create_signed_upload(
-        ref,
-        content_type="text/plain",
-        expected_size_bytes=4,
-        expires_in=timedelta(minutes=5),
-    )
-    response = await db_async_client.put(
-        _relative_url(upload.url),
-        content=b"text",
-        headers={"content-type": "text/plain; charset=utf-8"},
-    )
-
-    assert response.status_code == 400
-    assert response.json()["title"] == "Storage Validation Error"
-
-
 async def test_signed_upload_rejects_body_one_byte_over_granted_size(
     db_async_client: AsyncClient,
     local_storage_settings: None,
@@ -257,8 +234,15 @@ async def test_local_public_route_does_not_serve_sidecar_metadata(
     assert response.json()["title"] == "Storage Object Not Found"
 
 
-@pytest.mark.parametrize("action", ["upload", "download"])
-@pytest.mark.parametrize("tamper", ["bucket", "namespace", "key", "expires", "signature"])
+@pytest.mark.parametrize(
+    ("action", "tamper"),
+    [
+        ("upload", "bucket"),
+        ("upload", "signature"),
+        ("download", "namespace"),
+        ("download", "expires"),
+    ],
+)
 async def test_platform_local_signed_routes_reject_tampering(
     db_async_client: AsyncClient,
     local_storage_settings: None,

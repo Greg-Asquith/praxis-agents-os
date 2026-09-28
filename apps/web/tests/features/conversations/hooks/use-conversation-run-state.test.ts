@@ -1,4 +1,3 @@
-import { formatStreamError } from "@/features/conversations/run-error-copy"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -58,27 +57,6 @@ describe("conversation stream persistence handoff", () => {
     )
     expect(shouldRenderConversationStream({ ...common, hasPersistedStreamResponse: true })).toBe(
       false
-    )
-  })
-})
-
-describe("conversation stream errors", () => {
-  it("turns a missing provider key into an actionable local settings hint", () => {
-    expect(
-      formatStreamError({
-        code: "model_provider_not_configured",
-        message: "No API key is configured for model provider 'anthropic'.",
-      })
-    ).toBe(
-      "No API key is configured for model provider 'anthropic'. Add the provider's API key " +
-        "to .local/targets/local.secrets.env (Docker stack) or apps/api/.env (make dev), " +
-        "then restart the system."
-    )
-  })
-
-  it("keeps other stream errors unchanged", () => {
-    expect(formatStreamError({ code: "provider_failed", message: "Provider failed." })).toBe(
-      "Provider failed."
     )
   })
 })

@@ -7,7 +7,7 @@ from datetime import date
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.database import set_session_tenant_context
@@ -90,66 +90,6 @@ async def test_usage_upsert_increments_and_periods_are_isolated(
         )
         == 8
     )
-
-
-async def test_nonpositive_tokens_are_a_read_only_noop(db_session: AsyncSession) -> None:
-    workspace = build_workspace(slug=f"usage-noop-{uuid4().hex}")
-    db_session.add(workspace)
-    await db_session.flush()
-
-    assert await record_embedding_usage(db_session, workspace_id=workspace.id, tokens=0) == 0
-    assert await record_embedding_usage(db_session, workspace_id=workspace.id, tokens=-1) == 0
-
-
-async def test_usage_upsert_advances_updated_at(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    workspace = build_workspace(slug=f"usage-timestamp-{uuid4().hex}")
-    async with committed_db_session_factory() as db:
-        db.add(workspace)
-        await db.commit()
-
-    try:
-        async with committed_db_session_factory() as db:
-            await record_embedding_usage(
-                db,
-                workspace_id=workspace.id,
-                tokens=2,
-            )
-            await db.commit()
-
-        async with committed_db_session_factory() as db:
-            first_updated_at = await db.scalar(
-                select(EmbeddingTokenUsage.updated_at).where(
-                    EmbeddingTokenUsage.workspace_id == workspace.id
-                )
-            )
-
-        async with committed_db_session_factory() as db:
-            await record_embedding_usage(
-                db,
-                workspace_id=workspace.id,
-                tokens=3,
-            )
-            await db.commit()
-
-        async with committed_db_session_factory() as db:
-            second_updated_at = await db.scalar(
-                select(EmbeddingTokenUsage.updated_at).where(
-                    EmbeddingTokenUsage.workspace_id == workspace.id
-                )
-            )
-
-        assert first_updated_at is not None
-        assert second_updated_at is not None
-        assert second_updated_at > first_updated_at
-    finally:
-        async with committed_db_session_factory() as db:
-            await db.execute(
-                delete(EmbeddingTokenUsage).where(EmbeddingTokenUsage.workspace_id == workspace.id)
-            )
-            await db.execute(delete(Workspace).where(Workspace.id == workspace.id))
-            await db.commit()
 
 
 async def test_concurrent_increments_do_not_lose_updates(

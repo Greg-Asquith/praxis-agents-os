@@ -26,61 +26,6 @@ describe("ArtifactPreviewFrame", () => {
     expect(markup).toContain("connect-src &#x27;none&#x27;")
   })
 
-  it("falls back to plain text for oversized markdown", () => {
-    const markup = renderToStaticMarkup(
-      createElement(ArtifactPreviewFrame, {
-        artifactType: "markdown",
-        content: {
-          content: "#".repeat(200_001),
-          content_type: "text/markdown",
-          download_url: null,
-          size_bytes: 200_001,
-        },
-        title: "Large artifact",
-        versionId: "version-1",
-      })
-    )
-
-    expect(markup).toContain("<pre")
-  })
-
-  it("renders mermaid artifacts as diagrams instead of raw source", () => {
-    const markup = renderToStaticMarkup(
-      createElement(ArtifactPreviewFrame, {
-        artifactType: "mermaid",
-        content: {
-          content: "graph TD\n  A --> B",
-          content_type: "text/plain",
-          download_url: null,
-          size_bytes: 18,
-        },
-        title: "Mermaid artifact",
-        versionId: "version-1",
-      })
-    )
-
-    expect(markup).not.toContain("<pre")
-    expect(markup).toContain('data-slot="skeleton"')
-  })
-
-  it("preserves quoted newlines and escaped quotes in CSV cells", () => {
-    const markup = renderToStaticMarkup(
-      createElement(ArtifactPreviewFrame, {
-        artifactType: "csv",
-        content: {
-          content: 'name,notes\r\nPraxis,"first line\nsecond ""quoted"" line"',
-          content_type: "text/csv",
-          download_url: null,
-          size_bytes: 57,
-        },
-        title: "CSV artifact",
-        versionId: "version-1",
-      })
-    )
-
-    expect(markup).toContain("first line\nsecond &quot;quoted&quot; line")
-  })
-
   it("gives each HTML artifact version a distinct iframe identity", () => {
     const content = {
       content: "<p>Preview</p>",

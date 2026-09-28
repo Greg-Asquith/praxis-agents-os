@@ -175,7 +175,7 @@ async def test_platform_view_checks_exact_scope_and_revision_even_with_valid_sig
     assert (await db_async_client.get(_relative(url))).status_code == 404
 
 
-@pytest.mark.parametrize("artifact_type", ["markdown", "mermaid", "csv", "image-ref"])
+@pytest.mark.parametrize("artifact_type", ["markdown", "image-ref"])
 async def test_platform_serving_preserves_plain_sandbox_and_image_mime_checks(
     db_async_client, platform_views, artifact_type
 ):

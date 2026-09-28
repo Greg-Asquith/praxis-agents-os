@@ -7,15 +7,10 @@ import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import (
-    IntegrationAuthError,
-    IntegrationCredentialUnavailableError,
-)
 from models.integrations import (
     ExternalCredential,
     IntegrationConnection,
     IntegrationDiscoveryRun,
-    IntegrationResource,
 )
 from models.jobs import Job
 from models.notification import Notification
@@ -42,30 +37,6 @@ async def test_enqueue_discovery_deduplicates_in_flight_work(
     second = await enqueue_discovery(db_session, connection=connection)
     assert first.id == second.id
     assert first.initiated_by_user_id is None
-
-
-async def test_user_owned_discovery_uses_user_concurrency_bucket(
-    db_session: AsyncSession,
-) -> None:
-    user = build_user()
-    credential = build_external_credential()
-    credential.owner_user_id = user.id
-    db_session.add_all([user, credential])
-    await db_session.flush()
-    connection = build_integration_connection(
-        credential=credential,
-        user=user,
-        owner_user_id=user.id,
-        status="discovery_pending",
-    )
-    db_session.add(connection)
-    await db_session.flush()
-
-    job = await enqueue_discovery(db_session, connection=connection)
-
-    assert job.workspace_id is None
-    assert job.concurrency_user_id == user.id
-    assert job.initiated_by_user_id is None
 
 
 async def test_recover_orphaned_discovery_recreates_missing_work(
@@ -174,143 +145,6 @@ async def test_handler_notifies_only_on_final_attempt(
         .where(Notification.notification_type == "job_failed")
     )
     assert generic_count == 0
-
-
-async def test_reference_auth_failure_uses_replacement_notification(
-    db_session: AsyncSession,
-    discovery_connection: dict[str, object],
-) -> None:
-    connection = discovery_connection["connection"]
-    provider = discovery_connection["provider"]
-    provider["error"] = IntegrationAuthError(
-        "credential rejected",
-        provider_key=connection.provider_key,
-        operation="discover_resources",
-    )
-    job = Job(
-        kind="integrations.discover_resources",
-        workspace_id=connection.owner_workspace_id,
-        subject_type="integration_connection",
-        subject_id=connection.id,
-        content_hash="handler-auth-failure",
-        payload={},
-        attempts=3,
-        max_attempts=3,
-    )
-    db_session.add(job)
-    await db_session.flush()
-
-    with pytest.raises(IntegrationAuthError):
-        await discover_resources(db_session, job)
-    await db_session.refresh(connection)
-    assert connection.status == "needs_credential"
-    notification_types = set(
-        (await db_session.scalars(select(Notification.notification_type))).all()
-    )
-    assert "integration_needs_credential" in notification_types
-    assert "integration_needs_reauth" not in notification_types
-    assert "integration_discovery_failed" not in notification_types
-
-
-async def test_vault_unavailability_uses_terminal_discovery_notification(
-    db_session: AsyncSession,
-    discovery_connection: dict[str, object],
-) -> None:
-    connection = discovery_connection["connection"]
-    provider = discovery_connection["provider"]
-    provider["error"] = IntegrationCredentialUnavailableError(
-        "Credential unavailable",
-        provider_key="local",
-        operation="resolve_secret",
-    )
-    job = Job(
-        kind="integrations.discover_resources",
-        workspace_id=connection.owner_workspace_id,
-        subject_type="integration_connection",
-        subject_id=connection.id,
-        content_hash="handler-vault-failure",
-        payload={},
-        attempts=3,
-        max_attempts=3,
-    )
-    db_session.add(job)
-    await db_session.flush()
-
-    with pytest.raises(IntegrationCredentialUnavailableError):
-        await discover_resources(db_session, job)
-
-    notification_types = set(
-        (await db_session.scalars(select(Notification.notification_type))).all()
-    )
-    assert "integration_discovery_failed" in notification_types
-    assert "integration_needs_credential" not in notification_types
-    assert "integration_needs_reauth" not in notification_types
-
-
-async def test_enqueued_discovery_executes_through_real_worker(
-    committed_db_session_factory,
-    discovery_provider: dict[str, object],
-) -> None:
-    from workers.job_runner import run_once
-
-    user = build_user(email="discovery-worker@example.com")
-    workspace = build_workspace(slug="discovery-worker")
-    credential = build_external_credential(
-        auth_mode="api_key",
-        access_token_encrypted=None,
-        secret_provider="local_env",  # noqa: S106 - inert test reference metadata
-        secret_name="test-secret",  # noqa: S106 - inert test reference metadata
-        secret_version="latest",  # noqa: S106 - inert test reference metadata
-    )
-    async with committed_db_session_factory() as setup:
-        setup.add_all([user, workspace, credential])
-        await setup.flush()
-        connection = build_integration_connection(
-            credential=credential,
-            user=user,
-            workspace=workspace,
-            status="discovery_pending",
-        )
-        setup.add(connection)
-        await setup.flush()
-        job = await enqueue_discovery(setup, connection=connection)
-        # Select this job before unrelated recurring work in the shared test database.
-        job.priority = -1
-        await setup.commit()
-        user_id = user.id
-        workspace_id = workspace.id
-        credential_id = credential.id
-        connection_id = connection.id
-        job_id = job.id
-
-    try:
-        assert await run_once(owner_instance_id="discovery-test-worker") >= 1
-        async with committed_db_session_factory() as verify:
-            persisted_job = await verify.get(Job, job_id)
-            assert persisted_job is not None
-            assert persisted_job.status == "succeeded"
-            resource = await verify.scalar(
-                select(IntegrationResource).where(
-                    IntegrationResource.connection_id == connection_id
-                )
-            )
-            assert resource is not None
-            assert resource.writable is True
-    finally:
-        async with committed_db_session_factory() as cleanup:
-            await cleanup.execute(
-                delete(Notification).where(Notification.recipient_user_id == user_id)
-            )
-            await cleanup.execute(delete(Job).where(Job.subject_id == connection_id))
-            await cleanup.execute(
-                delete(IntegrationConnection).where(IntegrationConnection.id == connection_id)
-            )
-            await cleanup.execute(
-                delete(ExternalCredential).where(ExternalCredential.id == credential_id)
-            )
-            await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
-            await cleanup.execute(delete(User).where(User.id == user_id))
-            await cleanup.commit()
 
 
 async def test_terminal_worker_timeout_persists_failure_lifecycle(

@@ -8,18 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from services.embeddings.domain import EmbeddingConfigurationError
 from services.embeddings.providers.ollama import OllamaEmbeddingsProvider
-
-
-def test_ollama_provider_requires_an_explicit_base_url(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = importlib.import_module("services.embeddings.providers.ollama")
-    monkeypatch.setattr(module.settings, "EMBEDDINGS_OLLAMA_BASE_URL", None)
-
-    with pytest.raises(EmbeddingConfigurationError, match="EMBEDDINGS_OLLAMA_BASE_URL"):
-        OllamaEmbeddingsProvider()
 
 
 async def test_ollama_provider_posts_batch_and_estimates_usage(

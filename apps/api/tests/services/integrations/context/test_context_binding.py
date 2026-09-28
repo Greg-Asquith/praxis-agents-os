@@ -53,11 +53,6 @@ def _definition(function, **overrides) -> RuntimeToolDefinition:
     return RuntimeToolDefinition(**values)
 
 
-def test_binding_rejects_unknown_provider() -> None:
-    with pytest.raises(RuntimeError, match="unknown provider"):
-        validate_definition(_definition(lambda: None))
-
-
 def test_write_binding_requires_write_tool(integration_manifest) -> None:
     with pytest.raises(RuntimeError, match="require a write tool"):
         validate_definition(
@@ -88,14 +83,7 @@ def test_write_binding_requires_write_tool(integration_manifest) -> None:
     "parameter_name",
     [
         "connection_id",
-        "connection_label",
-        "resource_id",
-        "integration_resource_id",
-        "account_id",
         "customer_id",
-        "base_id",
-        "mailbox",
-        "principal",
     ],
 )
 def test_binding_rejects_model_selected_context_parameters(

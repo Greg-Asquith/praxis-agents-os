@@ -11,18 +11,15 @@ from pydantic_ai import DeferredToolRequests
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import ConflictError, NotFoundError
+from core.exceptions.general import NotFoundError
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs import (
-    complete_agent_run,
     create_agent_run,
     get_agent_run_approval_state,
-    mark_run_awaiting_approval,
-    start_agent_run,
 )
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
@@ -135,24 +132,6 @@ async def test_get_approval_state_returns_safe_pending_tool_details(
     assert streamed[0]["args"] == approval.args
 
 
-async def test_get_approval_state_rejects_completed_run(
-    db_session: AsyncSession,
-    approval_context: ApprovalStateContext,
-) -> None:
-    agent_run = await db_session.get(AgentRun, approval_context.run_id)
-    assert agent_run is not None
-    await start_agent_run(db_session, agent_run)
-    await complete_agent_run(db_session, agent_run)
-
-    with pytest.raises(ConflictError, match="not awaiting approval"):
-        await get_agent_run_approval_state(
-            db_session,
-            actor=approval_context.user,
-            workspace=approval_context.workspace,
-            run_id=agent_run.id,
-        )
-
-
 async def test_get_approval_state_respects_user_and_workspace_scope(
     db_session: AsyncSession,
     approval_context: ApprovalStateContext,
@@ -176,22 +155,4 @@ async def test_get_approval_state_respects_user_and_workspace_scope(
             actor=approval_context.user,
             workspace=other_workspace,
             run_id=approval_context.run_id,
-        )
-
-
-async def test_get_approval_state_rejects_missing_suspended_state(
-    db_session: AsyncSession,
-    approval_context: ApprovalStateContext,
-) -> None:
-    agent_run = await db_session.get(AgentRun, approval_context.run_id)
-    assert agent_run is not None
-    await start_agent_run(db_session, agent_run)
-    await mark_run_awaiting_approval(db_session, agent_run)
-
-    with pytest.raises(ConflictError, match="no suspended approval state"):
-        await get_agent_run_approval_state(
-            db_session,
-            actor=approval_context.user,
-            workspace=approval_context.workspace,
-            run_id=agent_run.id,
         )

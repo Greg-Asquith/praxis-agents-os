@@ -2,26 +2,7 @@
 
 import type { PricingCoverage, TokenCounts, UsageBreakdownRow } from "@/features/usage/types"
 
-export const AI_USAGE_PURPOSES = [
-  "agent_run",
-  "classification",
-  "code_execution",
-  "conversation_naming",
-  "history_summary",
-  "kb_annotation",
-  "web_search",
-  "web_fetch",
-  "image_generation",
-  "embedding_kb_ingest",
-  "embedding_kb_search",
-  "embedding_memory_write",
-  "embedding_memory_search",
-  "embedding_memory_dedup",
-] as const
-
-export type AIUsagePurpose = (typeof AI_USAGE_PURPOSES)[number]
-
-export const AI_TYPE_LABEL_BY_PURPOSE = {
+const AI_TYPE_LABEL_BY_PURPOSE = {
   agent_run: "Agent conversations",
   classification: "Classification",
   code_execution: "Code execution",
@@ -36,7 +17,9 @@ export const AI_TYPE_LABEL_BY_PURPOSE = {
   embedding_memory_write: "Search & document indexing",
   embedding_memory_search: "Search & document indexing",
   embedding_memory_dedup: "Search & document indexing",
-} satisfies Record<AIUsagePurpose, string>
+} as const
+
+type AIUsagePurpose = keyof typeof AI_TYPE_LABEL_BY_PURPOSE
 
 const INTEGER_FORMATTER = new Intl.NumberFormat(undefined, { notation: "compact" })
 const USD_FORMATTER = new Intl.NumberFormat("en-US", {

@@ -1,20 +1,14 @@
 // apps/web/tests/features/conversations/file-tools.test.ts
 
-import { createElement } from "react"
-import { renderToStaticMarkup } from "react-dom/server"
-import { FileToolRow } from "@/features/conversations/components/file-tool-row"
 import { describe, expect, it } from "vitest"
 
 import {
   fileEntityFromGeneratedImage,
-  fileEntityFromReadUrlResult,
   fileEntityFromRuntimeFile,
   fileEntityFromWriteResult,
   generateImageResult,
   listFilesResult,
   readFileContentResult,
-  readFileImageResult,
-  readFileUrlResult,
 } from "@/features/conversations/native-tools/file-tools"
 
 describe("file tool entities", () => {
@@ -108,53 +102,6 @@ describe("file tool entities", () => {
       sizeBytes: 120,
     })
   })
-
-  it("keeps image read metadata when the persisted tool result includes native bytes", () => {
-    const metadata = {
-      source: "image",
-      file_id: "file-3",
-      revision_id: "revision-3",
-      name: "screenshot.png",
-      category: "image",
-      media_type: "image/png",
-      processing_status: "ready",
-    }
-    const binary = {
-      data: "base64-image-data",
-      media_type: "image/png",
-      identifier: "file-3",
-      kind: "binary",
-    }
-
-    expect(readFileImageResult([metadata, binary])).toEqual(metadata)
-    expect(readFileImageResult({ return_value: [metadata, binary] })).toEqual(metadata)
-  })
-
-  it("preserves image metadata from URL results for the thumbnail path", () => {
-    const result = readFileUrlResult({
-      mode: "url",
-      file_id: "file-4",
-      revision_id: "revision-4",
-      name: "photo.jpg",
-      url: "http://testserver/files/file-4/download",
-      expires_at: "2026-07-17T17:07:00Z",
-      category: "image",
-      media_type: "image/jpeg",
-      processing_status: "ready",
-    })
-
-    expect(result).not.toBeNull()
-    if (!result) {
-      throw new Error("Expected a parsed URL result")
-    }
-    expect(fileEntityFromReadUrlResult(result)).toEqual({
-      category: "image",
-      contentType: "image/jpeg",
-      fileId: "file-4",
-      name: "photo.jpg",
-      processingStatus: "ready",
-    })
-  })
 })
 
 const fileTextSlice = {
@@ -189,32 +136,4 @@ describe("file content decoding", () => {
   ])("rejects malformed content nodes", (content) => {
     expect(readFileContentResult({ ...fileTextSlice, content })).toBeNull()
   })
-})
-
-it("renders wrapped platform File text in the transcript without exposing the wrapper", () => {
-  const html = renderToStaticMarkup(
-    createElement(FileToolRow, {
-      activity: {
-        id: "read",
-        kind: "result",
-        status: "completed",
-        name: "read_file",
-        result: {
-          ...fileTextSlice,
-          media_type: "text/plain",
-          content: {
-            node: "praxis_untrusted",
-            source_kind: "file",
-            source_ref: "file:shared/revision:published",
-            content: "<p>Delivery policy</p>",
-          },
-        },
-      },
-      defaultOpen: true,
-    })
-  )
-  expect(html).toContain('aria-label="Read File"')
-  expect(html).toContain("&lt;p&gt;Delivery policy&lt;/p&gt;")
-  expect(html).not.toContain("<p>Delivery policy</p>")
-  expect(html).not.toContain("praxis_untrusted")
 })

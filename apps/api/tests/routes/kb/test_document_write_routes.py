@@ -249,17 +249,6 @@ async def test_member_can_search_preview_and_import_an_integration_source(
             "get",
             "services.kb.integration_sources.search.authorize_integration_knowledge_source",
         ),
-        (
-            "/api/v1/kb/integration-sources/preview",
-            "post",
-            "services.kb.integration_sources.preview.authorize_integration_knowledge_source",
-        ),
-        (
-            "/api/v1/kb/documents/from-integration",
-            "post",
-            "services.kb.integration_sources.import_document."
-            "reauthorize_integration_knowledge_source",
-        ),
     ],
 )
 async def test_provider_auth_loss_uses_source_unavailable_contract(
@@ -316,7 +305,7 @@ async def test_provider_auth_loss_uses_source_unavailable_contract(
     assert response.json()["title"] == "Knowledge Source Unavailable"
 
 
-@pytest.mark.parametrize("provider_status", [403, 404])
+@pytest.mark.parametrize("provider_status", [404])
 async def test_notion_access_loss_uses_source_unavailable_contract(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

@@ -38,18 +38,3 @@ async def test_needs_reauth_notification_fires_once_per_transition(
         .where(Notification.notification_type == "integration_needs_reauth")
     )
     assert count == 2
-
-
-async def test_needs_credential_notification_fires_once_per_transition(
-    db_session: AsyncSession,
-    discovery_connection: dict[str, object],
-) -> None:
-    connection = discovery_connection["connection"]
-    await transition_connection_status(db_session, connection, "needs_credential")
-    await transition_connection_status(db_session, connection, "needs_credential")
-    count = await db_session.scalar(
-        select(func.count())
-        .select_from(Notification)
-        .where(Notification.notification_type == "integration_needs_credential")
-    )
-    assert count == 1

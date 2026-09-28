@@ -5,7 +5,6 @@
 import asyncio
 import importlib
 from collections.abc import Coroutine, Mapping, Sequence
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -13,8 +12,7 @@ import pytest
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 from pydantic_ai import DeferredToolRequests
-from pydantic_ai.messages import ToolReturnPart
-from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -32,11 +30,9 @@ from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import (
     complete_agent_run,
     create_agent_run,
-    mark_run_awaiting_approval,
     start_agent_run,
 )
 from services.agent_runs.schemas import AgentRunResumeDecision
-from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_projection import build_approval_graph
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
@@ -58,9 +54,6 @@ from services.agents.runtime.stream_protocol import (
 )
 from services.conversations.create_turn_stream import create_conversation_turn_stream
 from services.conversations.schemas import ConversationRead, ConversationTurnCreateRequest
-from services.jobs.handlers.sweep_expired_agent_run_approvals import (
-    sweep_expired_agent_run_approvals,
-)
 from tests.factories import (
     build_external_credential,
     build_integration_connection,
@@ -182,18 +175,15 @@ async def test_create_turn_stream_rejects_delegated_transcripts(
     assert response.json()["detail"] == "Delegated agent transcripts are read-only"
 
 
-@pytest.mark.parametrize("shared_by_default", [False, True])
 async def test_create_conversation_stream_creates_conversation_and_first_run(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
-    shared_by_default: bool,
 ) -> None:
     user, workspace, agent, _existing_conversation, headers = await _authenticated_context(
         db_session
     )
-    if shared_by_default:
-        workspace.conversations_shared_by_default = True
+    workspace.conversations_shared_by_default = True
     credential = build_external_credential()
     connection = build_integration_connection(
         credential=credential,
@@ -317,14 +307,9 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert created_conversation is not None
     assert created_conversation.user_id == user.id
     assert created_conversation.source == "direct"
-    if shared_by_default:
-        assert created_conversation.visibility == "workspace"
-        assert created_conversation.shared_at is not None
-        assert created_conversation.shared_by_user_id == user.id
-    else:
-        assert created_conversation.visibility == "private"
-        assert created_conversation.shared_at is None
-        assert created_conversation.shared_by_user_id is None
+    assert created_conversation.visibility == "workspace"
+    assert created_conversation.shared_at is not None
+    assert created_conversation.shared_by_user_id == user.id
     assert created_conversation.agent_slug == agent.slug
     assert created_conversation.metadata_json == {
         "title": {"source": "model", "model": "function:title"}
@@ -347,318 +332,6 @@ async def test_create_conversation_stream_creates_conversation_and_first_run(
     assert created_run.metadata_json["audit_context"]["ip_address"] == "127.0.0.1"
     assert created_run.metadata_json["audit_context"]["user_agent"].startswith("python-httpx2/")
     assert created_run.metadata_json["audit_context"]["request_id"]
-
-
-async def test_read_only_member_can_create_conversation_with_active_context(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    user, workspace, agent, _existing_conversation, headers = await _authenticated_context(
-        db_session,
-        role=WorkspaceRole.READ_ONLY,
-    )
-    credential = build_external_credential()
-    connection = build_integration_connection(
-        credential=credential,
-        user=user,
-        workspace=workspace,
-    )
-    resource = build_integration_resource(connection=connection)
-    db_session.add_all([credential, connection, resource])
-    await db_session.commit()
-
-    async def fake_title_worker(**_kwargs: object) -> None:
-        return None
-
-    async def fake_worker(
-        *,
-        run_id: UUID,
-        conversation_id: UUID,
-        user_prompt: str,
-        sink: EventSink,
-        **_kwargs: object,
-    ) -> None:
-        await sink.emit(DoneEvent(status="completed"))
-        await sink.close()
-
-    create_conversation_stream_module = importlib.import_module(
-        "services.conversations.create_conversation_stream"
-    )
-    monkeypatch.setattr(
-        create_conversation_stream_module,
-        "run_conversation_title_worker",
-        fake_title_worker,
-    )
-    monkeypatch.setattr(
-        create_conversation_stream_module,
-        "run_turn_worker",
-        fake_worker,
-    )
-
-    async with db_async_client.stream(
-        "POST",
-        "/api/v1/conversations/",
-        headers=headers,
-        json={
-            "agent_id": str(agent.id),
-            "user_prompt": "Summarize this account",
-            "active_context": {
-                "targets": [
-                    {
-                        "type": "resource",
-                        "integration_resource_id": str(resource.id),
-                    }
-                ]
-            },
-        },
-    ) as response:
-        await response.aread()
-
-    await _drain_initial_conversation_background_work()
-
-    assert response.status_code == 200
-    selection = await db_session.scalar(
-        select(ActiveContextSelection)
-        .join(Conversation)
-        .where(
-            Conversation.user_id == user.id,
-            Conversation.title == "Summarize this account",
-        )
-    )
-    assert selection is not None
-    assert selection.integration_resource_id == resource.id
-
-
-async def test_create_conversation_rejects_inactive_agent_without_creating_run(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    _user, _workspace, agent, existing_conversation, headers = await _authenticated_context(
-        db_session
-    )
-    agent.is_active = False
-    await db_session.commit()
-
-    response = await db_async_client.post(
-        "/api/v1/conversations/",
-        headers=headers,
-        json={
-            "agent_id": str(agent.id),
-            "user_prompt": "Plan the launch",
-        },
-    )
-
-    assert response.status_code == 409
-    body: Mapping[str, object] = response.json()
-    assert body["conflicting_resource"] == "agent"
-    assert body["agent_id"] == str(agent.id)
-
-    runs = (
-        await db_session.scalars(
-            select(AgentRun).where(AgentRun.conversation_id == existing_conversation.id)
-        )
-    ).all()
-    assert runs == []
-
-
-async def test_create_conversation_runtime_failure_keeps_submitted_prompt_conversation(
-    app: FastAPI,
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async with committed_db_session_factory() as db:
-        user, workspace, agent, _existing_conversation, headers = await _authenticated_context(db)
-
-    def broken_model(_resolved_model):
-        raise ModelConfigurationError("Missing credential", details={"provider": "openai"})
-
-    monkeypatch.setattr("services.agents.runtime.loop.build_model", broken_model)
-
-    try:
-        transport = ASGITransport(app=app)
-        async with (
-            AsyncClient(transport=transport, base_url="http://testserver") as client,
-            client.stream(
-                "POST",
-                "/api/v1/conversations/",
-                headers=headers,
-                json={
-                    "agent_id": str(agent.id),
-                    "user_prompt": "Please fail after saving prompt",
-                },
-            ) as response,
-        ):
-            body = (await response.aread()).decode()
-
-        assert response.status_code == 200
-        assert "event: error" in body
-        assert "event: done" in body
-
-        await _drain_initial_conversation_background_work()
-        await _wait_for_non_deleted_conversation_count(
-            committed_db_session_factory,
-            user_id=user.id,
-            workspace_id=workspace.id,
-            count=2,
-        )
-
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-            list_response = await client.get("/api/v1/conversations/", headers=headers)
-
-        assert list_response.status_code == 200
-        assert list_response.json()["total"] == 2
-
-        async with committed_db_session_factory() as db:
-            failed_conversation = await db.scalar(
-                select(Conversation).where(
-                    Conversation.user_id == user.id,
-                    Conversation.workspace_id == workspace.id,
-                    Conversation.title == "Please fail after saving prompt",
-                    Conversation.deleted == False,  # noqa: E712
-                )
-            )
-            assert failed_conversation is not None
-            failed_run = await db.scalar(
-                select(AgentRun).where(AgentRun.conversation_id == failed_conversation.id)
-            )
-            assert failed_run is not None
-            assert failed_run.status == "failed"
-            messages = (
-                await db.scalars(
-                    select(ConversationMessage)
-                    .where(ConversationMessage.conversation_id == failed_conversation.id)
-                    .order_by(ConversationMessage.sequence)
-                )
-            ).all()
-            assert [(message.role, message.client_message_id) for message in messages] == [
-                ("user", None)
-            ]
-            assert messages[0].parts["parts"][0]["content"] == "Please fail after saving prompt"
-    finally:
-        try:
-            await _drain_initial_conversation_background_work()
-        finally:
-            await _delete_committed_workspace_context(
-                committed_db_session_factory,
-                user_id=user.id,
-                workspace_id=workspace.id,
-            )
-
-
-async def test_list_conversations_returns_current_user_workspace_conversations(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, agent, existing_conversation, headers = await _authenticated_context(
-        db_session
-    )
-    existing_conversation.title = "Existing"
-    existing_conversation.agent_slug = agent.slug
-    existing_conversation.unread = True
-    older = Conversation(
-        user_id=user.id,
-        workspace_id=workspace.id,
-        created_by=user.id,
-        title="Older",
-        active_agent_id=agent.id,
-        agent_slug=agent.slug,
-        last_message_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
-    newest = Conversation(
-        user_id=user.id,
-        workspace_id=workspace.id,
-        created_by=user.id,
-        title="Newest",
-        active_agent_id=agent.id,
-        agent_slug=agent.slug,
-        last_message_at=datetime(2026, 1, 2, tzinfo=UTC),
-    )
-    deleted = Conversation(
-        user_id=user.id,
-        workspace_id=workspace.id,
-        created_by=user.id,
-        title="Deleted",
-        active_agent_id=agent.id,
-        agent_slug=agent.slug,
-    )
-    deleted.soft_delete(deleted_by=user.id, cascade=False)
-    db_session.add_all([older, newest, deleted])
-    await db_session.flush()
-    active_run = await create_agent_run(
-        db_session,
-        conversation_id=newest.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
-    await start_agent_run(db_session, active_run)
-    await mark_run_awaiting_approval(db_session, active_run)
-    await db_session.commit()
-
-    response = await db_async_client.get(
-        "/api/v1/conversations/",
-        headers=headers,
-        params={"limit": 10, "offset": 0},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["total"] == 3
-    assert body["limit"] == 10
-    assert body["offset"] == 0
-    assert [conversation["title"] for conversation in body["conversations"]] == [
-        "Existing",
-        "Newest",
-        "Older",
-    ]
-    assert all(
-        conversation["active_agent_id"] == str(agent.id) for conversation in body["conversations"]
-    )
-    assert all(conversation["agent_name"] == agent.name for conversation in body["conversations"])
-
-    by_title = {conversation["title"]: conversation for conversation in body["conversations"]}
-    assert by_title["Existing"]["unread"] is True
-    assert by_title["Existing"]["active_run_id"] is None
-    assert by_title["Existing"]["needs_approval"] is False
-    assert by_title["Newest"]["active_run_id"] == str(active_run.id)
-    assert by_title["Newest"]["active_run_status"] == "awaiting_approval"
-    assert by_title["Newest"]["needs_approval"] is True
-
-
-async def test_mark_conversation_read_is_idempotent_for_owner(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    _user, _workspace, agent, conversation, headers = await _authenticated_context(db_session)
-    conversation.title = "Unread thread"
-    conversation.agent_slug = agent.slug
-    conversation.unread = True
-    await db_session.commit()
-
-    response = await db_async_client.post(
-        f"/api/v1/conversations/{conversation.id}/read",
-        headers=headers,
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["id"] == str(conversation.id)
-    assert body["unread"] is False
-    assert body["agent_name"] == agent.name
-
-    await db_session.refresh(conversation)
-    assert conversation.unread is False
-
-    second_response = await db_async_client.post(
-        f"/api/v1/conversations/{conversation.id}/read",
-        headers=headers,
-    )
-
-    assert second_response.status_code == 200
-    assert second_response.json()["unread"] is False
 
 
 async def test_mark_conversation_read_rejects_other_workspace_user(
@@ -689,63 +362,6 @@ async def test_mark_conversation_read_rejects_other_workspace_user(
     )
     await db_session.refresh(conversation)
     assert conversation.unread is True
-
-
-async def test_delete_conversation_soft_deletes_and_hides_conversation(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, _workspace, _agent, conversation, headers = await _authenticated_context(db_session)
-
-    response = await db_async_client.delete(
-        f"/api/v1/conversations/{conversation.id}",
-        headers=headers,
-    )
-
-    assert response.status_code == 204
-    await db_session.refresh(conversation)
-    assert conversation.deleted is True
-    assert conversation.deleted_by == user.id
-
-    list_response = await db_async_client.get("/api/v1/conversations/", headers=headers)
-    assert list_response.status_code == 200
-    assert list_response.json()["total"] == 0
-
-    messages_response = await db_async_client.get(
-        f"/api/v1/conversations/{conversation.id}/messages",
-        headers=headers,
-    )
-    assert messages_response.status_code == 404
-
-
-async def test_delete_conversation_rejects_active_run(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
-    active_run = await create_agent_run(
-        db_session,
-        conversation_id=conversation.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
-    await start_agent_run(db_session, active_run)
-    await db_session.commit()
-
-    response = await db_async_client.delete(
-        f"/api/v1/conversations/{conversation.id}",
-        headers=headers,
-    )
-
-    assert response.status_code == 409
-    body: Mapping[str, object] = response.json()
-    assert body["conflicting_resource"] == "agent_run"
-    assert body["active_run_id"] == str(active_run.id)
-
-    await db_session.refresh(conversation)
-    assert conversation.deleted is False
 
 
 async def test_create_turn_stream_disconnect_completes_and_persists_with_real_worker(
@@ -819,99 +435,6 @@ async def test_create_turn_stream_disconnect_completes_and_persists_with_real_wo
             agent_id=conversation.active_agent_id,
             conversation_id=conversation.id,
         )
-
-
-async def test_create_turn_reaps_stale_run_then_admits_new_turn_with_real_worker(
-    app: FastAPI,
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async with committed_db_session_factory() as db:
-        user, workspace, agent, conversation, headers = await _authenticated_context(db)
-        stale_run = await create_agent_run(
-            db,
-            conversation_id=conversation.id,
-            agent_id=agent.id,
-            workspace_id=workspace.id,
-            user_id=user.id,
-            trigger="interactive",
-        )
-        await start_agent_run(db, stale_run)
-        stale_run.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-        await db.commit()
-
-    async def quick_stream(_messages, _agent_info):
-        yield "fresh reply"
-
-    monkeypatch.setattr(
-        "services.agents.runtime.loop.build_model",
-        lambda _resolved_model: FunctionModel(
-            stream_function=quick_stream,
-            model_name="route-quick",
-        ),
-    )
-
-    try:
-        transport = ASGITransport(app=app)
-        async with (
-            AsyncClient(transport=transport, base_url="http://testserver") as client,
-            client.stream(
-                "POST",
-                f"/api/v1/conversations/{conversation.id}/turns",
-                headers=headers,
-                json={"user_prompt": "Hello"},
-            ) as response,
-        ):
-            body = (await response.aread()).decode()
-
-        assert response.status_code == 200
-        assert "event: done" in body
-
-        async with committed_db_session_factory() as db:
-            runs = (
-                await db.scalars(
-                    select(AgentRun)
-                    .where(AgentRun.conversation_id == conversation.id)
-                    .order_by(AgentRun.created_at)
-                )
-            ).all()
-            assert [run.status for run in runs] == ["failed", "completed"]
-            assert runs[0].id == stale_run.id
-    finally:
-        await _delete_committed_context(
-            committed_db_session_factory,
-            user_id=user.id,
-            workspace_id=workspace.id,
-            agent_id=agent.id,
-            conversation_id=conversation.id,
-        )
-
-
-async def test_create_turn_rejects_existing_active_run(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
-    active_run = await create_agent_run(
-        db_session,
-        conversation_id=conversation.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
-    await start_agent_run(db_session, active_run)
-    await db_session.commit()
-
-    response = await db_async_client.post(
-        f"/api/v1/conversations/{conversation.id}/turns",
-        headers=headers,
-        json={"user_prompt": "Hello"},
-    )
-
-    assert response.status_code == 409
-    body: Mapping[str, object] = response.json()
-    assert body["active_run_id"] == str(active_run.id)
 
 
 async def test_concurrent_turn_creations_allow_exactly_one_active_run(
@@ -1027,152 +550,6 @@ async def test_create_turn_rejects_duplicate_completed_client_message_id(
     assert [run.id for run in runs] == [completed_run.id]
 
 
-async def test_get_active_run_lazily_reaps_expired_run(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    from datetime import UTC, datetime, timedelta
-
-    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
-    run = await create_agent_run(
-        db_session,
-        conversation_id=conversation.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
-    await start_agent_run(db_session, run)
-    run.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    await db_session.commit()
-
-    response = await db_async_client.get(
-        f"/api/v1/conversations/{conversation.id}/active-run",
-        headers=headers,
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["active_run"] is None
-    assert body["latest_run"]["id"] == str(run.id)
-    assert body["latest_run"]["status"] == "failed"
-    assert body["latest_run"]["outcome"] == "error"
-    assert body["latest_run"]["completion_json"] == {"error_code": "run_abandoned"}
-
-    stored = await db_session.get(AgentRun, run.id)
-    assert stored is not None
-    await db_session.refresh(stored)
-    assert stored.status == "failed"
-
-
-async def test_get_active_run_reports_parked_approval_expiry_deadline(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
-    run = await create_agent_run(
-        db_session,
-        conversation_id=conversation.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
-    await start_agent_run(db_session, run)
-    await mark_run_awaiting_approval(db_session, run)
-    await db_session.commit()
-    await db_session.refresh(run)
-
-    response = await db_async_client.get(
-        f"/api/v1/conversations/{conversation.id}/active-run",
-        headers=headers,
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["active_run"]["id"] == str(run.id)
-    assert datetime.fromisoformat(body["approval_expires_at"]) == run.updated_at + timedelta(days=7)
-
-
-async def test_resume_run_rejects_run_not_awaiting_approval(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
-    run = await create_agent_run(
-        db_session,
-        conversation_id=conversation.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
-    await db_session.commit()
-
-    response = await db_async_client.post(
-        f"/api/v1/agent-runs/{run.id}/resume",
-        headers=headers,
-        json={
-            "decisions": [
-                {"tool_call_id": "tool-call-1", "decision": "approved"},
-            ],
-        },
-    )
-
-    assert response.status_code == 409
-    body: Mapping[str, object] = response.json()
-    assert body["conflicting_resource"] == "agent_run"
-    assert body["run_status"] == "pending"
-
-
-async def test_resume_expired_approval_returns_conflict_before_streaming(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    now = datetime.now(UTC)
-    user, workspace, agent, conversation, headers = await _authenticated_context(db_session)
-    agent.tool_names = ["test_add_numbers"]
-    agent.tool_policies = {"test_add_numbers": "approval"}
-    run = await create_agent_run(
-        db_session,
-        conversation_id=conversation.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
-    suspended = await execute_run(
-        db_session,
-        conversation_id=conversation.id,
-        run_id=run.id,
-        user_prompt="Add two numbers",
-        sink=CollectingSink(run_id=run.id, conversation_id=conversation.id),
-        model=TestModel(call_tools=["test_add_numbers"]),
-    )
-    assert isinstance(suspended.output, DeferredToolRequests)
-    run.updated_at = now - timedelta(days=8)
-    await db_session.flush()
-    await sweep_expired_agent_run_approvals(db_session, now=now, expiry_days=7)
-
-    response = await db_async_client.post(
-        f"/api/v1/agent-runs/{run.id}/resume",
-        headers=headers,
-        json={
-            "decisions": [
-                {
-                    "tool_call_id": suspended.output.approvals[0].tool_call_id,
-                    "decision": "approved",
-                }
-            ]
-        },
-    )
-
-    assert response.status_code == 409
-    body: Mapping[str, object] = response.json()
-    assert body["conflicting_resource"] == "agent_run"
-    assert body["run_status"] == "failed"
-
-
 async def test_resume_run_streams_approved_tool_to_completion(
     app: FastAPI,
     committed_db_session_factory: async_sessionmaker[AsyncSession],
@@ -1273,104 +650,6 @@ async def test_resume_run_streams_approved_tool_to_completion(
         )
 
 
-async def test_resume_run_replays_edited_integer_through_conditional_approval(
-    app: FastAPI,
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def conditional_integer_then_done(
-        messages: list[Any],
-        _agent_info: Any,
-    ):
-        if any(isinstance(part, ToolReturnPart) for message in messages for part in message.parts):
-            yield "Integer confirmed."
-        else:
-            yield {
-                0: DeltaToolCall(
-                    name="test_conditional_integer",
-                    json_args='{"value":3}',
-                    tool_call_id="conditional-integer-call",
-                )
-            }
-
-    monkeypatch.setattr(
-        "services.agents.runtime.loop.build_model",
-        lambda _resolved_model: FunctionModel(
-            stream_function=conditional_integer_then_done,
-            model_name="conditional-integer-route-test",
-        ),
-    )
-    async with committed_db_session_factory() as db:
-        user, workspace, agent, conversation, headers = await _authenticated_context(db)
-        agent.tool_names = ["test_conditional_integer"]
-        run = await create_agent_run(
-            db,
-            conversation_id=conversation.id,
-            agent_id=agent.id,
-            workspace_id=workspace.id,
-            user_id=user.id,
-            trigger="interactive",
-        )
-        await db.commit()
-
-    try:
-        async with committed_db_session_factory() as db:
-            suspended = await execute_run(
-                db,
-                conversation_id=conversation.id,
-                run_id=run.id,
-                user_prompt="Confirm an integer",
-                sink=CollectingSink(run_id=run.id, conversation_id=conversation.id),
-                model=FunctionModel(
-                    stream_function=conditional_integer_then_done,
-                    model_name="conditional-integer-direct-test",
-                ),
-            )
-            assert isinstance(suspended.output, DeferredToolRequests)
-
-            stored_run = await db.get(AgentRun, run.id)
-            assert stored_run is not None
-            tool_call_id = load_suspended_run_state(stored_run).pending_tool_call_ids[0]
-            payload = approval_submission(
-                build_approval_graph(stored_run, {}),
-                [
-                    AgentRunResumeDecision(
-                        tool_call_id=tool_call_id,
-                        decision="approved",
-                        override_args={"value": 5},
-                    )
-                ],
-            )
-
-        transport = ASGITransport(app=app)
-        async with (
-            AsyncClient(transport=transport, base_url="http://testserver") as client,
-            client.stream(
-                "POST",
-                f"/api/v1/agent-runs/{run.id}/resume",
-                headers=headers,
-                json=payload.model_dump(mode="json"),
-            ) as response,
-        ):
-            body = (await response.aread()).decode()
-
-        assert response.status_code == 200, body
-        assert f"event: {EVENT_TOOL_CALL}" in body
-        assert '"args":{"value":5}' in body
-        assert f"event: {EVENT_TOOL_RESULT}" in body
-        assert '"result":5' in body
-        assert f"event: {EVENT_DONE}" in body
-        assert '"status":"completed"' in body
-    finally:
-        await _delete_committed_context(
-            committed_db_session_factory,
-            user_id=user.id,
-            workspace_id=workspace.id,
-            agent_id=agent.id,
-            conversation_id=conversation.id,
-        )
-
-
 async def _wait_for_run_status(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -1391,33 +670,6 @@ async def _wait_for_run_status(
                 return
         if asyncio.get_running_loop().time() >= deadline:
             raise AssertionError(f"Timed out waiting for run status {status!r}")
-        await asyncio.sleep(0.05)
-
-
-async def _wait_for_non_deleted_conversation_count(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    user_id: UUID,
-    workspace_id: UUID,
-    count: int,
-    timeout_seconds: float = 3,
-) -> None:
-    deadline = asyncio.get_running_loop().time() + timeout_seconds
-    while True:
-        async with session_factory() as db:
-            conversations = (
-                await db.scalars(
-                    select(Conversation).where(
-                        Conversation.user_id == user_id,
-                        Conversation.workspace_id == workspace_id,
-                        Conversation.deleted == False,  # noqa: E712
-                    )
-                )
-            ).all()
-            if len(conversations) == count:
-                return
-        if asyncio.get_running_loop().time() >= deadline:
-            raise AssertionError(f"Timed out waiting for {count} non-deleted conversations")
         await asyncio.sleep(0.05)
 
 
@@ -1448,40 +700,6 @@ async def _drain_initial_conversation_background_work(
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
         raise AssertionError(f"Timed out waiting for {len(pending)} conversation title task(s)")
-
-
-async def _delete_committed_workspace_context(
-    session_factory: async_sessionmaker[AsyncSession],
-    *,
-    user_id: UUID,
-    workspace_id: UUID,
-) -> None:
-    async with session_factory() as db:
-        conversation_ids = (
-            await db.scalars(
-                select(Conversation.id).where(
-                    Conversation.user_id == user_id,
-                    Conversation.workspace_id == workspace_id,
-                )
-            )
-        ).all()
-        if conversation_ids:
-            await db.execute(
-                delete(ConversationMessage).where(
-                    ConversationMessage.conversation_id.in_(conversation_ids)
-                )
-            )
-            await db.execute(delete(AgentRun).where(AgentRun.conversation_id.in_(conversation_ids)))
-            await db.execute(delete(Conversation).where(Conversation.id.in_(conversation_ids)))
-        await db.execute(delete(Agent).where(Agent.workspace_id == workspace_id))
-        await db.execute(
-            delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace_id)
-        )
-        await db.execute(delete(Session).where(Session.user_id == user_id))
-        await db.execute(update(User).where(User.id == user_id).values(default_workspace_id=None))
-        await db.execute(delete(User).where(User.id == user_id))
-        await db.execute(delete(Workspace).where(Workspace.id == workspace_id))
-        await db.commit()
 
 
 async def _delete_committed_context(

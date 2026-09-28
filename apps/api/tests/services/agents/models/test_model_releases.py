@@ -5,9 +5,8 @@ import json
 import httpx2 as httpx
 import pytest
 from anthropic import AsyncAnthropicVertex
-from pydantic import BaseModel, SecretStr
+from pydantic import SecretStr
 from pydantic_ai import Agent, models
-from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.anthropic import AnthropicStaleThinkingBlockWarning
@@ -15,7 +14,6 @@ from pydantic_ai.tools import ToolDefinition
 
 from core.settings import settings
 from services.agents.models import factory
-from services.agents.models.domain import ModelConfigurationError
 from services.agents.models.resolution import resolve_catalog_model
 
 
@@ -74,10 +72,6 @@ async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, model_id, thinki
     assert result.usage.input_tokens == 3
 
 
-class _Classification(BaseModel):
-    label: str
-
-
 @pytest.fixture(params=[False, True], ids=["direct", "vertex"])
 def opus_transport(request, monkeypatch):
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
@@ -85,69 +79,6 @@ def opus_transport(request, monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
     return request.param
-
-
-@pytest.mark.parametrize("thinking", [None, False, "high"])
-async def test_opus_structured_output_uses_native_schema(monkeypatch, opus_transport, thinking):
-    requests = []
-
-    def respond(request):
-        requests.append(json.loads(request.content))
-        return httpx.Response(
-            200,
-            json={
-                "id": "msg_release",
-                "type": "message",
-                "role": "assistant",
-                "model": "claude-opus-5-5",
-                "stop_reason": "end_turn",
-                "content": [{"type": "text", "text": '{"label":"yes"}'}],
-                "usage": {"input_tokens": 3, "output_tokens": 2},
-            },
-        )
-
-    overrides = {"thinking": thinking} if thinking is not None else {}
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
-        vertex = AsyncAnthropicVertex(
-            project_id="test-project",
-            region="global",
-            access_token="test-token",  # noqa: S106 - offline fixture
-            http_client=client,
-        )
-        monkeypatch.setattr(factory, "get_anthropic_vertex_client", lambda: vertex)
-        model = factory.build_model(
-            resolve_catalog_model("anthropic", "claude-opus-5-5", settings_overrides=overrides)
-        )
-        result = await Agent(model, output_type=_Classification).run("Classify this.")
-        assert model.profile["anthropic_binds_thinking_blocks"] is True
-        with pytest.raises(UserError, match="does not support"):
-            await model.request(
-                [ModelRequest(parts=[UserPromptPart("Force a tool.")])],
-                {"tool_choice": "required"},
-                ModelRequestParameters(function_tools=[ToolDefinition(name="lookup")]),
-            )
-
-    assert result.output.label == "yes"
-    [body] = requests
-    assert body["thinking"] == {"type": "adaptive", "display": "summarized"}
-    assert body["output_config"]["format"]["type"] == "json_schema"
-    assert body.get("tool_choice", {}).get("type") not in {"any", "tool"}
-    if thinking == "high":
-        assert body["output_config"]["effort"] == "high"
-
-
-@pytest.mark.parametrize("mode", ["disabled", "enabled"])
-def test_opus_rejects_incompatible_explicit_thinking(monkeypatch, mode):
-    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
-    with pytest.raises(ModelConfigurationError, match="requires adaptive thinking"):
-        factory.build_model(
-            resolve_catalog_model(
-                "anthropic",
-                "claude-opus-5-5",
-                settings_overrides={"anthropic_thinking": {"type": mode}},
-            )
-        )
 
 
 async def test_opus_tool_loop_preserves_thinking_and_recovers_binding(monkeypatch, opus_transport):

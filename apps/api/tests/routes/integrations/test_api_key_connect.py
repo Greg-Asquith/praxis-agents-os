@@ -3,36 +3,22 @@
 import json
 from importlib import import_module
 from types import SimpleNamespace
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from httpx2 import AsyncClient
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.audit_event import AuditEvent
-from models.integrations import ExternalCredential, IntegrationConnection, IntegrationResource
+from models.integrations import ExternalCredential, IntegrationConnection
 from models.jobs import Job
 from models.workspace import WorkspaceRole
 from services.integrations.connections.schemas import ApiKeyConnectRequest
-from services.integrations.discovery import run_discovery
 from services.secrets.domain import SecretReference
-from tests.factories import build_conversation
-from tests.integrations.meta_ads.support import (
-    TOKEN,
-    DiscoveryTransport,
-    account,
-    install_transport,
-)
 from tests.routes.integrations.conftest import create_identity
 
 pytestmark = pytest.mark.asyncio
-
-
-async def test_blank_api_key_is_rejected_before_storage() -> None:
-    with pytest.raises(ValidationError):
-        ApiKeyConnectRequest(provider_key="airtable", label="Blank", api_key="   ")
 
 
 async def test_new_secret_is_deleted_when_connection_persistence_fails(
@@ -71,7 +57,7 @@ async def test_new_secret_is_deleted_when_connection_persistence_fails(
     assert deleted == [reference]
 
 
-@pytest.mark.parametrize("provider_key", ["airtable", "meta_ads"])
+@pytest.mark.parametrize("provider_key", ["airtable"])
 async def test_raw_api_key_is_replaced_by_reference_everywhere(
     provider_key: str,
     db_session: AsyncSession,
@@ -134,47 +120,6 @@ async def test_member_cannot_enter_api_key(
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
-async def test_reference_only_connect_validates_and_accepts_existing_secret(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    initial = await db_async_client.post(
-        "/api/v1/integrations/connections/api-key",
-        headers=integration_identity["headers"],
-        json={"provider_key": "airtable", "label": "Initial", "api_key": "first-value"},
-    )
-    assert initial.status_code == 200
-    connection = await db_session.get(IntegrationConnection, initial.json()["id"])
-    credential = await db_session.get(ExternalCredential, connection.credential_id)
-
-    response = await db_async_client.post(
-        "/api/v1/integrations/connections/api-key",
-        headers=integration_identity["headers"],
-        json={
-            "provider_key": "airtable",
-            "label": "Reference reuse",
-            "secret_reference": {
-                "provider": credential.secret_provider,
-                "name": credential.secret_name,
-                "version": credential.secret_version,
-            },
-        },
-    )
-    assert response.status_code == 200, response.text
-
-    malformed = await db_async_client.post(
-        "/api/v1/integrations/connections/api-key",
-        headers=integration_identity["headers"],
-        json={
-            "provider_key": "airtable",
-            "label": "Malformed",
-            "secret_reference": {"provider": "local", "name": "../bad", "version": "1"},
-        },
-    )
-    assert malformed.status_code == 400
-
-
 async def test_reference_only_connect_rejects_another_workspaces_secret(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -209,67 +154,3 @@ async def test_reference_only_connect_rejects_another_workspaces_secret(
 
     assert response.status_code == 400
     assert "not authorized for this workspace" in response.text
-
-
-async def test_meta_token_discovers_selectable_accounts_with_write_permissions(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    headers = integration_identity["headers"]
-    connected = await db_async_client.post(
-        "/api/v1/integrations/connections/api-key",
-        headers=headers,
-        json={"provider_key": "meta_ads", "label": "Agency", "api_key": TOKEN},
-    )
-    assert connected.status_code == 200, connected.text
-    connection_id = UUID(connected.json()["id"])
-    install_transport(
-        monkeypatch,
-        DiscoveryTransport([[account("123")], [account("456", user_tasks=["ANALYZE"])]]),
-    )
-    discovery = await run_discovery(db_session, connection_id=connection_id)
-    assert discovery.status == "succeeded"
-    assert discovery.resources_added == 2
-    resources = list(
-        await db_session.scalars(
-            select(IntegrationResource)
-            .where(IntegrationResource.connection_id == connection_id)
-            .order_by(IntegrationResource.external_id)
-        )
-    )
-    assert [resource.external_id for resource in resources] == ["123", "456"]
-    assert [resource.writable for resource in resources] == [True, False]
-    assert all(resource.permissions_metadata["currency"] == "GBP" for resource in resources)
-    assert all(resource.resource_type == "meta_ads_ad_account" for resource in resources)
-    conversation = build_conversation(
-        user=integration_identity["user"], workspace=integration_identity["workspace"]
-    )
-    db_session.add(conversation)
-    await db_session.commit()
-
-    enabled = await db_async_client.put(
-        f"/api/v1/integrations/connections/{connection_id}/resources/selection",
-        headers=headers,
-        json={"enabled_resource_ids": [str(resource.id) for resource in resources]},
-    )
-    assert enabled.status_code == 200, enabled.text
-    selected = await db_async_client.put(
-        f"/api/v1/integrations/conversations/{conversation.id}/context",
-        headers=headers,
-        json={
-            "targets": [
-                {"type": "resource", "integration_resource_id": str(resource.id)}
-                for resource in resources
-            ]
-        },
-    )
-    assert selected.status_code == 200, selected.text
-    assert selected.json()["unavailable"] == []
-    entries = {entry["external_id"]: entry for entry in selected.json()["entries"]}
-    assert entries.keys() == {"123", "456"}
-    assert entries["123"]["write_allowed"] is True
-    assert entries["456"]["write_allowed"] is False
-    assert all(entry["provider_key"] == "meta_ads" for entry in entries.values())
-    assert TOKEN not in selected.text

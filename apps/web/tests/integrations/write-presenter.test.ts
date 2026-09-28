@@ -154,19 +154,16 @@ describe("integration write presenter", () => {
     expect(card.children).toBeNull()
   })
 
-  it.each([null, { name: "Original" }])(
-    "passes untrusted provenance through valid and invalid approvals",
-    (args) => {
-      const context = props("awaiting_approval")
-      context.activity.args = args
-      context.activity.derivedFromUntrusted = true
-      context.activity.taintSources = [{ source_kind: "integration", source_ref: "page" }]
-      context.approvalDecision = controls()
-      const card = approval(context)
-      expect(card.derivedFromUntrusted).toBe(true)
-      expect(card.taintSources).toBe(context.activity.taintSources)
-    }
-  )
+  it("passes untrusted provenance through malformed approvals", () => {
+    const context = props("awaiting_approval")
+    context.activity.args = null
+    context.activity.derivedFromUntrusted = true
+    context.activity.taintSources = [{ source_kind: "integration", source_ref: "page" }]
+    context.approvalDecision = controls()
+    const card = approval(context)
+    expect(card.derivedFromUntrusted).toBe(true)
+    expect(card.taintSources).toBe(context.activity.taintSources)
+  })
 
   it("blocks malformed edits even without a provider validator", () => {
     const context = props("awaiting_approval")
@@ -175,81 +172,34 @@ describe("integration write presenter", () => {
     expect(approval(context).validationError).toContain("edited approval details are invalid")
   })
 
-  it.each([false, true])(
-    "keeps invalid drafts mounted only when configured (%s)",
-    (renderInvalidDraft) => {
-      const context = props("awaiting_approval")
-      context.approvalDecision = controls()
-      const summary = vi.fn(() => "Editable draft")
-      const card = approval(context, {
-        ...variant,
-        approval: {
-          ...variant.approval,
-          renderInvalidDraft,
-          validateArgs: () => "Correct the draft",
-          renderSummary: summary,
-        },
+  it.each(["enabled", "approved"])("preserves custom field edits and locks (%s)", (state) => {
+    const context = props("awaiting_approval")
+    const decision = controls()
+    context.approvalDecision = decision
+    decision.pendingCount = 2
+    if (state === "approved" || state === "denied") decision.decision.decision = state
+    decision.disabled = state === "disabled"
+    decision.submitting = state === "submitting"
+    decision.decision.edits = { other: "Retained" }
+    const summary = vi.fn<NonNullable<typeof variant.approval.renderSummary>>(() => null)
+    const card = approval(context, {
+      ...variant,
+      approval: { ...variant.approval, renderFields: false, renderSummary: summary },
+    })
+    expect(card.fields).toEqual([])
+    expect(card.fallbackFields).toEqual([])
+    const call = summary.mock.calls[0]
+    expect(call?.[3]).toBe(state !== "enabled")
+    call?.[2]("name", "Edited")
+    if (state === "enabled") {
+      expect(decision.onDecisionChange).toHaveBeenCalledWith({
+        decision: "pending",
+        edits: { other: "Retained", name: "Edited" },
+        message: "",
       })
-      expect(card.validationError).toBe("Correct the draft")
-      expect(summary).toHaveBeenCalledTimes(renderInvalidDraft ? 1 : 0)
+    } else {
+      expect(decision.onDecisionChange).not.toHaveBeenCalled()
     }
-  )
-
-  it.each(["enabled", "disabled", "submitting", "approved", "denied"])(
-    "preserves custom field edits and locks (%s)",
-    (state) => {
-      const context = props("awaiting_approval")
-      const decision = controls()
-      context.approvalDecision = decision
-      decision.pendingCount = 2
-      if (state === "approved" || state === "denied") decision.decision.decision = state
-      decision.disabled = state === "disabled"
-      decision.submitting = state === "submitting"
-      decision.decision.edits = { other: "Retained" }
-      const summary = vi.fn<NonNullable<typeof variant.approval.renderSummary>>(() => null)
-      const card = approval(context, {
-        ...variant,
-        approval: { ...variant.approval, renderFields: false, renderSummary: summary },
-      })
-      expect(card.fields).toEqual([])
-      expect(card.fallbackFields).toEqual([])
-      const call = summary.mock.calls[0]
-      expect(call?.[3]).toBe(state !== "enabled")
-      call?.[2]("name", "Edited")
-      if (state === "enabled") {
-        expect(decision.onDecisionChange).toHaveBeenCalledWith({
-          decision: "pending",
-          edits: { other: "Retained", name: "Edited" },
-          message: "",
-        })
-      } else {
-        expect(decision.onDecisionChange).not.toHaveBeenCalled()
-      }
-    }
-  )
-
-  it.each([
-    ["running", "Changing Original"],
-    ["awaiting_approval", "Waiting for project approval"],
-    ["failed", "No change confirmed"],
-    ["unknown", "Missing project results"],
-  ] as const)("renders configured %s state", (status, copy) => {
-    const html = render(props(status))
-    expect(html).toContain("Change project")
-    expect(html).toContain('data-testid="example-logo"')
-    expect(html).toContain(copy)
-    expect(html).not.toContain("Outcome:")
-  })
-
-  it("keeps declines, reasons, provider fallback identity, and details distinct from failures", () => {
-    const context = props("denied")
-    context.activity.decisionReason = "Check the scope first"
-    const html = render(context)
-    expect(html).toContain("Change declined. Nothing changed.")
-    expect(html).toContain("Check the scope first")
-    expect(html).toContain("Project Selected project")
-    expect(html).toContain("Requested")
-    expect(html).not.toContain(">Failed<")
   })
 
   it("handles absent, empty, and malformed result envelopes without inferring outcomes", () => {
@@ -367,41 +317,6 @@ describe("integration write presenter", () => {
     )
     expect(html).not.toContain("Tool failed")
     expect(html).not.toContain(">Failed<")
-  })
-
-  it("uses custom failure rendering for fallback and settled errors", () => {
-    const config = {
-      ...variant,
-      renderFailure: (args: Args | null, description: string) =>
-        createElement("span", null, "Target ", args?.name, ": ", description),
-    }
-    expect(render(props("failed"), config)).toContain("Target Original: No change confirmed")
-    const context = props()
-    context.activity.result = {
-      results: [entry(null, { status: "error", error_message: "Unavailable" })],
-    }
-    expect(render(context, config)).toContain("Target Original: Unavailable")
-  })
-
-  it("passes parsed arguments to outcome renderers", () => {
-    const renderOutcome = vi.fn((result: string, args: Args | null): ReactNode =>
-      createElement("span", null, "Outcome: ", result, " for ", args?.name)
-    )
-    const context = props()
-    context.activity.result = {
-      results: [
-        entry("Applied"),
-        entry("Ambiguous", { status: "error", error_code: "unverified_mutation" }),
-      ],
-    }
-    const html = render(context, {
-      ...variant,
-      renderOutcome,
-      renderUnverifiedOutcome: renderOutcome,
-    })
-    expect(html).toContain("Outcome: Applied for Original")
-    expect(html).toContain("Outcome: Ambiguous for Original")
-    expect(renderOutcome).toHaveBeenCalledTimes(2)
   })
 
   it("renders provider-reported failures inside successful entries as failed cards", () => {

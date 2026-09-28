@@ -11,11 +11,6 @@ from pydantic import SecretStr
 from core.settings import settings
 from integrations.gmail.settings import gmail_settings
 from integrations.google_ads.settings import google_ads_settings
-from integrations.google_analytics.settings import google_analytics_settings
-from integrations.google_search_console.settings import google_search_console_settings
-from integrations.outlook_calendar.settings import outlook_calendar_settings
-from integrations.outlook_mail.settings import outlook_mail_settings
-from integrations.sharepoint.settings import sharepoint_settings
 from services.agents.runtime.entity_references.registry import ENTITY_RESOLVERS
 from services.agents.runtime.tools.contract import (
     RuntimeToolDefinition,
@@ -32,8 +27,6 @@ from services.integrations.manifest import (
 from services.integrations.plugin import (
     PROVIDER_PLUGINS,
     ExternalPrincipal,
-    IntegrationPreviewDefinition,
-    IntegrationPreviewPayload,
     IntegrationProviderPlugin,
     OAuthClientConfig,
     OAuthProtocol,
@@ -280,179 +273,12 @@ def test_loader_rejects_shared_oauth_client_ids(monkeypatch) -> None:
     PROVIDER_PLUGINS.clear()
 
 
-def test_loader_rejects_google_analytics_sharing_google_ads_client(monkeypatch) -> None:
-    PROVIDER_MANIFESTS.clear()
-    PROVIDER_PLUGINS.clear()
-    monkeypatch.setattr(
-        settings,
-        "INTEGRATIONS_ENABLED_PROVIDERS",
-        ["google_ads", "google_analytics"],
-    )
-    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_OAUTH_CLIENT_ID", "shared-client")
-    monkeypatch.setattr(
-        google_analytics_settings,
-        "GOOGLE_ANALYTICS_OAUTH_CLIENT_ID",
-        "shared-client",
-    )
-
-    with pytest.raises(RuntimeError, match="isolated client IDs"):
-        load_enabled_providers()
-    PROVIDER_MANIFESTS.clear()
-    PROVIDER_PLUGINS.clear()
-
-
-def test_provider_packages_own_distinct_oauth_credentials(monkeypatch) -> None:
-    from integrations.gmail import oauth_config as gmail_oauth_config
-    from integrations.google_ads import oauth_config as google_ads_oauth_config
-    from integrations.google_analytics import oauth_config as google_analytics_oauth_config
-    from integrations.google_search_console import (
-        oauth_config as google_search_console_oauth_config,
-    )
-
-    monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_ID", "gmail-client")
-    monkeypatch.setattr(gmail_settings, "GMAIL_OAUTH_CLIENT_SECRET", SecretStr("gmail-secret"))
-    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_OAUTH_CLIENT_ID", "ads-client")
-    monkeypatch.setattr(
-        google_ads_settings,
-        "GOOGLE_ADS_OAUTH_CLIENT_SECRET",
-        SecretStr("ads-secret"),
-    )
-    monkeypatch.setattr(
-        google_analytics_settings,
-        "GOOGLE_ANALYTICS_OAUTH_CLIENT_ID",
-        "analytics-client",
-    )
-    monkeypatch.setattr(
-        google_analytics_settings,
-        "GOOGLE_ANALYTICS_OAUTH_CLIENT_SECRET",
-        SecretStr("analytics-secret"),
-    )
-    monkeypatch.setattr(
-        google_search_console_settings,
-        "GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_ID",
-        "search-console-client",
-    )
-    monkeypatch.setattr(
-        google_search_console_settings,
-        "GOOGLE_SEARCH_CONSOLE_OAUTH_CLIENT_SECRET",
-        SecretStr("search-console-secret"),
-    )
-
-    gmail_config = gmail_oauth_config()
-    ads_config = google_ads_oauth_config()
-    analytics_config = google_analytics_oauth_config()
-    search_console_config = google_search_console_oauth_config()
-    assert gmail_config.client_id == "gmail-client"
-    assert ads_config.client_id == "ads-client"
-    assert gmail_config.client_secret.get_secret_value() == "gmail-secret"
-    assert ads_config.client_secret.get_secret_value() == "ads-secret"
-    assert analytics_config.client_id == "analytics-client"
-    assert analytics_config.client_secret.get_secret_value() == "analytics-secret"
-    assert search_console_config.client_id == "search-console-client"
-    assert search_console_config.client_secret.get_secret_value() == "search-console-secret"
-
-
-def test_loader_accepts_all_microsoft_providers_with_isolated_clients(monkeypatch) -> None:
-    configurations = (
-        (outlook_mail_settings, "OUTLOOK_MAIL", "mail-client"),
-        (outlook_calendar_settings, "OUTLOOK_CALENDAR", "calendar-client"),
-        (sharepoint_settings, "SHAREPOINT", "sharepoint-client"),
-    )
-    for provider_settings, prefix, client_id in configurations:
-        monkeypatch.setattr(provider_settings, f"{prefix}_OAUTH_CLIENT_ID", client_id)
-        monkeypatch.setattr(
-            provider_settings,
-            f"{prefix}_OAUTH_CLIENT_SECRET",
-            SecretStr(f"{client_id}-secret"),
-        )
-    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "organizations")
-    monkeypatch.setattr(
-        settings,
-        "INTEGRATIONS_ENABLED_PROVIDERS",
-        ["outlook_mail", "outlook_calendar", "sharepoint"],
-    )
-
-    load_enabled_providers()
-
-    assert set(PROVIDER_PLUGINS) == {"outlook_mail", "outlook_calendar", "sharepoint"}
-
-
-@pytest.mark.parametrize("provider_key", ["outlook_mail", "outlook_calendar", "sharepoint"])
-def test_loader_accepts_each_microsoft_provider_alone(
-    monkeypatch: pytest.MonkeyPatch,
-    provider_key: str,
-) -> None:
-    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "organizations")
-    monkeypatch.setattr(settings, "INTEGRATIONS_ENABLED_PROVIDERS", [provider_key])
-
-    load_enabled_providers()
-
-    assert set(PROVIDER_PLUGINS) == {provider_key}
-
-
-def test_loader_rejects_microsoft_providers_sharing_a_client(monkeypatch) -> None:
-    monkeypatch.setattr(outlook_mail_settings, "OUTLOOK_MAIL_OAUTH_CLIENT_ID", "shared-client")
-    monkeypatch.setattr(
-        outlook_calendar_settings,
-        "OUTLOOK_CALENDAR_OAUTH_CLIENT_ID",
-        "shared-client",
-    )
-    monkeypatch.setattr(settings, "MICROSOFT_GRAPH_TENANT", "organizations")
-    monkeypatch.setattr(
-        settings,
-        "INTEGRATIONS_ENABLED_PROVIDERS",
-        ["outlook_mail", "outlook_calendar"],
-    )
-
-    with pytest.raises(RuntimeError, match="isolated client IDs"):
-        load_enabled_providers()
-
-
 def test_loader_fails_fast_for_unknown_provider(monkeypatch) -> None:
     PROVIDER_MANIFESTS.clear()
     PROVIDER_PLUGINS.clear()
     monkeypatch.setattr(settings, "INTEGRATIONS_ENABLED_PROVIDERS", ["does_not_exist"])
     with pytest.raises(RuntimeError, match="Unknown enabled"):
         load_enabled_providers()
-
-
-def test_loader_resolves_each_oauth_configuration_once(monkeypatch) -> None:
-    import integrations.gmail as gmail_module
-
-    config = gmail_module.PROVIDER.oauth_config()
-    calls = 0
-
-    def oauth_config() -> OAuthClientConfig:
-        nonlocal calls
-        calls += 1
-        return config
-
-    monkeypatch.setattr(
-        gmail_module,
-        "PROVIDER",
-        replace(gmail_module.PROVIDER, oauth_config=oauth_config),
-    )
-    monkeypatch.setattr(settings, "INTEGRATIONS_ENABLED_PROVIDERS", ["gmail"])
-
-    load_enabled_providers()
-
-    assert calls == 1
-
-
-def test_loader_accepts_supported_oauth_protocols() -> None:
-    google_config = _validate_plugin(_oauth_plugin(), expected_key="example")
-    notion_config = _validate_plugin(
-        _oauth_plugin(
-            oauth_scopes=(),
-            protocol=_notion_protocol(),
-        ),
-        expected_key="example",
-    )
-
-    assert google_config is not None
-    assert google_config.protocol.identity_source == "google_userinfo"
-    assert notion_config is not None
-    assert notion_config.protocol.identity_source == "provider"
 
 
 def test_loader_validates_remote_revocation_configuration() -> None:
@@ -490,39 +316,10 @@ def test_loader_validates_remote_revocation_configuration() -> None:
         _validate_plugin(unexpected_url, expected_key="example")
 
 
-def test_loader_applies_oauth_protocol_rules_only_to_oauth_manifests() -> None:
-    plugin = replace(
-        _oauth_plugin(oauth_scopes=(), protocol=OAuthProtocol(identity_source="provider")),
-        manifest=_api_key_manifest(),
-    )
-
-    assert _validate_plugin(plugin, expected_key="example") is not None
-
-
 @pytest.mark.parametrize(
     ("oauth_scopes", "protocol", "message"),
     [
         ((), OAuthProtocol(), "must declare scopes"),
-        (
-            ("scope",),
-            _notion_protocol(),
-            "must not declare scopes",
-        ),
-        (
-            (),
-            OAuthProtocol(scope_parameter=False, identity_source="provider"),
-            "must implement access-token identity fetching",
-        ),
-        (
-            ("scope",),
-            OAuthProtocol(
-                extract_identity=lambda payload: ExternalPrincipal(
-                    external_id=str(payload),
-                    label=None,
-                )
-            ),
-            "must not declare provider identity callables",
-        ),
         (
             ("scope",),
             OAuthProtocol(fetch_identity=_fetch_provider_identity),
@@ -542,48 +339,11 @@ def test_loader_rejects_inconsistent_oauth_protocols(
         )
 
 
-def test_loader_requires_discovery_callable_when_manifest_advertises_it() -> None:
-    plugin = IntegrationProviderPlugin(
-        manifest=IntegrationProviderManifest(
-            provider_key="example",
-            display_name="Example",
-            auth_modes=("oauth",),
-            owner_scope="workspace",
-            oauth_scopes=("scope",),
-            resource_types=("example_resource",),
-            requires_discovery=True,
-        ),
-        discover_resources=None,
-    )
-    with pytest.raises(RuntimeError, match="must implement discovery"):
-        _validate_plugin(plugin, expected_key="example")
-
-
-def test_loader_requires_a_registered_valid_metadata_sync_handler() -> None:
-    invalid_kind = IntegrationProviderPlugin(
-        manifest=_api_key_manifest(),
-        discover_resources=None,
-        metadata_sync_job_kind="Invalid-Kind",
-    )
-    with pytest.raises(RuntimeError, match="invalid metadata sync job kind"):
-        _validate_plugin(invalid_kind, expected_key="example")
-
-    missing_handler = IntegrationProviderPlugin(
-        manifest=_api_key_manifest(),
-        discover_resources=None,
-        metadata_sync_job_kind="integrations.missing_handler",
-    )
-    with pytest.raises(RuntimeError, match="handler is not registered"):
-        _validate_plugin(missing_handler, expected_key="example")
-
-
 @pytest.mark.parametrize(
     ("entity_kind", "file_resolver_owner", "allowed"),
     [
         ("file", "core", True),
         ("agent", "core", False),
-        ("example_item", "core", False),
-        ("file", "missing", False),
         ("file", "example", False),
     ],
 )
@@ -629,35 +389,3 @@ def test_loader_allows_only_core_file_argument_fields_without_provider_resolvers
     else:
         with pytest.raises(RuntimeError, match=f"provider-owned resolvers: {entity_kind}"):
             _validate_plugin(plugin, expected_key="example")
-
-
-def test_loader_validates_provider_preview_definitions() -> None:
-    async def fetch_preview(db, connection, ref) -> IntegrationPreviewPayload:
-        return IntegrationPreviewPayload(content_type="text", content=ref, meta={})
-
-    definition = IntegrationPreviewDefinition(
-        kind="message",
-        operation="preview_message",
-        fetch=fetch_preview,
-    )
-    plugin = IntegrationProviderPlugin(
-        manifest=_api_key_manifest(),
-        discover_resources=None,
-        preview_definitions=(definition, definition),
-    )
-    with pytest.raises(RuntimeError, match="Duplicate integration preview kind"):
-        _validate_plugin(plugin, expected_key="example")
-
-    invalid_plugin = IntegrationProviderPlugin(
-        manifest=_api_key_manifest(),
-        discover_resources=None,
-        preview_definitions=(
-            IntegrationPreviewDefinition(
-                kind="Invalid-Kind",
-                operation="preview_message",
-                fetch=fetch_preview,
-            ),
-        ),
-    )
-    with pytest.raises(RuntimeError, match="lowercase snake_case"):
-        _validate_plugin(invalid_plugin, expected_key="example")

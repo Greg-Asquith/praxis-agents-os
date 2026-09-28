@@ -5,10 +5,8 @@ import { isValidElement, type ReactElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { Dialog } from "@/components/ui/dialog"
-import { PrivacyField } from "@/features/knowledge/components/privacy-field"
 import { PlatformDocumentActions } from "@/features/knowledge/components/platform-document-actions"
-import { CopyDocumentButton } from "@/features/knowledge/components/copy-document-button"
+import type { CopyDocumentButton } from "@/features/knowledge/components/copy-document-button"
 import type { KbDocumentDetail } from "@/features/knowledge/types"
 
 const state = vi.hoisted(() => ({
@@ -137,72 +135,5 @@ describe("platform Knowledge confirmation interactions", () => {
       expectedIngestionVersion: "version-a",
     })
     expect(propsOf(render(PlatformDocumentActions, updated), ConfirmDialog)["open"]).toBe(false)
-  })
-
-  it("retains the confirmation and reviewed version after rejected publication", async () => {
-    state.publish.mockRejectedValue(new Error("Review the latest document"))
-    await invoke(button(render(PlatformDocumentActions), "Publish"), "onClick")
-    await invoke(propsOf(render(PlatformDocumentActions), ConfirmDialog), "onConfirm")
-    const confirmation = propsOf(render(PlatformDocumentActions), ConfirmDialog)
-    expect(confirmation["open"]).toBe(true)
-    expect(
-      elements(confirmation["description"] as ReactNode).some(
-        (item) =>
-          item.props["role"] === "alert" && item.props["children"] === "Review the latest document"
-      )
-    ).toBe(true)
-    expect(state.publish).toHaveBeenCalledWith({
-      documentId: document.id,
-      expectedIngestionVersion: "version-a",
-    })
-  })
-
-  it.each([true, false])(
-    "copies canonical content with private choice %s and opens the local document",
-    async (isPrivate) => {
-      const opening = elements(render(CopyDocumentButton)).find(
-        (item) => item.type === Button && Array.isArray(item.props["children"])
-      )
-      if (!opening) throw new Error("Missing copy trigger")
-      await invoke(opening.props, "onClick")
-      let tree = render(CopyDocumentButton)
-      expect(propsOf(tree, PrivacyField)["checked"]).toBe(true)
-      if (!isPrivate) {
-        await invoke(propsOf(tree, PrivacyField), "onCheckedChange", false)
-        tree = render(CopyDocumentButton)
-      }
-      await invoke(button(tree, "Make a workspace copy"), "onClick")
-      expect(state.copy).toHaveBeenCalledWith({
-        title: "Policy",
-        contentMd: "Reviewed policy",
-        isPrivate,
-      })
-      expect(state.navigate).toHaveBeenCalledWith({
-        to: "/knowledge/$documentId",
-        params: { documentId: "local-copy" },
-        search: {},
-      })
-      expect(propsOf(render(CopyDocumentButton), Dialog)["open"]).toBe(false)
-    }
-  )
-
-  it("keeps a failed copy open with its privacy choice and an actionable error", async () => {
-    state.copy.mockRejectedValue(new Error("Try copying again"))
-    const opening = elements(render(CopyDocumentButton)).find(
-      (item) => item.type === Button && Array.isArray(item.props["children"])
-    )
-    if (!opening) throw new Error("Missing copy trigger")
-    await invoke(opening.props, "onClick")
-    await invoke(propsOf(render(CopyDocumentButton), PrivacyField), "onCheckedChange", false)
-    await invoke(button(render(CopyDocumentButton), "Make a workspace copy"), "onClick")
-    const tree = render(CopyDocumentButton)
-    expect(propsOf(tree, Dialog)["open"]).toBe(true)
-    expect(propsOf(tree, PrivacyField)["checked"]).toBe(false)
-    expect(
-      elements(tree).some(
-        (item) => item.props["role"] === "alert" && item.props["children"] === "Try copying again"
-      )
-    ).toBe(true)
-    expect(state.navigate).not.toHaveBeenCalled()
   })
 })

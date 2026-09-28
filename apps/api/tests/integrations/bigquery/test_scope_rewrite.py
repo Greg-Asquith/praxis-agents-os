@@ -1,8 +1,5 @@
 """BigQuery table row-scope adapter behavior."""
 
-import subprocess
-import sys
-
 import pytest
 
 from integrations.bigquery.operations.scope_rewrite import BIGQUERY_TABLE_SCOPE_ADAPTER
@@ -43,19 +40,3 @@ def test_adapter_enforces_bigquery_integer_range() -> None:
             column_type="integer",
             values=("9223372036854775808",),
         )
-
-
-def test_loading_the_bigquery_provider_does_not_import_sqlglot() -> None:
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import sys; import integrations.bigquery; "
-            "raise SystemExit(1 if 'sqlglot' in sys.modules else 0)",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert completed.returncode == 0, completed.stderr

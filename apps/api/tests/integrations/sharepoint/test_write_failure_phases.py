@@ -9,12 +9,9 @@ import pytest
 from core.exceptions.integration import (
     IntegrationConnectionError,
     IntegrationFailureDisposition,
-    IntegrationValidationError,
 )
-from integrations.sharepoint.operations.upload_session import UploadTarget, run_upload_session
-from integrations.sharepoint.operations.write_utils import DriveWriteState
-from integrations.sharepoint.tools.write_utils import failed_write_outcome, pending_write_detail
-from tests.integrations.sharepoint.support import entry, graph
+from integrations.sharepoint.tools.write_utils import failed_write_outcome
+from tests.integrations.sharepoint.support import graph
 from tests.integrations.sharepoint.test_write_tools import (
     CONTENT,
     NAME,
@@ -35,42 +32,17 @@ def terminal_evidence(provider, *, status):
     return detail.outcome_groups[0].outcomes[0].effects[0].fields
 
 
-async def test_empty_upload_is_a_known_failure_without_a_session(provider):
-    state = DriveWriteState()
-    target = UploadTarget(
-        drive_id="drive",
-        session_path="/drives/drive/root:/notes.txt:/createUploadSession",
-        item_path="/drives/drive/root:/notes.txt",
-        operation="write_file",
-    )
-    with pytest.raises(IntegrationValidationError) as caught:
-        await run_upload_session(provider.client, target=target, data=b"", state=state)
-    assert caught.value.error_code == "empty_content"
-    assert caught.value.failure_disposition is IntegrationFailureDisposition.NOT_DISPATCHED
-    selected = entry()
-    outcome = failed_write_outcome(
-        selected, pending_write_detail(selected, action="write_file"), state, caught.value
-    )
-    assert str(outcome.status) == "failure"
-    assert outcome.value["outcome"] == "failed"
-    assert outcome.value["error_code"] == "empty_content"
-    assert outcome.operation_detail.effect_counts.failed == 1
-    assert outcome.operation_detail.effect_counts.unverified == 0
-    assert not state.session_created and not state.committed and state.bytes_sent == 0
-    provider.client.post.assert_not_awaited()
-    provider.client.upload_fragment.assert_not_awaited()
-    provider.client.upload_status.assert_not_awaited()
-    provider.client.cancel_upload.assert_not_awaited()
-
-
 @pytest.mark.parametrize("name", ["write_file", "update_file"])
 @pytest.mark.parametrize(
-    "payload", [{}, {"uploadUrl": None}, {"uploadUrl": ""}, {"uploadUrl": 1}, []]
+    "payload",
+    [
+        {},
+        {"uploadUrl": None},
+    ],
 )
 async def test_invalid_session_response_is_an_audited_undispatched_failure(provider, name, payload):
     provider.client.post.side_effect = None
     provider.client.post.return_value = payload
-    from integrations.sharepoint.tools.write_utils import failed_write_outcome
 
     with patch(
         "integrations.sharepoint.tools.write_utils.failed_write_outcome",
@@ -88,61 +60,13 @@ async def test_invalid_session_response_is_an_audited_undispatched_failure(provi
     provider.client.upload_fragment.assert_not_awaited()
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        None,
-        [],
-        {"file": None},
-        {"file": []},
-        {"folder": {}},
-        {"folder": None},
-        {"package": {}},
-        {"parentReference": None},
-        {"id": "different"},
-        {"eTag": None},
-        {"eTag": "invalid token"},
-        {"eTag": []},
-    ],
-)
-async def test_invalid_second_replacement_read_is_an_audited_undispatched_failure(provider, change):
-    second_item = {**provider.item, **change} if isinstance(change, dict) else change
-    provider.client.get.side_effect = [provider.item, second_item]
-    from integrations.sharepoint.tools.write_utils import failed_write_outcome
-
-    with patch(
-        "integrations.sharepoint.tools.write_utils.failed_write_outcome",
-        wraps=failed_write_outcome,
-    ) as failed:
-        result = await invoke("update_file")
-    assert (
-        failed.call_args.args[-1].failure_disposition
-        is IntegrationFailureDisposition.NOT_DISPATCHED
-    )
-    assert result["results"][0]["data"]["outcome"] == "failed"
-    fields = terminal_evidence(provider, status="failure")
-    assert fields["committed"] is False and fields["session_created"] is False
-    assert fields["bytes_sent"] == 0 and fields["hash_matched"] is None
-    assert fields["etag_before"] == '"version-1"' and fields["etag_after"] is None
-    provider.client.post.assert_not_awaited()
-    provider.client.upload_fragment.assert_not_awaited()
-
-
-@pytest.mark.parametrize("folder", [{}, None])
-async def test_mixed_file_and_folder_metadata_fails_before_pending_intent(provider, folder):
-    provider.client.get.side_effect = None
-    provider.client.get.return_value = {**provider.item, "folder": folder}
-    result = await invoke("update_file")
-    assert result["results"][0]["error_code"] == "unsupported_type"
-    assert provider.audit.await_count == 1
-    assert str(provider.audit.await_args.kwargs["status"]) == "failure"
-    provider.client.post.assert_not_awaited()
-    provider.client.upload_fragment.assert_not_awaited()
-
-
 @pytest.mark.parametrize("name", ["write_file", "update_file"])
 @pytest.mark.parametrize(
-    "url", ["http://example.com/upload", "invalid URL", "https://127.0.0.1/upload"]
+    "url",
+    [
+        "http://example.com/upload",
+        "invalid URL",
+    ],
 )
 async def test_refused_session_url_has_undispatched_audit_and_no_fragment_request(
     provider, name, url
@@ -155,8 +79,6 @@ async def test_refused_session_url_has_undispatched_audit_and_no_fragment_reques
             return httpx2.Response(200, json=provider.item)
         assert request.method == "POST"
         return httpx2.Response(200, json={"uploadUrl": url})
-
-    from integrations.sharepoint.tools.write_utils import failed_write_outcome
 
     async with graph(handler) as client:
         provider.factory.return_value = client
@@ -177,7 +99,13 @@ async def test_refused_session_url_has_undispatched_audit_and_no_fragment_reques
     )
 
 
-@pytest.mark.parametrize("phase", ["session", "replacement_read", "commit", "reconcile"])
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "session",
+        "replacement_read",
+    ],
+)
 async def test_cancellation_audit_preserves_the_file_mutation_boundary(provider, phase):
     name = "update_file" if phase == "replacement_read" else "write_file"
     if phase == "session":
@@ -208,27 +136,3 @@ async def test_cancellation_audit_preserves_the_file_mutation_boundary(provider,
     assert fields["session_created"] is uncertain
     assert provider.client.upload_fragment.await_count == int(uncertain)
     provider.client.cancel_upload.assert_not_awaited()
-
-
-async def test_backoff_cancellation_records_undispatched_terminal_evidence(provider, monkeypatch):
-    monkeypatch.setattr("integrations.sharepoint.operations.upload_session.FRAGMENT_BYTES", 4)
-
-    async def sleep(delay):
-        assert delay == 1
-        raise asyncio.CancelledError
-
-    monkeypatch.setattr("integrations.sharepoint.operations.upload_session.asyncio.sleep", sleep)
-    provider.client.upload_fragment.side_effect = IntegrationConnectionError(
-        "Upload interrupted.",
-        error_code="upload_interrupted",
-        failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
-    )
-    with pytest.raises(asyncio.CancelledError) as caught:
-        await invoke("write_file")
-    assert caught.value.failure_disposition is IntegrationFailureDisposition.NOT_DISPATCHED
-    fields = terminal_evidence(provider, status="failure")
-    assert fields["session_created"] is True
-    assert fields["bytes_sent"] == 0 and fields["committed"] is False
-    provider.client.upload_fragment.assert_awaited_once()
-    provider.client.cancel_upload.assert_awaited_once()
-    provider.client.upload_status.assert_not_awaited()

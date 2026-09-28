@@ -96,37 +96,17 @@ function result() {
 }
 
 describe("positive keyword removal presenter", () => {
-  it("shows selected keyword labels as failure chips", () => {
-    expect(render("failed")).toMatch(/data-slot="badge"[^>]*>running shoes/)
-  })
-
   it("shows destructive approval with both ad groups and account context", () => {
     const html = render("awaiting_approval")
     expect(html).toContain("cannot be undone")
-    expect(html).toContain("cannot be re-enabled")
-    expect(html).toContain("Approve &amp; Remove")
-    expect(html).toContain("Shoes 20")
-    expect(html).toContain("Shoes 21")
-    expect(html).toContain("333")
     expect(html).toContain("Account 333 · Exact")
     expect(html).not.toContain("Account 333 · EXACT")
   })
 
   it("shows exact per-row outcomes and before/requested/after states", () => {
     const html = render("completed", result())
-    for (const value of [
-      "Retail account",
-      "Shoes 20",
-      "Shoes 21",
-      "Shoes 22",
-      "Removal rejected",
-      "Unverified",
-      "Before",
-      "Requested",
-      "After",
-    ]) {
-      expect(html).toContain(value)
-    }
+    expect(html).toContain("Shoes 22")
+    expect(html).toContain("Removal rejected")
   })
 
   it.each(["duplicate", "counts", "after", "truncated"])(
@@ -153,19 +133,4 @@ describe("positive keyword removal presenter", () => {
       )
     }
   })
-
-  it.each(["running", "failed", "denied"] as const)(
-    "renders the %s state without claiming removal",
-    (status) => {
-      const html = render(status)
-      expect(html).not.toContain("Google Ads keyword removal results")
-      expect(html).toContain(
-        status === "denied"
-          ? "Nothing was removed"
-          : status === "failed"
-            ? "The keywords could not be removed"
-            : "Removing keywords…"
-      )
-    }
-  )
 })

@@ -18,7 +18,6 @@ from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.report_results import ReportResultBudget
 from tests.integrations.google_ads.test_tools_and_audits import _read_ctx, _read_entry
 from tests.integrations.google_analytics.test_tools_and_audits import _entry as analytics_entry
-from tests.integrations.google_search_console.test_tools_and_audits import _entry as search_entry
 from tests.integrations.test_complete_reports import analytics_page
 from tests.services.integrations.context.test_fan_out import _binding, _ctx, _entry
 
@@ -76,36 +75,6 @@ def report_audit(monkeypatch):
             )
             for operation in ("run_report", "run_realtime_report")
         ],
-        (
-            "google_analytics",
-            "list_report_fields",
-            analytics_entry,
-            "data_get",
-            {},
-            {"dimensions": [{"apiName": "country", "uiName": "x" * 1_800}], "metrics": []},
-        ),
-        (
-            "google_search_console",
-            "query_search_analytics",
-            search_entry,
-            "webmasters_post",
-            {
-                "start_date": "2026-08-01",
-                "end_date": "2026-08-28",
-                "dimensions": ["query"],
-            },
-            {
-                "rows": [
-                    {
-                        "keys": ["x" * 1_800],
-                        "clicks": 1,
-                        "impressions": 2,
-                        "ctr": 0.5,
-                        "position": 1,
-                    }
-                ]
-            },
-        ),
     ],
 )
 @pytest.mark.parametrize("maximum", [3_000, 10_000])

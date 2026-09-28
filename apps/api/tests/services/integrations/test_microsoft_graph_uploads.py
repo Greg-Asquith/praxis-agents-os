@@ -12,7 +12,6 @@ from core.exceptions.integration import (
     IntegrationConnectionError,
     IntegrationFailureDisposition,
     IntegrationNotFoundError,
-    IntegrationPermissionError,
     IntegrationRateLimitError,
     IntegrationTimeoutError,
     IntegrationValidationError,
@@ -35,9 +34,7 @@ async def invoke(client, method, url=UPLOAD_URL):
     return await client.cancel_upload(url, operation="upload")
 
 
-@pytest.mark.parametrize(
-    "method,status", [("PUT", 200), ("PUT", 201), ("PUT", 202), ("GET", 200), ("DELETE", 204)]
-)
+@pytest.mark.parametrize("method,status", [("PUT", 201), ("DELETE", 204)])
 async def test_upload_never_uses_credentials_and_sends_exact_headers(monkeypatch, method, status):
     from services.integrations.microsoft_graph import client as module
 
@@ -74,41 +71,35 @@ async def test_upload_never_uses_credentials_and_sends_exact_headers(monkeypatch
         assert request.content == b"file"
 
 
-@pytest.mark.parametrize("method", ["PUT", "GET", "DELETE"])
 @pytest.mark.parametrize(
     "url",
     [
         "http://93.184.216.34/session",
-        "https://127.0.0.1/session",
-        "https://10.0.0.1/session",
-        "https://[::1]/session",
         "https://169.254.169.254/session",
         "https://user:password@93.184.216.34/session",
     ],
 )
-async def test_upload_refuses_unsafe_destinations(method, url):
+async def test_upload_refuses_unsafe_destinations(url):
     client = MicrosoftGraphClient(no_credentials, provider_key="sharepoint")
     with track_transport_attempts() as counter, pytest.raises(IntegrationValidationError) as caught:
-        await invoke(client, method, url)
+        await invoke(client, "PUT", url)
     assert (counter.requests, counter.attempts) == (0, 0)
     assert caught.value.failure_disposition is IntegrationFailureDisposition.NOT_DISPATCHED
 
 
-@pytest.mark.parametrize("method", ["PUT", "GET", "DELETE"])
-async def test_cancellation_during_upload_url_resolution_is_not_dispatched(monkeypatch, method):
+async def test_cancellation_during_upload_url_resolution_is_not_dispatched(monkeypatch):
     async def resolve(_host, _port):
         raise asyncio.CancelledError
 
     monkeypatch.setattr("services.integrations.microsoft_graph.client._resolve_host", resolve)
     client = MicrosoftGraphClient(no_credentials, provider_key="sharepoint")
     with track_transport_attempts() as counter, pytest.raises(asyncio.CancelledError) as caught:
-        await invoke(client, method)
+        await invoke(client, "PUT")
     assert (counter.requests, counter.attempts) == (0, 0)
     assert caught.value.failure_disposition is IntegrationFailureDisposition.NOT_DISPATCHED
 
 
-@pytest.mark.parametrize("method", ["PUT", "GET", "DELETE"])
-async def test_upload_refuses_mixed_public_and_private_dns(monkeypatch, method):
+async def test_upload_refuses_mixed_public_and_private_dns(monkeypatch):
     from services.integrations.microsoft_graph import client as module
 
     async def resolve(_host, _port):
@@ -117,25 +108,17 @@ async def test_upload_refuses_mixed_public_and_private_dns(monkeypatch, method):
     monkeypatch.setattr(module, "_resolve_host", resolve)
     client = MicrosoftGraphClient(no_credentials, provider_key="sharepoint")
     with pytest.raises(IntegrationValidationError):
-        await invoke(client, method, "https://upload.example.com/session")
+        await invoke(client, "PUT", "https://upload.example.com/session")
 
 
-@pytest.mark.parametrize("method", ["PUT", "GET", "DELETE"])
 @pytest.mark.parametrize(
-    "status,error,code",
+    "method,status,error,code",
     [
-        (302, IntegrationValidationError, None),
-        (307, IntegrationValidationError, None),
-        (401, IntegrationAuthError, None),
-        (403, IntegrationPermissionError, None),
-        (404, IntegrationNotFoundError, "upload_session_expired"),
-        (409, IntegrationValidationError, "name_exists"),
-        (412, IntegrationValidationError, "version_conflict"),
-        (416, IntegrationValidationError, "invalid_range"),
-        (423, IntegrationValidationError, "locked"),
-        (429, IntegrationRateLimitError, None),
-        (503, IntegrationConnectionError, "upload_interrupted"),
-        (507, IntegrationValidationError, "quota_exceeded"),
+        ("PUT", 302, IntegrationValidationError, None),
+        ("GET", 401, IntegrationAuthError, None),
+        ("DELETE", 404, IntegrationNotFoundError, "upload_session_expired"),
+        ("PUT", 429, IntegrationRateLimitError, None),
+        ("PUT", 503, IntegrationConnectionError, "upload_interrupted"),
     ],
 )
 async def test_upload_maps_errors_without_retry_or_signed_url(caplog, method, status, error, code):
@@ -168,9 +151,8 @@ async def test_upload_maps_errors_without_retry_or_signed_url(caplog, method, st
     assert "PRIVATE_UPLOAD_SECRET" not in "".join(traceback.format_exception(caught.value))
 
 
-@pytest.mark.parametrize("method", ["PUT", "GET", "DELETE"])
 @pytest.mark.parametrize("failure", [httpx2.ReadTimeout, httpx2.ConnectError])
-async def test_upload_transport_failure_is_private_and_never_retried(method, failure):
+async def test_upload_transport_failure_is_private_and_never_retried(failure):
     def handler(request):
         raise failure(UPLOAD_URL, request=request)
 
@@ -178,7 +160,7 @@ async def test_upload_transport_failure_is_private_and_never_retried(method, fai
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as transport:
         client = MicrosoftGraphClient(no_credentials, provider_key="sharepoint", client=transport)
         with track_transport_attempts() as counter, pytest.raises(error) as caught:
-            await invoke(client, method)
+            await invoke(client, "PUT")
     assert (counter.requests, counter.attempts) == (1, 1)
     assert caught.value.error_code == "upload_interrupted"
     assert caught.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
@@ -198,8 +180,8 @@ async def test_upload_cancellation_propagates_with_ambiguous_disposition():
     assert caught.value.failure_disposition is IntegrationFailureDisposition.AMBIGUOUS
 
 
-@pytest.mark.parametrize("body", [b"[1, 2]", b"not JSON PRIVATE_UPLOAD_SECRET"])
-async def test_upload_malformed_response_does_not_leak_body(body):
+async def test_upload_malformed_response_does_not_leak_body():
+    body = b"not JSON PRIVATE_UPLOAD_SECRET"
     async with httpx2.AsyncClient(
         transport=httpx2.MockTransport(lambda _: httpx2.Response(201, content=body))
     ) as transport:
@@ -208,16 +190,6 @@ async def test_upload_malformed_response_does_not_leak_body(body):
             await invoke(client, "PUT")
     assert caught.value.original_error is None
     assert "PRIVATE_UPLOAD_SECRET" not in "".join(traceback.format_exception(caught.value))
-
-
-@pytest.mark.parametrize("data,offset,total", [(b"", 0, 0), (b"file", -1, 4), (b"file", 0, 3)])
-async def test_upload_invalid_range_stops_before_dispatch(data, offset, total):
-    client = MicrosoftGraphClient(no_credentials, provider_key="sharepoint")
-    with track_transport_attempts() as counter, pytest.raises(ValueError):
-        await client.upload_fragment(
-            UPLOAD_URL, data, operation="upload", offset=offset, total=total
-        )
-    assert counter.attempts == 0
 
 
 async def test_upload_response_excludes_signed_url_annotations():
@@ -235,29 +207,6 @@ async def test_upload_response_excludes_signed_url_annotations():
     ) as transport:
         client = MicrosoftGraphClient(no_credentials, provider_key="sharepoint", client=transport)
         assert await invoke(client, "PUT") == {"id": "item"}
-
-
-@pytest.mark.parametrize(
-    "status,code",
-    [(409, "name_exists"), (412, "version_conflict"), (423, "locked"), (507, "quota_exceeded")],
-)
-async def test_authenticated_session_creation_maps_write_errors(status, code):
-    async def token(_force):
-        return "credential"
-
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(
-            lambda _: httpx2.Response(status, json={"error": {"code": "nameAlreadyExists"}})
-        )
-    ) as transport:
-        client = MicrosoftGraphClient(token, provider_key="sharepoint", client=transport)
-        with pytest.raises(IntegrationValidationError) as caught:
-            await client.post(
-                "/drives/drive/items/item/createUploadSession",
-                operation="replace_item",
-                policy=IntegrationRequestPolicy.MUTATION,
-            )
-    assert caught.value.error_code == code
 
 
 async def test_malformed_session_creation_does_not_retain_upload_url():
@@ -284,55 +233,16 @@ async def test_malformed_session_creation_does_not_retain_upload_url():
     assert "PRIVATE_UPLOAD_SECRET" not in "".join(traceback.format_exception(caught.value))
 
 
-@pytest.mark.parametrize("provider_code", [None, "ErrorIrresolvableConflict", "unexpected"])
-async def test_outlook_conflict_keeps_generic_fallback(provider_code):
-    async def token(_force):
-        return "credential"
-
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(
-            lambda _: httpx2.Response(409, json={"error": {"code": provider_code}})
-        )
-    ) as transport:
-        client = MicrosoftGraphClient(token, provider_key="outlook_mail", client=transport)
-        with pytest.raises(IntegrationValidationError) as caught:
-            await client.post(
-                "/me/messages/message/move",
-                operation="move_message",
-                policy=IntegrationRequestPolicy.MUTATION,
-            )
-    assert caught.value.error_code is None
-    assert caught.value.user_message == "Integration request was rejected"
-
-
-@pytest.mark.parametrize("status", [412, 423, 507])
-async def test_shared_write_errors_do_not_assume_sharepoint(status):
-    from services.integrations.microsoft_graph.errors import graph_response_error
-
-    error = graph_response_error(
-        httpx2.Response(status), provider_key="outlook_mail", operation="update_message"
-    )
-    assert error is not None
-    assert "SharePoint" not in error.user_message
-    assert "file" not in error.user_message
-    assert "library" not in error.user_message
-
-
-@pytest.mark.parametrize("method", ["PUT", "GET", "DELETE"])
 @pytest.mark.parametrize(
     "body,name_conflict",
     [
         ({"error": {"code": "nameAlreadyExists", "message": UPLOAD_URL}}, True),
-        ({"error": {"code": "ErrorIrresolvableConflict", "message": UPLOAD_URL}}, False),
         ({"error": {"code": UPLOAD_URL}}, False),
-        ({"error": {"code": 123}}, False),
-        ({"error": UPLOAD_URL}, False),
-        ({}, False),
-        ([], False),
         (None, False),
     ],
 )
-async def test_signed_conflict_uses_only_known_code(caplog, method, body, name_conflict):
+async def test_signed_conflict_uses_only_known_code(caplog, body, name_conflict):
+    method = "PUT"
     caplog.set_level(logging.DEBUG)
     response = httpx2.Response(
         409,

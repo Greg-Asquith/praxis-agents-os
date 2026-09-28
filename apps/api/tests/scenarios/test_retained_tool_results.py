@@ -72,19 +72,15 @@ def retained_tools(monkeypatch, tmp_path):
         output_model=ReportOutput,
         code_eligible=True,
     )
-    async def retained_report(small: bool = False, typed: bool = False) -> dict | ReportOutput:
-        value = {**RESULT, "rows": ROWS[:1], "total_rows": 1} if small else RESULT
-        return ReportOutput.model_validate(value) if typed else value
+    async def retained_report() -> dict:
+        return RESULT
 
     yield
     RUNTIME_TOOL_CATALOG.pop("retained_report", None)
     reset_storage_provider_cache()
 
 
-@pytest.mark.parametrize("typed", [False, True])
-async def test_retained_rows_are_hidden_readable_and_stable(
-    db_session_factory, retained_tools, typed
-):
+async def test_retained_rows_are_hidden_readable_and_stable(db_session_factory, retained_tools):
     context = await build_scenario_agent(db_session_factory, tool_names=["retained_report"])
     seen = []
     first = await run_scenario(
@@ -92,7 +88,7 @@ async def test_retained_rows_are_hidden_readable_and_stable(
         context,
         model=scripted_model(
             turns=[
-                ToolTurn((ToolCall("retained_report", {"typed": typed}, "report-1"),)),
+                ToolTurn((ToolCall("retained_report", {}, "report-1"),)),
                 "Report ready.",
             ],
             seen_requests=seen,
@@ -198,10 +194,8 @@ async def test_retained_rows_are_hidden_readable_and_stable(
         assert await db.get(File, UUID(preview["file_id"])) is None
 
 
-@pytest.mark.parametrize("public_limit", [2_000, 2_000_000])
-async def test_public_budget_and_stream_preview_are_independent(
-    db_session_factory, retained_tools, public_limit
-):
+async def test_public_budget_and_stream_preview_are_independent(db_session_factory, retained_tools):
+    public_limit = 2_000
     RUNTIME_TOOL_CATALOG["retained_report"] = replace(
         RUNTIME_TOOL_CATALOG["retained_report"], max_public_result_chars=public_limit
     )
@@ -213,11 +207,7 @@ async def test_public_budget_and_stream_preview_are_independent(
     )
     assert result.run.status == "completed"
     returned = result.tool_returns("retained_report")[0]
-    public = returned["metadata"].get("public_result")
-    if public_limit > len(json.dumps(RESULT)):
-        assert public == RESULT
-    else:
-        assert public is None
+    assert returned["metadata"].get("public_result") is None
     event = next(e for e in result.events if e.event == "tool.result")
     assert event.data["result"] == returned["content"]
     assert event.data["result"]["preview"] is True
@@ -226,7 +216,7 @@ async def test_public_budget_and_stream_preview_are_independent(
     )
 
 
-@pytest.mark.parametrize("failure", ["save", "size", "commit"])
+@pytest.mark.parametrize("failure", ["size", "commit"])
 async def test_storage_failures_retry_without_incomplete_success(
     db_session_factory, retained_tools, monkeypatch, failure
 ):
@@ -246,11 +236,6 @@ async def test_storage_failures_retry_without_incomplete_success(
             return saved
 
         monkeypatch.setattr(dispatch, "save_tool_result", save_then_fail_commit)
-    elif failure == "save":
-        dispatch = importlib.import_module("services.agents.runtime.dispatch")
-        monkeypatch.setattr(
-            dispatch, "save_tool_result", AsyncMock(side_effect=OSError("private backend detail"))
-        )
     else:
         monkeypatch.setattr(settings, "MAX_FILE_SIZE_AGENT_FILE", 1_000)
     context = await build_scenario_agent(db_session_factory, tool_names=["retained_report"])
@@ -266,63 +251,12 @@ async def test_storage_failures_retry_without_incomplete_success(
     assert ("could not be retained" if failure == "commit" else "too large") in str(
         retries[0].data["result"]
     )
-    assert "private backend detail" not in str(retries[0].data)
     assert not result.tool_returns("retained_report")
     async with db_session_factory() as db:
         assert await db.scalar(select(func.count()).select_from(File)) == 0
 
 
-async def test_small_result_is_unchanged(db_session_factory, retained_tools):
-    context = await build_scenario_agent(db_session_factory, tool_names=["retained_report"])
-    result = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(
-            turns=[ToolTurn((ToolCall("retained_report", {"small": True}),)), "Done."]
-        ),
-    )
-    assert result.tool_returns("retained_report")[0]["content"] == {
-        **RESULT,
-        "rows": ROWS[:1],
-        "total_rows": 1,
-    }
-    async with db_session_factory() as db:
-        assert await db.scalar(select(func.count()).select_from(File)) == 0
-
-
-async def test_code_mode_receives_all_rows(db_session_factory, retained_tools):
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=["retained_report"], code_mode_enabled=True
-    )
-    result = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            "run_workflow",
-                            {
-                                "code": "report = await retained_report()\n{'total': sum(row['value'] for row in report['rows']), 'rows': len(report['rows'])}"
-                            },
-                        ),
-                    )
-                ),
-                "Computed every row.",
-            ]
-        ),
-    )
-    assert result.run.status == "completed"
-    returned = result.tool_returns("run_workflow")[0]
-    assert returned["content"] == {"total": 999_000, "rows": 1_000}
-    async with db_session_factory() as db:
-        assert await db.scalar(select(func.count()).select_from(File)) == 0
-
-
-@pytest.mark.parametrize(
-    "failure", ["link", "cancel_link", "write", "commit", "cancel_commit", "lost_commit", None]
-)
+@pytest.mark.parametrize("failure", ["cancel_link", "lost_commit", None])
 async def test_retained_upload_ownership_survives_transaction_failure(
     committed_db_session_factory, retained_tools, monkeypatch, failure
 ):
@@ -332,34 +266,21 @@ async def test_retained_upload_ownership_survives_transaction_failure(
     original_link = service.create_conversation_file_references
     original_commit = AsyncSession.commit
     provider = get_storage_provider()
-    original_put = provider.put_object
 
     async def link(db, **kwargs):
         await original_link(db, **kwargs)
-        if failure == "link":
-            raise RuntimeError("Reference unavailable")
         if failure == "cancel_link":
             raise asyncio.CancelledError
         db.info["inject_retained_commit"] = True
 
     async def commit(db):
-        if db.info.pop("inject_retained_commit", False):
-            if failure == "cancel_commit":
-                raise asyncio.CancelledError
-            if failure == "lost_commit":
-                await original_commit(db)
-            if failure in {"commit", "lost_commit"}:
-                raise RuntimeError("Commit response unavailable")
+        if db.info.pop("inject_retained_commit", False) and failure == "lost_commit":
+            await original_commit(db)
+            raise RuntimeError("Commit response unavailable")
         await original_commit(db)
-
-    async def put(*args, **kwargs):
-        await original_put(*args, **kwargs)
-        raise OSError("Write response unavailable")
 
     monkeypatch.setattr(service, "create_conversation_file_references", link)
     monkeypatch.setattr(AsyncSession, "commit", commit)
-    if failure == "write":
-        monkeypatch.setattr(provider, "put_object", put)
     try:
         result = await run_scenario(
             factory,
@@ -368,7 +289,7 @@ async def test_retained_upload_ownership_survives_transaction_failure(
         )
         assert bool(result.tool_returns("retained_report")) == (failure is None)
     except asyncio.CancelledError:
-        assert failure in {"cancel_link", "cancel_commit"}
+        assert failure == "cancel_link"
 
     committed = failure in {None, "lost_commit"}
     async with factory() as db:

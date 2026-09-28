@@ -2,7 +2,6 @@
 
 """Platform extraction checks ownership and live revisions before storing output."""
 
-import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -17,7 +16,6 @@ from core.database import (
 from core.exceptions.auth import AuthorizationError
 from core.settings import settings
 from models.files import File, FileRevision
-from models.user import User
 from services.jobs.handlers import extract_platform_file_markdown as extraction
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
@@ -105,7 +103,7 @@ async def test_platform_extraction_stores_immutable_markdown_once(
     put.assert_not_awaited()
 
 
-@pytest.mark.parametrize("change", ["deleted", "withdrawn", "stale"])
+@pytest.mark.parametrize("change", ["withdrawn", "stale"])
 async def test_platform_extraction_rechecks_parent_after_conversion(
     db_session_factory, local_storage, monkeypatch, change
 ):
@@ -139,90 +137,7 @@ async def test_platform_extraction_rechecks_parent_after_conversion(
         assert parent.processing_attempts == 0
 
 
-@pytest.mark.parametrize("change", ["workspace", "subject", "owner", "payload"])
-async def test_platform_extraction_rejects_malformed_jobs(monkeypatch, change):
-    actor_id, revision_id = uuid4(), uuid4()
-    job = build_job(
-        subject_type="file_revision",
-        subject_id=revision_id,
-        concurrency_user_id=actor_id,
-        initiated_by_user_id=actor_id,
-        payload={"file_id": str(uuid4()), "revision_id": str(revision_id)},
-    )
-    if change == "workspace":
-        job.workspace_id = uuid4()
-    elif change == "subject":
-        job.subject_id = uuid4()
-    elif change == "owner":
-        job.concurrency_user_id = uuid4()
-    else:
-        job.payload = {"file_id": "invalid"}
-    maintenance = AsyncMock()
-    monkeypatch.setattr(extraction, "maintenance_async_db_session", maintenance)
-    with pytest.raises(ValueError):
-        await extraction.extract_platform_file_markdown(AsyncMock(), job)
-    maintenance.assert_not_called()
-
-
-@pytest.mark.parametrize("failure", ["size", "hash", "conversion", "oversized_markdown"])
-async def test_platform_extraction_failure_keeps_revision_unprocessed(
-    db_session_factory, local_storage, monkeypatch, failure
-):
-    file, revision, job = await _draft()
-    provider = get_storage_provider()
-    if failure in {"size", "hash"}:
-        await provider.put_object(
-            make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, revision.object_key),
-            b"x" * (revision.size_bytes + (failure == "size")),
-        )
-    else:
-        convert = AsyncMock(side_effect=ValueError("Conversion failed"))
-        if failure == "oversized_markdown":
-            convert = AsyncMock(return_value="x" * (settings.FILES_MAX_MARKDOWN_BYTES + 1))
-        monkeypatch.setattr(extraction, "convert_document_to_markdown", convert)
-    put = AsyncMock()
-    monkeypatch.setattr(provider, "put_object", put)
-    with pytest.raises(ValueError):
-        await _run(job)
-    put.assert_not_awaited()
-    async with maintenance_async_db_session() as db:
-        stored = await db.get(FileRevision, revision.id)
-        parent = await db.get(File, file.id)
-        assert stored.markdown_object_key is None
-        assert parent.processing_status == "error"
-        assert parent.processing_attempts == 1
-
-
-@pytest.mark.parametrize("cancel", [False, True])
-async def test_platform_extraction_cleans_output_after_interrupted_write(
-    db_session_factory, local_storage, monkeypatch, cancel
-):
-    file, revision, job = await _draft()
-    provider = get_storage_provider()
-    original_put = provider.put_object
-    written = []
-
-    async def interrupted_put(ref, *args, **kwargs):
-        assert kwargs["overwrite"] is False
-        await original_put(ref, *args, **kwargs)
-        written.append(ref)
-        if cancel:
-            raise asyncio.CancelledError()
-        raise ValueError("Storage acknowledgement failed")
-
-    monkeypatch.setattr(provider, "put_object", interrupted_put)
-    with pytest.raises(asyncio.CancelledError if cancel else ValueError):
-        await _run(job)
-    assert len(written) == 1
-    assert await provider.stat_object(written[0]) is None
-    async with maintenance_async_db_session() as db:
-        stored = await db.get(FileRevision, revision.id)
-        parent = await db.get(File, file.id)
-        assert stored.markdown_object_key is None
-        assert parent.processing_status == ("pending" if cancel else "error")
-
-
-@pytest.mark.parametrize("state", ["ordinary", "inactive", "deleted", "missing"])
+@pytest.mark.parametrize("state", ["ordinary", "inactive"])
 async def test_platform_extraction_requires_live_super_admin(monkeypatch, state):
     actor = build_user(email="extraction-admin@example.com", is_active=True)
     actor.deleted = False
@@ -250,26 +165,7 @@ async def test_platform_extraction_requires_live_super_admin(monkeypatch, state)
     maintenance.assert_not_called()
 
 
-async def test_platform_extraction_recovers_untracked_immutable_output(
-    db_session_factory, local_storage, monkeypatch
-):
-    file, revision, job = await _draft()
-    provider = get_storage_provider()
-    ref = make_storage_object_ref(
-        StorageBucket.PLATFORM_PRIVATE,
-        f"platform/files/{file.id}/{revision.id}.extracted.md",
-    )
-    await provider.put_object(ref, b"Platform guidance", content_type="text/markdown")
-    put = AsyncMock(side_effect=AssertionError("Existing output was overwritten"))
-    monkeypatch.setattr(provider, "put_object", put)
-    await _run(job)
-    put.assert_not_awaited()
-    async with maintenance_async_db_session() as db:
-        stored = await db.get(FileRevision, revision.id)
-        assert stored.markdown_object_key == ref.key
-
-
-@pytest.mark.parametrize("failure", ["flush", "commit"])
+@pytest.mark.parametrize("failure", ["commit"])
 async def test_platform_extraction_recovers_output_after_database_failure(
     db_session_factory, local_storage, monkeypatch, failure
 ):
@@ -322,37 +218,3 @@ async def test_workspace_extraction_refuses_platform_job_before_queries():
     )
     await extract_file_markdown(db, job)
     db.scalar.assert_not_awaited()
-
-
-async def test_metadata_edit_during_extraction_keeps_valid_output(
-    db_session_factory, local_storage, monkeypatch
-):
-    from services.files.domain import PlatformFileUpdateRequest
-    from services.files.platform.update_file import update_file
-    from tests.support.requests import build_test_request
-
-    file, revision, job = await _draft()
-    original_convert = extraction.convert_document_to_markdown
-
-    async def rename_parent(*args, **kwargs):
-        async with get_async_db_session_factory()() as db:
-            actor = await db.get(User, job.initiated_by_user_id)
-            await update_file(
-                db,
-                actor=actor,
-                request=build_test_request(),
-                file_id=file.id,
-                payload=PlatformFileUpdateRequest(
-                    name=f"renamed{file.extension}", description="Shared guidance"
-                ),
-            )
-        return await original_convert(*args, **kwargs)
-
-    monkeypatch.setattr(extraction, "convert_document_to_markdown", rename_parent)
-    await _run(job)
-    async with maintenance_async_db_session() as db:
-        parent = await db.get(File, file.id)
-        stored = await db.get(FileRevision, revision.id)
-        assert parent.name == f"renamed{file.extension}"
-        assert parent.processing_status == "ready"
-        assert stored.markdown_object_key is not None

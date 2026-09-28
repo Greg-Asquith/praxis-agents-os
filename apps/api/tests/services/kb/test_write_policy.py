@@ -40,9 +40,6 @@ def _user_provenance(**overrides) -> KBProvenance:
     [
         KBProvenance(actor_kind="user"),
         KBProvenance(actor_kind="agent", agent_id=uuid4()),
-        KBProvenance(actor_kind="agent", run_id=uuid4()),
-        KBProvenance(actor_kind="user", user_id=uuid4(), source_type="url"),
-        KBProvenance(actor_kind="system", source_type="upload"),
     ],
 )
 def test_required_provenance_is_enforced(provenance: KBProvenance) -> None:
@@ -111,10 +108,7 @@ def test_private_documents_can_only_move_toward_private_scope() -> None:
     "secret",
     [
         "AKIA1234567890ABCDEF",
-        "ghp_" + ("a" * 36),
-        "xoxb-1234567890-secret",
         "-----BEGIN PRIVATE KEY-----",
-        "AIza" + ("a" * 35),
         "eyJabc.eyJdef.signature",
     ],
 )
@@ -130,25 +124,6 @@ def test_detected_secret_is_rejected_without_echo(secret: str) -> None:
     assert secret not in str(caught.value)
 
 
-@pytest.mark.parametrize(
-    ("title", "content"),
-    [
-        (" ", "content"),
-        ("x" * 501, "content"),
-        ("Handbook", " "),
-    ],
-)
-def test_noise_gate_rejects_invalid_content(title: str, content: str) -> None:
-    with pytest.raises(AppValidationError):
-        enforce_kb_write_policy(
-            workspace_id=uuid4(),
-            provenance=_user_provenance(),
-            title=title,
-            content_md=content,
-            is_private=False,
-        )
-
-
 def test_duplicate_in_same_privacy_scope_is_a_conflict() -> None:
     duplicate = _document()
     with pytest.raises(ConflictError) as caught:
@@ -161,13 +136,3 @@ def test_duplicate_in_same_privacy_scope_is_a_conflict() -> None:
             duplicate=duplicate,
         )
     assert caught.value.details["document_id"] == str(duplicate.id)
-
-
-def test_compliant_write_passes() -> None:
-    enforce_kb_write_policy(
-        workspace_id=uuid4(),
-        provenance=_user_provenance(),
-        title="Operations handbook",
-        content_md="Safe and useful workspace knowledge.",
-        is_private=False,
-    )

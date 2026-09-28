@@ -248,7 +248,7 @@ async def test_platform_knowledge_read_only_admin_lifecycle(db_session, platform
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("content_md", None), ("content_hash", ""), ("processing_attempts", 0), ("chunk_count", 2)],
+    [("content_md", None), ("chunk_count", 2)],
 )
 async def test_platform_publication_requires_complete_canonical_content(
     db_session, platform_actor, field, value
@@ -375,38 +375,6 @@ async def test_platform_knowledge_actual_ingestion_replaces_chunks_and_needs_rep
         assert len(chunks) == saved.chunk_count == 1
         assert chunks[0].content == changed.content_md
     assert (await publish(db_session, platform_actor, saved)).is_published
-
-
-async def test_platform_knowledge_withdraw_cancels_processing_and_allows_reprocess(
-    db_session, platform_actor
-):
-    from services.kb.ingest_platform_document import ingest_platform_document
-
-    document = await draft(db_session, platform_actor)
-    job = await ingestion_job(document.id, document.meta["ingestion_version"])
-    withdrawn = await withdraw_document(
-        db_session, actor=platform_actor, request=build_test_request(), document_id=document.id
-    )
-    assert withdrawn.status == "error"
-    await ingest_platform_document(job)
-    saved = await get_document(db_session, actor=platform_actor, document_id=document.id)
-    assert saved.status == "error" and not saved.is_published
-    retried = await reprocess_document(
-        db_session, actor=platform_actor, request=build_test_request(), document_id=document.id
-    )
-    async with maintenance_async_db_session() as db:
-        event = await db.scalar(
-            select(AuditEvent).where(
-                AuditEvent.resource_id == str(document.id),
-                AuditEvent.details["operation"].astext == "update",
-            )
-        )
-        assert event.details["changed_fields"] == ["status"]
-    await ingest_platform_document(
-        await ingestion_job(document.id, retried.meta["ingestion_version"])
-    )
-    saved = await get_document(db_session, actor=platform_actor, document_id=document.id)
-    assert saved.status == "ready" and not saved.is_published
 
 
 async def test_platform_knowledge_upload_pins_exact_parent_revision(db_session, platform_actor):

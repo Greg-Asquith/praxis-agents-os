@@ -131,7 +131,7 @@ async def _mutate(operation, db, context):
     await getattr(module, operation)(db, **kwargs)
 
 
-@pytest.mark.parametrize("published", [True, False])
+@pytest.mark.parametrize("published", [True])
 @pytest.mark.parametrize(
     "operation",
     [

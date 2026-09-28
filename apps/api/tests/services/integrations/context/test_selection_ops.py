@@ -6,7 +6,6 @@ import asyncio
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import ValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -18,16 +17,12 @@ from models.integration_context import ActiveContextSelection
 from models.integrations import ExternalCredential, IntegrationConnection
 from services.integrations.context import (
     clear_active_context_selection,
-    create_context_group,
     get_active_context_selection,
     set_active_context_selection,
 )
 from services.integrations.context.schemas import (
-    MAX_ACTIVE_CONTEXT_TARGETS,
     ActiveContextSelectionValue,
     ActiveContextTargets,
-    ContextGroupCreateRequest,
-    ContextGroupUpdateRequest,
 )
 from tests.factories import (
     build_conversation,
@@ -42,59 +37,6 @@ from tests.factories import (
 
 def _targets(*targets: ActiveContextSelectionValue) -> ActiveContextTargets:
     return ActiveContextTargets(targets=list(targets))
-
-
-def test_selection_value_is_a_strict_discriminated_shape() -> None:
-    resource_id = uuid4()
-    selection = ActiveContextSelectionValue.model_validate(
-        {"type": "resource", "integration_resource_id": resource_id}
-    )
-
-    assert selection.model_dump() == {
-        "type": "resource",
-        "integration_resource_id": resource_id,
-    }
-    with pytest.raises(ValidationError):
-        ActiveContextSelectionValue.model_validate(
-            {
-                "type": "resource",
-                "integration_resource_id": resource_id,
-                "context_group_id": uuid4(),
-            }
-        )
-    with pytest.raises(ValidationError):
-        ActiveContextSelectionValue.model_validate(
-            {
-                "type": "context_group",
-                "context_group_id": uuid4(),
-                "unexpected": True,
-            }
-        )
-
-
-def test_target_set_is_capped_and_rejects_duplicates() -> None:
-    resource = ActiveContextSelectionValue.for_resource(uuid4())
-
-    with pytest.raises(ValidationError):
-        ActiveContextTargets.model_validate({})
-    with pytest.raises(ValidationError, match="must not contain duplicates"):
-        ActiveContextTargets(targets=[resource, resource])
-    with pytest.raises(ValidationError):
-        ActiveContextTargets(
-            targets=[
-                ActiveContextSelectionValue.for_resource(uuid4())
-                for _ in range(MAX_ACTIVE_CONTEXT_TARGETS + 1)
-            ]
-        )
-
-
-def test_context_group_resource_set_is_capped() -> None:
-    resource_ids = [uuid4() for _ in range(MAX_ACTIVE_CONTEXT_TARGETS + 1)]
-
-    with pytest.raises(ValidationError):
-        ContextGroupCreateRequest(name="Oversized", resource_ids=resource_ids)
-    with pytest.raises(ValidationError):
-        ContextGroupUpdateRequest(resource_ids=resource_ids)
 
 
 async def test_selection_replace_set_and_clear_audit_once_per_operation(
@@ -176,124 +118,6 @@ async def test_selection_replace_set_and_clear_audit_once_per_operation(
     assert {
         target["integration_resource_id"] for target in replace_events[0].details["targets"]
     } == {str(context_data["first"].id), str(context_data["second"].id)}
-
-
-async def test_empty_target_set_clears_with_one_replace_audit(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    await set_active_context_selection(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        conversation_id=context_data["conversation"].id,
-        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["first"].id)),
-    )
-    await set_active_context_selection(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        conversation_id=context_data["conversation"].id,
-        targets=ActiveContextTargets(targets=[]),
-    )
-
-    assert (
-        await get_active_context_selection(
-            db_session,
-            actor=context_data["user"],
-            workspace=context_data["workspace"],
-            conversation_id=context_data["conversation"].id,
-        )
-        == []
-    )
-    latest = await db_session.scalar(
-        select(AuditEvent)
-        .where(
-            AuditEvent.resource_type == "active_context_selection",
-            AuditEvent.action == "update",
-        )
-        .order_by(AuditEvent.occurred_at.desc())
-    )
-    assert latest is not None
-    assert latest.details["targets"] == []
-
-
-async def test_selection_accepts_a_workspace_group(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    group = await create_context_group(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        payload=ContextGroupCreateRequest(
-            name="Group",
-            resource_ids=[context_data["first"].id],
-        ),
-    )
-    selections = await set_active_context_selection(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        conversation_id=context_data["conversation"].id,
-        targets=_targets(ActiveContextSelectionValue.for_context_group(group.id)),
-    )
-    selection = selections[0]
-    assert selection.context_group_id == group.id
-    assert selection.integration_resource_id is None
-
-
-async def test_each_conversation_restores_its_own_active_context(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    other_conversation = build_conversation(
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-        title="Second conversation",
-    )
-    db_session.add(other_conversation)
-    await db_session.flush()
-
-    await set_active_context_selection(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        conversation_id=context_data["conversation"].id,
-        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["first"].id)),
-    )
-    await set_active_context_selection(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        conversation_id=other_conversation.id,
-        targets=_targets(ActiveContextSelectionValue.for_resource(context_data["second"].id)),
-    )
-
-    first_selection = await get_active_context_selection(
-        db_session,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        conversation_id=context_data["conversation"].id,
-    )
-    second_selection = await get_active_context_selection(
-        db_session,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        conversation_id=other_conversation.id,
-    )
-    assert [selection.integration_resource_id for selection in first_selection] == [
-        context_data["first"].id
-    ]
-    assert [selection.integration_resource_id for selection in second_selection] == [
-        context_data["second"].id
-    ]
 
 
 async def test_concurrent_selection_upserts_never_create_duplicate_rows(

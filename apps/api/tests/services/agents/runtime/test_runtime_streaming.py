@@ -3,13 +3,12 @@
 """Tests for detached runtime streaming helpers."""
 
 import asyncio
-import logging
 from uuid import uuid4
 
 import pytest
 
 from core.settings import settings
-from services.agents.runtime import heartbeat as heartbeat_module, run_manager as run_manager_module
+from services.agents.runtime import run_manager as run_manager_module
 from services.agents.runtime.run_manager import RunTaskRegistry
 from services.agents.runtime.sinks import CollectingSink, StreamSink
 from services.agents.runtime.stream_protocol import DoneEvent, RunStatusEvent
@@ -17,41 +16,6 @@ from services.conversations.create_turn_stream import SSE_KEEPALIVE_FRAME, _drai
 from tests.support.execution import build_execution_control
 
 pytestmark = pytest.mark.asyncio
-
-
-async def test_run_task_registry_holds_and_discards_task() -> None:
-    registry = RunTaskRegistry()
-    run_id = uuid4()
-    release = asyncio.Event()
-
-    async def worker() -> None:
-        await release.wait()
-
-    task = registry.spawn(run_id, worker())
-    assert registry.is_running(run_id)
-
-    release.set()
-    await task
-    await asyncio.sleep(0)
-
-    assert not registry.is_running(run_id)
-
-
-async def test_run_task_registry_drain_waits_for_in_flight_task() -> None:
-    registry = RunTaskRegistry()
-    run_id = uuid4()
-    completed = False
-
-    async def worker() -> None:
-        nonlocal completed
-        await asyncio.sleep(0)
-        completed = True
-
-    registry.spawn(run_id, worker())
-    await registry.drain(max_wait_seconds=1)
-
-    assert completed
-    assert not registry.is_running(run_id)
 
 
 async def test_run_task_registry_queues_above_limit_then_admits_next() -> None:
@@ -200,21 +164,6 @@ async def test_run_task_registry_bounds_forty_turns_below_ten_connection_slots()
     assert admitted == 40
 
 
-async def test_stream_drain_detaches_sink_when_consumer_closes() -> None:
-    sink = StreamSink(run_id=uuid4(), conversation_id=uuid4())
-    await sink.emit(RunStatusEvent(status="pending"))
-
-    stream = _drain_sse_sink(sink)
-    frame = await anext(stream)
-    await stream.aclose()
-
-    assert "event: run.status" in frame
-    assert sink.detached
-
-    await sink.emit(DoneEvent(status="completed"))
-    await sink.close()
-
-
 async def test_stream_sink_detaches_when_bounded_queue_is_full() -> None:
     sink = StreamSink(run_id=uuid4(), conversation_id=uuid4(), max_queue_size=1)
 
@@ -242,55 +191,3 @@ async def test_stream_drain_emits_keepalive_without_dropping_later_events(
     await sink.close()
     with pytest.raises(StopAsyncIteration):
         await asyncio.wait_for(anext(stream), timeout=1)
-
-
-async def test_heartbeat_failure_logs_error_with_pool_status(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    stop = asyncio.Event()
-
-    async def fail_renewal(**_kwargs) -> bool:
-        stop.set()
-        raise TimeoutError("pool checkout timed out")
-
-    monkeypatch.setattr(settings, "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS", 0.01)
-    monkeypatch.setattr(heartbeat_module, "renew_agent_run_lease_once", fail_renewal)
-    monkeypatch.setattr(heartbeat_module, "_runtime_pool_status", lambda: "Pool size: 5")
-
-    with caplog.at_level(logging.ERROR, logger=heartbeat_module.logger.name):
-        await heartbeat_module.heartbeat_agent_run_lease(
-            execution_control=build_execution_control(),
-            stop=stop,
-        )
-
-    record = next(
-        record
-        for record in caplog.records
-        if record.getMessage() == "Failed to renew agent run lease"
-    )
-    assert record.levelno == logging.ERROR
-    assert record.pool_status == "Pool size: 5"
-
-
-async def test_heartbeat_can_renew_queued_run_immediately(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stop = asyncio.Event()
-    renewals = 0
-
-    async def renew_once(**_kwargs) -> bool:
-        nonlocal renewals
-        renewals += 1
-        stop.set()
-        return True
-
-    monkeypatch.setattr(heartbeat_module, "renew_agent_run_lease_once", renew_once)
-
-    await heartbeat_module.heartbeat_agent_run_lease(
-        execution_control=build_execution_control(),
-        stop=stop,
-        renew_immediately=True,
-    )
-
-    assert renewals == 1

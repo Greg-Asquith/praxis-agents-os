@@ -28,7 +28,6 @@ from pydantic_ai import (
     DeferredToolResults,
     ToolApproved,
     ToolDenied,
-    models as pai_models,
 )
 from pydantic_ai.messages import (
     ModelMessage,
@@ -42,17 +41,6 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RequestUsage
 
 pytestmark = pytest.mark.asyncio
-
-# Stream event_kind discriminators the SSE sink translator depends on (07-streaming.md).
-EXPECTED_EVENT_KINDS = {
-    "part_start",
-    "part_delta",
-    "part_end",
-    "final_result",
-    "function_tool_call",
-    "function_tool_result",
-    "agent_run_result",
-}
 
 
 def _build_tool_agent() -> Agent:
@@ -94,34 +82,6 @@ async def test_message_history_round_trips_byte_stable() -> None:
     assert continued.new_messages()
 
 
-async def test_serialized_messages_are_storable_per_row() -> None:
-    """Each ModelMessage carries a kind discriminator + parts -> one ConversationMessage row each."""
-    agent = _build_tool_agent()
-    result = await agent.run("compute something")
-
-    stored = json.loads(ModelMessagesTypeAdapter.dump_json(result.all_messages()))
-    assert isinstance(stored, list)
-    for message in stored:
-        assert message["kind"] in {"request", "response"}
-        assert isinstance(message["parts"], list)
-        # round-trips through json again -> safe for a JSONB column
-        assert json.loads(json.dumps(message)) == message
-
-
-async def test_usage_is_a_property_not_a_method() -> None:
-    """AgentRunResult.usage is a RunUsage property in 2.1.0 (docs flagged it as .usage())."""
-    agent = _build_tool_agent()
-    result = await agent.run("compute something")
-
-    usage = result.usage
-    assert not callable(usage)
-    assert usage.requests >= 1
-    assert usage.tool_calls >= 1
-    # run identity is built into the result (relevant to the agent_runs table decision)
-    assert result.run_id
-    assert result.conversation_id
-
-
 async def test_model_response_usage_exposes_all_metered_token_classes() -> None:
     response = ModelResponse(
         parts=[TextPart(content="done")],
@@ -137,47 +97,6 @@ async def test_model_response_usage_exposes_all_metered_token_classes() -> None:
     assert response.usage.cache_read_tokens == 3
     assert response.usage.cache_write_tokens == 4
     assert response.usage.output_tokens == 5
-
-
-async def test_iter_driver_surfaces_tool_calls_and_output() -> None:
-    """agent.iter() exposes node boundaries and per-node event streams across the full loop."""
-    agent = _build_tool_agent()
-
-    node_names: list[str] = []
-    event_kinds: set[str] = set()
-
-    async with agent.iter("compute something") as run:
-        async for node in run:
-            node_names.append(type(node).__name__)
-            if Agent.is_model_request_node(node) or Agent.is_call_tools_node(node):
-                async with node.stream(run.ctx) as stream:
-                    async for event in stream:
-                        event_kinds.add(event.event_kind)
-        output = run.result.output
-
-    assert "CallToolsNode" in node_names
-    assert "End" in node_names
-    # the tool round-trip is observable, not hidden behind the final output
-    assert {"function_tool_call", "function_tool_result"} <= event_kinds
-    assert output is not None
-
-
-async def test_run_stream_events_surfaces_full_loop_and_terminal_result() -> None:
-    """run_stream_events() is the SSE driver: a flat stream of every event + a terminal result.
-
-    This resolves the iter()-vs-run_stream_events() question: run_stream_events does NOT
-    hide post-output tool calls (that was a run_stream limitation, a different method).
-    """
-    agent = _build_tool_agent()
-
-    async with agent.run_stream_events("compute something") as stream:
-        event_kinds = [event.event_kind async for event in stream]
-
-    seen = set(event_kinds)
-    assert {"function_tool_call", "function_tool_result", "final_result"} <= seen
-    assert seen <= EXPECTED_EVENT_KINDS
-    # the stream ends with a single terminal result event carrying the run outcome
-    assert event_kinds[-1] == "agent_run_result"
 
 
 async def test_requires_approval_suspends_with_deferred_requests() -> None:
@@ -254,27 +173,9 @@ def _build_overlap_probe_agent() -> tuple[Agent, dict[str, int]]:
     return agent, gauge
 
 
-async def test_parallel_tool_calls_overlap_by_default() -> None:
-    """Default mode runs same-response tool calls concurrently; sharing one
-    AsyncSession across tools is only safe under the sequential guard below."""
-    agent, gauge = _build_overlap_probe_agent()
-    await agent.run("go")
-    assert gauge["max_active"] == 2
-
-
 async def test_sequential_mode_serializes_parallel_tool_calls() -> None:
     """The execute_run guard: sequential mode never overlaps tool execution."""
     agent, gauge = _build_overlap_probe_agent()
     with Agent.parallel_tool_call_execution_mode("sequential"):
         await agent.run("go")
     assert gauge["max_active"] == 1
-
-
-async def test_test_model_runs_under_allow_model_requests_guard(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """ALLOW_MODEL_REQUESTS=False (the CI guard) must not block TestModel-based tests."""
-    monkeypatch.setattr(pai_models, "ALLOW_MODEL_REQUESTS", False)
-    agent = _build_tool_agent()
-    result = await agent.run("compute something")
-    assert result.output is not None

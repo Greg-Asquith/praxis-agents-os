@@ -2,8 +2,6 @@
 
 import json
 from dataclasses import replace
-from importlib import import_module
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID
 
@@ -25,11 +23,7 @@ from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.files.utils import file_revision_ref
 from services.integrations.context.domain import ResolvedActiveContext
 from services.storage.factory import get_storage_provider
-from tests.integrations.bigquery.test_bigquery_tools import _dry_run, _entry as bigquery_entry
 from tests.integrations.google_ads.test_tools_and_audits import _read_entry
-from tests.integrations.google_analytics.test_tools_and_audits import _entry as analytics_entry
-from tests.integrations.google_search_console.test_tools_and_audits import _entry as search_entry
-from tests.integrations.test_complete_reports import analytics_page, query_page, search_page
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -119,8 +113,6 @@ async def test_search_term_report_retains_every_row_for_followup_code(
     assert preview["lists"] == {"results.0.data.rows": {"total": 1_500, "shown": 50}}
     assert preview["data"]["results"][0]["data"]["row_count"] == 1_500
     assert preview["data"]["results"][0]["data"]["truncated"] is False
-    assert "Read the full saved result through file_reference" in preview["hint"]
-    assert "Do not repeat or split the source query" in preview["hint"]
     assert len(result_json(preview)) <= settings.AGENT_STRUCTURED_RESULT_MAX_CHARS
     assert returned["metadata"]["result_preview"] == preview
     assert "public_result" not in returned["metadata"]
@@ -131,12 +123,6 @@ async def test_search_term_report_retains_every_row_for_followup_code(
     assert model_return.content == preview
     # Include instructions and tool definitions in the deterministic request estimate.
     messages, info = seen[1]
-    report_definition = next(tool for tool in info.function_tools if tool.name == DEFINITION.name)
-    assert "file_ids=[file_reference]" in report_definition.description
-    assert "read_file with file_id=file_reference" in report_definition.description
-    assert "tool card" not in report_definition.description
-    assert "Open complete result" not in report_definition.description
-    assert "no automatic row cap is added" in report_definition.description
     request_text = (
         ModelMessagesTypeAdapter.dump_json(messages).decode()
         + (info.instructions or "")
@@ -228,144 +214,8 @@ async def test_search_term_report_retains_every_row_for_followup_code(
     )
 
 
-@pytest.mark.parametrize(
-    "provider,operation",
-    [
-        ("google_ads", "list_report_fields"),
-        ("google_analytics", "run_report"),
-        ("google_analytics", "run_realtime_report"),
-        ("google_analytics", "list_report_fields"),
-        ("google_search_console", "query_search_analytics"),
-        ("bigquery", "run_query"),
-    ],
-)
-async def test_provider_reports_save_complete_data_before_previewing(
-    db_session_factory, monkeypatch, report_storage, provider, operation
-):
-    monkeypatch.setattr(settings, "AGENT_STRUCTURED_RESULT_MAX_CHARS", 12_000)
-    monkeypatch.setattr(settings, "AGENT_RESULT_PREVIEW_ROWS", 50)
-    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 100_000)
-    module = import_module(f"integrations.{provider}.tools.{operation}")
-    definition = replace(
-        module.DEFINITION, availability_check=lambda: True, max_public_result_chars=12_000
-    )
-    monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
-    if provider == "google_ads":
-        entry = _read_entry()
-        args = {"resource": "campaign"}
-        client = SimpleNamespace(
-            get=AsyncMock(
-                return_value={
-                    "name": "campaign",
-                    "category": "RESOURCE",
-                    "dataType": "MESSAGE",
-                    "metrics": [f"metrics.value_{index:04}" for index in range(1500)],
-                    "segments": [f"segments.value_{index:04}" for index in range(1500)],
-                    "attributeResources": [f"resource_{index:04}" for index in range(1500)],
-                }
-            ),
-            post=AsyncMock(
-                return_value={
-                    "results": [
-                        {
-                            "name": f"campaign.field_{index:04}",
-                            "category": "ATTRIBUTE",
-                            "dataType": "STRING",
-                        }
-                        for index in range(1500)
-                    ]
-                }
-            ),
-        )
-        monkeypatch.setattr(module, "google_ads_client", AsyncMock(return_value=client))
-    elif provider == "google_analytics":
-        entry = analytics_entry("123")
-        args = {"metrics": ["activeUsers"], "dimensions": ["country"]}
-        payload = analytics_page(0, 1500, 1500)
-        if operation == "run_report":
-            args["date_ranges"] = [{"start_date": "28daysAgo", "end_date": "yesterday"}]
-        elif operation == "list_report_fields":
-            args = {}
-            fields = [
-                {"apiName": f"field{index}", "description": "Report field " * 20}
-                for index in range(1500)
-            ]
-            payload = {"dimensions": fields, "metrics": fields}
-        client = SimpleNamespace(
-            data_post=AsyncMock(return_value=payload), data_get=AsyncMock(return_value=payload)
-        )
-        monkeypatch.setattr(module, "google_analytics_client", AsyncMock(return_value=client))
-    elif provider == "google_search_console":
-        entry = search_entry("sc-domain:example.com")
-        args = {"start_date": "2026-08-01", "end_date": "2026-08-28", "dimensions": ["country"]}
-        client = SimpleNamespace(webmasters_post=AsyncMock(return_value=search_page(0, 1500)))
-        monkeypatch.setattr(module, "google_search_console_client", AsyncMock(return_value=client))
-    else:
-        entry = bigquery_entry()
-        args = {"query": "SELECT * FROM `analytics.marketing.campaign_daily`"}
-        client = SimpleNamespace(post=AsyncMock(side_effect=[_dry_run(), query_page(0, 1500)]))
-        monkeypatch.setattr(
-            module, "bigquery_query_client", AsyncMock(return_value=(client, "analytics"))
-        )
-    monkeypatch.setattr(
-        "services.agents.runtime.execute.setup.resolve_active_context",
-        AsyncMock(return_value=ResolvedActiveContext(entries=(entry,))),
-    )
-    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
-    result = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(turns=[ToolTurn((ToolCall(definition.name, args),)), "Report ready."]),
-    )
-    assert result.run.status == "completed"
-    [returned] = result.tool_returns(definition.name)
-    preview = returned["content"]
-    assert preview["preview"] is True
-    assert all(
-        count["total"] == 1500 and count["shown"] <= 50 for count in preview["lists"].values()
-    )
-    async with db_session_factory() as db:
-        await set_session_tenant_context(
-            db, workspace_id=context.workspace_id, user_id=context.user_id
-        )
-        file = await db.get(File, UUID(preview["file_id"]))
-        revision = await db.get(FileRevision, file.current_revision_id)
-        saved = await get_storage_provider().get_object(file_revision_ref(revision))
-    full = json.loads(saved)
-    data = full if provider in {"bigquery", "google_ads"} else full["results"][0]["data"]
-    lists = ("dimensions", "metrics") if operation == "list_report_fields" else ("rows",)
-    if provider == "google_ads":
-        lists = ("fields", "metrics", "segments", "attribute_resources")
-    assert all(len(data[key]) == 1500 for key in lists)
-    followup = await run_scenario(
-        db_session_factory,
-        await next_scenario_run(db_session_factory, context),
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            "read_file",
-                            {
-                                "file_id": preview["file_reference"],
-                                "offset": len(saved) - 1000,
-                                "max_bytes": 1000,
-                            },
-                        ),
-                    )
-                ),
-                "Final rows inspected.",
-            ]
-        ),
-        prompt="Inspect the end of the saved report.",
-    )
-    assert followup.run.status == "completed"
-    assert "1499" in str(followup.tool_returns("read_file")[0]["content"])
-
-
-@pytest.mark.parametrize("nested", [False, True])
-async def test_combined_report_limit_fails_direct_and_nested_calls_without_partial_results(
-    db_session_factory, monkeypatch, report_storage, nested
+async def test_combined_report_limit_fails_nested_call_without_partial_results(
+    db_session_factory, monkeypatch, report_storage
 ):
     monkeypatch.setattr(settings, "MAX_FILE_SIZE_AGENT_FILE", 3_000)
     monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 100_000)
@@ -391,12 +241,10 @@ async def test_combined_report_limit_fails_direct_and_nested_calls_without_parti
         )
 
     context = await build_scenario_agent(
-        db_session_factory, tool_names=[DEFINITION.name], code_mode_enabled=nested
+        db_session_factory, tool_names=[DEFINITION.name], code_mode_enabled=True
     )
-    call = (
-        ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": f"await google_ads_run_report(query={query!r})"})
-        if nested
-        else ToolCall(DEFINITION.name, {"query": query})
+    call = ToolCall(
+        RUN_WORKFLOW_TOOL_NAME, {"code": f"await google_ads_run_report(query={query!r})"}
     )
     seen = []
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:

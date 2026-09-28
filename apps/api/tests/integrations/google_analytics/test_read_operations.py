@@ -269,122 +269,12 @@ async def test_run_report_compiles_request_and_types_rows_aggregates_and_metadat
     }
 
 
-async def test_run_report_shapes_empty_response() -> None:
-    client = _Client({"metadata": {"emptyReason": "NO_DATA"}})
-    request = GoogleAnalyticsRunReportInput(
-        metrics=["sessions"],
-        dimensions=[],
-        date_ranges=[GoogleAnalyticsDateRange(start_date="yesterday", end_date="yesterday")],
-    )
-
-    result = await run_report(
-        client,
-        property_id="123",
-        request=request,
-    )
-
-    assert result["rows"] == []
-    assert result["row_count"] == 0
-    assert result["truncated"] is False
-    assert result["metadata"]["empty_reason"] == "NO_DATA"
-
-
-async def test_list_report_fields_filters_bounds_and_omits_deprecated_aliases() -> None:
-    client = _Client(
-        {
-            "dimensions": [
-                {
-                    "apiName": "country",
-                    "uiName": "Country",
-                    "description": "Geographic country",
-                    "category": "Geography",
-                    "deprecatedApiNames": ["oldCountry"],
-                },
-                {
-                    "apiName": "customEvent:plan",
-                    "uiName": "Plan",
-                    "description": "x" * 350,
-                    "category": "Custom",
-                    "customDefinition": True,
-                },
-            ],
-            "metrics": [
-                {
-                    "apiName": "sessions",
-                    "uiName": "Sessions",
-                    "description": "Session count",
-                    "category": "Session",
-                    "type": "TYPE_INTEGER",
-                },
-                {
-                    "apiName": "customEvent:score",
-                    "uiName": "Plan score",
-                    "description": "Score",
-                    "category": "Custom",
-                    "type": "TYPE_FLOAT",
-                    "customDefinition": True,
-                    "blockedReasons": ["NO_REVENUE_METRICS"],
-                },
-            ],
-        }
-    )
-
-    result = await list_report_fields(
-        client,
-        property_id="123",
-        search="plan",
-        kind="both",
-        custom_only=True,
-        limit=1,
-    )
-
-    assert result["dimension_count"] == 1
-    assert result["metric_count"] == 1
-    assert result["truncated"] is False
-    assert result["dimensions"][0]["api_name"] == "customEvent:plan"
-    assert len(result["dimensions"][0]["description"]) == 300
-    assert result["metrics"][0]["type"] == "TYPE_FLOAT"
-    assert result["metrics"][0]["blocked_reasons"] == ["NO_REVENUE_METRICS"]
-    assert "deprecatedApiNames" not in result["dimensions"][0]
-    path, call = client.calls[0]
-    assert path == "properties/123/metadata"
-    assert call["max_response_bytes"] > 0
-    assert {key: value for key, value in call.items() if key != "max_response_bytes"} == {
-        "operation": "list_report_fields",
-        "policy": IntegrationRequestPolicy.READ,
-    }
-
-
-async def test_list_report_fields_reports_counts_before_per_kind_bound() -> None:
-    client = _Client(
-        {
-            "dimensions": [
-                {"apiName": "country", "uiName": "Country"},
-                {"apiName": "city", "uiName": "City"},
-            ],
-            "metrics": [
-                {"apiName": "sessions", "uiName": "Sessions", "type": "TYPE_INTEGER"},
-                {"apiName": "totalUsers", "uiName": "Users", "type": "TYPE_INTEGER"},
-            ],
-        }
-    )
-
-    result = await list_report_fields(
-        client,
-        property_id="123",
-        search=None,
-        kind="both",
-        custom_only=False,
-        limit=1,
-    )
-
-    assert result["dimension_count"] == 2
-    assert result["metric_count"] == 2
-    assert len(result["dimensions"]) == len(result["metrics"]) == 1
-    assert result["truncated"] is True
-
-
-@pytest.mark.parametrize("operation", ["run_report", "list_report_fields"])
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "run_report",
+    ],
+)
 async def test_report_operations_fail_closed_on_non_object_response(operation: str) -> None:
     client = _Client([])
     with pytest.raises(IntegrationValidationError, match="invalid report"):

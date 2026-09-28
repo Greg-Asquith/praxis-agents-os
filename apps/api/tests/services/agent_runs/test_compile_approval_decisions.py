@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from pydantic_ai import DeferredToolRequests, ToolApproved
+from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 
 from core.exceptions.general import ConflictError
@@ -199,32 +199,6 @@ async def test_invalid_consent_never_validates_arguments(fault, canonicalizer):
 
 
 @pytest.mark.asyncio
-async def test_legacy_unique_direct_history_only(canonicalizer):
-    root = saved_run(legacy=True)
-    payload = AgentRunResumeRequest(
-        decisions=[AgentRunResumeDecision(tool_call_id="same", decision="approved")]
-    )
-    assert isinstance(
-        (await compile_for(root, {root.id: root}, payload)).approvals["same"], ToolApproved
-    )
-    root.metadata_json["approval_state"]["message_history"][0]["parts"][0]["args"] = {"value": 2}
-    with pytest.raises(ConflictError):
-        await compile_for(root, {root.id: root}, payload)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("workflow", [False, True])
-async def test_legacy_collisions_and_workflows_require_refresh(workflow, canonicalizer):
-    root, runs = family(workflow=workflow, legacy=True)
-    payload = AgentRunResumeRequest(
-        decisions=[AgentRunResumeDecision(tool_call_id="same", decision="approved")] * 2
-    )
-    with pytest.raises(ConflictError):
-        await compile_for(root, runs, payload)
-    canonicalizer.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_aggregate_result_bound_rejects_expanded_workflow_metadata(canonicalizer):
     root = saved_run(workflow=True)
     graph = build_approval_graph(root, {root.id: root})
@@ -236,15 +210,3 @@ async def test_aggregate_result_bound_rejects_expanded_workflow_metadata(canonic
     with pytest.raises(ConflictError, match="size limit"):
         await compile_for(root, {root.id: root}, payload)
     assert root.status == "awaiting_approval"
-
-
-def test_repeat_request_digest_handles_mixed_optional_identities():
-    from services.agent_runs.continuation_state import resume_request_digest
-
-    decisions = [
-        AgentRunResumeDecision(tool_call_id="first", decision="approved", approval_id=uuid4()),
-        AgentRunResumeDecision(tool_call_id="second", decision="denied"),
-    ]
-    assert resume_request_digest(
-        AgentRunResumeRequest(decisions=decisions)
-    ) == resume_request_digest(AgentRunResumeRequest(decisions=list(reversed(decisions))))

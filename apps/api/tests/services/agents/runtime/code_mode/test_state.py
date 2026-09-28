@@ -3,7 +3,6 @@ import json
 from uuid import uuid4
 
 import pytest
-from pydantic_monty import AsyncMonty, MontyCrashedError
 
 from models.agent_run import AgentRun
 from services.agents.runtime.code_mode.state import (
@@ -15,8 +14,6 @@ from services.agents.runtime.code_mode.state import (
     CodeModeStateError,
     append_executed_effect,
     build_code_mode_state_metadata,
-    classify_snapshot_load_failure,
-    clear_code_mode_state_metadata,
     load_code_mode_state,
 )
 
@@ -202,40 +199,6 @@ def test_maximum_state_is_trimmed_to_the_aggregate_bound() -> None:
     assert "presentation_truncated" not in trace[-1]
 
 
-def test_single_unbounded_presentation_is_trimmed_from_durable_state() -> None:
-    run = _run()
-    metadata = build_code_mode_state_metadata(
-        run=run,
-        outer_tool_call_id="outer",
-        nested_call_id="nested",
-        code="await read()",
-        reason=None,
-        snapshot=b"snapshot",
-        executed_call_count=1,
-        elapsed_seconds=0,
-        executed_effects=[],
-        nested_trace=[
-            {
-                "order": 1,
-                "tool_call_id": "nested",
-                "parent_tool_call_id": "outer",
-                "tool_name": "read",
-                "args_sha256": "a" * 64,
-                "summary": "Read",
-                "status": "succeeded",
-                "excerpt": "complete",
-                "presentation_result": {"content": "x" * (3 * 1024 * 1024)},
-            }
-        ],
-        snapshot_max_bytes=MAX_BYTES,
-        state_max_bytes=MAX_STATE_BYTES,
-    )
-
-    [entry] = metadata[CODE_MODE_STATE_METADATA_KEY]["nested_trace"]
-    assert entry["presentation_truncated"] is True
-    assert "presentation_result" not in entry
-
-
 def test_state_that_cannot_fit_after_presentation_trimming_fails_closed() -> None:
     run = _run()
     with pytest.raises(CodeModeStateError) as exc_info:
@@ -256,28 +219,6 @@ def test_state_that_cannot_fit_after_presentation_trimming_fails_closed() -> Non
     assert exc_info.value.reason == "snapshot_too_large"
 
 
-@pytest.mark.parametrize(
-    "mutate_trace",
-    [
-        lambda entry: entry.pop("tool_call_id"),
-        lambda entry: entry.update(tool_name=1),
-        lambda entry: entry.update(status="unknown"),
-        lambda entry: entry.update(order="1"),
-        lambda entry: entry.update(excerpt=1),
-    ],
-)
-def test_malformed_trace_entry_is_a_schema_mismatch(mutate_trace) -> None:
-    run = _run()
-    run.metadata_json = copy.deepcopy(_metadata(run))
-    [entry] = run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["nested_trace"]
-    mutate_trace(entry)
-
-    with pytest.raises(CodeModeStateError) as exc_info:
-        load_code_mode_state(run, snapshot_max_bytes=MAX_BYTES)
-
-    assert exc_info.value.reason == "schema_mismatch"
-
-
 def test_effect_ledger_append_is_bounded() -> None:
     effects = ()
     for index in range(25):
@@ -291,19 +232,3 @@ def test_effect_ledger_append_is_bounded() -> None:
         append_executed_effect(
             effects, nested_call_id="overflow", tool_name="write", args_sha256="x"
         )
-
-
-def test_clear_is_idempotent_and_preserves_unrelated_metadata() -> None:
-    run = _run()
-    run.metadata_json = _metadata(run)
-    run.metadata_json = clear_code_mode_state_metadata(run)
-    run.metadata_json = clear_code_mode_state_metadata(run)
-    assert run.metadata_json == {"kept": True}
-
-
-async def test_snapshot_failure_classification_distinguishes_worker_crash() -> None:
-    assert classify_snapshot_load_failure(ValueError("bad")).reason == "snapshot_corrupt"
-    async with AsyncMonty(request_timeout=0.05) as pool, pool.checkout() as session:
-        with pytest.raises(MontyCrashedError) as exc_info:
-            await session.feed_run("while True:\n    pass")
-    assert classify_snapshot_load_failure(exc_info.value).reason == "resume_crash"

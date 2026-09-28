@@ -54,33 +54,3 @@ def test_rrf_merge_weights_lists_without_changing_source_provenance() -> None:
     assert [result.id for result in recency_disabled] == [_A, _B]
     assert recency_disabled[1].score == 0
     assert recency_disabled[1].sources == frozenset({"recency"})
-
-
-def test_rrf_merge_handles_empty_and_one_sided_inputs() -> None:
-    assert rrf_merge({}, limit=10) == []
-    assert rrf_merge({"lexical": []}, limit=10) == []
-    result = rrf_merge({"lexical": [RankedId(_A, 1)]}, limit=1)
-    assert result[0].id == _A
-
-
-@pytest.mark.parametrize(
-    ("kwargs", "message"),
-    [
-        ({"k": -1, "limit": 1}, "k"),
-        ({"limit": -1}, "limit"),
-    ],
-)
-def test_rrf_merge_rejects_invalid_bounds(kwargs: dict[str, int], message: str) -> None:
-    with pytest.raises(ValueError, match=message):
-        rrf_merge({}, **kwargs)
-
-
-def test_rrf_merge_rejects_zero_based_ranks_and_negative_weights() -> None:
-    with pytest.raises(ValueError, match="one-based"):
-        rrf_merge({"lexical": [RankedId(_A, 0)]}, limit=1)
-    with pytest.raises(ValueError, match="weights"):
-        rrf_merge(
-            {"lexical": [RankedId(_A, 1)]},
-            limit=1,
-            weights={"lexical": -1},
-        )

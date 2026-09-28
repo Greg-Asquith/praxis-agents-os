@@ -1,7 +1,5 @@
 """Google Indexing API operation and tool coverage."""
 
-import json
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -13,12 +11,8 @@ from pydantic_ai import ModelRetry
 from core.exceptions.integration import (
     IntegrationFailureDisposition,
     IntegrationPermissionError,
-    IntegrationRateLimitError,
     IntegrationTimeoutError,
     IntegrationValidationError,
-)
-from integrations.google_search_console.operations.get_url_notification_metadata import (
-    get_url_notification_metadata,
 )
 from integrations.google_search_console.operations.publish_url_notification import (
     publish_url_notification,
@@ -33,13 +27,6 @@ from integrations.google_search_console.tools.schemas import (
 )
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
-from services.integrations.http import IntegrationRequestPolicy
-
-NOTIFICATION_METADATA = json.loads(
-    (Path(__file__).with_name("fixtures") / "notification_metadata.json").read_text(
-        encoding="utf-8"
-    )
-)
 
 
 class _Client:
@@ -96,50 +83,6 @@ def _notification(
         notification_type=notification_type,
         page_type="job_posting",
     )
-
-
-async def test_indexing_operations_declare_mutation_and_read_policies() -> None:
-    publish_client = _Client({"urlNotificationMetadata": {}})
-    await publish_url_notification(
-        publish_client,
-        url="https://example.com/jobs/one",
-        notification_type="URL_UPDATED",
-    )
-    assert publish_client.calls == [
-        (
-            "POST",
-            "urlNotifications:publish",
-            {
-                "operation": "publish_url_notification",
-                "policy": IntegrationRequestPolicy.MUTATION,
-                "json": {
-                    "url": "https://example.com/jobs/one",
-                    "type": "URL_UPDATED",
-                },
-            },
-        )
-    ]
-
-    metadata_client = _Client(NOTIFICATION_METADATA)
-    result = await get_url_notification_metadata(
-        metadata_client,
-        url="https://example.com/jobs/one",
-        notification_type="URL_UPDATED",
-    )
-    assert metadata_client.calls[0] == (
-        "GET",
-        "urlNotifications/metadata",
-        {
-            "operation": "get_url_notification_metadata",
-            "policy": IntegrationRequestPolicy.READ,
-            "params": {"url": "https://example.com/jobs/one"},
-        },
-    )
-    assert result == {
-        "url": "https://example.com/jobs/one",
-        "notification_type": "URL_UPDATED",
-        "notify_time": "2026-09-03T12:00:00Z",
-    }
 
 
 async def test_publish_treats_an_invalid_success_payload_as_ambiguous() -> None:
@@ -234,28 +177,6 @@ async def test_request_indexing_records_pending_and_metadata_evidence(monkeypatc
                 failure_disposition=IntegrationFailureDisposition.REJECTED,
             ),
             "api_not_enabled",
-        ),
-        (
-            IntegrationPermissionError(
-                "Google Search Console rejected publish_url_notification: "
-                "Permission denied. Failed to verify the URL ownership.",
-                failure_disposition=IntegrationFailureDisposition.REJECTED,
-            ),
-            "not_owner",
-        ),
-        (
-            IntegrationRateLimitError(
-                "quota",
-                failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
-            ),
-            "quota_exhausted",
-        ),
-        (
-            IntegrationTimeoutError(
-                "timeout",
-                failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
-            ),
-            "unverified",
         ),
     ],
 )

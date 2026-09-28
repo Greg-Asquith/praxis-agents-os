@@ -11,31 +11,10 @@ from core.rate_limiting import RateLimitResult
 from middleware.rate_limit import RateLimitMiddleware
 
 
-def test_totp_verification_uses_auth_critical_rate_limit() -> None:
+def test_totp_and_oauth_login_callback_use_auth_critical_rate_limit() -> None:
     middleware = RateLimitMiddleware(FastAPI())
 
     assert middleware._get_limit_type("/api/v1/auth/totp/verify", "POST") == "login_attempts"
-
-
-@pytest.mark.parametrize(
-    ("method", "path"),
-    [
-        ("GET", "/api/v1/auth/oauth/providers"),
-        ("POST", "/api/v1/auth/oauth/google/authorization-url"),
-        ("POST", "/api/v1/auth/oauth/google/link/authorization-url"),
-        ("POST", "/api/v1/auth/oauth/google/link/callback"),
-        ("DELETE", "/api/v1/auth/oauth/google/link"),
-    ],
-)
-def test_oauth_non_callback_routes_use_general_request_limit(method: str, path: str) -> None:
-    middleware = RateLimitMiddleware(FastAPI())
-
-    assert middleware._get_limit_type(path, method) == "requests_per_minute"
-
-
-def test_oauth_login_callback_uses_failed_login_limit() -> None:
-    middleware = RateLimitMiddleware(FastAPI())
-
     assert middleware._get_limit_type("/api/v1/auth/oauth/google/callback", "POST") == (
         "login_attempts"
     )

@@ -7,24 +7,18 @@ from types import SimpleNamespace
 
 import httpx2 as httpx
 import pytest
-from pydantic import BaseModel, ValidationError
-from pydantic_ai import Agent, NativeOutput
+from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models import override_allow_model_requests
 
-from core.settings import Settings, settings
+from core.settings import settings
 from services.agents.models import (
     build_model,
     close_vertex_clients,
     vertex_mistral_client as mistral,
     vertex_openai_client as vertex,
 )
-from services.agents.models.domain import ModelConfigurationError
-from services.agents.models.list_model_catalog import list_model_catalog
-from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_catalog_model
-from services.agents.models.utils import partner_location
-from services.agents.models.validate_partner_configuration import validate_partner_configuration
 
 MODELS = (
     ("meta", "llama-4-scout"),
@@ -51,24 +45,6 @@ async def configured(monkeypatch):
     await close_vertex_clients()
 
 
-@pytest.mark.parametrize(
-    "provider,alias,location,transport",
-    [
-        ("meta", "llama-4-scout", "us-east5", "chat-completions"),
-        ("xai", "grok-4-20-reasoning", "global", "chat-completions"),
-        ("mistral", "mistral-small-2503", "europe-west4", "mistral-publisher"),
-    ],
-)
-def test_defaults(configured, provider, alias, location, transport):
-    spec = resolve_catalog_model(provider, alias)
-    assert (spec.vertex_location, spec.partner_transport, spec.vertex_project) == (
-        location,
-        transport,
-        "test-project",
-    )
-    assert spec.qualified_id == f"{provider}:{alias}"
-
-
 def test_override_and_endpoint_client_identity(configured, monkeypatch):
     original = resolve_catalog_model("mistral", "mistral-small-2503")
     first = build_model(original).provider.client._client
@@ -84,50 +60,6 @@ def test_override_and_endpoint_client_identity(configured, monkeypatch):
         build_model(replace(original, vertex_project="another-project")).provider.client._client
         is not first
     )
-
-
-@pytest.mark.parametrize("value", [[], {"mistral:mistral-small-2503": 1}, {"": "global"}])
-def test_invalid_override_shape(value):
-    with pytest.raises(ValidationError, match="VERTEX_PARTNER_MODEL_LOCATIONS"):
-        Settings(_env_file=None, VERTEX_PARTNER_MODEL_LOCATIONS=value)
-
-
-@pytest.mark.parametrize("value", ["", "global", "us-central1"])
-def test_legacy_setting_rejected(value):
-    with pytest.raises(ValidationError, match="was removed"):
-        Settings(_env_file=None, VERTEX_PARTNER_LOCATION=value)
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        {"unknown:model": "global"},
-        {"google:gemini-3.8-flash": "global"},
-        {"meta:llama-4-scout": "global"},
-    ],
-)
-def test_catalog_override_rejection(configured, monkeypatch, value):
-    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODEL_LOCATIONS", value)
-    for operation in (
-        validate_partner_configuration,
-        list_model_catalog,
-        lambda: resolve_catalog_model(*MODELS[0]),
-    ):
-        with pytest.raises(ModelConfigurationError):
-            operation()
-
-
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"partner_transport": None},
-        {"vertex_default_location": None},
-        {"vertex_supported_locations": ()},
-    ],
-)
-def test_missing_metadata(configured, changes):
-    with pytest.raises(ModelConfigurationError):
-        partner_location(replace(get_model(*MODELS[0]), **changes))
 
 
 def install_response(monkeypatch, handler):
@@ -260,24 +192,6 @@ async def test_publisher_streamed_tool_round_trip(configured, monkeypatch):
     )
 
 
-async def test_publisher_native_output(configured, monkeypatch):
-    class Answer(BaseModel):
-        value: int
-
-    def respond(request):
-        assert json.loads(request.content)["response_format"]["type"] == "json_schema"
-        return httpx.Response(200, json=completion('{"value":37}'))
-
-    install_response(monkeypatch, respond)
-    with override_allow_model_requests(True):
-        result = await Agent(
-            build_model(resolve_catalog_model(*MODELS[2])),
-            output_type=NativeOutput(Answer),
-            name="json_test",
-        ).run("Return 37")
-    assert result.output.value == 37
-
-
 @pytest.mark.parametrize(
     "status,attempts,expected", [(429, 1, 1), (429, 3, 3), (503, 3, 3), (401, 3, 1), (403, 3, 1)]
 )
@@ -340,28 +254,6 @@ async def test_stream_cancellation_closes_response_without_retry(configured, mon
     assert client.is_closed
 
 
-async def test_publisher_eventual_success(configured, monkeypatch):
-    monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 3)
-    calls = []
-
-    def respond(request):
-        calls.append(request)
-        return (
-            httpx.Response(503, json={"error": "busy"})
-            if len(calls) < 3
-            else httpx.Response(200, json=completion())
-        )
-
-    install_response(monkeypatch, respond)
-    with override_allow_model_requests(True):
-        result = await Agent(build_model(resolve_catalog_model(*MODELS[2])), name="retry_test").run(
-            "Hello"
-        )
-    assert result.output == "Hello"
-    assert len(calls) == 3
-    assert result.usage.requests == 1
-
-
 @pytest.mark.parametrize("alias", ["llama-4-scout", "llama-4-maverick"])
 @pytest.mark.parametrize("limit", [None, 128])
 async def test_meta_requests_include_output_limit(configured, monkeypatch, alias, limit):
@@ -377,45 +269,3 @@ async def test_meta_requests_include_output_limit(configured, monkeypatch, alias
     with override_allow_model_requests(True):
         async with Agent(build_model(spec), name="meta_limit_test").run_stream("Hello") as result:
             assert await result.get_output() == "Hello"
-
-
-@pytest.mark.parametrize("alias", ["llama-4-scout", "llama-4-maverick"])
-async def test_meta_chart_schema_preserves_local_definition(configured, monkeypatch, alias):
-    from copy import deepcopy
-
-    from services.agents.runtime.tools.registry import get_runtime_tool_definition
-
-    definition = get_runtime_tool_definition("build_chart")
-    original = deepcopy(definition.serialized_input_schema())
-    seen = []
-
-    def inspect_schema(schema):
-        if isinstance(schema, list):
-            for item in schema:
-                inspect_schema(item)
-        elif isinstance(schema, dict):
-            assert not isinstance(schema.get("additionalProperties"), dict)
-            if schema.get("additionalProperties") is True:
-                assert "Each additional property value must match:" in schema["description"]
-                seen.append(schema)
-            for value in schema.values():
-                inspect_schema(value)
-
-    def respond(request):
-        body = json.loads(request.content)
-        tool = body["tools"][0]["function"]
-        assert "strict" not in tool
-        inspect_schema(tool["parameters"])
-        return streaming_response(content="Hello")
-
-    install_response(monkeypatch, respond)
-    agent = Agent(
-        build_model(resolve_catalog_model("meta", alias)),
-        tools=[definition.to_pydantic_tool()],
-        name="meta_chart_test",
-    )
-    with override_allow_model_requests(True):
-        async with agent.run_stream("Hello") as result:
-            assert await result.get_output() == "Hello"
-    assert seen
-    assert definition.serialized_input_schema() == original

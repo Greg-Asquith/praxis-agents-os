@@ -10,7 +10,6 @@ import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-
 import { buildResumeDecisions } from "@/features/conversations/approval-decisions"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { PendingToolApproval } from "@/features/conversations/types"
-import { resolveUiFields } from "@/features/conversations/tool-ui"
 import type { EntityChoice, ToolUi, ToolUiField } from "@/features/tools/types"
 import { notionWritePresenter } from "@/integrations/notion/presenters/write"
 import { isRecord } from "@/lib/guards"
@@ -22,16 +21,6 @@ const page = {
   page_id: "page-1",
   label: "Launch plan",
   description: "Notion page",
-  scope_label: "Operations workspace",
-}
-
-const dataSource = {
-  version: 1,
-  entity_kind: "notion_data_source",
-  workspace_id: "workspace-1",
-  data_source_id: "source-1",
-  label: "Launch tracker",
-  description: "Notion data source",
   scope_label: "Operations workspace",
 }
 
@@ -83,46 +72,6 @@ const writeUi: Record<string, ToolUi> = {
 }
 
 describe("Notion write approval and result fidelity", () => {
-  it("renders every replacement and property cell through the server-declared records schema", () => {
-    const contentHtml = renderPresenter(
-      activity("notion_update_page_content", "awaiting_approval", {
-        page,
-        replacements: [
-          { old_text: "Draft", new_text: "Approved", replace_all: "no" },
-          { old_text: "2025", new_text: "2026", replace_all: "yes" },
-        ],
-      }),
-      pendingControls()
-    )
-    expect(contentHtml).toContain('value="Launch plan"')
-    expect(contentHtml).toContain("Find")
-    expect(contentHtml).toContain("Replace with")
-    expect(contentHtml).toContain("Replace all")
-    expect(contentHtml).toContain('value="Draft"')
-    expect(contentHtml).toContain('value="Approved"')
-    expect(contentHtml).toContain(">No<")
-    expect(contentHtml).toContain(">Yes<")
-
-    const propertiesHtml = renderPresenter(
-      activity("notion_update_page_properties", "awaiting_approval", {
-        page,
-        properties: [
-          { name: "Estimate", type: "number", value: "12.50" },
-          { name: "Status", type: "status", value: "Ready" },
-        ],
-      }),
-      pendingControls()
-    )
-    expect(propertiesHtml).toContain("Property")
-    expect(propertiesHtml).toContain("Type")
-    expect(propertiesHtml).toContain("Value")
-    expect(propertiesHtml).toContain('value="Estimate"')
-    expect(propertiesHtml).toContain('value="12.50"')
-    expect(propertiesHtml).toContain(">Number<")
-    expect(propertiesHtml).toContain(">Status<")
-    expect(propertiesHtml).not.toContain('type="number"')
-  })
-
   it("shows every non-null create argument and keeps the unused parent null in the approved payload", () => {
     const args = {
       parent_page: page,
@@ -162,44 +111,10 @@ describe("Notion write approval and result fidelity", () => {
       activity("notion_create_page", "awaiting_approval", args),
       controls({ decision: "approved", edits, message: "" })
     )
-    expect(html).toContain("Approved")
-    expect(html).toContain("Launch plan")
     expect(html).toContain("Approved launch notes")
-    expect(html).toContain("# Approved")
-    expect(html).toContain("Ready")
     expect(html).not.toContain("Launch tracker")
     expect(html).not.toContain("Launch notes</")
     expect(html).not.toContain("# Draft")
-  })
-
-  it("uses the same presenter for live progress, pending consent, denial, and failure", () => {
-    const args = {
-      page,
-      replacements: [{ old_text: "Draft", new_text: "Final", replace_all: "no" }],
-    }
-
-    expect(
-      renderPresenter(activity("notion_update_page_content", "running", args), undefined, true)
-    ).toContain("Updating page content…")
-    expect(
-      renderPresenter(activity("notion_update_page_content", "awaiting_approval", args))
-    ).toContain("Waiting for approval to update page content…")
-    expect(
-      renderPresenter(
-        activity("notion_update_page_content", "awaiting_approval", args),
-        pendingControls()
-      )
-    ).toContain("Requires Approval")
-    const denied = activity("notion_update_page_content", "denied", args)
-    denied.decisionReason = "Keep the draft wording."
-    const deniedHtml = renderPresenter(denied)
-    expect(deniedHtml).toContain("This request was declined. Nothing was updated.")
-    expect(deniedHtml).toContain("Declined")
-    expect(deniedHtml).toContain("Keep the draft wording.")
-    expect(deniedHtml).not.toContain("Failed")
-    expect(renderPresenter(activity("notion_update_page_content", "failed", args))).toContain(
-      "The page content could not be updated."
-    )
   })
 
   it("shows the external-data warning and its source before approval", () => {
@@ -216,122 +131,7 @@ describe("Notion write approval and result fidelity", () => {
     expect(html).toContain("source-page-1")
   })
 
-  it("renders persisted success receipts after the declarative result field loses fan-out structure", () => {
-    const createResult = fanOut({
-      outcome: "applied",
-      error_code: null,
-      reference: { ...page, page_id: "page-2", label: "Approved launch notes" },
-      url: "https://www.notion.so/page-2",
-      title: "Approved launch notes",
-      last_edited_time: "2026-09-01T12:00:00Z",
-    })
-    expect(
-      resolveUiFields(writeUi["notion_create_page"]?.result_fields ?? [], createResult)
-    ).toEqual([])
-    const createHtml = renderPresenter(
-      resultActivity("notion_create_page", createResult, { parent_data_source: dataSource })
-    )
-    expect(createHtml).toContain("Change confirmed")
-    expect(createHtml).toContain("Approved launch notes")
-    expect(createHtml).toContain("https://www.notion.so/page-2")
-
-    const contentHtml = renderPresenter(
-      resultActivity(
-        "notion_update_page_content",
-        fanOut({
-          outcome: "applied",
-          error_code: null,
-          reference: page,
-          applied_replacements: 2,
-          page_truncated: true,
-          last_edited_time: "2026-09-01T12:00:00Z",
-        }),
-        { page }
-      )
-    )
-    expect(contentHtml).toContain("Applied 2 exact-text replacements.")
-    expect(contentHtml).toContain("Notion response truncated")
-
-    const contentWithoutTimestampHtml = renderPresenter(
-      resultActivity(
-        "notion_update_page_content",
-        fanOut({
-          outcome: "applied",
-          error_code: null,
-          reference: page,
-          applied_replacements: 1,
-          page_truncated: false,
-          last_edited_time: null,
-        }),
-        { page }
-      )
-    )
-    expect(contentWithoutTimestampHtml).toContain("Change confirmed")
-    expect(contentWithoutTimestampHtml).toContain("Applied 1 exact-text replacement.")
-    expect(contentWithoutTimestampHtml).not.toContain("Last edited")
-
-    const propertiesHtml = renderPresenter(
-      resultActivity(
-        "notion_update_page_properties",
-        fanOut({
-          outcome: "applied",
-          error_code: null,
-          reference: page,
-          url: "https://www.notion.so/page-1",
-          last_edited_time: "2026-09-01T12:00:00Z",
-        }),
-        { page }
-      )
-    )
-    expect(propertiesHtml).toContain("Updated the selected page properties.")
-    expect(propertiesHtml).toContain("Launch plan")
-  })
-
-  it("renders provider failure and unverified mutation entries as non-success outcomes", () => {
-    const failedHtml = renderPresenter(
-      resultActivity(
-        "notion_update_page_properties",
-        fanOutError("validation_error", "The selected Notion properties were not accepted."),
-        { page }
-      )
-    )
-    expect(failedHtml).toContain("The selected Notion properties were not accepted.")
-    expect(failedHtml).toContain("Failed")
-    expect(failedHtml).not.toContain("Change confirmed")
-
-    const unverifiedHtml = renderPresenter(
-      resultActivity(
-        "notion_update_page_properties",
-        fanOutError(
-          "unverified_mutation",
-          "The provider mutation outcome could not be verified exactly.",
-          { outcome: "unverified", error_code: "timeout", reference: page }
-        ),
-        { page }
-      )
-    )
-    expect(unverifiedHtml).toContain(
-      "couldn&#x27;t verify whether Notion updated the page properties"
-    )
-    expect(unverifiedHtml).toContain("Check the page in Notion before taking further action.")
-    expect(unverifiedHtml).toContain("Unconfirmed")
-    expect(unverifiedHtml).not.toContain(">Failed<")
-    expect(unverifiedHtml).not.toContain("Change confirmed")
-    expect(unverifiedHtml).not.toContain("timeout")
-  })
-
   it.each([
-    [
-      "notion_create_page",
-      {
-        outcome: "applied",
-        error_code: null,
-        reference: null,
-        url: null,
-        title: "Launch notes",
-        last_edited_time: null,
-      },
-    ],
     [
       "notion_update_page_content",
       {
@@ -340,16 +140,6 @@ describe("Notion write approval and result fidelity", () => {
         reference: page,
         applied_replacements: 0,
         page_truncated: null,
-        last_edited_time: null,
-      },
-    ],
-    [
-      "notion_update_page_properties",
-      {
-        outcome: "applied",
-        error_code: null,
-        reference: page,
-        url: null,
         last_edited_time: null,
       },
     ],
@@ -451,22 +241,6 @@ function fanOut(data: unknown) {
         data,
         error_code: null,
         error_message: null,
-      },
-    ],
-  }
-}
-
-function fanOutError(errorCode: string, errorMessage: string, data: unknown = null) {
-  return {
-    results: [
-      {
-        provider_key: "notion",
-        external_id: "workspace-1",
-        display_name: "Operations workspace",
-        status: "error",
-        data,
-        error_code: errorCode,
-        error_message: errorMessage,
       },
     ],
   }

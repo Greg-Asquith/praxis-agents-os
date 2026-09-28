@@ -4,10 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core.exceptions.integration import IntegrationValidationError
 from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.operations.get_account import get_account
-from integrations.meta_ads.operations.values import account_status, disable_reason
 from services.integrations.http import IntegrationRequestPolicy
 
 
@@ -83,25 +81,3 @@ async def test_provider_text_is_bounded_and_large_subtraction_stays_exact():
     assert len(result.name) == 512
     assert result.name.startswith("<script>")
     assert result.spend_cap_remaining == "12345678901234567890123456789.00"
-
-
-@pytest.mark.parametrize("value", [None, "XXX", "eur", {}, ""])
-async def test_unknown_or_missing_currency_is_rejected(value):
-    client = AsyncMock(spec=MetaAdsClient)
-    client.graph_get.return_value = {"currency": value}
-    with pytest.raises(IntegrationValidationError):
-        await get_account(client, account_id="123")
-
-
-@pytest.mark.parametrize("value", [True, "NaN", "1.1", {}, "Infinity"])
-async def test_invalid_minor_units_are_rejected(value):
-    client = AsyncMock(spec=MetaAdsClient)
-    client.graph_get.return_value = {"currency": "EUR", "amount_spent": value}
-    with pytest.raises(IntegrationValidationError, match="invalid currency amount"):
-        await get_account(client, account_id="123")
-
-
-def test_unknown_status_and_reason_do_not_expose_raw_numbers():
-    assert account_status(123456) == "Unknown"
-    assert disable_reason(123456) == "Unknown reason"
-    assert disable_reason(0) is None

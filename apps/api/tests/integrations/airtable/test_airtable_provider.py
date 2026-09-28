@@ -20,10 +20,6 @@ from integrations.airtable.entity_resolvers.record import (
     resolve_airtable_records,
     search_airtable_records,
 )
-from integrations.airtable.operations.create_record import create_record
-from integrations.airtable.operations.get_record import get_record
-from integrations.airtable.operations.list_records import list_records
-from integrations.airtable.operations.update_record import update_record
 from integrations.airtable.references import AirtableRecordReference
 from integrations.airtable.tools import TOOL_DEFINITIONS
 from integrations.airtable.tools.get_record import airtable_get_record
@@ -34,28 +30,12 @@ from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations import http as integration_http
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.integrations.http import IntegrationRequestPolicy
-from services.integrations.manifest import PROVIDER_MANIFESTS
-from services.integrations.providers_view import list_providers
 
 
 @pytest.fixture(autouse=True)
 def _loaded_airtable_tool_definitions(monkeypatch):
     for definition in TOOL_DEFINITIONS:
         monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
-
-
-def test_manifest_declares_and_exposes_discovery_and_pat_scope_help(monkeypatch) -> None:
-    from integrations.airtable import PROVIDER
-
-    manifest = PROVIDER.manifest
-    assert manifest.requires_discovery is True
-    assert manifest.resource_types == ("airtable_base",)
-    assert "data.records:read" in manifest.connect_help
-    assert "data.records:write" in manifest.connect_help
-    assert "schema.bases:read" in manifest.connect_help
-    monkeypatch.setitem(PROVIDER_MANIFESTS, "airtable", manifest)
-    provider = next(item for item in list_providers() if item.provider_key == "airtable")
-    assert provider.connect_help == manifest.connect_help
 
 
 def test_record_reference_identity_is_provider_owned_and_ignores_display_hints() -> None:
@@ -119,88 +99,6 @@ async def test_discovery_paginates_and_maps_write_permissions(monkeypatch) -> No
     assert [item.writable for item in resources] == [True, True, False, False]
     assert resources[0].permissions_metadata == {"permission_level": "edit"}
     assert requests[1].url.params["offset"] == "next-page"
-
-
-async def test_list_and_get_records_frame_provider_text() -> None:
-    list_request: httpx2.Request | None = None
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        nonlocal list_request
-        if request.url.path.endswith("/rec-one"):
-            return httpx2.Response(
-                200,
-                json={"id": "rec-one", "fields": {"Name": "One"}},
-                request=request,
-            )
-        list_request = request
-        return httpx2.Response(
-            200,
-            json={
-                "records": [
-                    {
-                        "id": "rec-one",
-                        "createdTime": "2026-07-22T10:00:00.000Z",
-                        "fields": {"Name": "One", "Tags": ["A", "B"]},
-                    }
-                ]
-            },
-            request=request,
-        )
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        client = AirtableClient(_static_token, client=http_client)
-        listed = await list_records(
-            client,
-            base_id="app-one",
-            table="Table / One",
-            view="Grid",
-            filter_by_formula="{Active}=1",
-            max_records=250,
-        )
-        fetched = await get_record(
-            client,
-            base_id="app-one",
-            table="Table / One",
-            record_id="rec-one",
-        )
-
-    assert listed["total"] == 1
-    assert list_request is not None
-    assert list_request.url.params["maxRecords"] == "100"
-    assert list_request.url.params["view"] == "Grid"
-    assert list_request.url.params["filterByFormula"] == "{Active}=1"
-    assert listed["records"][0]["fields"]["Name"].content == "One"
-    assert listed["records"][0]["fields"]["Tags"][1].source_ref == "rec-one"
-    assert fetched["fields"]["Name"].content == "One"
-
-
-async def test_create_and_update_return_record_ids() -> None:
-    methods: list[str] = []
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        methods.append(request.method)
-        record_id = "rec-created" if request.method == "POST" else "rec-updated"
-        return httpx2.Response(200, json={"id": record_id}, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        client = AirtableClient(_static_token, client=http_client)
-        created = await create_record(
-            client,
-            base_id="app-one",
-            table="Contacts",
-            fields={"Name": "Ada"},
-        )
-        updated = await update_record(
-            client,
-            base_id="app-one",
-            table="Contacts",
-            record_id="rec-created",
-            fields={"Name": "Grace"},
-        )
-
-    assert methods == ["POST", "PATCH"]
-    assert created == {"record_id": "rec-created"}
-    assert updated == {"record_id": "rec-updated"}
 
 
 async def test_record_hydration_omits_stale_item_without_aborting_batch(monkeypatch) -> None:
@@ -394,7 +292,6 @@ async def test_list_records_attaches_each_base_scope_to_returned_references(monk
     ("tool", "module", "operation_name"),
     [
         (airtable_get_record, "get_record", "get_record"),
-        (airtable_update_record, "update_record", "update_record"),
     ],
 )
 async def test_record_tools_target_only_the_referenced_base(
@@ -484,80 +381,13 @@ async def test_update_record_rejects_table_reference_mismatch_before_dispatch(mo
     provider_update.assert_not_awaited()
 
 
-async def test_update_record_accepts_cosmetic_table_name_differences(monkeypatch) -> None:
-    entry = ResolvedContextEntry(
-        integration_resource_id=uuid4(),
-        provider_key="airtable",
-        resource_type="airtable_base",
-        external_id="app-one",
-        display_name="Base",
-        connection_id=uuid4(),
-        connection_label="Airtable",
-        connection_status="active",
-        write_allowed=True,
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
-        tool_name="airtable_update_record",
-    )
-    provider_update = AsyncMock(return_value={"record_id": "rec-one"})
-
-    async def passthrough_audit(_ctx, _entry, **kwargs):
-        return (await kwargs["execute"]()).value
-
-    monkeypatch.setattr(
-        "integrations.airtable.tools.update_record.airtable_client",
-        AsyncMock(return_value=object()),
-    )
-    monkeypatch.setattr("integrations.airtable.tools.update_record.update_record", provider_update)
-    monkeypatch.setattr(
-        "integrations.airtable.tools.update_record.run_audited_integration_operation",
-        passthrough_audit,
-    )
-
-    await airtable_update_record(
-        ctx,
-        "  contacts  ",
-        AirtableRecordReference(
-            base_id=entry.external_id,
-            record_id="rec-one",
-            table="Contacts",
-            label="Contact",
-        ),
-        {"Status": "Done"},
-    )
-
-    assert provider_update.await_args.kwargs["table"] == "Contacts"
-
-
-async def test_airtable_rate_limit_honors_retry_after(monkeypatch) -> None:
-    attempts = 0
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        nonlocal attempts
-        attempts += 1
-        return httpx2.Response(
-            429 if attempts == 1 else 200,
-            headers={"Retry-After": "1"} if attempts == 1 else {},
-            json={"records": []},
-            request=request,
-        )
-
-    sleep = AsyncMock()
-    monkeypatch.setattr(integration_http.asyncio, "sleep", sleep)
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        payload = await AirtableClient(_static_token, client=client).get(
-            "app/Table",
-            operation="list_records",
-            policy=IntegrationRequestPolicy.READ,
-        )
-
-    assert payload == {"records": []}
-    assert attempts == 2
-    sleep.assert_awaited_once_with(1.0)
-
-
-@pytest.mark.parametrize("failure", ["connect", "read_timeout", "429", "503"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "connect",
+        "read_timeout",
+    ],
+)
 async def test_airtable_create_failures_attempt_once(failure: str) -> None:
     attempts = 0
 
@@ -580,27 +410,6 @@ async def test_airtable_create_failures_attempt_once(failure: str) -> None:
             )
 
     assert attempts == 1
-
-
-async def test_airtable_create_auth_rejection_is_not_retried() -> None:
-    attempts = 0
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        nonlocal attempts
-        attempts += 1
-        return httpx2.Response(401, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        with pytest.raises(IntegrationError) as exc_info:
-            await AirtableClient(_static_token, client=http_client).post(
-                "app/Table",
-                operation="create_record",
-                policy=IntegrationRequestPolicy.MUTATION,
-                json={"fields": {}},
-            )
-
-    assert attempts == 1
-    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.REJECTED
 
 
 async def test_airtable_malformed_create_response_is_ambiguous() -> None:

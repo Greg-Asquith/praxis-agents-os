@@ -76,7 +76,7 @@ export function AuditEventDetail({
   )
 }
 
-export function AuditEventFields({
+function AuditEventFields({
   event,
   toolLabelFor,
 }: {

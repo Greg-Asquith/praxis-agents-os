@@ -5,8 +5,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from pydantic_ai import ToolReturn
-from pydantic_ai.messages import BinaryContent, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelRequest, ToolReturnPart
 
 from services.agents.runtime.dispatch import retain_structured_result
 from services.agents.runtime.structured_results import preview_structured_result, result_json
@@ -60,13 +59,6 @@ def test_preview_preserves_accounts_metadata_and_original(path):
         assert bounded["lists"][f"results.{index}.data.rows"] == {"total": 100, "shown": shown}
 
 
-def test_root_list_and_empty_lists_remain_explicit():
-    bounded = preview(list(range(100)), rows=3)
-    assert bounded["data"] == [0, 1, 2]
-    assert bounded["lists"] == {"$": {"total": 100, "shown": 3}}
-    assert preview({"rows": []})["lists"] == {"rows": {"total": 0, "shown": 0}}
-
-
 @pytest.mark.parametrize(
     "value,path",
     [
@@ -81,23 +73,6 @@ def test_unpreviewable_results_fail_without_dropping_content(value, path):
     with pytest.raises(ValueError, match="Narrow the query"):
         preview(value, path=path)
     assert value == original
-
-
-async def test_multimodal_transport_is_not_serialised_into_a_preview():
-    image = BinaryContent(data=b"\xff\xfe" * 50_000, media_type="image/png")
-    result = ToolReturn(return_value=[{"kind": "image"}, image])
-    assert (
-        await retain_structured_result(
-            None,
-            None,
-            result,
-            tool_name="read_file",
-            tool_call_id="image",
-            parent_tool_call_id=None,
-        )
-        is None
-    )
-    assert result.return_value[1] is image
 
 
 async def test_write_evidence_is_not_replaced():

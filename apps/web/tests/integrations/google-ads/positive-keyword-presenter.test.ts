@@ -82,20 +82,6 @@ describe("Google Ads positive keyword input", () => {
 })
 
 describe("Google Ads positive keyword presenter", () => {
-  it("shows selected ad-group labels as failure chips", () => {
-    const html = render(
-      googleAdsCreatePositiveKeywordsPresenter.render(
-        props(
-          activity("failed", {
-            ad_groups: [adGroup("20", "Shoes", "Search")],
-            keywords: [{ text: "running shoes", match_type: "EXACT" }],
-          })
-        )
-      )
-    )
-    expect(html).toMatch(/data-slot="badge"[^>]*>Shoes/)
-  })
-
   it("groups the approval by campaign and shows trusted account currency", () => {
     const html = render(
       googleAdsCreatePositiveKeywordsPresenter.render(
@@ -130,16 +116,7 @@ describe("Google Ads positive keyword presenter", () => {
       )
     )
 
-    expect(html).toContain("Proposed keyword additions")
-    expect(html).toContain("Brand campaign")
-    expect(html).toContain("Brand exact")
-    expect(html).toContain("Brand discovery")
-    expect(html).toContain("UK account")
-    expect(html).toContain("GBP")
     expect(html).toContain("2 keywords × 2 ad groups · 4 planned additions")
-    expect(html).not.toContain('data-slot="stat"')
-    expect(html).toContain("bid setting, and URL setting")
-    expect(html).not.toContain("optional CPC bid")
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Add<\/button>/)
   })
 
@@ -170,101 +147,7 @@ describe("Google Ads positive keyword presenter", () => {
       )
       expect(malformed).toContain(error)
       expect(malformed).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Add<\/button>/)
-      expect(malformed).toMatch(/<button[^>]*>Decline<\/button>/)
     }
-  })
-
-  it("uses the complete serialized keyword column contract", () => {
-    const keywordField = positiveKeywordUi().arg_fields[1]
-
-    expect(keywordField).toMatchObject({
-      editable: true,
-      format: "records",
-      key: "keywords",
-      label: "Keywords",
-      min_rows: 1,
-    })
-    expect(keywordField && "columns" in keywordField ? keywordField.columns : null).toEqual([
-      column("text", "Keyword", { required: true }),
-      {
-        ...column("match_type", "Match Type", { required: true }),
-        options: ["EXACT", "PHRASE", "BROAD"],
-      },
-      { ...column("status", "Status"), default_value: "ENABLED", options: ["ENABLED", "PAUSED"] },
-      column("cpc_bid", "CPC Bid", { secondary: true }),
-      column("final_urls", "Final URLs", { format: "list", secondary: true }),
-      column("final_mobile_urls", "Final Mobile URLs", { format: "list", secondary: true }),
-      column("final_url_suffix", "Final URL Suffix", { secondary: true }),
-      column("tracking_url_template", "Tracking URL Template", { secondary: true }),
-      column("url_custom_parameters", "URL Custom Parameters", {
-        format: "keyvalue",
-        max_entries: 8,
-        secondary: true,
-      }),
-    ])
-  })
-
-  it("renders the complete keyword table after approval or denial", () => {
-    const args = {
-      ad_groups: [adGroup("10", "Brand exact", "Brand campaign")],
-      keywords: [
-        {
-          cpc_bid: "",
-          final_mobile_urls: [],
-          final_url_suffix: "",
-          final_urls: [],
-          match_type: "EXACT",
-          status: "ENABLED",
-          text: "running shoes",
-          tracking_url_template: "",
-          url_custom_parameters: {},
-        },
-      ],
-    }
-
-    for (const decision of ["approved", "denied"] as const) {
-      const html = render(
-        googleAdsCreatePositiveKeywordsPresenter.render(
-          props(activity("awaiting_approval", args), approvalControls({}, decision, true))
-        )
-      )
-      for (const label of [
-        "Keyword",
-        "Match Type",
-        "Status",
-        "CPC Bid",
-        "Final URLs",
-        "Final Mobile URLs",
-        "Final URL Suffix",
-        "Tracking URL Template",
-        "URL Custom Parameters",
-      ]) {
-        expect(html).toContain(label)
-      }
-      expect(html).toContain("running shoes")
-      expect(html).toContain("—")
-      expect(html).not.toContain("<input")
-    }
-  })
-
-  it("defers Unicode duplicate identity to authoritative backend validation", () => {
-    const html = render(
-      googleAdsCreatePositiveKeywordsPresenter.render(
-        props(
-          activity("awaiting_approval", {
-            ad_groups: [adGroup("10", "Brand exact", "Brand campaign")],
-            keywords: [
-              { match_type: "EXACT", text: "Straße" },
-              { match_type: "EXACT", text: "STRASSE" },
-            ],
-          }),
-          approvalControls()
-        )
-      )
-    )
-
-    expect(html).not.toContain("edited approval details are invalid")
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Add<\/button>/)
   })
 
   it("renders backend rows with omitted optional fields", () => {
@@ -364,88 +247,12 @@ describe("Google Ads positive keyword presenter", () => {
       )
     )
 
-    expect(html).toContain("Add Google Ads Keywords")
-    expect(html).toContain("trail shoes")
-    expect(html).toContain("running shoes")
-    expect(html).toContain("walking shoes")
-    expect(html).toContain("hiking shoes")
-    expect(html).toContain("Already existed")
-    expect(html).toContain("Existing keyword")
-    expect(html).toContain("Requested Status")
-    expect(html).toContain("Existing Status")
-    expect(html).toContain("Paused")
     expect(html).toContain("https://existing.example.com")
-    expect(html).toContain("Not present")
     expect(html).toMatch(/£2\.50|GBP\s*2\.50/)
-    expect(html).toContain("Ad group default")
-    expect(html).toContain("The bid is incompatible with this ad group.")
     expect(html).toContain("Download Report CSV")
   })
 
-  it("renders exact bid, URL, tracking, and custom-parameter request evidence", () => {
-    const html = render(
-      googleAdsCreatePositiveKeywordsPresenter.render(
-        props({
-          ...activity("completed", null),
-          result: {
-            results: [
-              entry({
-                counts: { added: 1, failed: 0, skipped_existing: 0, unverified: 0 },
-                currency_code: "GBP",
-                samples: {
-                  added: [
-                    {
-                      ...resultRow("added", "trail shoes", "PHRASE", "2.5"),
-                      requested: {
-                        ...resultRow("added", "trail shoes", "PHRASE", "2.5").requested,
-                        final_urls: ["https://example.com/trail"],
-                        final_mobile_urls: ["https://m.example.com/trail"],
-                        final_url_suffix: "source=ads",
-                        tracking_url_template: "https://track.example.com/{lpurl}",
-                        url_custom_parameters: [{ key: "audience", value: "trail" }],
-                      },
-                    },
-                  ],
-                  failed: [],
-                  skipped_existing: [],
-                  unverified: [],
-                },
-                samples_truncated: false,
-              }),
-            ],
-          },
-        })
-      )
-    )
-
-    expect(html).toMatch(/CPC.*£2\.50|CPC.*GBP\s*2\.50/)
-    expect(html).toContain("https://example.com/trail")
-    expect(html).toContain("https://track.example.com/{lpurl}")
-    expect(html).toContain("{_audience}=trail")
-  })
-
-  it("keeps denied, loading, malformed, and unverified states distinct", () => {
-    const denied = activity("denied", {
-      ad_groups: [adGroup("10", "Brand exact", "Brand campaign")],
-      keywords: [
-        {
-          cpc_bid: "",
-          final_mobile_urls: [],
-          final_url_suffix: "",
-          final_urls: [],
-          match_type: "EXACT",
-          status: "ENABLED",
-          text: "running shoes",
-          tracking_url_template: "",
-          url_custom_parameters: {},
-        },
-      ],
-    })
-    denied.decisionReason = "Use a different match type."
-    const deniedHtml = render(googleAdsCreatePositiveKeywordsPresenter.render(props(denied)))
-    const loadingHtml = render(
-      googleAdsCreatePositiveKeywordsPresenter.render(props(activity("running", null)))
-    )
+  it("keeps malformed and unverified states distinct", () => {
     const malformedHtml = render(
       googleAdsCreatePositiveKeywordsPresenter.render(
         props({ ...activity("completed", null), result: { results: [entry({ bad: true })] } })
@@ -469,10 +276,6 @@ describe("Google Ads positive keyword presenter", () => {
       )
     )
 
-    expect(deniedHtml).toContain("declined")
-    expect(deniedHtml).toContain("Use a different match type.")
-    expect(deniedHtml).not.toContain("Failed")
-    expect(loadingHtml).toContain("Adding keywords…")
     expect(malformedHtml).toContain("couldn&#x27;t confirm")
     expect(unverifiedHtml).toContain("couldn&#x27;t verify whether Google Ads added")
     expect(unverifiedHtml).not.toContain("provider transport detail")

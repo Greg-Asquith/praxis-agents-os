@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { loadOAuthLoginCallback } from "@/features/auth/routes/oauth-login-callback-loader"
 import type { AuthResponse } from "@/features/auth/types"
-import { getFetchRequest, jsonResponse, stubFetch } from "../../support/fetch-stub"
 
 const completeOauthLogin = vi.fn()
 const redirect = vi.fn((path: string): never => {
@@ -144,31 +143,5 @@ describe("OAuth login callback loader", () => {
     ).rejects.toMatchObject({ path: expected })
 
     expect(redirect).toHaveBeenLastCalledWith(expected)
-  })
-
-  it("uses the production login API when dependencies are omitted", async () => {
-    const response: AuthResponse = {
-      next_path: "/agents",
-      requires_twofa: true,
-      session: { expires_at: "2026-07-17T00:00:00Z", twofa_verified: false },
-      user: null,
-    }
-    const fetchStub = stubFetch(jsonResponse(response))
-    storage.set("praxis.oauthLoginProvider", "google")
-
-    await expect(
-      loadOAuthLoginCallback({
-        queryClient: new QueryClient(),
-        search: { code: "production-code", state: "production-state" },
-      })
-    ).resolves.toEqual({
-      error: null,
-      nextPath: "/agents",
-      twoFactorPending: true,
-    })
-
-    const { init, url } = getFetchRequest(fetchStub)
-    expect(url.href).toBe("http://localhost:8000/api/v1/auth/oauth/google/callback")
-    expect(init).toMatchObject({ credentials: "include", method: "POST" })
   })
 })

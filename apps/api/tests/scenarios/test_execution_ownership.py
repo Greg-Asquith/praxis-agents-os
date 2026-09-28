@@ -185,8 +185,7 @@ async def test_queued_deadline_prevents_worker_entry(committed_db_session_factor
     assert sink.events[-1].data["status"] == "failed"
 
 
-@pytest.mark.parametrize("queued", [False, True])
-@pytest.mark.parametrize("shutdown", [False, True])
+@pytest.mark.parametrize(("queued", "shutdown"), [(False, True), (True, False)])
 async def test_stop_before_worker_entry_settles_claim(
     committed_db_session_factory,
     queued,

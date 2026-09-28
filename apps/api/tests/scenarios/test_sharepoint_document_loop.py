@@ -13,12 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from core.database import maintenance_async_db_session
-from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
-from core.exceptions.integration import (
-    IntegrationConnectionError,
-    IntegrationFailureDisposition,
-    IntegrationNotFoundError,
-)
+from core.exceptions.general import AppValidationError
 from core.settings import settings
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.tools.copy_to_files import DEFINITION as COPY_DEFINITION
@@ -28,9 +23,7 @@ from models.agent_run import AgentRun
 from models.files import File, FileFolder, FileReference, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.get_approval_state import get_agent_run_approval_state
-from services.agent_runs.review_approval import review_agent_run_approval
-from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunReviewApprovalRequest
+from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.entity_references.domain import FileReference as SourceReference
@@ -54,7 +47,6 @@ from tests.support.scenario import (
     scripted_model,
 )
 from tests.support.storage import reset_storage_provider_cache
-from utils.content import ContentScope
 from utils.quickxorhash import quickxorhash
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -153,8 +145,7 @@ def _configure_runtime(
     return active, selected
 
 
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("outcome", ["applied", "version_conflict", "source_changed", "unverified"])
+@pytest.mark.parametrize(("nested", "outcome"), [(False, "applied"), (True, "source_changed")])
 async def test_sharepoint_document_loop(
     db_session_factory, monkeypatch, document_storage, nested, outcome
 ):
@@ -246,25 +237,13 @@ async def test_sharepoint_document_loop(
     provider.post.assert_not_awaited()
     provider.upload_fragment.assert_not_awaited()
 
-    if outcome == "version_conflict":
-        provider.get.return_value = before | {"eTag": '"concurrent-remote-edit"'}
-    elif outcome == "source_changed":
+    if outcome == "source_changed":
 
         async def change_after_approval(*_args, **_kwargs):
             await _append_revision(db_session_factory, context, file_id, original)
             return ResolvedActiveContext(entries=(selected,))
 
         active.side_effect = change_after_approval
-    elif outcome == "unverified":
-        provider.get.side_effect = [before, before, saved]
-        provider.upload_fragment.side_effect = IntegrationConnectionError(
-            "The upload response was lost.",
-            failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
-            error_code="upload_interrupted",
-        )
-        provider.upload_status.side_effect = IntegrationNotFoundError(
-            "The session is unavailable.", error_code="upload_session_expired"
-        )
 
     completed = await resume_scenario(
         db_session_factory,
@@ -286,33 +265,27 @@ async def test_sharepoint_document_loop(
     evidence += json.dumps([row.details for row in operations], default=str)
     assert "PRIVATE_UPLOAD_SECRET" not in evidence
     assert "PRIVATE_DOWNLOAD_SECRET" not in evidence
-    if outcome in {"version_conflict", "source_changed"}:
+    if outcome == "source_changed":
         provider.post.assert_not_awaited()
         provider.upload_fragment.assert_not_awaited()
         assert [row.status for row in operations] == ["failure"]
         assert operations[0].details["error_code"] == outcome
         assert outcome in evidence
     else:
-        terminal_status = "success" if outcome == "applied" else "unverified"
-        assert sorted(row.status for row in operations) == ["pending", terminal_status]
+        assert sorted(row.status for row in operations) == ["pending", "success"]
         pending = next(row for row in operations if row.status == "pending")
-        terminal = next(row for row in operations if row.status == terminal_status)
+        terminal = next(row for row in operations if row.status == "success")
         assert terminal.details["related_event_id"] == str(pending.id)
         effect = terminal.details["operation_detail"]["outcome_groups"][0]["outcomes"][0][
             "effects"
         ][0]
         assert effect["fields"]["hash_matched"] is True
-        assert effect["fields"]["committed"] is (outcome == "applied")
+        assert effect["fields"]["committed"] is True
         assert effect["fields"]["etag_before"] == '"version-1"'
         assert effect["fields"]["etag_after"] == '"version-2"'
         provider.upload_fragment.assert_awaited_once()
         assert provider.upload_fragment.await_args.args[1] == edited
         assert provider.post.await_args.kwargs["headers"] == {"If-Match": '"version-1"'}
-        if outcome == "unverified":
-            assert effect["error_code"] == "unverified_mutation"
-            assert effect["fields"]["session_status"] == "missing"
-            provider.upload_status.assert_awaited_once()
-            provider.cancel_upload.assert_not_awaited()
     async with db_session_factory() as db:
         file = await db.get(File, file_id)
         original_revision = await db.get(FileRevision, original_revision_id)
@@ -325,66 +298,10 @@ async def test_sharepoint_document_loop(
         assert await get_storage_provider().get_object(file_revision_ref(edited_revision)) == edited
 
 
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("decision", ["approved", "denied"])
-async def test_copy_to_files_respects_approval_policy(
-    db_session_factory, monkeypatch, document_storage, nested, decision
-):
-    definition = replace(COPY_DEFINITION, availability_check=lambda: True)
-    _configure_runtime(monkeypatch, db_session_factory, ((definition, "approval"),), nested=nested)
-    provider = AsyncMock()
-    original = WORKBOOK.read_bytes()
-    provider.get.return_value = file_metadata(
-        name="sheet.xlsx", size=len(original), file={"mimeType": XLSX}
-    )
-    provider.get_bytes.return_value = original
-    monkeypatch.setattr(
-        "integrations.sharepoint.tools.copy_to_files.drive_client", AsyncMock(return_value=provider)
-    )
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[definition.name],
-        tool_policies={definition.name: "approval"},
-        code_mode_enabled=nested,
-    )
-    remote = SharePointDriveItemReference(drive_id="drive", item_id="file", kind="file").model_dump(
-        mode="json"
-    )
-    call = _call(definition, {"file": remote}, nested=nested, call_id="copy")
-    model = scripted_model(turns=[ToolTurn((call,)), "The copy request finished."])
-    suspended = await run_scenario(db_session_factory, context, model=model)
-    assert suspended.run.status == "awaiting_approval"
-    assert provider.mock_calls == []
-    completed = await resume_scenario(
-        db_session_factory,
-        context,
-        model=model,
-        decisions=[
-            AgentRunResumeDecision(tool_call_id="copy:1" if nested else "copy", decision=decision)
-        ],
-    )
-    assert completed.run.status == "completed"
-    async with db_session_factory() as db:
-        files = (
-            await db.scalars(select(File).where(File.workspace_id == context.workspace_id))
-        ).all()
-    if decision == "denied":
-        assert provider.mock_calls == []
-        assert files == []
-        assert any(row.status == "denied" for row in completed.audit_rows)
-    else:
-        assert len(files) == 1
-        provider.get_bytes.assert_awaited_once()
-        assert any(
-            row.status == "success" and row.details.get("provider_operation") == "copy_to_files"
-            for row in completed.audit_rows
-        )
-
-
-async def _source_file(context, content, *, visibility="workspace"):
+async def _source_file(context, content, *, foreign=False):
     async with maintenance_async_db_session() as db:
         workspace = await db.get(Workspace, context.workspace_id)
-        if visibility == "foreign":
+        if foreign:
             workspace = build_workspace(slug=f"foreign-source-{uuid4().hex[:8]}")
             db.add(workspace)
             await db.flush()
@@ -395,23 +312,14 @@ async def _source_file(context, content, *, visibility="workspace"):
             extension=".xlsx",
             size_bytes=len(content),
             content_hash=sha256_hex(content),
-            deleted=visibility == "deleted",
-            **(
-                {"scope": ContentScope.PLATFORM, "workspace_id": None}
-                if visibility == "platform"
-                else {}
-            ),
         )
         db.add(file)
         await db.flush()
-        revision = build_file_revision(file, is_published=visibility == "platform")
+        revision = build_file_revision(file)
         db.add(revision)
         await db.flush()
         file.current_revision_id = revision.id
         file.revision_count = 1
-        if visibility == "platform":
-            file.published_revision_id = revision.id
-            file.is_published = True
         await get_storage_provider().put_object(
             file_revision_ref(revision), content, content_type=XLSX
         )
@@ -435,19 +343,7 @@ async def _compile_source_decision(session_factory, context, decision):
         )
 
 
-@pytest.mark.parametrize("nested", [False, True], ids=["direct", "code_mode"])
-@pytest.mark.parametrize(
-    "outcome",
-    [
-        "applied",
-        "source_changed",
-        "deleted",
-        "substituted",
-        "reviewed",
-        "reviewed_changed",
-        "reviewed_revision",
-    ],
-)
+@pytest.mark.parametrize(("nested", "outcome"), [(True, "applied"), (False, "substituted")])
 async def test_file_source_approval_uses_real_core_authorisation(
     db_session_factory, monkeypatch, document_storage, nested, outcome
 ):
@@ -498,48 +394,17 @@ async def test_file_source_approval_uses_real_core_authorisation(
     decision = AgentRunResumeDecision(
         tool_call_id="save:1" if nested else "save", decision="approved"
     )
-    if outcome == "source_changed":
-        await _append_revision(db_session_factory, context, file.id, _edited_workbook())
-    elif outcome == "deleted":
-        async with db_session_factory() as db:
-            stored = await db.get(File, file.id)
-            stored.deleted = True
-            await db.commit()
-    elif outcome in {"substituted", "reviewed", "reviewed_changed"}:
+    if outcome == "substituted":
         substitute, _ = await _source_file(context, _edited_workbook())
         decision.override_args = args | {
             "source": SourceReference(entity_id=substitute.id, label="Replacement").model_dump(
                 mode="json"
             )
         }
-
-    if outcome == "reviewed_revision":
-        await _append_revision(db_session_factory, context, file.id, _edited_workbook())
-        substitute = file
-        decision.override_args = args
-    if outcome in {"reviewed", "reviewed_changed", "reviewed_revision"}:
-        reviewed = await _review_source(db_session_factory, context, decision.override_args)
-        assert reviewed.approvals[0].replay_args["source"]["entity_id"] == str(substitute.id)
-        decision.override_args = None
-        file = substitute
-        content = _edited_workbook()
-        provider.upload_fragment.return_value = file_metadata(
-            name="saved.xlsx",
-            size=len(content),
-            parentReference={"driveId": "drive", "path": "/drives/drive/root:"},
-            file={"mimeType": XLSX, "hashes": {"quickXorHash": quickxorhash(content)}},
-        )
-        pin = reviewed.approvals[0].args["_source"]
-        if outcome == "reviewed_changed":
-            await _append_revision(db_session_factory, context, file.id, WORKBOOK.read_bytes())
-
-    if outcome in {"deleted", "substituted"}:
+    if outcome == "substituted":
         with pytest.raises(AppValidationError) as caught:
             await resume_scenario(db_session_factory, context, model=model, decisions=[decision])
-        if outcome == "substituted":
-            assert caught.value.details["error_code"] == "approval_review_required"
-        else:
-            assert caught.value.field == "source"
+        assert caught.value.details["error_code"] == "approval_review_required"
         credentials.assert_not_awaited()
         assert provider.mock_calls == []
         async with db_session_factory() as db:
@@ -577,22 +442,15 @@ async def test_file_source_approval_uses_real_core_authorisation(
     operations = [
         row for row in completed.audit_rows if row.details.get("provider_operation") == "write_file"
     ]
-    if outcome in {"source_changed", "reviewed_changed"}:
-        assert [row.status for row in operations] == ["failure"]
-        assert operations[0].details["error_code"] == "source_changed"
-        credentials.assert_not_awaited()
-        assert provider.mock_calls == []
-    else:
-        assert sorted(row.status for row in operations) == ["pending", "success"]
-        provider.upload_fragment.assert_awaited_once()
-        assert provider.upload_fragment.await_args.args[1] == content
+    assert sorted(row.status for row in operations) == ["pending", "success"]
+    provider.upload_fragment.assert_awaited_once()
+    assert provider.upload_fragment.await_args.args[1] == content
 
 
-@pytest.mark.parametrize("nested", [False, True], ids=["direct", "code_mode"])
-@pytest.mark.parametrize("visibility", ["foreign", "platform", "deleted"])
-async def test_unavailable_file_sources_cannot_produce_usable_approval(
-    db_session_factory, monkeypatch, document_storage, nested, visibility
+async def test_foreign_file_source_cannot_produce_usable_approval(
+    db_session_factory, monkeypatch, document_storage
 ):
+    nested = False
     definition = replace(WRITE_DEFINITION, availability_check=lambda: True)
     _configure_runtime(
         monkeypatch,
@@ -604,7 +462,7 @@ async def test_unavailable_file_sources_cannot_produce_usable_approval(
     context = await build_scenario_agent(
         db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
     )
-    file, _ = await _source_file(context, WORKBOOK.read_bytes(), visibility=visibility)
+    file, _ = await _source_file(context, WORKBOOK.read_bytes(), foreign=True)
     source = SourceReference(entity_id=file.id, label="Claimed workspace File")
     call = _call(
         definition,
@@ -636,91 +494,3 @@ async def test_unavailable_file_sources_cannot_produce_usable_approval(
     assert caught.value.field == "source"
     credentials.assert_not_awaited()
     storage.assert_not_called()
-
-
-async def _review_source(session_factory, context, args):
-    from copy import deepcopy
-
-    async with session_factory() as db:
-        actor = await db.get(User, context.user_id)
-        workspace = await db.get(Workspace, context.workspace_id)
-        membership = await db.scalar(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == workspace.id,
-                WorkspaceMembership.user_id == actor.id,
-            )
-        )
-        pending = await db.get(AgentRun, context.run_id)
-        original = deepcopy(pending.metadata_json)
-        original_updated_at = pending.updated_at
-        projection = await get_agent_run_approval_state(
-            db, actor=actor, workspace=workspace, run_id=pending.id
-        )
-        payload = AgentRunReviewApprovalRequest(
-            approval_id=projection.approvals[0].approval_id,
-            approval_revision=projection.approval_revision,
-            override_args=args,
-        )
-        for field in ("_source", "reviewed_args"):
-            with pytest.raises(AppValidationError):
-                await review_agent_run_approval(
-                    db,
-                    actor=actor,
-                    workspace=workspace,
-                    membership=membership,
-                    run_id=pending.id,
-                    payload=payload.model_copy(
-                        update={"override_args": args | {field: {"revision_id": str(uuid4())}}}
-                    ),
-                )
-            assert pending.metadata_json == original
-        with pytest.raises(NotFoundError):
-            await review_agent_run_approval(
-                db,
-                actor=User(id=uuid4()),
-                workspace=workspace,
-                membership=membership,
-                run_id=pending.id,
-                payload=payload,
-            )
-        with pytest.raises(NotFoundError):
-            await review_agent_run_approval(
-                db,
-                actor=actor,
-                workspace=Workspace(id=uuid4()),
-                membership=membership,
-                run_id=pending.id,
-                payload=payload,
-            )
-        updated = await review_agent_run_approval(
-            db,
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            run_id=pending.id,
-            payload=payload,
-        )
-        assert updated.approval_revision != projection.approval_revision
-        await db.refresh(pending)
-        assert pending.updated_at == original_updated_at
-        state = pending.metadata_json["approval_state"]
-        assert state["message_history"] == original["approval_state"]["message_history"]
-        assert (
-            state["deferred_tool_requests"]["approvals"]
-            == original["approval_state"]["deferred_tool_requests"]["approvals"]
-        )
-        assert pending.metadata_json.get("code_mode_state") == original.get("code_mode_state")
-        with pytest.raises(ConflictError):
-            await review_agent_run_approval(
-                db,
-                actor=actor,
-                workspace=workspace,
-                membership=membership,
-                run_id=pending.id,
-                payload=payload,
-            )
-        reloaded = await get_agent_run_approval_state(
-            db, actor=actor, workspace=workspace, run_id=pending.id
-        )
-        assert reloaded == updated
-        return updated

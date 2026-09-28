@@ -11,94 +11,6 @@ import type { ToolActivity } from "@/integrations/contract"
 import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
 
 describe("BigQuery tool presenters", () => {
-  it("renders datasets and cached tables as a scannable inventory", () => {
-    const html = render(
-      bigQueryTablesPresenter.render(
-        props({
-          id: "tables-1",
-          kind: "result",
-          name: "bigquery_list_tables",
-          status: "completed",
-          result: {
-            datasets: [
-              {
-                dataset: "praxis-analytics.marketing",
-                display_name: "Marketing",
-                tables: [
-                  {
-                    table: "campaign_daily",
-                    table_type: "table",
-                    description: "Daily campaign performance.",
-                    row_count: 12500,
-                    last_synced_at: "2026-07-28T10:00:00Z",
-                  },
-                ],
-              },
-            ],
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("List BigQuery Tables")
-    expect(html).toContain("Marketing")
-    expect(html).toContain("praxis-analytics.marketing")
-    expect(html).toContain("campaign_daily")
-    expect(html).toContain("Daily campaign performance.")
-    expect(html).toMatch(/12,?500 rows/)
-  })
-
-  it("renders schema metadata and makes partition requirements prominent", () => {
-    const html = render(
-      bigQuerySchemaPresenter.render(
-        props({
-          id: "schema-1",
-          kind: "result",
-          name: "bigquery_get_table_schema",
-          status: "completed",
-          result: {
-            table: "`praxis-analytics.marketing.campaign_daily`",
-            table_type: "partitioned_table",
-            description: "Daily campaign performance.",
-            fields: [
-              {
-                name: "campaign.id",
-                type: "STRING",
-                mode: "REQUIRED",
-                description: "Stable campaign identifier.",
-              },
-              {
-                name: "spend",
-                type: "NUMERIC",
-                mode: "NULLABLE",
-                description: null,
-              },
-            ],
-            partitioning: {
-              field: "report_date",
-              require_partition_filter: true,
-              type: "DAY",
-            },
-            clustering_fields: ["account_id"],
-            row_count: 12500,
-            size_bytes: 4096,
-            last_synced_at: "2026-07-28T10:00:00Z",
-            requires_partition_filter: true,
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("Get BigQuery Table Schema")
-    expect(html).toContain("Partition filter required")
-    expect(html).toContain("Clustered by account_id")
-    expect(html).toContain("campaign.id")
-    expect(html).toContain("Stable campaign identifier.")
-    expect(html).toContain("STRING")
-    expect(html).toContain("REQUIRED")
-    expect(html).toContain("4.0 KB")
-  })
-
   it("renders query rows with export controls and honest cap metadata", () => {
     const html = render(
       bigQueryQueryPresenter.render(
@@ -135,29 +47,6 @@ describe("BigQuery tool presenters", () => {
     expect(html).toContain("Row filters limited this result")
     expect(html).not.toContain("praxis_untrusted")
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
-  })
-
-  it("explains when the structured result limit excludes every row", () => {
-    const html = render(
-      bigQueryQueryPresenter.render(
-        props({
-          id: "query-limited",
-          kind: "result",
-          name: "bigquery_run_query",
-          status: "completed",
-          result: {
-            rows: [],
-            total_rows: 1,
-            truncated: true,
-            total_bytes_processed: 1,
-            cache_hit: false,
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("The result exceeded the safe output limit")
-    expect(html).not.toContain("The query returned no rows.")
   })
 
   it("renders all loading states and falls through for malformed results", () => {

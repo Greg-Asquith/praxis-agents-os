@@ -34,7 +34,7 @@ ARGS = {
 
 
 @pytest.mark.parametrize("definition", WRITES, ids=lambda value: value.name)
-@pytest.mark.parametrize("nested", [False, True], ids=["direct", "code_mode"])
+@pytest.mark.parametrize("nested", [True], ids=["code_mode"])
 async def test_library_display_is_retained_without_becoming_replay_arguments(
     monkeypatch, definition, nested
 ):

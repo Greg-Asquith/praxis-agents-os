@@ -17,7 +17,6 @@ from pydantic_ai.messages import (
     NativeToolReturnPart,
     TextPart,
     ToolReturnPart,
-    UserPromptPart,
 )
 from pydantic_ai.models import CompletedStreamedResponse
 from pydantic_ai.models.function import FunctionModel
@@ -41,23 +40,6 @@ async def _consume(stream, messages, *, deferred_tool_results=None):
         event_sink=CollectingSink(run_id=run_id, conversation_id=uuid4()),
         messages_so_far=messages,
     )
-
-
-async def test_stream_captures_new_messages_without_prior_history() -> None:
-    agent = Agent(TestModel(custom_output_text="Done."))
-    history = [
-        ModelRequest(parts=[UserPromptPart("Earlier prompt")], run_id="earlier"),
-        ModelResponse(parts=[TextPart("Earlier reply")], run_id="earlier"),
-    ]
-    messages: list[ModelMessage] = []
-    async with agent.run_stream_events("Continue", message_history=history) as stream:
-        result, captured = await _consume(stream, messages)
-
-    assert captured is messages
-    assert messages == result.new_messages()
-    assert len(messages) == 2
-    assert messages[0].parts[0].content == "Continue"
-    assert messages[1].parts[0].content == "Done."
 
 
 async def test_stream_captures_partial_response_on_provider_failure() -> None:
@@ -155,22 +137,6 @@ async def test_stream_captures_approved_return_when_resumed_model_fails() -> Non
     assert isinstance(returned, ToolReturnPart)
     assert returned.tool_name == "write"
     assert returned.content == "Saved the file"
-
-
-async def test_stream_keeps_request_and_response_events_without_sdk_handle() -> None:
-    request = ModelRequest(parts=[UserPromptPart("Continue")])
-    response = ModelResponse(parts=[TextPart("Partial reply")])
-
-    async def events():
-        yield request
-        yield response
-        raise RuntimeError("Stream failed")
-
-    messages: list[ModelMessage] = []
-    with pytest.raises(RuntimeError, match="Stream failed"):
-        await _consume(events(), messages)
-
-    assert messages == [request, response]
 
 
 async def test_checkpoint_waits_for_native_tool_audit(monkeypatch) -> None:

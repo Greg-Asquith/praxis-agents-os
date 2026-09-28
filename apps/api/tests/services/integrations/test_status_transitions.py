@@ -22,7 +22,6 @@ from services.integrations.connections import (
     transition_connection_status,
 )
 from services.integrations.credentials import revoke_credential, store_oauth_credential
-from services.integrations.domain import CONNECTION_STATUS_TRANSITIONS
 from services.integrations.oauth import ExternalPrincipal
 from services.integrations.plugin import PROVIDER_PLUGINS
 from tests.factories import (
@@ -65,21 +64,6 @@ async def _connection(
     db_session.add(connection)
     await db_session.flush()
     return connection
-
-
-@pytest.mark.parametrize(
-    ("source", "target"),
-    [
-        (source, target)
-        for source, targets in CONNECTION_STATUS_TRANSITIONS.items()
-        for target in targets
-    ],
-)
-async def test_every_declared_transition_is_allowed(db_session, source, target) -> None:
-    auth_mode = "api_key" if "needs_credential" in {source, target} else "oauth"
-    connection = await _connection(db_session, status=source, auth_mode=auth_mode)
-    assert await transition_connection_status(db_session, connection, target) is connection
-    assert connection.status == target
 
 
 async def test_illegal_and_terminal_transitions_are_rejected(db_session) -> None:
@@ -362,13 +346,6 @@ async def test_callback_cannot_replace_credential_during_connection_revocation(
             await cleanup.execute(delete(Workspace).where(Workspace.id == workspace_id))
             await cleanup.execute(delete(User).where(User.id == user_id))
             await cleanup.commit()
-
-
-async def test_same_status_is_noop(db_session) -> None:
-    connection = await _connection(db_session, status="active")
-    changed_at = connection.status_changed_at
-    await transition_connection_status(db_session, connection, "active", reason="ignored")
-    assert connection.status_changed_at == changed_at
 
 
 async def test_recovery_status_must_match_auth_mode(db_session) -> None:

@@ -29,6 +29,7 @@ def test_provider_contract_exposes_workspace_token_discovery_and_insights() -> N
         "meta_ads_get_accounts",
         "meta_ads_list_objects",
         "meta_ads_list_custom_conversions",
+        "meta_ads_list_activities",
     ]
     assert "meta_ads" in VALID_TOOL_ICONS
 

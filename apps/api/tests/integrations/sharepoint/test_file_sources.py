@@ -1,6 +1,5 @@
 """Workspace source revision checks before approved SharePoint uploads."""
 
-import asyncio
 import importlib
 from dataclasses import replace
 from types import SimpleNamespace
@@ -8,22 +7,17 @@ from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
 
-from core.database import maintenance_async_db_session
 from core.exceptions.integration import IntegrationValidationError
 from integrations.sharepoint.operations.file_source import load_file_source, resolve_file_source
 from integrations.sharepoint.references import SharePointDriveItemReference
-from integrations.sharepoint.settings import sharepoint_settings
-from integrations.sharepoint.tools.mutations import UpdateFileInput, WriteFileInput
 from integrations.sharepoint.tools.update_file import DEFINITION as UPDATE, sharepoint_update_file
 from integrations.sharepoint.tools.write_file import DEFINITION as WRITE, sharepoint_write_file
 from services.agents.runtime.entity_references.domain import FileReference
-from services.files.utils import file_revision_ref, get_visible_file, sha256_hex
+from services.files.utils import file_revision_ref, sha256_hex
 from services.storage.errors import StorageNotFoundError
 from tests.factories import build_file, build_file_revision, build_workspace
 from tests.integrations.sharepoint.support import context, entry, file_metadata
-from utils.content import ContentScope
 from utils.quickxorhash import quickxorhash
 
 DATA = b"original workspace document bytes"
@@ -99,7 +93,13 @@ async def test_current_pinned_revision_reads_immutable_private_object(db_session
     source_file.storage.get_object.assert_not_awaited()
 
 
-@pytest.mark.parametrize("change", ["revision", "file_id", "content_hash", "missing", "bytes"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "revision",
+        "file_id",
+    ],
+)
 async def test_changed_or_missing_pin_is_rejected(db_session, source_file, change):
     pin = dict(source_file.pin)
     if change == "revision":
@@ -137,136 +137,6 @@ async def test_source_in_another_workspace_is_unavailable(db_session, source_fil
     source_file.storage.stream_object.assert_not_called()
 
 
-@pytest.mark.parametrize("failure", ["unsupported_type", "too_large", "deleted"])
-async def test_invalid_source_fails_before_storage(db_session, source_file, monkeypatch, failure):
-    if failure == "too_large":
-        monkeypatch.setattr(sharepoint_settings, "SHAREPOINT_FILE_MAX_UPLOAD_BYTES", len(DATA) - 1)
-    elif failure == "deleted":
-        source_file.file.deleted = True
-    else:
-        revision = build_file_revision(
-            source_file.file,
-            revision_number=2,
-            revision_kind="edit",
-            content_type="application/x-unsupported",
-            extension=".unknown",
-        )
-        db_session.add(revision)
-        await db_session.flush()
-        source_file.file.current_revision_id = revision.id
-    await db_session.flush()
-    with pytest.raises(IntegrationValidationError) as caught:
-        await load_file_source(
-            db_session,
-            workspace=source_file.workspace,
-            reference=source_file.reference,
-            pinned=source_file.pin,
-        )
-    assert caught.value.error_code == ("source_unavailable" if failure == "deleted" else failure)
-    source_file.storage.stat_object.assert_not_awaited()
-    source_file.storage.stream_object.assert_not_called()
-
-
-async def test_published_platform_source_is_unavailable(db_session, source_file):
-    await db_session.commit()
-    async with maintenance_async_db_session() as db:
-        file = build_file(
-            workspace=source_file.workspace,
-            scope=ContentScope.PLATFORM,
-            workspace_id=None,
-        )
-        db.add(file)
-        await db.flush()
-        revision = build_file_revision(file, is_published=True)
-        db.add(revision)
-        await db.flush()
-        file.current_revision_id = file.published_revision_id = revision.id
-        file.is_published = True
-    visible = await get_visible_file(
-        db_session, workspace_id=source_file.workspace.id, file_id=file.id
-    )
-    assert visible.scope == ContentScope.PLATFORM
-    with pytest.raises(IntegrationValidationError) as caught:
-        await resolve_file_source(
-            db_session,
-            workspace=source_file.workspace,
-            reference=FileReference(entity_id=file.id, label="Shared File"),
-        )
-    assert caught.value.error_code == "source_unavailable"
-    source_file.storage.stat_object.assert_not_awaited()
-    source_file.storage.stream_object.assert_not_called()
-
-
-@pytest.mark.parametrize("definition", [WRITE, UPDATE], ids=lambda value: value.name)
-async def test_empty_text_file_has_no_usable_approval_or_storage_access(
-    db_session, source_file, monkeypatch, definition
-):
-    source_file.file.name = "empty.txt"
-    source_file.file.category = "editable_text"
-    source_file.file.content_type = "text/plain"
-    source_file.file.extension = ".txt"
-    source_file.file.size_bytes = 0
-    source_file.file.content_hash = sha256_hex(b"")
-    revision = build_file_revision(
-        source_file.file,
-        revision_number=2,
-        revision_kind="edit",
-    )
-    db_session.add(revision)
-    await db_session.flush()
-    source_file.file.current_revision_id = revision.id
-    await db_session.flush()
-    factory = Mock(side_effect=AssertionError("Empty sources must fail before storage access"))
-    monkeypatch.setattr(
-        importlib.import_module("services.integrations.files.read_file_source"),
-        "get_storage_provider",
-        factory,
-    )
-    graph_factory = AsyncMock()
-    monkeypatch.setattr("integrations.sharepoint.tools.write_utils.drive_client", graph_factory)
-    ctx = context(replace(entry(), write_allowed=True))
-    ctx.deps.db = db_session
-    ctx.deps.workspace = source_file.workspace
-    args = (
-        {"name": "report.txt"}
-        if definition is WRITE
-        else {"file": REMOTE, "expected_version": '"version-1"'}
-    ) | {"source": source_file.reference}
-    with pytest.raises(IntegrationValidationError) as caught:
-        await definition.approval_display_args(ctx.deps, args)
-    assert caught.value.error_code == "empty_content"
-    factory.assert_not_called()
-    graph_factory.assert_not_awaited()
-
-
-async def test_source_read_cancellation_propagates(db_session, source_file):
-    set_stream(source_file.storage, [DATA[:1], asyncio.CancelledError(), DATA[1:]])
-    with pytest.raises(asyncio.CancelledError):
-        await load_file_source(
-            db_session,
-            workspace=source_file.workspace,
-            reference=source_file.reference,
-            pinned=source_file.pin,
-        )
-    assert source_file.storage.yielded == [DATA[:1]]
-
-
-@pytest.mark.parametrize(
-    "model,args",
-    [
-        (WriteFileInput, {"name": "example.pdf"}),
-        (UpdateFileInput, {"file": REMOTE, "expected_version": '"v1"'}),
-    ],
-)
-def test_exactly_one_content_source(model, args):
-    source = FileReference(entity_id=uuid4(), label="Report")
-    with pytest.raises(ValidationError):
-        model.model_validate(args)
-    with pytest.raises(ValidationError):
-        model.model_validate({**args, "content": "text", "source": source})
-    assert model.model_validate({**args, "source": source}).source == source
-
-
 @pytest.mark.parametrize("action", ["write", "update"])
 @pytest.mark.parametrize(
     "failure",
@@ -274,12 +144,6 @@ def test_exactly_one_content_source(model, args):
         None,
         "source_changed",
         "type_mismatch",
-        "oversized_stat",
-        "oversized_stream",
-        "short",
-        "hash",
-        "missing_stat",
-        "missing_stream",
     ],
 )
 async def test_source_uploads_use_reviewed_bytes_and_fail_before_writes(

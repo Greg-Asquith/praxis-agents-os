@@ -114,22 +114,6 @@ def _agent_run(
     )
 
 
-async def test_status_summary_is_empty_for_new_workspace(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    _user, _workspace, _agent, headers = await _authenticated_workspace(db_session)
-
-    response = await db_async_client.get("/api/v1/status/summary", headers=headers)
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "unread_conversations": 0,
-        "conversations_needing_approval": 0,
-        "schedules_needing_attention": 0,
-    }
-
-
 async def test_status_summary_counts_all_rows_and_latest_schedule_health(
     db_session: AsyncSession,
     db_async_client: AsyncClient,

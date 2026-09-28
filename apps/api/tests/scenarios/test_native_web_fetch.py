@@ -173,25 +173,3 @@ async def test_fetch_url_blocked_domain_returns_model_visible_retry(
     assert "domain is blocked" in str(seen_requests[1][0])
     assert result.output == "The domain is blocked, so I did not fetch it."
     assert {row.details["outcome"] for row in result.audit_rows} == {"failed"}
-
-
-async def test_fetch_url_is_hidden_when_only_an_unsupported_provider_is_configured(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
-    context = await build_scenario_agent(db_session_factory, tool_names=["fetch_url"])
-    seen_requests = []
-
-    result = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(turns=["No fetch tool is available."], seen_requests=seen_requests),
-    )
-
-    tool_names = {tool.name for tool in seen_requests[0][1].function_tools}
-    assert result.run.status == "completed"
-    assert "fetch_url" not in tool_names

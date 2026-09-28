@@ -15,9 +15,8 @@ from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.files import FileReference
 from services.agent_runs.domain import RUN_STATUS_COMPLETED
-from services.conversations.create_conversation_stream import create_conversation_stream
 from services.conversations.create_turn_stream import create_conversation_turn_stream
-from services.conversations.schemas import ConversationCreateRequest, ConversationTurnCreateRequest
+from services.conversations.schemas import ConversationTurnCreateRequest
 from services.files.contract import contract_for_content_type
 from services.files.utils import private_ref_from_key, revision_object_key, sha256_hex
 from services.storage.factory import get_storage_provider
@@ -43,60 +42,6 @@ def local_storage_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterato
         yield
     finally:
         reset_storage_provider_cache()
-
-
-async def test_create_conversation_records_attachment_references_and_run_metadata(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    create_module = importlib.import_module("services.conversations.create_conversation_stream")
-
-    actor, workspace, agent = await _persist_workspace_agent(db_session)
-    file, _revision = await _persist_file(db_session, workspace=workspace, actor=actor)
-    captured_worker: dict[str, object] = {}
-    _patch_spawn(monkeypatch, create_module)
-
-    def fake_initial_worker(**kwargs):
-        captured_worker.update(kwargs)
-
-        async def noop():
-            return None
-
-        return noop()
-
-    monkeypatch.setattr(create_module, "_run_initial_conversation_worker", fake_initial_worker)
-
-    await create_conversation_stream(
-        db_session,
-        actor=actor,
-        workspace=workspace,
-        payload=ConversationCreateRequest(
-            agent_id=agent.id,
-            user_prompt="Read this file",
-            client_message_id="create-attachment",
-            attachments=[file.id, file.id],
-        ),
-    )
-
-    conversation = await db_session.scalar(
-        select(Conversation).where(Conversation.active_agent_id == agent.id)
-    )
-    assert conversation is not None
-    reference = await db_session.scalar(
-        select(FileReference).where(
-            FileReference.file_id == file.id,
-            FileReference.target_type == "conversation",
-            FileReference.target_id == conversation.id,
-        )
-    )
-    assert reference is not None
-    run = await db_session.scalar(
-        select(AgentRun).where(AgentRun.conversation_id == conversation.id)
-    )
-    assert run is not None
-    assert run.metadata_json["attachment_file_ids"] == [str(file.id)]
-    assert captured_worker["attachment_file_ids"] == [file.id]
 
 
 async def test_create_turn_references_attachments_idempotently(

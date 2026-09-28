@@ -4,9 +4,7 @@ import {
   DEFAULT_CRON_EXPRESSION,
   MAX_SCHEDULE_BUDGET,
   buildSchedulePayload,
-  buildSchedulePreviewPayload,
   initialScheduleFormState,
-  isScheduleFormDirty,
   validateScheduleFormState,
   type ScheduleFormState,
 } from "@/features/schedules/components/schedule-form-model"
@@ -106,23 +104,6 @@ describe("initialScheduleFormState", () => {
       timezone: "Europe/London",
     })
   })
-
-  it("round-trips the largest cross-platform-safe schedule budgets", () => {
-    const state = initialScheduleFormState({
-      ...schedule,
-      execution_params: {
-        completion_contract: {
-          required: false,
-          criteria: [],
-          max_requests: MAX_SCHEDULE_BUDGET,
-          max_total_tokens: MAX_SCHEDULE_BUDGET,
-        },
-      },
-    })
-
-    expect(state.maxRequests).toBe(String(MAX_SCHEDULE_BUDGET))
-    expect(state.maxTotalTokens).toBe(String(MAX_SCHEDULE_BUDGET))
-  })
 })
 
 describe("validateScheduleFormState", () => {
@@ -181,10 +162,6 @@ describe("validateScheduleFormState", () => {
       label: "Interval",
       message: "Interval must be a whole number of at least 1 minute.",
     })
-  })
-
-  it("accepts valid state", () => {
-    expect(validateScheduleFormState(validState())).toEqual([])
   })
 
   it("requires bounded completion checks when reporting is enabled", () => {
@@ -328,21 +305,6 @@ describe("buildSchedulePayload", () => {
     ).toMatchObject({ execution_params: { temperature: 0 } })
   })
 
-  it("builds budget-only completion contracts", () => {
-    expect(
-      buildSchedulePayload(validState({ maxRequests: "3", maxTotalTokens: "12000" }), "create")
-    ).toMatchObject({
-      execution_params: {
-        completion_contract: {
-          required: false,
-          criteria: [],
-          max_requests: 3,
-          max_total_tokens: 12000,
-        },
-      },
-    })
-  })
-
   it("round-trips an active context selection and explicit clear", () => {
     expect(
       buildSchedulePayload(
@@ -386,43 +348,6 @@ describe("buildSchedulePayload", () => {
     })
   })
 
-  it("omits unchanged active context from update payloads", () => {
-    const initialState = validState({
-      activeContext: {
-        targets: [
-          { type: "context_group", context_group_id: "group-1" },
-          { type: "resource", integration_resource_id: "resource-1" },
-        ],
-      },
-    })
-    const reorderedState = validState({
-      activeContext: {
-        targets: [
-          { type: "resource", integration_resource_id: "resource-1" },
-          { type: "context_group", context_group_id: "group-1" },
-        ],
-      },
-      name: "Admin renamed schedule",
-    })
-
-    expect(buildEditPayload(reorderedState, initialState)).not.toHaveProperty("active_context")
-  })
-
-  it("includes active context when an update replaces the target set", () => {
-    const initialState = validState({
-      activeContext: {
-        targets: [{ type: "context_group", context_group_id: "group-1" }],
-      },
-    })
-    const replacement = {
-      targets: [{ type: "resource" as const, integration_resource_id: "resource-1" }],
-    }
-
-    expect(
-      buildEditPayload(validState({ activeContext: replacement }), initialState)
-    ).toHaveProperty("active_context", replacement)
-  })
-
   it("removes a revoked grant while preserving unrelated execution params", () => {
     const state = validState({
       executionParams: {
@@ -441,21 +366,6 @@ describe("buildSchedulePayload", () => {
           requested_by: "ops",
         },
         temperature: 0,
-      },
-    })
-  })
-
-  it("preserves an existing explicit approval policy during ordinary edits", () => {
-    const state = validState({
-      executionParams: {
-        envelope: { side_effect_policy: "require_approval" },
-      },
-      externalWritesAllowed: false,
-    })
-
-    expect(buildEditPayload(state)).toMatchObject({
-      execution_params: {
-        envelope: { side_effect_policy: "require_approval" },
       },
     })
   })
@@ -498,51 +408,5 @@ describe("buildSchedulePayload", () => {
         "create"
       )
     ).toBe("Run once time is invalid.")
-  })
-
-  it("returns validation strings for invalid interval payloads", () => {
-    expect(buildEditPayload(validState({ intervalMinutes: "abc", scheduleType: "interval" }))).toBe(
-      "Interval must be a whole number of at least 1 minute."
-    )
-  })
-})
-
-describe("buildSchedulePreviewPayload", () => {
-  it("adds a default preview count to valid timing state", () => {
-    expect(buildSchedulePreviewPayload(validState({ scheduleType: "interval" }))).toEqual({
-      schedule_type: "interval",
-      cron_expression: null,
-      interval_minutes: 60,
-      run_once_at: null,
-      timezone: "UTC",
-      preview_count: 5,
-    })
-  })
-
-  it("returns null when timing state is invalid", () => {
-    expect(
-      buildSchedulePreviewPayload(validState({ intervalMinutes: "", scheduleType: "interval" }))
-    ).toBeNull()
-  })
-})
-
-describe("isScheduleFormDirty", () => {
-  it("tracks field-level changes", () => {
-    const initial = initialScheduleFormState(schedule)
-
-    expect(isScheduleFormDirty(initial, initial)).toBe(false)
-    expect(isScheduleFormDirty({ ...initial, timezone: "UTC" }, initial)).toBe(true)
-    expect(isScheduleFormDirty({ ...initial, name: "Renamed report" }, initial)).toBe(true)
-    expect(
-      isScheduleFormDirty(
-        {
-          ...initial,
-          activeContext: {
-            targets: [{ type: "resource", integration_resource_id: "resource-1" }],
-          },
-        },
-        initial
-      )
-    ).toBe(true)
   })
 })

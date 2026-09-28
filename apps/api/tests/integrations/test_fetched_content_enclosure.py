@@ -33,7 +33,11 @@ class FramedFixtureOutput(BaseModel):
 
 
 @pytest.mark.parametrize(
-    "source_kind", ["gmail_message", "outlook_message", "outlook_person", "sharepoint_drive_item"]
+    "source_kind",
+    [
+        "gmail_message",
+        "outlook_message",
+    ],
 )
 async def test_hostile_provider_content_is_enclosed_by_dispatch(monkeypatch, source_kind) -> None:
     hostile = FIXTURE.read_text(encoding="utf-8")

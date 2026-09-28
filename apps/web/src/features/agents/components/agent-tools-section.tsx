@@ -283,7 +283,7 @@ function CodeModeInfoContent() {
   )
 }
 
-export function CodeModeInfoBody() {
+function CodeModeInfoBody() {
   return (
     <>
       <PopoverHeader>

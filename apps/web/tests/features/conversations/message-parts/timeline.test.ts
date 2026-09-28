@@ -40,26 +40,6 @@ type TimelineScenario = {
 
 const scenarios: TimelineScenario[] = [
   {
-    name: "pairs persisted tool results into one transcript row",
-    input: input({
-      messages: [
-        message("assistant-call", "assistant", 1, [toolCall("call-1")]),
-        message("tool-result", "tool", 2, [toolResult("call-1", { value: "done" })]),
-      ],
-    }),
-    select: (timeline) => transcriptActivities(timeline),
-    expected: [{ id: "call-1", result: { value: "done" }, status: "completed" }],
-  },
-  {
-    name: "heals an unanswered tool call from a terminated run",
-    input: input({
-      messages: [runMessage("assistant-call", "run-1", [toolCall("call-1")])],
-      transcriptRun: { id: "run-1", status: "failed" },
-    }),
-    select: (timeline) => transcriptActivities(timeline),
-    expected: [{ id: "call-1", status: "stopped" }],
-  },
-  {
     name: "uses a completed live result until persistence catches up",
     input: input({
       messages: [runMessage("assistant-call", "run-1", [toolCall("call-1")])],
@@ -174,31 +154,6 @@ const scenarios: TimelineScenario[] = [
     expected: normalizedWorkflow,
   },
   {
-    name: "removes an optimistic message when its persisted copy appears",
-    input: input({
-      messages: [
-        {
-          ...message("user-message", "user", 1, [{ content: "Hello", part_kind: "user-prompt" }]),
-          client_message_id: "client-1",
-        },
-      ],
-      pendingUserMessages: [pendingMessage("client-1")],
-    }),
-    select: (timeline) => timeline.rows.map((row) => row.kind),
-    expected: ["message"],
-  },
-  {
-    name: "appends a new optimistic message after persisted rows",
-    input: input({
-      messages: [
-        message("assistant-message", "assistant", 1, [{ content: "Hi", part_kind: "text" }]),
-      ],
-      pendingUserMessages: [pendingMessage("client-2")],
-    }),
-    select: (timeline) => timeline.rows.map((row) => row.kind),
-    expected: ["message", "pending-message"],
-  },
-  {
     name: "ignores live activity for another conversation",
     input: input({
       stream: stream({
@@ -306,16 +261,6 @@ function toolCall(toolCallId: string) {
   }
 }
 
-function toolResult(toolCallId: string, content: unknown) {
-  return {
-    content,
-    outcome: "success",
-    part_kind: "tool-return",
-    tool_call_id: toolCallId,
-    tool_name: "test_tool",
-  }
-}
-
 function liveToolCall(toolCallId: string, status: ToolCallState["status"]): ToolCallState {
   return {
     args: { value: "input" },
@@ -387,15 +332,6 @@ function replayWorkflowMessages(): ConversationMessage[] {
 
 function approval(toolCallId: string): PendingToolApproval {
   return { args: { value: "input" }, name: "test_tool", tool_call_id: toolCallId }
-}
-
-function pendingMessage(clientMessageId: string) {
-  return {
-    clientMessageId,
-    conversationId: "conversation-1",
-    createdAt,
-    text: "Hello",
-  }
 }
 
 function transcriptActivities(timeline: ConversationTimeline) {
@@ -536,36 +472,6 @@ describe("persisted run failure notices", () => {
     ])
   })
 
-  it("shows a failure after the user prompt when no assistant response was saved", () => {
-    const prompt = {
-      ...message("prompt", "user", 1, [{ part_kind: "user-prompt", content: "Hello" }]),
-      metadata: { agent_run_id: "failed" },
-    }
-    const timeline = projectConversationTimeline(
-      input({ runs: { failed: failedRun("failed") }, messages: [prompt] })
-    )
-    expect(timeline.rows.map((row) => row.kind)).toEqual(["message", "run-outcome"])
-  })
-
-  it("rebuilds budget copy at an older run boundary", () => {
-    const run = failedRun("budget", {
-      outcome: "budget_exhausted",
-      completion_json: {
-        tripped_budget: { kind: "total_tokens", limit: 1000000 },
-        observed_total_tokens: 1100000,
-        requests: 12,
-      },
-    })
-    const timeline = projectConversationTimeline(
-      input({ runs: { budget: run }, messages: [runText("reply", "budget")] })
-    )
-    const notice = timeline.rows.at(-1)
-    expect(notice?.kind).toBe("run-outcome")
-    if (notice?.kind !== "run-outcome") throw new Error("Expected run failure notice")
-    expect(notice.outcome.title).toBe("Run limit reached")
-    expect(notice.outcome.message).toContain("1,100,000 tokens across 12 requests")
-  })
-
   it("suppresses only the run with a visible live error or recovery banner, then restores it on reload", () => {
     const base = input({
       runs: { old: failedRun("old"), live: failedRun("live") },
@@ -584,7 +490,7 @@ describe("persisted run failure notices", () => {
     ).toEqual(["old", "live"])
   })
 
-  it.each(["completed", "cancelled", "running", "awaiting_approval"] as const)(
+  it.each(["completed", "running"] as const)(
     "adds no failure notice for a %s run or an unreferenced run",
     (status) => {
       const timeline = projectConversationTimeline(

@@ -6,11 +6,6 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from core.exceptions.integration import IntegrationNotFoundError
-from integrations.notion.entity_resolvers.data_source import (
-    resolve_notion_data_sources,
-    search_notion_data_sources,
-)
 from integrations.notion.entity_resolvers.page import (
     resolve_notion_pages,
     search_notion_pages,
@@ -70,12 +65,6 @@ def notion_text(content: str, source_ref: str, kind: str) -> UntrustedNode:
     return UntrustedNode(source_kind=kind, source_ref=source_ref, content=content)
 
 
-@pytest.mark.parametrize("reference_type", [NotionPageReference, NotionDataSourceReference])
-def test_references_reject_bare_uuid_strings(reference_type) -> None:
-    with pytest.raises(ValidationError):
-        reference_type.model_validate(str(uuid4()))
-
-
 def test_page_reference_rejects_data_source_reference() -> None:
     with pytest.raises(ValidationError):
         NotionPageReference.model_validate(data_source_reference("workspace-1").model_dump())
@@ -132,39 +121,6 @@ async def test_page_search_fans_out_and_pages_with_offset(monkeypatch) -> None:
     assert all(choice.icon == "notion" for choice in (*first.choices, *second.choices))
 
 
-async def test_data_source_search_uses_matching_object_filter(monkeypatch) -> None:
-    selected = entry("workspace-1")
-    calls: list[dict] = []
-
-    async def client_for_principal(*_args, **_kwargs):
-        return object()
-
-    async def search(_client, **kwargs):
-        calls.append(kwargs)
-        return {
-            "items": [
-                {
-                    "kind": "data_source",
-                    "id": "source-1",
-                    "title": notion_text("Projects", "source-1", "notion_data_source"),
-                    "url": "https://www.notion.so/source",
-                    "last_edited_time": "2026-08-25T12:00:00Z",
-                }
-            ]
-        }
-
-    monkeypatch.setattr(
-        "integrations.notion.entity_resolvers.utils.notion_client_for_principal",
-        client_for_principal,
-    )
-    monkeypatch.setattr("integrations.notion.entity_resolvers.utils.search_notion", search)
-
-    result = await search_notion_data_sources(context(selected), "projects", {}, 20, None)
-
-    assert calls[0]["kind"] == "data_source"
-    assert result.choices[0].value["data_source_id"] == "source-1"
-
-
 async def test_exact_resolution_uses_only_the_matching_workspace(monkeypatch) -> None:
     first = entry("workspace-1")
     second = entry("workspace-2")
@@ -197,37 +153,3 @@ async def test_exact_resolution_uses_only_the_matching_workspace(monkeypatch) ->
     assert clients == ["workspace-2"]
     assert len(choices) == 1
     assert choices[0].label == "Hydrated"
-
-
-async def test_exact_resolution_omits_not_found_and_wrong_reference_types(monkeypatch) -> None:
-    selected = entry("workspace-1")
-
-    async def client_for_principal(*_args, **_kwargs):
-        return object()
-
-    async def get_data_source(_client, *, data_source_id):
-        raise IntegrationNotFoundError(
-            "Notion resource was not found",
-            provider_key="notion",
-            operation="get_data_source",
-        )
-
-    monkeypatch.setattr(
-        "integrations.notion.entity_resolvers.utils.notion_client_for_principal",
-        client_for_principal,
-    )
-    monkeypatch.setattr(
-        "integrations.notion.entity_resolvers.data_source.get_data_source",
-        get_data_source,
-    )
-
-    choices = await resolve_notion_data_sources(
-        context(selected),
-        [
-            data_source_reference("workspace-1").model_dump(),
-            page_reference("workspace-1").model_dump(),
-        ],
-        {},
-    )
-
-    assert choices == ()

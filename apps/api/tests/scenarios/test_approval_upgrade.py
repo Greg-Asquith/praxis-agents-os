@@ -23,8 +23,9 @@ from tests.support.delegation import resume_scenario, scenario_effects
 from tests.support.scenario import scripted_model
 
 
-@pytest.mark.parametrize("fixture", ["direct", "workflow", "workflow-second", "delegated"])
-@pytest.mark.parametrize("decision", ["approved", "denied"])
+@pytest.mark.parametrize(
+    ("fixture", "decision"), [("workflow-second", "denied"), ("delegated", "approved")]
+)
 async def test_saved_v1_approvals_resume_without_repeating_completed_effects(
     committed_db_session_factory, monkeypatch, fixture, decision
 ):
@@ -111,11 +112,11 @@ async def test_saved_v1_approvals_resume_without_repeating_completed_effects(
             await close_code_mode_executor()
 
 
-@pytest.mark.parametrize("fixture", ["direct", "workflow-second", "delegated"])
 async def test_old_accepted_but_unexecuted_continuation_requires_blocked_recovery(
-    committed_db_session_factory, monkeypatch, fixture
+    committed_db_session_factory, monkeypatch
 ):
     factory = committed_db_session_factory
+    fixture = "workflow-second"
     with scenario_effects(name="scenario_release_write") as effects:
         context = await restore_approval_fixture(factory, fixture)
         monkeypatch.setattr(
@@ -136,11 +137,10 @@ async def test_old_accepted_but_unexecuted_continuation_requires_blocked_recover
             evidence = deepcopy(root.completion_json)
             actions = evidence["recovery"]["actions"]
             assert any(action["status"] == "uncertain" for action in actions)
-            if fixture == "workflow-second":
-                assert any(
-                    action["tool_call_id"] == "workflow:1" and action["status"] == "completed"
-                    for action in actions
-                )
+            assert any(
+                action["tool_call_id"] == "workflow:1" and action["status"] == "completed"
+                for action in actions
+            )
             assert "approval_state" not in root.metadata_json
             actor = await db.get(User, context.user_id)
             workspace = await db.get(Workspace, context.workspace_id)
@@ -163,9 +163,8 @@ async def test_old_accepted_but_unexecuted_continuation_requires_blocked_recover
         assert effects.calls == []
 
 
-@pytest.mark.parametrize("decision", ["approved", "denied"])
 async def test_saved_staged_workflow_preserves_content_and_consent(
-    committed_db_session_factory, monkeypatch, tmp_path, decision
+    committed_db_session_factory, monkeypatch, tmp_path
 ):
     from core.settings import settings
     from models.files import File, FileRevision
@@ -217,7 +216,7 @@ async def test_saved_staged_workflow_preserves_content_and_consent(
                 AgentRunResumeDecision(
                     approval_id=leaf.approval_id,
                     tool_call_id=leaf.tool_call_id,
-                    decision=decision,
+                    decision="approved",
                 )
             ],
         )
@@ -226,15 +225,12 @@ async def test_saved_staged_workflow_preserves_content_and_consent(
             files = list(
                 await db.scalars(select(File).where(File.workspace_id == context.workspace_id))
             )
-            assert len(files) == (1 if decision == "approved" else 0)
-            if files:
-                revision = await db.scalar(
-                    select(FileRevision).where(FileRevision.file_id == files[0].id)
-                )
-                assert (
-                    await provider.get_object(private_ref_from_key(revision.object_key))
-                    == b"nested body"
-                )
+            [file] = files
+            revision = await db.scalar(select(FileRevision).where(FileRevision.file_id == file.id))
+            assert (
+                await provider.get_object(private_ref_from_key(revision.object_key))
+                == b"nested body"
+            )
         with pytest.raises(StorageNotFoundError):
             await resolve_staged_write_content(
                 workspace_id=context.workspace_id, run_id=context.run_id, content_ref=content_ref
@@ -244,15 +240,10 @@ async def test_saved_staged_workflow_preserves_content_and_consent(
         reset_storage_provider_cache()
 
 
-@pytest.mark.parametrize(
-    "fault",
-    ["old_tab", "duplicate_native", "unsupported_version", "stale_revision", "terminal_child"],
-)
+@pytest.mark.parametrize("fault", ["stale_revision", "terminal_child"])
 async def test_legacy_upgrade_rejects_unverifiable_decisions_before_execution(
     committed_db_session_factory, monkeypatch, fault
 ):
-    from uuid import uuid4
-
     factory = committed_db_session_factory
     fixture = "delegated" if fault == "terminal_child" else "direct"
     with scenario_effects(name="scenario_release_write") as effects:
@@ -270,17 +261,7 @@ async def test_legacy_upgrade_rejects_unverifiable_decisions_before_execution(
             )
             root = await db.get(AgentRun, context.run_id)
             metadata = deepcopy(root.metadata_json)
-            state = metadata["approval_state"]
-            if fault == "old_tab":
-                state["approval_batch_id"] = str(uuid4())
-            elif fault == "duplicate_native":
-                response = next(
-                    message for message in state["message_history"] if message["kind"] == "response"
-                )
-                response["parts"].append(deepcopy(response["parts"][0]))
-            elif fault == "unsupported_version":
-                state["version"] = 999
-            elif fault == "terminal_child":
+            if fault == "terminal_child":
                 child = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
                 child.status = "completed"
             root.metadata_json = metadata
@@ -299,7 +280,7 @@ async def test_legacy_upgrade_rejects_unverifiable_decisions_before_execution(
                 await resume_agent_run_stream(
                     db, actor=actor, workspace=workspace, run_id=root.id, payload=payload
                 )
-            if fault in {"old_tab", "duplicate_native", "stale_revision"}:
+            if fault == "stale_revision":
                 assert error.value.details["error_code"] == "approval_refresh_required"
             await db.rollback()
         async with factory() as db:

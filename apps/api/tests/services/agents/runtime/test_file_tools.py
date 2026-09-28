@@ -2,9 +2,6 @@
 
 """Tests for runtime file tools."""
 
-import asyncio
-import base64
-import importlib
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +14,6 @@ from pydantic_ai import (
     DeferredToolRequests,
     ModelRetry,
     RunContext,
-    ToolReturn,
 )
 from pydantic_ai.messages import (
     BinaryContent,
@@ -43,7 +39,6 @@ from models.files import File, FileFolder, FileReference as FileReferenceRow, Fi
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
-from services.agents.runtime.code_mode.approval import build_code_mode_approval_metadata
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.envelope import RunEnvelope
@@ -55,23 +50,15 @@ from services.agents.runtime.staged_tool_content import (
     tool_args_for_display,
     tool_replay_args_for_editing,
 )
-from services.agents.runtime.tools.contract import (
-    TOOL_EFFECT_READ,
-    TOOL_EFFECT_WRITE,
-    TOOL_POLICY_AUTO,
-)
-from services.agents.runtime.tools.files.list_files import list_files as runtime_list_files
 from services.agents.runtime.tools.files.read_file import read_file
 from services.agents.runtime.tools.files.utils import slice_text
 from services.agents.runtime.tools.files.write_file import write_file
-from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
-from services.files import create_file_preview, write_agent_file, write_generated_image
+from services.files import write_generated_image
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key, sha256_hex
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision, build_user, build_workspace
 from tests.support.storage import reset_storage_provider_cache
-from utils.document_markdown import DocumentConversionError
 
 pytestmark = pytest.mark.asyncio
 
@@ -97,22 +84,6 @@ def local_storage_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterato
         yield
     finally:
         reset_storage_provider_cache()
-
-
-async def test_file_tool_catalog_policies() -> None:
-    assert RUNTIME_TOOL_CATALOG["list_files"].effect == TOOL_EFFECT_READ
-    assert RUNTIME_TOOL_CATALOG["read_file"].effect == TOOL_EFFECT_READ
-    assert RUNTIME_TOOL_CATALOG["write_file"].effect == TOOL_EFFECT_WRITE
-    assert RUNTIME_TOOL_CATALOG["write_file"].effect_scope == "internal"
-    assert RUNTIME_TOOL_CATALOG["write_file"].default_policy == TOOL_POLICY_AUTO
-    assert (
-        RUNTIME_TOOL_CATALOG["read_file"].timeout
-        == settings.CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS + 5.0
-    )
-    assert "promote_scratch" not in RUNTIME_TOOL_CATALOG
-    for tool_name in ("list_files", "read_file", "write_file"):
-        assert RUNTIME_TOOL_CATALOG[tool_name].configurable is False
-        assert RUNTIME_TOOL_CATALOG[tool_name].auto_mount is True
 
 
 async def test_stages_write_file_approval_content_without_persisting_body(
@@ -170,52 +141,6 @@ async def test_stages_write_file_approval_content_without_persisting_body(
     )
 
 
-async def test_stages_nested_code_mode_write_content_in_trusted_metadata(
-    local_storage_settings: None,
-) -> None:
-    workspace_id = uuid4()
-    run_id = uuid4()
-    nested = ToolCallPart(
-        tool_name="write_file",
-        tool_call_id="workflow-call:1",
-        args={"name": "nested.md", "content": "nested sensitive body"},
-    )
-    outer = ToolCallPart(
-        tool_name="run_workflow",
-        tool_call_id="workflow-call",
-        args={"code": "await write_file(...)"},
-    )
-    staged = await stage_write_file_approval_content(
-        workspace_id=workspace_id,
-        run_id=run_id,
-        new_messages=[ModelResponse(parts=[outer])],
-        all_messages=[ModelResponse(parts=[outer])],
-        deferred_tool_requests=DeferredToolRequests(
-            approvals=[outer],
-            metadata={
-                outer.tool_call_id: build_code_mode_approval_metadata(
-                    outer_tool_call_id=outer.tool_call_id,
-                    nested_call=nested,
-                    reason="Review the nested write.",
-                )
-            },
-        ),
-    )
-
-    metadata = staged.deferred_tool_requests.metadata[outer.tool_call_id]
-    assert "content" not in metadata["nested_args"]
-    content_ref = metadata["nested_args"][WRITE_FILE_CONTENT_REF_ARG]
-    assert (
-        await resolve_staged_write_content(
-            workspace_id=workspace_id,
-            run_id=run_id,
-            content_ref=content_ref,
-        )
-        == "nested sensitive body"
-    )
-    assert metadata["display_args"]["content"] == "[staged for approval; content omitted]"
-
-
 async def test_rejects_invalid_staged_write_content_ref() -> None:
     workspace_id = uuid4()
     run_id = uuid4()
@@ -232,24 +157,6 @@ async def test_rejects_invalid_staged_write_content_ref() -> None:
                 run_id=run_id,
                 content_ref=content_ref,
             )
-
-
-async def test_list_files_returns_workspace_files(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    await write_agent_file(
-        db_session,
-        workspace=context.workspace,
-        agent=context.agent,
-        name="notes.md",
-        content="durable notes",
-    )
-    output = await runtime_list_files(_run_context(db_session, context))
-
-    assert [file.name for file in output.files] == ["notes.md"]
-    assert output.total == 1
 
 
 async def test_durable_write_requires_approval_and_records_agent_revision(
@@ -345,95 +252,6 @@ async def test_rejected_write_file_does_not_persist_its_requested_folder(
     )
 
 
-async def test_generated_png_uses_file_limits_revision_provenance_audit_and_preview(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    png = base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-    )
-
-    result = await write_generated_image(
-        db_session,
-        workspace=context.workspace,
-        agent=context.agent,
-        prompt="A small red square",
-        content=png,
-        media_type="image/png",
-        conversation_id=context.conversation.id,
-        requested_by_user_id=context.user.id,
-    )
-
-    file = await db_session.get(File, result.file_id)
-    revision = await db_session.get(FileRevision, result.revision_id)
-    audit = await db_session.scalar(
-        select(AuditEvent).where(
-            AuditEvent.workspace_id == context.workspace.id,
-            AuditEvent.resource_type == "file",
-            AuditEvent.resource_id == str(result.file_id),
-        )
-    )
-    assert file is not None
-    assert revision is not None
-    assert result.width == 1
-    assert result.height == 1
-    assert result.name.startswith("a-small-red-square-")
-    assert result.name.endswith(".png")
-    assert file.category == "image"
-    assert file.processing_status == "ready"
-    assert revision.created_by_agent_id == context.agent.id
-    assert audit is not None
-    assert audit.actor_type == "agent"
-    assert audit.details["source"] == "native_image_generation"
-    assert await db_session.scalar(
-        select(FileReferenceRow.id).where(
-            FileReferenceRow.file_id == result.file_id,
-            FileReferenceRow.target_type == "conversation",
-            FileReferenceRow.target_id == context.conversation.id,
-        )
-    )
-    preview = await create_file_preview(
-        db_session,
-        workspace=context.workspace,
-        file_id=file.id,
-    )
-    assert preview.preview.url.startswith("http://testserver/")
-
-
-async def test_generated_webp_preserves_provider_format(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    webp = (
-        b"RIFF"
-        + (22).to_bytes(4, "little")
-        + b"WEBPVP8X"
-        + (10).to_bytes(4, "little")
-        + b"\x00\x00\x00\x00"
-        + (639).to_bytes(3, "little")
-        + (479).to_bytes(3, "little")
-    )
-
-    result = await write_generated_image(
-        db_session,
-        workspace=context.workspace,
-        agent=context.agent,
-        prompt="A WebP landscape",
-        content=webp,
-        media_type="image/webp",
-    )
-
-    file = await db_session.get(File, result.file_id)
-    assert file is not None
-    assert result.content_type == "image/webp"
-    assert result.name.endswith(".webp")
-    assert (result.width, result.height) == (640, 480)
-    assert file.content_type == "image/webp"
-    assert file.extension == ".webp"
-
-
 async def test_generated_image_rejects_invalid_or_oversized_content(
     db_session: AsyncSession,
     local_storage_settings: None,
@@ -501,33 +319,6 @@ async def test_edited_write_file_approval_uses_staged_content(
     assert stored == b"approved staged bytes"
 
 
-async def test_read_file_returns_editable_text_content(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    result = await write_agent_file(
-        db_session,
-        workspace=context.workspace,
-        agent=context.agent,
-        name="notes.md",
-        content="abcdefghij",
-    )
-
-    read_output = await read_file(
-        _run_context(db_session, context),
-        file_id=result.file.id,
-        offset=3,
-        max_bytes=4,
-    )
-
-    assert read_output["source"] == "content"
-    assert read_output["content"] == "defg"
-    assert read_output["offset"] == 3
-    assert read_output["end_offset"] == 7
-    assert read_output["truncated"] is True
-
-
 async def test_text_slices_preserve_utf8_boundaries() -> None:
     first = slice_text(
         "ab😀cd",
@@ -553,32 +344,6 @@ async def test_text_slices_preserve_utf8_boundaries() -> None:
     assert second["content"] == "😀"
     assert second["end_offset"] == 6
     assert third["content"] == "cd"
-
-
-async def test_read_file_returns_binary_content_for_images(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    image_file, revision = await _persist_image_file(
-        db_session,
-        context=context,
-        content=b"fake-png",
-    )
-
-    read_output = await read_file(_run_context(db_session, context), file_id=image_file.id)
-
-    assert isinstance(read_output, ToolReturn)
-    assert read_output.metadata == {
-        "file_id": str(image_file.id),
-        "revision_id": str(revision.id),
-    }
-    assert read_output.content is None
-    metadata, binary = read_output.return_value
-    assert metadata["source"] == "image"
-    assert isinstance(binary, BinaryContent)
-    assert binary.data == b"fake-png"
-    assert binary.media_type == "image/png"
 
 
 async def test_image_content_reaches_the_post_tool_model_request(
@@ -635,62 +400,6 @@ async def test_image_content_reaches_the_post_tool_model_request(
     assert binary.identifier == str(image_file.id)
 
 
-async def test_ready_document_content_reaches_the_post_tool_model_request(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    document, _revision = await _persist_document(
-        db_session,
-        context=context,
-        content=b"source-pdf",
-        content_type="application/pdf",
-        filename="brief.pdf",
-        processing_status="ready",
-        markdown=b"# Extracted\n\nThe document is model-visible.",
-    )
-    observed_returns: list[ToolReturnPart] = []
-
-    def model_function(messages, _info):
-        returns = [
-            part
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart)
-        ]
-        if not returns:
-            return ModelResponse(
-                parts=[
-                    ToolCallPart(
-                        tool_name="read_file",
-                        args={
-                            "file_id": FileReference(
-                                entity_id=document.id,
-                                label=document.name,
-                            ).model_dump(mode="json")
-                        },
-                        tool_call_id="read-document",
-                    )
-                ]
-            )
-        observed_returns.extend(returns)
-        return ModelResponse(parts=[TextPart(content="inspected")])
-
-    agent = PydanticAgent(
-        FunctionModel(model_function, model_name="document-file-handoff-test"),
-        deps_type=RuntimeDeps,
-        tools=[read_file],
-    )
-    result = await agent.run("Inspect the document", deps=_run_context(db_session, context).deps)
-
-    assert result.output == "inspected"
-    [tool_return] = observed_returns
-    assert tool_return.content["source"] == "markdown"
-    assert tool_return.content["content"] == "# Extracted\n\nThe document is model-visible."
-    assert "url" not in tool_return.content
-
-
 async def test_pending_document_converts_on_demand_without_persisting_derived_state(
     db_session: AsyncSession,
     local_storage_settings: None,
@@ -712,166 +421,6 @@ async def test_pending_document_converts_on_demand_without_persisting_derived_st
     assert "Deck Title Slide" in output["content"]
     assert document.processing_status == "pending"
     assert revision.markdown_object_key is None
-
-
-async def test_document_conversion_failure_points_to_run_code(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    document, _revision = await _persist_document(
-        db_session,
-        context=context,
-        content=b"not a document",
-        content_type="application/msword",
-        filename="brief.doc",
-        processing_status="pending",
-    )
-    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
-
-    async def failed_conversion(*_args, **_kwargs) -> str:
-        raise DocumentConversionError("conversion failed")
-
-    monkeypatch.setattr(read_file_module, "markdown_for_revision", failed_conversion)
-
-    with pytest.raises(ModelRetry) as exc_info:
-        await read_file(_run_context(db_session, context), file_id=document.id)
-
-    assert str(exc_info.value) == (
-        "The document couldn't be read. You can still pass this file id to run_code to work "
-        "with the original bytes."
-    )
-
-
-async def test_failed_background_processing_guidance_survives_on_demand_failure(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    document, _revision = await _persist_document(
-        db_session,
-        context=context,
-        content=b"not a document",
-        content_type="application/msword",
-        filename="brief.doc",
-        processing_status="error",
-        processing_error="unsupported document structure",
-    )
-    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
-
-    async def failed_conversion(*_args, **_kwargs) -> str:
-        raise DocumentConversionError("conversion failed")
-
-    monkeypatch.setattr(read_file_module, "markdown_for_revision", failed_conversion)
-
-    with pytest.raises(ModelRetry) as exc_info:
-        await read_file(_run_context(db_session, context), file_id=document.id)
-
-    message = str(exc_info.value)
-    assert "File processing failed: unsupported document structure." in message
-    assert "pass this file id to run_code" in message
-
-
-async def test_document_conversion_timeout_points_to_run_code(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    document, _revision = await _persist_document(
-        db_session,
-        context=context,
-        content=b"not a document",
-        content_type="application/msword",
-        filename="brief.doc",
-        processing_status="pending",
-    )
-    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
-
-    async def conversion_that_does_not_finish(*_args, **_kwargs) -> str:
-        await asyncio.Future()
-
-    monkeypatch.setattr(read_file_module, "markdown_for_revision", conversion_that_does_not_finish)
-    monkeypatch.setattr(settings, "CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS", 0.001)
-
-    with pytest.raises(ModelRetry, match="run_code"):
-        await read_file(_run_context(db_session, context), file_id=document.id)
-
-
-async def test_image_content_failure_does_not_present_url_as_inspection(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    image_file, _revision = await _persist_image_file(
-        db_session,
-        context=context,
-        content=b"fake-png",
-    )
-    read_file_module = importlib.import_module("services.agents.runtime.tools.files.read_file")
-    monkeypatch.setattr(read_file_module, "agent_model_supports_vision", lambda _deps: False)
-
-    with pytest.raises(ModelRetry) as exc_info:
-        await read_file(_run_context(db_session, context), file_id=image_file.id)
-
-    assert str(exc_info.value) == (
-        "The configured model does not support image inspection. "
-        "Use mode='url' only if the user requested a download; a URL will not let this model "
-        "inspect the image."
-    )
-
-
-async def test_unsupported_content_failure_reserves_url_for_download(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    file, _revision = await _persist_image_file(
-        db_session,
-        context=context,
-        content=b"audio-like-content",
-    )
-    file.category = FileCategory.AUDIO.value
-    await db_session.flush()
-
-    with pytest.raises(ModelRetry) as exc_info:
-        await read_file(_run_context(db_session, context), file_id=file.id)
-
-    assert str(exc_info.value) == (
-        "This file type cannot be inspected as content. "
-        "Use mode='url' only if the user requested a download."
-    )
-
-
-async def test_explicit_url_mode_returns_download_only(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    context = await _runtime_file_context(db_session)
-    image_file, _revision = await _persist_image_file(
-        db_session,
-        context=context,
-        content=b"fake-png",
-    )
-
-    output = await read_file(
-        _run_context(db_session, context),
-        file_id=image_file.id,
-        mode="url",
-    )
-
-    assert output["mode"] == "url"
-    assert output["file_id"] == str(image_file.id)
-    assert output["category"] == "image"
-    assert output["media_type"] == "image/png"
-    assert output["processing_status"] == "ready"
-    assert output["url"].startswith("http://testserver/")
-    assert output["note"] == (
-        "Share this link with the user only when they need direct download access; it expires."
-    )
 
 
 async def test_read_file_hides_unknown_file(db_session: AsyncSession) -> None:

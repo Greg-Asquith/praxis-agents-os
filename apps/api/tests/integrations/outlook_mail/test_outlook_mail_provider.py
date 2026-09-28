@@ -9,7 +9,7 @@ import pytest
 
 from core.exceptions.integration import IntegrationValidationError
 from core.settings import settings
-from integrations.outlook_mail import OUTLOOK_MAIL_OAUTH_SCOPES, PROVIDER, oauth_config
+from integrations.outlook_mail import oauth_config
 from integrations.outlook_mail.settings import outlook_mail_settings
 from services.integrations.plugin import IntegrationDiscoveryResult
 
@@ -19,11 +19,6 @@ TENANT_ID = "b2c4d170-11e8-43a7-943e-a758a11b48d4"
 
 def _fixture(name: str) -> dict[str, object]:
     return json.loads((FIXTURES / name).read_text())
-
-
-def test_outlook_mail_manifest() -> None:
-    assert PROVIDER.manifest.oauth_scopes == OUTLOOK_MAIL_OAUTH_SCOPES
-    assert PROVIDER.manifest.resource_types == ("outlook_mailbox",)
 
 
 def test_outlook_mail_tenant_override_wins_and_invalid_tenants_fail(
@@ -67,26 +62,6 @@ async def test_outlook_mail_discovers_one_writable_mailbox(
         "user_principal_name": "person@example.com",
         "time_zone": "GMT Standard Time",
     }
-
-
-async def test_outlook_mail_omits_missing_optional_mailbox_settings(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from integrations.outlook_mail import discover_resources as exported_discovery
-
-    module = __import__(exported_discovery.__module__, fromlist=["MicrosoftGraphClient"])
-
-    class Client:
-        def __init__(self, *_args, **_kwargs) -> None:
-            pass
-
-        async def get(self, path: str, **_kwargs):
-            return _fixture("me.json") if path == "/me" else {}
-
-    monkeypatch.setattr(module, "MicrosoftGraphClient", Client)
-    resources = await exported_discovery("token")
-
-    assert resources[0].permissions_metadata == {"user_principal_name": "person@example.com"}
 
 
 async def test_outlook_mail_records_mailbox_unavailability(

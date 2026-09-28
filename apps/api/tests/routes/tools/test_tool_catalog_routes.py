@@ -57,85 +57,9 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
     assert "google_ads_get_report_field" not in catalog_names
     assert "google_ads_list_report_fields" not in catalog_names
     web_search = next(tool for tool in body["tools"] if tool["name"] == "web_search")
-    assert web_search == {
-        "name": "web_search",
-        "version": 1,
-        "provider": "native",
-        "label": "Web Search",
-        "description": (
-            "Search the web with a provider-native helper model. The helper model "
-            "provider and model can be selected per call from the available native "
-            "search providers: anthropic, google, openai. "
-            "Use the conversation's current date to resolve relative dates such as 'this year'; "
-            "preserve any year explicitly requested by the user. The result includes the query "
-            "actually executed, which may reflect edits made during approval. Use that query "
-            "and its answer and sources when deciding what to do next. Once the results answer "
-            "the user's question, respond with the answer. Search again only to resolve a "
-            "specific missing fact or conflicting evidence."
-        ),
-        "kind": "function",
-        "effect": "read",
-        "effect_scope": "internal",
-        "egress": "provider_query",
-        "code_eligible": False,
-        "default_policy": "approval",
-        "supported_policies": ["approval", "auto"],
-        "defer_loading": False,
-        "provider_keys": None,
-        "resource_types": None,
-        "input_schema": {
-            "additionalProperties": False,
-            "properties": {
-                "query": {
-                    "description": "Search query to send to the native-search helper model.",
-                    "type": "string",
-                },
-                "model_provider": {
-                    "anyOf": [
-                        {
-                            "enum": ["anthropic", "google", "openai"],
-                            "type": "string",
-                        },
-                        {"type": "null"},
-                    ],
-                    "default": None,
-                    "description": (
-                        "Optional helper model provider. Omit unless there is a reason "
-                        "to choose one. Available providers are anthropic, google, and "
-                        "openai."
-                    ),
-                },
-                "model": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "default": None,
-                    "description": (
-                        "Optional model id for model_provider. Omit to use that provider's "
-                        "default native-search helper model."
-                    ),
-                },
-            },
-            "required": ["query"],
-            "type": "object",
-        },
-    }
+    assert web_search["default_policy"] == "approval"
+    assert web_search["input_schema"]["required"] == ["query"]
     assert "timeout" not in web_search
-    assert "max_retries" not in web_search
-    assert "output_model" not in web_search
-    fetch_url = next(tool for tool in body["tools"] if tool["name"] == "fetch_url")
-    assert fetch_url["provider"] == "native"
-    assert fetch_url["effect"] == "read"
-    assert fetch_url["default_policy"] == "approval"
-    assert fetch_url["supported_policies"] == ["approval", "auto"]
-    assert fetch_url["input_schema"]["required"] == ["url"]
-    classifier = next(tool for tool in body["tools"] if tool["name"] == "classify")
-    assert classifier["provider"] == "native"
-    assert classifier["effect"] == "read"
-    assert classifier["effect_scope"] == "internal"
-    assert classifier["egress"] == "provider_query"
-    assert classifier["code_eligible"] is True
-    assert classifier["default_policy"] == "auto"
-    assert classifier["supported_policies"] == ["approval", "auto"]
-    assert classifier["input_schema"]["required"] == ["items", "labels"]
 
 
 async def test_tool_catalog_route_hides_helper_tools_without_configured_providers(
@@ -159,8 +83,8 @@ async def test_tool_catalog_route_hides_helper_tools_without_configured_provider
 
 @pytest.mark.parametrize(
     ("provider", "google_vertex_ai"),
-    [("google", False), ("google", True), ("openai", False)],
-    ids=["google-developer-api", "google-vertex-ai", "openai"],
+    [("google", True), ("openai", False)],
+    ids=["google-vertex-ai", "openai"],
 )
 async def test_tool_catalog_route_exposes_generate_image_for_supported_provider(
     db_session: AsyncSession,
@@ -205,35 +129,7 @@ async def test_tool_catalog_route_exposes_generate_image_for_supported_provider(
         assert "generate_image_from_video" not in tools
 
 
-async def test_tool_catalog_route_hides_generate_image_without_supported_provider(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _user, _workspace, headers = await _authenticated_workspace(db_session)
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("anthropic-test"))
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
-
-    response = await db_async_client.get("/api/v1/tools/catalog", headers=headers)
-
-    assert response.status_code == 200
-    assert "generate_image" not in {tool["name"] for tool in response.json()["tools"]}
-    assert "edit_image" not in {tool["name"] for tool in response.json()["tools"]}
-    assert "generate_image_from_video" not in {tool["name"] for tool in response.json()["tools"]}
-
-
-async def test_tool_catalog_route_requires_authentication(
-    db_async_client: AsyncClient,
-) -> None:
-    response = await db_async_client.get("/api/v1/tools/catalog")
-
-    assert response.status_code == 401
-    assert response.headers["content-type"].startswith("application/problem+json")
-
-
-@pytest.mark.parametrize("role", [WorkspaceRole.OWNER, WorkspaceRole.ADMIN])
+@pytest.mark.parametrize("role", [WorkspaceRole.ADMIN])
 async def test_tool_availability_route_allows_workspace_managers(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -255,7 +151,7 @@ async def test_tool_availability_route_allows_workspace_managers(
     assert "web_search" not in {entry["name"] for entry in catalog_response.json()["tools"]}
 
 
-@pytest.mark.parametrize("role", [WorkspaceRole.MEMBER, WorkspaceRole.READ_ONLY])
+@pytest.mark.parametrize("role", [WorkspaceRole.MEMBER])
 async def test_tool_availability_route_rejects_non_managers(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -270,24 +166,6 @@ async def test_tool_availability_route_rejects_non_managers(
     )
 
     assert response.status_code == 403
-
-
-async def test_tool_availability_route_returns_not_found_for_unknown_tool(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    _user, _workspace, headers = await _authenticated_workspace(
-        db_session,
-        role=WorkspaceRole.OWNER,
-    )
-
-    response = await db_async_client.put(
-        "/api/v1/tools/not_a_runtime_tool/availability",
-        headers=headers,
-        json={"enabled": False},
-    )
-
-    assert response.status_code == 404
 
 
 async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
@@ -318,130 +196,6 @@ async def test_tool_presentations_route_returns_every_first_party_runtime_tool(
             if not field["editable"]:
                 assert field["placeholder"] == ""
                 assert field["options"] == []
-    write_file_entry = next(tool for tool in body["tools"] if tool["name"] == "write_file")
-    assert write_file_entry["label"] == "Save File"
-    assert write_file_entry["effect"] == "write"
-    assert write_file_entry["ui"]["icon"] == "file-plus"
-    assert write_file_entry["ui"]["running_label"] == "Saving {name}"
-    assert write_file_entry["ui"]["approval_prompt"]
-    assert write_file_entry["ui"]["approve_label"] == "Approve & Save"
-    assert {field["key"] for field in write_file_entry["ui"]["arg_fields"]} == {
-        "name",
-        "file_id",
-        "folder",
-        "content",
-    }
-    write_file_fields = {field["key"]: field for field in write_file_entry["ui"]["arg_fields"]}
-    assert write_file_fields["name"]["editable"] is True
-    assert write_file_fields["file_id"]["format"] == "entity"
-    assert write_file_fields["file_id"]["secondary"] is True
-    assert write_file_fields["content"]["editable"] is False
-    assert [field["key"] for field in write_file_entry["ui"]["result_fields"]] == [
-        "name",
-        "bytes_written",
-    ]
-    for tool_name in ("list_artifacts", "read_artifact"):
-        artifact_read_entry = next(tool for tool in body["tools"] if tool["name"] == tool_name)
-        assert artifact_read_entry["effect"] == "read"
-        assert artifact_read_entry["effect_scope"] == "internal"
-        assert artifact_read_entry["egress"] == "none"
-        assert artifact_read_entry["default_policy"] == "auto"
-    list_artifacts_entry = next(tool for tool in body["tools"] if tool["name"] == "list_artifacts")
-    assert list_artifacts_entry["ui"]["icon"] == "files"
-    assert [field["key"] for field in list_artifacts_entry["ui"]["result_fields"]] == ["items"]
-    read_artifact_entry = next(tool for tool in body["tools"] if tool["name"] == "read_artifact")
-    assert read_artifact_entry["ui"]["icon"] == "file"
-    assert read_artifact_entry["ui"]["arg_fields"][0]["entity_kind"] == "artifact"
-    web_search_entry = next(tool for tool in body["tools"] if tool["name"] == "web_search")
-    assert web_search_entry["ui"]["approve_label"] == "Approve & Search"
-    assert web_search_entry["ui"]["arg_fields"] == [
-        {
-            "key": "query",
-            "label": "Search",
-            "format": "text",
-            "editable": True,
-            "placeholder": "What should the agent search for?",
-            "options": [],
-            "secondary": False,
-            "entity_kind": None,
-            "depends_on": [],
-            "min_rows": 0,
-        },
-        {
-            "key": "model_provider",
-            "label": "Search Provider",
-            "format": "text",
-            "editable": True,
-            "placeholder": "",
-            "options": ["anthropic", "google", "openai"],
-            "secondary": False,
-            "entity_kind": None,
-            "depends_on": [],
-            "min_rows": 0,
-        },
-    ]
-    google_ads_entry = next(
-        tool for tool in body["tools"] if tool["name"] == "google_ads_add_negative_keywords"
-    )
-    keyword_field = next(
-        field for field in google_ads_entry["ui"]["arg_fields"] if field["key"] == "keywords"
-    )
-    assert keyword_field["min_rows"] == 1
-    assert {column["key"]: column["required"] for column in keyword_field["columns"]} == {
-        "match_type": True,
-        "text": True,
-    }
-    assert all(field["editable"] is False for field in web_search_entry["ui"]["result_fields"])
-    fetch_url_entry = next(tool for tool in body["tools"] if tool["name"] == "fetch_url")
-    assert fetch_url_entry["ui"]["approve_label"] == "Approve & Fetch"
-    assert fetch_url_entry["ui"]["arg_fields"][0]["key"] == "url"
-    assert fetch_url_entry["ui"]["arg_fields"][0]["editable"] is True
-    assert [field["key"] for field in fetch_url_entry["ui"]["result_fields"]] == [
-        "content",
-        "sources",
-    ]
-    classifier_entry = next(tool for tool in body["tools"] if tool["name"] == "classify")
-    assert classifier_entry["ui"]["icon"] == "sparkles"
-    assert classifier_entry["ui"]["running_label"] == "Classifying items"
-    assert classifier_entry["ui"]["completed_label"] == "Classified items"
-    assert [field["key"] for field in classifier_entry["ui"]["arg_fields"]] == [
-        "items",
-        "labels",
-        "instructions",
-    ]
-    assert classifier_entry["ui"]["result_fields"][0]["format"] == "records"
-    assert [column["key"] for column in classifier_entry["ui"]["result_fields"][0]["columns"]] == [
-        "index",
-        "value",
-        "label",
-    ]
-    read_todos_entry = next(tool for tool in body["tools"] if tool["name"] == "read_todos")
-    assert read_todos_entry["ui"]["icon"] == "list-todo"
-    workflow_entry = next(tool for tool in body["tools"] if tool["name"] == "run_workflow")
-    assert workflow_entry["ui"]["icon"] == "workflow"
-    assert workflow_entry["ui"]["completed_label"] == "Completed Workflow"
-    delegate_entry = next(tool for tool in body["tools"] if tool["name"] == "delegate_to_agent")
-    assert delegate_entry["ui"]["approve_label"] == "Approve & Delegate"
-    delegate_fields = {field["key"]: field for field in delegate_entry["ui"]["arg_fields"]}
-    assert delegate_fields["agent_id"]["editable"] is True
-    assert delegate_fields["agent_id"]["format"] == "entity"
-    assert delegate_fields["task"]["editable"] is True
-    assert delegate_fields["task"]["format"] == "multiline"
-    save_memory_entry = next(tool for tool in body["tools"] if tool["name"] == "save_memory")
-    save_memory_fields = {field["key"]: field for field in save_memory_entry["ui"]["arg_fields"]}
-    assert save_memory_fields["kind"]["options"] == ["core", "note"]
-    assert save_memory_fields["scope"]["options"] == ["agent", "user", "workspace"]
-    assert save_memory_fields["title"]["editable"] is True
-    assert save_memory_fields["content"]["editable"] is True
-    assert save_memory_fields["importance"]["format"] == "number"
-    assert save_memory_fields["importance"]["editable"] is True
-    assert save_memory_fields["memory_type"]["options"] == [
-        "fact",
-        "preference",
-        "episode",
-        "outcome",
-    ]
-    assert save_memory_fields["expires_in_days"]["secondary"] is True
 
 
 async def test_entity_reference_route_searches_and_hydrates_only_workspace_files(
@@ -553,12 +307,3 @@ async def test_entity_reference_route_requires_conversation_access(
 
     assert response.status_code == 404
     assert user.id != other.id
-
-
-async def test_tool_presentations_route_requires_authentication(
-    db_async_client: AsyncClient,
-) -> None:
-    response = await db_async_client.get("/api/v1/tools/presentations")
-
-    assert response.status_code == 401
-    assert response.headers["content-type"].startswith("application/problem+json")

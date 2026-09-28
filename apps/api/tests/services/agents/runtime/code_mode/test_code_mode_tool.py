@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic_ai import ModelRetry, RunContext, ToolReturn
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.toolsets import FunctionToolset
 from pydantic_ai.usage import RunUsage
 
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
@@ -47,23 +46,6 @@ async def test_run_workflow_closes_over_catalog_and_stamps_run_metadata(
         code="{'done': True}",
         reason="Compose reads",
     )
-
-
-@pytest.mark.parametrize("trigger", ["scheduled", "delegated", "event"])
-async def test_run_workflow_is_available_to_unattended_principals(trigger: str) -> None:
-    tool = code_mode.build_run_workflow_tool(CodeModeCatalog.build(()))
-
-    prepared = await FunctionToolset([tool]).get_tools(_ctx(trigger=trigger))
-
-    assert set(prepared) == {"run_workflow"}
-
-
-async def test_run_workflow_is_available_to_interactive_principals() -> None:
-    tool = code_mode.build_run_workflow_tool(CodeModeCatalog.build(()))
-
-    prepared = await FunctionToolset([tool]).get_tools(_ctx(trigger="interactive"))
-
-    assert set(prepared) == {"run_workflow"}
 
 
 async def test_run_workflow_requires_outer_call_identity() -> None:

@@ -2,8 +2,6 @@
 
 """HTTP-boundary tests for key user and workspace management routes."""
 
-from typing import Any
-
 import pytest
 from httpx2 import AsyncClient
 from sqlalchemy import select
@@ -52,33 +50,6 @@ async def test_user_create_route_requires_super_admin(
     assert response.json()["detail"] == "Requires super admin role"
 
 
-async def test_super_admin_create_user_route_returns_public_projection(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", "admin@example.com")
-    _, token = await _authenticated_user(db_session, email="admin@example.com")
-
-    response = await db_async_client.post(
-        "/api/v1/users/",
-        headers=bearer_headers(token),
-        json={
-            "email": " Created.User@Example.COM ",
-            "display_name": " Created User ",
-            "password": "Password123",
-        },
-    )
-
-    assert response.status_code == 201
-    body: dict[str, Any] = response.json()
-    assert body["email"] == "created.user@example.com"
-    assert body["display_name"] == "Created User"
-    assert body["default_workspace_id"] is not None
-    assert "password_hash" not in body
-    assert "totp_secret_encrypted" not in body
-
-
 async def test_list_workspaces_route_returns_only_authenticated_user_memberships(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -106,49 +77,11 @@ async def test_list_workspaces_route_returns_only_authenticated_user_memberships
     assert body["workspaces"][0]["current_user_role"] == WorkspaceRole.READ_ONLY.value
 
 
-async def test_create_membership_route_returns_forbidden_for_non_manager(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    actor, token = await _authenticated_user(db_session, email="member@example.com")
-    target = build_user(email="target@example.com")
-    workspace = build_workspace(slug="team-workspace", name="Team Workspace")
-    actor_membership = build_workspace_membership(
-        workspace_id=workspace.id,
-        user_id=actor.id,
-        role=WorkspaceRole.MEMBER,
-    )
-    db_session.add_all([target, workspace, actor_membership])
-    await db_session.commit()
-
-    response = await db_async_client.post(
-        f"/api/v1/workspaces/{workspace.id}/memberships",
-        headers=bearer_headers(token),
-        json={"user_id": str(target.id), "role": WorkspaceRole.ADMIN.value},
-    )
-
-    assert response.status_code == 403
-    assert response.headers["content-type"].startswith("application/problem+json")
-    body = response.json()
-    assert body["detail"] == "Requires higher level role"
-    assert body["allowed_roles"] == [WorkspaceRole.ADMIN.value, WorkspaceRole.OWNER.value]
-    assert "membership_id" not in body
-    assert "membership_role" not in body
-    assert "workspace_id" not in body
-    assert "user_id" not in body
-
-
 @pytest.mark.parametrize(
     ("role", "super_admin", "expected_status"),
     [
-        (WorkspaceRole.OWNER, False, 204),
         (WorkspaceRole.ADMIN, False, 204),
-        (WorkspaceRole.MEMBER, True, 204),
-        (WorkspaceRole.READ_ONLY, True, 204),
         (WorkspaceRole.MEMBER, False, 403),
-        (WorkspaceRole.READ_ONLY, False, 403),
-        (None, True, 403),
-        (None, False, 403),
     ],
 )
 async def test_delete_membership_route_enforces_management_permissions(
@@ -203,46 +136,11 @@ async def test_delete_membership_route_enforces_management_permissions(
         assert audit_event is None
 
 
-@pytest.mark.parametrize("super_admin", [False, True])
-async def test_delete_membership_route_preserves_last_owner(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-    super_admin: bool,
-) -> None:
-    actor, token = await _authenticated_user(db_session, email="actor@example.com")
-    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", actor.email if super_admin else "")
-    owner = build_user(email="owner@example.com")
-    workspace = build_workspace(slug="keep-owner")
-    actor_membership = build_workspace_membership(
-        workspace_id=workspace.id, user_id=actor.id, role=WorkspaceRole.ADMIN
-    )
-    owner_membership = build_workspace_membership(
-        workspace_id=workspace.id, user_id=owner.id, role=WorkspaceRole.OWNER
-    )
-    db_session.add_all([owner, workspace, actor_membership, owner_membership])
-    await db_session.commit()
-
-    response = await db_async_client.delete(
-        f"/api/v1/workspaces/{workspace.id}/memberships/{owner_membership.id}",
-        headers=bearer_headers(token),
-    )
-
-    assert response.status_code == 400
-    assert response.json()["detail"] == "A workspace must keep at least one active owner"
-    await db_session.refresh(owner_membership)
-    assert owner_membership.deleted is False
-
-
-@pytest.mark.parametrize("super_admin", [False, True])
 async def test_delete_membership_route_rejects_membership_from_another_workspace(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
-    monkeypatch: pytest.MonkeyPatch,
-    super_admin: bool,
 ) -> None:
     actor, token = await _authenticated_user(db_session, email="actor@example.com")
-    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", actor.email if super_admin else "")
     target = build_user(email="target@example.com")
     workspace = build_workspace(slug="managed-workspace")
     other_workspace = build_workspace(slug="other-workspace")

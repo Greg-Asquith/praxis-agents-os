@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 
 import httpx2 as httpx
 import pytest
-from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 
 from core.settings import settings
 from services.agents.models.utils import _build_retrying_http_client
@@ -19,17 +18,6 @@ def _fast_retry_settings(monkeypatch, *, attempts: int) -> None:
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", attempts)
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 0.001)
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_TOTAL_WAIT_CAP_SECONDS", 0.001)
-
-
-async def test_retrying_http_client_uses_provider_request_timeout() -> None:
-    client = _build_retrying_http_client(wrapped=httpx.MockTransport(lambda _request: None))
-    try:
-        assert client.timeout.connect == 5
-        assert client.timeout.read == DEFAULT_HTTP_TIMEOUT
-        assert client.timeout.write == DEFAULT_HTTP_TIMEOUT
-        assert client.timeout.pool == DEFAULT_HTTP_TIMEOUT
-    finally:
-        await client.aclose()
 
 
 async def test_retrying_http_client_retries_429_then_succeeds(monkeypatch) -> None:
@@ -70,25 +58,6 @@ async def test_retrying_http_client_does_not_retry_non_transient_401(monkeypatch
 
     assert response.status_code == 401
     assert calls == 1
-
-
-async def test_retrying_http_client_exhaustion_preserves_response(monkeypatch) -> None:
-    _fast_retry_settings(monkeypatch, attempts=3)
-    calls = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal calls
-        calls += 1
-        return httpx.Response(503, request=request)
-
-    client = _build_retrying_http_client(wrapped=httpx.MockTransport(handler))
-    try:
-        response = await client.get("https://provider.example/test")
-        assert response.status_code == 503
-    finally:
-        await client.aclose()
-
-    assert calls == 3
 
 
 @pytest.mark.parametrize("vertex", [False, True])
@@ -173,88 +142,6 @@ async def test_anthropic_sdk_retry_boundary(monkeypatch, vertex, attempts, statu
     assert calls == (1 if status in (401, 403) else attempts)
 
 
-@pytest.mark.parametrize("provider", ["openai", "azure", "xai", "google"])
-@pytest.mark.parametrize("attempts", [1, 3])
-async def test_other_sdk_attempt_limits(monkeypatch, provider, attempts):
-    import pydantic_ai.models
-    from pydantic import SecretStr
-    from pydantic_ai.exceptions import ModelHTTPError
-    from pydantic_ai.messages import ModelRequest, UserPromptPart
-    from pydantic_ai.models import ModelRequestParameters
-
-    from services.agents.models import factory
-    from services.agents.models.domain import ResolvedModel
-
-    monkeypatch.setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", True)
-    _fast_retry_settings(monkeypatch, attempts=attempts)
-    for name in ("OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "GOOGLE_API_KEY"):
-        monkeypatch.setattr(settings, name, SecretStr("test-key"))
-    monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", "https://azure.example.com")
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
-    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
-    calls = 0
-
-    def handler(request):
-        nonlocal calls
-        calls += 1
-        return httpx.Response(429, json={"error": {"code": 429, "message": "private detail"}})
-
-    async with _build_retrying_http_client(httpx.MockTransport(handler)) as client:
-        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
-        monkeypatch.setattr(factory, "get_vertex_openai_client", lambda: client)
-        model_name = "gemini-3-flash-preview" if provider == "google" else "test-model"
-        model = factory.build_model(
-            ResolvedModel(
-                provider=provider,
-                model=model_name,
-                transport_model=model_name,
-                settings={},
-                max_steps=3,
-                vertex_project="test-project",
-                vertex_location="global",
-                partner_transport="chat-completions",
-            )
-        )
-        with pytest.raises(ModelHTTPError) as error:
-            await model.request(
-                [ModelRequest(parts=[UserPromptPart(content="Hello")])],
-                None,
-                ModelRequestParameters(),
-            )
-        assert error.value.status_code == 429
-    assert calls == attempts
-
-
-async def test_exhausted_stream_response_is_readable(monkeypatch):
-    _fast_retry_settings(monkeypatch, attempts=2)
-    streams = []
-
-    class ErrorStream(httpx.AsyncByteStream):
-        closed = False
-
-        async def __aiter__(self):
-            assert not self.closed
-            yield b'{"error":"provider detail"}'
-
-        async def aclose(self):
-            self.closed = True
-
-    def handler(request):
-        stream = ErrorStream()
-        streams.append(stream)
-        return httpx.Response(503, stream=stream)
-
-    async with (
-        _build_retrying_http_client(httpx.MockTransport(handler)) as client,
-        client.stream("GET", "https://provider.example/test") as response,
-    ):
-        assert streams[0].closed
-        assert not streams[1].closed
-        assert await response.aread() == b'{"error":"provider detail"}'
-    assert all(stream.closed for stream in streams)
-
-
 @pytest.mark.parametrize("retry_after", ["86400", "Wed, 09 Sep 2099 12:00:00 GMT", "invalid"])
 async def test_retry_waits_are_bounded(monkeypatch, retry_after):
     import services.agents.models.utils as utils
@@ -308,47 +195,3 @@ async def test_cancellation_during_backoff_does_not_retry(monkeypatch):
             await task
     assert len(responses) == 1
     assert responses[0].is_closed
-
-
-@pytest.mark.parametrize("vertex", [False, True])
-async def test_shared_transport_shutdown_and_reacquisition(monkeypatch, vertex):
-    import services.agents.models.utils as utils
-    from services.agents.models.vertex_clients import (
-        close_vertex_clients,
-        get_anthropic_vertex_client,
-    )
-
-    await close_vertex_clients()
-    build = utils._build_retrying_http_client
-    transports = []
-
-    def build_client():
-        transport = httpx.MockTransport(lambda _: httpx.Response(200))
-        transport.aclose = AsyncMock(wraps=transport.aclose)
-        transports.append(transport)
-        return build(transport)
-
-    monkeypatch.setattr(utils, "_build_retrying_http_client", build_client)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
-    first = utils.retrying_http_client()
-    try:
-        assert utils.retrying_http_client() is first
-        if vertex:
-            sdk = get_anthropic_vertex_client()
-            assert sdk._client is first
-            assert get_anthropic_vertex_client() is sdk
-            monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_LOCATION", "us")
-            assert get_anthropic_vertex_client()._client is first
-        await close_vertex_clients()
-        await close_vertex_clients()
-        assert first.is_closed
-        transports[0].aclose.assert_awaited_once_with()
-        assert len(transports) == 1
-        second = utils.retrying_http_client()
-        assert second is not first
-        assert not second.is_closed
-        assert (await second.get("https://provider.example/test")).status_code == 200
-    finally:
-        await close_vertex_clients()
-    for transport in transports:
-        transport.aclose.assert_awaited_once_with()

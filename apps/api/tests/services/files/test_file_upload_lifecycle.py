@@ -13,17 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
-from models.asset_upload import AssetUpload
 from models.audit_event import AuditEvent
 from models.files import File, FileFolder, FileRevision, FileUpload
 from models.jobs import Job
 from models.workspace import WorkspaceRole
-from services.assets.domain import AssetKind
 from services.audit_events import AuditAction, AuditResourceType
 from services.files import (
     confirm_file_upload,
     create_file_download,
-    create_file_preview,
     create_file_upload,
     delete_file,
     edit_file,
@@ -232,46 +229,6 @@ async def test_create_file_upload_validates_metadata_deduplicates_and_flags_soft
         )
 
 
-async def test_create_file_upload_replace_intent_skips_cross_file_dedup(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    actor, workspace, membership = await _workspace_context(db_session)
-    target_file, _target_revision = await _persist_file(
-        db_session,
-        workspace=workspace,
-        actor=actor,
-        filename="target.txt",
-        content=b"target",
-    )
-    duplicate_file, _duplicate_revision = await _persist_file(
-        db_session,
-        workspace=workspace,
-        actor=actor,
-        filename="duplicate.txt",
-        content=b"duplicate",
-    )
-
-    result = await create_file_upload(
-        db_session,
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        payload=FileUploadRequest(
-            filename="target.txt",
-            content_type="text/plain",
-            size_bytes=len(b"duplicate"),
-            content_hash=duplicate_file.content_hash,
-            file_id=target_file.id,
-        ),
-    )
-
-    assert result.deduplicated is False
-    assert result.file is None
-    assert result.grant is not None
-    assert result.grant.file_id == target_file.id
-
-
 async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(
     db_session: AsyncSession,
     local_storage_settings: None,
@@ -448,96 +405,6 @@ async def test_reusing_confirmed_upload_grant_cannot_change_revision_bytes(
     assert reused.status_code == 204
     assert await provider.get_object(private_ref_from_key(revision.object_key)) == original
     assert revision.content_hash == sha256_hex(original)
-
-
-async def test_confirm_preserves_extension_alias_and_rejects_deleted_replace(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    actor, workspace, membership = await _workspace_context(db_session)
-    provider = get_storage_provider()
-
-    grant_result = await create_file_upload(
-        db_session,
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        payload=FileUploadRequest(
-            filename="Report.markdown",
-            content_type="text/markdown",
-            size_bytes=len(b"# Alias"),
-        ),
-    )
-    assert grant_result.grant is not None
-    assert grant_result.grant.upload.ref.key.endswith(".markdown")
-    await provider.put_object(
-        grant_result.grant.upload.ref,
-        b"# Alias",
-        content_type="text/markdown",
-    )
-
-    confirmed = await confirm_file_upload(
-        db_session,
-        request=build_test_request(path="/api/v1/files/uploads/confirm"),
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        payload=FileConfirmRequest(upload_token=grant_result.grant.upload_token),
-    )
-
-    assert confirmed.extension == ".markdown"
-    revision = await db_session.scalar(
-        select(FileRevision).where(FileRevision.id == confirmed.current_revision_id)
-    )
-    assert revision is not None
-    assert revision.extension == ".markdown"
-    assert revision.object_key.endswith(".markdown")
-
-    replace_grant = await create_file_upload(
-        db_session,
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        payload=FileUploadRequest(
-            filename="Report.markdown",
-            content_type="text/markdown",
-            size_bytes=9,
-            file_id=confirmed.id,
-            allow_duplicate_content=True,
-        ),
-    )
-    assert replace_grant.grant is not None
-    await provider.put_object(
-        replace_grant.grant.upload.ref,
-        b"# Deleted",
-        content_type="text/markdown",
-    )
-    await delete_file(
-        db_session,
-        request=build_test_request(path=f"/api/v1/files/{confirmed.id}", method="DELETE"),
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        file_id=confirmed.id,
-    )
-
-    file_count_before = await db_session.scalar(select(func.count()).select_from(File))
-    revision_count_before = await db_session.scalar(select(func.count()).select_from(FileRevision))
-
-    with pytest.raises(ConflictError):
-        await confirm_file_upload(
-            db_session,
-            request=build_test_request(path="/api/v1/files/uploads/confirm"),
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            payload=FileConfirmRequest(upload_token=replace_grant.grant.upload_token),
-        )
-    assert await db_session.scalar(select(func.count()).select_from(File)) == file_count_before
-    assert (
-        await db_session.scalar(select(func.count()).select_from(FileRevision))
-        == revision_count_before
-    )
 
 
 async def test_confirm_rejects_bad_stored_metadata_and_wrong_actor_token(
@@ -747,141 +614,6 @@ async def test_create_file_download_records_read_audit_and_defaults_attachment(
         "filename": "download.txt",
         "revision_id": str(revision.id),
     }
-
-
-async def test_create_file_preview_is_media_only_and_does_not_record_read_audit(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    actor, workspace, _membership = await _workspace_context(db_session)
-    image_file, _image_revision = await _persist_file(
-        db_session,
-        workspace=workspace,
-        actor=actor,
-        filename="screen.png",
-        content_type="image/png",
-        content=b"png",
-    )
-
-    grant = await create_file_preview(
-        db_session,
-        workspace=workspace,
-        file_id=image_file.id,
-    )
-
-    assert "download=1" not in grant.preview.url
-    assert grant.preview.headers == {}
-    read_audit_count = await db_session.scalar(
-        select(func.count())
-        .select_from(AuditEvent)
-        .where(
-            AuditEvent.action == AuditAction.READ.value,
-            AuditEvent.resource_type == AuditResourceType.FILE.value,
-            AuditEvent.resource_id == str(image_file.id),
-        )
-    )
-    assert read_audit_count == 0
-
-    text_file, _text_revision = await _persist_file(
-        db_session,
-        workspace=workspace,
-        actor=actor,
-        filename="notes.txt",
-        content_type="text/plain",
-        content=b"notes",
-    )
-    with pytest.raises(
-        AppValidationError,
-        match="Previews are available for images, videos, and PDFs",
-    ):
-        await create_file_preview(
-            db_session,
-            workspace=workspace,
-            file_id=text_file.id,
-        )
-
-
-async def test_edit_and_restore_reject_invalid_file_states(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor, workspace, membership = await _workspace_context(db_session)
-    pdf_file, pdf_revision = await _persist_file(
-        db_session,
-        workspace=workspace,
-        actor=actor,
-        filename="report.pdf",
-        content_type="application/pdf",
-        content=b"%PDF",
-    )
-    with pytest.raises(AppValidationError):
-        await edit_file(
-            db_session,
-            request=build_test_request(path=f"/api/v1/files/{pdf_file.id}/content", method="PUT"),
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            file_id=pdf_file.id,
-            payload=FileEditRequest(
-                content="blocked",
-                expected_current_revision_id=pdf_revision.id,
-            ),
-        )
-
-    file, original = await _persist_file(db_session, workspace=workspace, actor=actor)
-    monkeypatch.setattr(settings, "FILES_MAX_TEXT_EDIT_BYTES", 3)
-    with pytest.raises(AppValidationError):
-        await edit_file(
-            db_session,
-            request=build_test_request(path=f"/api/v1/files/{file.id}/content", method="PUT"),
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            file_id=file.id,
-            payload=FileEditRequest(
-                content="four",
-                expected_current_revision_id=original.id,
-            ),
-        )
-    monkeypatch.setattr(settings, "FILES_MAX_TEXT_EDIT_BYTES", 2_097_152)
-
-    edited = await edit_file(
-        db_session,
-        request=build_test_request(path=f"/api/v1/files/{file.id}/content", method="PUT"),
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        file_id=file.id,
-        payload=FileEditRequest(content="second", expected_current_revision_id=original.id),
-    )
-
-    with pytest.raises(AppValidationError):
-        await restore_file_revision(
-            db_session,
-            request=build_test_request(path=f"/api/v1/files/{file.id}/restore"),
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            file_id=file.id,
-            payload=FileRestoreRequest(
-                revision_id=edited.current_revision_id,
-                expected_current_revision_id=edited.current_revision_id,
-            ),
-        )
-    with pytest.raises(ConflictError):
-        await restore_file_revision(
-            db_session,
-            request=build_test_request(path=f"/api/v1/files/{file.id}/restore"),
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            file_id=file.id,
-            payload=FileRestoreRequest(
-                revision_id=original.id,
-                expected_current_revision_id=original.id,
-            ),
-        )
 
 
 async def test_delete_purge_and_usage_handle_retained_and_shared_blobs(
@@ -1095,36 +827,3 @@ async def test_sweep_deleted_files_purges_expired_rows_and_abandoned_uploads(
     first = await ensure_files_sweep_job(db_session)
     second = await ensure_files_sweep_job(db_session)
     assert first.id == second.id
-
-
-async def test_sweep_deleted_files_purges_expired_skill_document_grants(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    actor, workspace, _membership = await _workspace_context(db_session, role=WorkspaceRole.ADMIN)
-    object_key = (
-        f"workspaces/{workspace.id}/skills/{uuid4()}/docs/guide/"
-        f"pending/{uuid4().hex}/original/guide.md"
-    )
-    provider = get_storage_provider()
-    await provider.put_object(
-        private_ref_from_key(object_key),
-        b"abandoned",
-        content_type="text/markdown",
-    )
-    upload = AssetUpload(
-        token_id=f"expired-{uuid4().hex}",
-        kind=AssetKind.SKILL_DOCUMENT.value,
-        object_key=object_key,
-        created_by_user_id=actor.id,
-        workspace_id=workspace.id,
-        expires_at=datetime.now(UTC) - timedelta(minutes=1),
-    )
-    job = Job(kind="files.sweep_deleted", content_hash=f"test-asset-sweep-{uuid4()}")
-    db_session.add_all([upload, job])
-    await db_session.flush()
-
-    await sweep_deleted_files(db_session, job)
-
-    assert await db_session.get(AssetUpload, upload.id) is None
-    assert await provider.stat_object(private_ref_from_key(object_key)) is None

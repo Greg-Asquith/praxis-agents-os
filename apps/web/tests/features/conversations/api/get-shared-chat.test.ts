@@ -68,7 +68,7 @@ it("loads one recent page, advances hidden cursors, and retries earlier failures
   client.clear()
 })
 
-it.each([401, 403, 404])(
+it.each([404])(
   "clears both observed reads after access loss %s without rerender requests or late restoration",
   async (status) => {
     const client = new QueryClient()

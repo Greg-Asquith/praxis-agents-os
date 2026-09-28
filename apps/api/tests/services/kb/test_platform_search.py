@@ -82,25 +82,15 @@ async def mixed_corpus(db_session_factory):
     return workspace, user, documents
 
 
-@pytest.mark.parametrize("maintenance", [False, True])
-@pytest.mark.parametrize("semantic", [False, True])
-@pytest.mark.parametrize("filter_kind", ["all", "private", "documents", "source", "hidden"])
+@pytest.mark.parametrize(("maintenance", "semantic"), [(False, True), (True, False), (True, True)])
+@pytest.mark.parametrize("filter_kind", ["all", "hidden"])
 async def test_combined_search_visibility(
     db_session_factory, mixed_corpus, maintenance, semantic, filter_kind
 ):
     workspace, user, documents = mixed_corpus
     filters = {}
     expected = {"local", "private", "platform", "pending_embedding"}
-    if filter_kind == "private":
-        filters = {"private_only": True}
-        expected = {"private"}
-    elif filter_kind == "documents":
-        filters = {"document_ids": [documents[name].id for name in ("platform", "draft", "local")]}
-        expected = {"platform", "local"}
-    elif filter_kind == "source":
-        filters = {"source_types": ["upload"]}
-        expected = {"pending_embedding"}
-    elif filter_kind == "hidden":
+    if filter_kind == "hidden":
         filters = {
             "document_ids": [documents[name].id for name in ("draft", "withdrawn", "other_private")]
         }

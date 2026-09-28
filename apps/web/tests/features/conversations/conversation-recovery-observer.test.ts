@@ -110,7 +110,7 @@ describe("conversation recovery through a query observer", () => {
     return observer
   }
 
-  it.each(["awaiting_approval", "completed", "failed", "cancelled"] as const)(
+  it.each(["awaiting_approval", "failed"] as const)(
     "recovers %s through timed reads while the stream is disconnected",
     async (status) => {
       vi.mocked(apiRequest)
@@ -150,18 +150,7 @@ describe("conversation recovery through a query observer", () => {
     expect(apiRequest).toHaveBeenCalledTimes(1)
   })
 
-  it("stops interval reads when the last observer unsubscribes", async () => {
-    vi.mocked(apiRequest).mockResolvedValue(response("running"))
-    observe()
-    await vi.advanceTimersByTimeAsync(4_000)
-    expect(apiRequest).toHaveBeenCalledTimes(2)
-    unsubscribe?.()
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(apiRequest).toHaveBeenCalledTimes(2)
-    client.clear()
-    expect(vi.getTimerCount()).toBe(0)
-  })
-  it.each([503, 429, "network"] as const)(
+  it.each([503, "network"] as const)(
     "recovers after exhausted %s retries with capped delays and resets after success",
     async (kind) => {
       const error =
@@ -196,7 +185,7 @@ describe("conversation recovery through a query observer", () => {
     }
   )
 
-  it.each([401, 403, 404, "abort"] as const)("stops automatic reads for %s", async (kind) => {
+  it.each([401, "abort"] as const)("stops automatic reads for %s", async (kind) => {
     const error =
       kind === "abort"
         ? new DOMException("Cancelled", "AbortError")

@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from pydantic import ValidationError
 from pydantic_ai.models.test import TestModel
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,14 +15,13 @@ import workers.agent_runner as agent_runner
 import workers.job_runner as job_runner
 import workers.main as worker_main
 from core.database import get_maintenance_async_db_session_factory
-from core.settings import Settings, settings
+from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.jobs import Job
 from services.agent_schedules.runs import RUN_STATUS_COMPLETED
 from services.jobs.domain import JOB_STATUS_PENDING, JOB_STATUS_SUCCEEDED
 from services.jobs.enqueue_job import enqueue_job
-from services.jobs.registry import JOB_HANDLERS, get_job_handler, job_handler
-from services.kb.ensure_reconcile_job import KB_RECONCILE_SOURCES_KIND
+from services.jobs.registry import JOB_HANDLERS, job_handler
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
@@ -74,30 +72,6 @@ async def _clear_jobs(session_factory: async_sessionmaker[AsyncSession]) -> None
         await db.commit()
 
 
-async def test_run_once_ensures_only_the_source_reconciliation_job(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    await _clear_jobs(db_session_factory)
-    _disable_periodic_enqueuers(monkeypatch)
-    ensure_calls = 0
-
-    async def ensure_source_reconciliation(_db: AsyncSession) -> None:
-        nonlocal ensure_calls
-        ensure_calls += 1
-
-    async def claim_no_job(*, owner_instance_id: str) -> None:
-        assert owner_instance_id == "source-reconcile-worker"
-
-    monkeypatch.setattr(job_runner, "ensure_kb_reconcile_job", ensure_source_reconciliation)
-    monkeypatch.setattr(job_runner, "_claim_one_job", claim_no_job)
-
-    assert await job_runner.run_once(owner_instance_id="source-reconcile-worker") == 0
-    assert ensure_calls == 1
-    assert get_job_handler(KB_RECONCILE_SOURCES_KIND) is not None
-    assert get_job_handler("kb.reconcile_integration_sources") is None
-
-
 async def _create_due_schedule(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> UUID:
@@ -132,40 +106,6 @@ async def _create_due_schedule(
         db.add(schedule)
         await db.commit()
         return schedule.id
-
-
-async def test_drain_mode_with_empty_queues_exits_zero(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = {"agent": 0, "job": 0}
-    vertex_clients_closed = False
-
-    async def drain_agent(*, shutdown_event: asyncio.Event) -> int:
-        assert not shutdown_event.is_set()
-        calls["agent"] += 1
-        return 0
-
-    async def drain_jobs(*, shutdown_event: asyncio.Event) -> int:
-        assert not shutdown_event.is_set()
-        calls["job"] += 1
-        return 0
-
-    async def close_connections() -> None:
-        return None
-
-    async def close_vertex_clients() -> None:
-        nonlocal vertex_clients_closed
-        vertex_clients_closed = True
-
-    monkeypatch.setattr(settings, "WORKER_MODE", "drain")
-    monkeypatch.setattr(worker_main.agent_runner, "run_drain", drain_agent)
-    monkeypatch.setattr(worker_main.job_runner, "run_drain", drain_jobs)
-    monkeypatch.setattr(worker_main, "close_db_connections", close_connections)
-    monkeypatch.setattr(worker_main, "close_vertex_clients", close_vertex_clients)
-
-    assert await asyncio.wait_for(worker_main.main(), timeout=1) == 0
-    assert calls == {"agent": 1, "job": 1}
-    assert vertex_clients_closed is True
 
 
 async def test_drain_mode_rechecks_both_queues_after_either_does_work(
@@ -290,70 +230,6 @@ async def test_queued_job_and_due_schedule_are_processed_before_drain_exits(
     await _clear_jobs(committed_db_session_factory)
 
 
-async def test_job_enqueued_by_periodic_enqueuer_is_processed(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    drain_job_kind: tuple[str, dict[str, int]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    kind, executions = drain_job_kind
-    _disable_periodic_enqueuers(monkeypatch)
-    await _clear_jobs(committed_db_session_factory)
-    enqueued = False
-
-    async def enqueue_once(db: AsyncSession) -> None:
-        nonlocal enqueued
-        if enqueued:
-            return
-        enqueued = True
-        await enqueue_job(db, kind=kind)
-
-    monkeypatch.setattr(
-        "services.jobs.handlers.sweep_terminal_jobs.ensure_sweep_job",
-        enqueue_once,
-    )
-
-    await job_runner.run_drain(
-        shutdown_event=asyncio.Event(),
-        owner_instance_id="enqueuer-drain-worker",
-    )
-
-    assert enqueued is True
-    assert len(executions) == 1
-    assert set(executions.values()) == {1}
-    await _clear_jobs(committed_db_session_factory)
-
-
-async def test_schedule_drain_admits_up_to_shared_capacity_per_pass(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    batch_sizes: list[int | None] = []
-    expected_shutdown_event = asyncio.Event()
-
-    async def run_once(
-        *,
-        owner_instance_id: str,
-        model=None,
-        batch_size: int | None = None,
-        shutdown_event: asyncio.Event | None = None,
-    ) -> int:
-        assert owner_instance_id == "single-claim-agent-worker"
-        assert model is None
-        assert shutdown_event is expected_shutdown_event
-        batch_sizes.append(batch_size)
-        return 0
-
-    monkeypatch.setattr(settings, "WORKER_MAX_CONCURRENT_RUNS", 3)
-    monkeypatch.setattr(agent_runner, "run_once", run_once)
-
-    claimed_count = await agent_runner.run_drain(
-        shutdown_event=expected_shutdown_event,
-        owner_instance_id="single-claim-agent-worker",
-    )
-
-    assert claimed_count == 0
-    assert batch_sizes == [3]
-
-
 async def test_schedule_drain_allows_admitted_run_to_finish_after_stop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -473,15 +349,3 @@ async def test_overlapping_drains_execute_each_job_once(
         assert all(job.attempts == 1 for job in persisted)
         assert executions == {str(job_id): 1 for job_id in job_ids}
     await _clear_jobs(committed_db_session_factory)
-
-
-async def test_worker_settings_validate_mode_and_positive_budget() -> None:
-    defaults = Settings(_env_file=None)
-    assert defaults.WORKER_MODE == "forever"
-    assert defaults.WORKER_MAX_CONCURRENT_RUNS == 4
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, WORKER_MODE="once")
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, WORKER_DRAIN_MAX_SECONDS=0)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, WORKER_MAX_CONCURRENT_RUNS=0)

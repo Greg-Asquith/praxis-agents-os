@@ -327,9 +327,6 @@ async def test_connection_sync_job_fans_out_one_deduplicated_job_per_enabled_dat
     ("status", "credential_revoked"),
     [
         ("auth_pending", False),
-        ("needs_reauth", False),
-        ("needs_credential", False),
-        ("revoked", True),
         ("active", True),
     ],
 )

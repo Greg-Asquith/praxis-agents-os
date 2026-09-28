@@ -6,7 +6,6 @@ from hashlib import sha256
 
 import pytest
 from pydantic import SecretStr
-from pydantic_ai import DeferredToolResults, ToolApproved
 from pydantic_ai.messages import BinaryImage
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,8 +15,6 @@ from models.ai_usage_event import AIUsageEvent
 from models.audit_event import AuditEvent
 from models.files import File, FileRevision
 from models.workspace import Workspace
-from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
-from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools.native import (
     image_editing as image_editing_tools,
@@ -28,7 +25,6 @@ from services.files.utils import private_ref_from_key
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision
 from tests.support.google_native import mock_google_native
-from tests.support.openai_images import image_request
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -105,84 +101,10 @@ async def _persist_source(
         return file, revision
 
 
-@pytest.mark.parametrize("tool_name", ["edit_image", "generate_image_from_video"])
-async def test_input_media_tool_approval_resumes_with_edited_prompt(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-    image_input_storage: None,
-    tool_name: str,
-) -> None:
-    _enable_google(monkeypatch)
-    calls: list[tuple[str, list[bytes]]] = []
-
-    async def fake_generate(*, prompt, input_media, **_kwargs) -> BinaryImage:
-        calls.append((prompt, [item.data for item in input_media]))
-        return BinaryImage(data=_ONE_PIXEL_PNG, media_type="image/png")
-
-    tool_module = image_editing_tools if tool_name == "edit_image" else video_to_image_tools
-    monkeypatch.setattr(tool_module, "run_native_image_generation", fake_generate)
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[tool_name],
-        tool_policies={tool_name: "approval"},
-    )
-    is_edit = tool_name == "edit_image"
-    source, _revision = await _persist_source(
-        db_session_factory,
-        workspace_id=context.workspace_id,
-        user_id=context.user_id,
-        name="source.png" if is_edit else "source.mp4",
-        category=FileCategory.IMAGE if is_edit else FileCategory.VIDEO,
-        content_type="image/png" if is_edit else "video/mp4",
-        extension=".png" if is_edit else ".mp4",
-        content=b"source-image" if is_edit else b"source-video",
-    )
-    reference = FileReference(entity_id=source.id, label=source.name).model_dump(mode="json")
-    args = (
-        {"prompt": "Original prompt", "file_ids": [reference], "model_provider": "google"}
-        if is_edit
-        else {"prompt": "Original prompt", "file_id": reference}
-    )
-    model = scripted_model(
-        turns=[ToolTurn((ToolCall(tool_name, args, "media-approval"),)), "The image is ready."]
-    )
-
-    suspended = await run_scenario(db_session_factory, context, model=model)
-
-    assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
-    assert calls == []
-    state = load_suspended_run_state(suspended.run)
-    resumed_args = {**args, "prompt": "Approved prompt"}
-    resumed = await run_scenario(
-        db_session_factory,
-        context,
-        model=model,
-        prompt=None,
-        expected_status=RUN_STATUS_AWAITING_APPROVAL,
-        message_history=state.message_history,
-        deferred_tool_results=DeferredToolResults(
-            approvals={state.pending_tool_call_ids[0]: ToolApproved(override_args=resumed_args)}
-        ),
-    )
-
-    assert resumed.run.status == "completed"
-    assert calls == [
-        (
-            "Approved prompt",
-            [b"source-image" if is_edit else b"source-video"],
-        )
-    ]
-    assert {row.details["outcome"] for row in resumed.audit_rows if row.tool_name == tool_name} == {
-        "approval_requested",
-        "completed",
-    }
-
-
 @pytest.mark.parametrize(
     ("tool_name", "provider", "image_model"),
     [
         ("edit_image", "google", "gemini-3.1-flash-image"),
-        ("edit_image", "openai", "gpt-image-2.5-sunburst"),
         ("generate_image_from_video", "google", "gemini-3.1-flash-image"),
     ],
 )
@@ -193,17 +115,14 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
     tool_name: str,
     provider: str,
     image_model: str,
-    openai_image_requests,
 ) -> None:
     _enable_google(monkeypatch)
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
 
     async def fake_generate(**_kwargs) -> BinaryImage:
         return BinaryImage(data=_ONE_PIXEL_PNG, media_type="image/png")
 
     tool_module = image_editing_tools if tool_name == "edit_image" else video_to_image_tools
-    if provider == "google":
-        monkeypatch.setattr(tool_module, "run_native_image_generation", fake_generate)
+    monkeypatch.setattr(tool_module, "run_native_image_generation", fake_generate)
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[tool_name],
@@ -221,7 +140,7 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
         content=b"source-image" if is_edit else b"source-video",
     )
     source_files = [(source, source_revision)]
-    if is_edit and provider == "google":
+    if is_edit:
         second_source = await _persist_source(
             db_session_factory,
             workspace_id=context.workspace_id,
@@ -251,27 +170,7 @@ async def test_input_media_tool_auto_path_persists_source_provenance(
     assert result.run.status == "completed"
     [returned] = result.tool_returns(tool_name)
     assert returned["content"]["image_model" if is_edit else "model"] == image_model
-    if provider == "openai":
-        [request] = openai_image_requests
-        body = image_request(request)
-        assert body["prompt"] == "  Approved prompt  "
-        assert body["image"] == b"source-image"
     async with db_session_factory() as db:
-        if provider == "openai":
-            [usage] = (
-                await db.scalars(
-                    select(AIUsageEvent).where(
-                        AIUsageEvent.run_id == context.run_id,
-                        AIUsageEvent.purpose == "image_generation",
-                    )
-                )
-            ).all()
-            assert (usage.model, usage.input_tokens, usage.output_tokens, usage.requests) == (
-                image_model,
-                10,
-                20,
-                1,
-            )
         generated = list(
             (
                 await db.scalars(

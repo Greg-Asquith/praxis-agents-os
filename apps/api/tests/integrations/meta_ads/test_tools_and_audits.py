@@ -1,4 +1,4 @@
-"""Insights fan-out, policy, and safe audit evidence."""
+"""Meta read fan-out, policy, and safe audit evidence."""
 
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +16,10 @@ from core.exceptions.integration import (
     IntegrationValidationError,
 )
 from integrations.meta_ads.tools.run_insights import DEFINITION, meta_ads_run_insights
+from integrations.meta_ads.tools.schemas.activities import (
+    MetaAdsActivitiesData,
+    MetaAdsActivitiesOutput,
+)
 from integrations.meta_ads.tools.schemas.insights import MetaAdsInsightsData, MetaAdsInsightsOutput
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
 from services.integrations.context.domain import ResolvedActiveContext
@@ -617,6 +621,7 @@ def test_account_audit_reserve_covers_shared_finalisation_bound():
         ("meta_ads_get_accounts", None),
         ("meta_ads_list_objects", "results.*.data.objects"),
         ("meta_ads_list_custom_conversions", "results.*.data.conversions"),
+        ("meta_ads_list_activities", "results.*.data.events"),
     ],
 )
 def test_account_read_tools_use_shared_governance(tool_name, preview_path):
@@ -646,6 +651,12 @@ def test_account_read_tools_use_shared_governance(tool_name, preview_path):
             "list_custom_conversions",
             {},
         ),
+        (
+            "list_activities",
+            "meta_ads_list_activities",
+            "list_activities",
+            {"since": TODAY, "until": TODAY},
+        ),
     ],
 )
 async def test_account_read_throttle_fails_before_resolving_credentials(
@@ -674,3 +685,54 @@ async def test_account_read_throttle_fails_before_resolving_credentials(
     client.assert_not_awaited()
     assert audit.await_args.kwargs["status"] == "failure"
     assert audit.await_args.kwargs["error_code"] == "IntegrationRateLimitError"
+
+
+async def test_activities_fan_out_with_account_time_zone_and_counts_only_audit(monkeypatch):
+    from integrations.meta_ads.tools import list_activities as module
+
+    audit = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    monkeypatch.setattr(module, "meta_ads_client", AsyncMock())
+    zones = []
+
+    async def history(client, **kwargs):
+        zones.append(kwargs["timezone_name"])
+        assert kwargs["max_response_bytes"] > 0
+        return MetaAdsActivitiesData(
+            events=[
+                {
+                    "event_time": f"{TODAY}T09:00:00+00:00",
+                    "event_type": "update_ad_set_budget",
+                    "translated_event_type": "Ad set budget updated",
+                    "object_type": "ADSET",
+                    "object_id": "10",
+                    "object_name": HOSTILE,
+                    "actor_name": "Dana",
+                    "old_value": "1000",
+                    "new_value": "2500",
+                }
+            ],
+            event_count=1,
+            truncated=False,
+            window_note=None,
+            timezone_name=kwargs["timezone_name"],
+        )
+
+    monkeypatch.setattr(module, "list_activities", history)
+    ctx = _ctx(context_entry("111"))
+    ctx.tool_name = "meta_ads_list_activities"
+    result = await module.meta_ads_list_activities(ctx, TODAY, TODAY, ["10", "11"])
+    MetaAdsActivitiesOutput.model_validate(result)
+    assert zones == ["Europe/Paris"]
+    assert result["results"][0]["data"]["events"][0]["object_name"] == HOSTILE
+    detail = audit.await_args.kwargs["operation_detail"].model_dump()
+    for text in (HOSTILE, "Dana", "2500", "Ad set budget updated"):
+        assert text not in str(detail)
+    assert detail["intent_groups"][0]["items"][0]["fields"] == {
+        "since": TODAY,
+        "until": TODAY,
+        "object_id_count": 2,
+        "event_count": 1,
+    }

@@ -5,15 +5,8 @@ import {
   parseGoogleAdsCustomParameters,
 } from "@/integrations/google_ads/lib/field-values"
 
-import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeEnvelope, parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
-import {
-  countByKind,
-  outcomeDetails,
-  outcomeKind,
-  outcomeLabel,
-  outcomeTone,
-} from "@/integrations/google_ads/lib/outcomes"
+import { countByKind, outcomeDetails, outcomeTone } from "@/integrations/google_ads/lib/outcomes"
 import {
   campaignBudgetIdentity,
   parseCampaignBudgetReference,
@@ -28,35 +21,9 @@ import {
 import { parsePositiveKeywordReference } from "@/integrations/google_ads/lib/positive-keywords"
 import { parseRecommendationReference } from "@/integrations/google_ads/lib/recommendations"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
-import { isNullableFiniteNumber, isRecord } from "@/lib/guards"
+import { isRecord } from "@/lib/guards"
 
 describe("Google Ads outcome vocabulary", () => {
-  it.each([
-    "updated",
-    "created",
-    "assigned",
-    "removed",
-    "linked",
-    "unlinked",
-    "applied",
-    "dismissed",
-    "added",
-  ] as const)("classifies %s as applied", (token) => {
-    expect(outcomeKind(token)).toBe("applied")
-    expect(outcomeLabel(token)).toBe(token.charAt(0).toUpperCase() + token.slice(1))
-  })
-  it.each([
-    ["already_set", "Already set"],
-    ["already_exists", "Already existed"],
-    ["already_linked", "Already linked"],
-    ["not_linked", "Not linked"],
-    ["already_dismissed", "Already dismissed"],
-    ["skipped_existing", "Already existed"],
-    ["not_found", "Not found"],
-  ] as const)("classifies %s as skipped", (token, label) => {
-    expect(outcomeKind(token)).toBe("skipped")
-    expect(outcomeLabel(token)).toBe(label)
-  })
   it("orders counts and reserves warning for unverified writes", () => {
     expect(
       countByKind([
@@ -71,14 +38,7 @@ describe("Google Ads outcome vocabulary", () => {
       { kind: "failed", label: "Failed", count: 1 },
       { kind: "unverified", label: "Unverified", count: 0 },
     ])
-    expect([
-      outcomeTone("applied"),
-      outcomeTone("skipped"),
-      outcomeTone("failed"),
-      outcomeTone("unverified"),
-    ]).toEqual(["success", undefined, "danger", "warning"])
-    expect(outcomeKind("failed")).toBe("failed")
-    expect(outcomeLabel("unverified")).toBe("Unverified")
+    expect(outcomeTone("unverified")).toBe("warning")
     expect(outcomeDetails("Try again", null, "Not confirmed")).toBe("Try again · Not confirmed")
     expect(outcomeDetails(null, null, null)).toBe("")
   })
@@ -87,14 +47,6 @@ describe("Google Ads outcome vocabulary", () => {
       "Target CPA CPC CPM CPV ROAS ID URL"
     )
     expect(googleAdsTokenLabel("__", "Unavailable")).toBe("Unavailable")
-  })
-})
-
-describe("Google Ads approval count lines", () => {
-  it("pluralises nouns", () => {
-    expect(approvalCountLine(1, "campaign")).toBe("1 campaign")
-    expect(approvalCountLine(0, "keyword")).toBe("0 keywords")
-    expect(approvalCountLine(12, "recommendation")).toBe("12 recommendations")
   })
 })
 
@@ -138,26 +90,20 @@ describe("Google Ads result envelopes", () => {
   })
   it.each([
     null,
-    {},
-    { ...envelope(), counts: {} },
     { ...envelope(), samples: {} },
-    { ...envelope(), samples_truncated: 1 },
     { ...envelope(), samples: { updated: [null], failed: [] } },
   ])("rejects malformed evidence %j", (value) => {
     expect(parseOutcomeEnvelope(value, outcomes, parseRow)).toBeNull()
   })
-  it.each([-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "1"])(
-    "rejects invalid count %s",
-    (count) => {
-      expect(
-        parseOutcomeEnvelope(
-          { ...envelope(), counts: { updated: count, failed: 0 } },
-          outcomes,
-          parseRow
-        )
-      ).toBeNull()
-    }
-  )
+  it.each([-1, 0.5, "1"])("rejects invalid count %s", (count) => {
+    expect(
+      parseOutcomeEnvelope(
+        { ...envelope(), counts: { updated: count, failed: 0 } },
+        outcomes,
+        parseRow
+      )
+    ).toBeNull()
+  })
   it("rejects contradictory counts even when aggregate totals match or samples are truncated", () => {
     for (const truncated of [true, false]) {
       expect(
@@ -184,12 +130,6 @@ describe("Google Ads result envelopes", () => {
       { campaigns: [{ id: "1" }, { id: "1" }] },
     ])
       expect(parse(value)).toBeNull()
-  })
-  it.each([null, 0, -1, 1.5])("accepts nullable finite number %s", (value) => {
-    expect(isNullableFiniteNumber(value)).toBe(true)
-  })
-  it.each([undefined, NaN, Infinity, "1", false])("rejects invalid nullable number %s", (value) => {
-    expect(isNullableFiniteNumber(value)).toBe(false)
   })
 })
 
@@ -243,15 +183,12 @@ describe("Google Ads reference parsers", () => {
     })
     expect(parsePositiveKeywordReference({ ...keyword, cpc_bid_micros: "0" })?.cpcBid).toBe("0")
   })
-  it.each([
-    null,
-    {},
-    { ...campaign, entity_kind: "other" },
-    { ...campaign, campaign_id: 1 },
-    { ...campaign, campaign_id: "abc" },
-  ])("rejects invalid campaign references %j", (value) => {
-    expect(parseCampaignReference(value)).toBeNull()
-  })
+  it.each([null, { ...campaign, entity_kind: "other" }, { ...campaign, campaign_id: "abc" }])(
+    "rejects invalid campaign references %j",
+    (value) => {
+      expect(parseCampaignReference(value)).toBeNull()
+    }
+  )
   it("rejects malformed budget and keyword metadata", () => {
     for (const patch of [
       { currency_code: "gbp" },

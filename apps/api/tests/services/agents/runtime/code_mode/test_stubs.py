@@ -8,14 +8,11 @@ from typing import Literal
 
 import pytest
 from pydantic import BaseModel, create_model
-from pydantic_ai.function_signature import FunctionSignature
 from pydantic_monty import AsyncMonty, MontyTypingError
 
-from core.settings import settings
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS as GMAIL_TOOL_DEFINITIONS
-from integrations.google_ads.client import GOOGLE_ADS_API_VERSION
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
@@ -134,193 +131,6 @@ def test_catalog_description_uses_probe_pinned_workflow_guidance() -> None:
     assert "Sleeps return immediately" in description
 
 
-def test_catalog_description_states_configured_limits(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "AGENT_CODE_MODE_MAX_NESTED_CALLS", 12)
-    monkeypatch.setattr(settings, "AGENT_CODE_MODE_TIMEOUT_SECONDS", 30.0)
-    monkeypatch.setattr(settings, "AGENT_CODE_MODE_RESULT_MAX_BYTES", 16_384)
-    monkeypatch.setattr(settings, "AGENT_CODE_MODE_OUTPUT_MAX_CHARS", 4_000)
-
-    description = " ".join(
-        CodeModeCatalog.build(((SCHEMA_MATRIX_DEFINITION, "auto"),)).tool_description.split()
-    )
-
-    assert "at most 12 wrapped calls and 30 seconds" in description
-    assert "under 16 KB of JSON" in description
-    assert "capped at 4,000 characters" in description
-
-
-def test_google_ads_report_stub_declares_its_fan_out_and_row_envelope() -> None:
-    definition = next(
-        item for item in GOOGLE_ADS_TOOL_DEFINITIONS if item.name == "google_ads_run_report"
-    )
-
-    rendered = render_tool_stub(definition)
-
-    assert "class GoogleAdsReportData(TypedDict):" in rendered
-    assert "rows: list[dict[str, GoogleAdsJsonValue]]" in rendered
-    assert "row_count: int" in rendered
-    assert "class GoogleAdsRunReportOutput(TypedDict):" in rendered
-    assert "async def google_ads_run_report(*, query: str) -> GoogleAdsRunReportOutput" in rendered
-    assert "one fan-out entry per selected account" in rendered
-    assert "`data.rows`" in rendered
-    assert "mirrors the selected GAQL paths as nested lowerCamelCase objects" in rendered
-
-
-def test_google_ads_report_field_stubs_are_typed_and_versioned() -> None:
-    definitions = {
-        item.name: item
-        for item in GOOGLE_ADS_TOOL_DEFINITIONS
-        if item.name
-        in {
-            "google_ads_get_report_field",
-            "google_ads_list_report_fields",
-        }
-    }
-
-    assert set(definitions) == {
-        "google_ads_get_report_field",
-        "google_ads_list_report_fields",
-    }
-
-    listed = render_tool_stub(definitions["google_ads_list_report_fields"])
-    assert "class GoogleAdsReportFieldSummary(TypedDict):" in listed
-    assert "class GoogleAdsListReportFieldsOutput(TypedDict):" in listed
-    assert "attribute_resources: GoogleAdsFieldNames" in listed
-    assert "compatibility_truncated: bool" in listed
-    assert "fields: list[GoogleAdsReportFieldSummary]" in listed
-    assert "field_count: int" in listed
-    assert (
-        "async def google_ads_list_report_fields(*, resource: str, "
-        "search: str | None = None, limit: int | None = None) "
-        "-> GoogleAdsListReportFieldsOutput"
-    ) in listed
-
-    exact = render_tool_stub(definitions["google_ads_get_report_field"])
-    assert "class GoogleAdsReportFieldDetail(TypedDict):" in exact
-    assert "class GoogleAdsGetReportFieldOutput(TypedDict):" in exact
-    assert "type_url: str | None" in exact
-    assert "enum_values: list[str]" in exact
-    assert "selectable_with: list[str]" in exact
-    assert "attribute_resources: list[str]" in exact
-    assert "metrics: list[str]" in exact
-    assert "segments: list[str]" in exact
-    assert "fields: list[GoogleAdsReportFieldDetail]" in exact
-    assert "missing: list[str]" in exact
-    assert (
-        "async def google_ads_get_report_field(*, field_names: list[str]) "
-        "-> GoogleAdsGetReportFieldOutput"
-    ) in exact
-
-    for rendered in (listed, exact):
-        assert f"Google Ads {GOOGLE_ADS_API_VERSION}" in rendered
-        assert "google_ads_run_report to execute it" in rendered
-        assert "customer_id" not in rendered
-        assert "integration_resource_id" not in rendered
-        assert "connection_id" not in rendered
-
-
-def test_google_analytics_report_stub_declares_typed_inputs_and_rows() -> None:
-    definition = next(
-        item
-        for item in GOOGLE_ANALYTICS_TOOL_DEFINITIONS
-        if item.name == "google_analytics_run_report"
-    )
-
-    rendered = render_tool_stub(definition)
-
-    assert "class GoogleAnalyticsDateRange(TypedDict):" in rendered
-    assert "class GoogleAnalyticsFieldFilter(TypedDict):" in rendered
-    assert "class GoogleAnalyticsReportData(TypedDict):" in rendered
-    assert "rows: list[dict[str, GoogleAnalyticsValue]]" in rendered
-    assert (
-        "async def google_analytics_run_report(*, metrics: list[str], dimensions: list[str], "
-        "date_ranges: list[GoogleAnalyticsDateRange]"
-    ) in rendered
-    assert "-> GoogleAnalyticsRunReportOutput" in rendered
-    assert "Use google_analytics_list_report_fields" in rendered
-
-
-def test_google_analytics_realtime_and_compatibility_stubs_are_typed() -> None:
-    definitions = {
-        item.name: item
-        for item in GOOGLE_ANALYTICS_TOOL_DEFINITIONS
-        if item.name
-        in {
-            "google_analytics_check_report_fields",
-            "google_analytics_run_realtime_report",
-        }
-    }
-
-    realtime = render_tool_stub(definitions["google_analytics_run_realtime_report"])
-    compatibility = render_tool_stub(definitions["google_analytics_check_report_fields"])
-
-    assert "class GoogleAnalyticsMinuteRange(TypedDict):" in realtime
-    assert "class GoogleAnalyticsRealtimeReportData(TypedDict):" in realtime
-    assert "rows: list[dict[str, GoogleAnalyticsValue]]" in realtime
-    assert "async def google_analytics_run_realtime_report(" in realtime
-    assert "-> GoogleAnalyticsRunRealtimeReportOutput" in realtime
-    assert "start_minutes_ago is the older boundary" in realtime
-    assert "the last 30 minutes is 29 through 0" in realtime
-    assert "class GoogleAnalyticsFieldCompatibility(TypedDict):" in compatibility
-    assert "incompatible_fields: list[str]" in compatibility
-    assert "async def google_analytics_check_report_fields(" in compatibility
-    assert "candidate_metrics: list[str]" in compatibility
-    assert "candidate_dimensions: list[str]" in compatibility
-    assert "-> GoogleAnalyticsCheckReportFieldsOutput" in compatibility
-
-
-def test_search_console_stubs_declare_typed_inputs_and_rows() -> None:
-    definitions = {item.name: item for item in GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS}
-
-    query = render_tool_stub(definitions["google_search_console_query_search_analytics"])
-    sitemaps = render_tool_stub(definitions["google_search_console_list_sitemaps"])
-    inspection = render_tool_stub(definitions["google_search_console_inspect_url"])
-    submission = render_tool_stub(definitions["google_search_console_submit_sitemap"])
-    indexing = render_tool_stub(definitions["google_search_console_request_indexing"])
-
-    assert "class GoogleSearchConsoleFilter(TypedDict):" in query
-    assert "class GoogleSearchConsoleSearchAnalyticsRow(TypedDict):" in query
-    assert "keys: dict[str, GoogleSearchConsoleDimensionValue]" in query
-    assert "async def google_search_console_query_search_analytics(" in query
-    assert "-> GoogleSearchConsoleSearchAnalyticsOutput" in query
-    assert "class GoogleSearchConsoleSitemap(TypedDict):" in sitemaps
-    assert "submitted_url_count: int" in sitemaps
-    assert "async def google_search_console_list_sitemaps(" in sitemaps
-    assert "-> GoogleSearchConsoleListSitemapsOutput" in sitemaps
-    assert "class GoogleSearchConsoleInspection(TypedDict):" in inspection
-    assert "referring_urls: NotRequired[list[UntrustedNode]]" in inspection
-    assert "async def google_search_console_inspect_url(" in inspection
-    assert "urls: list[str]" in inspection
-    assert "-> GoogleSearchConsoleInspectUrlOutput" in inspection
-    assert "sitemap_urls: list[str]" in submission
-    assert "-> GoogleSearchConsoleSubmitSitemapsOutput" in submission
-    assert "class GoogleSearchConsoleIndexingNotification(TypedDict):" in indexing
-    assert "notification_type: Literal['URL_UPDATED', 'URL_DELETED']" in indexing
-    assert "page_type: Literal['job_posting', 'broadcast_event']" in indexing
-    assert "async def google_search_console_request_indexing(" in indexing
-    assert "-> GoogleSearchConsoleRequestIndexingOutput" in indexing
-
-
-def test_google_ads_and_analytics_catalogs_render_together_without_internal_ids() -> None:
-    definitions = (
-        *GOOGLE_ADS_TOOL_DEFINITIONS,
-        *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
-    )
-
-    rendered = render_stub_catalog(definitions)
-
-    assert "async def google_ads_run_report(" in rendered
-    assert "async def google_ads_apply_recommendations(" in rendered
-    assert "async def google_ads_dismiss_recommendations(" in rendered
-    assert "GoogleAdsCampaignBudgetParameters" in rendered
-    assert "GoogleAdsSetTargetRoasParameters" in rendered
-    assert "async def google_analytics_list_google_ads_links(" in rendered
-    assert "class GoogleAnalyticsGoogleAdsLink(TypedDict):" in rendered
-    assert "customer_id: str" in rendered
-    assert "integration_resource_id" not in rendered
-    assert "connection_id" not in rendered
-
-
 async def test_every_first_party_eligible_schema_renders() -> None:
     definitions = {
         definition.name: definition
@@ -370,39 +180,6 @@ async def test_every_first_party_eligible_schema_renders() -> None:
         assert await session.feed_run("1") == 1
 
 
-def test_sharepoint_write_stubs_preserve_versions_and_typed_outcomes() -> None:
-    definitions = {item.name: item for item in SHAREPOINT_TOOL_DEFINITIONS}
-    for action in ("create_folder", "write_file", "update_file"):
-        definition = definitions[f"sharepoint_{action}"]
-        rendered = render_tool_stub(definition)
-        assert "-> SharePointWriteOutput" in rendered
-        assert "VersionToken = str" in rendered
-        assert "version: VersionToken" in rendered
-        assert "outcome: Literal['applied', 'failed', 'unverified']" in rendered
-        assert definition.supports_approval and not definition.supports_auto
-        if action != "create_folder":
-            assert "content: TextContent | None = None" in rendered
-            assert "source: FileReference | None = None" in rendered
-            assert "class FileReference(TypedDict):" in rendered
-    update = render_tool_stub(definitions["sharepoint_update_file"])
-    assert "expected_version: VersionToken" in update
-    assert "version: VersionToken" in render_tool_stub(definitions["sharepoint_read_file"])
-
-
-def test_sharepoint_copy_stub_returns_typed_file_and_version() -> None:
-    definition = next(
-        item for item in SHAREPOINT_TOOL_DEFINITIONS if item.name == "sharepoint_copy_to_files"
-    )
-    rendered = render_tool_stub(definition)
-    assert "class FileReference(TypedDict):" in rendered
-    assert "reference: FileReference" in rendered
-    assert "version: VersionToken" in rendered
-    assert "class SharePointDriveItemReference(TypedDict):" in rendered
-    assert "folder: str | None = None" in rendered
-    assert definition.code_eligible
-    compile(rendered, "sharepoint_copy.pyi", "exec")
-
-
 async def test_keyword_output_fields_compile_and_are_consumable_in_monty() -> None:
     output = create_model("MessageOutput", **{"from": (str, ...)})
 
@@ -437,97 +214,6 @@ async def test_keyword_output_fields_compile_and_are_consumable_in_monty() -> No
             await session.feed_run('message = await read_message()\nmessage["from"] + 1')
 
 
-def test_public_renderer_loses_recursive_non_object_types() -> None:
-    schema = {
-        "type": "object",
-        "properties": {"value": {"$ref": "#/$defs/RecursiveValue"}},
-        "required": ["value"],
-        "$defs": {
-            "RecursiveValue": {
-                "anyOf": [
-                    {"type": "integer"},
-                    {"type": "array", "items": {"$ref": "#/$defs/RecursiveValue"}},
-                ]
-            }
-        },
-    }
-    signature = FunctionSignature.from_schema(name="recursive", parameters_schema=schema)
-    assert str(signature.params["value"].type) == "int | list[Any]"
-
-    definition = RuntimeToolDefinition(
-        name="recursive",
-        function=lambda value: value,
-        description="Reads recursive values.",
-        code_eligible=True,
-    )
-    object.__setattr__(definition, "_serialized_input_schema", schema)
-    object.__setattr__(definition, "_input_schema_cached", True)
-    assert "RecursiveValue = int | list['RecursiveValue']" in render_tool_stub(definition)
-
-
-def test_public_renderer_conflates_input_and_output_name_collisions() -> None:
-    input_shape = create_model("SharedShape", value=(str, ...))
-    output_shape = create_model("SharedShape", value=(int, ...))
-    parameters = create_model("Parameters", value=(input_shape, ...))
-    output = create_model("Output", value=(output_shape, ...))
-    signature = FunctionSignature.from_schema(
-        name="collision",
-        parameters_schema=parameters.model_json_schema(),
-        return_schema=output.model_json_schema(mode="serialization"),
-    )
-    conflicts = FunctionSignature.get_conflicting_type_names([signature])
-    definitions = FunctionSignature.render_type_definitions([signature], conflicts)
-    rendered = "\n".join(definitions)
-    assert rendered.count("class collision_SharedShape(TypedDict):") == 2
-    assert "value: str" in rendered
-    assert "value: int" in rendered
-    assert "value: SharedShape" in rendered
-    definition = RuntimeToolDefinition(
-        name="collision",
-        function=lambda value: value,
-        description="Reads a shared input and returns a distinct output.",
-        code_eligible=True,
-        output_model=output,
-    )
-    object.__setattr__(definition, "_serialized_input_schema", parameters.model_json_schema())
-    object.__setattr__(definition, "_input_schema_cached", True)
-    retained = render_tool_stub(definition)
-    assert "class SharedShape(TypedDict):\n    value: str" in retained
-    assert "class OutputSharedShape(TypedDict):\n    value: int" in retained
-    assert "value: OutputSharedShape" in retained
-
-
-def test_public_renderer_changes_required_defaults_and_optional_nullability() -> None:
-    signature = FunctionSignature.from_schema(
-        name="defaults",
-        parameters_schema={
-            "type": "object",
-            "properties": {
-                "optional": {"type": "string"},
-                "required": {"type": "integer", "default": 3},
-            },
-            "required": ["required"],
-        },
-    )
-    assert str(signature.params["optional"]) == "optional: str | None = None"
-    assert str(signature.params["required"]) == "required: int = 3"
-
-
-def test_classifier_is_rendered_in_the_code_mode_stub_catalog() -> None:
-    definition = RUNTIME_TOOL_CATALOG["classify"]
-
-    rendered = render_stub_catalog((definition,))
-
-    assert "class ClassifiedItem(TypedDict):" in rendered
-    assert "value: str" in rendered
-    assert "class ClassifyOutput(TypedDict):" in rendered
-    assert "results: list[ClassifiedItem]" in rendered
-    assert (
-        "async def classify(*, items: list[str], labels: list[str], instructions: str | None = None"
-    ) in rendered
-    assert "-> ClassifyOutput" in rendered
-
-
 def test_unsupported_schema_keyword_fails_closed() -> None:
     definition = RuntimeToolDefinition(
         name="unsupported_schema",
@@ -551,26 +237,6 @@ def test_unsupported_schema_keyword_fails_closed() -> None:
         render_tool_stub(definition)
 
 
-def test_meta_ads_insights_stub_has_typed_rows_and_no_platform_ids() -> None:
-    definition = META_ADS_TOOL_DEFINITIONS[0]
-    rendered = render_tool_stub(definition)
-    assert (
-        "async def meta_ads_run_insights(*, fields: list[str], since: str, until: str" in rendered
-    )
-    assert "class MetaAdsInsightsFilter(TypedDict):" in rendered
-    assert "class MetaAdsInsightsData(TypedDict):" in rendered
-    assert "-> MetaAdsInsightsOutput" in rendered
-    assert "metrics: dict[str," in rendered
-    assert "actions: dict[str," in rendered
-    assert "windows: dict[str," in rendered
-    assert "custom_conversion_id: NotRequired[MetaAdsId | None]" in rendered
-    assert "custom_conversion_name: NotRequired[MetaAdsText | None]" in rendered
-    assert "integration_resource_id" not in rendered
-    assert "connection_id" not in rendered
-    assert definition.code_eligible
-    assert definition.preview_list_path == "results.*.data.rows"
-
-
 @pytest.mark.parametrize(
     "name,output,fields",
     [
@@ -591,6 +257,16 @@ def test_meta_ads_insights_stub_has_typed_rows_and_no_platform_ids() -> None:
                 "conversion_count: int",
                 "conversions: list[",
                 "is_archived: NotRequired[bool | None]",
+            ],
+        ),
+        (
+            "meta_ads_list_activities",
+            "MetaAdsActivitiesOutput",
+            [
+                "event_count: int",
+                "events: list[",
+                "old_value: MetaAdsChangeValue | None",
+                "timezone_name: MetaAdsText",
             ],
         ),
     ],

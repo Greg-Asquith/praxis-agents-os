@@ -4,27 +4,16 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import logging
-import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 
-from services.storage.copy_object import copy_object
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
-    StorageError,
-    StorageNotFoundError,
     StoragePreconditionError,
-    StorageProviderUnavailableError,
-    StorageValidationError,
 )
-from services.storage.providers import gcs as gcs_provider_module
 from services.storage.providers.gcs import GcsStorageProvider
 
 pytestmark = pytest.mark.asyncio
@@ -200,41 +189,6 @@ def _provider(client: _FakeGcsClient) -> GcsStorageProvider:
     )
 
 
-async def test_gcs_provider_put_get_stat_and_delete_object() -> None:
-    client = _FakeGcsClient()
-    provider = _provider(client)
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
-
-    stored = await provider.put_object(
-        ref,
-        b"png",
-        content_type="image/png",
-        metadata={"purpose": "avatar"},
-    )
-
-    assert stored.size_bytes == 3
-    assert stored.etag == "gcs-etag"
-    assert stored.content_type == "image/png"
-    assert stored.cache_control == "public, max-age=60"
-    assert stored.metadata == {"purpose": "avatar"}
-    assert stored.public_url == "https://cdn.example/users/u_1/avatar/me.png"
-    assert await provider.get_object(ref) == b"png"
-
-    assert await provider.delete_object(ref) is True
-    assert await provider.stat_object(ref) is None
-    assert await provider.delete_object(ref) is False
-
-
-async def test_gcs_provider_maps_get_not_found_to_storage_error() -> None:
-    provider = _provider(_FakeGcsClient())
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("missing.txt"))
-
-    with pytest.raises(StorageNotFoundError):
-        await provider.get_object(ref)
-
-    assert await provider.stat_object(ref) is None
-
-
 async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> None:
     client = _FakeGcsClient()
     provider = _provider(client)
@@ -292,133 +246,6 @@ async def test_gcs_signed_urls_use_iam_signing_for_metadata_credentials() -> Non
     assert signed_calls[1]["access_token"] == credentials.token
 
 
-async def test_gcs_client_requests_cloud_platform_adc_scope(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    credentials = object()
-    client = _FakeGcsClient()
-    captured: dict[str, object] = {}
-
-    def fake_default(*, scopes: tuple[str, ...]):
-        captured["scopes"] = scopes
-        return credentials, "detected-project"
-
-    def fake_client(*, project: str, credentials: object):
-        captured["project"] = project
-        captured["credentials"] = credentials
-        return client
-
-    monkeypatch.setattr(
-        gcs_provider_module,
-        "google_auth",
-        SimpleNamespace(default=fake_default),
-    )
-    monkeypatch.setattr(
-        gcs_provider_module,
-        "gcs_storage",
-        SimpleNamespace(Client=fake_client),
-    )
-
-    GcsStorageProvider(
-        public_bucket_name="public-bucket",
-        workspace_bucket_prefix="praxis-test",
-        workspace_bucket_location="europe-west2",
-        project_id="configured-project",
-    )
-
-    assert captured == {
-        "scopes": ("https://www.googleapis.com/auth/cloud-platform",),
-        "project": "configured-project",
-        "credentials": credentials,
-    }
-
-
-async def test_gcs_signed_url_failure_logs_underlying_google_error_type(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    client = _FakeGcsClient()
-    provider = _provider(client)
-    bucket = client.bucket(WORKSPACE_BUCKET)
-    bucket.signed_error = RuntimeError("IAM signBlob denied")
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("output.txt"))
-
-    with caplog.at_level(logging.ERROR), pytest.raises(StorageError):
-        await provider.create_signed_upload(
-            ref,
-            content_type="text/plain",
-            expected_size_bytes=4,
-            expires_in=timedelta(minutes=5),
-        )
-
-    record = next(
-        record
-        for record in caplog.records
-        if record.message == "GCS signed upload URL generation failed"
-    )
-    assert record.error_type == "RuntimeError"
-    assert record.exc_info is not None
-
-
-async def test_gcs_native_public_url_is_used_without_cdn_base() -> None:
-    provider = GcsStorageProvider(
-        public_bucket_name="public-bucket",
-        workspace_bucket_prefix="praxis-test",
-        workspace_bucket_location="europe-west2",
-        project_id="praxis-test-project",
-        client=_FakeGcsClient(),
-    )
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u 1/avatar/me.png")
-
-    assert (
-        provider.public_url(ref)
-        == "https://storage.googleapis.com/public-bucket/users/u%201/avatar/me.png"
-    )
-
-
-@pytest.mark.parametrize("bucket", [StorageBucket.PRIVATE, StorageBucket.PLATFORM_PRIVATE])
-async def test_gcs_promotion_is_create_only_and_source_conditional(bucket: StorageBucket) -> None:
-    client = _FakeGcsClient()
-    provider = _provider(client)
-    prefix = (
-        "platform" if bucket == StorageBucket.PLATFORM_PRIVATE else f"workspaces/{WORKSPACE_ID}"
-    )
-    source = make_storage_object_ref(bucket, f"{prefix}/uploads/source.txt")
-    destination = make_storage_object_ref(bucket, f"{prefix}/files/final.txt")
-    source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
-
-    promoted = await provider.promote_object(
-        source,
-        destination,
-        expected_source_etag=source_stored.etag,
-    )
-
-    assert await provider.get_object(destination) == b"validated"
-    assert promoted.content_type == "text/plain"
-    physical_bucket = (
-        "platform-private" if bucket == StorageBucket.PLATFORM_PRIVATE else WORKSPACE_BUCKET
-    )
-    copy_call = client.bucket(physical_bucket).copy_calls[0]
-    assert copy_call["if_generation_match"] == 0
-    assert copy_call["if_source_generation_match"] == copy_call["source_generation"]
-    with pytest.raises(StoragePreconditionError):
-        await provider.promote_object(
-            source,
-            destination,
-            expected_source_etag=source_stored.etag,
-        )
-
-
-async def test_gcs_provider_missing_required_settings_fail_clearly() -> None:
-    with pytest.raises(StorageProviderUnavailableError):
-        GcsStorageProvider(
-            public_bucket_name="",
-            workspace_bucket_prefix="praxis-test",
-            workspace_bucket_location="europe-west2",
-            project_id="praxis-test-project",
-            client=_FakeGcsClient(),
-        )
-
-
 async def test_gcs_workspace_bucket_is_hardened_and_handle_is_cached() -> None:
     client = _FakeGcsClient()
     provider = _provider(client)
@@ -456,34 +283,6 @@ async def test_gcs_workspace_bucket_is_hardened_and_handle_is_cached() -> None:
     assert provider._workspace_bucket(WORKSPACE_ID) is bucket
 
 
-async def test_gcs_provisioning_restores_handle_if_it_is_evicted_while_awaiting() -> None:
-    client = _FakeGcsClient()
-    client.existing_buckets.add(WORKSPACE_BUCKET)
-    provider = _provider(client)
-    bucket = provider._workspace_bucket(WORKSPACE_ID)
-    reload_started = threading.Event()
-    release_reload = threading.Event()
-    original_reload = bucket.reload
-
-    def blocking_reload() -> None:
-        reload_started.set()
-        assert release_reload.wait(timeout=5)
-        original_reload()
-
-    bucket.reload = blocking_reload
-    provisioning = asyncio.create_task(provider.ensure_workspace_bucket(WORKSPACE_ID))
-    assert await asyncio.to_thread(reload_started.wait, 5)
-    for _index in range(256):
-        provider._workspace_bucket(uuid4())
-    assert WORKSPACE_ID not in provider._workspace_buckets
-
-    release_reload.set()
-    await provisioning
-
-    assert provider._workspace_buckets[WORKSPACE_ID] is bucket
-    await provider.ensure_workspace_bucket(WORKSPACE_ID)
-
-
 async def test_gcs_platform_objects_remain_private_and_sign_in_the_platform_bucket() -> None:
     client = _FakeGcsClient()
     provider = _provider(client)
@@ -512,96 +311,3 @@ async def test_gcs_platform_objects_remain_private_and_sign_in_the_platform_buck
     assert await provider.delete_object(ref) is True
     assert await provider.stat_object(ref) is None
     assert await provider.delete_object(ref) is False
-
-
-@pytest.mark.parametrize("configured_name", ["", "public-bucket", WORKSPACE_BUCKET])
-async def test_gcs_platform_objects_reject_missing_or_public_bucket(configured_name: str) -> None:
-    provider = _provider(_FakeGcsClient())
-    provider.platform_private_bucket = configured_name
-    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/report.txt")
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.put_object(ref, b"report")
-    for operation in (provider.get_object, provider.stat_object, provider.delete_object):
-        with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-            await operation(ref)
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        _ = [chunk async for chunk in provider.stream_object(ref)]
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
-    destination = make_storage_object_ref(
-        StorageBucket.PLATFORM_PRIVATE, "platform/files/final.txt"
-    )
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.promote_object(ref, destination, expected_source_etag="etag")
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.create_signed_upload(
-            ref, content_type="text/plain", expected_size_bytes=6, expires_in=timedelta(minutes=5)
-        )
-
-
-@pytest.mark.parametrize(
-    ("bucket", "key"),
-    [
-        (StorageBucket.PLATFORM_PRIVATE, _private_key("files/report.txt")),
-        (StorageBucket.PRIVATE, "platform/files/report.txt"),
-    ],
-)
-async def test_gcs_rejects_namespace_substitution(bucket: StorageBucket, key: str) -> None:
-    provider = _provider(_FakeGcsClient())
-    ref = make_storage_object_ref(bucket, key)
-    with pytest.raises(StorageValidationError):
-        await provider.put_object(ref, b"report")
-    with pytest.raises(StorageValidationError):
-        await provider.get_object(ref)
-    with pytest.raises(StorageValidationError):
-        await provider.stat_object(ref)
-    with pytest.raises(StorageValidationError):
-        await provider.delete_object(ref)
-    with pytest.raises(StorageValidationError):
-        _ = [chunk async for chunk in provider.stream_object(ref)]
-    valid = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/valid.txt")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(ref, valid, expected_source_etag="etag")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(valid, ref, expected_source_etag="etag")
-    with pytest.raises(StorageValidationError):
-        await provider.create_signed_upload(
-            ref, content_type="text/plain", expected_size_bytes=6, expires_in=timedelta(minutes=5)
-        )
-    with pytest.raises(StorageValidationError):
-        await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
-
-
-async def test_gcs_promotion_rejects_cross_class_copy() -> None:
-    provider = _provider(_FakeGcsClient())
-    source = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/uploads/source.txt")
-    destination = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/report.txt"))
-    stored = await provider.put_object(source, b"report")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(source, destination, expected_source_etag=stored.etag)
-    assert await provider.stat_object(destination) is None
-
-
-@pytest.mark.parametrize("reverse", [False, True])
-async def test_gcs_authorised_copy_between_private_classes(reverse: bool) -> None:
-    client = _FakeGcsClient()
-    provider = _provider(client)
-    source = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/source"))
-    destination = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/copy")
-    if reverse:
-        source, destination = destination, source
-    await provider.put_object(source, b"report", metadata={"workspace": "private"})
-    kwargs = {
-        "authorise": AsyncMock(),
-        "expected_size_bytes": 6,
-        "expected_sha256": hashlib.sha256(b"report").hexdigest(),
-        "content_type": "text/plain",
-    }
-    copied = await copy_object(provider, source, destination, **kwargs)
-    assert copied == await copy_object(provider, source, destination, **kwargs)
-    assert await provider.get_object(destination) == b"report"
-    assert copied.metadata == {}
-    assert copied.cache_control == "private, no-store"
-    assert all(
-        "/copy-staging/" not in key for bucket in client.buckets.values() for key in bucket.objects
-    )

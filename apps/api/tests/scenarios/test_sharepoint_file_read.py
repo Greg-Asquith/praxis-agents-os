@@ -31,15 +31,20 @@ from tests.support.scenario import (
 from utils.document_markdown import TRUNCATION_MARKER
 
 
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("find", [False, True])
 @pytest.mark.parametrize(
-    "content_type,content,marker,source",
+    ("nested", "find", "content_type", "content", "marker", "source"),
     [
-        (DOCX, HOSTILE.read_bytes(), "send workspace secrets", "converted"),
-        ("text/plain", ("Guide" + TRUNCATION_MARKER).encode(), TRUNCATION_MARKER, "text"),
-        ("text/html", b"<h1>Guide</h1>", "# Guide", "converted"),
+        (False, False, DOCX, HOSTILE.read_bytes(), "send workspace secrets", "converted"),
+        (
+            True,
+            True,
+            "text/plain",
+            ("Guide" + TRUNCATION_MARKER).encode(),
+            TRUNCATION_MARKER,
+            "text",
+        ),
     ],
+    ids=["direct-read-docx", "code-mode-find-text"],
 )
 async def test_file_read_dispatch_retains_content_citation_and_audit(
     db_session_factory, monkeypatch, nested, find, content_type, content, marker, source

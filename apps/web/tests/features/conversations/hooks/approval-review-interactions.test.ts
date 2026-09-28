@@ -188,15 +188,6 @@ describe("approval File re-review interactions", () => {
       expect(onReview).not.toHaveBeenCalled()
     }
   )
-  it.each([{ readOnly: true }, { enabled: false }, { isSubmitting: true }])(
-    "blocks a retained callback when availability changes to %j",
-    (overrides) => {
-      const retained = editSource()
-      render(overrides)
-      retained?.onReview?.()
-      expect(onReview).not.toHaveBeenCalled()
-    }
-  )
   it("blocks duplicate review, approval, and edits while review is in flight", async () => {
     let finish: () => void = () => undefined
     onReview.mockImplementation(
@@ -245,13 +236,5 @@ describe("approval File re-review interactions", () => {
     reject(new Error("Old review failed"))
     await Promise.resolve()
     expect(render({ approvalRevision: "round-2" })?.error).toBeNull()
-  })
-  it.each([
-    { isSubmitting: true },
-    { approvalRevision: null },
-    { approvals: [approval, approval] },
-  ])("does not review an unavailable approval: %j", (overrides) => {
-    render(overrides)?.onReview?.()
-    expect(onReview).not.toHaveBeenCalled()
   })
 })

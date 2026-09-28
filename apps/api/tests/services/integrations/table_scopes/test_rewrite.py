@@ -1,17 +1,11 @@
 """Provider-neutral table row-scope rewrite behavior."""
 
-from collections.abc import Mapping, Sequence
-
 import pytest
-from sqlglot import exp
 
 from integrations.bigquery.operations.scope_rewrite import BIGQUERY_TABLE_SCOPE_ADAPTER
 from services.integrations.table_scopes.domain import (
-    EligibleTableScopeColumn,
     TableCoordinate,
     TableNamespace,
-    TableScopeColumnType,
-    TableScopeQueryParameter,
     TableScopeRewriteError,
     TableScopeRule,
 )
@@ -186,74 +180,3 @@ def test_rewrite_skips_information_schema_references() -> None:
 
     assert result.parameters == ()
     assert result.referenced_tables == frozenset()
-
-
-class _PostgresStubAdapter:
-    dialect = "postgres"
-
-    def eligible_columns(
-        self,
-        _schema_fields: Sequence[Mapping[str, object]],
-    ) -> tuple[EligibleTableScopeColumn, ...]:
-        return ()
-
-    def should_skip_reference(self, _table: TableCoordinate) -> bool:
-        return False
-
-    def validate_allowed_values(
-        self,
-        *,
-        column_type: TableScopeColumnType,
-        values: tuple[str, ...],
-    ) -> None:
-        return None
-
-    def validate_governed_table(self, _table: exp.Table) -> None:
-        return None
-
-    def membership_predicate(
-        self,
-        *,
-        column_name: str,
-        parameter_name: str,
-    ) -> exp.Expression:
-        return exp.EQ(
-            this=exp.column(column_name, quoted=True),
-            expression=exp.Placeholder(this=parameter_name),
-        )
-
-    def query_parameter(
-        self,
-        *,
-        name: str,
-        column_type: TableScopeColumnType,
-        values: tuple[str, ...],
-    ) -> TableScopeQueryParameter:
-        return TableScopeQueryParameter(
-            name=name,
-            payload={"name": name, "type": column_type, "values": list(values)},
-        )
-
-
-def test_rewrite_engine_uses_a_non_bigquery_adapter_without_provider_literals() -> None:
-    coordinate = TableCoordinate("warehouse", "public", "clients")
-    rule = TableScopeRule(
-        table=coordinate,
-        column_name="client_id",
-        column_type="integer",
-        allowed_values=("42",),
-    )
-
-    result = rewrite_table_scopes(
-        "SELECT * FROM public.clients",
-        default_namespace=TableNamespace(catalog="warehouse"),
-        rules={coordinate: rule},
-        adapter=_PostgresStubAdapter(),
-    )
-
-    assert result.query == (
-        'SELECT * FROM (SELECT * FROM public.clients WHERE "client_id" = '
-        "%(praxis_scope_0)s) AS clients"
-    )
-    assert "UNNEST" not in result.query
-    assert "INT64" not in result.query

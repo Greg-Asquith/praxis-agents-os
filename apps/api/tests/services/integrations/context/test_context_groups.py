@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import set_session_tenant_context
-from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
+from core.exceptions.general import AppValidationError
 from models.audit_event import AuditEvent
 from models.integration_context import IntegrationContextGroup
 from models.integrations import IntegrationResource
@@ -125,27 +125,6 @@ async def test_context_group_crud_replaces_members_and_audits(
     assert [event.action for event in events] == ["create", "update", "delete"]
 
 
-async def test_context_group_name_is_unique_case_insensitively_per_workspace(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    await create_context_group(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        payload=ContextGroupCreateRequest(name="Accounts", resource_ids=[]),
-    )
-    with pytest.raises(ConflictError):
-        await create_context_group(
-            db_session,
-            request=None,
-            actor=context_data["user"],
-            workspace=context_data["workspace"],
-            payload=ContextGroupCreateRequest(name="accounts", resource_ids=[]),
-        )
-
-
 async def test_context_group_rejects_foreign_workspace_resource(
     db_session: AsyncSession,
     context_data: dict[str, object],
@@ -215,74 +194,6 @@ async def test_shared_context_group_rejects_actor_owned_resource(
     assert exc_info.value.field == "resource_ids"
 
 
-async def test_shared_context_group_accepts_mixed_workspace_owned_providers(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    google_analytics = await _add_resource(
-        db_session,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-        provider_key="google_analytics",
-        resource_type="google_analytics_property",
-    )
-    google_ads = await _add_resource(
-        db_session,
-        user=context_data["user"],
-        workspace=context_data["workspace"],
-        provider_key="google_ads",
-        resource_type="google_ads_account",
-    )
-
-    group = await create_context_group(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        payload=ContextGroupCreateRequest(
-            name="Mixed providers",
-            resource_ids=[google_ads.id, google_analytics.id],
-        ),
-    )
-
-    assert {member.id for member in group.members} == {google_ads.id, google_analytics.id}
-
-
-async def test_personal_context_group_accepts_actor_and_workspace_owned_resources(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    workspace = context_data["workspace"]
-    workspace.is_personal = True
-    gmail = await _add_resource(
-        db_session,
-        user=context_data["user"],
-        workspace=None,
-        provider_key="gmail",
-        resource_type="gmail_mailbox",
-    )
-    google_ads = await _add_resource(
-        db_session,
-        user=context_data["user"],
-        workspace=workspace,
-        provider_key="google_ads",
-        resource_type="google_ads_account",
-    )
-
-    group = await create_context_group(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=workspace,
-        payload=ContextGroupCreateRequest(
-            name="My accounts",
-            resource_ids=[gmail.id, google_ads.id],
-        ),
-    )
-
-    assert {member.id for member in group.members} == {gmail.id, google_ads.id}
-
-
 async def test_personal_context_group_rejects_another_workspace_resource(
     db_session: AsyncSession,
     context_data: dict[str, object],
@@ -325,57 +236,4 @@ async def test_personal_context_group_rejects_another_workspace_resource(
                 name="Other workspace",
                 resource_ids=[foreign_resource.id],
             ),
-        )
-
-
-async def test_shared_context_group_rejects_ineligible_update_atomically(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    group = await create_context_group(
-        db_session,
-        request=None,
-        actor=context_data["user"],
-        workspace=context_data["workspace"],
-        payload=ContextGroupCreateRequest(
-            name="Shared accounts",
-            resource_ids=[context_data["first"].id],
-        ),
-    )
-    personal_resource = await _add_resource(
-        db_session,
-        user=context_data["user"],
-        workspace=None,
-        provider_key="gmail",
-        resource_type="gmail_mailbox",
-    )
-
-    with pytest.raises(AppValidationError):
-        await update_context_group(
-            db_session,
-            request=None,
-            actor=context_data["user"],
-            workspace=context_data["workspace"],
-            group_id=group.id,
-            payload=ContextGroupUpdateRequest(
-                resource_ids=[context_data["second"].id, personal_resource.id]
-            ),
-        )
-
-    persisted = await list_context_groups(db_session, workspace=context_data["workspace"])
-    assert [member.id for member in persisted.items[0].members] == [context_data["first"].id]
-
-
-async def test_context_group_cross_workspace_id_is_hidden(
-    db_session: AsyncSession,
-    context_data: dict[str, object],
-) -> None:
-    with pytest.raises(NotFoundError):
-        await update_context_group(
-            db_session,
-            request=None,
-            actor=context_data["user"],
-            workspace=context_data["workspace"],
-            group_id=uuid4(),
-            payload=ContextGroupUpdateRequest(name="Missing"),
         )

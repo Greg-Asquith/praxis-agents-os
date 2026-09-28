@@ -11,7 +11,7 @@ from models.conversation import Conversation, ConversationMessage
 from tests.security.test_conversation_sharing import set_sharing, sharing_case
 
 
-@pytest.mark.parametrize("viewer", [False, True])
+@pytest.mark.parametrize("viewer", [True])
 async def test_message_runs_are_page_bounded_and_keep_viewer_filtering(
     db_session, db_async_client, viewer
 ):

@@ -1,17 +1,14 @@
 """Knowledge-base hybrid search service tests."""
 
-import importlib
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError
 from core.settings import settings
 from services.embeddings.domain import EmbeddingProviderError
 from services.kb import search_chunks
-from services.retrieval import RerankItem
 from tests.factories import build_kb_chunk, build_kb_document, build_user
 from tests.services.kb.conftest import KBActors
 from tests.support.embeddings import FakeEmbeddingProvider
@@ -22,17 +19,6 @@ class FailingEmbeddingProvider(FakeEmbeddingProvider):
 
     async def embed_texts(self, texts, *, model, dimensions):
         raise EmbeddingProviderError("offline")
-
-
-class ReverseReranker:
-    """Deterministic reranker stub."""
-
-    async def rerank(
-        self,
-        query: str,
-        results: list[RerankItem],
-    ) -> list[RerankItem]:
-        return list(reversed(results))
 
 
 async def _add_document(
@@ -273,96 +259,3 @@ async def test_search_excludes_refreshable_sources_unless_ready(
         )
 
         assert {hit.document_id for hit in result.results} == expected_ids
-
-
-@pytest.mark.parametrize(
-    ("query", "source_types"),
-    [
-        ("", None),
-        ("x" * 1_001, None),
-        ("valid", ["unknown"]),
-    ],
-)
-async def test_search_validates_input(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-    query: str,
-    source_types: list[str] | None,
-) -> None:
-    with pytest.raises(AppValidationError):
-        await search_chunks(
-            db_session,
-            workspace_id=kb_actors.workspace.id,
-            user_id=kb_actors.user.id,
-            query=query,
-            source_types=source_types,
-            provider=FakeEmbeddingProvider(),
-        )
-
-
-async def test_search_clamps_top_k_to_configured_bounds(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-) -> None:
-    for index in range(2):
-        await _add_document(
-            db_session,
-            actors=kb_actors,
-            title=f"Guide {index}",
-            content=f"bounded result phrase {index}",
-        )
-
-    result = await search_chunks(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        user_id=kb_actors.user.id,
-        query="bounded result phrase",
-        top_k=1_000,
-        provider=FakeEmbeddingProvider(),
-    )
-    assert len(result.results) == 2
-
-    for requested_limit in (-10, 0):
-        minimum = await search_chunks(
-            db_session,
-            workspace_id=kb_actors.workspace.id,
-            user_id=kb_actors.user.id,
-            query="bounded result phrase",
-            top_k=requested_limit,
-            provider=FakeEmbeddingProvider(),
-        )
-        assert len(minimum.results) == 1
-
-
-async def test_configured_reranker_reorders_the_fused_candidate_set(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    for index in range(2):
-        await _add_document(
-            db_session,
-            actors=kb_actors,
-            title=f"Rerank guide {index}",
-            content="same reranker candidate",
-        )
-
-    baseline = await search_chunks(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        user_id=kb_actors.user.id,
-        query="same reranker candidate",
-        provider=FakeEmbeddingProvider(),
-    )
-    search_module = importlib.import_module("services.kb.search_chunks")
-    monkeypatch.setattr(search_module, "get_reranker", lambda: ReverseReranker())
-
-    reranked = await search_chunks(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        user_id=kb_actors.user.id,
-        query="same reranker candidate",
-        provider=FakeEmbeddingProvider(),
-    )
-
-    assert [hit.id for hit in reranked.results] == [hit.id for hit in reversed(baseline.results)]

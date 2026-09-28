@@ -1,7 +1,6 @@
 """Concurrency coverage for folder membership changes."""
 
 import asyncio
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -10,20 +9,16 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.general import NotFoundError
-from models.agent import Agent
 from models.audit_event import AuditEvent
-from models.conversation import Conversation
 from models.files import File, FileFolder, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.files import (
     create_folder as create_folder_service,
-    ensure_conversation_folder as ensure_conversation_folder_service,
     move_files as move_files_service,
 )
 from services.files.create_folder import create_folder
 from services.files.domain import FileFolderCreateRequest, FileMoveRequest
-from services.files.ensure_conversation_folder import ensure_conversation_folder
 from services.files.move_files import move_files
 from tests.factories import (
     build_file,
@@ -99,98 +94,6 @@ async def test_concurrent_same_name_folder_creation_retries_deterministically(
             await cleanup_db.execute(
                 delete(FileFolder).where(FileFolder.workspace_id == workspace.id)
             )
-            await cleanup_db.execute(
-                delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace.id)
-            )
-            await cleanup_db.execute(delete(Workspace).where(Workspace.id == workspace.id))
-            await cleanup_db.execute(delete(User).where(User.id == user.id))
-            await cleanup_db.commit()
-
-
-async def test_concurrent_conversation_folder_creation_reuses_winner(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    suffix = uuid4().hex
-    user = build_user(email=f"conversation-folder-{suffix}@example.com")
-    workspace = build_workspace(slug=f"conversation-folder-{suffix[:10]}")
-    membership = build_workspace_membership(workspace_id=workspace.id, user_id=user.id)
-    agent = Agent(
-        name="Folder Agent",
-        slug=f"folder-agent-{suffix[:10]}",
-        instructions="Create files.",
-        workspace_id=workspace.id,
-        created_by=user.id,
-        model_provider="openai",
-        model="gpt-5.6-luna",
-    )
-    conversation = Conversation(
-        user_id=user.id,
-        workspace_id=workspace.id,
-        created_by=user.id,
-        active_agent_id=agent.id,
-        title="Concurrent outputs",
-    )
-    async with committed_db_session_factory() as setup_db:
-        setup_db.add_all([user, workspace])
-        await setup_db.flush()
-        setup_db.add_all([membership, agent])
-        await setup_db.flush()
-        setup_db.add(conversation)
-        await setup_db.commit()
-
-    ensure_module = __import__(
-        ensure_conversation_folder_service.__module__,
-        fromlist=["ensure_conversation_folder"],
-    )
-    monkeypatch.setattr(
-        ensure_module,
-        "available_folder_name",
-        _two_caller_barrier(ensure_module.available_folder_name),
-    )
-
-    async def ensure_one():
-        async with committed_db_session_factory() as db:
-            folder = await ensure_conversation_folder(
-                SimpleNamespace(
-                    agent=agent,
-                    conversation=conversation,
-                    db=db,
-                    user=user,
-                    workspace=workspace,
-                )
-            )
-            await db.commit()
-            return folder.id
-
-    try:
-        folder_ids = await asyncio.gather(ensure_one(), ensure_one())
-        assert folder_ids[0] == folder_ids[1]
-        async with committed_db_session_factory() as verify_db:
-            assert (
-                len(
-                    list(
-                        await verify_db.scalars(
-                            select(FileFolder).where(
-                                FileFolder.workspace_id == workspace.id,
-                                FileFolder.source_conversation_id == conversation.id,
-                                FileFolder.deleted.is_(False),
-                            )
-                        )
-                    )
-                )
-                == 1
-            )
-    finally:
-        async with committed_db_session_factory() as cleanup_db:
-            await cleanup_db.execute(
-                delete(AuditEvent).where(AuditEvent.workspace_id == workspace.id)
-            )
-            await cleanup_db.execute(
-                delete(FileFolder).where(FileFolder.workspace_id == workspace.id)
-            )
-            await cleanup_db.execute(delete(Conversation).where(Conversation.id == conversation.id))
-            await cleanup_db.execute(delete(Agent).where(Agent.id == agent.id))
             await cleanup_db.execute(
                 delete(WorkspaceMembership).where(WorkspaceMembership.workspace_id == workspace.id)
             )

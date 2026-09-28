@@ -3,8 +3,8 @@
 Meta Ads connects a workspace to the ad accounts assigned to an agency's Meta
 system user. Discovered accounts can join active context and Context Groups.
 Agents can run bounded Insights reports, read account totals, list advertising
-objects, and discover custom conversions on selected accounts. Change history,
-writes, Facebook sign-in, and event delivery are pending.
+objects, discover custom conversions, and read change history on selected
+accounts. Writes, Facebook sign-in, and event delivery are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -126,7 +126,7 @@ cannot shorten its active deadline. An expired restriction cannot be revived
 by another quota's reset time. Same-response wait-only account or Insights
 business headers can qualify Insights utilisation; healthy quotas and other
 business-use-case types cannot. Saturated usage without a usable wait does
-not block locally. Malformed usage headers are ignored. All four read tools
+not block locally. Malformed usage headers are ignored. All five read tools
 check the account cooldown before provider requests.
 
 The Marketing API access tier is separate from permission access. In the
@@ -345,6 +345,48 @@ slice B: account totals, paused-ad-set budgets, custom conversion availability
 and action-ID mapping, and mixed-provider manual checks remain unverified.
 The numeric custom-action mapping remains an implementation assumption until
 designated live Meta responses confirm it.
+
+## Change history
+
+`meta_ads_list_activities` reads each selected account's `activities` edge
+for absolute `since` and `until` dates covering at most 31 days. Dates use the
+account time zone from discovery metadata; `data.timezone_name` records the
+zone, which is UTC when the stored zone is missing or unknown. Optional
+`object_ids` accepts up to 50 numeric campaign, ad set, or ad IDs and keeps
+changes whose changed object matches one of them.
+
+The request sends the window as `since` and `until` timestamps. Because live
+window and object filtering on this edge are unverified, the operation also
+filters every returned event by `event_time` and object ID. Only matching
+events count towards the 200-event limit. Filtered reads request full pages
+of 100, with a 10-page cap per account. Reaching either limit sets
+`truncated=true` and a `window_note` asking for narrower dates or object IDs.
+
+Each event contains `event_time` as ISO 8601 with an offset, `event_type`,
+`translated_event_type`, `object_type`, `object_id`, `object_name`, and
+`actor_name`. Text is bounded to 512 characters. Meta's `extra_data` JSON
+contributes only scalar `old_value` and `new_value` entries, each converted to
+text and bounded to 256 characters. Nested values, other keys, malformed JSON,
+and extra data longer than 16,384 characters are dropped. These values are not
+converted to the account currency, so budget amounts can be in minor units.
+Missing or offset-free event times and non-numeric object IDs fail that
+account's read as an invalid response.
+
+The tool uses the shared credential, authorisation, fan-out, audit, and
+retained-result paths with read policy, a 60-second timeout, and Code Mode
+support. Large results preview `results.*.data.events`. Audits record the
+window, object ID count, and event count; they exclude names, actors, and
+change values. The presenter shows time, change, object, actor, and old and new
+values, with the time zone and any window note above the table.
+
+On 25 September 2026, inspection of Meta's official
+[account SDK](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adaccount.py)
+and [ad activity model](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adactivity.py)
+confirmed the `since` and `until` edge parameters and the requested event
+fields. These definitions do not establish live filtering, event ordering, or
+the shape of `extra_data` for budget and status changes. Those checks, and the
+manual check that an Ads Manager budget change appears in the history, remain
+unverified.
 
 ## Version upgrades
 

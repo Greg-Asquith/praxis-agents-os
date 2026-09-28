@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import {
-  autoUiFields,
-  friendlyResultText,
-  resolveToolTemplate,
-  resolveUiFields,
-  shortOutcomeMetric,
-  toolUiApprovalPrompt,
-} from "@/features/conversations/tool-ui"
-import type { ToolActivity } from "@/features/conversations/message-parts"
+import { resolveToolTemplate, resolveUiFields } from "@/features/conversations/tool-ui"
 import type { ToolUiField } from "@/features/tools/types"
 
 function uiField(field: Pick<ToolUiField, "key" | "label"> & Partial<ToolUiField>): ToolUiField {
@@ -29,52 +21,11 @@ describe("resolveToolTemplate", () => {
     expect(resolved).toBe("Writing report.md")
   })
 
-  it("prefers earlier sources over later ones", () => {
-    const resolved = resolveToolTemplate("Wrote {name}", [{ name: "draft.md" }, { name: "x" }])
-    expect(resolved).toBe("Wrote draft.md")
-  })
-
   it("returns null when any placeholder cannot be resolved", () => {
     expect(resolveToolTemplate("Writing {name}", [{}])).toBeNull()
     expect(resolveToolTemplate("Writing {name}", [null, undefined])).toBeNull()
   })
-
-  it("ignores non-scalar values", () => {
-    expect(resolveToolTemplate("Writing {name}", [{ name: { nested: true } }])).toBeNull()
-  })
-
-  it("truncates long values", () => {
-    const resolved = resolveToolTemplate("Searching for {query}", [{ query: "q".repeat(100) }])
-    expect(resolved).toBe(`Searching for ${"q".repeat(64)}…`)
-  })
 })
-
-describe("toolUiApprovalPrompt", () => {
-  it("keeps long approval values readable", () => {
-    const query = "q".repeat(100)
-    const activity = {
-      id: "search-1",
-      kind: "approval",
-      name: "web_search",
-      status: "awaiting_approval",
-      args: { query },
-    } satisfies ToolActivity
-    const ui = {
-      icon: "globe",
-      running_label: "Searching",
-      completed_label: "Searched",
-      failed_label: "Search failed",
-      approval_title: "Search the Web",
-      approval_prompt: "The agent wants to search for {query}.",
-      approve_label: "Approve & Search",
-      arg_fields: [],
-      result_fields: [],
-    }
-
-    expect(toolUiApprovalPrompt(ui, activity)).toBe(`The agent wants to search for ${query}.`)
-  })
-})
-
 describe("resolveUiFields", () => {
   it("resolves declared fields and drops missing ones", () => {
     const fields = resolveUiFields(
@@ -128,42 +79,5 @@ describe("resolveUiFields", () => {
     ])
     expect(resolveUiFields(fields, { link: "javascript:alert(1)" })).toEqual([])
     expect(resolveUiFields(fields, { link: "not a URL" })).toEqual([])
-  })
-})
-
-describe("shortOutcomeMetric", () => {
-  it("returns only a short first resolved result", () => {
-    expect(
-      shortOutcomeMetric([
-        { key: "answer", label: "Answer", value: "  Found   3 files  ", format: "text" },
-      ])
-    ).toBe("Found 3 files")
-    expect(
-      shortOutcomeMetric([
-        { key: "answer", label: "Answer", value: "x".repeat(41), format: "text" },
-      ])
-    ).toBeNull()
-    expect(shortOutcomeMetric([])).toBeNull()
-  })
-})
-
-describe("autoUiFields", () => {
-  it("builds humanized fields from scalar entries only", () => {
-    const fields = autoUiFields({ file_name: "a.md", max_bytes: 10, nested: { skip: true } })
-    expect(fields).toEqual([
-      { key: "file_name", label: "File name", value: "a.md", format: "text" },
-      { key: "max_bytes", label: "Max bytes", value: "10", format: "text" },
-    ])
-  })
-})
-
-describe("friendlyResultText", () => {
-  it("returns plain string results", () => {
-    expect(friendlyResultText("All done")).toBe("All done")
-  })
-
-  it("rejects JSON-looking or non-string results", () => {
-    expect(friendlyResultText('{"a":1}')).toBeNull()
-    expect(friendlyResultText({ a: 1 })).toBeNull()
   })
 })

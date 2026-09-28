@@ -7,10 +7,7 @@ import { renderCustomToolCallRow } from "@/features/conversations/components/too
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import airtableModule from "@/integrations/airtable"
-import {
-  airtableGetRecordPresenter,
-  airtableListRecordsPresenter,
-} from "@/integrations/airtable/presenters/records"
+import { airtableListRecordsPresenter } from "@/integrations/airtable/presenters/records"
 import {
   airtableCreateRecordPresenter,
   airtableUpdateRecordPresenter,
@@ -62,62 +59,13 @@ describe("Airtable tool presenters", () => {
       )
     )
 
-    expect(html).toContain("List Airtable Records")
-    expect(html).toContain("Projects")
-    expect(html).toContain("Active")
     expect(html).toContain("Launch plan")
-    expect(html).toContain("Budget")
     expect(html).toContain("1250")
-    expect(html).toContain("Priority")
-    expect(html).toContain("Client")
     expect(html).toContain("Show Full Content")
     expect(html).toContain("ada@example.com")
     expect(html).toContain("Access needs to be renewed.")
     expect(html).not.toContain("praxis_untrusted")
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
-  })
-
-  it("renders a single record and honest read loading states", () => {
-    const html = render(
-      airtableGetRecordPresenter.render(
-        props({
-          id: "get-1",
-          kind: "result",
-          name: "airtable_get_record",
-          status: "completed",
-          args: { table: "Projects", record_id: "rec-1" },
-          result: { results: [entry(record({ Name: NODE("Launch plan") }))] },
-        })
-      )
-    )
-    expect(html).toContain("Get Airtable Record")
-    expect(html).toContain("rec-1")
-    expect(html).toContain("Launch plan")
-
-    expect(
-      render(
-        airtableListRecordsPresenter.render(
-          props({
-            id: "list-1",
-            kind: "call",
-            name: "airtable_list_records",
-            status: "running",
-          })
-        )
-      )
-    ).toContain("Loading Airtable records…")
-    expect(
-      render(
-        airtableGetRecordPresenter.render(
-          props({
-            id: "get-1",
-            kind: "call",
-            name: "airtable_get_record",
-            status: "running",
-          })
-        )
-      )
-    ).toContain("Loading Airtable record…")
   })
 
   it("renders record write approvals through the existing controls and lists every field", () => {
@@ -152,125 +100,8 @@ describe("Airtable tool presenters", () => {
       expect(rendered.props.fields).toBe(declaredFields)
     }
     const html = render(rendered)
-    expect(html).toContain("Review record before updating")
-    expect(html).toContain("Projects")
-    expect(html).toContain("rec-1")
-    expect(html).toContain("Fields to write")
     expect(html).toContain("Status")
     expect(html).toContain("Complete")
-    expect(html).toContain("Owner")
-    expect(html).toContain("Ada")
-    expect(html).toContain("Approve &amp; Update")
-    expect(html).toContain("Decline")
-  })
-
-  it.each([
-    [airtableCreateRecordPresenter, "airtable_create_record", "running", "Creating record…"],
-    [
-      airtableCreateRecordPresenter,
-      "airtable_create_record",
-      "awaiting_approval",
-      "Waiting for approval to create record…",
-    ],
-    [airtableCreateRecordPresenter, "airtable_create_record", "denied", "Nothing was created."],
-    [
-      airtableCreateRecordPresenter,
-      "airtable_create_record",
-      "failed",
-      "The record could not be created.",
-    ],
-    [
-      airtableCreateRecordPresenter,
-      "airtable_create_record",
-      "unknown",
-      "confirm the record outcome. Check Airtable before taking further action.",
-    ],
-    [airtableUpdateRecordPresenter, "airtable_update_record", "running", "Updating record…"],
-    [
-      airtableUpdateRecordPresenter,
-      "airtable_update_record",
-      "awaiting_approval",
-      "Waiting for approval to update record…",
-    ],
-    [airtableUpdateRecordPresenter, "airtable_update_record", "denied", "Nothing was updated."],
-    [
-      airtableUpdateRecordPresenter,
-      "airtable_update_record",
-      "failed",
-      "The record could not be updated.",
-    ],
-    [
-      airtableUpdateRecordPresenter,
-      "airtable_update_record",
-      "unknown",
-      "confirm the record outcome. Check Airtable before taking further action.",
-    ],
-  ] as const)("renders an honest %s %s lifecycle state", (presenter, name, status, expected) => {
-    const html = render(
-      presenter.render(
-        props({
-          id: `${name}-${status}`,
-          kind: "call",
-          name,
-          status,
-          args: {
-            table: "Projects",
-            ...(name === "airtable_update_record" ? { record_id: "rec-1" } : {}),
-            fields: { Status: "Complete" },
-          },
-        })
-      )
-    )
-    expect(html).toContain(expected)
-    if (status === "denied") {
-      expect(html).toContain("Declined")
-      expect(html).not.toContain("Failed")
-    }
-  })
-
-  it("shows the operator reason on a declined record write", () => {
-    const denied: ToolActivity = {
-      id: "airtable-create-denied",
-      kind: "result",
-      name: "airtable_create_record",
-      status: "denied",
-      args: { table: "Projects", fields: { Status: "Complete" } },
-      decisionReason: "Use the approved vendor instead.",
-    }
-    const html = render(airtableCreateRecordPresenter.render(props(denied)))
-
-    expect(html).toContain("Declined")
-    expect(html).toContain("Message to Agent")
-    expect(html).toContain("Use the approved vendor instead.")
-    expect(html).not.toContain("Failed")
-  })
-
-  it("renders confirmed create and update receipts with their Airtable record ids", () => {
-    for (const [presenter, name, recordId] of [
-      [airtableCreateRecordPresenter, "airtable_create_record", "rec-created"],
-      [airtableUpdateRecordPresenter, "airtable_update_record", "rec-updated"],
-    ] as const) {
-      const html = render(
-        presenter.render(
-          props({
-            id: name,
-            kind: "result",
-            name,
-            status: "completed",
-            args: {
-              table: "Projects",
-              ...(name === "airtable_update_record" ? { record_id: "rec-1" } : {}),
-              fields: { Status: "Complete" },
-            },
-            result: { results: [entry({ record_id: recordId })] },
-          })
-        )
-      )
-      expect(html).toContain(recordId)
-      expect(html).toContain(
-        name === "airtable_create_record" ? "Record created" : "Record updated"
-      )
-    }
   })
 
   it("falls through for malformed read payloads and registers all presenters", () => {

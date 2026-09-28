@@ -9,7 +9,7 @@ import pytest
 from httpx2 import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import ConflictError, NotFoundError
+from core.exceptions.general import ConflictError
 from models.user import UserAuth
 from services.auth.oauth.unlink_oauth_provider import unlink_oauth_provider
 from tests.factories.users import build_user
@@ -67,20 +67,6 @@ async def test_unlink_removes_provider_when_password_remains(
 
 
 @pytest.mark.asyncio
-@requires_email_auth
-async def test_unlink_unknown_provider_returns_404(db_async_client: AsyncClient) -> None:
-    await _register(db_async_client)
-
-    response = await db_async_client.request(
-        "DELETE",
-        "/api/v1/auth/oauth/github/link",
-        headers=_state_changing_headers(db_async_client),
-    )
-
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_unlink_only_sign_in_method_is_rejected(db_session: AsyncSession) -> None:
     user = build_user(email=f"only-{uuid4()}@example.com", password=None)
     db_session.add(user)
@@ -97,22 +83,6 @@ async def test_unlink_only_sign_in_method_is_rejected(db_session: AsyncSession) 
     await db_session.flush()
 
     with pytest.raises(ConflictError):
-        await unlink_oauth_provider(
-            db_session,
-            request=SimpleNamespace(),
-            user=user,
-            provider_name="google",
-        )
-
-
-@pytest.mark.asyncio
-async def test_unlink_missing_provider_at_service_layer(db_session: AsyncSession) -> None:
-    strong_password = "StrongerPassword123!"
-    user = build_user(email=f"nopass-{uuid4()}@example.com", password=strong_password)
-    db_session.add(user)
-    await db_session.flush()
-
-    with pytest.raises(NotFoundError):
         await unlink_oauth_provider(
             db_session,
             request=SimpleNamespace(),

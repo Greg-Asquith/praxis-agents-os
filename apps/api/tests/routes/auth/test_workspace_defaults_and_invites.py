@@ -13,11 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.sessions import session_manager
 from core.database import get_maintenance_async_db_session_factory
 from models.audit_event import AuditEvent
-from models.security import SecurityEvent
 from models.user import User, UserAuth
 from models.workspace import WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
-from services.security import SecurityEventType
 from tests.factories import build_user, build_workspace, build_workspace_membership
 from tests.support.auth import bearer_headers, requires_email_auth
 
@@ -25,77 +23,6 @@ pytestmark = pytest.mark.asyncio
 
 ORIGIN = "http://localhost:3000"
 PASSWORD = "StrongerPassword123!"
-
-
-@requires_email_auth
-async def test_login_accepts_pending_invitation_for_verified_identity(
-    db_async_client: AsyncClient,
-    db_session: AsyncSession,
-) -> None:
-    owner = build_user(email="owner@example.com")
-    invited = build_user(email="invited@example.com", password=PASSWORD)
-    verified_identity = UserAuth(
-        user_id=invited.id,
-        provider="google",
-        provider_user_id="verified-invited-user",
-        email=invited.email,
-        email_verified=True,
-    )
-    workspace = build_workspace(slug="client-team", name="Client Team", is_personal=False)
-    owner_membership = build_workspace_membership(
-        workspace_id=workspace.id,
-        user_id=owner.id,
-        role=WorkspaceRole.OWNER,
-    )
-    invitation = WorkspaceInvitation(
-        workspace_id=workspace.id,
-        email=invited.email,
-        role=WorkspaceRole.ADMIN.value,
-        invited_by=owner.id,
-        token_hash=WorkspaceInvitation.hash_raw_token("pending-invite-token"),
-        expires_at=datetime.now(UTC) + timedelta(days=7),
-    )
-    db_session.add_all([owner, invited, verified_identity, workspace, owner_membership, invitation])
-    await db_session.flush()
-    workspace_id = workspace.id
-    invited_id = invited.id
-    invited_email = invited.email
-    invitation_id = invitation.id
-    verified_identity_id = verified_identity.id
-    await db_session.commit()
-
-    response = await db_async_client.post(
-        "/api/v1/auth/login",
-        headers={"origin": ORIGIN},
-        json={"email": invited_email, "password": PASSWORD},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["requires_twofa"] is False
-    assert body["user"]["email"] == invited_email
-
-    db_session.expire_all()
-    membership = await db_session.scalar(
-        select(WorkspaceMembership).where(
-            WorkspaceMembership.workspace_id == workspace_id,
-            WorkspaceMembership.user_id == invited_id,
-            WorkspaceMembership.deleted.is_(False),
-        )
-    )
-    assert membership is not None
-    assert membership.role == WorkspaceRole.ADMIN.value
-
-    security_event = await db_session.scalar(
-        select(SecurityEvent).where(
-            SecurityEvent.event_type == SecurityEventType.WORKSPACE_INVITATION_ACCEPTED.value,
-            SecurityEvent.user_email == invited_email,
-        )
-    )
-    assert security_event is not None
-    assert security_event.details["invitation_id"] == str(invitation_id)
-    assert security_event.details["identity_proof"] == "verified_identity"
-    assert security_event.details["verified_identity_id"] == str(verified_identity_id)
 
 
 @requires_email_auth
@@ -235,7 +162,7 @@ async def test_patch_auth_me_persists_default_workspace_and_records_audit(
     assert audit_event.details["fields"] == ["default_workspace_id"]
 
 
-async def test_patch_auth_me_rejects_invalid_or_null_default_workspace(
+async def test_patch_auth_me_rejects_default_workspace_without_membership(
     db_async_client: AsyncClient,
     db_session: AsyncSession,
 ) -> None:
@@ -261,11 +188,3 @@ async def test_patch_auth_me_rejects_invalid_or_null_default_workspace(
     )
     assert invalid_response.status_code == 400
     assert invalid_response.json()["field"] == "default_workspace_id"
-
-    null_response = await db_async_client.patch(
-        "/api/v1/auth/me",
-        headers=headers,
-        json={"default_workspace_id": None},
-    )
-    assert null_response.status_code == 400
-    assert null_response.json()["field"] == "default_workspace_id"

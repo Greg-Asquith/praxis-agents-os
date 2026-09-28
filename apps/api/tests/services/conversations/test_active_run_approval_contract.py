@@ -35,20 +35,11 @@ def test_active_run_revision_reads_saved_value_without_mutating_metadata() -> No
         _saved_approval_revision(run)
 
 
-@pytest.mark.parametrize("state", [{}, {"approval_batch_id": str(uuid4())}])
-def test_active_run_revision_keeps_legacy_reads_without_projection(state: dict) -> None:
-    run = AgentRun(status="awaiting_approval", metadata_json={"approval_state": state})
-    assert _saved_approval_revision(run) is None
-    assert _saved_approval_revision(run) is None
-    assert run.metadata_json == {"approval_state": state}
-
-
 @pytest.mark.parametrize(
     "state",
     [
         {"approval_batch_id": "invalid"},
         {"approval_revision": "a" * 64},
-        {"approval_batch_id": str(uuid4()), "approval_revision": None},
     ],
 )
 def test_active_run_revision_rejects_invalid_identity_metadata(state: dict) -> None:

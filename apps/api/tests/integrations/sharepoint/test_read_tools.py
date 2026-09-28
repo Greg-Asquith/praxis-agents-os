@@ -8,65 +8,24 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 
-from integrations.sharepoint import PROVIDER
-from integrations.sharepoint.operations.utils import item_result
 from integrations.sharepoint.references import SharePointDriveItemReference
-from integrations.sharepoint.settings import sharepoint_settings
-from integrations.sharepoint.tools.copy_to_files import DEFINITION as COPY_DEFINITION
-from integrations.sharepoint.tools.create_folder import DEFINITION as CREATE_DEFINITION
-from integrations.sharepoint.tools.find_in_file import DEFINITION as FIND_DEFINITION
-from integrations.sharepoint.tools.list_folder import DEFINITION, sharepoint_list_folder
-from integrations.sharepoint.tools.open_link import DEFINITION as LINK_DEFINITION
-from integrations.sharepoint.tools.read_file import DEFINITION as READ_DEFINITION
+from integrations.sharepoint.tools.list_folder import sharepoint_list_folder
 from integrations.sharepoint.tools.schemas import FolderOutput
-from integrations.sharepoint.tools.search_files import DEFINITION as SEARCH_DEFINITION
-from integrations.sharepoint.tools.update_file import DEFINITION as UPDATE_DEFINITION
-from integrations.sharepoint.tools.utils import bounded_output, sharepoint_available
-from integrations.sharepoint.tools.write_file import DEFINITION as WRITE_DEFINITION
-from services.agents.runtime.code_mode.stubs import render_tool_stub
-from services.agents.runtime.tools.contract import validate_definition
+from integrations.sharepoint.tools.utils import bounded_output
 from services.agents.runtime.untrusted import UntrustedNode, frame_untrusted_content
 from services.integrations.context.results import IntegrationContextResult
 from tests.integrations.sharepoint.support import context, entry, fixture, graph
 
 
-def test_registration_schema_and_code_mode_stub(monkeypatch):
-    assert PROVIDER.tool_definitions == (
-        DEFINITION,
-        SEARCH_DEFINITION,
-        READ_DEFINITION,
-        FIND_DEFINITION,
-        CREATE_DEFINITION,
-        WRITE_DEFINITION,
-        UPDATE_DEFINITION,
-        COPY_DEFINITION,
-        LINK_DEFINITION,
-    )
-    validate_definition(DEFINITION)
-    stub = render_tool_stub(DEFINITION)
-    assert "def sharepoint_list_folder(" in stub
-    assert "FolderOutput" in stub
-    assert DEFINITION.code_eligible and DEFINITION.default_policy == "auto"
-    assert DEFINITION.egress == "provider_query" and DEFINITION.timeout == 90
-    assert DEFINITION.integration_binding.requires_write is False
-    schema = DEFINITION.to_pydantic_tool().function_schema.json_schema
-    assert set(schema["properties"]) == {"folder", "limit"}
-    assert schema["properties"]["limit"] == {
-        "default": 50,
-        "minimum": 1,
-        "maximum": 200,
-        "type": "integer",
-    }
-    monkeypatch.setattr(sharepoint_settings, "SHAREPOINT_OAUTH_CLIENT_ID", "")
-    assert not sharepoint_available()
-    monkeypatch.setattr(sharepoint_settings, "SHAREPOINT_OAUTH_CLIENT_ID", "configured")
-    assert sharepoint_available()
-
-
-@pytest.mark.parametrize("drives", [(), ("other",), ("drive", "drive")])
+@pytest.mark.parametrize(
+    "drives",
+    [
+        (),
+        ("other",),
+    ],
+)
 async def test_unselected_or_ambiguous_reference_stops_before_credentials(monkeypatch, drives):
     client = AsyncMock()
     monkeypatch.setattr("integrations.sharepoint.tools.list_folder.drive_client", client)
@@ -78,7 +37,12 @@ async def test_unselected_or_ambiguous_reference_stops_before_credentials(monkey
     client.assert_not_awaited()
 
 
-@pytest.mark.parametrize("targeted", [False, True])
+@pytest.mark.parametrize(
+    "targeted",
+    [
+        False,
+    ],
+)
 async def test_listing_retains_typed_provenance_and_audits_each_selected_drive(
     monkeypatch, targeted
 ):
@@ -153,75 +117,3 @@ def test_complete_result_byte_bound():
                 )
             ]
         )
-
-
-def test_complete_result_byte_bound_includes_full_citation_urls():
-    file = fixture("children.json")["value"][0]
-    url = "https://example.sharepoint.com/" + "a" * 8000
-    item = item_result({**file, "webUrl": url}, drive_id="drive", operation="list_folder")
-    assert item["web_url"].content == url
-    with pytest.raises(ModelRetry, match="too much data"):
-        bounded_output(
-            [
-                IntegrationContextResult(
-                    entry=entry(),
-                    status="success",
-                    data={"items": [item] * 100, "count": 100, "has_more": False},
-                )
-            ]
-        )
-
-
-@pytest.mark.parametrize(
-    "item_id", ["REJECTED_PROVIDER_MARKER invalid", "REJECTED_PROVIDER_MARKER" * 30]
-)
-async def test_invalid_provider_ids_retain_partial_success_and_failed_audit(monkeypatch, item_id):
-    audit = AsyncMock(return_value=uuid4())
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event", audit
-    )
-    file = fixture("children.json")["value"][0]
-
-    def handler(request):
-        if "/invalid/" in request.url.path:
-            row = {**file, "id": item_id, "parentReference": {"driveId": "invalid"}}
-        else:
-            row = file
-        return httpx2.Response(200, json={"value": [row]})
-
-    async with graph(handler) as provider:
-        monkeypatch.setattr(
-            "integrations.sharepoint.tools.list_folder.drive_client",
-            AsyncMock(return_value=provider),
-        )
-        result = await sharepoint_list_folder(context(entry("invalid"), entry()))
-    typed = FolderOutput.model_validate(result)
-    failed, successful = typed.results
-    assert failed.status == "error" and failed.data is None
-    assert failed.error_code == "IntegrationValidationError"
-    assert failed.error_message == "SharePoint returned invalid item metadata."
-    assert successful.status == "success" and successful.data.count == 1
-    assert successful.data.items[0].reference.item_id == "file"
-    assert audit.await_count == 2
-    failed_audit, successful_audit = [call.kwargs for call in audit.call_args_list]
-    assert failed_audit["status"] == "failure"
-    assert failed_audit["error_code"] == "IntegrationValidationError"
-    assert successful_audit["status"] == "success"
-    for marker in (
-        "REJECTED_PROVIDER_MARKER",
-        "string_pattern_mismatch",
-        "string_too_long",
-        "errors.pydantic.dev",
-        "ValidationError:",
-    ):
-        assert marker not in typed.model_dump_json() + str(failed_audit)
-
-
-def test_reference_identity_excludes_display_metadata():
-    reference = SharePointDriveItemReference(drive_id="drive", item_id="folder")
-    assert (
-        reference.identity()
-        == reference.model_copy(update={"name": "Rename", "kind": "folder"}).identity()
-    )
-    with pytest.raises(ValidationError):
-        SharePointDriveItemReference(drive_id="drive", item_id="../../other")

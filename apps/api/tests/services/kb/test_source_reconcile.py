@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import event, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.database import get_maintenance_async_db_session_factory
@@ -12,13 +12,8 @@ from core.settings import settings
 from models.jobs import Job
 from models.kb import KBDocument
 from services.jobs.enqueue_job import enqueue_job
-from services.jobs.handlers.reconcile_kb_sources import handle_reconcile_kb_sources
-from services.kb.ensure_reconcile_job import (
-    KB_RECONCILE_SOURCES_KIND,
-    ensure_kb_reconcile_job,
-)
 from services.kb.reconcile_sources import reconcile_kb_sources
-from tests.factories import build_job, build_kb_document, build_workspace
+from tests.factories import build_kb_document, build_workspace
 
 pytestmark = pytest.mark.asyncio
 
@@ -153,74 +148,3 @@ async def test_reconcile_advances_past_sources_checked_by_the_previous_batch(
             await db.scalars(select(Job.subject_id).where(Job.kind == "kb.ingest_document"))
         )
         assert queued_ids == {first.id, second.id, third.id}
-
-
-async def test_reconcile_selects_no_content_or_chunks(
-    db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    del db_session_factory
-    session_factory = get_maintenance_async_db_session_factory()
-    async with session_factory() as db:
-        statements: list[str] = []
-
-        def capture_statement(_conn, _cursor, statement, _params, _context, _executemany):
-            statements.append(statement.lower())
-
-        bind = db.get_bind()
-        event.listen(bind, "before_cursor_execute", capture_statement)
-        try:
-            assert await reconcile_kb_sources(db) == 0
-        finally:
-            event.remove(bind, "before_cursor_execute", capture_statement)
-
-        assert statements
-        assert all("content_md" not in statement for statement in statements)
-        assert all("kb_chunks" not in statement for statement in statements)
-
-
-async def test_reconcile_handler_reschedules_after_an_empty_scan(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    del db_session_factory
-    monkeypatch.setattr(settings, "KB_SOURCE_REFRESH_INTERVAL_SECONDS", 600)
-    session_factory = get_maintenance_async_db_session_factory()
-    async with session_factory() as db:
-        running_job = build_job(
-            kind=KB_RECONCILE_SOURCES_KIND,
-            content_hash="reconcile-kb-sources:running",
-            status="running",
-        )
-        db.add(running_job)
-        await db.flush()
-        before = datetime.now(UTC)
-
-        await handle_reconcile_kb_sources(db, running_job)
-
-        scheduled = await db.scalar(
-            select(Job).where(
-                Job.kind == KB_RECONCILE_SOURCES_KIND,
-                Job.id != running_job.id,
-            )
-        )
-        assert scheduled is not None
-        assert scheduled.workspace_id is None
-        assert scheduled.concurrency_user_id is None
-        assert scheduled.content_hash == f"reconcile-kb-sources:{running_job.id}"
-        assert scheduled.payload == {"scheduled_by_job_id": str(running_job.id)}
-        assert scheduled.run_after >= before + timedelta(seconds=600)
-
-
-async def test_ensure_reconcile_job_is_idempotent_and_ownerless(
-    db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    del db_session_factory
-    session_factory = get_maintenance_async_db_session_factory()
-    async with session_factory() as db:
-        first = await ensure_kb_reconcile_job(db)
-        second = await ensure_kb_reconcile_job(db)
-
-        assert second.id == first.id
-        assert first.workspace_id is None
-        assert first.concurrency_user_id is None
-        assert first.content_hash == "reconcile-kb-sources:ensure"

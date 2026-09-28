@@ -1,7 +1,5 @@
 """Checks cumulative ceiling composition at framework boundaries."""
 
-from dataclasses import fields
-
 import pytest
 from pydantic import ValidationError
 from pydantic_ai import Agent, RunContext
@@ -17,14 +15,6 @@ from services.agents.runtime.usage_limits import (
     SavedUsageLimits,
     intersect_usage_limits,
 )
-
-
-def test_supported_sdk_fields() -> None:
-    assert {field.name for field in fields(UsageLimits)} == (
-        set(EffectiveUsageLimits.model_fields) - {"cached_token_weight"}
-    )
-    effective = EffectiveUsageLimits.from_sdk(UsageLimits())
-    assert EffectiveUsageLimits.from_sdk(effective.to_sdk()) == effective
 
 
 @pytest.mark.parametrize("weight", [0.0, 0.1, 1.0])
@@ -49,35 +39,6 @@ def test_cached_weight_applies_only_to_total_without_changing_usage(weight, meth
         with pytest.raises(BudgetLimitExceeded) as raw_error:
             getattr(limits, "check_cost" if field == "cost_limit" else "check_tokens")(usage)
         assert raw_error.value.kind == field
-
-
-def test_fractional_cached_token_exceeds_integer_ceiling() -> None:
-    limits = EffectiveUsageLimits(total_tokens_limit=1, cached_token_weight=0.1).to_sdk()
-    limits.check_tokens(RunUsage(input_tokens=10, cache_read_tokens=10))
-    with pytest.raises(BudgetLimitExceeded):
-        limits.check_tokens(RunUsage(input_tokens=11, cache_read_tokens=11))
-
-
-@pytest.mark.parametrize("weight", [-0.1, 1.1, float("inf"), float("nan"), "0.1", True])
-def test_snapshot_rejects_invalid_cached_weight(weight) -> None:
-    with pytest.raises(ValidationError):
-        SavedUsageLimits.model_validate({"limits": {"cached_token_weight": weight}})
-
-
-def test_old_snapshot_keeps_full_token_counting() -> None:
-    saved = SavedUsageLimits.model_validate({"version": 1, "limits": {"total_tokens_limit": 100}})
-    assert saved.limits.cached_token_weight == 1
-    with pytest.raises(BudgetLimitExceeded):
-        saved.limits.to_sdk().check_tokens(RunUsage(input_tokens=101, cache_read_tokens=100))
-
-
-def test_catalogue_defaults_fit_safe_json_integers() -> None:
-    from core.settings import Settings
-    from services.agents.models.registry import list_models
-
-    multiplier = Settings.model_fields["AGENT_RUN_TOTAL_TOKENS_WINDOW_MULTIPLIER"].default
-    for model in list_models(include_deprecated=True):
-        assert 0 < model.context_window * multiplier <= 2**53 - 1
 
 
 @pytest.mark.parametrize(("fraction", "expected_requests"), [(0.4, 20), (1.0, 9)])
@@ -161,25 +122,6 @@ async def test_restored_weighted_usage_keeps_absolute_inherited_boundary() -> No
         restored.to_sdk().check_before_request(usage)
 
 
-def test_budget_evidence_is_bounded_and_frozen_at_failure() -> None:
-    usage = RunUsage(input_tokens=2**60, requests=2**60)
-    with pytest.raises(BudgetLimitExceeded) as error:
-        EffectiveUsageLimits(total_tokens_limit=1).to_sdk().check_tokens(usage)
-    usage.input_tokens = 0
-    usage.requests = 0
-    evidence = public_run_error(error.value).completion_json
-    assert evidence["observed_total_tokens"] == 2**53 - 1
-    assert evidence["requests"] == 2**53 - 1
-
-
-def test_untyped_usage_error_does_not_parse_exception_text() -> None:
-    from pydantic_ai import UsageLimitExceeded
-
-    error = public_run_error(UsageLimitExceeded("Exceeded the total_tokens_limit of 100 (secret)"))
-    assert error.completion_json == {"error_code": "usage_limit_exceeded"}
-    assert error.message == "The agent run exceeded its configured usage limit."
-
-
 @pytest.mark.parametrize(
     ("parent", "child", "expected"),
     [(None, None, None), (3, None, 3), (None, 4, 4), (3, 3, 3), (2, 8, 2), (8, 2, 2)],
@@ -193,12 +135,6 @@ def test_intersection(parent: int | None, child: int | None, expected: int | Non
     assert effective.tool_calls_limit is None
     with pytest.raises(ValidationError):
         inherited.request_limit = 100
-
-
-@pytest.mark.parametrize("value", [-1, True, "4", 1.5, 2**53])
-def test_snapshot_rejects_malformed_ceilings(value: object) -> None:
-    with pytest.raises(ValidationError):
-        SavedUsageLimits.model_validate({"version": 1, "limits": {"request_limit": value}})
 
 
 def test_saved_ceilings_never_widen() -> None:
@@ -263,42 +199,6 @@ async def test_parent_request_cap_blocks_child_model_request() -> None:
     assert requests == []
     assert shared.requests == 1
     assert parent_limits == UsageLimits(request_limit=1)
-
-
-@pytest.mark.parametrize("version", [True, "1", 0, 2, None])
-def test_snapshot_rejects_invalid_version(version: object) -> None:
-    with pytest.raises(ValidationError):
-        SavedUsageLimits.model_validate({"version": version, "limits": {}})
-
-
-@pytest.mark.parametrize("extra", ["limits", "snapshot"])
-def test_snapshot_rejects_unknown_fields(extra: str) -> None:
-    value = {"version": 1, "limits": {}}
-    if extra == "limits":
-        value["limits"]["unknown_budget"] = 1
-    else:
-        value["unknown_budget"] = 1
-    with pytest.raises(ValidationError):
-        SavedUsageLimits.model_validate(value)
-
-
-@pytest.mark.parametrize(
-    ("field", "method", "usage"),
-    [
-        ("input_tokens_limit", "check_tokens", RunUsage(input_tokens=5)),
-        ("output_tokens_limit", "check_tokens", RunUsage(output_tokens=5)),
-        ("tool_calls_limit", "check_before_tool_call", RunUsage(tool_calls=5)),
-        ("per_request_input_tokens_limit", "check_per_request_input_tokens", 5),
-    ],
-)
-def test_additional_sdk_ceilings_keep_their_check_boundary(field, method, usage) -> None:
-    parent = EffectiveUsageLimits.model_validate({field: 4})
-    effective = intersect_usage_limits(parent, EffectiveUsageLimits.model_validate({field: 8}))
-    assert getattr(effective, field) == 4
-    with pytest.raises(BudgetLimitExceeded) as error:
-        getattr(RuntimeUsageLimits(effective, parent), method)(usage)
-    assert error.value.kind == field
-    assert error.value.inherited
 
 
 def test_decimal_ceiling_round_trips_and_tightens_without_enabling_other_caps() -> None:

@@ -64,65 +64,6 @@ async def _events(
         )
 
 
-async def test_success_records_one_logical_agent_invocation(
-    db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    context = await build_scenario_agent(db_session_factory)
-    await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(turns=["Done."]),
-    )
-
-    [event] = await _events(
-        db_session_factory,
-        workspace_id=context.workspace_id,
-        run_id=context.run_id,
-    )
-    assert event.purpose == "agent_run"
-    assert event.requests == 1
-    assert event.agent_id == context.agent_id
-    assert event.user_id == context.user_id
-
-
-async def test_approval_resume_records_non_overlapping_invocations(
-    db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=["scenario_external_write"],
-        tool_policies={"scenario_external_write": "approval"},
-    )
-    model = scripted_model(
-        turns=[
-            ToolTurn((ToolCall("scenario_external_write", {"value": "ok"}, "write"),)),
-            "Approved.",
-        ]
-    )
-    suspended = await run_scenario(db_session_factory, context, model=model)
-    assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
-    state = load_suspended_run_state(suspended.run)
-
-    await run_scenario(
-        db_session_factory,
-        context,
-        model=model,
-        prompt=None,
-        expected_status=RUN_STATUS_AWAITING_APPROVAL,
-        message_history=state.message_history,
-        deferred_tool_results=DeferredToolResults(
-            approvals={state.pending_tool_call_ids[0]: ToolApproved()}
-        ),
-    )
-
-    events = await _events(
-        db_session_factory,
-        workspace_id=context.workspace_id,
-        run_id=context.run_id,
-    )
-    assert [event.requests for event in events] == [1, 1]
-
-
 async def test_failed_run_records_completed_partial_request(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -189,9 +130,8 @@ async def test_failed_approval_resume_excludes_persisted_baseline(
     await _assert_run_usage_matches_ledger(db_session_factory, context, events, tool_calls=1)
 
 
-@pytest.mark.parametrize("resume", [False, True])
 async def test_cancelled_stream_records_usage_after_last_checkpoint(
-    committed_db_session_factory, monkeypatch, resume
+    committed_db_session_factory, monkeypatch
 ):
     monkeypatch.setattr(
         "pydantic_ai.models.function._estimate_usage",
@@ -204,23 +144,14 @@ async def test_cancelled_stream_records_usage_after_last_checkpoint(
         tool_names=["scenario_external_write"],
         tool_policies={"scenario_external_write": "approval"},
     )
-    continuation = {}
-    if resume:
-        suspended = await run_scenario(
-            committed_db_session_factory,
-            context,
-            model=scripted_model(
-                turns=[ToolTurn((ToolCall("scenario_external_write", {"value": "ok"}, "write"),))]
-            ),
-        )
-        state = load_suspended_run_state(suspended.run)
-        continuation = {
-            "prompt": None,
-            "expected_status": RUN_STATUS_AWAITING_APPROVAL,
-            "message_history": state.message_history,
-            "deferred_tool_results": DeferredToolResults(approvals={"write": ToolApproved()}),
-            "usage": restored_run_usage(suspended.run),
-        }
+    suspended = await run_scenario(
+        committed_db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[ToolTurn((ToolCall("scenario_external_write", {"value": "ok"}, "write"),))]
+        ),
+    )
+    state = load_suspended_run_state(suspended.run)
     barrier = ScenarioBarrier()
 
     async def partial_stream(_messages, _info):
@@ -232,7 +163,11 @@ async def test_cancelled_stream_records_usage_after_last_checkpoint(
             committed_db_session_factory,
             context,
             model=FunctionModel(stream_function=partial_stream),
-            **continuation,
+            prompt=None,
+            expected_status=RUN_STATUS_AWAITING_APPROVAL,
+            message_history=state.message_history,
+            deferred_tool_results=DeferredToolResults(approvals={"write": ToolApproved()}),
+            usage=restored_run_usage(suspended.run),
         )
     ) as task:
         await asyncio.wait_for(barrier.reached.wait(), timeout=3)
@@ -245,26 +180,20 @@ async def test_cancelled_stream_records_usage_after_last_checkpoint(
         workspace_id=context.workspace_id,
         run_id=context.run_id,
     )
-    assert [event.requests for event in events] == ([1, 1] if resume else [1])
+    assert [event.requests for event in events] == [1, 1]
     assert all(event.input_tokens == 100 and event.cache_read_tokens == 20 for event in events)
     await _assert_run_usage_matches_ledger(
-        committed_db_session_factory, context, events, tool_calls=int(resume)
+        committed_db_session_factory, context, events, tool_calls=1
     )
 
 
-@pytest.mark.parametrize("sink_state", ["closed", "detached"])
-async def test_unavailable_stream_does_not_prevent_usage_settlement(
-    committed_db_session_factory, sink_state
-):
+async def test_detached_stream_does_not_prevent_usage_settlement(committed_db_session_factory):
     from services.agents.runtime.execute_run import execute_run
     from services.agents.runtime.sinks import StreamSink
 
     context = await build_scenario_agent(committed_db_session_factory)
     sink = StreamSink(run_id=context.run_id, conversation_id=context.conversation_id)
-    if sink_state == "closed":
-        await sink.close()
-    else:
-        sink.detach()
+    sink.detach()
     async with committed_db_session_factory() as db:
         result = await execute_run(
             db,

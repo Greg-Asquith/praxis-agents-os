@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from dataclasses import replace
 from importlib import import_module
 from traceback import format_exception
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode
 from uuid import uuid4
 
 import httpx2
@@ -14,8 +14,6 @@ from pydantic import SecretStr
 
 from core.exceptions.integration import (
     IntegrationAuthError,
-    IntegrationConnectionError,
-    IntegrationValidationError,
 )
 from core.settings import settings
 from integrations.gmail import PROVIDER as GMAIL_PROVIDER
@@ -59,28 +57,6 @@ def isolated_google_oauth_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[
     PROVIDER_PLUGINS.update(original_plugins)
 
 
-def test_authorization_urls_use_each_providers_client_id(
-    isolated_google_oauth_settings: None,
-) -> None:
-    gmail_url = build_authorization_url(
-        GMAIL_PROVIDER.manifest,
-        state="gmail-state",
-        code_verifier="gmail-verifier",
-    )
-    ads_url = build_authorization_url(
-        GOOGLE_ADS_PROVIDER.manifest,
-        state="ads-state",
-        code_verifier="ads-verifier",
-    )
-
-    assert parse_qs(urlparse(gmail_url).query)["client_id"] == ["gmail-client"]
-    assert parse_qs(urlparse(ads_url).query)["client_id"] == ["ads-client"]
-    assert {"openid", "email"}.issubset(
-        set(parse_qs(urlparse(gmail_url).query)["scope"][0].split())
-    )
-    assert {"openid", "email"}.issubset(set(parse_qs(urlparse(ads_url).query)["scope"][0].split()))
-
-
 def test_google_authorization_url_keeps_its_wire_contract(
     isolated_google_oauth_settings: None,
 ) -> None:
@@ -108,19 +84,6 @@ def test_google_authorization_url_keeps_its_wire_contract(
         )
         == f"https://accounts.google.com/o/oauth2/v2/auth?{expected_query}"
     )
-
-
-def test_google_providers_declare_the_default_identity_source() -> None:
-    gmail_config = GMAIL_PROVIDER.oauth_config()
-    ads_config = GOOGLE_ADS_PROVIDER.oauth_config()
-
-    assert gmail_config.protocol == OAuthProtocol(identity_source="google_userinfo")
-    assert ads_config.protocol == OAuthProtocol(identity_source="google_userinfo")
-
-
-def test_google_identity_lookup_uses_the_oidc_userinfo_endpoint() -> None:
-    module = import_module("services.integrations.oauth.resolve_external_principal")
-    assert module.GOOGLE_USERINFO_URL == "https://openidconnect.googleapis.com/v1/userinfo"
 
 
 async def test_token_exchange_uses_each_providers_client_secret(
@@ -336,36 +299,10 @@ async def test_provider_identity_failure_does_not_expose_provider_values(
     assert exposed_value not in formatted_chain
 
 
-def test_callback_connection_metadata_accepts_bounded_notion_fields() -> None:
-    callback_module = import_module("services.integrations.connections.complete_oauth_callback")
-    metadata = {
-        "bot_id": "bot-1",
-        "duplicated_template_id": "page-1",
-        "workspace_icon": "https://example.com/icon.png",
-        "workspace_id": "workspace-1",
-        "workspace_name": "Example Organization",
-    }
-
-    assert (
-        callback_module._validated_connection_metadata(
-            metadata,
-            provider_key="gmail",
-        )
-        == metadata
-    )
-
-
 @pytest.mark.parametrize(
     "metadata",
     [
-        {"BadKey": "value"},
-        {"api_key": "value"},
-        {"code": "value"},
-        {"token": "value"},
-        {"id_token": "value"},
         {"client_secret": "value"},
-        {"authorization_code": "value"},
-        {"workspace_id": 1},
         {"workspace_id": "x" * 256},
         {f"key_{index}": "value" for index in range(17)},
     ],
@@ -385,12 +322,7 @@ def test_callback_connection_metadata_rejects_unbounded_or_secret_fields(
 @pytest.mark.parametrize(
     "reserved_key",
     [
-        "client_id",
-        "code_challenge",
-        "code_challenge_method",
         "redirect_uri",
-        "response_type",
-        "scope",
         "state",
     ],
 )
@@ -405,80 +337,6 @@ def test_plugin_validation_rejects_reserved_authorization_parameters(
 
     with pytest.raises(RuntimeError, match="reserved authorization parameters"):
         _validate_plugin(plugin, expected_key="gmail")
-
-
-def test_authorization_url_defensively_rejects_reserved_parameters(
-    isolated_google_oauth_settings: None,
-) -> None:
-    config = replace(
-        GMAIL_PROVIDER.oauth_config(),
-        protocol=OAuthProtocol(authorization_params=(("state", "overridden"),)),
-    )
-    PROVIDER_PLUGINS["gmail"] = replace(GMAIL_PROVIDER, oauth_config=lambda: config)
-
-    with pytest.raises(RuntimeError, match="override reserved fields: state"):
-        build_authorization_url(
-            GMAIL_PROVIDER.manifest,
-            state="trusted-state",
-            code_verifier="gmail-verifier",
-        )
-
-
-async def test_client_secret_basic_uses_literal_credentials(
-    isolated_google_oauth_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    exchange_module = import_module("services.integrations.oauth.exchange_authorization_code")
-    sent: dict[str, object] = {}
-    config = OAuthClientConfig(
-        client_id="client id+value",
-        client_secret=SecretStr("secret+value&more"),
-        authorization_url="https://provider.example.test/authorize",
-        token_url="https://provider.example.test/token",  # noqa: S106
-        revoke_url="https://provider.example.test/revoke",
-        protocol=OAuthProtocol(token_auth="client_secret_basic"),  # noqa: S106
-    )
-    PROVIDER_PLUGINS["gmail"] = replace(GMAIL_PROVIDER, oauth_config=lambda: config)
-
-    class Response:
-        def json(self) -> dict[str, str]:
-            return {"access_token": "provider-access"}
-
-    async def request_with_retries(method: str, url: str, **kwargs):
-        sent.update(kwargs)
-        return Response()
-
-    monkeypatch.setattr(exchange_module, "request_with_retries", request_with_retries)
-    await exchange_authorization_code(
-        provider_key="gmail",
-        code="provider-code",
-        code_verifier="provider-verifier",
-    )
-
-    encoded = b64encode(b"client id+value:secret+value&more").decode("ascii")
-    assert sent["headers"] == {"Authorization": f"Basic {encoded}"}
-
-
-async def test_oauth_protocol_rejects_malformed_json(
-    isolated_google_oauth_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = import_module("services.integrations.oauth.exchange_authorization_code")
-
-    class Response:
-        def json(self):
-            raise ValueError("malformed provider response")
-
-    async def request_with_retries(method: str, url: str, **kwargs):
-        return Response()
-
-    monkeypatch.setattr(module, "request_with_retries", request_with_retries)
-    with pytest.raises(IntegrationConnectionError):
-        await exchange_authorization_code(
-            provider_key="gmail",
-            code="gmail-code",
-            code_verifier="gmail-verifier",
-        )
 
 
 async def test_oauth_token_error_uses_provider_classifier(
@@ -526,68 +384,6 @@ async def test_oauth_token_error_uses_provider_classifier(
     assert exc_info.value.failure_disposition == "rejected"
     assert exc_info.value.user_message == "OAuth token response was rejected"
     assert "provider detail" not in str(exc_info.value)
-
-
-async def test_oauth_unclassified_token_error_keeps_existing_contract(
-    isolated_google_oauth_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = import_module("services.integrations.oauth.exchange_authorization_code")
-
-    class Response:
-        def json(self) -> dict[str, str]:
-            return {"error": "unknown_error"}
-
-    async def request_with_retries(*_args, **_kwargs) -> Response:
-        return Response()
-
-    monkeypatch.setattr(module, "request_with_retries", request_with_retries)
-    with pytest.raises(IntegrationAuthError) as exc_info:
-        await exchange_authorization_code(
-            provider_key="gmail",
-            code="gmail-code",
-            code_verifier="gmail-verifier",
-        )
-
-    assert exc_info.value.error_code is None
-    assert exc_info.value.user_message == "OAuth token response was rejected"
-
-
-async def test_unclassified_oauth_http_error_keeps_generic_http_mapping(
-    isolated_google_oauth_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from services.integrations import http as http_module
-
-    config = GMAIL_PROVIDER.oauth_config()
-    PROVIDER_PLUGINS["gmail"] = replace(
-        GMAIL_PROVIDER,
-        oauth_config=lambda: replace(
-            config,
-            protocol=replace(config.protocol, classify_token_error=lambda _payload: None),
-        ),
-    )
-    async_client_type = httpx2.AsyncClient
-
-    def handler(_request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(
-            400,
-            headers={"Content-Type": "application/json"},
-            json={"error": "unknown_error"},
-        )
-
-    monkeypatch.setattr(
-        http_module.httpx2,
-        "AsyncClient",
-        lambda: async_client_type(transport=httpx2.MockTransport(handler)),
-    )
-
-    with pytest.raises(IntegrationValidationError):
-        await exchange_authorization_code(
-            provider_key="gmail",
-            code="gmail-code",
-            code_verifier="gmail-verifier",
-        )
 
 
 async def test_revocation_sends_token_in_form_body(

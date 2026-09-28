@@ -42,11 +42,8 @@ function message(
 describe("parseConversationMessages", () => {
   it.each([
     ["interrupted", "stopped"],
-    ["failed", "failed"],
     ["denied", "denied"],
-    ["success", "completed"],
     ["future-outcome", "unknown"],
-    [undefined, "completed"],
   ])("maps a saved %s return to %s without claiming a different result", (outcome, status) => {
     const reason = "Tool call ended without a recorded result because its run was interrupted."
     const parsed = parseConversationMessages(
@@ -81,7 +78,7 @@ describe("parseConversationMessages", () => {
     ])
   })
 
-  it.each(["failed", "cancelled", "completed"] as const)(
+  it.each(["failed"] as const)(
     "uses the page run map for an older %s run and preserves recorded results",
     (status) => {
       const stoppedRun: AgentRun = {
@@ -186,33 +183,6 @@ describe("parseConversationMessages", () => {
     }
   )
 
-  it("marks an unresolved tool call as stopped when its run failed", () => {
-    const parsed = parseConversationMessages(
-      [
-        message(
-          "message-1",
-          "assistant",
-          1,
-          [
-            {
-              part_kind: "tool-call",
-              tool_call_id: "send-1",
-              tool_name: "gmail_send_message",
-              args: { to: ["client@example.com"], subject: "Update", body_html: "<p>Hello</p>" },
-            },
-          ],
-          { agent_run_id: "run-1" }
-        ),
-      ],
-      run("run-1", "failed")
-    )
-
-    expect(parsed[0]?.toolActivities[0]).toMatchObject({
-      id: "send-1",
-      status: "stopped",
-    })
-  })
-
   it("hides internal tool validation retries from the user-facing transcript", () => {
     const parsed = parseConversationMessages([
       message("message-1", "assistant", 1, [
@@ -264,40 +234,6 @@ describe("parseConversationMessages", () => {
       { kind: "tool", activity: { id: "tool-call-1", status: "completed" } },
       { kind: "text", content: "Here is the conclusion." },
     ])
-  })
-
-  it("marks messages without an ordered parts array for grouped fallback rendering", () => {
-    const fallbackMessage = message("message-1", "assistant", 1, [])
-    fallbackMessage.parts = { content: "Legacy answer" }
-
-    const parsed = parseConversationMessages([fallbackMessage])
-
-    expect(parsed[0]).toMatchObject({ parts: null, text: ["Legacy answer"] })
-  })
-
-  it("parses a plain user and assistant exchange", () => {
-    const parsed = parseConversationMessages([
-      message("message-1", "user", 1, [{ part_kind: "user-prompt", content: "Hello" }]),
-      message("message-2", "assistant", 2, [{ part_kind: "text", content: "How can I help?" }]),
-    ])
-
-    expect(parsed).toHaveLength(2)
-    expect(parsed[0]).toMatchObject({
-      id: "message-1",
-      role: "user",
-      sequence: 1,
-      text: ["Hello"],
-      toolActivities: [],
-      unsupportedParts: [],
-    })
-    expect(parsed[1]).toMatchObject({
-      id: "message-2",
-      role: "assistant",
-      sequence: 2,
-      text: ["How can I help?"],
-      toolActivities: [],
-      unsupportedParts: [],
-    })
   })
 
   it("pairs a tool call with its result and removes the standalone result row", () => {
@@ -534,33 +470,6 @@ describe("parseConversationMessages", () => {
     })
   })
 
-  it("leaves legacy workflow messages without trace metadata as plain tool rows", () => {
-    const parsed = parseConversationMessages([
-      message("message-1", "assistant", 1, [
-        {
-          part_kind: "tool-call",
-          tool_call_id: "workflow-1",
-          tool_name: "run_workflow",
-          args: { code: "'done'" },
-        },
-        {
-          part_kind: "tool-return",
-          tool_call_id: "workflow-1",
-          tool_name: "run_workflow",
-          outcome: "success",
-          content: "done",
-        },
-      ]),
-    ])
-
-    expect(parsed[0]?.toolActivities[0]).not.toHaveProperty("script")
-    expect(parsed[0]?.toolActivities[0]).toMatchObject({
-      name: "run_workflow",
-      result: "done",
-      status: "completed",
-    })
-  })
-
   it("renders a workflow call the run never answered as a stopped workflow card", () => {
     const dangling = [
       message(
@@ -672,62 +581,6 @@ describe("parseConversationMessages", () => {
     })
   })
 
-  it.each([
-    {
-      name: "failed",
-      outcome: "failed",
-      traceStatus: "failed",
-      expectedStatus: "failed",
-    },
-    {
-      name: "resumed",
-      outcome: "success",
-      traceStatus: "succeeded",
-      expectedStatus: "completed",
-    },
-  ])(
-    "replays a $name workflow from its settled trace",
-    ({ outcome, traceStatus, expectedStatus }) => {
-      const parsed = parseConversationMessages([
-        message("message-1", "assistant", 1, [
-          {
-            args: { code: "await check_report(account='one')" },
-            part_kind: "tool-call",
-            tool_call_id: "workflow-1",
-            tool_name: "run_workflow",
-          },
-          {
-            content: outcome === "failed" ? { error: "Stopped" } : "done",
-            metadata: {
-              code_mode_trace: {
-                calls: [
-                  {
-                    excerpt: outcome === "failed" ? "Stopped" : '{"rows":3}',
-                    status: traceStatus,
-                    tool_call_id: "workflow-1:1",
-                    tool_name: "check_report",
-                  },
-                ],
-              },
-            },
-            outcome,
-            part_kind: "tool-return",
-            tool_call_id: "workflow-1",
-            tool_name: "run_workflow",
-          },
-        ]),
-      ])
-
-      expect(parsed[0]?.toolActivities[0]).toMatchObject({
-        status: expectedStatus,
-        script: {
-          status: expectedStatus,
-          children: [{ status: expectedStatus }],
-        },
-      })
-    }
-  )
-
   it("keeps the partial workflow visible when a suspended run expires", () => {
     const pendingWorkflow = {
       code: "await send_email(subject='Update')",
@@ -829,43 +682,6 @@ describe("parseConversationMessages", () => {
     )
   })
 
-  it("preserves capability-load metadata for skill activation rows", () => {
-    const parsed = parseConversationMessages([
-      message("message-1", "assistant", 1, [
-        {
-          part_kind: "tool-call",
-          tool_call_id: "tool-call-1",
-          tool_kind: "capability-load",
-          tool_name: "load_capability",
-          args: '{"id":"skill-skill-1"}',
-        },
-        {
-          part_kind: "tool-return",
-          tool_call_id: "tool-call-1",
-          tool_kind: "capability-load",
-          tool_name: "load_capability",
-          outcome: "success",
-          content: { loaded: true },
-        },
-      ]),
-    ])
-
-    expect(parsed).toHaveLength(1)
-    expect(parsed[0]?.toolActivities).toEqual([
-      {
-        id: "tool-call-1",
-        agentRunId: null,
-        kind: "call",
-        status: "completed",
-        name: "load_capability",
-        args: { id: "skill-skill-1" },
-        outcome: "success",
-        result: { loaded: true },
-        toolKind: "capability-load",
-      },
-    ])
-  })
-
   it("uses explicit public tool-result metadata for persisted transcript display", () => {
     const parsed = parseConversationMessages([
       message("message-1", "tool", 1, [
@@ -893,43 +709,10 @@ describe("parseConversationMessages", () => {
     )
   })
 
-  it("keeps retained-result metadata when joining a saved result to its call", () => {
-    const preview = { preview: true, file_id: "retained-file", lists: {} }
-    const parsed = parseConversationMessages([
-      message("call", "assistant", 1, [
-        {
-          part_kind: "tool-call",
-          tool_call_id: "report",
-          tool_name: "google_ads_run_report",
-          args: {},
-        },
-      ]),
-      message("result", "tool", 2, [
-        {
-          part_kind: "tool-return",
-          tool_call_id: "report",
-          tool_name: "google_ads_run_report",
-          outcome: "success",
-          content: preview,
-          metadata: { public_result: { results: [] }, result_preview: preview },
-        },
-      ]),
-    ])
-    expect(parsed[0]?.toolActivities[0]).toMatchObject({
-      result: { results: [] },
-      resultPreview: preview,
-      status: "completed",
-    })
-  })
-
   it.each([
     { name: "absent", metadata: {}, expected: { model_only: "must-not-leak" } },
     { name: "null", metadata: { public_result: null }, expected: null },
-    { name: "false", metadata: { public_result: false }, expected: false },
-    { name: "zero", metadata: { public_result: 0 }, expected: 0 },
-    { name: "empty string", metadata: { public_result: "" }, expected: "" },
     { name: "object", metadata: { public_result: { rows: [] } }, expected: { rows: [] } },
-    { name: "list", metadata: { public_result: [] }, expected: [] },
   ])("honors $name public-result presence in persisted messages", ({ metadata, expected }) => {
     const parsed = parseConversationMessages([
       message("message-1", "tool", 1, [
@@ -945,58 +728,6 @@ describe("parseConversationMessages", () => {
     ])
 
     expect(parsed[0]?.toolActivities[0]?.result).toEqual(expected)
-  })
-
-  it("groups delegation call and return details under one activity", () => {
-    const parsed = parseConversationMessages([
-      message("message-1", "assistant", 1, [
-        {
-          part_kind: "tool-call",
-          tool_call_id: "delegate-1",
-          tool_name: "delegate_to_agent",
-          args: {
-            agent_id: "agent-2",
-            task: "Research the launch plan",
-          },
-        },
-      ]),
-      message("message-2", "tool", 2, [
-        {
-          part_kind: "tool-return",
-          tool_call_id: "delegate-1",
-          tool_name: "delegate_to_agent",
-          outcome: "success",
-          content: {
-            agent_id: "agent-2",
-            agent_name: "Researcher",
-            conversation_id: "conversation-2",
-            output: "Research complete",
-            pending_approvals: [],
-            run_id: "run-2",
-            status: "completed",
-          },
-        },
-      ]),
-    ])
-
-    expect(parsed).toHaveLength(1)
-    expect(parsed[0]?.toolActivities[0]).toMatchObject({
-      id: "delegate-1",
-      kind: "call",
-      status: "completed",
-      name: "delegate_to_agent",
-      delegate: {
-        agentId: "agent-2",
-        agentName: "Researcher",
-        conversationId: "conversation-2",
-        output: "Research complete",
-        pendingApprovalCount: 0,
-        runId: "run-2",
-        status: "completed",
-        taskPreview: "Research the launch plan",
-        truncated: false,
-      },
-    })
   })
 
   it("merges pending delegated approvals into a running delegation call", () => {
@@ -1098,36 +829,6 @@ describe("parseConversationMessages", () => {
     ])
   })
 
-  it("keeps unknown parts as unsupported renderable content", () => {
-    const parsed = parseConversationMessages([
-      message("message-1", "assistant", 1, [
-        { part_kind: "strange-part", content: { value: "unhandled" } },
-      ]),
-    ])
-
-    expect(parsed).toHaveLength(1)
-    expect(parsed[0]?.text).toEqual([])
-    expect(parsed[0]?.toolActivities).toEqual([])
-    expect(parsed[0]?.unsupportedParts).toHaveLength(1)
-    expect(parsed[0]?.unsupportedParts[0]).toMatchObject({
-      id: "message-1:0",
-      label: "Strange Part",
-    })
-    expect(parsed[0]?.unsupportedParts[0]?.preview).toContain("unhandled")
-  })
-
-  it("preserves input ordering and sequence values for identical timestamps", () => {
-    const messages = [
-      message("message-2", "assistant", 2, [{ part_kind: "text", content: "Second" }]),
-      message("message-1", "assistant", 1, [{ part_kind: "text", content: "First" }]),
-    ]
-
-    const parsed = parseConversationMessages(messages, run("run-1", "completed"))
-
-    expect(parsed.map((item) => item.id)).toEqual(["message-2", "message-1"])
-    expect(parsed.map((item) => item.sequence)).toEqual([2, 1])
-  })
-
   it("completes a persisted call from a live stream result before persistence catches up", () => {
     const parsed = parseConversationMessages(
       [
@@ -1160,40 +861,6 @@ describe("parseConversationMessages", () => {
       id: "tool-call-1",
       status: "completed",
       result: { results: [] },
-    })
-  })
-
-  it("keeps a call running when no live result exists for it", () => {
-    const parsed = parseConversationMessages(
-      [
-        message(
-          "message-1",
-          "assistant",
-          1,
-          [
-            {
-              part_kind: "tool-call",
-              tool_call_id: "tool-call-1",
-              tool_name: "gmail_send_message",
-              args: {},
-            },
-          ],
-          { agent_run_id: "run-1" }
-        ),
-      ],
-      run("run-1", "running"),
-      [],
-      new Map([
-        [
-          toolActivityIdentity("run-1", "other-call"),
-          { result: "done", status: "completed" as const },
-        ],
-      ])
-    )
-
-    expect(parsed[0]?.toolActivities[0]).toMatchObject({
-      id: "tool-call-1",
-      status: "running",
     })
   })
 

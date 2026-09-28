@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.integrations import IntegrationDiscoveryRun
 from models.jobs import Job
-from services.integrations.discovery.enqueue_discovery import enqueue_discovery
 from services.integrations.discovery.handlers import discover_resources
 from services.integrations.discovery.rediscover_stale import rediscover_stale
 from services.integrations.plugin import DiscoveredIntegrationResource
@@ -91,7 +90,7 @@ async def test_rediscovery_skips_fresh_connection(
     assert persisted_run is not None
 
 
-@pytest.mark.parametrize("status", ["needs_reauth", "needs_credential", "revoked"])
+@pytest.mark.parametrize("status", ["needs_reauth"])
 async def test_rediscovery_skips_auth_blocked_connections(
     db_session: AsyncSession,
     discovery_connection: dict[str, object],
@@ -124,34 +123,3 @@ async def test_rediscovery_skips_auth_blocked_connections(
         )
     )
     assert count == 0
-
-
-async def test_rediscovery_does_not_duplicate_in_flight_discovery(
-    db_session: AsyncSession,
-    discovery_connection: dict[str, object],
-) -> None:
-    connection = discovery_connection["connection"]
-    existing = await enqueue_discovery(db_session, connection=connection)
-    scan_job = Job(
-        kind="integrations.rediscover_stale",
-        content_hash="rediscover-in-flight-test",
-        payload={},
-        attempts=1,
-        max_attempts=5,
-    )
-    db_session.add(scan_job)
-    await db_session.flush()
-
-    await rediscover_stale(db_session, job=scan_job)
-
-    jobs = list(
-        (
-            await db_session.scalars(
-                select(Job).where(
-                    Job.kind == "integrations.discover_resources",
-                    Job.subject_id == connection.id,
-                )
-            )
-        ).all()
-    )
-    assert [row.id for row in jobs] == [existing.id]

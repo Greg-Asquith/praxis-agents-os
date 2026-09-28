@@ -69,6 +69,7 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "meta_ads_get_accounts": ("read", "internal", "auto", False),
         "meta_ads_list_objects": ("read", "internal", "auto", False),
         "meta_ads_list_custom_conversions": ("read", "internal", "auto", False),
+        "meta_ads_list_activities": ("read", "internal", "auto", False),
         "sharepoint_create_folder": ("write", "external", "approval", True),
         "sharepoint_write_file": ("write", "external", "approval", True),
         "sharepoint_update_file": ("write", "external", "approval", True),
@@ -778,4 +779,5 @@ def test_meta_ads_exports_the_implemented_read_tools() -> None:
         "meta_ads_get_accounts",
         "meta_ads_list_objects",
         "meta_ads_list_custom_conversions",
+        "meta_ads_list_activities",
     }

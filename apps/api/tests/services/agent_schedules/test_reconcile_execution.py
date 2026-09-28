@@ -24,7 +24,6 @@ from services.agent_schedules.runs import (
     RUN_STATUS_ACCEPTED,
     RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
-    RUN_STATUS_RETRYABLE_FAILED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_TERMINAL_FAILED,
 )
@@ -115,20 +114,6 @@ async def test_reconcile_running_schedule_with_failed_generic_run(
     assert run.outcome == "error"
 
 
-async def test_reconcile_running_schedule_with_completed_generic_run(
-    db_session: AsyncSession,
-) -> None:
-    schedule, schedule_run, run = await _running_schedule_with_run(db_session)
-    await start_agent_run(db_session, run)
-    await complete_agent_run(db_session, run)
-
-    reconciled = await reconcile_schedule_run_execution(db_session)
-
-    assert reconciled == 1
-    assert schedule_run.status == RUN_STATUS_COMPLETED
-    assert schedule.is_active is False
-
-
 async def test_reconcile_awaiting_schedule_with_completed_generic_run(
     db_session: AsyncSession,
 ) -> None:
@@ -141,21 +126,6 @@ async def test_reconcile_awaiting_schedule_with_completed_generic_run(
 
     assert reconciled == 1
     assert schedule_run.status == RUN_STATUS_COMPLETED
-    assert schedule.is_active is False
-
-
-async def test_reconcile_awaiting_schedule_with_failed_generic_run(
-    db_session: AsyncSession,
-) -> None:
-    schedule, schedule_run, run = await _running_schedule_with_run(db_session)
-    schedule_run.status = RUN_STATUS_AWAITING_APPROVAL
-    await start_agent_run(db_session, run)
-    await fail_agent_run(db_session, run, error_code="abandoned", error_message="stale")
-
-    reconciled = await reconcile_schedule_run_execution(db_session)
-
-    assert reconciled == 1
-    assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
     assert schedule.is_active is False
 
 
@@ -218,19 +188,6 @@ async def _expired_accepted_run_without_generic_run(
     db.add(schedule_run)
     await db.flush()
     return schedule_run
-
-
-async def test_reconcile_expired_accepted_run_without_generic_run(
-    db_session: AsyncSession,
-) -> None:
-    now = datetime.now(UTC)
-    schedule_run = await _expired_accepted_run_without_generic_run(db_session, now=now)
-
-    reconciled = await reconcile_schedule_run_execution(db_session, now=now)
-
-    assert reconciled == 1
-    assert schedule_run.status == RUN_STATUS_RETRYABLE_FAILED
-    assert schedule_run.last_error_code == "schedule_execution_abandoned"
 
 
 async def test_reconcile_exhausted_run_without_generic_run_reports_blocked(

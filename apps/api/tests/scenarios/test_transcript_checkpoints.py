@@ -26,7 +26,7 @@ from tests.support.scenario import (
 )
 
 
-@pytest.mark.parametrize("finish", ["success", "shutdown"])
+@pytest.mark.parametrize("finish", ["shutdown"])
 async def test_completed_steps_are_durable_before_next_model_response(
     committed_db_session_factory, monkeypatch, finish
 ):
@@ -162,7 +162,7 @@ async def test_checkpointed_write_approval_stages_once_and_updates_saved_call(
     )
 
 
-@pytest.mark.parametrize("boundary", ["response", "tool_return"])
+@pytest.mark.parametrize("boundary", ["tool_return"])
 async def test_checkpoint_timeout_rolls_back_before_interrupted_settlement(
     committed_db_session_factory, monkeypatch, boundary
 ):

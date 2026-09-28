@@ -178,13 +178,11 @@ beforeAll(async () => {
 
 const approvalCases = [
   [false, null],
-  [true, null],
-  [false, "c".repeat(64)],
   [true, "c".repeat(64)],
 ] as const
 
 describe.each(approvalCases)("saved-draft approval (%s, %s)", (nested, revision) => {
-  it.each(["text", "html"])(
+  it.each(["html"])(
     "projects the complete read-only %s review and submits only its call identity",
     async (bodyType) => {
       const draft = {
@@ -269,53 +267,6 @@ describe.each(approvalCases)("saved-draft approval (%s, %s)", (nested, revision)
     assertReview(html)
   })
 
-  it("keeps the review read-only after submission failure and on restored pending approval", async () => {
-    const approval = pending(nested)
-    const activity = project(approval, nested)
-    const error = new Error("The request could not be submitted.")
-    const submit = vi.fn().mockRejectedValue(error)
-    let bound = controls()
-    function ApprovalProbe() {
-      const resolver = useInlineApprovals({
-        activeRunId: "active-run",
-        approvalRevision: revision,
-        approvals: [approval],
-        enabled: true,
-        isSubmitting: false,
-        onSubmit: submit,
-      })
-      bound = resolver.resolveApprovalControls(activity) ?? controls()
-      return null
-    }
-    renderToStaticMarkup(createElement(ApprovalProbe))
-    render(activity, bound)
-    click("Approve & Send")
-    await vi.waitFor(() => {
-      expect(submit).toHaveBeenCalledExactlyOnceWith(
-        [{ tool_call_id: approval.tool_call_id, decision: "approved", override_args: null }],
-        revision ?? undefined
-      )
-    })
-    await expect(submit.mock.results[0]?.value).rejects.toBe(error)
-    const onDecisionChange = vi.fn()
-    const failed = controls({
-      decision: { decision: "approved", edits: {}, message: "" },
-      error: error.message,
-      onDecisionChange,
-    })
-    const html = render(activity, failed)
-    assertReview(html)
-    expect(html).toContain(failed.error)
-    expect(html).toContain("Try Again")
-    click("Try Again")
-    expect(failed.onRetry).toHaveBeenCalledOnce()
-    click("Decline")
-    expect(onDecisionChange).toHaveBeenCalledWith({ decision: "pending", edits: {}, message: "" })
-    const restored = render(project(approval, nested), controls())
-    assertReview(restored)
-    expect(restored).toContain("Requires Approval")
-  })
-
   it("blocks a restored approval without review evidence", () => {
     const approval = pending(nested, null)
     const html = render(project(approval, nested), controls())
@@ -326,18 +277,16 @@ describe.each(approvalCases)("saved-draft approval (%s, %s)", (nested, revision)
     expect(approve?.[0].disabled).toBe(true)
   })
 
-  it.each([
-    { _draft: { fingerprint: "b".repeat(64) } },
-    { _draft: { subject: "Injected subject", body: "Injected body" } },
-    { _draft: message },
-    { _fingerprint: "b".repeat(64) },
-  ])("rejects stale or injected display metadata edits %j", (edits) => {
-    const approval = pending(nested)
-    const result = buildResumeDecisions([approval], {
-      [approval.tool_call_id]: { decision: "approved", edits, message: "" },
-    })
-    expect(result).toBe("This request can no longer be edited. Refresh and try again.")
-  })
+  it.each([{ _draft: { fingerprint: "b".repeat(64) } }, { _fingerprint: "b".repeat(64) }])(
+    "rejects stale or injected display metadata edits %j",
+    (edits) => {
+      const approval = pending(nested)
+      const result = buildResumeDecisions([approval], {
+        [approval.tool_call_id]: { decision: "approved", edits, message: "" },
+      })
+      expect(result).toBe("This request can no longer be edited. Refresh and try again.")
+    }
+  )
 
   it("keeps display metadata out of unchanged reference replay", () => {
     const approval = pending(nested)

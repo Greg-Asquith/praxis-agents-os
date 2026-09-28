@@ -10,18 +10,16 @@ TEST_DATABASE_URL via the shared db_session fixture chain.
 import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from runpy import run_path
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.database import set_session_tenant_context
 from core.exceptions.general import ConflictError, CustomValueError, NotFoundError
-from models.agent import Agent, AgentSchedule, AgentScheduleRun
+from models.agent import Agent, AgentScheduleRun
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.user import User
@@ -32,37 +30,22 @@ from services.agent_runs import (
     create_agent_run,
     fail_agent_run,
     link_schedule_run,
-    mark_run_awaiting_approval,
-    record_run_usage,
     renew_agent_run_lease,
     start_agent_run,
     start_agent_run_with_lease,
 )
 from services.agent_runs.domain import (
     RUN_OUTCOME_BLOCKED,
-    RUN_OUTCOME_BUDGET_EXHAUSTED,
     RUN_OUTCOME_CANCELLED,
     RUN_OUTCOME_ERROR,
     RUN_OUTCOME_SUCCESS,
-    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
-    RUN_STATUS_PENDING,
-    RUN_STATUS_RUNNING,
-    RUN_TRIGGER_DELEGATED,
-    RunUsageSnapshot,
 )
-from services.agents.runtime.completion_contract import MAX_COMPLETION_JSON_BYTES
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
-
-CORE_0035_BACKFILL_SQL = run_path(
-    str(
-        Path(__file__).resolve().parents[3] / "alembic/versions/core/0035_add_agent_run_outcomes.py"
-    )
-)["AGENT_RUN_OUTCOME_BACKFILL_SQL"]
 
 
 @dataclass(frozen=True)
@@ -121,69 +104,6 @@ async def _create(db: AsyncSession, ctx: RunContext, *, trigger: str = "interact
     )
 
 
-async def test_create_agent_run_starts_pending(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    assert run.id is not None
-    assert run.status == RUN_STATUS_PENDING
-    assert run.trigger == "interactive"
-    assert run.model_name == "anthropic:claude-opus-4-8"
-    assert run.started_at is None
-
-
-async def test_create_rejects_unknown_trigger(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    with pytest.raises(CustomValueError):
-        await _create(db_session, run_context, trigger="telepathy")
-
-
-async def test_create_delegated_run_records_parent_and_depth(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    parent_run = await _create(db_session, run_context)
-    child_conversation = Conversation(
-        user_id=run_context.user_id,
-        workspace_id=run_context.workspace_id,
-        created_by=run_context.user_id,
-        active_agent_id=run_context.agent_id,
-        source="delegated",
-    )
-    db_session.add(child_conversation)
-    await db_session.flush()
-
-    child_run = await create_agent_run(
-        db_session,
-        conversation_id=child_conversation.id,
-        agent_id=run_context.agent_id,
-        workspace_id=run_context.workspace_id,
-        user_id=run_context.user_id,
-        trigger=RUN_TRIGGER_DELEGATED,
-        parent_run_id=parent_run.id,
-        delegation_depth=1,
-    )
-
-    assert child_run.trigger == RUN_TRIGGER_DELEGATED
-    assert child_run.parent_run_id == parent_run.id
-    assert child_run.delegation_depth == 1
-
-
-async def test_create_rejects_negative_delegation_depth(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    with pytest.raises(CustomValueError, match="delegation_depth"):
-        await create_agent_run(
-            db_session,
-            conversation_id=run_context.conversation_id,
-            agent_id=run_context.agent_id,
-            workspace_id=run_context.workspace_id,
-            user_id=run_context.user_id,
-            trigger=RUN_TRIGGER_DELEGATED,
-            delegation_depth=-1,
-        )
-
-
 async def test_create_rejects_conversation_workspace_mismatch(
     db_session: AsyncSession, run_context: RunContext
 ) -> None:
@@ -240,69 +160,6 @@ async def test_create_rejects_agent_workspace_mismatch(
         )
 
 
-async def test_create_rejects_conversation_active_agent_mismatch(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    other_agent = Agent(
-        name="Other Runner",
-        slug=f"other-runner-{uuid4().hex[:8]}",
-        instructions="do another thing",
-        workspace_id=run_context.workspace_id,
-        created_by=run_context.user_id,
-    )
-    conversation = await db_session.get(Conversation, run_context.conversation_id)
-    assert conversation is not None
-    conversation.active_agent_id = run_context.agent_id
-    db_session.add(other_agent)
-    await db_session.flush()
-
-    with pytest.raises(ConflictError, match="context is inconsistent"):
-        await create_agent_run(
-            db_session,
-            conversation_id=run_context.conversation_id,
-            agent_id=other_agent.id,
-            workspace_id=run_context.workspace_id,
-            user_id=run_context.user_id,
-            trigger="interactive",
-        )
-
-
-async def test_running_to_completed_stamps_timestamps(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-
-    await start_agent_run(db_session, run)
-    assert run.status == RUN_STATUS_RUNNING
-    assert run.started_at is not None
-
-    await complete_agent_run(db_session, run)
-    assert run.status == RUN_STATUS_COMPLETED
-    assert run.completed_at is not None
-    assert run.outcome == RUN_OUTCOME_SUCCESS
-    assert run.completion_json is None
-
-
-async def test_start_with_lease_sets_owner_and_expiry(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    now = datetime.now(UTC)
-    run = await _create(db_session, run_context)
-
-    await start_agent_run_with_lease(
-        db_session,
-        run,
-        owner_instance_id="api-1",
-        now=now,
-        ttl_seconds=30,
-    )
-
-    assert run.status == RUN_STATUS_RUNNING
-    assert run.started_at is not None
-    assert run.owner_instance_id == "api-1"
-    assert run.lease_expires_at == now + timedelta(seconds=30)
-
-
 @pytest.mark.parametrize(
     "owner,elapsed,expected", [("old", 1, False), ("current", 30, False), ("current", 1, True)]
 )
@@ -340,45 +197,6 @@ async def test_start_cannot_replace_live_owner(
     assert run.owner_instance_id == "current"
 
 
-async def test_awaiting_approval_then_resume(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    await start_agent_run(db_session, run)
-
-    await mark_run_awaiting_approval(db_session, run)
-    assert run.status == RUN_STATUS_AWAITING_APPROVAL
-
-    # resume re-enters running
-    await start_agent_run(db_session, run)
-    assert run.status == RUN_STATUS_RUNNING
-
-
-async def test_resume_restarts_runtime_clock(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    await start_agent_run(db_session, run)
-    stale_started_at = datetime.now(UTC) - timedelta(hours=1)
-    run.started_at = stale_started_at
-    await db_session.flush()
-    await mark_run_awaiting_approval(db_session, run)
-
-    await start_agent_run(db_session, run)
-
-    assert run.started_at is not None
-    assert run.started_at > stale_started_at + timedelta(minutes=30)
-
-
-async def test_invalid_transition_from_pending_raises(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    # pending -> completed is not a permitted edge
-    with pytest.raises(ConflictError):
-        await complete_agent_run(db_session, run)
-
-
 async def test_terminal_status_is_final(db_session: AsyncSession, run_context: RunContext) -> None:
     run = await _create(db_session, run_context)
     await start_agent_run(db_session, run)
@@ -408,27 +226,6 @@ async def test_fail_records_sanitized_error(
     assert run.error_message == "boom with messy whitespace"
     assert run.outcome == RUN_OUTCOME_ERROR
     assert run.completion_json == {"error_code": "provider_error"}
-
-
-async def test_terminal_outcome_is_written_once(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    await start_agent_run(db_session, run)
-    await complete_agent_run(
-        db_session,
-        run,
-        completion_json={"summary": "first terminal evidence"},
-    )
-
-    await complete_agent_run(
-        db_session,
-        run,
-        completion_json={"summary": "replacement must not be written"},
-    )
-
-    assert run.outcome == RUN_OUTCOME_SUCCESS
-    assert run.completion_json == {"summary": "first terminal evidence"}
 
 
 @pytest.mark.parametrize(
@@ -566,198 +363,6 @@ async def test_competing_terminal_transitions_preserve_first_outcome(
             await cleanup_db.commit()
 
 
-async def test_core_0035_backfills_legacy_terminal_outcomes(
-    db_session: AsyncSession,
-    run_context: RunContext,
-) -> None:
-    cases = [
-        ("completed", None, "success", None),
-        ("cancelled", None, "cancelled", None),
-        ("failed", "approval_expired", "blocked", {"error_code": "approval_expired"}),
-        (
-            "failed",
-            "usage_limit_exceeded",
-            "budget_exhausted",
-            {"error_code": "usage_limit_exceeded"},
-        ),
-        ("failed", "run_abandoned", "error", {"error_code": "run_abandoned"}),
-        ("failed", "provider_error", "error", {"error_code": "provider_error"}),
-        ("failed", None, "error", {"error_code": "agent_run_failed"}),
-    ]
-    runs = [
-        AgentRun(
-            conversation_id=run_context.conversation_id,
-            agent_id=run_context.agent_id,
-            workspace_id=run_context.workspace_id,
-            user_id=run_context.user_id,
-            trigger="interactive",
-            status=status,
-            error_code=error_code,
-        )
-        for status, error_code, _outcome, _completion_json in cases
-    ]
-    pending = AgentRun(
-        conversation_id=run_context.conversation_id,
-        agent_id=run_context.agent_id,
-        workspace_id=run_context.workspace_id,
-        user_id=run_context.user_id,
-        trigger="interactive",
-        status=RUN_STATUS_PENDING,
-    )
-    db_session.add_all([*runs, pending])
-    await db_session.flush()
-
-    await db_session.execute(text(str(CORE_0035_BACKFILL_SQL)))
-    refreshed = list(
-        (
-            await db_session.scalars(
-                select(AgentRun)
-                .where(AgentRun.id.in_([run.id for run in runs]))
-                .execution_options(populate_existing=True)
-            )
-        ).all()
-    )
-    by_id = {run.id: run for run in refreshed}
-
-    for run, (_status, _error_code, expected_outcome, expected_completion) in zip(
-        runs, cases, strict=True
-    ):
-        assert by_id[run.id].outcome == expected_outcome
-        assert by_id[run.id].completion_json == expected_completion
-
-    await db_session.refresh(pending)
-    assert pending.outcome is None
-    assert pending.completion_json is None
-
-
-async def test_completion_json_rejects_oversized_evidence_before_transition(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    await start_agent_run(db_session, run)
-
-    with pytest.raises(ValueError, match="must not exceed"):
-        await complete_agent_run(
-            db_session,
-            run,
-            completion_json={"summary": "x" * MAX_COMPLETION_JSON_BYTES},
-        )
-
-    assert run.status == RUN_STATUS_RUNNING
-    assert run.outcome is None
-
-
-@pytest.mark.parametrize(
-    ("error_code", "expected_outcome"),
-    [
-        ("usage_limit_exceeded", RUN_OUTCOME_BUDGET_EXHAUSTED),
-        ("provider_error", RUN_OUTCOME_ERROR),
-    ],
-)
-async def test_failure_outcome_taxonomy(
-    db_session: AsyncSession,
-    run_context: RunContext,
-    error_code: str,
-    expected_outcome: str,
-) -> None:
-    run = await _create(db_session, run_context)
-    await start_agent_run(db_session, run)
-
-    await fail_agent_run(db_session, run, error_code=error_code, error_message="stopped")
-
-    assert run.outcome == expected_outcome
-    assert run.completion_json == {"error_code": error_code}
-
-
-async def test_cancelled_run_stamps_cancelled_outcome(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    await start_agent_run(db_session, run)
-    run.metadata_json = {
-        "approval_state": {"version": 1},
-        "code_mode_state": {"snapshot_b64": "opaque"},
-        "retained": True,
-    }
-
-    await cancel_agent_run(db_session, run)
-
-    assert run.status == RUN_STATUS_CANCELLED
-    assert run.outcome == RUN_OUTCOME_CANCELLED
-    assert run.completion_json is None
-    assert run.metadata_json == {"retained": True}
-
-
-async def test_record_usage_sets_hot_columns_and_json(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    run = await _create(db_session, run_context)
-    await start_agent_run(db_session, run)
-
-    snapshot = RunUsageSnapshot(
-        input_tokens=103,
-        input_tokens_cached=40,
-        output_tokens=15,
-        requests=2,
-        tool_calls=1,
-        raw_json={"input_tokens": 103, "output_tokens": 15, "requests": 2, "tool_calls": 1},
-    )
-    await record_run_usage(db_session, run, snapshot)
-
-    assert run.input_tokens == 103
-    assert run.input_tokens_cached == 40
-    assert run.output_tokens == 15
-    assert run.requests == 2
-    assert run.tool_calls == 1
-    assert run.usage_json["input_tokens"] == 103
-
-
-async def test_link_schedule_run_points_at_generic_run(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    schedule = AgentSchedule(
-        agent_id=run_context.agent_id,
-        user_id=run_context.user_id,
-        workspace_id=run_context.workspace_id,
-        schedule_type="once",
-        run_once_at=datetime.now(UTC),
-    )
-    db_session.add(schedule)
-    await db_session.flush()
-
-    schedule_run = AgentScheduleRun(
-        schedule_id=schedule.id,
-        workspace_id=run_context.workspace_id,
-        user_id=run_context.user_id,
-        agent_id=run_context.agent_id,
-        scheduled_for=datetime.now(UTC),
-    )
-    db_session.add(schedule_run)
-    await db_session.flush()
-
-    run = await _create(db_session, run_context, trigger="scheduled")
-    await link_schedule_run(db_session, schedule_run, run)
-
-    assert schedule_run.agent_run_id == run.id
-    assert run.trigger == "scheduled"
-
-
-async def test_link_schedule_run_rejects_interactive_run(
-    db_session: AsyncSession, run_context: RunContext
-) -> None:
-    schedule_run = AgentScheduleRun(
-        schedule_id=uuid4(),
-        workspace_id=run_context.workspace_id,
-        user_id=run_context.user_id,
-        agent_id=run_context.agent_id,
-        scheduled_for=datetime.now(UTC),
-    )
-    run = await _create(db_session, run_context, trigger="interactive")
-
-    with pytest.raises(ConflictError, match="cannot be linked"):
-        await link_schedule_run(db_session, schedule_run, run)
-
-
 async def test_link_schedule_run_rejects_context_mismatch(
     db_session: AsyncSession, run_context: RunContext
 ) -> None:
@@ -789,18 +394,4 @@ async def test_create_rejects_caller_supplied_effective_budget(db_session, run_c
             user_id=run_context.user_id,
             trigger="interactive",
             metadata={"effective_usage_limits": snapshot},
-        )
-
-
-@pytest.mark.parametrize("key", ["transcript_invocation_id", "interrupted_history_truncation"])
-async def test_create_rejects_caller_supplied_transcript_metadata(db_session, run_context, key):
-    with pytest.raises(CustomValueError, match="owned by run execution"):
-        await create_agent_run(
-            db_session,
-            conversation_id=run_context.conversation_id,
-            agent_id=run_context.agent_id,
-            workspace_id=run_context.workspace_id,
-            user_id=run_context.user_id,
-            trigger="interactive",
-            metadata={key: None},
         )

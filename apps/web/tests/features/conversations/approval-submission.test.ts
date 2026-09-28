@@ -31,7 +31,7 @@ describe("approval submission recovery", () => {
     vi.useRealTimers()
   })
 
-  it.each(["lost", "approval_already_reserved", "approval_decisions_conflict"])(
+  it.each(["lost", "approval_decisions_conflict"])(
     "keeps the card Retry behind reconciliation after %s, with one POST",
     async (outcome) => {
       let finishRead: (() => void) | undefined

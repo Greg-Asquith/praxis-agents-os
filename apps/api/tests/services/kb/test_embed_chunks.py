@@ -6,7 +6,6 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.kb import KBChunk
 from services.embeddings.domain import EmbeddingConfigurationError
@@ -17,29 +16,6 @@ from tests.services.kb.conftest import KBActors
 from tests.support.embeddings import FakeEmbeddingProvider
 
 pytestmark = pytest.mark.asyncio
-
-
-async def test_embedding_requires_workspace_scope_before_mutating(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-) -> None:
-    document = build_kb_document(workspace=kb_actors.workspace, status="ready", chunk_count=1)
-    chunk = build_kb_chunk(document=document)
-    db_session.add(document)
-    await db_session.flush()
-    db_session.add(chunk)
-    await db_session.flush()
-
-    with pytest.raises(AppValidationError, match="require a workspace"):
-        await embed_kb_chunks(
-            db_session,
-            document_id=document.id,
-            workspace_id=None,
-            provider=FakeEmbeddingProvider(),
-        )
-
-    await db_session.refresh(chunk)
-    assert chunk.embedding is None
 
 
 async def test_embedding_fills_only_null_rows_and_meters_usage(
@@ -86,31 +62,6 @@ async def test_embedding_fills_only_null_rows_and_meters_usage(
         )
         == first_usage
     )
-
-
-async def test_dimension_mismatch_fails_before_writing(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    document = build_kb_document(workspace=kb_actors.workspace, status="ready", chunk_count=1)
-    chunk = build_kb_chunk(document=document)
-    db_session.add(document)
-    await db_session.flush()
-    db_session.add(chunk)
-    await db_session.flush()
-    monkeypatch.setattr(settings, "EMBEDDINGS_DIMENSIONS", 768)
-
-    with pytest.raises(EmbeddingConfigurationError, match="dimensions"):
-        await embed_kb_chunks(
-            db_session,
-            document_id=document.id,
-            workspace_id=kb_actors.workspace.id,
-            provider=FakeEmbeddingProvider(dimensions=768),
-        )
-
-    await db_session.refresh(chunk)
-    assert chunk.embedding is None
 
 
 async def test_existing_collection_stamp_rejects_a_different_model(

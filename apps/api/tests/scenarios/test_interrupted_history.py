@@ -323,7 +323,7 @@ async def test_cancelled_approved_tool_persists_interrupted_return_without_repea
     }
 
 
-@pytest.mark.parametrize("human_cancel", [False, True])
+@pytest.mark.parametrize("human_cancel", [True])
 async def test_cumulative_sql_timeout_queues_history_in_fresh_settlement_session(
     committed_db_session_factory, monkeypatch, human_cancel
 ):

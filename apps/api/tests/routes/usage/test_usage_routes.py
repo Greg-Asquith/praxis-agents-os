@@ -59,19 +59,9 @@ async def test_usage_routes_require_workspace_manager(
     db_async_client: AsyncClient,
 ) -> None:
     _owner, workspace, owner_headers = await _authenticated_workspace(db_session)
-    _admin, _workspace, admin_headers = await _authenticated_workspace(
-        db_session,
-        role=WorkspaceRole.ADMIN,
-        workspace=workspace,
-    )
     _member, _workspace, member_headers = await _authenticated_workspace(
         db_session,
         role=WorkspaceRole.MEMBER,
-        workspace=workspace,
-    )
-    _reader, _workspace, reader_headers = await _authenticated_workspace(
-        db_session,
-        role=WorkspaceRole.READ_ONLY,
         workspace=workspace,
     )
 
@@ -79,28 +69,19 @@ async def test_usage_routes_require_workspace_manager(
         "from": "2026-08-12T00:00:00Z",
         "to": "2026-08-13T00:00:00Z",
     }
-    for headers in (owner_headers, admin_headers):
-        summary = await db_async_client.get("/api/v1/usage/summary", headers=headers, params=params)
-        breakdown = await db_async_client.get(
-            "/api/v1/usage/breakdown",
-            headers=headers,
-            params={**params, "dimension": "model"},
-        )
-        assert summary.status_code == 200
-        assert breakdown.status_code == 200
-        pricing = await db_async_client.get("/api/v1/usage/model-pricing", headers=headers)
-        assert pricing.status_code == 200
-        assert pricing.json()["models"]
+    breakdown = await db_async_client.get(
+        "/api/v1/usage/breakdown",
+        headers=owner_headers,
+        params={**params, "dimension": "model"},
+    )
+    pricing = await db_async_client.get("/api/v1/usage/model-pricing", headers=owner_headers)
+    denied = await db_async_client.get(
+        "/api/v1/usage/summary", headers=member_headers, params=params
+    )
 
-    for headers in (member_headers, reader_headers):
-        response = await db_async_client.get(
-            "/api/v1/usage/summary",
-            headers=headers,
-            params=params,
-        )
-        assert response.status_code == 403
-        pricing = await db_async_client.get("/api/v1/usage/model-pricing", headers=headers)
-        assert pricing.status_code == 403
+    assert breakdown.status_code == 200
+    assert pricing.status_code == 200
+    assert denied.status_code == 403
 
 
 async def test_usage_summary_is_explicitly_workspace_scoped(

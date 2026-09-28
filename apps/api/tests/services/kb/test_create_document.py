@@ -3,7 +3,6 @@
 """Knowledge-base document creation tests."""
 
 import asyncio
-from datetime import datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -15,7 +14,6 @@ from models.jobs import Job
 from models.kb import KBDocument
 from models.workspace import Workspace
 from services.kb import create_kb_document, delete_kb_document
-from services.kb.utils import compute_markdown_hash
 from tests.factories import build_file, build_file_revision, build_workspace
 from tests.services.kb.conftest import KBActors
 
@@ -41,31 +39,6 @@ async def _create_concurrent_duplicate(
             await db.rollback()
             return False
     return True
-
-
-async def test_manual_create_stores_content_and_enqueues_ids_only_job(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-) -> None:
-    document = await create_kb_document(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        source_type="manual",
-        title="  Handbook  ",
-        created_by_user_id=kb_actors.user.id,
-        content="# Handbook\n\nOperator guidance.",
-    )
-
-    assert document.title == "Handbook"
-    assert document.content_hash == compute_markdown_hash(document.content_md or "")
-    assert isinstance(document.source_updated_at, datetime)
-    assert document.annotation_enabled is False
-    job = await db_session.scalar(
-        select(Job).where(Job.kind == "kb.ingest_document", Job.subject_id == document.id)
-    )
-    assert job is not None
-    assert job.payload == {}
-    assert job.initiated_by_user_id == kb_actors.user.id
 
 
 async def test_concurrent_identical_creates_allow_exactly_one_document(
@@ -106,25 +79,6 @@ async def test_concurrent_identical_creates_allow_exactly_one_document(
             await cleanup.commit()
 
 
-async def test_url_create_defers_fetch_and_supports_annotation_override(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-) -> None:
-    document = await create_kb_document(
-        db_session,
-        workspace_id=kb_actors.workspace.id,
-        source_type="url",
-        title="Remote guide",
-        url="https://docs.example.com/guide",
-        annotate=False,
-    )
-
-    assert document.external_url == "https://docs.example.com/guide"
-    assert document.content_md is None
-    assert document.source_updated_at is None
-    assert document.annotation_enabled is False
-
-
 async def test_upload_requires_revision_in_the_same_workspace(
     db_session: AsyncSession,
     kb_actors: KBActors,
@@ -154,27 +108,6 @@ async def test_upload_requires_revision_in_the_same_workspace(
             source_type="upload",
             title="Cross-workspace",
             file_revision_id=revision.id,
-        )
-
-
-@pytest.mark.parametrize(
-    ("source_type", "message"),
-    [
-        ("conversation", "document-source workflow"),
-    ],
-)
-async def test_unavailable_source_producers_are_rejected_honestly(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-    source_type: str,
-    message: str,
-) -> None:
-    with pytest.raises(AppValidationError, match=message):
-        await create_kb_document(
-            db_session,
-            workspace_id=kb_actors.workspace.id,
-            source_type=source_type,
-            title="Pending source",
         )
 
 

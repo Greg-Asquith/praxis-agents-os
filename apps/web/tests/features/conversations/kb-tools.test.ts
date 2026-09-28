@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest"
 
 import {
   readDocumentResult,
-  searchKnowledgeQueryArg,
   searchKnowledgeResult,
 } from "@/features/conversations/native-tools/kb-tools"
 
@@ -41,15 +40,6 @@ describe("search_knowledge results", () => {
     expect(result?.total).toBe(2)
     expect(result?.results[0]?.content).toBe("Quarterly reviews are required.")
     expect(result?.results[1]?.source_type).toBe("url")
-  })
-
-  it("unwraps return_value envelopes", () => {
-    const result = searchKnowledgeResult({
-      return_value: { query: "policy", results: [], total: 0, used_lexical_fallback: true },
-    })
-
-    expect(result).not.toBeNull()
-    expect(result?.used_lexical_fallback).toBe(true)
   })
 
   it("rejects unknown source types instead of inventing a badge", () => {
@@ -106,14 +96,5 @@ describe("read_document results", () => {
         content: { unexpected: true },
       })
     ).toBeNull()
-  })
-})
-
-describe("search_knowledge args", () => {
-  it("reads the trimmed query from object and JSON string args", () => {
-    expect(searchKnowledgeQueryArg({ query: "  pricing tiers  " })).toBe("pricing tiers")
-    expect(searchKnowledgeQueryArg('{"query": "pricing tiers"}')).toBe("pricing tiers")
-    expect(searchKnowledgeQueryArg({ query: "   " })).toBeNull()
-    expect(searchKnowledgeQueryArg(undefined)).toBeNull()
   })
 })

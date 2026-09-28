@@ -6,7 +6,6 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Literal
-from unittest.mock import Mock
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,7 +17,6 @@ from pydantic_ai import (
     ModelRetry,
     RunContext,
     ToolApproved,
-    ToolDenied,
 )
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
@@ -44,13 +42,10 @@ from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import (
     RUN_STATUS_AWAITING_APPROVAL,
-    RUN_STATUS_CANCELLED,
     RUN_STATUS_COMPLETED,
     RUN_TRIGGER_SCHEDULED,
 )
-from services.agents.models.domain import ResolvedModel
 from services.agents.runtime.approval_state import load_suspended_run_state
-from services.agents.runtime.cancellation import request_agent_run_task_cancel
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
 from services.agents.runtime.dispatch import (
@@ -59,7 +54,6 @@ from services.agents.runtime.dispatch import (
     digest_args,
     model_visible_integration_failure,
 )
-from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.contract import (
@@ -67,7 +61,6 @@ from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_EXTERNAL_WRITE,
 )
-from services.agents.runtime.tools.native.classifier import ClassifiedItem
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.agents.runtime.untrusted import (
     UNTRUSTED_CONTENT_END,
@@ -78,9 +71,6 @@ from services.agents.runtime.untrusted import (
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
-
-runtime_setup_module = importlib.import_module("services.agents.runtime.execute.setup")
-dispatch_module = importlib.import_module("services.agents.runtime.dispatch")
 
 
 class DispatchToolOutput(BaseModel):
@@ -271,62 +261,6 @@ def dispatch_test_tools():
         RUNTIME_TOOL_CATALOG.pop(name, None)
 
 
-async def test_tool_invocation_writes_digest_only_audit_row(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_secret"],
-    )
-    marker = f"raw-value-{uuid4().hex}"
-
-    try:
-        result = await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_secret",
-            args={"value": marker},
-        )
-
-        assert result.run.status == RUN_STATUS_COMPLETED
-
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_secret",
-        )
-        expected_sha, expected_bytes = digest_args({"value": marker})
-
-        assert event.action == "execute"
-        assert event.resource_type == "tool_call"
-        assert event.resource_id == "dispatch_secret-call"
-        assert event.actor_type == "user"
-        assert event.actor_id == str(context.user_id)
-        assert event.actor_user_id == context.user_id
-        assert event.actor_display is not None
-        assert event.requested_by_user_id == context.user_id
-        assert event.request_id == "dispatch-test-request"
-        assert event.ip_address == "203.0.113.24"
-        assert event.user_agent == "dispatch-test-agent/1.0"
-        assert event.tool_provider == "test"
-        assert event.status == "success"
-        assert event.summary.startswith(f"{event.actor_display} ran tool dispatch_secret")
-        assert event.details["outcome"] == "completed"
-        assert "args" not in event.details
-        assert event.details["args_sha256"] == expected_sha
-        assert event.details["args_bytes"] == expected_bytes
-        assert event.details["latency_ms"] >= 1
-        assert event.details["run_id"] == str(context.run_id)
-        assert event.details["agent_id"] == str(context.agent_id)
-        assert "parent_tool_call_id" not in event.details
-        assert "result_chars" not in event.details
-        assert "result_truncated" not in event.details
-        assert marker not in json.dumps(event.details)
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
 async def test_oversized_text_is_model_visible_persisted_and_audited_as_truncated(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     dispatch_test_tools,
@@ -375,47 +309,6 @@ async def test_oversized_text_is_model_visible_persisted_and_audited_as_truncate
         assert event.details["result_chars"] == len(model_visible)
         assert event.details["result_truncated"] is True
         assert event.details["result_original_chars"] == len(original)
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
-async def test_oversized_structured_result_is_preserved_warned_and_audited(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_large_structured"],
-    )
-    original = "structured-content" * 20
-    seen_messages: list[ModelMessage] = []
-    warning = Mock()
-    monkeypatch.setattr(settings, "AGENT_TOOL_RESULT_MAX_CHARS", 20)
-    monkeypatch.setattr(dispatch_module.logger, "warning", warning)
-
-    try:
-        await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_large_structured",
-            args={"value": original},
-            seen_messages=seen_messages,
-        )
-
-        assert original in str(_tool_result_content(seen_messages, "dispatch_large_structured"))
-        warning.assert_called_once()
-        assert (
-            warning.call_args.args[0] == "Oversized structured tool result exempt from truncation"
-        )
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_large_structured",
-        )
-        assert event.details["result_chars"] > 20
-        assert event.details["result_truncated"] is False
-        assert "result_original_chars" not in event.details
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
@@ -475,155 +368,6 @@ async def test_untrusted_result_is_framed_for_model_but_streamed_and_persisted_a
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 
-async def test_approved_oversized_result_is_truncated_once_and_replays_identically(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_long_text"],
-        tool_policies={"dispatch_long_text": "approval"},
-    )
-    original = "approved-head" * 20 + "approved-tail" * 20
-    stream_function, seen_messages = _single_tool_stream(
-        tool_name="dispatch_long_text",
-        args={"value": original},
-        final_text="approved result handled",
-    )
-    monkeypatch.setattr(settings, "AGENT_TOOL_RESULT_MAX_CHARS", 80)
-
-    try:
-        async with committed_db_session_factory() as db:
-            suspended = await execute_run(
-                db,
-                conversation_id=context.conversation_id,
-                run_id=context.run_id,
-                user_prompt="Use the approved tool.",
-                sink=CollectingSink(
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                ),
-                model=FunctionModel(
-                    stream_function=stream_function,
-                    model_name="dispatch-approved-long-result",
-                ),
-            )
-
-        assert isinstance(suspended.output, DeferredToolRequests)
-        suspended_state = load_suspended_run_state(suspended.run)
-        tool_call_id = suspended_state.pending_tool_call_ids[0]
-
-        async with committed_db_session_factory() as db:
-            resumed = await execute_run(
-                db,
-                conversation_id=context.conversation_id,
-                run_id=context.run_id,
-                user_prompt=None,
-                sink=CollectingSink(
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                ),
-                model=FunctionModel(
-                    stream_function=stream_function,
-                    model_name="dispatch-approved-long-result",
-                ),
-                expected_status=RUN_STATUS_AWAITING_APPROVAL,
-                message_history=suspended_state.message_history,
-                deferred_tool_results=DeferredToolResults(approvals={tool_call_id: ToolApproved()}),
-            )
-
-        assert resumed.output == "approved result handled"
-        model_visible = _tool_result_content(seen_messages, "dispatch_long_text")
-        assert "Tool result truncated" in model_visible
-
-        async with committed_db_session_factory() as db:
-            persisted_row = await db.scalar(
-                select(ConversationMessage).where(
-                    ConversationMessage.conversation_id == context.conversation_id,
-                    ConversationMessage.tool_name == "dispatch_long_text",
-                    ConversationMessage.role == "tool",
-                )
-            )
-        assert persisted_row is not None
-        assert persisted_row.parts["parts"][0]["content"] == model_visible
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
-async def test_tool_model_retry_records_failure_and_run_continues(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_retry"],
-    )
-
-    try:
-        result = await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_retry",
-            args={"value": "bad"},
-            final_text="after retry",
-        )
-
-        assert result.output == "after retry"
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_retry",
-        )
-        assert event.status == "failure"
-        assert event.details["outcome"] == "failed"
-        assert event.details["error_code"] == "ToolRetryError"
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
-async def test_rejected_provider_read_is_returned_to_the_model(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_provider_rejected"],
-    )
-    seen_messages: list[ModelMessage] = []
-
-    try:
-        result = await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_provider_rejected",
-            args={"value": "missing"},
-            final_text="reported the failure",
-            seen_messages=seen_messages,
-        )
-
-        assert result.output == "reported the failure"
-        retries = [
-            part
-            for message in seen_messages
-            for part in message.parts
-            if getattr(part, "part_kind", None) == "retry-prompt"
-        ]
-        assert len(retries) == 1
-        assert "has no record named missing" in str(retries[0].content)
-        assert "provider=" not in str(retries[0].content)
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_provider_rejected",
-        )
-        assert event.status == "failure"
-        assert event.details["outcome"] == "failed"
-        assert event.details["error_code"] == "IntegrationNotFoundError"
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
 def _integration_error(disposition: IntegrationFailureDisposition | None) -> IntegrationError:
     return IntegrationError(
         "Provider rejected the request.",
@@ -658,112 +402,6 @@ async def test_model_visible_integration_failure_only_covers_effect_free_rejecti
     if message is not None:
         assert message.startswith(f"{definition.name} did not complete: Provider rejected")
         assert "provider=" not in message
-
-
-async def test_output_contract_failures_record_mutation_risk(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    read_messages: list[ModelMessage] = []
-    write_messages: list[ModelMessage] = []
-    read_context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_bad_read"],
-    )
-    write_context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_bad_write"],
-    )
-
-    try:
-        rolled_back_title = f"rolled-back-{uuid4().hex}"
-        await _execute_single_tool(
-            committed_db_session_factory,
-            read_context,
-            tool_name="dispatch_bad_read",
-            args={},
-            final_text="read recovered",
-            seen_messages=read_messages,
-        )
-        await _execute_single_tool(
-            committed_db_session_factory,
-            write_context,
-            tool_name="dispatch_bad_write",
-            args={"conversation_title": rolled_back_title},
-            final_text="write recovered",
-            seen_messages=write_messages,
-        )
-
-        [read_event] = await _tool_audit_events(
-            committed_db_session_factory,
-            read_context,
-            tool_name="dispatch_bad_read",
-        )
-        [write_event] = await _tool_audit_events(
-            committed_db_session_factory,
-            write_context,
-            tool_name="dispatch_bad_write",
-        )
-        assert read_event.status == "failure"
-        assert read_event.details["outcome"] == "failed"
-        assert write_event.status == "failure"
-        assert write_event.details["outcome"] == "unverified_mutation"
-        assert "Tool output did not match" in " ".join(map(str, read_messages))
-        assert "external action may have completed" in " ".join(map(str, write_messages))
-        async with committed_db_session_factory() as verification_db:
-            persisted_title = await verification_db.scalar(
-                select(Conversation.title).where(Conversation.id == write_context.conversation_id)
-            )
-        assert persisted_title != rolled_back_title
-    finally:
-        await _delete_committed_runtime_context(
-            committed_db_session_factory,
-            read_context,
-        )
-        await _delete_committed_runtime_context(
-            committed_db_session_factory,
-            write_context,
-        )
-
-
-async def test_envelope_denies_write_tool_before_execution(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_write_ok"],
-    )
-    monkeypatch.setattr(
-        runtime_setup_module,
-        "build_run_envelope",
-        lambda _run: RunEnvelope(
-            principal="interactive",
-            side_effect_policy="deny",
-        ),
-    )
-
-    try:
-        result = await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_write_ok",
-            args={"value": "do it"},
-            final_text="denied and recovered",
-        )
-
-        assert result.output == "denied and recovered"
-        assert dispatch_test_tools["write_ok"] == 0
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_write_ok",
-        )
-        assert event.status == "denied"
-        assert event.details["outcome"] == "denied_envelope"
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 
 async def test_read_only_role_allows_reads_but_denies_automatic_writes(
@@ -974,128 +612,6 @@ async def test_read_only_role_cannot_execute_an_approved_write_replay(
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 
-async def test_envelope_requires_approval_for_external_write_tool_and_resumes(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_write_ok"],
-        trigger=RUN_TRIGGER_SCHEDULED,
-        metadata={"envelope": {"side_effect_policy": "require_approval"}},
-    )
-    stream_function, _seen_messages = _single_tool_stream(
-        tool_name="dispatch_write_ok",
-        args={"value": "write externally"},
-        final_text="approved write done",
-    )
-
-    try:
-        async with committed_db_session_factory() as db:
-            suspended = await execute_run(
-                db,
-                conversation_id=context.conversation_id,
-                run_id=context.run_id,
-                user_prompt="Use the tool.",
-                sink=CollectingSink(
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                ),
-                model=FunctionModel(
-                    stream_function=stream_function,
-                    model_name="dispatch-envelope-approval",
-                ),
-            )
-
-        assert isinstance(suspended.output, DeferredToolRequests)
-        assert suspended.output.metadata["dispatch_write_ok-call"] == {
-            "side_effect_policy": "require_approval",
-            "effect_scope": "external",
-            "egress": "external_write",
-        }
-        assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
-        assert dispatch_test_tools["write_ok"] == 0
-        [pending_event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_write_ok",
-        )
-        assert pending_event.status == "pending"
-        assert pending_event.details["outcome"] == "approval_requested"
-        assert pending_event.details["approval_ref"] == "dispatch_write_ok-call"
-
-        suspended_state = load_suspended_run_state(suspended.run)
-        deferred_tool_results = DeferredToolResults(
-            approvals={suspended_state.pending_tool_call_ids[0]: ToolApproved()}
-        )
-        async with committed_db_session_factory() as db:
-            resumed = await execute_run(
-                db,
-                conversation_id=context.conversation_id,
-                run_id=context.run_id,
-                user_prompt=None,
-                sink=CollectingSink(
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                ),
-                model=FunctionModel(
-                    stream_function=stream_function,
-                    model_name="dispatch-envelope-approval",
-                ),
-                expected_status=RUN_STATUS_AWAITING_APPROVAL,
-                message_history=suspended_state.message_history,
-                deferred_tool_results=deferred_tool_results,
-            )
-
-        assert resumed.output == "approved write done"
-        assert dispatch_test_tools["write_ok"] == 1
-        assert dispatch_test_tools["scope_resolutions"] == 2
-        events = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_write_ok",
-        )
-        assert [(event.status, event.details["outcome"]) for event in events] == [
-            ("pending", "approval_requested"),
-            ("success", "completed"),
-        ]
-        assert events[1].details["approval_ref"] == "dispatch_write_ok-call"
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
-async def test_envelope_allows_scheduled_internal_write_tool(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_internal_write_ok"],
-        trigger=RUN_TRIGGER_SCHEDULED,
-        metadata={"envelope": {"side_effect_policy": "require_approval"}},
-    )
-
-    try:
-        result = await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_internal_write_ok",
-            args={"value": "plan"},
-        )
-
-        assert result.run.status == RUN_STATUS_COMPLETED
-        assert dispatch_test_tools["internal_write_ok"] == 1
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_internal_write_ok",
-        )
-        assert event.status == "success"
-        assert event.details["outcome"] == "completed"
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
 async def test_tool_turn_releases_transaction_before_each_model_request(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     dispatch_test_tools,
@@ -1139,62 +655,6 @@ async def test_tool_turn_releases_transaction_before_each_model_request(
 
         assert result.run.status == RUN_STATUS_COMPLETED
         assert dispatch_test_tools["read_ok"] == 1
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
-async def test_retrying_tool_releases_transaction_before_next_model_request(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_retry"],
-    )
-
-    try:
-        rolled_back_title = f"rolled-back-{uuid4().hex}"
-        async with committed_db_session_factory() as db:
-            await set_session_tenant_context(
-                db,
-                workspace_id=context.workspace_id,
-                user_id=context.user_id,
-            )
-            stream_function, _seen_messages = _single_tool_stream(
-                tool_name="dispatch_retry",
-                args={
-                    "value": "retry-boundary",
-                    "conversation_title": rolled_back_title,
-                },
-                final_text="retry observed",
-            )
-
-            async def asserting_stream(messages, info):
-                assert db.in_transaction() is False
-                async for event in stream_function(messages, info):
-                    yield event
-
-            result = await execute_run(
-                db,
-                conversation_id=context.conversation_id,
-                run_id=context.run_id,
-                user_prompt="Use the tool.",
-                sink=CollectingSink(
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                ),
-                model=FunctionModel(
-                    stream_function=asserting_stream,
-                    model_name="retry-transaction-boundary-model",
-                ),
-            )
-
-        assert result.output == "retry observed"
-        async with committed_db_session_factory() as verification_db:
-            persisted_title = await verification_db.scalar(
-                select(Conversation.title).where(Conversation.id == context.conversation_id)
-            )
-        assert persisted_title != rolled_back_title
     finally:
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
@@ -1271,250 +731,9 @@ async def test_audit_writer_failure_does_not_fail_tool_call(
         await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 
-async def test_tool_body_approval_required_records_pending_audit(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_needs_approval"],
-    )
-
-    try:
-        result = await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_needs_approval",
-            args={"value": "pause"},
-        )
-
-        assert isinstance(result.output, DeferredToolRequests)
-        assert result.run.status == RUN_STATUS_AWAITING_APPROVAL
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_needs_approval",
-        )
-        assert event.status == "pending"
-        assert event.details["outcome"] == "approval_requested"
-        assert event.details["approval_ref"] == "dispatch_needs_approval-call"
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
-async def test_denied_approval_records_audit_without_executing_tool(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    dispatch_test_tools,
-) -> None:
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=["dispatch_write_ok"],
-        tool_policies={"dispatch_write_ok": "approval"},
-    )
-    stream_function, seen_messages = _single_tool_stream(
-        tool_name="dispatch_write_ok",
-        args={"value": "do not run"},
-        final_text="denial handled",
-    )
-
-    try:
-        async with committed_db_session_factory() as db:
-            suspended = await execute_run(
-                db,
-                conversation_id=context.conversation_id,
-                run_id=context.run_id,
-                user_prompt="Need approval.",
-                sink=CollectingSink(
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                ),
-                model=FunctionModel(
-                    stream_function=stream_function,
-                    model_name="dispatch-denied-approval",
-                ),
-            )
-
-        assert isinstance(suspended.output, DeferredToolRequests)
-        assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
-        assert dispatch_test_tools["write_ok"] == 0
-
-        suspended_state = load_suspended_run_state(suspended.run)
-        denied_call_id = suspended_state.pending_tool_call_ids[0]
-        deferred_tool_results = DeferredToolResults(
-            approvals={denied_call_id: ToolDenied("Denied in test")},
-            metadata={denied_call_id: {"reason": "The budget is too high."}},
-        )
-
-        async with committed_db_session_factory() as db:
-            resumed = await execute_run(
-                db,
-                conversation_id=context.conversation_id,
-                run_id=context.run_id,
-                user_prompt=None,
-                sink=CollectingSink(
-                    run_id=context.run_id,
-                    conversation_id=context.conversation_id,
-                ),
-                model=FunctionModel(
-                    stream_function=stream_function,
-                    model_name="dispatch-denied-approval",
-                ),
-                expected_status=RUN_STATUS_AWAITING_APPROVAL,
-                message_history=suspended_state.message_history,
-                deferred_tool_results=deferred_tool_results,
-            )
-
-        assert resumed.output == "denial handled"
-        assert seen_messages
-        assert dispatch_test_tools["write_ok"] == 0
-        events = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name="dispatch_write_ok",
-        )
-        assert {event.details["outcome"] for event in events} == {
-            "approval_requested",
-            "denied_approval",
-        }
-        event = next(event for event in events if event.details["outcome"] == "denied_approval")
-        assert event.status == "denied"
-        assert event.details["outcome"] == "denied_approval"
-        assert event.details["approval_ref"] == suspended_state.pending_tool_call_ids[0]
-        assert event.details["error_code"] == "ToolDenied"
-        assert event.details["denial_reason"] == "The budget is too high."
-        expected_sha, expected_bytes = digest_args({"value": "do not run"})
-        assert event.details["args_sha256"] == expected_sha
-        assert event.details["args_bytes"] == expected_bytes
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
-async def test_cancelled_tool_call_records_cancelled_audit_row(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    tool_name = f"dispatch_cancel_{uuid4().hex}"
-    tool_started = asyncio.Event()
-    RUNTIME_TOOL_CATALOG.pop(tool_name, None)
-
-    @runtime_tool(
-        name=tool_name,
-        provider="test",
-        label="Dispatch cancel",
-        description="Sleep until the run is cancelled.",
-        effect=TOOL_EFFECT_WRITE,
-    )
-    async def dispatch_cancel(value: str) -> dict[str, bool]:
-        tool_started.set()
-        await asyncio.sleep(10)
-        return {"ok": bool(value)}
-
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=[tool_name],
-    )
-
-    try:
-        task = asyncio.create_task(
-            _execute_single_tool(
-                committed_db_session_factory,
-                context,
-                tool_name=tool_name,
-                args={"value": "interrupt"},
-            )
-        )
-        await asyncio.wait_for(tool_started.wait(), timeout=2)
-        request_agent_run_task_cancel(task, run_id=context.run_id)
-
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-        async with committed_db_session_factory() as db:
-            run = await db.get(AgentRun, context.run_id)
-            assert run is not None
-            assert run.status == RUN_STATUS_CANCELLED
-
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name=tool_name,
-        )
-        assert event.status == "failure"
-        assert event.details["outcome"] == "cancelled"
-        assert event.details["error_code"] == "CancelledError"
-        assert event.details["args_sha256"]
-    finally:
-        RUNTIME_TOOL_CATALOG.pop(tool_name, None)
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
-
-
 async def test_delegation_tool_names_are_audited_as_delegation_provider() -> None:
     for tool_name in DELEGATION_TOOL_NAMES:
         assert _tool_provider(tool_name, None) == "delegation"
-
-
-async def test_workspace_classifier_dispatch_is_audited_as_classifier_provider(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    tool_name = "classifier_audit_triage"
-    context = await _create_committed_runtime_context(
-        committed_db_session_factory,
-        tool_names=[tool_name],
-    )
-    monkeypatch.setattr(
-        "services.agents.runtime.tools.classifiers.resolve_classifier_model",
-        lambda **_kwargs: ResolvedModel(
-            provider="openai",
-            model="gpt-5.6-luna",
-            transport_model="gpt-5.6-luna",
-            settings={},
-            max_steps=2,
-        ),
-    )
-
-    async def classify(_deps, **_kwargs):
-        return [ClassifiedItem(index=0, value="Refund please", label="complaint")]
-
-    monkeypatch.setattr(
-        "services.agents.runtime.tools.classifiers.run_native_classification",
-        classify,
-    )
-
-    try:
-        async with committed_db_session_factory() as db:
-            await set_session_tenant_context(
-                db,
-                workspace_id=context.workspace_id,
-                user_id=context.user_id,
-            )
-            db.add(
-                Classifier(
-                    workspace_id=context.workspace_id,
-                    created_by=context.user_id,
-                    name="audit_triage",
-                    display_name="Audit triage",
-                    description="Classify support messages.",
-                    labels=[{"label": "complaint"}, {"label": "other"}],
-                )
-            )
-            await db.commit()
-
-        result = await _execute_single_tool(
-            committed_db_session_factory,
-            context,
-            tool_name=tool_name,
-            args={"items": ["Refund please"]},
-        )
-        assert result.run.status == RUN_STATUS_COMPLETED
-
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            tool_name=tool_name,
-        )
-        assert event.tool_provider == "classifier"
-    finally:
-        await _delete_committed_runtime_context(committed_db_session_factory, context)
 
 
 async def test_raw_json_tool_call_args_digest_like_execution_args() -> None:

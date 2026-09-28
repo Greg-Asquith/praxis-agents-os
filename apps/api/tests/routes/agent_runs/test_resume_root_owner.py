@@ -24,7 +24,7 @@ from tests.support.scenario import (
 )
 
 
-@pytest.mark.parametrize("parent_status", ["awaiting_approval", "running"])
+@pytest.mark.parametrize("parent_status", ["awaiting_approval"])
 async def test_child_resume_is_rejected_before_decisions_or_effects(
     committed_db_session_factory, async_client, monkeypatch, parent_status
 ):
@@ -93,7 +93,7 @@ async def test_child_resume_is_rejected_before_decisions_or_effects(
         assert effects.calls == []
 
 
-@pytest.mark.parametrize("generation", ["legacy", "current"])
+@pytest.mark.parametrize("generation", ["current"])
 async def test_resume_http_contract_reserves_once_and_returns_stream_version(
     committed_db_session_factory, async_client, monkeypatch, generation
 ):

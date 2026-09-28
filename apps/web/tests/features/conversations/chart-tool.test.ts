@@ -43,52 +43,6 @@ describe("chartSpec", () => {
     expect(parsed?.x_axis.tick_angle).toBe(-35)
   })
 
-  it("accepts named secondary axes and explicit brand hex colors", () => {
-    const parsed = chartSpec({
-      ...COMPACT_SPEC,
-      chart_type: "composed",
-      y_axes: [
-        { id: "money", label: "Revenue", format: "currency", currency_code: "GBP" },
-        { id: "rate", label: "Conversion", format: "percent", orientation: "right" },
-      ],
-      series: [
-        {
-          data_key: "revenue",
-          label: "Revenue",
-          kind: "bar",
-          y_axis_id: "money",
-          color: "#123456",
-        },
-        {
-          data_key: "conversion",
-          label: "Conversion",
-          kind: "line",
-          y_axis_id: "rate",
-          color: "#FEDCBA",
-          curve: "step",
-          connect_nulls: true,
-          show_points: true,
-          line_style: "dashed",
-        },
-      ],
-      data: [{ week: "2026-07-06", revenue: 1250.5, conversion: 18.2 }],
-    })
-
-    expect(parsed?.y_axes).toHaveLength(2)
-    expect(parsed?.series[1]?.y_axis_id).toBe("rate")
-    expect(parsed?.series[1]?.color).toBe("#FEDCBA")
-    expect(parsed?.series[1]).toMatchObject({
-      connect_nulls: true,
-      curve: "step",
-      line_style: "dashed",
-      show_points: true,
-    })
-  })
-
-  it("unwraps a named spec argument when a transport preserves the parameter name", () => {
-    expect(chartSpec({ spec: COMPACT_SPEC })?.title).toBe("Weekly revenue")
-  })
-
   it("rejects malformed load-bearing fields", () => {
     expect(chartSpec({ ...COMPACT_SPEC, chart_type: "script" })).toBeNull()
     expect(chartSpec({ ...COMPACT_SPEC, series: [] })).toBeNull()

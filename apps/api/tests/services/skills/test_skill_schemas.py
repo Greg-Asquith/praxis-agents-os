@@ -15,36 +15,13 @@ from utils.content import ContentScope
 
 @pytest.mark.parametrize(
     "name",
-    ["research", "google-ads", "a1-b2"],
-)
-def test_skill_create_accepts_lowercase_kebab_names(name: str) -> None:
-    payload = SkillCreateRequest(
-        name=f" {name} ",
-        description="Use this for focused work.",
-        instructions="Follow the workflow.",
-    )
-
-    assert payload.name == name
-
-
-@pytest.mark.parametrize(
-    "name",
-    ["Bad Name", "-leading", "trailing-", "two--hyphens", "Uppercase"],
+    ["Bad Name", "two--hyphens"],
 )
 def test_skill_create_rejects_invalid_names(name: str) -> None:
     with pytest.raises(ValidationError):
         SkillCreateRequest(
             name=name,
             description="Use this for focused work.",
-            instructions="Follow the workflow.",
-        )
-
-
-def test_skill_create_enforces_description_prompt_budget() -> None:
-    with pytest.raises(ValidationError):
-        SkillCreateRequest(
-            name="too-long",
-            description="x" * 1025,
             instructions="Follow the workflow.",
         )
 

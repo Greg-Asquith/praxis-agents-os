@@ -193,7 +193,15 @@ describe("Google Ads registered write copy", () => {
     )
   })
 
-  it.each(cases)("uses shared lifecycle wording for $name", ({ name, spec }) => {
+  it.each(
+    cases.filter(({ name }) =>
+      [
+        "google_ads_create_keywords",
+        "google_ads_link_negative_keyword_list",
+        "google_ads_dismiss_recommendations",
+      ].includes(name)
+    )
+  )("uses shared lifecycle wording for $name", ({ name, spec }) => {
     const copy = integrationWriteCopy(googleAdsProvider, spec)
     const running =
       name === "google_ads_link_negative_keyword_list"

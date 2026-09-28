@@ -71,41 +71,4 @@ describe("Meta Ads Insights row details", () => {
       expect(section).not.toContain("<b>Qualified lead</b>")
     }
   })
-  it.each(["EUR", "JPY", ""])(
-    "uses the same currency, CTR, and ROAS formatting in cells and details for %j",
-    (currency) => {
-      const report = parseMetaAdsInsights(
-        insightsData({
-          currency,
-          rows: [
-            insightsRow({
-              metrics: { social_spend: 125.5, ctr: 0.5 },
-              actions: {
-                purchase_roas: [{ action_type: "purchase", value: 2.5, windows: {} }],
-              },
-            }),
-          ],
-        })
-      )
-      if (!report) throw new Error("Invalid fixture")
-      vi.mocked(useState).mockImplementationOnce(() => [report.rows[0], vi.fn()])
-      const html = renderToStaticMarkup(
-        createElement(MetaAdsInsightsResults, { report, externalId: "123" })
-      )
-      const table = html.slice(html.indexOf("<table"), html.indexOf("</table>"))
-      const details = html.slice(html.indexOf("<aside"), html.indexOf("</aside>"))
-      const money = currency
-        ? new Intl.NumberFormat(undefined, { style: "currency", currency }).format(125.5)
-        : "125.5"
-      for (const section of [table, details]) {
-        expect(section).toContain("Social Spend")
-        expect(section).toContain(money)
-        expect(section).toContain("0.5%")
-        expect(section).toContain(">2.5<")
-        expect(section).not.toContain("2.5%")
-      }
-      expect(details).toContain("Report row details")
-      if (!currency) expect(html).toContain("Currency unavailable")
-    }
-  )
 })

@@ -12,7 +12,7 @@ async function getPlatformUsageSummary(range: UsageRange) {
   })
 }
 
-export function platformUsageSummaryQueryOptions(userId: string, range: UsageRange) {
+function platformUsageSummaryQueryOptions(userId: string, range: UsageRange) {
   return queryOptions({
     queryKey: platformUsageQueryKeys.summary(userId, range),
     queryFn: () => getPlatformUsageSummary(range),

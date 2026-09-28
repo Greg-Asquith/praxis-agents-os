@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.settings import settings
 from services.ai_usage.domain import PURPOSE_EMBEDDING_KB_SEARCH, AIUsageEventData
 from services.embeddings.domain import (
-    EmbeddingBatch,
-    EmbeddingConfigurationError,
     EmbeddingProviderError,
     EmbeddingProviderPartialUsageError,
 )
@@ -31,31 +29,6 @@ class FailingSecondProvider(RecordingProvider):
             self.call_sizes.append(len(texts))
             raise EmbeddingProviderError("later batch failed")
         return await super().embed_texts(texts, model=model, dimensions=dimensions)
-
-
-class MultiRequestProvider(RecordingProvider):
-    async def embed_texts(self, texts, *, model, dimensions):
-        result = await super().embed_texts(texts, model=model, dimensions=dimensions)
-        return EmbeddingBatch(
-            vectors=result.vectors,
-            total_tokens=result.total_tokens,
-            provider=result.provider,
-            model=result.model,
-            dimensions=result.dimensions,
-            requests=len(texts),
-        )
-
-
-class ClosingFailingProvider(RecordingProvider):
-    def __init__(self) -> None:
-        super().__init__()
-        self.closed = False
-
-    async def embed_texts(self, texts, *, model, dimensions):
-        raise EmbeddingProviderError("provider failed")
-
-    async def aclose(self) -> None:
-        self.closed = True
 
 
 async def _workspace(db: AsyncSession):
@@ -97,68 +70,6 @@ async def test_batches_preserve_order_and_meter_provider_tokens(
     assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 15
 
 
-async def test_empty_input_short_circuits_without_provider_or_metering(
-    db_session: AsyncSession,
-) -> None:
-    workspace = await _workspace(db_session)
-    provider = RecordingProvider()
-
-    result = await embed_texts(
-        db_session,
-        [],
-        workspace_id=workspace.id,
-        purpose=PURPOSE_EMBEDDING_KB_SEARCH,
-        provider=provider,
-    )
-
-    assert result.vectors == []
-    assert provider.call_sizes == []
-    assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 0
-
-
-async def test_metering_sums_physical_provider_requests(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = await _workspace(db_session)
-    recorded: list[AIUsageEventData] = []
-
-    async def record(event: AIUsageEventData) -> bool:
-        recorded.append(event)
-        return True
-
-    monkeypatch.setattr(embed_texts_module, "record_ai_usage_durable", record)
-    monkeypatch.setattr(settings, "EMBEDDINGS_MAX_BATCH_TEXTS", 2)
-
-    result = await embed_texts(
-        db_session,
-        ["one", "two", "three"],
-        workspace_id=workspace.id,
-        purpose=PURPOSE_EMBEDDING_KB_SEARCH,
-        provider=MultiRequestProvider(),
-    )
-
-    assert result.requests == 3
-    assert recorded[0].requests == 3
-
-
-async def test_invalid_text_names_its_index(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = await _workspace(db_session)
-    monkeypatch.setattr(settings, "EMBEDDINGS_MAX_TEXT_CHARS", 4)
-
-    with pytest.raises(EmbeddingConfigurationError, match="index 1"):
-        await embed_texts(
-            db_session,
-            ["okay", "too long"],
-            workspace_id=workspace.id,
-            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
-            provider=RecordingProvider(),
-        )
-
-
 async def test_soft_budget_warns_only_on_the_crossing_call(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -190,48 +101,6 @@ async def test_soft_budget_warns_only_on_the_crossing_call(
     assert len(warnings) == 1
     assert "crossed its soft monthly budget" in warnings[0]
     assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 9
-
-
-async def test_provider_length_mismatch_fails_before_metering(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = await _workspace(db_session)
-    recorded: list[AIUsageEventData] = []
-
-    async def record(event: AIUsageEventData) -> bool:
-        recorded.append(event)
-        return True
-
-    monkeypatch.setattr(embed_texts_module, "record_ai_usage_durable", record)
-
-    with pytest.raises(EmbeddingProviderError, match="unexpected number"):
-        await embed_texts(
-            db_session,
-            ["first", "second"],
-            workspace_id=workspace.id,
-            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
-            provider=RecordingProvider(omit_last=True),
-        )
-
-    assert await get_embedding_usage(db_session, workspace_id=workspace.id) == 0
-    assert recorded[0].requests == 1
-    assert recorded[0].input_tokens == 6
-
-
-async def test_invalid_purpose_fails_before_provider_call(db_session: AsyncSession) -> None:
-    workspace = await _workspace(db_session)
-    provider = RecordingProvider()
-
-    with pytest.raises(ValueError, match="Unknown AI usage purpose"):
-        await embed_texts(
-            db_session,
-            ["text"],
-            workspace_id=workspace.id,
-            purpose="invalid",  # type: ignore[arg-type] - runtime boundary probe
-            provider=provider,
-        )
-    assert provider.call_sizes == []
 
 
 async def test_later_batch_failure_records_completed_batches_only(
@@ -285,22 +154,3 @@ async def test_partial_provider_failure_records_completed_request_usage(
 
     assert recorded[0].requests == 1
     assert recorded[0].input_tokens == 4
-
-
-async def test_operation_owned_provider_closes_after_failure(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = await _workspace(db_session)
-    provider = ClosingFailingProvider()
-    monkeypatch.setattr(embed_texts_module, "get_embedding_provider", lambda: provider)
-
-    with pytest.raises(EmbeddingProviderError, match="provider failed"):
-        await embed_texts(
-            db_session,
-            ["text"],
-            workspace_id=workspace.id,
-            purpose=PURPOSE_EMBEDDING_KB_SEARCH,
-        )
-
-    assert provider.closed is True

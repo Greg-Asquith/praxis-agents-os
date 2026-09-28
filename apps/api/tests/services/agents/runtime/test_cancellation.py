@@ -14,32 +14,6 @@ from services.agents.runtime.sinks import StreamSink
 pytestmark = pytest.mark.asyncio
 
 
-async def test_stopping_heartbeat_preserves_cancellation_of_waiting_worker():
-    from services.agents.runtime.heartbeat import stop_agent_run_heartbeat
-
-    started, stopping, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
-
-    async def ticker():
-        started.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            stopping.set()
-            await release.wait()
-
-    heartbeat = asyncio.create_task(ticker())
-    await started.wait()
-    worker = asyncio.create_task(stop_agent_run_heartbeat(asyncio.Event(), heartbeat))
-    try:
-        await asyncio.wait_for(stopping.wait(), timeout=1)
-        worker.cancel("run_process_shutdown")
-        with pytest.raises(asyncio.CancelledError, match="run_process_shutdown"):
-            await worker
-    finally:
-        release.set()
-        await asyncio.gather(heartbeat, worker, return_exceptions=True)
-
-
 async def test_run_task_registry_cancel_cleans_up_task_before_it_starts() -> None:
     registry = RunTaskRegistry()
     release = asyncio.Event()
@@ -127,45 +101,6 @@ async def test_heartbeat_outage_stops_at_confirmed_lease_deadline(monkeypatch):
     assert renewal.call_count == 1
 
 
-@pytest.mark.parametrize("status", ["completed", "awaiting_approval"])
-async def test_heartbeat_does_not_interrupt_own_committed_finalisation(monkeypatch, status):
-    from unittest.mock import AsyncMock
-
-    from services.agent_runs.execution_state import ExecutionState
-    from services.agents.runtime.execution_control import ExecutionPhase
-    from services.agents.runtime.heartbeat import heartbeat_agent_run_lease
-    from tests.support.execution import build_execution_control
-
-    control = build_execution_control()
-    control.phase = ExecutionPhase.FINALISING
-    control.deadline = asyncio.get_running_loop().time() - 1
-    monkeypatch.setattr(
-        "services.agents.runtime.heartbeat.renew_agent_run_lease_once",
-        AsyncMock(return_value=False),
-    )
-    monkeypatch.setattr(
-        "services.agents.runtime.execution_control.read_execution_states",
-        AsyncMock(
-            return_value={
-                control.run_id: ExecutionState(status, control.owner_instance_id, None),
-            }
-        ),
-    )
-    target = asyncio.create_task(asyncio.Event().wait())
-    try:
-        await heartbeat_agent_run_lease(
-            execution_control=control,
-            stop=asyncio.Event(),
-            cancel_target=target,
-            renew_immediately=True,
-        )
-        assert not target.cancelling()
-        assert control.reason is None
-    finally:
-        target.cancel()
-        await asyncio.gather(target, return_exceptions=True)
-
-
 @pytest.mark.parametrize("repeat_cancel", [False, True])
 async def test_finalisation_first_wait_is_bounded_and_joins_task(repeat_cancel):
     from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
@@ -198,44 +133,3 @@ async def test_finalisation_first_wait_is_bounded_and_joins_task(repeat_cancel):
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-
-
-async def test_finalisation_database_error_propagates_without_live_task():
-    from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
-
-    async def failed_checkout():
-        raise RuntimeError("checkout failed")
-
-    with pytest.raises(RuntimeError, match="checkout failed"):
-        await bounded_finalisation(failed_checkout(), max_wait=0.02)
-    assert not [task for task in asyncio.all_tasks() if task.get_name() == "agent-run-finalisation"]
-
-
-async def test_resistant_cleanup_retains_its_owned_resources_under_supervision():
-    from services.agents.runtime.execute.bounded_finalisation import bounded_finalisation
-
-    release = asyncio.Event()
-    closed = asyncio.Event()
-    owned_task = None
-
-    async def isolated_operation():
-        nonlocal owned_task
-        owned_task = asyncio.current_task()
-        try:
-            try:
-                await asyncio.Event().wait()
-            except asyncio.CancelledError:
-                await release.wait()
-        finally:
-            closed.set()
-
-    try:
-        assert not await bounded_finalisation(isolated_operation(), max_wait=0.01)
-        assert owned_task is not None and not owned_task.done()
-        assert not closed.is_set()
-    finally:
-        release.set()
-        if owned_task is not None:
-            await asyncio.wait_for(owned_task, timeout=1)
-    assert closed.is_set()
-    assert not [task for task in asyncio.all_tasks() if task.get_name() == "agent-run-finalisation"]

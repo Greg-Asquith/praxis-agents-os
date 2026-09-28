@@ -4,12 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it, vi } from "vitest"
 
-import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { MessageList } from "@/features/conversations/components/message-list"
 import { ToolCallRow } from "@/features/conversations/components/tool-call-row"
 import { projectConversationTimeline } from "@/features/conversations/message-parts/timeline"
 import type { ConversationMessage } from "@/features/conversations/types"
-import { loadIntegrationUiModules } from "@/integrations/registry"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
 
 vi.mock("@/features/conversations/hooks/use-inline-approvals", () => ({
@@ -101,50 +99,6 @@ describe("shared MessageList", () => {
     client.clear()
   })
 
-  it("reuses the registered Google Ads report presenter and its table", async () => {
-    await loadIntegrationUiModules(["google_ads"])
-    const client = new QueryClient()
-    const html = renderToStaticMarkup(
-      createElement(
-        QueryClientProvider,
-        { client },
-        createElement(
-          SharedTranscriptContext,
-          { value: true },
-          createElement(ToolCallRow, {
-            defaultOpen: true,
-            activity: {
-              id: "report",
-              name: "google_ads_run_report",
-              kind: "result",
-              status: "completed",
-              result: {
-                results: [
-                  {
-                    provider_key: "google_ads",
-                    display_name: "Client account",
-                    external_id: "1234567890",
-                    status: "success",
-                    error_message: null,
-                    data: {
-                      rows: [{ campaign: { name: "Summer" }, metrics: { clicks: "5" } }],
-                      row_count: 1,
-                      truncated: false,
-                    },
-                  },
-                ],
-              },
-            },
-          })
-        )
-      )
-    )
-    expect(html).toContain("Run Google Ads Report")
-    expect(html).toContain("Summer")
-    expect(html).toContain("Download Report CSV")
-    client.clear()
-  })
-
   it("hides awaiting approval tools before mounting any presenter or query hooks", () => {
     const html = renderToStaticMarkup(
       createElement(
@@ -162,21 +116,6 @@ describe("shared MessageList", () => {
       )
     )
     expect(html).toBe("")
-  })
-
-  it("preserves ordinary Markdown links in shared transcripts", () => {
-    const html = renderToStaticMarkup(
-      createElement(
-        SharedTranscriptContext,
-        { value: true },
-        createElement(MarkdownContent, {
-          content: "[Child](/conversations/private-child) [Public](https://example.com/source)",
-        })
-      )
-    )
-    expect(html).toContain("Child")
-    expect(html).toContain('href="/conversations/private-child"')
-    expect(html).toContain('href="https://example.com/source"')
   })
 })
 

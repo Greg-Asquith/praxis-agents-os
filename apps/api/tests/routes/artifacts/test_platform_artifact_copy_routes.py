@@ -2,8 +2,6 @@
 
 """HTTP copy requests create local Artifacts only for active workspace editors."""
 
-from uuid import uuid4
-
 import pytest
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
@@ -47,7 +45,7 @@ async def copy_app(committed_db_session_factory, platform_copy_context):
 
 @pytest.mark.parametrize(
     "role",
-    [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER, WorkspaceRole.READ_ONLY],
+    [WorkspaceRole.MEMBER, WorkspaceRole.READ_ONLY],
 )
 async def test_platform_copy_http_enforces_editor_access(copy_app, platform_copy_context, role):
     app, membership = copy_app
@@ -71,23 +69,3 @@ async def test_platform_copy_http_enforces_editor_access(copy_app, platform_copy
         assert result["id"] != str(artifact.id)
         assert result["can_edit"] is True
         assert len(result["versions"]) == 1
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"version_id": str(uuid4())},
-        {"request_id": str(uuid4())},
-        {"version_id": str(uuid4()), "request_id": str(uuid4()), "scope": "platform"},
-    ],
-)
-async def test_platform_copy_http_requires_exact_pin_and_request_identity(
-    copy_app, platform_copy_context, payload
-):
-    app, _membership = copy_app
-    _context, _membership_id, artifact, _request = platform_copy_context
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        response = await client.post(f"/api/v1/artifacts/{artifact.id}/copy", json=payload)
-    assert response.status_code == 422

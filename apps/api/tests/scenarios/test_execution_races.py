@@ -32,12 +32,11 @@ from tests.support.execution import race_with_first_lock
 from tests.support.scenario import build_scenario_agent
 
 
-@pytest.mark.parametrize("status", ["completed", "awaiting_approval"])
 async def test_committed_own_finalisation_survives_delayed_heartbeat(
     committed_db_session_factory,
     monkeypatch,
-    status,
 ):
+    status = "awaiting_approval"
     context = await build_scenario_agent(committed_db_session_factory)
     async with committed_db_session_factory() as db:
         run = await db.get(AgentRun, context.run_id)

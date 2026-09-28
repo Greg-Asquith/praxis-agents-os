@@ -31,18 +31,3 @@ async def test_paginate_counts_filtered_rows_not_window(db_session: AsyncSession
 
     assert total == 3
     assert [user.email for user in page] == ["page-b@example.com", "page-c@example.com"]
-
-
-async def test_paginate_empty_result_returns_empty_list_and_zero_total(
-    db_session: AsyncSession,
-) -> None:
-    page, total = await paginate(
-        db_session,
-        select(User).where(User.email == "missing@example.com"),
-        User.email.asc(),
-        limit=10,
-        offset=0,
-    )
-
-    assert page == []
-    assert total == 0

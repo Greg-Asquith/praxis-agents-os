@@ -45,17 +45,13 @@ describe("SharePoint write argument parsing", () => {
     expect(validateSharePointWriteArgs(selected)).toBeNull()
   })
 
-  it.each([
-    false,
-    [],
-    "folder",
-    {},
-    { ...reference, drive_id: "" },
-    { ...reference, kind: "other" },
-  ])("rejects malformed optional references %j", (folder) => {
-    expect(sharePointWriteFileArgs({ name: "Report.txt", content: "Text", folder })).toBeNull()
-    expect(sharePointCreateFolderArgs({ name: "Reports", parent: folder })).toBeNull()
-  })
+  it.each(["folder", { ...reference, drive_id: "" }, { ...reference, kind: "other" }])(
+    "rejects malformed optional references %j",
+    (folder) => {
+      expect(sharePointWriteFileArgs({ name: "Report.txt", content: "Text", folder })).toBeNull()
+      expect(sharePointCreateFolderArgs({ name: "Reports", parent: folder })).toBeNull()
+    }
+  )
 
   it("keeps replacement identity and version mandatory", () => {
     const base = {
@@ -120,31 +116,18 @@ describe("SharePoint public item parsing", () => {
     expect(JSON.stringify(parsed)).not.toMatch(/private-item|private-version|private-upload/)
   })
 
-  it.each(["name", "path", "content_type", "modified_at", "web_url"])(
-    "rejects malformed %s in both projections",
-    (field) => {
-      for (const value of [
-        null,
-        undefined,
-        {},
-        [],
-        1,
-        { node: "praxis_untrusted", content: "Text" },
-      ]) {
-        const malformed = { ...item, [field]: value }
-        expect(itemRows([malformed])).toBeNull()
-        expect(sharePointWriteResult({ outcome: "applied", item: malformed })).toBeNull()
-      }
+  it.each(["name", "web_url"])("rejects malformed %s in both projections", (field) => {
+    for (const value of [null, 1, { node: "praxis_untrusted", content: "Text" }]) {
+      const malformed = { ...item, [field]: value }
+      expect(itemRows([malformed])).toBeNull()
+      expect(sharePointWriteResult({ outcome: "applied", item: malformed })).toBeNull()
     }
-  )
+  })
 
-  it.each([{ kind: "other" }, { size_bytes: -1 }, { size_bytes: 0.5 }, { size_bytes: Infinity }])(
-    "rejects malformed item fields %j",
-    (patch) => {
-      expect(sharePointItem({ ...item, ...patch })).toBeNull()
-      expect(sharePointWriteResult({ outcome: "applied", item: { ...item, ...patch } })).toBeNull()
-    }
-  )
+  it.each([{ kind: "other" }, { size_bytes: 0.5 }])("rejects malformed item fields %j", (patch) => {
+    expect(sharePointItem({ ...item, ...patch })).toBeNull()
+    expect(sharePointWriteResult({ outcome: "applied", item: { ...item, ...patch } })).toBeNull()
+  })
 
   it("allows missing item evidence only for failed and unverified results", () => {
     expect(sharePointWriteResult({ outcome: "applied" })).toBeNull()

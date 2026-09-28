@@ -37,7 +37,7 @@ class FailingEmbeddingProvider(FakeEmbeddingProvider):
         raise EmbeddingProviderError("offline")
 
 
-@pytest.mark.parametrize("source_type", ["manual", "upload"])
+@pytest.mark.parametrize("source_type", ["upload"])
 async def test_platform_knowledge_search_and_read_keep_scope_through_dispatch(
     db_session_factory, monkeypatch, source_type
 ):

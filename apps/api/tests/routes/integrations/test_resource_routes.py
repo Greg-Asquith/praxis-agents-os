@@ -115,32 +115,6 @@ async def _connection_with_resources(
     return connection, available, removed
 
 
-async def test_list_includes_provider_removed_resources_for_read_only_member(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection, available, removed = await _connection_with_resources(
-        db_session, integration_identity
-    )
-    _reader, _workspace, _membership, headers = await create_identity(
-        db_session,
-        role=WorkspaceRole.READ_ONLY,
-        workspace=integration_identity["workspace"],
-    )
-
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/resources",
-        headers=headers,
-    )
-
-    assert response.status_code == 200, response.text
-    by_id = {row["id"]: row for row in response.json()}
-    assert set(by_id) == {str(available.id), str(removed.id)}
-    assert by_id[str(removed.id)]["availability"] == "removed"
-    assert by_id[str(available.id)]["metadata"] == {"role": "editor"}
-
-
 async def test_selection_replace_set_recomputes_status_and_audits_diff(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -235,85 +209,6 @@ async def test_selection_rejects_unknown_foreign_and_removed_resource_ids(
         assert response.status_code == 400, response.text
 
 
-async def test_editor_cannot_change_workspace_connection_resource_selection(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection, available, removed = await _connection_with_resources(
-        db_session, integration_identity
-    )
-    _editor, _workspace, _membership, editor_headers = await create_identity(
-        db_session,
-        role=WorkspaceRole.MEMBER,
-        workspace=integration_identity["workspace"],
-    )
-
-    for enabled_resource_ids in ([str(available.id)], []):
-        response = await db_async_client.put(
-            f"/api/v1/integrations/connections/{connection.id}/resources/selection",
-            headers=editor_headers,
-            json={"enabled_resource_ids": enabled_resource_ids},
-        )
-        assert response.status_code == 403, response.text
-
-    connection_id = connection.id
-    available_id = available.id
-    removed_id = removed.id
-    db_session.expire_all()
-    persisted_available = await db_session.get(IntegrationResource, available_id)
-    persisted_removed = await db_session.get(IntegrationResource, removed_id)
-    assert persisted_available is not None and persisted_available.enabled is False
-    assert persisted_removed is not None and persisted_removed.enabled is True
-    metadata_job = await db_session.scalar(
-        select(Job).where(
-            Job.kind == "tests.sync_selected_metadata",
-            Job.subject_id == connection_id,
-        )
-    )
-    assert metadata_job is None
-
-
-@pytest.mark.parametrize(
-    "status",
-    ["auth_pending", "needs_reauth", "needs_credential", "revoked"],
-)
-async def test_selection_rejects_connections_without_usable_credentials(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-    status: str,
-) -> None:
-    connection, available, removed = await _connection_with_resources(
-        db_session, integration_identity
-    )
-    connection_id = connection.id
-    available_id = available.id
-    removed_id = removed.id
-    connection.status = status
-    await db_session.commit()
-
-    response = await db_async_client.put(
-        f"/api/v1/integrations/connections/{connection_id}/resources/selection",
-        headers=integration_identity["headers"],
-        json={"enabled_resource_ids": [str(available_id)]},
-    )
-
-    assert response.status_code == 400, response.text
-    db_session.expire_all()
-    persisted_available = await db_session.get(IntegrationResource, available_id)
-    persisted_removed = await db_session.get(IntegrationResource, removed_id)
-    assert persisted_available is not None and persisted_available.enabled is False
-    assert persisted_removed is not None and persisted_removed.enabled is True
-    metadata_job = await db_session.scalar(
-        select(Job).where(
-            Job.kind == "tests.sync_selected_metadata",
-            Job.subject_id == connection_id,
-        )
-    )
-    assert metadata_job is None
-
-
 async def test_resource_route_rbac_and_user_connection_owner_rule(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -351,26 +246,3 @@ async def test_resource_route_rbac_and_user_connection_owner_rule(
         json={"enabled_resource_ids": [str(user_resource.id)]},
     )
     assert hidden_user_connection.status_code == 404
-
-
-async def test_trigger_discovery_returns_202_and_deduplicates(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection, _available, _removed = await _connection_with_resources(
-        db_session, integration_identity
-    )
-
-    first = await db_async_client.post(
-        f"/api/v1/integrations/connections/{connection.id}/discover",
-        headers=integration_identity["headers"],
-    )
-    second = await db_async_client.post(
-        f"/api/v1/integrations/connections/{connection.id}/discover",
-        headers=integration_identity["headers"],
-    )
-
-    assert first.status_code == 202, first.text
-    assert second.status_code == 202, second.text
-    assert second.json()["job_id"] == first.json()["job_id"]

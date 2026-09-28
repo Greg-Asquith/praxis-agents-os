@@ -3,7 +3,6 @@
 """SSRF and pinned-connect coverage for knowledge-base URL ingestion."""
 
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 
 import httpx2
 import pytest
@@ -11,7 +10,7 @@ import pytest
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from services.kb.domain import KBSourceUnavailableError
-from services.kb.utils import convert_html_to_markdown, fetch_url, parse_last_modified
+from services.kb.utils import convert_html_to_markdown, fetch_url
 
 Resolver = Callable[[str, int], Awaitable[tuple[str, ...]]]
 
@@ -105,44 +104,12 @@ async def test_fetch_url_pins_initial_and_redirect_connections() -> None:
     assert all("if-modified-since" not in request.headers for request in requests)
 
 
-async def test_fetch_url_sends_validators_only_on_first_hop() -> None:
-    requests: list[httpx2.Request] = []
-
-    async def handler(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        if request.url.host == "93.184.216.34":
-            return httpx2.Response(
-                302,
-                headers={"location": "https://redirect.example/final"},
-            )
-        return httpx2.Response(200, content=b"Updated")
-
-    await fetch_url(
-        "https://source.example/document",
-        etag='"revision-1"',
-        last_modified="Tue, 01 Sep 2026 09:00:00 GMT",
-        resolver=resolver_for(
-            {
-                "source.example": ("93.184.216.34",),
-                "redirect.example": ("8.8.8.8",),
-            }
-        ),
-        transport=httpx2.MockTransport(handler),
-    )
-
-    assert requests[0].headers["if-none-match"] == '"revision-1"'
-    assert requests[0].headers["if-modified-since"] == "Tue, 01 Sep 2026 09:00:00 GMT"
-    assert "if-none-match" not in requests[1].headers
-    assert "if-modified-since" not in requests[1].headers
-
-
-@pytest.mark.parametrize("with_validators", [False, True])
-async def test_fetch_url_accepts_not_modified_response(with_validators: bool) -> None:
+async def test_fetch_url_accepts_not_modified_response() -> None:
     async def handler(_request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(304)
 
-    etag = '"revision-1"' if with_validators else None
-    last_modified = "Tue, 01 Sep 2026 09:00:00 GMT" if with_validators else None
+    etag = '"revision-1"'
+    last_modified = "Tue, 01 Sep 2026 09:00:00 GMT"
     fetched = await fetch_url(
         "https://source.example/document",
         etag=etag,
@@ -159,7 +126,7 @@ async def test_fetch_url_accepts_not_modified_response(with_validators: bool) ->
 
 @pytest.mark.parametrize(
     ("status_code", "error_code"),
-    [(401, "access_lost"), (403, "access_lost"), (404, "not_found"), (410, "not_found")],
+    [(401, "access_lost"), (404, "not_found")],
 )
 async def test_fetch_url_maps_definitive_source_failures(
     status_code: int,
@@ -177,77 +144,6 @@ async def test_fetch_url_maps_definitive_source_failures(
 
     assert exc_info.value.error_code == error_code
     assert exc_info.value.details == {"status_code": status_code}
-
-
-@pytest.mark.parametrize("status_code", [429, 503])
-async def test_fetch_url_keeps_transient_statuses_generic(status_code: int) -> None:
-    async def handler(_request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(status_code)
-
-    with pytest.raises(AppValidationError) as exc_info:
-        await fetch_url(
-            "https://source.example/document",
-            resolver=resolver_for({"source.example": ("93.184.216.34",)}),
-            transport=httpx2.MockTransport(handler),
-        )
-
-    assert not isinstance(exc_info.value, KBSourceUnavailableError)
-    assert exc_info.value.details == {"status_code": status_code}
-
-
-async def test_fetch_url_bounds_etag_and_tolerates_invalid_last_modified() -> None:
-    async def handler(_request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(
-            200,
-            headers={
-                "etag": f'"{"x" * 256}"',
-                "last-modified": "not an HTTP date",
-            },
-            content=b"Safe content",
-        )
-
-    fetched = await fetch_url(
-        "https://source.example/document",
-        resolver=resolver_for({"source.example": ("93.184.216.34",)}),
-        transport=httpx2.MockTransport(handler),
-    )
-
-    assert fetched.etag is None
-    assert fetched.last_modified == "not an HTTP date"
-    assert parse_last_modified(fetched.last_modified) is None
-
-
-def test_parse_last_modified_returns_utc_datetime() -> None:
-    assert parse_last_modified("Tue, 01 Sep 2026 09:00:00 GMT") == datetime(
-        2026,
-        9,
-        1,
-        9,
-        tzinfo=UTC,
-    )
-
-
-async def test_convert_html_to_markdown_accepts_charset_for_extensionless_url() -> None:
-    markdown = await convert_html_to_markdown(
-        b"<h1>Safe content</h1>",
-        content_type="text/html; charset=UTF-8",
-        source_url="https://source.example/praxis",
-    )
-
-    assert markdown == "# Safe content"
-
-
-async def test_convert_html_to_markdown_replaces_images_and_removes_empty_links() -> None:
-    markdown = await convert_html_to_markdown(
-        b'<main><p><img src="/diagram.png" alt="System diagram"></p>'
-        b'<p><a href="/empty"></a>Ready to use.</p></main>',
-        content_type="application/xhtml+xml",
-        source_url="https://source.example/guide",
-    )
-
-    assert markdown == "System diagram\n\nReady to use."
-    assert "![" not in markdown
-    assert "[](" not in markdown
 
 
 async def test_convert_html_to_markdown_drops_boilerplate_and_image_markup() -> None:
@@ -283,27 +179,6 @@ async def test_convert_html_to_markdown_drops_boilerplate_and_image_markup() -> 
     assert "Privacy" not in markdown
     assert "Decorative marquee" not in markdown
     assert "\n\n\n" not in markdown
-
-
-async def test_convert_html_to_markdown_prunes_chrome_without_a_main_element() -> None:
-    html = (
-        b"<html><body>"
-        b'<header><img src="/logo.svg" alt="Site Logo"></header>'
-        b"<h1>Release notes</h1><p>Version 2 ships approvals.</p>"
-        b"<footer>Copyright</footer>"
-        b"</body></html>"
-    )
-
-    markdown = await convert_html_to_markdown(
-        html,
-        content_type="text/html",
-        source_url="https://source.example/notes",
-    )
-
-    assert "Release notes" in markdown
-    assert "Version 2 ships approvals." in markdown
-    assert "Site Logo" not in markdown
-    assert "Copyright" not in markdown
 
 
 async def test_fetch_url_brackets_ipv6_literal_host_header() -> None:

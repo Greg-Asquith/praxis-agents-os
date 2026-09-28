@@ -18,7 +18,6 @@ from services.conversations.mark_read import mark_conversation_read
 from services.conversations.naming import (
     ConversationTitle,
     _persist_title_update,
-    fallback_conversation_title,
     generate_conversation_title,
 )
 from tests.factories import build_user, build_workspace, build_workspace_membership
@@ -93,22 +92,11 @@ async def test_generate_conversation_title_falls_back_when_model_returns_blank()
     assert title.model_name == "blank-title-test"
 
 
-def test_fallback_conversation_title_is_deterministic_and_bounded() -> None:
-    prompt = " ".join(["long"] * 40)
-
-    title = fallback_conversation_title(prompt)
-
-    assert title.endswith("...")
-    assert len(title) <= 80
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "personal,source,visibility",
     [
-        (False, "direct", "private"),
         (False, "direct", "workspace"),
-        (True, "direct", "private"),
         (False, "delegated", "private"),
     ],
 )

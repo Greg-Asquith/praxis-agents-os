@@ -2,12 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import {
   buildAgentPayload,
-  buildModelTypeOptions,
   buildModelOptions,
-  buildProviderOptions,
   initialAgentFormState,
-  isAgentFormDirty,
-  modelSelectionForProvider,
   modelSelectionForType,
   simpleSelectionFromModel,
   validateAgentFormState,
@@ -274,16 +270,6 @@ describe("initialAgentFormState", () => {
       },
     })
   })
-
-  it("restores a stored identity color", () => {
-    const state = initialAgentFormState(
-      { ...agent, metadata: { identity_color: 5, note: "keep" } },
-      toolCatalog
-    )
-
-    expect(state.identityColor).toBe("5")
-    expect(state.metadataJson).toEqual({ identity_color: 5, note: "keep" })
-  })
 })
 
 describe("validateAgentFormState", () => {
@@ -347,39 +333,7 @@ describe("buildAgentPayload", () => {
     })
     expect(buildAgentPayload(validState(), "edit")).not.toHaveProperty("slug")
   })
-
-  it("stores a chosen identity color without dropping other metadata", () => {
-    expect(
-      buildAgentPayload(validState({ identityColor: "3", metadataJson: { note: "keep" } }), "edit")
-    ).toMatchObject({
-      metadata: { identity_color: 3, note: "keep" },
-    })
-    expect(
-      buildAgentPayload(
-        validState({ identityColor: "Auto", metadataJson: { identity_color: 3 } }),
-        "edit"
-      )
-    ).toMatchObject({ metadata: null })
-  })
-
-  it("returns the first validation error string for invalid state", () => {
-    expect(buildAgentPayload(validState({ name: "" }), "create")).toBe("Name is required.")
-    expect(buildAgentPayload(validState({ maxSteps: "0" }), "create")).toBe(
-      "Max steps must be a whole number from 1 to 100."
-    )
-  })
 })
-
-describe("isAgentFormDirty", () => {
-  it("tracks field-level changes", () => {
-    const initial = initialAgentFormState(agent, toolCatalog)
-
-    expect(isAgentFormDirty(initial, initial)).toBe(false)
-    expect(isAgentFormDirty({ ...initial, name: "Planner v2" }, initial)).toBe(true)
-    expect(isAgentFormDirty({ ...initial, codeModeEnabled: false }, initial)).toBe(true)
-  })
-})
-
 describe("buildModelOptions", () => {
   it("keeps a saved model override when it is absent from the catalog", () => {
     const catalog: ModelCatalogResponse = {
@@ -411,52 +365,6 @@ describe("buildModelOptions", () => {
 })
 
 describe("simple model selection", () => {
-  it("includes only configured providers that have catalog models", () => {
-    expect(buildProviderOptions(modelCatalog)).toEqual([
-      { label: "OpenAI", value: "openai" },
-      { label: "Anthropic", value: "anthropic" },
-      { label: "Google", value: "google" },
-    ])
-  })
-
-  it("orders available model types and omits types the provider lacks", () => {
-    expect(buildModelTypeOptions(modelCatalog, "google")).toEqual([
-      {
-        description: "Workspace default (OpenAI · GPT-6 Luna).",
-        label: "Automatic (recommended)",
-        value: "automatic",
-      },
-      {
-        description: "Fastest and lowest cost, for simple tasks.",
-        label: "Light",
-        value: "light",
-      },
-      {
-        description: "Fast and capable, best for most tasks.",
-        label: "Standard",
-        value: "standard",
-      },
-      {
-        description: "Larger models for complex work, higher cost.",
-        label: "Powerful",
-        value: "powerful",
-      },
-    ])
-    expect(buildModelTypeOptions(modelCatalog, "anthropic").at(-1)).toEqual({
-      description: "The most powerful model available, very high cost.",
-      label: "Max",
-      value: "max",
-    })
-  })
-
-  it("omits Automatic when the workspace default is unavailable", () => {
-    const catalogWithoutDefault = { ...modelCatalog, defaults: { agent_model: null } }
-
-    expect(
-      buildModelTypeOptions(catalogWithoutDefault, "openai").map((option) => option.value)
-    ).toEqual(["light", "standard"])
-  })
-
   it("maps model types and Automatic to the stored selection", () => {
     expect(modelSelectionForType(modelCatalog, "openai", "standard")).toBe("openai:gpt-6-luna")
     expect(modelSelectionForType(modelCatalog, "anthropic", "light")).toBe(
@@ -492,29 +400,4 @@ describe("simple model selection", () => {
       selectedLabel: "Custom (azure:deployment-model)",
     })
   })
-
-  it("keeps the type across providers and falls back to Standard when unavailable", () => {
-    expect(modelSelectionForProvider(modelCatalog, "anthropic", "openai:gpt-5.4-nano")).toBe(
-      "anthropic:claude-haiku-4-5"
-    )
-    expect(modelSelectionForProvider(modelCatalog, "google", "anthropic:claude-fable-5")).toBe(
-      "google:gemini-3.7-flash"
-    )
-  })
-})
-
-it("labels Google Cloud transport in provider options", () => {
-  const transported: ModelCatalogResponse = {
-    ...modelCatalog,
-    providers: modelCatalog.providers.map((provider) => ({
-      ...provider,
-      transport: "google-cloud",
-    })),
-  }
-  expect(buildProviderOptions(transported)).toEqual(
-    buildProviderOptions(modelCatalog).map((option) => ({
-      ...option,
-      label: `${option.label} via Google Cloud`,
-    }))
-  )
 })

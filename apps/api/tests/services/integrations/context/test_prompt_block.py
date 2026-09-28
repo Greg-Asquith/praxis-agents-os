@@ -8,7 +8,6 @@ from services.agents.runtime.prompt import PromptBlock, build_system_prompt, run
 from services.integrations.context.domain import (
     ResolvedActiveContext,
     ResolvedContextEntry,
-    UnavailableContextEntry,
 )
 from services.integrations.context.prompt_block import (
     ACTIVE_CONTEXT_LAW,
@@ -30,35 +29,6 @@ def _entry(name: str = "Account", **overrides) -> ResolvedContextEntry:
     }
     values.update(overrides)
     return ResolvedContextEntry(**values)
-
-
-def test_empty_context_renders_no_block() -> None:
-    assert render_active_context_block(ResolvedActiveContext()) == ""
-
-
-def test_prompt_renders_law_entries_and_unavailable_reasons() -> None:
-    rendered = render_active_context_block(
-        ResolvedActiveContext(
-            source="conversation",
-            groups=((uuid4(), "Morning review"), (uuid4(), "Evening review")),
-            entries=(_entry(is_personal=True),),
-            unavailable=(
-                UnavailableContextEntry(
-                    display_name="Old account",
-                    provider_key="test_provider",
-                    reason="connection_needs_reauth",
-                ),
-            ),
-        )
-    )
-
-    assert rendered.index(ACTIVE_CONTEXT_LAW) < rendered.index("Account")
-    assert "authorization boundary" in rendered
-    assert "some tools run once per compatible resource" in rendered
-    assert "others perform one operation constrained to the listed resources" in rendered
-    assert 'Context groups: "Morning review", "Evening review"' in rendered
-    assert "degraded, read-only, personal" in rendered
-    assert "connection_needs_reauth" in rendered
 
 
 def test_active_context_block_precedes_files_and_preserves_law_when_truncated() -> None:

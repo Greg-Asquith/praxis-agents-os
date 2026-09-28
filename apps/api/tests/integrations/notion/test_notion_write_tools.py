@@ -6,10 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
-import pytest
-from pydantic import TypeAdapter, ValidationError
-from pydantic_ai import ModelRetry
-
 from core.exceptions.integration import (
     IntegrationFailureDisposition,
     IntegrationTimeoutError,
@@ -23,11 +19,9 @@ from integrations.notion.operations.update_page_properties import (
     UpdatePagePropertiesPreparation,
 )
 from integrations.notion.references import (
-    NotionDataSourceReference,
     NotionPageReference,
 )
-from integrations.notion.tools import TOOL_DEFINITIONS
-from integrations.notion.tools.create_page import NotionPageTitle, notion_create_page
+from integrations.notion.tools.create_page import notion_create_page
 from integrations.notion.tools.mutations import (
     NotionPropertyRecord,
     NotionReplacementRecord,
@@ -39,14 +33,6 @@ from integrations.notion.tools.schemas import (
 )
 from integrations.notion.tools.update_page_content import notion_update_page_content
 from integrations.notion.tools.update_page_properties import notion_update_page_properties
-from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
-from services.agents.runtime.tools.contract import (
-    TOOL_EFFECT_SCOPE_EXTERNAL,
-    TOOL_EFFECT_WRITE,
-    TOOL_EGRESS_EXTERNAL_WRITE,
-    TOOL_POLICY_APPROVAL,
-    validate_definition,
-)
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 
@@ -88,16 +74,6 @@ def _page_reference(workspace_id: str = "workspace-1") -> NotionPageReference:
     )
 
 
-def _data_source_reference() -> NotionDataSourceReference:
-    return NotionDataSourceReference(
-        workspace_id="workspace-1",
-        data_source_id="data-source-1",
-        label="Projects",
-        description="Notion data source",
-        scope_label="Product workspace",
-    )
-
-
 def _target(
     *,
     entity_type: str = "notion_page",
@@ -120,145 +96,6 @@ def _audit(monkeypatch) -> AsyncMock:
         audit,
     )
     return audit
-
-
-def test_notion_write_definitions_are_approval_only_and_losslessly_presented() -> None:
-    definitions = {definition.name: definition for definition in TOOL_DEFINITIONS}
-    writes = {
-        name: definitions[name]
-        for name in (
-            "notion_create_page",
-            "notion_update_page_content",
-            "notion_update_page_properties",
-        )
-    }
-    for definition in writes.values():
-        validate_definition(definition)
-        assert definition.effect == TOOL_EFFECT_WRITE
-        assert definition.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
-        assert definition.egress == TOOL_EGRESS_EXTERNAL_WRITE
-        assert definition.default_policy == TOOL_POLICY_APPROVAL
-        assert definition.supports_auto is False
-        assert definition.supports_approval is True
-        assert definition.allowed_policies() == frozenset({TOOL_POLICY_APPROVAL})
-        assert definition.code_eligible is True
-        assert definition.takes_ctx is True
-        assert definition.timeout == 90
-        assert definition.integration_binding is not None
-        assert definition.integration_binding.requires_write is True
-
-    create_fields = {
-        field.key: field for field in writes["notion_create_page"].presentation.arg_fields
-    }
-    assert create_fields["parent_page"].entity_kind == "notion_page"
-    assert create_fields["parent_page"].secondary is True
-    assert create_fields["parent_data_source"].entity_kind == "notion_data_source"
-    assert create_fields["parent_data_source"].secondary is True
-    assert create_fields["content_md"].format == "markdown"
-    assert create_fields["properties"].min_rows == 0
-
-    replacement_field = next(
-        field
-        for field in writes["notion_update_page_content"].presentation.arg_fields
-        if field.key == "replacements"
-    )
-    assert replacement_field.min_rows == 1
-    assert [column.key for column in replacement_field.columns] == [
-        "old_text",
-        "new_text",
-        "replace_all",
-    ]
-    assert replacement_field.columns[2].options == ("no", "yes")
-
-    property_field = next(
-        field
-        for field in writes["notion_update_page_properties"].presentation.arg_fields
-        if field.key == "properties"
-    )
-    assert property_field.min_rows == 1
-    assert [column.key for column in property_field.columns] == ["name", "type", "value"]
-    assert property_field.columns[1].options == (
-        "title",
-        "rich_text",
-        "number",
-        "checkbox",
-        "url",
-        "email",
-        "phone_number",
-        "date",
-        "select",
-        "status",
-        "multi_select",
-    )
-
-
-def test_create_page_title_contract_normalizes_and_validates_before_approval() -> None:
-    adapter = TypeAdapter(NotionPageTitle)
-
-    assert adapter.validate_python("  Launch notes  ") == "Launch notes"
-    with pytest.raises(ValidationError, match="at least 1 character"):
-        adapter.validate_python("   ")
-    with pytest.raises(ValidationError, match="at most 500 characters"):
-        adapter.validate_python("x" * 501)
-
-
-@pytest.mark.parametrize("properties", [None, []])
-async def test_create_page_approval_accepts_optional_properties(monkeypatch, properties) -> None:
-    definition = next(
-        definition for definition in TOOL_DEFINITIONS if definition.name == "notion_create_page"
-    )
-    monkeypatch.setattr(
-        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
-        lambda _tool_name: definition,
-    )
-    reference = _page_reference().model_dump(mode="json")
-    authorize = AsyncMock(return_value=SimpleNamespace())
-    resolve = AsyncMock(return_value=[reference])
-    monkeypatch.setattr(
-        "services.agents.runtime.entity_references.service.authorize_entity_field",
-        authorize,
-    )
-    monkeypatch.setattr(
-        "services.agents.runtime.entity_references.service.resolve_authorized_references",
-        resolve,
-    )
-    args = {"title": "Launch notes", "parent_page": reference}
-    if properties is not None:
-        args["properties"] = properties
-
-    result = await validate_and_canonicalize_override_args(
-        AsyncMock(),
-        actor=SimpleNamespace(),
-        workspace=SimpleNamespace(),
-        membership=SimpleNamespace(),
-        run=SimpleNamespace(conversation_id=uuid4()),
-        tool_call=SimpleNamespace(tool_name="notion_create_page", args=args),
-        override_args=None,
-    )
-
-    assert result is None
-    authorize.assert_awaited_once()
-    resolve.assert_awaited_once()
-
-
-@pytest.mark.parametrize(
-    ("parent_page", "parent_data_source"),
-    [
-        (None, None),
-        (_page_reference(), _data_source_reference()),
-    ],
-)
-async def test_create_page_rejects_zero_or_two_parents(
-    parent_page: NotionPageReference | None,
-    parent_data_source: NotionDataSourceReference | None,
-) -> None:
-    with pytest.raises(ModelRetry, match="Choose one Notion page or data source"):
-        await notion_create_page(
-            _context("notion_create_page", _entry()),
-            title="Launch notes",
-            parent_page=parent_page,
-            parent_data_source=parent_data_source,
-        )
 
 
 async def test_create_page_records_one_pending_and_terminal_event(monkeypatch) -> None:

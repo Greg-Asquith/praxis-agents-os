@@ -8,9 +8,7 @@ from pydantic import ValidationError
 
 from integrations.google_ads.tools.run_report import DEFINITION as ADS
 from integrations.google_analytics.tools.list_report_fields import DEFINITION as FIELDS
-from integrations.google_analytics.tools.run_realtime_report import DEFINITION as REALTIME
 from integrations.google_analytics.tools.run_report import DEFINITION as ANALYTICS
-from integrations.google_search_console.tools.query_search_analytics import DEFINITION as SEARCH
 from services.agents.runtime.structured_results import preview_structured_result, result_json
 
 ANALYTICS_METADATA = {
@@ -40,27 +38,6 @@ ANALYTICS_DATA = {
             ANALYTICS,
             {"country": "GB", "activeUsers": 2},
             {**ANALYTICS_DATA, "metadata": ANALYTICS_METADATA},
-        ),
-        (
-            REALTIME,
-            {"country": "GB", "activeUsers": 2},
-            {**ANALYTICS_DATA, "window": [{"start_minutes_ago": 29, "end_minutes_ago": 0}]},
-        ),
-        (
-            SEARCH,
-            {
-                "keys": {"query": "example"},
-                "clicks": 2,
-                "impressions": 10,
-                "ctr": 0.2,
-                "position": 1,
-            },
-            {
-                "response_aggregation_type": "byProperty",
-                "start_date": "2026-09-01",
-                "end_date": "2026-09-20",
-                "search_type": "web",
-            },
         ),
     ],
 )

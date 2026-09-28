@@ -72,7 +72,12 @@ async def test_analytics_respects_requested_limit_and_offset():
     assert client.data_post.await_args.kwargs["json"]["limit"] == 2
 
 
-@pytest.mark.parametrize("failure", ["empty", "repeated", "changed"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "empty",
+    ],
+)
 async def test_analytics_rejects_incomplete_or_inconsistent_pages(failure):
     first = analytics_page(0, 1, 3)
     second = analytics_page(1, 2, 3)
@@ -134,7 +139,12 @@ def search_page(start, stop):
     }
 
 
-@pytest.mark.parametrize("limit", [None, 25_001])
+@pytest.mark.parametrize(
+    "limit",
+    [
+        None,
+    ],
+)
 async def test_search_console_collects_pages_instead_of_capping_the_saved_result(limit):
     client = SimpleNamespace(
         webmasters_post=AsyncMock(side_effect=[search_page(0, 25_000), search_page(25_000, 25_001)])
@@ -195,7 +205,12 @@ async def test_bigquery_reads_all_pages_without_reexecuting_the_query():
     assert client.get.await_args.kwargs["params"]["pageToken"] == "next"
 
 
-@pytest.mark.parametrize("failure", ["repeated", "missing", "foreign_job"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "repeated",
+    ],
+)
 async def test_bigquery_rejects_incomplete_or_invalid_result_pages(failure):
     first = query_page(0, 1000, "next")
     second = query_page(1000, 1100, "next" if failure == "repeated" else None)

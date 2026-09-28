@@ -15,24 +15,16 @@ from utils.document_markdown import (
 
 
 @pytest.mark.parametrize("cancel", [False, True])
-@pytest.mark.parametrize("operation", ["convert", "read", "find"])
-async def test_conversion_timeout_and_cancellation_kill_worker(
-    monkeypatch, tmp_path, cancel, operation
-):
+async def test_conversion_timeout_and_cancellation_kill_worker(monkeypatch, tmp_path, cancel):
     started = tmp_path / "worker.pid"
-    function, worker, arguments = {
-        "convert": (convert_document_to_markdown, "_convert_bounded_sync", {"max_bytes": 100}),
-        "read": (read_document_window, "_read_window_sync", {"offset": 0, "max_bytes": 100}),
-        "find": (find_document_text, "_find_text_sync", {"query": "notes", "limit": 10}),
-    }[operation]
-    monkeypatch.setattr(f"utils.document_markdown.{worker}", slow_conversion)
+    monkeypatch.setattr("utils.document_markdown._convert_bounded_sync", slow_conversion)
     task = asyncio.create_task(
-        function(
+        convert_document_to_markdown(
             str(started).encode(),
             content_type="text/plain",
             filename="probe.txt",
             timeout_seconds=5,
-            **arguments,
+            max_bytes=100,
         )
     )
     async with asyncio.timeout(4):
@@ -51,11 +43,7 @@ async def test_conversion_timeout_and_cancellation_kill_worker(
     "content_type",
     [
         "text/plain",
-        "text/markdown",
-        "text/csv",
-        "application/json",
         "text/html",
-        "application/xhtml+xml",
     ],
 )
 async def test_strict_utf8_rejection_and_default_replacement_in_real_worker(content_type):
@@ -100,8 +88,9 @@ async def test_real_worker_decodes_text_once(content_type, source):
     assert result.truncated is False
 
 
-@pytest.mark.parametrize("operation", ["read", "find"])
-@pytest.mark.parametrize("content_type", ["text/plain", "text/html"])
+@pytest.mark.parametrize(
+    ("operation", "content_type"), [("read", "text/plain"), ("find", "text/html")]
+)
 async def test_whole_document_worker_decodes_once_and_rejects_invalid_utf8(operation, content_type):
     from tests.support.document_conversion_worker import WorkerDecodedBytes
 

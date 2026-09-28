@@ -8,10 +8,7 @@ release used by the application.
 The source files map as follows:
 
 - `sample.pptx`: `pptx/pres.pptx`
-- `sample.ppt`: `ppt/handmade-sparsenotes.ppt`
-- `sample.docx`: `docx/text.docx`
 - `sample.doc`: `doc/text.doc`
-- `sample.xlsx`: `xlsx/sheet.xlsx`
 - `sample.xls`: `xls/sheet.xls`
 
 The upstream fixtures are licensed under the following terms:

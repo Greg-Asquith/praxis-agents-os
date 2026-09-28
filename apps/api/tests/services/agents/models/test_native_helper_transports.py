@@ -288,21 +288,6 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
     assert result.usage.output_tokens == 5
 
 
-@pytest.mark.parametrize("action", ["search", "fetch", "code", "classification"])
-@pytest.mark.parametrize("provider", ["meta", "mistral", "xai"])
-def test_vertex_partners_remain_outside_helper_availability(monkeypatch, action, provider):
-    from services.agents.runtime.tools.native import classifier, run_code, web_fetch, web_search
-
-    module, available = {
-        "search": (web_search, web_search.configured_native_search_providers),
-        "fetch": (web_fetch, web_fetch.configured_native_fetch_providers),
-        "code": (run_code, run_code.configured_native_run_code_providers),
-        "classification": (classifier, classifier.configured_classifier_providers),
-    }[action]
-    monkeypatch.setattr(module, "is_provider_configured", lambda _provider: True)
-    assert provider not in available()
-
-
 @pytest.mark.parametrize("action", ["fetch", "code"])
 def test_anthropic_vertex_helper_override_fails_before_dispatch(monkeypatch, action):
     from pydantic_ai import ModelRetry

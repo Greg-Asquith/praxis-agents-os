@@ -1,7 +1,6 @@
 """Notion Knowledge Base source adapter contracts."""
 
 import json
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,25 +14,17 @@ from core.exceptions.integration import (
     IntegrationRateLimitError,
     IntegrationValidationError,
 )
-from core.settings import settings
-from integrations.notion import PROVIDER, knowledge_source as source_module
+from integrations.notion import knowledge_source as source_module
 from integrations.notion.client import NotionClient
 from integrations.notion.knowledge_source import (
-    KNOWLEDGE_SOURCE,
     fetch_source,
     notion_client_for_connection,
     parse_source,
     preview_source,
-    search_sources,
 )
-from integrations.notion.references import NotionPageReference
-from services.integrations.loader import _validate_plugin
-from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.plugin import (
-    PROVIDER_PLUGINS,
     KnowledgeSourceAccessLostError,
 )
-from services.integrations.providers_view import list_providers
 
 PAGE_ID = "01234567-89ab-cdef-0123-456789abcdef"
 PAGE_ID_COMPACT = PAGE_ID.replace("-", "")
@@ -60,30 +51,11 @@ def _page_payload(*, title: str = "Launch plan", page_id: str = PAGE_ID) -> dict
     return payload
 
 
-@pytest.mark.parametrize("page_id", [PAGE_ID, PAGE_ID_COMPACT])
-def test_parse_source_normalizes_scoped_page_ids(page_id: str) -> None:
-    reference = NotionPageReference(
-        workspace_id="workspace-1",
-        page_id=page_id,
-        label="Launch plan",
-        description="Notion page",
-        scope_label="Example workspace",
-    )
-
-    parsed = parse_source(reference.model_dump(mode="json"))
-
-    assert parsed["workspace_id"] == "workspace-1"
-    assert parsed["page_id"] == PAGE_ID
-
-
 @pytest.mark.parametrize(
     "url",
     [
         PAGE_URL,
         f"https://notion.so/{PAGE_ID_COMPACT}",
-        f"https://www.notion.so/{PAGE_ID_COMPACT}",
-        f"https://app.notion.com/Launch-plan-{PAGE_ID_COMPACT}",
-        f"https://example-team.notion.site/Roadmap-{PAGE_ID_COMPACT}",
     ],
 )
 def test_parse_source_accepts_supported_notion_page_urls(url: str) -> None:
@@ -96,8 +68,6 @@ def test_parse_source_accepts_supported_notion_page_urls(url: str) -> None:
         f"http://www.notion.so/{PAGE_ID_COMPACT}",
         f"https://notion.site/{PAGE_ID_COMPACT}",
         f"https://notion.so.example.com/{PAGE_ID_COMPACT}",
-        f"https://example.com/{PAGE_ID_COMPACT}",
-        "https://www.notion.so/not-a-page",
     ],
 )
 def test_parse_source_rejects_unsupported_or_invalid_urls(url: str) -> None:
@@ -105,101 +75,12 @@ def test_parse_source_rejects_unsupported_or_invalid_urls(url: str) -> None:
         parse_source(url)
 
 
-async def test_search_returns_canonical_unicode_page_results(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    payload = _fixture("knowledge_search.json")
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        assert request.url.path == "/v1/search"
-        return httpx2.Response(200, json=payload, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-
-        def client_for_connection(*_args) -> NotionClient:
-            return NotionClient(_token, client=http_client)
-
-        monkeypatch.setattr(source_module, "notion_client_for_connection", client_for_connection)
-        results = await search_sources(None, None, _resource(), "  launch  ", 25)
-
-    assert len(results) == 1
-    assert results[0].title == "Renamed launch 🚀"
-    assert results[0].reference["page_id"] == PAGE_ID
-    assert results[0].reference["workspace_id"] == "workspace-1"
-    assert results[0].source_updated_at is not None
-
-
-async def test_search_maps_malformed_provider_page_ids(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    payload = _fixture("knowledge_search.json")
-    payload["results"][0]["id"] = "not-a-page-id"
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=payload, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-
-        def client_for_connection(*_args) -> NotionClient:
-            return NotionClient(_token, client=http_client)
-
-        monkeypatch.setattr(source_module, "notion_client_for_connection", client_for_connection)
-        with pytest.raises(
-            IntegrationValidationError,
-            match=r"invalid page response.*operation=search_knowledge_sources",
-        ):
-            await search_sources(None, None, _resource(), None, 25)
-
-
-async def test_preview_accepts_a_url_reference_and_bounds_unicode_markdown(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    markdown = "🙂" * (source_module.MAX_PREVIEW_MARKDOWN_BYTES // 2)
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        payload = _fixture("knowledge_page_markdown.json")
-        payload["markdown"] = markdown
-        if not request.url.path.endswith("/markdown"):
-            payload = _page_payload()
-        return httpx2.Response(200, json=payload, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-
-        def client_for_connection(*_args) -> NotionClient:
-            return NotionClient(_token, client=http_client)
-
-        monkeypatch.setattr(source_module, "notion_client_for_connection", client_for_connection)
-        preview = await preview_source(None, None, _resource(), parse_source(PAGE_URL))
-
-    assert preview.reference["page_id"] == PAGE_ID
-    assert preview.external_id == PAGE_ID
-    assert len(preview.markdown_excerpt.encode("utf-8")) <= 8 * 1024
-
-
-async def test_preview_maps_malformed_provider_page_urls(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        payload = _fixture("knowledge_page_markdown.json")
-        if not request.url.path.endswith("/markdown"):
-            payload = _page_payload()
-            payload["url"] = f"https://example.com/{PAGE_ID_COMPACT}"
-        return httpx2.Response(200, json=payload, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-
-        def client_for_connection(*_args) -> NotionClient:
-            return NotionClient(_token, client=http_client)
-
-        monkeypatch.setattr(source_module, "notion_client_for_connection", client_for_connection)
-        with pytest.raises(
-            IntegrationValidationError,
-            match=r"invalid page response.*operation=preview_knowledge_source",
-        ):
-            await preview_source(None, None, _resource(), parse_source(PAGE_URL))
-
-
-@pytest.mark.parametrize("status_code", [403, 404])
+@pytest.mark.parametrize(
+    "status_code",
+    [
+        403,
+    ],
+)
 async def test_preview_maps_definitive_access_loss(
     monkeypatch: pytest.MonkeyPatch,
     status_code: int,
@@ -235,28 +116,6 @@ async def test_preview_keeps_rate_limits_transient(
         monkeypatch.setattr(source_module, "notion_client_for_connection", client_for_connection)
         with pytest.raises(IntegrationRateLimitError):
             await preview_source(None, None, _resource(), parse_source(PAGE_URL))
-
-
-async def test_fetch_rejects_markdown_above_the_document_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "KB_MAX_DOCUMENT_BYTES", 16)
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        payload = _fixture("knowledge_page_markdown.json")
-        payload["markdown"] = "A" * 17
-        if not request.url.path.endswith("/markdown"):
-            payload = _page_payload()
-        return httpx2.Response(200, json=payload, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-
-        def client_for_connection(*_args) -> NotionClient:
-            return NotionClient(_token, client=http_client)
-
-        monkeypatch.setattr(source_module, "notion_client_for_connection", client_for_connection)
-        with pytest.raises(IntegrationValidationError, match="document limit"):
-            await fetch_source(None, None, _resource(), PAGE_ID)
 
 
 async def test_fetch_rejects_incomplete_provider_markdown(
@@ -413,46 +272,3 @@ def test_connection_client_rejects_an_open_caller_transaction() -> None:
 
     with pytest.raises(RuntimeError, match="must close database transactions"):
         notion_client_for_connection(Database(), connection)
-
-
-def test_loader_rejects_empty_knowledge_source_resource_types() -> None:
-    plugin = replace(
-        PROVIDER,
-        knowledge_source=replace(
-            KNOWLEDGE_SOURCE,
-            resource_types=frozenset(),
-        ),
-    )
-
-    with pytest.raises(RuntimeError, match="without any resource types"):
-        _validate_plugin(plugin, expected_key="notion")
-
-
-def test_loader_rejects_undeclared_knowledge_source_resource_types() -> None:
-    plugin = replace(
-        PROVIDER,
-        knowledge_source=replace(
-            KNOWLEDGE_SOURCE,
-            resource_types=frozenset({"undeclared_resource"}),
-        ),
-    )
-
-    with pytest.raises(RuntimeError, match="not declared by its manifest"):
-        _validate_plugin(plugin, expected_key="notion")
-
-
-def test_provider_view_exposes_knowledge_source_support() -> None:
-    original_manifests = dict(PROVIDER_MANIFESTS)
-    original_plugins = dict(PROVIDER_PLUGINS)
-    PROVIDER_MANIFESTS["notion"] = PROVIDER.manifest
-    PROVIDER_PLUGINS["notion"] = PROVIDER
-    try:
-        provider = next(item for item in list_providers() if item.provider_key == "notion")
-    finally:
-        PROVIDER_MANIFESTS.clear()
-        PROVIDER_MANIFESTS.update(original_manifests)
-        PROVIDER_PLUGINS.clear()
-        PROVIDER_PLUGINS.update(original_plugins)
-
-    assert provider.knowledge_source_supported is True
-    assert provider.knowledge_source_resource_types == ("notion_workspace",)

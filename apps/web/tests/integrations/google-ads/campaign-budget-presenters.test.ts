@@ -10,40 +10,6 @@ import { googleAdsRemoveCampaignBudgetsPresenter } from "@/integrations/google_a
 import { googleAdsUpdateCampaignBudgetAmountsPresenter } from "@/integrations/google_ads/presenters/update-campaign-budget-amounts"
 
 describe("Google Ads campaign budget presenters", () => {
-  it.each([
-    [
-      googleAdsUpdateCampaignBudgetAmountsPresenter,
-      "google_ads_update_campaign_budget_amounts",
-      { updates: [{ budget: budgetReference("55", "Brand budget"), amount: "12.50" }] },
-      "Brand budget",
-    ],
-    [
-      googleAdsAssignCampaignBudgetsPresenter,
-      "google_ads_assign_campaign_budgets",
-      {
-        campaigns: [campaignReference("10", "Brand campaign")],
-        destination_budget: budgetReference("55", "Shared budget"),
-        _budget_routes: [
-          {
-            campaign: campaignReference("10", "Brand campaign"),
-            previous_budget: budgetReference("54", "Old budget"),
-            destination_budget: budgetReference("55", "Shared budget"),
-          },
-        ],
-      },
-      "Brand campaign",
-    ],
-    [
-      googleAdsRemoveCampaignBudgetsPresenter,
-      "google_ads_remove_campaign_budgets",
-      { budgets: [budgetReference("55", "Unused budget", { reference_count: 0 })] },
-      "Unused budget",
-    ],
-  ] as const)("shows selected labels for failed %s", (presenter, name, args, label) => {
-    const html = render(presenter.render(props(activity(name, "failed", args))))
-    expect(html).toMatch(new RegExp(`data-slot="badge"[^>]*>${label}</span>`))
-  })
-
   it("shows trusted account currencies in the create approval", () => {
     const html = render(
       googleAdsCreateCampaignBudgetPresenter.render(
@@ -69,67 +35,8 @@ describe("Google Ads campaign budget presenters", () => {
       )
     )
 
-    expect(html).toContain("UK account")
-    expect(html).toContain("EU account")
     expect(html).toMatch(/£12\.50|GBP\s*12\.50/)
     expect(html).toMatch(/€12\.50|EUR\s*12\.50/)
-    expect(html).toContain("estimated")
-    expect(html).not.toContain("account currency")
-    expect(html).not.toContain("Account Currencies")
-  })
-
-  it("renders created and failed budget evidence without inferring success", () => {
-    const html = render(
-      googleAdsCreateCampaignBudgetPresenter.render(
-        props({
-          ...activity("google_ads_create_campaign_budget", "completed", null),
-          result: {
-            results: [
-              entry(
-                {
-                  amount: "12.5",
-                  amount_micros: 12_500_000,
-                  currency_code: "GBP",
-                  delivery_method: "STANDARD",
-                  explicitly_shared: true,
-                  name: "Autumn launch",
-                  outcome: "created",
-                  period: "DAILY",
-                  reference: budgetReference("55", "Autumn launch"),
-                },
-                "UK account",
-                "1234567890"
-              ),
-              entry(
-                {
-                  amount: "12.5",
-                  amount_micros: 12_500_000,
-                  currency_code: "EUR",
-                  delivery_method: "STANDARD",
-                  error_code: "TARGET_CPA_ERROR",
-                  explicitly_shared: true,
-                  message: "A budget with this name already exists.",
-                  name: "Autumn launch",
-                  outcome: "failed",
-                  period: "DAILY",
-                  reference: null,
-                },
-                "EU account",
-                "2234567890"
-              ),
-            ],
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("Created")
-    expect(html).toContain("Failed")
-    expect(html).toContain("Budget ID 55")
-    expect(html).toContain("Target CPA Error")
-    expect(html).not.toContain("TARGET_CPA_ERROR")
-    expect(html).toContain("A budget with this name already exists.")
-    expect(html).toContain("estimated per month")
   })
 
   it("blocks invalid total-budget combinations and decimal precision before approval", () => {
@@ -186,13 +93,8 @@ describe("Google Ads campaign budget presenters", () => {
       )
     )
 
-    expect(html).toContain("Review each selected budget amount")
-    expect(html).toContain("Autumn launch")
-    expect(html).toContain("Current")
     expect(html).toMatch(/£10\.00|GBP\s*10/)
-    expect(html).toContain("Proposed")
     expect(html).toMatch(/£15\.00|GBP\s*15/)
-    expect(html).toContain("1 campaign")
   })
 
   it("rejects an explicitly wrong entity kind", () => {
@@ -231,8 +133,6 @@ describe("Google Ads campaign budget presenters", () => {
     )
 
     expect(html).toContain("can&#x27;t be approved")
-    expect(html).toContain("Decline this request")
-    expect(html).toMatch(/<button[^>]*>Decline<\/button>/)
     expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Decline<\/button>/)
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Update<\/button>/)
   })
@@ -359,151 +259,15 @@ describe("Google Ads campaign budget presenters", () => {
       )
     )
 
-    expect(html).toContain("Before")
-    expect(html).toContain("Requested")
-    expect(html).toContain("After")
-    expect(html).toContain("Unconfirmed")
     expect(html).toContain("+50% from the previous amount")
-    expect(html).toContain("Already set")
-    expect(html).toContain("Unverified")
-    expect(html).toContain("Google Ads rejected this amount.")
     expect(html).toContain("0 campaigns")
     expect(html).not.toContain("50 campaigns")
-    expect(html).toContain("4 rows")
-    expect(html).toContain("Download Report CSV")
-  })
-
-  it("shows every campaign route before approval and after assignment", () => {
-    const destination = budgetReference("90", "Shared growth budget", {
-      explicitly_shared: true,
-      reference_count: 2,
-    })
-    const approvalHtml = render(
-      googleAdsAssignCampaignBudgetsPresenter.render(
-        props(
-          activity("google_ads_assign_campaign_budgets", "awaiting_approval", {
-            _budget_routes: [
-              {
-                campaign: campaignReference("10", "Brand"),
-                destination_budget: destination,
-                previous_budget: budgetReference("50", "Brand budget"),
-              },
-              {
-                campaign: campaignReference("20", "Shopping"),
-                destination_budget: destination,
-                previous_budget: destination,
-              },
-            ],
-            campaigns: [campaignReference("10", "Brand"), campaignReference("20", "Shopping")],
-            destination_budget: destination,
-          }),
-          approvalControls(),
-          toolUi([
-            field("destination_budget", "Destination Budget", "entity", true),
-            field("campaigns", "Campaigns", "entity_list", true),
-          ])
-        )
-      )
-    )
-    const resultHtml = render(
-      googleAdsAssignCampaignBudgetsPresenter.render(
-        props({
-          ...activity("google_ads_assign_campaign_budgets", "completed", null),
-          result: {
-            results: [
-              entry({
-                counts: { already_set: 1, assigned: 1, failed: 0, unverified: 0 },
-                destination_budget: { ...destination, reference_count: 3 },
-                samples: {
-                  already_set: [
-                    assignmentSample("20", "Shopping", destination, destination, "already_set"),
-                  ],
-                  assigned: [
-                    assignmentSample(
-                      "10",
-                      "Brand",
-                      budgetReference("50", "Brand budget"),
-                      destination,
-                      "assigned"
-                    ),
-                  ],
-                  failed: [],
-                  unverified: [],
-                },
-                samples_truncated: false,
-              }),
-            ],
-          },
-        })
-      )
-    )
-
-    expect(approvalHtml).toContain("Brand")
-    expect(approvalHtml).toContain("Shopping")
-    expect(approvalHtml).toContain("Shared growth budget")
-    expect(approvalHtml).toContain("Brand budget")
-    expect(approvalHtml).toContain(">Current<")
-    expect(approvalHtml).toContain(">Proposed<")
-    expect(resultHtml).toContain("Brand budget")
-    expect(resultHtml).toContain("Shared growth budget")
-    expect(resultHtml).toContain(">Before<")
-    expect(resultHtml).toContain(">Requested<")
-    expect(resultHtml).toContain(">After<")
-    expect(resultHtml).not.toContain("→")
-    expect(resultHtml).toContain("Already set")
-    expect(resultHtml).toContain("Assigned")
-  })
-
-  it("makes permanent removal explicit and preserves unverified results", () => {
-    const unused = budgetReference("70", "Legacy budget", { reference_count: 0 })
-    const approvalHtml = render(
-      googleAdsRemoveCampaignBudgetsPresenter.render(
-        props(
-          activity("google_ads_remove_campaign_budgets", "awaiting_approval", {
-            budgets: [unused],
-          }),
-          approvalControls(),
-          toolUi([field("budgets", "Unused Campaign Budgets", "entity_list", true)])
-        )
-      )
-    )
-    const resultHtml = render(
-      googleAdsRemoveCampaignBudgetsPresenter.render(
-        props({
-          ...activity("google_ads_remove_campaign_budgets", "completed", null),
-          result: {
-            results: [
-              entry({
-                counts: { failed: 0, removed: 1, unverified: 1 },
-                samples: {
-                  failed: [],
-                  removed: [removalSample(unused, "removed", "REMOVED")],
-                  unverified: [
-                    removalSample(budgetReference("71", "Uncertain budget"), "unverified", null),
-                  ],
-                },
-                samples_truncated: false,
-              }),
-            ],
-          },
-        })
-      )
-    )
-
-    expect(approvalHtml).toContain("cannot be undone")
-    expect(approvalHtml).toContain("zero linked campaigns")
-    expect(approvalHtml).toContain("Legacy budget")
-    expect(resultHtml).toContain("Removed")
-    expect(resultHtml).toContain("Unverified")
-    expect(resultHtml).toContain("Uncertain budget")
   })
 
   it.each([
     [googleAdsCreateCampaignBudgetPresenter, "google_ads_create_campaign_budget"],
-    [googleAdsUpdateCampaignBudgetAmountsPresenter, "google_ads_update_campaign_budget_amounts"],
     [googleAdsAssignCampaignBudgetsPresenter, "google_ads_assign_campaign_budgets"],
-    [googleAdsRemoveCampaignBudgetsPresenter, "google_ads_remove_campaign_budgets"],
-  ])("contains malformed, unverified, denied, and loading states for %s", (presenter, name) => {
+  ])("contains malformed and unverified states for %s", (presenter, name) => {
     const malformed = render(
       presenter.render(
         props({ ...activity(name, "completed", null), result: { results: [entry({ bad: true })] } })
@@ -530,14 +294,6 @@ describe("Google Ads campaign budget presenters", () => {
     expect(malformed).toContain("couldn&#x27;t confirm")
     expect(unverified).toContain("couldn&#x27;t verify whether Google Ads")
     expect(unverified).not.toContain("raw provider error")
-    const denied = activity(name, "denied", null)
-    denied.decisionReason = "The budget is too high."
-    const deniedHtml = render(presenter.render(props(denied)))
-    expect(deniedHtml).toContain("declined")
-    expect(deniedHtml).toContain("Declined")
-    expect(deniedHtml).toContain("The budget is too high.")
-    expect(deniedHtml).not.toContain("Failed")
-    expect(render(presenter.render(props(activity(name, "running", null))))).toContain("…")
   })
 })
 
@@ -589,51 +345,6 @@ function budgetReference(budgetId: string, label: string, overrides: Record<stri
     total_amount_micros: null,
     version: 1,
     ...overrides,
-  }
-}
-
-function campaignReference(campaignId: string, label: string) {
-  return {
-    campaign_id: campaignId,
-    customer_id: "1234567890",
-    entity_kind: "google_ads_campaign",
-    label,
-    version: 1,
-  }
-}
-
-function assignmentSample(
-  campaignId: string,
-  campaignLabel: string,
-  previousBudget: ReturnType<typeof budgetReference>,
-  requestedBudget: ReturnType<typeof budgetReference>,
-  outcome: "already_set" | "assigned"
-) {
-  return {
-    campaign: campaignReference(campaignId, campaignLabel),
-    error_code: null,
-    external_ref: outcome === "assigned" ? `customers/123/campaigns/${campaignId}` : null,
-    message: null,
-    outcome,
-    previous_budget: previousBudget,
-    requested_budget: requestedBudget,
-  }
-}
-
-function removalSample(
-  reference: ReturnType<typeof budgetReference>,
-  outcome: "removed" | "unverified",
-  resultingStatus: string | null
-) {
-  return {
-    error_code: null,
-    external_ref:
-      outcome === "removed" ? `customers/123/campaignBudgets/${reference.budget_id}` : null,
-    message: outcome === "unverified" ? "Check Google Ads before retrying." : null,
-    outcome,
-    previous_status: "ENABLED",
-    reference,
-    resulting_status: resultingStatus,
   }
 }
 

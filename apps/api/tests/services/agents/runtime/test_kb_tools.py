@@ -13,9 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from services.agents.runtime.entity_references.domain import KnowledgeDocumentReference
-from services.agents.runtime.tools.contract import TOOL_EFFECT_READ, TOOL_POLICY_AUTO
 from services.agents.runtime.tools.kb import (
-    KB_AGENT_SEARCH_DEFAULT_LIMIT,
     KnowledgeSearchFilters,
     ReadDocumentOutput,
     ReadRange,
@@ -23,7 +21,6 @@ from services.agents.runtime.tools.kb import (
     read_document,
     search_knowledge,
 )
-from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.agents.runtime.untrusted import UntrustedNode
 from services.embeddings.domain import EmbeddingProviderError
 from services.kb.create_document import create_kb_document
@@ -153,29 +150,6 @@ async def test_search_knowledge_clamps_limit_and_preserves_filters(
     SearchKnowledgeOutput.model_validate(output)
 
 
-async def test_search_knowledge_defaults_to_a_small_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-
-    async def fake_search(_db, **kwargs):
-        captured.update(kwargs)
-        return KBSearchResult(query="policy", mode="hybrid", results=[])
-
-    monkeypatch.setattr("services.agents.runtime.tools.kb.search_chunks", fake_search)
-    context = _context(
-        db=object(),
-        workspace=SimpleNamespace(id=uuid4()),
-        user=SimpleNamespace(id=uuid4()),
-    )
-    output = await search_knowledge(context, "policy")
-
-    assert captured["top_k"] == KB_AGENT_SEARCH_DEFAULT_LIMIT
-    assert "No matches" in output["next_step"]
-    with pytest.raises(ModelRetry, match="at least 1"):
-        await search_knowledge(context, "policy", limit=0)
-
-
 @pytest.mark.parametrize("scope", ["workspace", "platform"])
 async def test_read_document_caps_range(
     monkeypatch: pytest.MonkeyPatch,
@@ -234,51 +208,6 @@ async def test_read_document_caps_range(
         if scope == "platform"
         else content[5:17]
     )
-
-
-async def test_read_document_retries_for_invalid_range(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    document_id = uuid4()
-    now = datetime.now(UTC)
-    monkeypatch.setattr(
-        "services.agents.runtime.tools.kb.get_kb_document",
-        lambda *_args, **_kwargs: None,
-    )
-
-    async def fake_read(_db, **_kwargs):
-        return KBDocumentRead(
-            id=document_id,
-            scope="workspace",
-            workspace_id=uuid4(),
-            is_published=False,
-            title="Manual note",
-            concept_id=None,
-            source_type=KB_SOURCE_MANUAL,
-            source_updated_at=None,
-            source_sync_status=None,
-            source_synced_at=None,
-            status="ready",
-            processing_error=None,
-            summary=None,
-            external_url=None,
-            is_private=False,
-            chunk_count=1,
-            content_md="short",
-            meta={},
-            created_at=now,
-            updated_at=now,
-        )
-
-    monkeypatch.setattr("services.agents.runtime.tools.kb.get_kb_document", fake_read)
-    context = _context(
-        db=object(),
-        workspace=SimpleNamespace(id=uuid4()),
-        user=SimpleNamespace(id=uuid4()),
-    )
-
-    with pytest.raises(ModelRetry, match="less than the document length"):
-        await read_document(context, document_id, range=ReadRange(start=5))
 
 
 async def test_real_kb_pipeline_returns_plain_content_and_respects_visibility(
@@ -351,17 +280,3 @@ async def test_real_kb_pipeline_returns_plain_content_and_respects_visibility(
     assert url_read["content"] == url_content_source
     with pytest.raises(ModelRetry, match="not found"):
         await read_document(context, hidden_document.id)
-
-
-def test_kb_catalog_entries_are_bounded_read_tools_with_presentations() -> None:
-    for name in ("search_knowledge", "read_document"):
-        definition = RUNTIME_TOOL_CATALOG[name]
-        assert definition.provider == "kb"
-        assert definition.effect == TOOL_EFFECT_READ
-        assert definition.default_policy == TOOL_POLICY_AUTO
-        assert definition.configurable is False
-        assert definition.auto_mount is True
-        assert definition.presentation.icon in {"search", "book"}
-        assert definition.presentation.running_label
-        assert definition.presentation.completed_label
-        assert definition.presentation.failed_label

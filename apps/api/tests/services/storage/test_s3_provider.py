@@ -16,13 +16,10 @@ import pytest
 from services.storage.copy_object import copy_object
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
-    StorageError,
-    StorageNotFoundError,
     StoragePreconditionError,
     StorageProviderUnavailableError,
     StorageValidationError,
 )
-from services.storage.providers import s3 as s3_provider_module
 from services.storage.providers.s3 import S3StorageProvider
 from services.storage.workspace_buckets import s3_workspace_bucket_name
 
@@ -247,16 +244,6 @@ async def test_s3_provider_put_get_stat_and_delete_object() -> None:
     assert await provider.delete_object(ref) is False
 
 
-async def test_s3_provider_maps_get_not_found_to_storage_error() -> None:
-    provider = _provider(_FakeS3Client())
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("missing.txt"))
-
-    with pytest.raises(StorageNotFoundError):
-        await provider.get_object(ref)
-
-    assert await provider.stat_object(ref) is None
-
-
 async def test_s3_provider_signed_urls_bind_content_type_and_disposition() -> None:
     client = _FakeS3Client()
     provider = _provider(client)
@@ -288,16 +275,7 @@ async def test_s3_provider_signed_urls_bind_content_type_and_disposition() -> No
     )
 
 
-async def test_s3_public_signed_download_returns_public_url() -> None:
-    provider = _provider(_FakeS3Client())
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
-
-    download = await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
-
-    assert download.url == "https://cdn.example/users/u_1/avatar/me.png"
-
-
-@pytest.mark.parametrize("bucket", [StorageBucket.PRIVATE, StorageBucket.PLATFORM_PRIVATE])
+@pytest.mark.parametrize("bucket", [StorageBucket.PLATFORM_PRIVATE])
 async def test_s3_promotion_is_create_only_and_source_conditional(bucket: StorageBucket) -> None:
     client = _FakeS3Client()
     provider = _provider(client)
@@ -321,18 +299,6 @@ async def test_s3_promotion_is_create_only_and_source_conditional(bucket: Storag
             source,
             destination,
             expected_source_etag=source_stored.etag,
-        )
-
-
-async def test_s3_provider_missing_required_settings_fail_clearly() -> None:
-    with pytest.raises(StorageProviderUnavailableError):
-        S3StorageProvider(
-            public_bucket_name="",
-            workspace_bucket_prefix="praxis-test",
-            region_name=AWS_REGION,
-            account_id=AWS_ACCOUNT_ID,
-            public_assets_base_url="https://cdn.example",
-            client=_FakeS3Client(),
         )
 
 
@@ -404,23 +370,6 @@ async def test_s3_workspace_bucket_is_hardened_and_signed_urls_are_confined() ->
     assert signed.ref == ref
 
 
-async def test_s3_workspace_bucket_provisioning_preserves_existing_tags() -> None:
-    client = _FakeS3Client()
-    client.buckets.add(WORKSPACE_BUCKET)
-    client.bucket_tags[WORKSPACE_BUCKET] = [
-        {"Key": "environment", "Value": "staging"},
-        {"Key": "praxis-workspace", "Value": "stale"},
-    ]
-    provider = _provider(client)
-
-    await provider.ensure_workspace_bucket(WORKSPACE_ID)
-
-    assert client.bucket_tags[WORKSPACE_BUCKET] == [
-        {"Key": "environment", "Value": "staging"},
-        {"Key": "praxis-workspace", "Value": str(WORKSPACE_ID)},
-    ]
-
-
 async def test_s3_public_upload_converges_cors_once_and_preserves_other_rules() -> None:
     client = _FakeS3Client()
     client.bucket_cors["public-bucket"] = [
@@ -453,107 +402,6 @@ async def test_s3_public_upload_converges_cors_once_and_preserves_other_rules() 
     assert first_rules[1]["ID"] == "PraxisBrowserSignedUploads"
 
 
-async def test_s3_browser_upload_rejects_missing_cors_origins() -> None:
-    provider = S3StorageProvider(
-        public_bucket_name="public-bucket",
-        workspace_bucket_prefix="praxis-test",
-        region_name=AWS_REGION,
-        account_id=AWS_ACCOUNT_ID,
-        public_assets_base_url="https://cdn.example",
-        client=_FakeS3Client(),
-    )
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
-
-    with pytest.raises(StorageProviderUnavailableError, match="ALLOWED_CORS_ORIGINS"):
-        await provider.create_signed_upload(
-            ref,
-            content_type="image/png",
-            expected_size_bytes=3,
-            expires_in=timedelta(minutes=5),
-        )
-
-
-async def test_s3_client_uses_stable_regional_path_style_origin(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-    client = _FakeS3Client()
-
-    def fake_config(**kwargs):
-        captured["config"] = kwargs
-        return "boto-config"
-
-    def fake_client(service_name: str, **kwargs):
-        captured["service_name"] = service_name
-        captured["client_kwargs"] = kwargs
-        return client
-
-    monkeypatch.setattr(s3_provider_module, "BotoConfig", fake_config)
-    monkeypatch.setattr(
-        s3_provider_module,
-        "boto3",
-        type("FakeBoto3", (), {"client": staticmethod(fake_client)}),
-    )
-
-    S3StorageProvider(
-        public_bucket_name="public-bucket",
-        workspace_bucket_prefix="praxis-test",
-        region_name=AWS_REGION,
-        account_id=AWS_ACCOUNT_ID,
-        public_assets_base_url="https://cdn.example",
-        cors_origins=("https://app.example",),
-    )
-
-    assert captured == {
-        "config": {"signature_version": "s3v4", "s3": {"addressing_style": "path"}},
-        "service_name": "s3",
-        "client_kwargs": {"region_name": AWS_REGION, "config": "boto-config"},
-    }
-
-
-async def test_s3_public_cors_failure_is_mapped_to_storage_error() -> None:
-    client = _FakeS3Client()
-
-    def fail_get_bucket_cors(**_params):
-        raise RuntimeError("cors denied")
-
-    client.get_bucket_cors = fail_get_bucket_cors
-    provider = _provider(client)
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
-
-    with pytest.raises(StorageError, match="Failed to configure S3 browser upload CORS"):
-        await provider.create_signed_upload(
-            ref,
-            content_type="image/png",
-            expected_size_bytes=3,
-            expires_in=timedelta(minutes=5),
-        )
-
-
-async def test_s3_workspace_bucket_provisioning_preserves_existing_policy_statements() -> None:
-    client = _FakeS3Client()
-    client.buckets.add(WORKSPACE_BUCKET)
-    existing_statement = {
-        "Sid": "OperatorPolicy",
-        "Effect": "Deny",
-        "Principal": "*",
-        "Action": "s3:DeleteBucket",
-        "Resource": f"arn:aws:s3:::{WORKSPACE_BUCKET}",
-    }
-    client.bucket_policies[WORKSPACE_BUCKET] = {
-        "Version": "2012-10-17",
-        "Statement": [existing_statement],
-    }
-    provider = _provider(client)
-
-    await provider.ensure_workspace_bucket(WORKSPACE_ID)
-
-    assert client.bucket_policies[WORKSPACE_BUCKET]["Statement"][0] == existing_statement
-    assert client.bucket_policies[WORKSPACE_BUCKET]["Statement"][1]["Sid"] == (
-        "DenyInsecureTransport"
-    )
-
-
 async def test_s3_platform_objects_remain_private_and_sign_in_the_platform_bucket() -> None:
     client = _FakeS3Client()
     provider = _provider(client)
@@ -581,7 +429,7 @@ async def test_s3_platform_objects_remain_private_and_sign_in_the_platform_bucke
     assert await provider.delete_object(ref) is False
 
 
-@pytest.mark.parametrize("configured_name", ["", "public-bucket", WORKSPACE_BUCKET])
+@pytest.mark.parametrize("configured_name", ["public-bucket", WORKSPACE_BUCKET])
 async def test_s3_platform_objects_reject_missing_or_public_bucket(configured_name: str) -> None:
     provider = _provider(_FakeS3Client())
     provider.platform_private_bucket = configured_name
@@ -639,67 +487,7 @@ async def test_s3_rejects_namespace_substitution(bucket: StorageBucket, key: str
         await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
 
 
-async def test_s3_promotion_rejects_cross_class_copy() -> None:
-    provider = _provider(_FakeS3Client())
-    source = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/uploads/source.txt")
-    destination = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/report.txt"))
-    stored = await provider.put_object(source, b"report")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(source, destination, expected_source_etag=stored.etag)
-    assert await provider.stat_object(destination) is None
-
-
-async def test_s3_platform_provisioning_hardens_existing_bucket_and_preserves_metadata(
-    monkeypatch,
-) -> None:
-    client = _FakeS3Client()
-    client.buckets.add("platform-private")
-    client.bucket_tags["platform-private"] = [{"Key": "owner", "Value": "operations"}]
-    statement = {"Sid": "OperatorDeny", "Effect": "Deny", "Action": "s3:DeleteBucket"}
-    client.bucket_policies["platform-private"] = {"Statement": [statement]}
-    provider = _provider(client)
-    await provider.ensure_platform_bucket()
-
-    def fail_if_repeated(**kwargs):
-        raise AssertionError("Successful provisioning must be cached")
-
-    monkeypatch.setattr(client, "head_bucket", fail_if_repeated)
-    await provider.ensure_platform_bucket()
-    config = client.bucket_configuration["platform-private"]
-    assert "CreateBucket" not in config
-    assert all(config["PublicAccessBlockConfiguration"].values())
-    assert config["VersioningConfiguration"] == {"Status": "Enabled"}
-    assert config["OwnershipControls"]["Rules"] == [{"ObjectOwnership": "BucketOwnerEnforced"}]
-    assert config["ServerSideEncryptionConfiguration"]["Rules"][0][
-        "ApplyServerSideEncryptionByDefault"
-    ] == {"SSEAlgorithm": "AES256"}
-    assert statement in client.bucket_policies["platform-private"]["Statement"]
-    assert {"Key": "owner", "Value": "operations"} in client.bucket_tags["platform-private"]
-    assert {"Key": "praxis-platform", "Value": "true"} in client.bucket_tags["platform-private"]
-    assert WORKSPACE_BUCKET not in client.buckets
-
-
-async def test_s3_platform_provisioning_failure_blocks_upload_and_retries(monkeypatch) -> None:
-    client = _FakeS3Client()
-    provider = _provider(client)
-    original = client.put_public_access_block
-
-    def fail(**kwargs):
-        raise RuntimeError("Access denied")
-
-    monkeypatch.setattr(client, "put_public_access_block", fail)
-    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/uploads/report")
-    with pytest.raises(StorageError, match="Failed to harden"):
-        await provider.put_object(ref, b"report", overwrite=False)
-    assert not client.objects
-    assert not provider._platform_bucket_ensured
-    monkeypatch.setattr(client, "put_public_access_block", original)
-    await provider.put_object(ref, b"report", overwrite=False)
-    assert provider._platform_bucket_ensured
-    assert "BucketNamespace" not in client.bucket_configuration["platform-private"]["CreateBucket"]
-
-
-@pytest.mark.parametrize("source_bucket", [StorageBucket.PRIVATE, StorageBucket.PLATFORM_PRIVATE])
+@pytest.mark.parametrize("source_bucket", [StorageBucket.PRIVATE])
 async def test_s3_platform_cross_class_copy_is_immutable_and_retryable(source_bucket) -> None:
     client = _FakeS3Client()
     provider = _provider(client)

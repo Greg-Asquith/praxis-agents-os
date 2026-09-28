@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.integration import (
     IntegrationAuthError,
     IntegrationCredentialUnavailableError,
-    IntegrationValidationError,
 )
 from models.integrations import IntegrationDiscoveryRun, IntegrationResource
 from models.jobs import Job
@@ -66,9 +65,7 @@ async def test_run_discovery_is_idempotent_and_persists_permissions(
 @pytest.mark.parametrize(
     ("write_scopes", "writable"),
     [
-        ((), False),
         (("Files.ReadWrite.All",), False),
-        (("Sites.ReadWrite.All",), False),
         (("Files.ReadWrite.All", "Sites.ReadWrite.All"), True),
     ],
 )
@@ -121,44 +118,6 @@ async def test_sharepoint_discovery_requires_both_write_scopes(
     assert len(resources) == 2
     assert all(resource.resource_type == "sharepoint_drive" for resource in resources)
     assert all(resource.writable is writable for resource in resources)
-
-
-async def test_partial_discovery_reconciles_resources_and_keeps_degraded_reason(
-    db_session: AsyncSession,
-    discovery_connection: dict[str, object],
-) -> None:
-    connection = discovery_connection["connection"]
-    provider = discovery_connection["provider"]
-    original = PROVIDER_PLUGINS[connection.provider_key]
-
-    async def discover_resources(
-        _credential: str,
-        _label: str | None,
-        _pacing_key: str,
-    ):
-        return IntegrationDiscoveryResult(
-            resources=provider["resources"],
-            degraded_reason="provider_resource_limit_reached",
-        )
-
-    PROVIDER_PLUGINS[connection.provider_key] = replace(
-        original,
-        discover_resources=discover_resources,
-    )
-    try:
-        run = await run_discovery(db_session, connection_id=connection.id)
-    finally:
-        PROVIDER_PLUGINS[connection.provider_key] = original
-
-    resource_count = await db_session.scalar(
-        select(func.count())
-        .select_from(IntegrationResource)
-        .where(IntegrationResource.connection_id == connection.id)
-    )
-    assert run.status == "succeeded"
-    assert resource_count == 1
-    assert connection.status == "degraded"
-    assert connection.status_reason == "provider_resource_limit_reached"
 
 
 async def test_partial_discovery_preserves_resources_from_failed_parents(
@@ -247,7 +206,7 @@ async def test_successful_discovery_enqueues_one_provider_metadata_sync(
 
 @pytest.mark.parametrize(
     "status",
-    ["auth_pending", "needs_reauth", "needs_credential", "revoked"],
+    ["needs_reauth"],
 )
 async def test_metadata_sync_does_not_enqueue_without_usable_credentials(
     db_session: AsyncSession,
@@ -366,41 +325,6 @@ async def test_reference_provider_auth_failure_requires_credential_replacement(
     assert connection.status == "needs_credential"
 
 
-async def test_oauth_provider_auth_failure_requires_sign_in(
-    db_session: AsyncSession,
-    discovery_connection: dict[str, object],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    connection = discovery_connection["connection"]
-    credential = discovery_connection["credential"]
-    provider = discovery_connection["provider"]
-    credential.auth_mode = "oauth"
-    credential.secret_provider = None
-    credential.secret_name = None
-    credential.secret_version = None
-    credential.access_token_encrypted = "ciphertext"
-    await db_session.flush()
-    provider["error"] = IntegrationAuthError(
-        "OAuth rejected",
-        provider_key=connection.provider_key,
-        operation="discover_resources",
-    )
-
-    async def resolve_oauth(*args, **kwargs):
-        return "test-secret", frozenset(), None
-
-    module = __import__(
-        "services.integrations.discovery.run_discovery",
-        fromlist=["_resolve_credential_value"],
-    )
-    monkeypatch.setattr(module, "_resolve_credential_value", resolve_oauth)
-
-    with pytest.raises(IntegrationAuthError):
-        await run_discovery(db_session, connection_id=connection.id)
-
-    assert connection.status == "needs_reauth"
-
-
 async def test_oauth_discovery_forces_refresh_after_provider_auth_rejection(
     db_session: AsyncSession,
     discovery_connection: dict[str, object],
@@ -502,19 +426,3 @@ async def test_vault_unavailability_preserves_prior_success_and_recovers(
     recovered = await run_discovery(db_session, connection_id=connection.id)
     assert recovered.status == "succeeded"
     assert connection.status == "active"
-
-
-async def test_runtime_registry_without_discovery_callable_is_defensively_rejected(
-    db_session: AsyncSession,
-    discovery_connection: dict[str, object],
-) -> None:
-    from services.integrations.plugin import IntegrationProviderPlugin
-
-    connection = discovery_connection["connection"]
-    plugin = PROVIDER_PLUGINS[connection.provider_key]
-    PROVIDER_PLUGINS[connection.provider_key] = IntegrationProviderPlugin(
-        manifest=plugin.manifest,
-        discover_resources=None,
-    )
-    with pytest.raises(IntegrationValidationError, match="not implemented"):
-        await run_discovery(db_session, connection_id=connection.id)

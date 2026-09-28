@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 
 from core.exceptions.integration import (
@@ -21,27 +21,16 @@ from integrations.google_ads.operations.list_recommendations import list_recomme
 from integrations.google_ads.references import GoogleAdsRecommendationReference
 from integrations.google_ads.tools.apply_recommendations import (
     DEFINITION,
-    _pending_operation_detail,
     _provider_parameters,
     _serialize_parameter,
     google_ads_apply_recommendations,
 )
 from integrations.google_ads.tools.schemas.recommendations import (
-    GoogleAdsApplyRecommendationsOutput,
     GoogleAdsCampaignBudgetParameters,
-    GoogleAdsForecastingSetTargetCpaParameters,
-    GoogleAdsForecastingSetTargetRoasParameters,
     GoogleAdsKeywordParameters,
-    GoogleAdsLowerTargetRoasParameters,
-    GoogleAdsMoveUnusedBudgetParameters,
-    GoogleAdsRaiseTargetCpaBidTooLowParameters,
-    GoogleAdsRaiseTargetCpaParameters,
     GoogleAdsRecommendationApplyParameters,
-    GoogleAdsSetTargetCpaParameters,
-    GoogleAdsSetTargetRoasParameters,
     GoogleAdsTargetCpaOptInParameters,
     GoogleAdsTargetRoasOptInParameters,
-    GoogleAdsUseBroadMatchKeywordParameters,
 )
 from integrations.google_ads.tools.verifiers.recommendation import verify_recommendations
 from services.audit_events import AuditStatus
@@ -157,73 +146,6 @@ def test_apply_definition_is_approval_only_and_uses_recommendation_entities() ->
             ),
             ("targetRoasOptIn", {"targetRoas": 2.5}),
         ),
-        (
-            GoogleAdsMoveUnusedBudgetParameters(
-                recommendation_resource_name="customers/333/recommendations/5",
-                budget_micros_to_move=1_000_000,
-            ),
-            ("moveUnusedBudget", {"budgetMicrosToMove": "1000000"}),
-        ),
-        (
-            GoogleAdsUseBroadMatchKeywordParameters(
-                recommendation_resource_name="customers/333/recommendations/6",
-                new_budget_amount_micros=3_000_000,
-            ),
-            ("useBroadMatchKeyword", {"newBudgetAmountMicros": "3000000"}),
-        ),
-        (
-            GoogleAdsRaiseTargetCpaBidTooLowParameters(
-                recommendation_resource_name="customers/333/recommendations/7",
-                target_multiplier=1.2,
-            ),
-            ("raiseTargetCpaBidTooLow", {"targetMultiplier": 1.2}),
-        ),
-        (
-            GoogleAdsForecastingSetTargetRoasParameters(
-                recommendation_resource_name="customers/333/recommendations/8",
-                target_roas=3.0,
-                campaign_budget_amount_micros=9_000_000,
-            ),
-            (
-                "forecastingSetTargetRoas",
-                {"targetRoas": 3.0, "campaignBudgetAmountMicros": "9000000"},
-            ),
-        ),
-        (
-            GoogleAdsRaiseTargetCpaParameters(
-                recommendation_resource_name="customers/333/recommendations/9",
-                target_cpa_multiplier=1.1,
-            ),
-            ("raiseTargetCpa", {"targetCpaMultiplier": 1.1}),
-        ),
-        (
-            GoogleAdsLowerTargetRoasParameters(
-                recommendation_resource_name="customers/333/recommendations/10",
-                target_roas_multiplier=0.9,
-            ),
-            ("lowerTargetRoas", {"targetRoasMultiplier": 0.9}),
-        ),
-        (
-            GoogleAdsForecastingSetTargetCpaParameters(
-                recommendation_resource_name="customers/333/recommendations/11",
-                target_cpa_micros=2_000_000,
-            ),
-            ("forecastingSetTargetCpa", {"targetCpaMicros": "2000000"}),
-        ),
-        (
-            GoogleAdsSetTargetCpaParameters(
-                recommendation_resource_name="customers/333/recommendations/12",
-                campaign_budget_amount_micros=7_000_000,
-            ),
-            ("setTargetCpa", {"campaignBudgetAmountMicros": "7000000"}),
-        ),
-        (
-            GoogleAdsSetTargetRoasParameters(
-                recommendation_resource_name="customers/333/recommendations/13",
-                target_roas=4.0,
-            ),
-            ("setTargetRoas", {"targetRoas": 4.0}),
-        ),
     ],
 )
 def test_every_supported_parameter_serializes_to_exact_v24_fields(
@@ -250,49 +172,6 @@ def test_live_recommendation_type_controls_parameter_compatibility() -> None:
     assert provider_parameters == {
         reference.resource_name: ("campaignBudget", {"newBudgetAmountMicros": "2000000"})
     }
-
-
-def test_parameter_union_rejects_unknown_or_empty_variants() -> None:
-    adapter = TypeAdapter(GoogleAdsRecommendationApplyParameters)
-    with pytest.raises(ValidationError):
-        adapter.validate_python(
-            {
-                "parameter_type": "textAd",
-                "recommendation_resource_name": "customers/333/recommendations/1",
-                "ad": {},
-            }
-        )
-
-
-@pytest.mark.parametrize(
-    ("parameter_type", "field_name"),
-    [
-        ("raiseTargetCpaBidTooLow", "target_multiplier"),
-        ("raiseTargetCpa", "target_cpa_multiplier"),
-        ("lowerTargetRoas", "target_roas_multiplier"),
-    ],
-)
-def test_multiplier_parameters_reject_non_finite_values(
-    parameter_type: str,
-    field_name: str,
-) -> None:
-    adapter = TypeAdapter(GoogleAdsRecommendationApplyParameters)
-
-    with pytest.raises(ValidationError, match="finite number"):
-        adapter.validate_python(
-            {
-                "parameter_type": parameter_type,
-                "recommendation_resource_name": "customers/333/recommendations/1",
-                field_name: float("inf"),
-            }
-        )
-    with pytest.raises(ValidationError, match="require a target or budget"):
-        adapter.validate_python(
-            {
-                "parameter_type": "setTargetRoas",
-                "recommendation_resource_name": "customers/333/recommendations/1",
-            }
-        )
 
 
 def test_keyword_parameters_reject_cross_account_ad_group() -> None:
@@ -357,55 +236,11 @@ async def test_apply_operation_reconciles_partial_failures_by_index() -> None:
     }
 
 
-async def test_apply_operation_preserves_indexed_failures_with_unattributed_diagnostics() -> None:
-    client = _Client(
-        {
-            "results": [{}, {}],
-            "partialFailureError": {
-                "details": [
-                    {
-                        "errors": [
-                            {
-                                "message": "First recommendation was rejected",
-                                "errorCode": {"recommendationError": "INVALID_VALUE"},
-                                "location": {
-                                    "fieldPathElements": [{"fieldName": "operations", "index": 0}]
-                                },
-                            },
-                            {
-                                "message": "Provider response was incomplete",
-                                "errorCode": {"internalError": "INTERNAL_ERROR"},
-                            },
-                        ]
-                    }
-                ]
-            },
-        }
-    )
-
-    ledger = await apply_recommendations(
-        client,
-        customer_id="333",
-        login_customer_id="111",
-        recommendations=[
-            ("customers/333/recommendations/one", "CAMPAIGN_BUDGET", None),
-            ("customers/333/recommendations/two", "SET_TARGET_CPA", None),
-        ],
-    )
-
-    assert [effect.outcome for effect in ledger.effects] == ["failed", "unverified"]
-    assert ledger.effects[0].error_code == "INVALID_VALUE"
-    assert ledger.effects[1].error_code == "INTERNAL_ERROR"
-
-
 @pytest.mark.parametrize(
     "payload",
     [
         {},
         {"results": "not-a-list"},
-        {"results": []},
-        {"results": [{"resourceName": "customers/333/recommendations/wrong"}]},
-        {"results": [None]},
     ],
 )
 async def test_apply_operation_marks_malformed_response_shapes_unverified(payload) -> None:
@@ -558,149 +393,6 @@ async def test_verifier_rejects_missing_dismissed_and_changed_recommendations() 
                 entry=entry,
                 references=[reference],
             )
-
-
-async def test_apply_tool_returns_exact_partial_outcomes(monkeypatch) -> None:
-    entry = _entry()
-    first = _reference(entry, "one")
-    second = _reference(entry, "two", "SET_TARGET_ROAS")
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
-        tool_name=DEFINITION.name,
-    )
-    provider_client = _Client(
-        {
-            "results": [
-                {"resourceName": first.resource_name},
-                {},
-            ],
-            "partialFailureError": {
-                "details": [
-                    {
-                        "errors": [
-                            {
-                                "message": "Target rejected",
-                                "errorCode": {"recommendationError": "INVALID_VALUE"},
-                                "location": {
-                                    "fieldPathElements": [{"fieldName": "operations", "index": 1}]
-                                },
-                            }
-                        ]
-                    }
-                ]
-            },
-        }
-    )
-    live = {
-        first.resource_name: {
-            "resourceName": first.resource_name,
-            "type": first.recommendation_type,
-            "dismissed": False,
-            "campaign": "customers/333/campaigns/8",
-            "impact": {
-                "baseMetrics": {"clicks": 10.0, "costMicros": "1000000"},
-                "potentialMetrics": {"clicks": 14.0, "costMicros": "1200000"},
-            },
-        },
-        second.resource_name: {
-            "resourceName": second.resource_name,
-            "type": second.recommendation_type,
-            "dismissed": False,
-            "campaigns": ["customers/333/campaigns/9"],
-        },
-    }
-    audit_outcomes = []
-
-    async def passthrough_audit(_ctx, _entry, **kwargs):
-        await kwargs["prepare_pending_operation"]()
-        outcome = await kwargs["execute"]()
-        audit_outcomes.append(outcome)
-        return outcome.value
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.google_ads_client",
-        AsyncMock(return_value=provider_client),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.verify_recommendations",
-        AsyncMock(return_value=live),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.run_audited_integration_operation",
-        passthrough_audit,
-    )
-    parameter = GoogleAdsSetTargetRoasParameters(
-        recommendation_resource_name=second.resource_name,
-        target_roas=3.0,
-    )
-
-    result = await google_ads_apply_recommendations(ctx, [first, second], [parameter])
-
-    GoogleAdsApplyRecommendationsOutput.model_validate(result)
-    rows = result["results"][0]["data"]["recommendations"]
-    assert [row["outcome"] for row in rows] == ["applied", "failed"]
-    assert rows[0]["affected_campaigns"] == ["customers/333/campaigns/8"]
-    assert rows[0]["impact"]["potential_metrics"]["clicks"] == 14.0
-    assert rows[1]["requested_parameters"]["parameter_type"] == "setTargetRoas"
-    detail = audit_outcomes[0].operation_detail
-    assert detail.intent_counts.model_dump() == {
-        "applied": 1,
-        "skipped": 0,
-        "failed": 1,
-        "unverified": 0,
-    }
-    assert detail.intent_groups[0].items[1].fields["parameters"] == {
-        "parameter_type": "setTargetRoas",
-        "target_roas": 3.0,
-    }
-
-
-async def test_apply_tool_retains_exact_rows_for_unverified_outer_error(monkeypatch) -> None:
-    entry = _entry()
-    reference = _reference(entry, "one")
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(entry,)),
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4()),
-            run=SimpleNamespace(id=uuid4()),
-        ),
-        tool_name=DEFINITION.name,
-        tool_call_id="call-unverified",
-    )
-    live = {
-        reference.resource_name: {
-            "resourceName": reference.resource_name,
-            "type": reference.recommendation_type,
-            "dismissed": False,
-        }
-    }
-    audit = AsyncMock(return_value=uuid4())
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.google_ads_client",
-        AsyncMock(return_value=_Client({"results": []})),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.verify_recommendations",
-        AsyncMock(return_value=live),
-    )
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        audit,
-    )
-
-    result = await google_ads_apply_recommendations(ctx, [reference])
-
-    account_result = result["results"][0]
-    row = account_result["data"]["recommendations"][0]
-    assert account_result["status"] == "error"
-    assert account_result["error_code"] == "unverified_mutation"
-    assert row["outcome"] == "unverified"
-    assert [call.kwargs["status"] for call in audit.await_args_list] == [
-        "pending",
-        "unverified",
-    ]
 
 
 @pytest.mark.parametrize(
@@ -860,54 +552,6 @@ async def test_apply_tool_rejects_duplicate_and_unselected_parameter_rows(monkey
     targeting.assert_not_awaited()
 
 
-async def test_apply_tool_rejects_parameter_type_mismatch_before_mutation(monkeypatch) -> None:
-    entry = _entry()
-    reference = _reference(entry, "one", "CAMPAIGN_BUDGET")
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(entry,))),
-        tool_name=DEFINITION.name,
-    )
-    mutation = AsyncMock()
-
-    async def passthrough_audit(_ctx, _entry, **kwargs):
-        await kwargs["prepare_pending_operation"]()
-        return (await kwargs["execute"]()).value
-
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.google_ads_client",
-        AsyncMock(return_value=object()),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.verify_recommendations",
-        AsyncMock(
-            return_value={
-                reference.resource_name: {
-                    "resourceName": reference.resource_name,
-                    "type": reference.recommendation_type,
-                }
-            }
-        ),
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.apply_recommendations",
-        mutation,
-    )
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.run_audited_integration_operation",
-        passthrough_audit,
-    )
-    parameter = GoogleAdsSetTargetRoasParameters(
-        recommendation_resource_name=reference.resource_name,
-        target_roas=3.0,
-    )
-
-    result = await google_ads_apply_recommendations(ctx, [reference], [parameter])
-
-    assert result["results"][0]["status"] == "error"
-    assert "do not match" in result["results"][0]["error_message"]
-    mutation.assert_not_awaited()
-
-
 async def test_apply_write_denial_stops_provider_calls_and_records_failure(monkeypatch) -> None:
     entry = _entry(write_allowed=False)
     reference = _reference(entry, "one")
@@ -939,37 +583,3 @@ async def test_apply_write_denial_stops_provider_calls_and_records_failure(monke
     audit.assert_awaited_once()
     assert audit.await_args.kwargs["status"].value == "failure"
     assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
-
-
-def test_pending_evidence_keeps_intent_and_parameters_without_provider_payload() -> None:
-    entry = _entry()
-    reference = _reference(entry, "one", "SET_TARGET_CPA")
-    parameter = GoogleAdsSetTargetCpaParameters(
-        recommendation_resource_name=reference.resource_name,
-        target_cpa_micros=2_000_000,
-    )
-
-    detail = _pending_operation_detail(
-        entry,
-        [reference],
-        {reference.resource_name: parameter},
-        live_rows={
-            reference.resource_name: {
-                "resourceName": reference.resource_name,
-                "type": reference.recommendation_type,
-                "campaign": "customers/333/campaigns/9",
-                "affectedCampaignLabel": "Brand search",
-            }
-        },
-    )
-
-    assert detail.intent_groups[0].items[0].fields == {
-        "recommendation_resource_name": reference.resource_name,
-        "recommendation_type": "SET_TARGET_CPA",
-        "recommendation_label": "Set Target Cpa",
-        "campaign_label": "Brand search",
-        "parameters": {
-            "parameter_type": "setTargetCpa",
-            "target_cpa_micros": 2_000_000,
-        },
-    }

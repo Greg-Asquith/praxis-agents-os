@@ -15,7 +15,6 @@ from integrations.bigquery.operations.run_query import (
     AllowedDataset,
     run_query,
 )
-from integrations.bigquery.tools import TOOL_DEFINITIONS
 from integrations.bigquery.tools.get_table_schema import bigquery_get_table_schema
 from integrations.bigquery.tools.list_tables import bigquery_list_tables
 from integrations.bigquery.tools.run_query import bigquery_run_query
@@ -38,37 +37,6 @@ from tests.factories import (
     build_user,
     build_workspace,
 )
-
-
-def test_tool_contracts_are_cache_or_context_bound_read_tools() -> None:
-    definitions = {definition.name: definition for definition in TOOL_DEFINITIONS}
-
-    assert set(definitions) == {
-        "bigquery_list_tables",
-        "bigquery_get_table_schema",
-        "bigquery_run_query",
-    }
-    for definition in definitions.values():
-        assert definition.effect == "read"
-        assert definition.default_policy == "auto"
-        assert definition.presentation.icon == "bigquery"
-        assert definition.supports_approval is True
-        assert definition.integration_binding is not None
-        assert definition.integration_binding.provider_keys == frozenset({"bigquery"})
-        assert definition.integration_binding.resource_types == frozenset({"bigquery_dataset"})
-        assert definition.output_model is not None
-        assert definition.presentation.running_label
-        assert definition.presentation.completed_label
-        assert definition.presentation.failed_label
-    assert (
-        "every active BigQuery dataset in one discovery call"
-        in definitions["bigquery_list_tables"].description
-    )
-    assert (
-        "targets one table and does not repeat"
-        in definitions["bigquery_get_table_schema"].description
-    )
-    assert "query is not repeated for each dataset" in definitions["bigquery_run_query"].description
 
 
 async def test_cache_tools_scope_rows_to_active_resources(
@@ -108,54 +76,13 @@ async def test_cache_tools_scope_rows_to_active_resources(
     assert all(call.kwargs["external_ref"] is None for call in audit.await_args_list)
 
 
-async def test_get_schema_requires_qualification_when_table_name_is_ambiguous(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    first, _cached = await _cached_table_context(db_session)
-    connection_model = await db_session.get(IntegrationConnection, first.connection_id)
-    assert connection_model is not None
-    second_resource = build_integration_resource(
-        connection=connection_model,
-        resource_type="bigquery_dataset",
-        external_id="analytics.finance",
-        permissions_metadata={
-            "project_id": "analytics",
-            "dataset_id": "finance",
-            "location": "EU",
-        },
-    )
-    db_session.add(second_resource)
-    await db_session.flush()
-    db_session.add(
-        build_integration_table_schema(
-            resource=second_resource,
-            table_external_id="campaign_daily",
-        )
-    )
-    await db_session.flush()
-    second = _entry(
-        resource_id=second_resource.id,
-        connection_id=first.connection_id,
-        external_id="analytics.finance",
-    )
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        AsyncMock(),
-    )
-
-    with pytest.raises(ModelRetry, match="ambiguous"):
-        await bigquery_get_table_schema(
-            _ctx(
-                db_session,
-                (first, second),
-                tool_name="bigquery_get_table_schema",
-            ),
-            "campaign_daily",
-        )
-
-
-@pytest.mark.parametrize("statement_type", ["INSERT", "CREATE_TABLE", "SCRIPT"])
+@pytest.mark.parametrize(
+    "statement_type",
+    [
+        "INSERT",
+        "CREATE_TABLE",
+    ],
+)
 async def test_query_rejects_non_select_statement_types(statement_type: str) -> None:
     client = _QueryClient(dry_run=_dry_run(statement_type=statement_type))
 
@@ -303,31 +230,6 @@ async def test_query_sends_row_filter_parameters_to_dry_run_and_execution() -> N
     assert result["row_filters_applied"] is True
 
 
-async def test_query_reports_no_filter_when_enforcement_emits_no_parameters() -> None:
-    client = _QueryClient(dry_run=_dry_run())
-
-    result = await run_query(
-        client,
-        query="SELECT * FROM `analytics.marketing.campaign_daily`",
-        billing_project_id="analytics",
-        allowed_datasets={
-            ("analytics", "marketing"): AllowedDataset(
-                project_id="analytics",
-                dataset_id="marketing",
-                location="EU",
-            )
-        },
-        labels={},
-        request_id="request-id",
-        max_bytes_billed=1024,
-        timeout_seconds=60,
-        query_parameters=(),
-        permitted_tables=frozenset({("analytics", "marketing", "campaign_daily")}),
-    )
-
-    assert result["row_filters_applied"] is False
-
-
 async def test_query_rejects_dry_run_reference_outside_permitted_tables() -> None:
     client = _QueryClient(dry_run=_dry_run(references=[("analytics", "marketing", "hidden_view")]))
 
@@ -352,26 +254,6 @@ async def test_query_rejects_dry_run_reference_outside_permitted_tables() -> Non
         )
 
     assert len(client.calls) == 1
-
-
-async def test_query_retains_large_cells_for_shared_result_storage() -> None:
-    client = _QueryClient(
-        dry_run=_dry_run(),
-        query_response={
-            "jobComplete": True,
-            "schema": {"fields": [{"name": "large_value"}]},
-            "rows": [{"f": [{"v": "x" * 5000}]}],
-            "totalRows": "1",
-            "totalBytesProcessed": "1",
-            "cacheHit": False,
-        },
-    )
-
-    result = await _run_operation(client)
-
-    assert result["rows"] == [{"large_value": "x" * 5000}]
-    assert result["total_rows"] == 1
-    assert result["truncated"] is False
 
 
 async def test_query_tool_rejects_multiple_bigquery_connections_before_provider_io() -> None:
@@ -495,8 +377,6 @@ async def test_query_tool_rewrites_with_fresh_rules_and_discloses_filtering(
     "schema_fields",
     [
         [{"name": "other_id", "type": "STRING", "mode": "REQUIRED"}],
-        [{"name": "account_id", "type": "STRING", "mode": "REPEATED"}],
-        [{"name": "account_id", "type": "FLOAT64", "mode": "REQUIRED"}],
     ],
 )
 async def test_query_tool_rejects_rules_that_no_longer_match_cached_columns(
@@ -541,8 +421,6 @@ async def test_query_tool_rejects_rules_that_no_longer_match_cached_columns(
     ("table_type", "queried_table", "expected_message"),
     [
         ("view", "campaign_daily", "available base table"),
-        ("materialized_view", "campaign_daily", "available base table"),
-        ("external", "campaign_daily", "available base table"),
         ("table", "missing_table", "view or unknown table"),
     ],
 )

@@ -1,5 +1,3 @@
-import { createElement } from "react"
-import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import metaAdsModule from "@/integrations/meta_ads"
@@ -20,29 +18,7 @@ describe("Meta Ads integration module", () => {
       "meta_ads_get_accounts",
       "meta_ads_list_objects",
       "meta_ads_list_custom_conversions",
+      "meta_ads_list_activities",
     ])
-  })
-
-  it("explains partner access, system user tasks, token permissions and revocation", () => {
-    const html = renderToStaticMarkup(createElement(metaAdsModule.ConnectHelp))
-
-    for (const text of [
-      "partner",
-      "Manage campaigns",
-      "View performance",
-      "Advertise",
-      "Never",
-      "ads_read",
-      "ads_management",
-      "business_management",
-      "pages_show_list",
-      "pages_manage_ads",
-      "pages_read_engagement",
-      "Look for New Resources",
-      "personal user token",
-      "revoke",
-    ]) {
-      expect(html).toContain(text)
-    }
   })
 })

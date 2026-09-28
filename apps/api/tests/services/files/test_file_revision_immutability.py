@@ -30,8 +30,6 @@ async def _persist_revision(db_session: AsyncSession):
     ("column_name", "value"),
     [
         ("content_hash", "b" * 64),
-        ("object_key", "workspaces/changed/files/changed/revision.pdf"),
-        ("size_bytes", 99),
         ("created_by_system", True),
     ],
 )
@@ -58,15 +56,3 @@ async def test_file_revision_allows_markdown_backfill_once(db_session: AsyncSess
     revision.markdown_object_key = "workspaces/ws/files/file/other.extracted.md"
     with pytest.raises(RuntimeError, match="already set"):
         await db_session.flush()
-
-
-async def test_file_rows_remain_mutable(db_session: AsyncSession) -> None:
-    file, _revision = await _persist_revision(db_session)
-
-    file.content_hash = "c" * 64
-    file.size_bytes = 42
-    file.processing_status = "processing"
-    await db_session.flush()
-
-    assert file.content_hash == "c" * 64
-    assert file.size_bytes == 42

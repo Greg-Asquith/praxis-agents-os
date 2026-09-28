@@ -12,27 +12,9 @@ from services.skills.documents.domain import SkillDocumentUploadRequest
 from services.skills.documents.utils import (
     TRUNCATION_MARKER,
     convert_document_to_markdown,
-    truncate_markdown,
     validate_document_upload,
 )
 from tests.support.documents import tiny_pdf
-
-
-@pytest.mark.asyncio
-async def test_convert_document_to_markdown_passthrough_text_types() -> None:
-    markdown = await convert_document_to_markdown(
-        b"# Heading\nBody",
-        content_type="text/markdown",
-        filename="guide.md",
-    )
-    plain = await convert_document_to_markdown(
-        "café".encode(),
-        content_type="text/plain",
-        filename="notes.txt",
-    )
-
-    assert markdown == "# Heading\nBody"
-    assert plain == "café"
 
 
 @pytest.mark.asyncio
@@ -60,10 +42,6 @@ async def test_convert_document_to_markdown_converts_binary_docs() -> None:
     )
 
     assert "Skill document marker" in result
-
-
-def test_truncate_markdown_leaves_short_content_unchanged() -> None:
-    assert truncate_markdown("short", max_bytes=10) == "short"
 
 
 def test_validate_document_upload_enforces_cap_and_allows_replacement(

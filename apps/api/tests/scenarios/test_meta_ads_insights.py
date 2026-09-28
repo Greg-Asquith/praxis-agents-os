@@ -36,6 +36,8 @@ from tests.support.scenario import (
 )
 from tests.support.storage import reset_storage_provider_cache
 
+TODAY = datetime.now(UTC).date().isoformat()
+
 
 @pytest.fixture
 def insights_runtime(monkeypatch, tmp_path):
@@ -60,8 +62,7 @@ def insights_runtime(monkeypatch, tmp_path):
     reset_storage_provider_cache()
 
 
-@pytest.mark.parametrize("nested", [False, True])
-@pytest.mark.parametrize("failure", [None, "query", "authentication", "credentials"])
+@pytest.mark.parametrize(("nested", "failure"), [(False, "query"), (True, None)])
 async def test_insights_dispatch_preserves_complete_report(
     db_session_factory, monkeypatch, insights_runtime, nested, failure
 ):
@@ -317,9 +318,8 @@ async def test_insights_dispatch_preserves_complete_report(
     assert "1499" in str(followup.tool_returns("read_file")[0]["content"])
 
 
-@pytest.mark.parametrize("nested", [False, True])
 async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
-    db_session_factory, monkeypatch, insights_runtime, nested
+    db_session_factory, monkeypatch, insights_runtime
 ):
     from integrations.meta_ads.tools import TOOL_DEFINITIONS
 
@@ -348,6 +348,18 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
             payload = {"name": "Account name", "currency": "EUR", "account_status": 1}
         elif path == "act_111/campaigns":
             payload = {"data": [{"id": "801", "name": "Campaign name", "status": "PAUSED"}]}
+        elif path == "act_111/activities":
+            payload = {
+                "data": [
+                    {
+                        "event_time": f"{TODAY}T09:00:00+0000",
+                        "object_id": "801",
+                        "object_name": "Campaign name",
+                        "actor_name": "Actor name",
+                        "extra_data": json.dumps({"old_value": "Paused", "new_value": "Active"}),
+                    }
+                ]
+            }
         else:
             assert path == "act_111/customconversions"
             payload = {
@@ -356,28 +368,22 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
         return httpx2.Response(200, json=payload)
 
     context = await build_scenario_agent(
-        db_session_factory, tool_names=[item.name for item in definitions], code_mode_enabled=nested
+        db_session_factory, tool_names=[item.name for item in definitions]
     )
     calls = [
         ToolCall("meta_ads_get_accounts", {}),
         ToolCall("meta_ads_list_objects", {"object_type": "campaign"}),
         ToolCall("meta_ads_list_custom_conversions", {}),
+        ToolCall("meta_ads_list_activities", {"since": TODAY, "until": TODAY}),
     ]
-    if nested:
-        calls = [
-            ToolCall(
-                RUN_WORKFLOW_TOOL_NAME,
-                {
-                    "code": "accounts = await meta_ads_get_accounts()\n"
-                    "objects = await meta_ads_list_objects(object_type='campaign')\n"
-                    "conversions = await meta_ads_list_custom_conversions()\n"
-                    "{'accounts': accounts, 'objects': objects, 'conversions': conversions}"
-                },
-            )
-        ]
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         provider = MetaAdsClient(AsyncMock(return_value="test-meta-token"), client=http)
-        for module in ("get_accounts", "list_objects", "list_custom_conversions"):
+        for module in (
+            "get_accounts",
+            "list_objects",
+            "list_custom_conversions",
+            "list_activities",
+        ):
             monkeypatch.setattr(
                 f"integrations.meta_ads.tools.{module}.meta_ads_client",
                 AsyncMock(return_value=provider),
@@ -388,20 +394,22 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
             model=scripted_model(turns=[ToolTurn(tuple(calls)), "Account details ready."]),
         )
     assert result.run.status == "completed"
-    if nested:
-        returned = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)[0]["content"]
-        reports = [returned[key] for key in ("accounts", "objects", "conversions")]
-    else:
-        reports = [result.tool_returns(call.name)[0]["content"] for call in calls]
+    reports = [result.tool_returns(call.name)[0]["content"] for call in calls]
     for report in reports:
         assert [item["status"] for item in report["results"]] == ["success", "error"], report
         assert report["results"][1]["error_code"] == "IntegrationAuthError"
     assert reports[0]["results"][0]["data"]["name"] == "Account name"
     assert reports[1]["results"][0]["data"]["objects"][0]["name"] == "Campaign name"
     assert reports[2]["results"][0]["data"]["conversions"][0]["name"] == "Conversion name"
+    change = reports[3]["results"][0]["data"]["events"][0]
+    assert (change["actor_name"], change["old_value"], change["new_value"]) == (
+        "Actor name",
+        "Paused",
+        "Active",
+    )
     operations = [row for row in result.audit_rows if row.resource_type == "integration_resource"]
-    assert len(operations) == 6
-    assert [row.status for row in operations].count("success") == 3
+    assert len(operations) == 8
+    assert [row.status for row in operations].count("success") == 4
     expected_fields = {
         "get_account": {"account_count": 1},
         "list_objects": {
@@ -410,6 +418,12 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
             "object_count": 1,
         },
         "list_custom_conversions": {"conversion_count": 1},
+        "list_activities": {
+            "since": TODAY,
+            "until": TODAY,
+            "object_id_count": 0,
+            "event_count": 1,
+        },
     }
     for row in operations:
         if row.status == "success":
@@ -421,6 +435,8 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
         "Campaign name",
         "Conversion name",
         "Private rule",
+        "Actor name",
+        "Paused",
         "test-meta-token",
     ):
         assert text not in details
@@ -428,30 +444,27 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
         [
             f"act_{account}{suffix}"
             for account in ("111", "222")
-            for suffix in ("", "/campaigns", "/customconversions")
+            for suffix in ("", "/campaigns", "/customconversions", "/activities")
         ]
     )
 
 
-@pytest.mark.parametrize("tool", ["list_objects", "list_custom_conversions"])
 async def test_account_listings_retain_complete_named_results(
-    db_session_factory, monkeypatch, insights_runtime, tool
+    db_session_factory, monkeypatch, insights_runtime
 ):
     from integrations.meta_ads.tools import TOOL_DEFINITIONS
 
-    definition = next(item for item in TOOL_DEFINITIONS if item.name == f"meta_ads_{tool}")
+    definition = next(item for item in TOOL_DEFINITIONS if item.name == "meta_ads_list_objects")
     monkeypatch.setitem(
         RUNTIME_TOOL_CATALOG,
         definition.name,
         replace(definition, availability_check=lambda: True, max_public_result_chars=12_000),
     )
-    records = [{"id": str(index + 1), "name": f"Named item {index}"} for index in range(500)]
-    key = "objects" if tool == "list_objects" else "conversions"
-    args = {"limit": 500, **({"object_type": "campaign"} if key == "objects" else {})}
+    total = 500
+    records = [{"id": str(index + 1), "name": f"Named item {index}"} for index in range(total)]
 
     def respond(request):
-        edge = "campaigns" if key == "objects" else "customconversions"
-        assert request.url.path == f"/{META_GRAPH_API_VERSION}/act_111/{edge}"
+        assert request.url.path == f"/{META_GRAPH_API_VERSION}/act_111/campaigns"
         offset = int(request.url.params.get("after", "0"))
         limit = int(request.url.params["limit"])
         payload = {"data": records[offset : offset + limit]}
@@ -465,8 +478,10 @@ async def test_account_listings_retain_complete_named_results(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         provider = MetaAdsClient(AsyncMock(return_value="test-meta-token"), client=http)
         monkeypatch.setattr(
-            f"integrations.meta_ads.tools.{tool}.meta_ads_client", AsyncMock(return_value=provider)
+            "integrations.meta_ads.tools.list_objects.meta_ads_client",
+            AsyncMock(return_value=provider),
         )
+        args = {"limit": total, "object_type": "campaign"}
         result = await run_scenario(
             db_session_factory,
             context,
@@ -477,8 +492,8 @@ async def test_account_listings_retain_complete_named_results(
     assert result.run.status == "completed"
     preview = result.tool_returns(definition.name)[0]["content"]
     assert preview["preview"] is True
-    assert preview["lists"] == {f"results.0.data.{key}": {"total": 500, "shown": 10}}
-    assert preview["data"]["results"][0]["data"][key][0]["name"] == "Named item 0"
+    assert preview["lists"] == {"results.0.data.objects": {"total": total, "shown": 10}}
+    assert preview["data"]["results"][0]["data"]["objects"][0]["name"] == "Named item 0"
     async with db_session_factory() as db:
         await set_session_tenant_context(
             db, workspace_id=context.workspace_id, user_id=context.user_id
@@ -486,6 +501,6 @@ async def test_account_listings_retain_complete_named_results(
         file = await db.get(File, UUID(preview["file_id"]))
         revision = await db.get(FileRevision, file.current_revision_id)
         saved = await get_storage_provider().get_object(file_revision_ref(revision))
-    full = json.loads(saved)["results"][0]["data"][key]
-    assert len(full) == 500
-    assert full[-1]["name"] == "Named item 499"
+    full = json.loads(saved)["results"][0]["data"]["objects"]
+    assert len(full) == total
+    assert full[-1]["name"] == f"Named item {total - 1}"

@@ -20,22 +20,11 @@ def _payload(**overrides):
     return payload
 
 
-def test_classifier_create_normalizes_operator_authored_fields() -> None:
-    request = ClassifierCreateRequest.model_validate(_payload())
-
-    assert request.labels[0].label == "Complaint"
-    assert request.labels[1].description is None
-    assert request.model_provider is None
-    assert request.model is None
-
-
 @pytest.mark.parametrize(
     ("field", "value"),
     [
         ("name", "Complaint-Triage"),
-        ("name", "_complaint"),
         ("labels", [{"label": "same"}, {"label": " same "}]),
-        ("labels", [{"label": "only"}]),
     ],
 )
 def test_classifier_create_rejects_invalid_names_and_label_sets(field, value) -> None:

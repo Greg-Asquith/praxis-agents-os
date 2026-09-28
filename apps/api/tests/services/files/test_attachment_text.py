@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from models.files import File, FileRevision
-from services.files import attachment_text_payload, markdown_for_revision
+from services.files import markdown_for_revision
 from services.storage.domain import StorageObjectRef
 from tests.factories import build_file, build_file_revision, build_workspace
 
@@ -66,41 +66,6 @@ async def test_markdown_for_revision_converts_original_on_demand(
     )
     assert file.processing_status == "pending"
     assert revision.markdown_object_key is None
-
-
-@pytest.mark.parametrize(
-    ("content_type", "expected_label"),
-    [
-        ("application/vnd.ms-powerpoint", "PowerPoint"),
-        ("application/vnd.openxmlformats-officedocument.presentationml.presentation", "PowerPoint"),
-        ("application/msword", "Word"),
-        ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Word"),
-        ("application/vnd.ms-excel", "Spreadsheet"),
-        ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Spreadsheet"),
-        ("text/csv", "CSV"),
-        ("text/html", "HTML"),
-        ("text/markdown", "Markdown"),
-        ("text/plain", "Text"),
-        ("application/json", "JSON"),
-        ("application/x-custom-document", "application/x-custom-document"),
-    ],
-)
-def test_attachment_text_payload_names_format(
-    content_type: str,
-    expected_label: str,
-) -> None:
-    file, revision = _build_document(content_type=content_type)
-
-    payload = attachment_text_payload(file, revision, "# Converted content").decode("utf-8")
-
-    assert payload == (
-        "Attached file: Q3 board deck.pptx\n"
-        f"File id: {file.id}\n"
-        f"Original format: {expected_label} ({content_type}), 14,208,113 bytes\n"
-        "This is a text conversion. To work with the original file (for example to edit it "
-        "or read charts and images), pass the file id to run_code.\n\n"
-        "# Converted content"
-    )
 
 
 def _build_document(

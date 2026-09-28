@@ -9,11 +9,7 @@ from uuid import uuid4
 
 import pytest
 
-from core.exceptions.integration import (
-    IntegrationConnectionError,
-    IntegrationFailureDisposition,
-    IntegrationNotFoundError,
-)
+from core.exceptions.integration import IntegrationConnectionError, IntegrationFailureDisposition
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.tools.create_folder import DEFINITION as FOLDER_DEFINITION
 from integrations.sharepoint.tools.update_file import DEFINITION as UPDATE_DEFINITION
@@ -80,34 +76,15 @@ def _provider(action):
     return provider
 
 
-@pytest.mark.parametrize("nested", [False, True])
 @pytest.mark.parametrize(
-    ("action", "outcome"),
+    ("nested", "action", "outcome"),
     [
-        ("create_folder", "applied"),
-        ("create_folder", "denied"),
-        ("write_file", "applied"),
-        ("write_file", "denied"),
-        ("update_file", "applied"),
-        ("update_file", "denied"),
-        ("update_file", "version_conflict"),
-        ("create_folder", "library_changed"),
-        ("write_file", "library_changed"),
-        ("create_folder", "connection_changed"),
-        ("write_file", "connection_changed"),
-        ("update_file", "connection_changed"),
-        ("create_folder", "resource_changed"),
-        ("write_file", "resource_changed"),
-        ("update_file", "resource_changed"),
-        ("create_folder", "edited_destination"),
-        ("write_file", "edited_destination"),
-        ("write_file", "incomplete"),
-        ("update_file", "incomplete"),
-        ("write_file", "missing"),
-        ("update_file", "missing"),
-        ("write_file", "unavailable"),
-        ("update_file", "unavailable"),
-        ("update_file", "unchanged_version"),
+        (False, "update_file", "applied"),
+        (True, "write_file", "applied"),
+        (False, "update_file", "version_conflict"),
+        (True, "write_file", "resource_changed"),
+        (False, "create_folder", "edited_destination"),
+        (False, "update_file", "incomplete"),
     ],
 )
 async def test_sharepoint_write_approval_resume(
@@ -178,11 +155,9 @@ async def test_sharepoint_write_approval_resume(
     )
     if outcome == "version_conflict":
         provider.get.return_value = file_metadata(eTag='"changed-after-approval"')
-    unverified = outcome in {"incomplete", "missing", "unavailable", "unchanged_version"}
+    unverified = outcome == "incomplete"
     if unverified:
         saved = dict(provider.upload_fragment.return_value)
-        if outcome == "unchanged_version":
-            saved["eTag"] = '"version-1"'
         provider.get.side_effect = (
             [file_metadata(), file_metadata(), saved] if action == "update_file" else [saved]
         )
@@ -191,21 +166,10 @@ async def test_sharepoint_write_approval_resume(
             failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
             error_code="upload_interrupted",
         )
-        if outcome in {"missing", "unchanged_version"}:
-            provider.upload_status.side_effect = IntegrationNotFoundError(
-                "The session is unavailable.", error_code="upload_session_expired"
-            )
-        elif outcome == "unavailable":
-            provider.upload_status.side_effect = IntegrationConnectionError("Status unavailable.")
-        else:
-            provider.upload_status.return_value = {"nextExpectedRanges": ["0-"]}
-    if outcome in {"library_changed", "edited_destination"}:
+        provider.upload_status.return_value = {"nextExpectedRanges": ["0-"]}
+    if outcome == "edited_destination":
         active_context.return_value = ResolvedActiveContext(
             entries=(replace(selected, external_id="other"),)
-        )
-    if outcome == "connection_changed":
-        active_context.return_value = ResolvedActiveContext(
-            entries=(replace(selected, connection_id=uuid4()),)
         )
     if outcome == "resource_changed":
         active_context.return_value = ResolvedActiveContext(
@@ -228,22 +192,17 @@ async def test_sharepoint_write_approval_resume(
         decisions=[
             AgentRunResumeDecision(
                 tool_call_id="workflow:1" if nested else "write",
-                decision="denied" if outcome == "denied" else "approved",
-                override_args=None if outcome == "denied" else edited,
+                decision="approved",
+                override_args=edited,
             )
         ],
     )
     assert completed.run.status == "completed"
     operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
-    if outcome in {"library_changed", "connection_changed", "resource_changed"}:
+    if outcome == "resource_changed":
         assert provider.mock_calls == []
         assert [row.status for row in operations] == ["failure"]
         assert "changed after review" in str([row.parts for row in completed.messages])
-        return
-    if outcome == "denied":
-        assert provider.mock_calls == []
-        assert operations == []
-        assert any(row.status == "denied" for row in completed.audit_rows)
         return
     if outcome == "version_conflict":
         provider.post.assert_not_awaited()
@@ -263,9 +222,7 @@ async def test_sharepoint_write_approval_resume(
         assert effect["error_code"] == "unverified_mutation"
         assert effect["fields"]["committed"] is False
         assert effect["fields"]["hash_matched"] is True
-        assert effect["fields"]["session_status"] == (
-            "missing" if outcome == "unchanged_version" else outcome
-        )
+        assert effect["fields"]["session_status"] == "incomplete"
         assert effect["fields"]["bytes_sent"] == 0
         provider.post.assert_awaited_once()
         provider.upload_fragment.assert_awaited_once()

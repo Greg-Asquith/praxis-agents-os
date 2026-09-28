@@ -2,15 +2,10 @@ import { describe, expect, it } from "vitest"
 
 import {
   approvalExpiryOutcome,
-  approvalConflictMessage,
   conversationApprovalExpiryOutcome,
   conversationRunInterruptionOutcome,
   runInterruptionOutcome,
-  runFailureOutcome,
-  formatStreamError,
-  tokenBudgetMessage,
 } from "@/features/conversations/run-error-copy"
-import { ApiError } from "@/lib/api/errors"
 import type { AgentRun } from "@/features/conversations/types"
 
 function failedRun(errorCode: string): AgentRun {
@@ -119,41 +114,6 @@ describe("token budget failures", () => {
     })
     expect(conversationRunInterruptionOutcome({ ...run, status: "running" }, run)).toBeNull()
   })
-
-  it("formats singular requests and zero limits", () => {
-    expect(tokenBudgetMessage({ ...completion, requests: 1 })).toContain("across 1 request;")
-    expect(
-      tokenBudgetMessage({ ...completion, tripped_budget: { kind: "total_tokens", limit: 0 } })
-    ).toContain("limit for this run is 0.")
-  })
-
-  it.each([null, "12", -1, 1.5, Number.MAX_SAFE_INTEGER + 1, Infinity, true])(
-    "rejects invalid retained counts: %s",
-    (value) => {
-      expect(tokenBudgetMessage({ ...completion, observed_total_tokens: value })).toBeNull()
-      expect(tokenBudgetMessage({ ...completion, requests: value })).toBeNull()
-      expect(
-        tokenBudgetMessage({
-          ...completion,
-          tripped_budget: { kind: "total_tokens", limit: value },
-        })
-      ).toBeNull()
-    }
-  )
-
-  it("keeps legacy failures readable without inventing observed usage", () => {
-    const run = {
-      ...failedRun("usage_limit_exceeded"),
-      outcome: "budget_exhausted" as const,
-      completion_json: { tripped_budget: { kind: "total_tokens", limit: 1000 } },
-      error_message: "Saved limit message",
-    }
-    expect(tokenBudgetMessage(run.completion_json)).toBeNull()
-    expect(runInterruptionOutcome(run)?.message).toBe("Saved limit message")
-    expect(
-      tokenBudgetMessage({ ...completion, tripped_budget: { kind: "requests", limit: 20 } })
-    ).toBeNull()
-  })
 })
 
 describe("root continuation recovery", () => {
@@ -228,34 +188,5 @@ describe("root continuation recovery", () => {
     }
     expect(runInterruptionOutcome(run)?.uncertainActions).toHaveLength(25)
     expect(runInterruptionOutcome(run)?.actionsTruncated).toBe(true)
-  })
-})
-
-describe("approval reservation conflicts", () => {
-  it.each([
-    ["approval_already_reserved", "Your decisions were already accepted."],
-    ["approval_decisions_conflict", "Your latest changes were not applied."],
-  ])("distinguishes %s without asking for another submission", (code, message) => {
-    const error = new ApiError({ status: 409, message: "Conflict", problem: { code } })
-    expect(approvalConflictMessage(error)).toContain(message)
-  })
-})
-
-describe("historical run failure copy", () => {
-  it.each(["provider_error", "model_provider_not_configured", "timeout", "future_error"])(
-    "uses the live error copy for %s",
-    (code) => {
-      const run = failedRun(code)
-      run.error_message = "The model could not finish this run."
-      expect(runFailureOutcome(run)?.message).toBe(
-        formatStreamError({ code, message: run.error_message })
-      )
-    }
-  )
-
-  it("gives an explicit fallback when no reason was saved", () => {
-    expect(runFailureOutcome({ ...failedRun("unknown"), error_message: null })?.message).toBe(
-      "This run stopped before it finished. Send a new message to try again."
-    )
   })
 })

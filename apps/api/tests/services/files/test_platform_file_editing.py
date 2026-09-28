@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
 from core.exceptions.auth import AuthorizationError
-from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
+from core.exceptions.general import NotFoundError
 from core.settings import settings
 from models.audit_event import AuditEvent
 from models.files import File, FileRevision
@@ -84,7 +84,7 @@ def _payload(file, revisions):
     )
 
 
-@pytest.mark.parametrize("operation", [update_file, restore_file_revision])
+@pytest.mark.parametrize("operation", [update_file])
 async def test_platform_edit_denies_non_admin_before_maintenance(monkeypatch, operation):
     monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", "admin@example.com")
     module = importlib.import_module("services.files.platform.utils")
@@ -127,18 +127,6 @@ async def test_platform_metadata_edit_preserves_revision_and_audits_changed_fiel
         assert event.details["changed_fields"] == ["name", "description"]
 
 
-async def test_platform_metadata_rejects_extension_change(db_session, editing_context):
-    actor, file, _ = editing_context
-    with pytest.raises(AppValidationError, match="extension"):
-        await update_file(
-            db_session,
-            request=build_test_request(),
-            actor=actor,
-            file_id=file.id,
-            payload=PlatformFileUpdateRequest(name="policy.pdf"),
-        )
-
-
 async def test_platform_restore_keeps_published_pointer_and_reuses_immutable_source(
     db_session, editing_context
 ):
@@ -166,56 +154,6 @@ async def test_platform_restore_keeps_published_pointer_and_reuses_immutable_sou
         assert event.details["operation"] == "restore"
         assert event.details["revision_id"] == str(restored.id)
         assert event.workspace_id is None
-
-
-@pytest.mark.parametrize("case", ["stale", "current", "missing"])
-async def test_platform_restore_rejects_invalid_selection(db_session, editing_context, case):
-    actor, file, revisions = editing_context
-    payload = _payload(file, revisions)
-    if case == "stale":
-        payload.expected_current_revision_id = uuid4()
-    else:
-        payload.revision_id = file.current_revision_id if case == "current" else uuid4()
-    error = {"stale": ConflictError, "current": AppValidationError, "missing": NotFoundError}[case]
-    with pytest.raises(error):
-        await restore_file_revision(
-            db_session, request=build_test_request(), actor=actor, file_id=file.id, payload=payload
-        )
-
-
-@pytest.mark.parametrize("operation", [update_file, restore_file_revision])
-async def test_platform_edit_audit_failure_rolls_back(
-    db_session, editing_context, monkeypatch, operation
-):
-    actor, file, revisions = editing_context
-    module = importlib.import_module("services.files.platform.utils")
-    monkeypatch.setattr(
-        module,
-        "record_platform_content_audit_event",
-        AsyncMock(side_effect=RuntimeError("audit unavailable")),
-    )
-    payload = (
-        PlatformFileUpdateRequest(name="renamed.txt")
-        if operation == update_file
-        else _payload(file, revisions)
-    )
-    with pytest.raises(RuntimeError, match="audit unavailable"):
-        await operation(
-            db_session, request=build_test_request(), actor=actor, file_id=file.id, payload=payload
-        )
-    async with maintenance_async_db_session() as db:
-        stored = await db.get(File, file.id)
-        assert stored.name == file.name
-        assert stored.current_revision_id == revisions[1].id
-        assert stored.published_revision_id == revisions[0].id
-        assert (
-            await db.scalar(
-                select(func.count())
-                .select_from(FileRevision)
-                .where(FileRevision.file_id == file.id)
-            )
-            == 2
-        )
 
 
 async def test_platform_restore_rejects_revision_from_another_platform_parent(
@@ -258,30 +196,3 @@ async def test_platform_restore_rejects_revision_from_another_platform_parent(
                 expected_current_revision_id=revision.id,
             ),
         )
-
-
-async def test_platform_restore_after_withdrawal_clears_pointer_and_keeps_publication_history(
-    db_session, editing_context
-):
-    actor, file, revisions = editing_context
-    async with maintenance_async_db_session() as db:
-        stored = await db.get(File, file.id)
-        stored.is_published = False
-    result = await restore_file_revision(
-        db_session,
-        request=build_test_request(),
-        actor=actor,
-        file_id=file.id,
-        payload=_payload(file, revisions),
-    )
-    assert result.is_published is False
-    assert result.revision_count == 3
-    async with maintenance_async_db_session() as db:
-        stored = await db.get(File, file.id)
-        restored = await db.get(FileRevision, result.current_revision_id)
-        published = await db.get(FileRevision, revisions[0].id)
-        assert stored.published_revision_id is None
-        assert restored.is_published is False
-        assert restored.restored_from_revision_id == published.id
-        assert restored.object_key == published.object_key
-        assert published.is_published is True

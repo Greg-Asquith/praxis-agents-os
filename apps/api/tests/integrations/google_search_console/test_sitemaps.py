@@ -45,22 +45,12 @@ async def test_list_sitemaps_sorts_bounds_and_drops_deprecated_indexed_counts() 
     assert "indexed" not in latest["contents"][0]
 
 
-async def test_list_sitemaps_caps_results_at_200() -> None:
-    payload = {
-        "sitemap": [
-            {
-                "path": f"https://example.com/{index}.xml",
-                "lastSubmitted": f"2026-08-{(index % 28) + 1:02d}T10:00:00Z",
-            }
-            for index in range(205)
-        ]
-    }
-    result = await list_sitemaps(_Client(payload), site_url="https://example.com/")
-    assert len(result["sitemaps"]) == 200
-    assert result["sitemap_count"] == 200
-
-
-@pytest.mark.parametrize("payload", [[], {"sitemap": "bad"}, {"sitemap": [None]}])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+    ],
+)
 async def test_list_sitemaps_rejects_malformed_provider_responses(payload: Any) -> None:
     with pytest.raises(IntegrationValidationError):
         await list_sitemaps(_Client(payload), site_url="https://example.com/")

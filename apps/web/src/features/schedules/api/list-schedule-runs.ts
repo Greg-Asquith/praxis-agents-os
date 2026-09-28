@@ -25,9 +25,9 @@ async function listScheduleRuns(
   })
 }
 
-export const SCHEDULE_RUNS_REFETCH_INTERVAL_MS = 30_000
+const SCHEDULE_RUNS_REFETCH_INTERVAL_MS = 30_000
 
-export function scheduleRunsQueryOptions(
+function scheduleRunsQueryOptions(
   scheduleId: string,
   params: ListScheduleRunsParams = {},
   enabled = true

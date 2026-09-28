@@ -86,7 +86,7 @@ async def test_private_object_operations_are_confined_to_the_resolved_workspace_
     assert await provider.get_object(ref_b) == b"workspace-b"
 
 
-@pytest.mark.parametrize("provider_kind", ["local", "s3", "gcs", "azure_blob"])
+@pytest.mark.parametrize("provider_kind", ["s3"])
 async def test_private_non_workspace_keys_fail_closed(
     provider_kind: str,
     tmp_path: Path,

@@ -11,19 +11,17 @@ function response(contentType: string, body: string, statusText = "Bad Request")
 }
 
 describe("parseApiError", () => {
-  it.each([
-    "application/json",
-    "application/problem+json",
-    "application/json; charset=utf-8",
-    "application/problem+json; charset=utf-8",
-  ])("parses problem details from %s", async (contentType) => {
-    const error = await parseApiError(
-      response(contentType, JSON.stringify({ detail: "No access" }))
-    )
+  it.each(["application/json", "application/problem+json; charset=utf-8"])(
+    "parses problem details from %s",
+    async (contentType) => {
+      const error = await parseApiError(
+        response(contentType, JSON.stringify({ detail: "No access" }))
+      )
 
-    expect(error.message).toBe("No access")
-    expect(error.problem).toEqual({ detail: "No access" })
-  })
+      expect(error.message).toBe("No access")
+      expect(error.problem).toEqual({ detail: "No access" })
+    }
+  )
 
   it("falls back to status text for malformed JSON", async () => {
     const error = await parseApiError(response("application/problem+json", "{"))

@@ -3,12 +3,8 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  forgetMemoryResult,
   saveMemoryResult,
-  saveMemoryTitleArg,
-  searchMemoryQueryArg,
   searchMemoryResult,
-  updateMemoryResult,
 } from "@/features/conversations/native-tools/memory-tools"
 
 describe("save_memory results", () => {
@@ -101,48 +97,6 @@ describe("search_memory results", () => {
       })
     ).toBeNull()
     expect(searchMemoryResult({ query: "reply style", results: [] })).toBeNull()
-  })
-})
-
-describe("update_memory results", () => {
-  it("parses updates and supersessions", () => {
-    const updated = updateMemoryResult({
-      status: "updated",
-      memory: memorySummary(),
-      superseded_memory_id: null,
-    })
-    const superseded = updateMemoryResult({
-      status: "superseded",
-      memory: memorySummary(),
-      superseded_memory_id: "m-0",
-    })
-
-    expect(updated?.status).toBe("updated")
-    expect(updated?.superseded_memory_id).toBeNull()
-    expect(superseded?.superseded_memory_id).toBe("m-0")
-    expect(updateMemoryResult({ status: "updated", memory: {} })).toBeNull()
-  })
-})
-
-describe("forget_memory results", () => {
-  it("parses archived and already-archived outcomes", () => {
-    const archived = forgetMemoryResult({ status: "archived", memory: memorySummary() })
-    const repeat = forgetMemoryResult({ status: "already_archived", memory: memorySummary() })
-
-    expect(archived?.status).toBe("archived")
-    expect(repeat?.status).toBe("already_archived")
-    expect(forgetMemoryResult({ status: "deleted", memory: memorySummary() })).toBeNull()
-  })
-})
-
-describe("memory tool args", () => {
-  it("reads trimmed values from object and JSON string args", () => {
-    expect(saveMemoryTitleArg({ title: "  Prefers concise replies  " })).toBe(
-      "Prefers concise replies"
-    )
-    expect(searchMemoryQueryArg('{"query": "reply style"}')).toBe("reply style")
-    expect(saveMemoryTitleArg({ title: "   " })).toBeNull()
-    expect(searchMemoryQueryArg(undefined)).toBeNull()
   })
 })
 

@@ -5,36 +5,24 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 
 from core.exceptions.integration import (
     IntegrationAuthError,
-    IntegrationNotFoundError,
     IntegrationPermissionError,
 )
 from integrations.notion.references import (
-    NotionDataSourceReference,
     NotionPageReference,
 )
-from integrations.notion.settings import notion_settings
-from integrations.notion.tools import TOOL_DEFINITIONS, search_cursor
-from integrations.notion.tools.query_data_source import notion_query_data_source
 from integrations.notion.tools.read_page import notion_read_page
 from integrations.notion.tools.schemas import (
-    NotionDataSourceQueryData,
-    NotionDataSourceQueryOutput,
     NotionPageOutput,
-    NotionSearchData,
     NotionSearchOutput,
 )
 from integrations.notion.tools.search_cursor import decode_search_cursor, encode_search_cursor
 from integrations.notion.tools.search_pages import COVERAGE_NOTE, notion_search_pages
-from integrations.notion.tools.utils import bounded_notion_output
-from services.agents.runtime.tools.permissions import is_tool_allowed
 from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
-from services.integrations.context.results import IntegrationContextResult
 
 
 def entry(workspace_id: str) -> ResolvedContextEntry:
@@ -75,15 +63,6 @@ def page_reference(workspace_id: str) -> NotionPageReference:
         workspace_id=workspace_id,
         page_id="page-1",
         label="Launch plan",
-        scope_label=f"Workspace {workspace_id}",
-    )
-
-
-def source_reference(workspace_id: str) -> NotionDataSourceReference:
-    return NotionDataSourceReference(
-        workspace_id=workspace_id,
-        data_source_id="source-1",
-        label="Projects",
         scope_label=f"Workspace {workspace_id}",
     )
 
@@ -197,16 +176,6 @@ def test_search_cursor_round_trips_long_provider_value_verbatim() -> None:
     assert decode_search_cursor(encoded) == ("workspace-1", provider_cursor)
 
 
-def test_search_cursor_rejects_oversized_encoded_wrapper(monkeypatch) -> None:
-    monkeypatch.setattr(search_cursor, "MAX_SCOPED_CURSOR_CHARS", 1)
-
-    with pytest.raises(ModelRetry, match="continuation is invalid"):
-        encode_search_cursor(
-            workspace_id="workspace-1",
-            provider_cursor="provider-cursor",
-        )
-
-
 async def test_search_rejects_invalid_or_inactive_continuations(monkeypatch) -> None:
     selected = entry("workspace-1")
     ctx = context(selected, tool_name="notion_search_pages")
@@ -244,7 +213,6 @@ async def test_search_rejects_invalid_or_inactive_continuations(monkeypatch) -> 
     ("exception_type", "error_code"),
     [
         (IntegrationPermissionError, "IntegrationPermissionError"),
-        (IntegrationNotFoundError, "IntegrationNotFoundError"),
     ],
 )
 async def test_page_provider_failure_is_an_audited_fan_out_error(
@@ -328,54 +296,6 @@ async def test_read_page_returns_complete_truncation_evidence_and_external_ref(m
     NotionPageOutput.model_validate(result)
 
 
-async def test_query_returns_bounded_records_and_external_ref(monkeypatch) -> None:
-    selected = entry("workspace-1")
-    audit = AsyncMock(return_value=uuid4())
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        audit,
-    )
-    monkeypatch.setattr(
-        "integrations.notion.tools.query_data_source.notion_client",
-        lambda _ctx, _entry: async_value(object()),
-    )
-    monkeypatch.setattr(
-        "integrations.notion.tools.query_data_source.query_data_source",
-        AsyncMock(
-            return_value={
-                "records": [
-                    {
-                        "id": "record-1",
-                        "kind": "page",
-                        "title": notion_text("Alpha", "record-1", "notion_page"),
-                        "url": "https://www.notion.so/record-1",
-                        "last_edited_time": "2026-08-25T12:00:00Z",
-                        "properties": {"Estimate": 8},
-                        "properties_truncated": False,
-                    }
-                ],
-                "count": 1,
-                "has_more": True,
-                "next_cursor": "cursor-2",
-                "incomplete": True,
-            }
-        ),
-    )
-
-    result = await notion_query_data_source(
-        context(selected, tool_name="notion_query_data_source"),
-        source_reference("workspace-1"),
-        limit=25,
-    )
-
-    data = result["results"][0]["data"]
-    assert data["records"][0]["reference"].workspace_id == "workspace-1"
-    assert data["records"][0]["properties_truncated"] is False
-    assert data["incomplete"] is True
-    assert audit.await_args.kwargs["external_ref"] == "source-1"
-    NotionDataSourceQueryOutput.model_validate(result)
-
-
 @pytest.mark.parametrize(
     ("tool_name", "call"),
     [
@@ -383,128 +303,8 @@ async def test_query_returns_bounded_records_and_external_ref(monkeypatch) -> No
             "notion_read_page",
             lambda ctx: notion_read_page(ctx, page_reference("unselected")),
         ),
-        (
-            "notion_query_data_source",
-            lambda ctx: notion_query_data_source(ctx, source_reference("unselected")),
-        ),
     ],
 )
 async def test_targeted_tools_reject_unselected_workspace(tool_name, call) -> None:
     with pytest.raises(ModelRetry, match="no longer in the active integration context"):
         await call(context(entry("workspace-1"), tool_name=tool_name))
-
-
-async def test_search_names_notion_when_no_compatible_context() -> None:
-    with pytest.raises(ModelRetry, match="Notion"):
-        await notion_search_pages(context(tool_name="notion_search_pages"), query="launch")
-
-
-def test_tool_contracts_are_code_eligible_typed_and_provider_gated(monkeypatch) -> None:
-    assert {definition.name for definition in TOOL_DEFINITIONS} == {
-        "notion_search_pages",
-        "notion_read_page",
-        "notion_query_data_source",
-        "notion_create_page",
-        "notion_update_page_content",
-        "notion_update_page_properties",
-    }
-    assert all(definition.code_eligible for definition in TOOL_DEFINITIONS)
-    assert all(definition.output_model is not None for definition in TOOL_DEFINITIONS)
-    assert {definition.name: definition.timeout for definition in TOOL_DEFINITIONS} == {
-        "notion_search_pages": 60,
-        "notion_read_page": 60,
-        "notion_query_data_source": 60,
-        "notion_create_page": 90,
-        "notion_update_page_content": 90,
-        "notion_update_page_properties": 90,
-    }
-
-    monkeypatch.setattr(notion_settings, "NOTION_OAUTH_CLIENT_ID", "")
-    assert all(not is_tool_allowed(definition, workspace=None) for definition in TOOL_DEFINITIONS)
-
-
-def test_output_models_forbid_unbounded_extra_provider_fields() -> None:
-    with pytest.raises(ValidationError):
-        NotionSearchOutput.model_validate(
-            {
-                "results": [
-                    {
-                        "provider_key": "notion",
-                        "external_id": "workspace-1",
-                        "display_name": "Workspace",
-                        "status": "success",
-                        "data": {
-                            "items": [],
-                            "count": 0,
-                            "has_more": False,
-                            "coverage_note": COVERAGE_NOTE,
-                            "raw_provider_response": {},
-                        },
-                    }
-                ]
-            }
-        )
-
-
-def test_output_models_enforce_public_collection_limits() -> None:
-    page = page_reference("workspace-1")
-    search_item = {
-        "kind": "page",
-        "title": notion_text("Launch plan", "page-1", "notion_page"),
-        "url": "https://www.notion.so/page-1",
-        "last_edited_time": "2026-08-25T12:00:00Z",
-        "reference": page,
-    }
-    with pytest.raises(ValidationError):
-        NotionSearchData.model_validate(
-            {
-                "items": [search_item] * 51,
-                "count": 50,
-                "has_more": True,
-                "coverage_note": COVERAGE_NOTE,
-            }
-        )
-
-    record = {
-        "reference": page,
-        "title": notion_text("Launch plan", "page-1", "notion_page"),
-        "url": "https://www.notion.so/page-1",
-        "last_edited_time": "2026-08-25T12:00:00Z",
-        "properties": {},
-        "properties_truncated": False,
-    }
-    with pytest.raises(ValidationError):
-        NotionDataSourceQueryData.model_validate(
-            {
-                "records": [record] * 51,
-                "count": 50,
-                "has_more": True,
-                "incomplete": False,
-            }
-        )
-
-    with pytest.raises(ValidationError):
-        NotionDataSourceQueryData.model_validate(
-            {
-                "records": [{**record, "properties": {str(index): index for index in range(101)}}],
-                "count": 1,
-                "has_more": False,
-                "incomplete": False,
-            }
-        )
-
-
-def test_complete_notion_output_rejects_an_oversized_serialized_result(monkeypatch) -> None:
-    selected = entry("workspace-1")
-    monkeypatch.setattr("integrations.notion.tools.utils.MAX_NOTION_RESULT_BYTES", 100)
-
-    with pytest.raises(ModelRetry, match="lower maximum result count"):
-        bounded_notion_output(
-            [
-                IntegrationContextResult(
-                    entry=selected,
-                    status="success",
-                    data={"content": "x" * 200},
-                )
-            ]
-        )

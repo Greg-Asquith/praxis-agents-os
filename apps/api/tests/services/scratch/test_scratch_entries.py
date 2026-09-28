@@ -7,19 +7,16 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.agent import Agent
 from models.conversation import Conversation
-from models.scratch import ScratchEntry
 from services.agent_runs import create_agent_run
 from services.scratch import (
     delete_scratch_entry,
     list_scratch_entries,
-    purge_expired_scratch,
     read_scratch_entry,
     upsert_scratch_entry,
 )
@@ -196,43 +193,6 @@ async def test_scratch_scopes_do_not_leak_between_conversations(
         )
         is None
     )
-
-
-async def test_purge_expired_scratch_deletes_only_expired_rows(
-    db_session: AsyncSession,
-) -> None:
-    context = await _scratch_context(db_session)
-    scope = ScratchScope(conversation_id=context.conversation_id)
-    expired = await upsert_scratch_entry(
-        db_session,
-        workspace_id=context.workspace_id,
-        scope=scope,
-        name="expired",
-        content="old",
-        created_by_run_id=context.run_id,
-    )
-    fresh = await upsert_scratch_entry(
-        db_session,
-        workspace_id=context.workspace_id,
-        scope=scope,
-        name="fresh",
-        content="new",
-        created_by_run_id=context.run_id,
-    )
-    expired.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    await db_session.flush()
-
-    purged_count = await purge_expired_scratch(db_session)
-
-    assert purged_count == 1
-    remaining_names = (
-        await db_session.scalars(
-            select(ScratchEntry.name).where(
-                ScratchEntry.id.in_([expired.id, fresh.id]),
-            )
-        )
-    ).all()
-    assert set(remaining_names) == {"fresh"}
 
 
 async def _scratch_context(db: AsyncSession) -> ScratchTestContext:

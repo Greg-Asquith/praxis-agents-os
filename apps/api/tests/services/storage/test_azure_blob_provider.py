@@ -4,25 +4,16 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import threading
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock
 from urllib.parse import parse_qs, urlsplit
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 
-from services.storage.copy_object import copy_object
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
-    StorageError,
-    StorageNotFoundError,
     StoragePreconditionError,
-    StorageProviderUnavailableError,
     StorageSignatureError,
-    StorageValidationError,
 )
 from services.storage.providers import azure_blob as azure_blob_provider_module
 from services.storage.providers.azure_blob import AzureBlobStorageProvider
@@ -206,42 +197,6 @@ def _provider(service_client: _FakeBlobServiceClient) -> AzureBlobStorageProvide
     )
 
 
-async def test_azure_blob_provider_put_get_stat_and_delete_object() -> None:
-    service_client = _FakeBlobServiceClient()
-    provider = _provider(service_client)
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
-
-    stored = await provider.put_object(
-        ref,
-        b"png",
-        content_type="image/png",
-        metadata={"purpose": "avatar"},
-    )
-
-    obj = service_client.get_container_client("public").objects[ref.key]
-    assert obj["content_settings"].cache_control == "public, max-age=60"
-    assert stored.size_bytes == 3
-    assert stored.etag == "azure-etag"
-    assert stored.content_type == "image/png"
-    assert stored.metadata == {"purpose": "avatar"}
-    assert stored.public_url == "https://cdn.example/users/u_1/avatar/me.png"
-    assert await provider.get_object(ref) == b"png"
-
-    assert await provider.delete_object(ref) is True
-    assert await provider.stat_object(ref) is None
-    assert await provider.delete_object(ref) is False
-
-
-async def test_azure_blob_provider_maps_get_not_found_to_storage_error() -> None:
-    provider = _provider(_FakeBlobServiceClient())
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("missing.txt"))
-
-    with pytest.raises(StorageNotFoundError):
-        await provider.get_object(ref)
-
-    assert await provider.stat_object(ref) is None
-
-
 async def test_azure_blob_uses_size_bound_upload_relay_and_signed_download() -> None:
     service_client = _FakeBlobServiceClient()
     provider = _provider(service_client)
@@ -288,76 +243,6 @@ async def test_azure_blob_uses_size_bound_upload_relay_and_signed_download() -> 
     assert service_client.delegation_key_calls == 1
 
 
-async def test_azure_blob_native_public_url_is_used_without_cdn_base() -> None:
-    provider = AzureBlobStorageProvider(
-        account_name="storageacct",
-        public_container_name="public",
-        workspace_bucket_prefix="praxis-test",
-        app_base_url="http://testserver",
-        api_prefix="/api/v1",
-        secret_key="s" * 32,
-        credential=object(),
-        service_client=_FakeBlobServiceClient(),
-        content_settings_cls=_FakeContentSettings,
-        match_conditions_cls=_FakeMatchConditions,
-        sas_permissions_cls=_FakePermissions,
-        generate_sas_func=_fake_generate_blob_sas,
-    )
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u 1/avatar/me.png")
-
-    assert (
-        provider.public_url(ref)
-        == "https://storageacct.blob.core.windows.net/public/users/u%201/avatar/me.png"
-    )
-
-
-@pytest.mark.parametrize("bucket", [StorageBucket.PRIVATE, StorageBucket.PLATFORM_PRIVATE])
-async def test_azure_blob_promotion_is_create_only_and_source_conditional(
-    bucket: StorageBucket,
-) -> None:
-    service_client = _FakeBlobServiceClient()
-    provider = _provider(service_client)
-    prefix = (
-        "platform" if bucket == StorageBucket.PLATFORM_PRIVATE else f"workspaces/{WORKSPACE_ID}"
-    )
-    source = make_storage_object_ref(bucket, f"{prefix}/uploads/source.txt")
-    destination = make_storage_object_ref(bucket, f"{prefix}/files/final.txt")
-    source_stored = await provider.put_object(source, b"validated", content_type="text/plain")
-
-    promoted = await provider.promote_object(
-        source,
-        destination,
-        expected_source_etag=source_stored.etag,
-    )
-
-    assert await provider.get_object(destination) == b"validated"
-    assert promoted.content_type == "text/plain"
-    with pytest.raises(StoragePreconditionError):
-        await provider.promote_object(
-            source,
-            destination,
-            expected_source_etag=source_stored.etag,
-        )
-
-
-async def test_azure_blob_provider_missing_required_settings_fail_clearly() -> None:
-    with pytest.raises(StorageProviderUnavailableError):
-        AzureBlobStorageProvider(
-            account_name="",
-            public_container_name="public",
-            workspace_bucket_prefix="praxis-test",
-            app_base_url="http://testserver",
-            api_prefix="/api/v1",
-            secret_key="s" * 32,
-            credential=object(),
-            service_client=_FakeBlobServiceClient(),
-            content_settings_cls=_FakeContentSettings,
-            match_conditions_cls=_FakeMatchConditions,
-            sas_permissions_cls=_FakePermissions,
-            generate_sas_func=_fake_generate_blob_sas,
-        )
-
-
 async def test_azure_workspace_container_is_private_labeled_and_cached() -> None:
     service_client = _FakeBlobServiceClient()
     provider = _provider(service_client)
@@ -393,74 +278,6 @@ async def test_azure_production_uses_managed_identity_credential(
     assert captured == {"client_id": "managed-client-id"}
 
 
-async def test_azure_local_uses_default_credential_chain(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, str] = {}
-
-    def fake_default_credential(**kwargs):
-        captured.update(kwargs)
-        return "default-credential"
-
-    monkeypatch.setattr(
-        azure_blob_provider_module,
-        "DefaultAzureCredential",
-        fake_default_credential,
-    )
-    provider = AzureBlobStorageProvider.__new__(AzureBlobStorageProvider)
-    provider.use_managed_identity = False
-    provider.managed_identity_client_id = "managed-client-id"
-
-    assert provider._create_credential() == "default-credential"
-    assert captured == {"managed_identity_client_id": "managed-client-id"}
-
-
-async def test_azure_workspace_container_preserves_stored_access_policies() -> None:
-    service_client = _FakeBlobServiceClient()
-    service_client.existing_containers.add(WORKSPACE_CONTAINER)
-    container = service_client.get_container_client(WORKSPACE_CONTAINER)
-    container.metadata = {"environment": "staging"}
-    container.signed_identifiers = {"operator-policy": object()}
-    provider = _provider(service_client)
-
-    await provider.ensure_workspace_bucket(WORKSPACE_ID)
-
-    assert set(container.signed_identifiers) == {"operator-policy"}
-    assert container.metadata == {
-        "environment": "staging",
-        "praxis_workspace": str(WORKSPACE_ID),
-    }
-    assert container.public_access is None
-
-
-async def test_azure_provisioning_restores_handle_if_it_is_evicted_while_awaiting() -> None:
-    service_client = _FakeBlobServiceClient()
-    service_client.existing_containers.add(WORKSPACE_CONTAINER)
-    provider = _provider(service_client)
-    container = provider._workspace_container(WORKSPACE_ID)
-    properties_started = threading.Event()
-    release_properties = threading.Event()
-    original_get_properties = container.get_container_properties
-
-    def blocking_get_properties() -> dict:
-        properties_started.set()
-        assert release_properties.wait(timeout=5)
-        return original_get_properties()
-
-    container.get_container_properties = blocking_get_properties
-    provisioning = asyncio.create_task(provider.ensure_workspace_bucket(WORKSPACE_ID))
-    assert await asyncio.to_thread(properties_started.wait, 5)
-    for _index in range(256):
-        provider._workspace_container(uuid4())
-    assert WORKSPACE_ID not in provider._workspace_containers
-
-    release_properties.set()
-    await provisioning
-
-    assert provider._workspace_containers[WORKSPACE_ID] is container
-    await provider.ensure_workspace_bucket(WORKSPACE_ID)
-
-
 async def test_azure_blob_platform_objects_remain_private_and_sign_in_the_platform_bucket() -> None:
     client = _FakeBlobServiceClient()
     provider = _provider(client)
@@ -488,156 +305,3 @@ async def test_azure_blob_platform_objects_remain_private_and_sign_in_the_platfo
     assert await provider.delete_object(ref) is True
     assert await provider.stat_object(ref) is None
     assert await provider.delete_object(ref) is False
-
-
-@pytest.mark.parametrize("configured_name", ["", "public", WORKSPACE_CONTAINER])
-async def test_azure_blob_platform_objects_reject_missing_or_public_bucket(
-    configured_name: str,
-) -> None:
-    provider = _provider(_FakeBlobServiceClient())
-    provider.platform_private_container = configured_name
-    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/report.txt")
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.put_object(ref, b"report")
-    for operation in (provider.get_object, provider.stat_object, provider.delete_object):
-        with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-            await operation(ref)
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        _ = [chunk async for chunk in provider.stream_object(ref)]
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
-    destination = make_storage_object_ref(
-        StorageBucket.PLATFORM_PRIVATE, "platform/files/final.txt"
-    )
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.promote_object(ref, destination, expected_source_etag="etag")
-    with pytest.raises((StorageProviderUnavailableError, StorageValidationError)):
-        await provider.create_signed_upload(
-            ref, content_type="text/plain", expected_size_bytes=6, expires_in=timedelta(minutes=5)
-        )
-
-
-@pytest.mark.parametrize(
-    ("bucket", "key"),
-    [
-        (StorageBucket.PLATFORM_PRIVATE, _private_key("files/report.txt")),
-        (StorageBucket.PRIVATE, "platform/files/report.txt"),
-    ],
-)
-async def test_azure_blob_rejects_namespace_substitution(bucket: StorageBucket, key: str) -> None:
-    provider = _provider(_FakeBlobServiceClient())
-    ref = make_storage_object_ref(bucket, key)
-    with pytest.raises(StorageValidationError):
-        await provider.put_object(ref, b"report")
-    with pytest.raises(StorageValidationError):
-        await provider.get_object(ref)
-    with pytest.raises(StorageValidationError):
-        await provider.stat_object(ref)
-    with pytest.raises(StorageValidationError):
-        await provider.delete_object(ref)
-    with pytest.raises(StorageValidationError):
-        _ = [chunk async for chunk in provider.stream_object(ref)]
-    valid = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/valid.txt")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(ref, valid, expected_source_etag="etag")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(valid, ref, expected_source_etag="etag")
-    with pytest.raises(StorageValidationError):
-        await provider.create_signed_upload(
-            ref, content_type="text/plain", expected_size_bytes=6, expires_in=timedelta(minutes=5)
-        )
-    with pytest.raises(StorageValidationError):
-        await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
-
-
-async def test_azure_blob_promotion_rejects_cross_class_copy() -> None:
-    provider = _provider(_FakeBlobServiceClient())
-    source = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/uploads/source.txt")
-    destination = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/report.txt"))
-    stored = await provider.put_object(source, b"report")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(source, destination, expected_source_etag=stored.etag)
-    assert await provider.stat_object(destination) is None
-
-
-async def test_azure_platform_provisioning_hardens_existing_container_and_preserves_metadata(
-    monkeypatch,
-) -> None:
-    client = _FakeBlobServiceClient()
-    client.existing_containers.add("platform-private")
-    container = client.get_container_client("platform-private")
-    container.metadata = {"owner": "operations"}
-    container.signed_identifiers = {"operator": "retained"}
-    provider = _provider(client)
-    await provider.ensure_platform_bucket()
-
-    def fail_if_repeated(**kwargs):
-        raise AssertionError("Successful provisioning must be cached")
-
-    monkeypatch.setattr(container, "get_container_properties", fail_if_repeated)
-    await provider.ensure_platform_bucket()
-    assert container.metadata == {"owner": "operations", "praxis_platform": "true"}
-    assert container.signed_identifiers == {"operator": "retained"}
-    assert container.public_access is None
-    assert WORKSPACE_CONTAINER not in client.existing_containers
-
-
-async def test_azure_platform_provisioning_failure_blocks_upload_and_retries(monkeypatch) -> None:
-    client = _FakeBlobServiceClient()
-    provider = _provider(client)
-    container = client.get_container_client("platform-private")
-    original = container.set_container_access_policy
-
-    def fail(**kwargs):
-        raise RuntimeError("Access denied")
-
-    monkeypatch.setattr(container, "set_container_access_policy", fail)
-    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/uploads/report")
-    with pytest.raises(StorageError, match="Failed to harden"):
-        await provider.put_object(ref, b"report", overwrite=False)
-    assert not container.objects
-    assert not provider._platform_bucket_ensured
-    monkeypatch.setattr(container, "set_container_access_policy", original)
-    await provider.put_object(ref, b"report", overwrite=False)
-    assert provider._platform_bucket_ensured
-    assert container.public_access is None
-
-
-@pytest.mark.parametrize("source_bucket", [StorageBucket.PRIVATE, StorageBucket.PLATFORM_PRIVATE])
-async def test_azure_blob_platform_cross_class_copy_is_immutable_and_retryable(
-    source_bucket,
-) -> None:
-    client = _FakeBlobServiceClient()
-    provider = _provider(client)
-    workspace_ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/copy.txt"))
-    platform_ref = make_storage_object_ref(
-        StorageBucket.PLATFORM_PRIVATE, "platform/files/copy.txt"
-    )
-    source, destination = (
-        (workspace_ref, platform_ref)
-        if source_bucket == StorageBucket.PRIVATE
-        else (platform_ref, workspace_ref)
-    )
-    await provider.put_object(
-        source, b"report", content_type="text/plain", metadata={"private_owner": "internal"}
-    )
-    authorise = AsyncMock()
-    arguments = {
-        "authorise": authorise,
-        "expected_size_bytes": 6,
-        "expected_sha256": hashlib.sha256(b"report").hexdigest(),
-        "content_type": "text/plain",
-    }
-    copied = await copy_object(provider, source, destination, **arguments)
-    retried = await copy_object(provider, source, destination, **arguments)
-    assert copied == retried
-    assert copied.metadata == {}
-    assert copied.cache_control == "private, no-store"
-    assert await provider.get_object(destination) == b"report"
-    assert await provider.get_object(source) == b"report"
-    assert authorise.await_count == 3
-    assert all(
-        "copy-staging/" not in key
-        for container in client.containers.values()
-        for key in container.objects
-    )

@@ -33,7 +33,7 @@ export function useResourceTablesQuery({
   return useInfiniteQuery(resourceTablesQueryOptions({ connectionId, enabled, resourceId }))
 }
 
-export function resourceTablesQueryOptions({
+function resourceTablesQueryOptions({
   connectionId,
   enabled,
   resourceId,

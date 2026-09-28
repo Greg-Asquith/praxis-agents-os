@@ -1,5 +1,3 @@
-import { CancelledError } from "@tanstack/react-query"
-import { ApiError } from "@/lib/api/errors"
 import { describe, expect, it } from "vitest"
 
 import {
@@ -7,7 +5,6 @@ import {
   CONVERSATION_HEAL_POLL_INTERVAL_MS,
   conversationActiveRunRefetchInterval,
   conversationHealPollInterval,
-  conversationRecoveryMessage,
 } from "@/features/conversations/conversation-heal-polling"
 import type { AgentRun, ConversationActiveRunResponse } from "@/features/conversations/types"
 
@@ -44,8 +41,8 @@ function activeRunResponse(
 }
 
 describe("conversation heal polling", () => {
-  it.each(["pending", "running"] as const)("polls while a run is %s", (status) => {
-    expect(conversationHealPollInterval(status, null, false)).toBe(
+  it("polls while a run is active", () => {
+    expect(conversationHealPollInterval("running", null, false)).toBe(
       CONVERSATION_HEAL_POLL_INTERVAL_MS
     )
   })
@@ -54,15 +51,8 @@ describe("conversation heal polling", () => {
     expect(conversationHealPollInterval("running", null, true)).toBe(false)
   })
 
-  it.each([null, "awaiting_approval", "completed", "failed", "cancelled"] as const)(
-    "stops when the run status is %s",
-    (status) => {
-      expect(conversationHealPollInterval(status, null, false)).toBe(false)
-    }
-  )
-
-  it("does not retry an unclassified programming error", () => {
-    expect(conversationHealPollInterval("running", new Error("API unavailable"), false)).toBe(false)
+  it.each([null, "completed"] as const)("stops when the run status is %s", (status) => {
+    expect(conversationHealPollInterval(status, null, false)).toBe(false)
   })
 
   it("waits until the approval deadline instead of polling throughout the wait", () => {
@@ -94,26 +84,5 @@ describe("conversation heal polling", () => {
     expect(
       conversationActiveRunRefetchInterval(activeRunResponse("awaiting_approval"), null, false)
     ).toBe(false)
-  })
-
-  it("threads stream connectivity through active-run polling", () => {
-    expect(conversationActiveRunRefetchInterval(activeRunResponse("running"), null, true)).toBe(
-      false
-    )
-  })
-  it("does not retry a query cancellation", () => {
-    expect(conversationHealPollInterval("running", new CancelledError(), false)).toBe(false)
-  })
-
-  it.each([
-    [401, "Your session has ended"],
-    [403, "no longer have access"],
-    [404, "no longer available"],
-  ] as const)("explains the terminal %s state", (status, message) => {
-    expect(
-      conversationRecoveryMessage(
-        new ApiError({ status, message: "Internal detail", problem: null })
-      )
-    ).toContain(message)
   })
 })

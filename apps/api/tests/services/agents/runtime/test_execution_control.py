@@ -23,40 +23,6 @@ def state(
     )
 
 
-@pytest.mark.parametrize("phase", [ExecutionPhase.QUEUED, ExecutionPhase.EXECUTING])
-@pytest.mark.parametrize("status", ["failed", "completed", "awaiting_approval"])
-def test_non_live_state_revokes_execution(phase: ExecutionPhase, status: str) -> None:
-    control = ExecutionControl(
-        uuid4(), uuid4(), uuid4(), "owner", deadline=100, lease_deadline=90, phase=phase
-    )
-    assert (
-        control.permission_loss(state(status=status), now=datetime(2026, 9, 8, tzinfo=UTC))
-        == InterruptionReason.LEASE_LOST
-    )
-
-
-@pytest.mark.parametrize("status", ["completed", "awaiting_approval"])
-def test_own_finalisation_survives_committed_status(status: str) -> None:
-    control = ExecutionControl(
-        uuid4(),
-        uuid4(),
-        uuid4(),
-        "owner",
-        deadline=100,
-        lease_deadline=90,
-        phase=ExecutionPhase.FINALISING,
-    )
-    assert (
-        control.permission_loss(state(status=status), now=datetime(2026, 9, 8, tzinfo=UTC)) is None
-    )
-    assert (
-        control.permission_loss(
-            state(status=status, owner="replacement"), now=datetime(2026, 9, 8, tzinfo=UTC)
-        )
-        == InterruptionReason.LEASE_LOST
-    )
-
-
 def test_continuation_clock_includes_queue_and_intersects_root() -> None:
     now = datetime(2026, 9, 8, tzinfo=UTC)
     root = ExecutionControl.from_claim(

@@ -19,7 +19,7 @@ def test_fixed_vectors(data, expected):
     assert quickxorhash(data) == expected
 
 
-@pytest.mark.parametrize("size", [20, 160, 161, 255, 1025])
+@pytest.mark.parametrize("size", [161, 1025])
 def test_wraparound_and_length_match_bit_reference(size):
     data = bytes(index % 256 for index in range(size))
     result = bytearray(20)

@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from integrations.outlook_calendar import OUTLOOK_CALENDAR_OAUTH_SCOPES, PROVIDER
-
 FIXTURES = Path(__file__).with_name("fixtures")
 TENANT_ID = "b2c4d170-11e8-43a7-943e-a758a11b48d4"
 USER_ID = "3a1c8019-6e25-4f52-8035-d2fa75a42cc1"
@@ -16,11 +14,6 @@ USER_ID = "3a1c8019-6e25-4f52-8035-d2fa75a42cc1"
 
 def _fixture(name: str) -> dict[str, object]:
     return json.loads((FIXTURES / name).read_text())
-
-
-def test_outlook_calendar_manifest() -> None:
-    assert PROVIDER.manifest.oauth_scopes == OUTLOOK_CALENDAR_OAUTH_SCOPES
-    assert PROVIDER.manifest.resource_types == ("outlook_calendar",)
 
 
 async def test_outlook_calendar_discovers_editable_and_read_only_calendars(

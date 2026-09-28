@@ -50,14 +50,6 @@ const cases = [
     label: "Search",
   },
   {
-    name: "google_ads_remove_campaign_budgets",
-    applied: "removed",
-    metadata: {},
-    sample: { reference: budget, previous_status: "ENABLED", resulting_status: "REMOVED" },
-    column: "Budget",
-    label: "Requested budget",
-  },
-  {
     name: "google_ads_update_campaign_budget_amounts",
     applied: "updated",
     skipped: "already_set",
@@ -73,40 +65,9 @@ const cases = [
     label: "Requested budget",
   },
   {
-    name: "google_ads_create_keywords",
-    applied: "added",
-    skipped: "skipped_existing",
-    metadata: { currency_code: "GBP" },
-    sample: {
-      campaign_id: "10",
-      campaign_name: "Search",
-      ad_group_id: "20",
-      ad_group_name: "Shoes",
-      requested: keyword,
-      observed: null,
-      previous_state: "absent",
-    },
-    column: "Keyword",
-    label: "running shoes",
-  },
-  {
     name: "google_ads_add_negative_keywords",
     applied: "added",
     skipped: "skipped_existing",
-    metadata: {},
-    sample: {
-      ...keyword,
-      resource_name: "customers/123/sharedCriteria/1",
-      scope: "keyword",
-      message: "Rejected keyword",
-    },
-    column: "Keyword",
-    label: "running shoes",
-  },
-  {
-    name: "google_ads_remove_negative_keywords",
-    applied: "removed",
-    skipped: "not_found",
     metadata: {},
     sample: {
       ...keyword,
@@ -122,14 +83,9 @@ const cases = [
 const expectedCsv: Record<string, string> = {
   google_ads_assign_campaign_budgets:
     "Campaign,Campaign ID,Before,Requested,After,Outcome\r\nSearch,10,Previous budget,Requested budget,Requested budget,Assigned",
-  google_ads_remove_campaign_budgets:
-    "Budget,Budget ID,Amount,Period,Linked Campaigns,Before,After,Outcome\r\nRequested budget,55,£10.00,Daily,0 campaigns,Enabled,Removed,Removed",
   google_ads_update_campaign_budget_amounts:
     "Budget,Before,Requested,After,Requested change,Period,Linked Campaigns,Outcome,Details\r\nRequested budget,£10.00,£15.00,£15.00,+50%,Daily,0 campaigns,Updated,Requested: £456.00 estimated per month",
-  google_ads_create_keywords:
-    "Campaign,Ad Group,Keyword,Match Type,Requested Status,Existing Status,Requested Bid,Existing Bid,Requested URLs,Existing URLs,Previous State,Outcome\r\nSearch,Shoes,running shoes,Exact,Enabled,—,Ad group default,—,None,—,Not present,Added",
   google_ads_add_negative_keywords: "Keyword,Match Type,Outcome\r\nrunning shoes,EXACT,Added",
-  google_ads_remove_negative_keywords: "Keyword,Match Type,Outcome\r\nrunning shoes,EXACT,Removed",
 }
 
 type Case = (typeof cases)[number]
@@ -197,19 +153,16 @@ beforeEach(() => {
   captured.tables = []
 })
 describe.each(cases)("$name result evidence", (test) => {
-  it.each(["wrong outcome", "missing complete samples", "excess truncated samples"])(
-    "rejects %s",
-    (defect) => {
-      const data = envelope(test, defect === "excess truncated samples")
-      if (defect === "missing complete samples") data.samples[test.applied] = []
-      else {
-        data.counts[test.applied] = 0
-        data.counts["failed"] = 1
-      }
-      expect(render(test.name, data)).toContain("couldn&#x27;t confirm the")
-      expect(captured.tables).toHaveLength(0)
+  it.each(["wrong outcome", "missing complete samples"])("rejects %s", (defect) => {
+    const data = envelope(test, defect === "excess truncated samples")
+    if (defect === "missing complete samples") data.samples[test.applied] = []
+    else {
+      data.counts[test.applied] = 0
+      data.counts["failed"] = 1
     }
-  )
+    expect(render(test.name, data)).toContain("couldn&#x27;t confirm the")
+    expect(captured.tables).toHaveLength(0)
+  })
   it.each([false, true])("preserves valid evidence and exports (truncated: %s)", (truncated) => {
     const data = envelope(test, truncated)
     if (truncated) data.counts[test.applied] = 3

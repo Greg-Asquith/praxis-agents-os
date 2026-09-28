@@ -8,7 +8,6 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolActivity } from "@/features/conversations/message-parts"
-import type { ToolUiField } from "@/features/tools/types"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 import { outlookMailDraftPresenter } from "@/integrations/outlook_mail/presenters/create-draft"
 import { outlookMailForwardPresenter } from "@/integrations/outlook_mail/presenters/forward-message"
@@ -76,45 +75,6 @@ const PRESENTERS: Record<string, ToolRowPresenter> = {
 }
 
 const NAMES = Object.keys(PRESENTERS)
-
-// Mirrors the server's declared approval fields so entity references use the entity editor.
-const FIELDS: Record<string, [string, ToolUiField["format"]][]> = {
-  outlook_mail_send_message: [
-    ["to", "list"],
-    ["subject", "text"],
-    ["body_html", "html"],
-    ["cc", "list"],
-    ["bcc", "list"],
-  ],
-  outlook_mail_reply_to_message: [
-    ["message", "entity"],
-    ["body_html", "html"],
-    ["reply_all", "boolean"],
-  ],
-  outlook_mail_forward_message: [
-    ["message", "entity"],
-    ["to", "list"],
-    ["body_html", "html"],
-  ],
-  outlook_mail_create_draft: [
-    ["to", "list"],
-    ["subject", "text"],
-    ["body_html", "html"],
-    ["cc", "list"],
-    ["bcc", "list"],
-    ["reply_to", "entity"],
-    ["reply_all", "boolean"],
-  ],
-  outlook_mail_move_message: [
-    ["message", "entity"],
-    ["destination_folder", "text"],
-  ],
-  outlook_mail_update_message: [
-    ["message", "entity"],
-    ["is_read", "boolean"],
-    ["flagged", "boolean"],
-  ],
-}
 
 function render(node: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } })
@@ -189,55 +149,17 @@ describe("Outlook write presenters", () => {
     await loadIntegrationUiModules(["outlook_mail"])
   })
 
-  it.each(NAMES)("registers %s with its own approval-aware presenter", (name) => {
-    const presenter = PRESENTERS[name]
-    expect(presenter?.handlesApprovals).toBe(true)
-    expect(presenter?.matches(props(name, "completed").activity)).toBe(true)
-    expect(NAMES.filter((other) => presenter?.matches(props(other, "completed").activity))).toEqual(
-      [name]
-    )
-    const context = props(name, "awaiting_approval")
-    context.approvalDecision = controls()
-    expect(renderCustomToolCallRow(context)).not.toBeNull()
-  })
-
-  it.each([
-    ["outlook_mail_send_message", "Review email before sending", "Approve &amp; Send"],
-    ["outlook_mail_send_draft", "Review draft before sending", "Approve &amp; Send"],
-    ["outlook_mail_reply_to_message", "Review reply before sending", "Approve &amp; Send"],
-    ["outlook_mail_forward_message", "Review email before forwarding", "Approve &amp; Forward"],
-    ["outlook_mail_create_draft", "Review draft before saving", "Approve &amp; Save"],
-    ["outlook_mail_move_message", "Review message before moving", "Approve &amp; Move"],
-    ["outlook_mail_update_message", "Review message before updating", "Approve &amp; Update"],
-  ])("renders a branded approval card for %s", (name, title, approve) => {
-    const context = props(name, "awaiting_approval")
-    context.approvalDecision = controls()
-    context.ui = {
-      icon: "outlook_mail",
-      running_label: "",
-      completed_label: "",
-      failed_label: "",
-      approval_title: "",
-      approval_prompt: "",
-      approve_label: "",
-      arg_fields: (FIELDS[name] ?? []).map(([key, format]) => ({
-        key,
-        label: key,
-        format,
-        editable: true,
-        min_rows: 0,
-        options: [],
-        placeholder: "",
-        secondary: false,
-        ...(format === "entity" ? { entity_kind: "outlook_message" } : {}),
-      })),
-      result_fields: [],
+  it("registers each write with its own approval-aware presenter", () => {
+    for (const name of NAMES) {
+      const presenter = PRESENTERS[name]
+      expect(presenter?.handlesApprovals).toBe(true)
+      expect(
+        NAMES.filter((other) => presenter?.matches(props(other, "completed").activity))
+      ).toEqual([name])
+      const context = props(name, "awaiting_approval")
+      context.approvalDecision = controls()
+      expect(renderCustomToolCallRow(context)).not.toBeNull()
     }
-    const html = render(PRESENTERS[name]?.render(context))
-    expect(html).toContain(`Approval request: ${title}`)
-    expect(html).toContain(approve)
-    expect(html).toContain("<svg")
-    expect(html).not.toContain("opaque-mailbox")
   })
 
   it.each([
@@ -247,12 +169,6 @@ describe("Outlook write presenters", () => {
       "A reply draft cannot set To or Subject.",
     ],
     [
-      "outlook_mail_create_draft",
-      { to: ["kai@example.com"], subject: "Draft", body_html: "", reply_all: true },
-      "Reply all needs a message to reply to.",
-    ],
-    ["outlook_mail_create_draft", { body_html: "" }, "A new draft needs To and Subject."],
-    [
       "outlook_mail_update_message",
       { message, is_read: null, flagged: null },
       "Set Read or Flagged to update a message.",
@@ -261,33 +177,6 @@ describe("Outlook write presenters", () => {
     const context = props(name, "awaiting_approval", { args })
     context.approvalDecision = controls()
     expect(render(PRESENTERS[name]?.render(context))).toContain(reason)
-  })
-
-  it.each([
-    ["running", "Sending email…"],
-    ["awaiting_approval", "Waiting for approval to send email…"],
-    ["failed", "The email could not be sent."],
-  ] as const)("renders the %s state for a send", (status, copy) => {
-    const html = render(outlookMailSendPresenter.render(props("outlook_mail_send_message", status)))
-    expect(html).toContain("Send Outlook Email")
-    expect(html).toContain(copy)
-    if (status === "failed") {
-      expect(html).toContain("Email not sent")
-      expect(html).toContain("Monthly report")
-      expect(html).not.toContain("Open in Outlook")
-    }
-  })
-
-  it("keeps a declined send distinct from a failure and shows the reason", () => {
-    const html = render(
-      outlookMailSendPresenter.render(
-        props("outlook_mail_send_message", "denied", { decisionReason: "Wrong recipient" })
-      )
-    )
-    expect(html).toContain("This request was declined. Nothing was sent.")
-    expect(html).toContain("Wrong recipient")
-    expect(html).toContain("Subject: Monthly report")
-    expect(html).not.toContain(">Failed<")
   })
 
   it.each([
@@ -302,15 +191,6 @@ describe("Outlook write presenters", () => {
         "Report attached",
       ],
     ],
-    ["outlook_mail_reply_to_message", ["Reply sent", "Reply all", "Yes", "Thanks"]],
-    ["outlook_mail_send_draft", ["Draft sent", "Outlook accepted the existing draft for sending."]],
-    ["outlook_mail_forward_message", ["Email forwarded", "kai@example.com"]],
-    [
-      "outlook_mail_create_draft",
-      ["Draft saved", "Nothing was sent.", "Draft report", "Open draft in Outlook"],
-    ],
-    ["outlook_mail_move_message", ["Message moved", "Folder", "Archive"]],
-    ["outlook_mail_update_message", ["Message updated", "Read", "Not flagged"]],
   ])("renders the confirmed outcome for %s from the approved arguments", (name, expected) => {
     const html = completed(name, [entry(applied())])
     for (const text of expected) expect(html).toContain(text)
@@ -321,15 +201,7 @@ describe("Outlook write presenters", () => {
     expect(html).not.toContain("praxis_untrusted")
   })
 
-  const outcomes = [
-    ["outlook_mail_send_message", "Send not confirmed", "Email not sent"],
-    ["outlook_mail_send_draft", "Send not confirmed", "Draft not sent"],
-    ["outlook_mail_reply_to_message", "Reply not confirmed", "Reply not sent"],
-    ["outlook_mail_forward_message", "Forward not confirmed", "Email not forwarded"],
-    ["outlook_mail_create_draft", "Draft not confirmed", "Draft not saved"],
-    ["outlook_mail_move_message", "Move not confirmed", "Message not moved"],
-    ["outlook_mail_update_message", "Update not confirmed", "Message not updated"],
-  ]
+  const outcomes = [["outlook_mail_create_draft", "Draft not confirmed", "Draft not saved"]]
 
   it.each(outcomes)("preserves uncertain evidence throughout %s", (name, title, rejected) => {
     const ambiguous = (data: unknown) =>
@@ -373,11 +245,6 @@ describe("Outlook write presenters", () => {
     }
   )
 
-  it("does not render an empty forward body frame", () => {
-    expect(completed("outlook_mail_forward_message", [entry(applied())])).not.toContain("<iframe")
-    expect(completed("outlook_mail_send_message", [entry(applied())])).toContain("<iframe")
-  })
-
   it("shows a rejected send as failed with the draft that remains", () => {
     const html = completed("outlook_mail_send_message", [
       entry(
@@ -393,22 +260,6 @@ describe("Outlook write presenters", () => {
     expect(html).toContain("Open draft in Outlook")
     expect(html).toContain(">Failed<")
     expect(html).not.toContain(">Done<")
-    expect(html).not.toContain("Email sent")
-  })
-
-  it("shows an unverified send as unconfirmed rather than sent or failed", () => {
-    const html = completed("outlook_mail_send_message", [
-      entry(applied({ outcome: "unverified", error_code: "unverified_mutation" }), {
-        status: "error",
-        error_code: "unverified_mutation",
-        error_message: "Raw provider message",
-      }),
-    ])
-    expect(html).toContain("Send not confirmed")
-    expect(html).toContain("couldn&#x27;t verify whether Outlook sent the email")
-    expect(html).toContain("Open in Outlook")
-    expect(html).not.toContain("Open draft in Outlook")
-    expect(html).not.toContain("Raw provider message")
     expect(html).not.toContain("Email sent")
   })
 

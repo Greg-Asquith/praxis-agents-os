@@ -52,44 +52,6 @@ def test_over_limit_string_keeps_head_tail_and_exact_marker() -> None:
     assert size.oversized is True
 
 
-def test_at_or_under_limit_returns_same_object() -> None:
-    result = "within-bound"
-
-    bounded, size = truncate_result(_definition(), result, default_limit=len(result))
-
-    assert bounded is result
-    assert size.chars == len(result)
-    assert size.truncated is False
-    assert size.oversized is False
-
-
-def test_none_default_disables_truncation() -> None:
-    result = "x" * 100
-
-    bounded, size = truncate_result(_definition(), result, default_limit=None)
-
-    assert bounded is result
-    assert size.truncated is False
-
-
-def test_per_tool_limit_overrides_default_in_both_directions() -> None:
-    result = "x" * 50
-
-    bounded, _size = truncate_result(
-        _definition(max_result_chars=20),
-        result,
-        default_limit=100,
-    )
-    unbounded, _size = truncate_result(
-        _definition(max_result_chars=100),
-        result,
-        default_limit=20,
-    )
-
-    assert bounded != result
-    assert unbounded is result
-
-
 def test_structured_and_declared_outputs_are_measured_but_never_cut() -> None:
     mapping = {"content": "x" * 100}
     rich = ToolReturn(return_value="x" * 100)
@@ -114,16 +76,6 @@ def test_structured_and_declared_outputs_are_measured_but_never_cut() -> None:
     assert declared_size.truncated is False
 
 
-def test_truncation_is_deterministic() -> None:
-    result = "prefix" * 1000 + "漢字" * 1000 + "suffix" * 1000
-
-    first, first_size = truncate_result(_definition(), result, default_limit=100)
-    second, second_size = truncate_result(_definition(), result, default_limit=100)
-
-    assert first == second
-    assert first_size == second_size
-
-
 def test_public_result_is_json_safe_redacted_validated_and_measured() -> None:
     result = ToolReturn(
         return_value={"rows": []},
@@ -139,36 +91,6 @@ def test_public_result_is_json_safe_redacted_validated_and_measured() -> None:
     assert isinstance(row["id"], str)
     assert row["api_token"] == REDACTED_VALUE
     assert chars is not None and chars > 0
-
-
-@pytest.mark.parametrize(
-    "metadata",
-    [
-        pytest.param({}, id="absent"),
-        pytest.param({"public_result": None}, id="null"),
-        pytest.param({"public_result": False}, id="false"),
-        pytest.param({"public_result": 0}, id="zero"),
-        pytest.param({"public_result": ""}, id="empty-string"),
-        pytest.param({"public_result": {"rows": []}}, id="object"),
-        pytest.param({"public_result": []}, id="list"),
-    ],
-)
-def test_public_result_validation_honors_key_presence(metadata: dict[str, object]) -> None:
-    result = ToolReturn(return_value={"model_only": "must-not-leak"}, metadata=metadata.copy())
-
-    chars = prepare_public_result(
-        _definition(max_public_result_chars=1_000),
-        result,
-    )
-
-    if "public_result" not in metadata:
-        assert chars is None
-        assert "public_result" not in result.metadata
-    else:
-        assert chars is not None
-        assert "public_result" in result.metadata
-        assert result.metadata["public_result"] == metadata["public_result"]
-        assert type(result.metadata["public_result"]) is type(metadata["public_result"])
 
 
 @pytest.mark.parametrize("max_public_result_chars", [None, 10])

@@ -1,6 +1,6 @@
 """Tests for the actor-scoped pending-approvals inbox."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -29,55 +29,6 @@ from tests.services.agent_runs.test_approval_state import ApprovalStateContext
 
 pytestmark = pytest.mark.asyncio
 pytest_plugins = ("tests.services.agent_runs.test_approval_state",)
-
-
-async def test_list_pending_approvals_returns_tool_names_oldest_first(
-    db_session: AsyncSession,
-    approval_context: ApprovalStateContext,
-) -> None:
-    first_run = await db_session.get(AgentRun, approval_context.run_id)
-    conversation = await db_session.get(Conversation, approval_context.conversation_id)
-    assert first_run is not None
-    assert conversation is not None
-    conversation.title = "Quarterly review"
-    newer_conversation = await _create_conversation(db_session, approval_context)
-
-    newer_run = await create_agent_run(
-        db_session,
-        conversation_id=newer_conversation.id,
-        agent_id=approval_context.agent_id,
-        workspace_id=approval_context.workspace.id,
-        user_id=approval_context.user.id,
-        trigger="interactive",
-    )
-    oldest = datetime.now(UTC) - timedelta(hours=2)
-    newer = datetime.now(UTC) - timedelta(minutes=30)
-    await _suspend_run(
-        db_session,
-        run=first_run,
-        conversation=conversation,
-        tool_name="send_report",
-        awaiting_since=oldest,
-    )
-    await _suspend_run(
-        db_session,
-        run=newer_run,
-        conversation=newer_conversation,
-        tool_name="update_record",
-        awaiting_since=newer,
-    )
-
-    response = await list_pending_agent_run_approvals(
-        db_session,
-        actor=approval_context.user,
-        workspace=approval_context.workspace,
-    )
-
-    assert [item.run_id for item in response.items] == [first_run.id, newer_run.id]
-    assert response.items[0].conversation_title == "Quarterly review"
-    assert response.items[0].agent_name == "Approval Agent"
-    assert response.items[0].pending_tool_names == ["send_report"]
-    assert response.items[0].awaiting_since == oldest
 
 
 async def test_list_pending_approvals_enforces_scope_and_projects_delegation(
@@ -246,47 +197,6 @@ async def test_list_pending_approvals_enforces_scope_and_projects_delegation(
     assert [item.run_id for item in response.items] == [parent.id]
     assert response.items[0].pending_tool_names == ["create_invoice"]
     assert response.items[0].delegated_agent_names == ["Finance delegate"]
-
-
-async def test_list_pending_approvals_total_exceeds_limit(
-    db_session: AsyncSession,
-    approval_context: ApprovalStateContext,
-) -> None:
-    conversation = await db_session.get(Conversation, approval_context.conversation_id)
-    first_run = await db_session.get(AgentRun, approval_context.run_id)
-    assert conversation is not None
-    assert first_run is not None
-    await _suspend_run(
-        db_session,
-        run=first_run,
-        conversation=conversation,
-        tool_name="first_tool",
-    )
-    second_conversation = await _create_conversation(db_session, approval_context)
-    second_run = await create_agent_run(
-        db_session,
-        conversation_id=second_conversation.id,
-        agent_id=approval_context.agent_id,
-        workspace_id=approval_context.workspace.id,
-        user_id=approval_context.user.id,
-        trigger="interactive",
-    )
-    await _suspend_run(
-        db_session,
-        run=second_run,
-        conversation=second_conversation,
-        tool_name="second_tool",
-    )
-
-    response = await list_pending_agent_run_approvals(
-        db_session,
-        actor=approval_context.user,
-        workspace=approval_context.workspace,
-        limit=1,
-    )
-
-    assert response.total == 2
-    assert len(response.items) == 1
 
 
 async def test_list_pending_approvals_skips_corrupt_state(

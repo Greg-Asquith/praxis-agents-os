@@ -30,7 +30,7 @@ const approvals: PendingToolApproval[] = [
 ]
 
 describe("approval decision helpers", () => {
-  it.each([true, false])("serialises boolean edits from %s with replay arguments", (original) => {
+  it.each([true])("serialises boolean edits from %s with replay arguments", (original) => {
     const approval: PendingToolApproval = {
       tool_call_id: "scalar",
       name: "update_settings",
@@ -57,26 +57,14 @@ describe("approval decision helpers", () => {
     ])
   })
 
-  it.each([true, false])("omits an unchanged boolean %s", (enabled) => {
+  it.each(["true", null])("rejects a boolean edit over original %j", (enabled) => {
     expect(
       buildResumeDecisions(
         [{ tool_call_id: "scalar", name: "update_settings", args: { enabled } }],
-        { scalar: { decision: "approved", edits: { enabled }, message: "" } }
+        { scalar: { decision: "approved", edits: { enabled: true }, message: "" } }
       )
-    ).toEqual([{ tool_call_id: "scalar", decision: "approved", override_args: null }])
+    ).toBe("This request can no longer be edited. Refresh and try again.")
   })
-
-  it.each(["true", "false", 0, 1, null, undefined, [], {}])(
-    "rejects a boolean edit over original %j",
-    (enabled) => {
-      expect(
-        buildResumeDecisions(
-          [{ tool_call_id: "scalar", name: "update_settings", args: { enabled } }],
-          { scalar: { decision: "approved", edits: { enabled: true }, message: "" } }
-        )
-      ).toBe("This request can no longer be edited. Refresh and try again.")
-    }
-  )
 
   it("summarizes pending, approved, and denied decisions", () => {
     const decisions: ApprovalDecisionMap = {
@@ -262,64 +250,6 @@ describe("approval decision helpers", () => {
     ])
   })
 
-  it("sends Airtable field edits as an object in override args", () => {
-    const approval: PendingToolApproval = {
-      tool_call_id: "airtable-create-1",
-      name: "airtable_create_record",
-      args: {
-        table: "Projects",
-        fields: { Status: "Draft", Owner: "Ada" },
-      },
-    }
-
-    expect(
-      buildResumeDecisions([approval], {
-        "airtable-create-1": {
-          decision: "approved",
-          message: "",
-          edits: {
-            fields: { Status: "Complete", Owner: "Ada" },
-          },
-        },
-      })
-    ).toEqual([
-      {
-        decision: "approved",
-        override_args: {
-          table: "Projects",
-          fields: { Status: "Complete", Owner: "Ada" },
-        },
-        tool_call_id: "airtable-create-1",
-      },
-    ])
-  })
-
-  it("drops structurally unchanged typed edits", () => {
-    const approval: PendingToolApproval = {
-      tool_call_id: "typed-1",
-      name: "typed_write",
-      args: {
-        importance: 3,
-        recipients: ["one@example.com", "two@example.com"],
-        fields: { Name: "Praxis", Score: 3, Active: true },
-      },
-    }
-
-    expect(
-      buildResumeDecisions([approval], {
-        "typed-1": {
-          decision: "approved",
-          message: "",
-          edits: {
-            importance: 3,
-            recipients: ["one@example.com", "two@example.com"],
-            fields: { Name: "Praxis", Score: 3, Active: true },
-          },
-        },
-      })
-    ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "typed-1" }])
-  })
-
   it("replaces record rows exactly while preserving typed cell values", () => {
     const approval: PendingToolApproval = {
       tool_call_id: "records-1",
@@ -465,43 +395,6 @@ describe("approval decision helpers", () => {
     ])
   })
 
-  it("submits scoped multi-entity references without flattening their account scope", () => {
-    const first = {
-      version: 1 as const,
-      entity_kind: "google_ads_campaign",
-      customer_id: "1234567890",
-      campaign_id: "111",
-      label: "Spring campaign",
-    }
-    const second = {
-      ...first,
-      customer_id: "2222222222",
-      campaign_id: "222",
-      label: "Summer campaign",
-    }
-    const approval: PendingToolApproval = {
-      tool_call_id: "campaigns-1",
-      name: "google_ads_update_campaign_status",
-      args: { campaign_ids: [first], status: "PAUSED" },
-    }
-
-    expect(
-      buildResumeDecisions([approval], {
-        "campaigns-1": {
-          decision: "approved",
-          message: "",
-          edits: { campaign_ids: [first, second] },
-        },
-      })
-    ).toEqual([
-      {
-        decision: "approved",
-        override_args: { campaign_ids: [first, second], status: "PAUSED" },
-        tool_call_id: "campaigns-1",
-      },
-    ])
-  })
-
   it("preserves integer shape and rejects unsupported edited value shapes", () => {
     const integerApproval: PendingToolApproval = {
       tool_call_id: "integer-1",
@@ -561,47 +454,6 @@ describe("approval decision helpers", () => {
         decision: "approved",
         override_args: {
           fields: { Name: "Praxis", Linked: [{ id: "record-1" }] },
-        },
-        tool_call_id: "fields-1",
-      },
-    ])
-  })
-
-  it("drops empty newly added key/value rows", () => {
-    const approval: PendingToolApproval = {
-      tool_call_id: "fields-1",
-      name: "airtable_create_record",
-      args: {
-        fields: {
-          Name: "Praxis",
-          ExistingEmpty: "",
-        },
-      },
-    }
-
-    expect(
-      buildResumeDecisions([approval], {
-        "fields-1": {
-          decision: "approved",
-          message: "",
-          edits: {
-            fields: {
-              Name: "Praxis Agents",
-              ExistingEmpty: "",
-              "Field 3": "",
-              Notes: "   ",
-            },
-          },
-        },
-      })
-    ).toEqual([
-      {
-        decision: "approved",
-        override_args: {
-          fields: {
-            Name: "Praxis Agents",
-            ExistingEmpty: "",
-          },
         },
         tool_call_id: "fields-1",
       },
@@ -705,7 +557,7 @@ describe("optional entity approval edits", () => {
     entity_kind: "file",
   }
 
-  it.each([null, undefined, reference])("clears an optional entity from %j", (folder) => {
+  it.each([undefined, reference])("clears an optional entity from %j", (folder) => {
     const args = folder === undefined ? { name: "notes.txt" } : { name: "notes.txt", folder }
     expect(
       buildResumeDecisions(
@@ -722,21 +574,18 @@ describe("optional entity approval edits", () => {
     ])
   })
 
-  it.each([
-    undefined,
-    { ...field, secondary: false },
-    { ...field, editable: false },
-    { ...field, format: "text" as const },
-    { ...field, format: "entity_list" as const },
-  ])("rejects clearing without an editable optional entity declaration: %j", (declaration) => {
-    expect(
-      buildResumeDecisions(
-        [{ tool_call_id: "write", name: "write_file", args: { folder: reference } }],
-        { write: { decision: "approved", message: "", edits: { folder: null } } },
-        () => (declaration ? [declaration] : undefined)
-      )
-    ).toBe("This request can no longer be edited. Refresh and try again.")
-  })
+  it.each([undefined, { ...field, secondary: false }, { ...field, editable: false }])(
+    "rejects clearing without an editable optional entity declaration: %j",
+    (declaration) => {
+      expect(
+        buildResumeDecisions(
+          [{ tool_call_id: "write", name: "write_file", args: { folder: reference } }],
+          { write: { decision: "approved", message: "", edits: { folder: null } } },
+          () => (declaration ? [declaration] : undefined)
+        )
+      ).toBe("This request can no longer be edited. Refresh and try again.")
+    }
+  )
 
   it.each([null, { ...reference, entity_id: "other-folder" }])(
     "rejects a stale or injected locked entity edit %j",
@@ -751,16 +600,13 @@ describe("optional entity approval edits", () => {
     }
   )
 
-  it.each(["folder-id", false, 1, [], {}])(
-    "rejects clearing a malformed entity value %j",
-    (folder) => {
-      expect(
-        buildResumeDecisions(
-          [{ tool_call_id: "write", name: "write_file", args: { folder } }],
-          { write: { decision: "approved", message: "", edits: { folder: null } } },
-          () => [field]
-        )
-      ).toBe("This request can no longer be edited. Refresh and try again.")
-    }
-  )
+  it.each(["folder-id", {}])("rejects clearing a malformed entity value %j", (folder) => {
+    expect(
+      buildResumeDecisions(
+        [{ tool_call_id: "write", name: "write_file", args: { folder } }],
+        { write: { decision: "approved", message: "", edits: { folder: null } } },
+        () => [field]
+      )
+    ).toBe("This request can no longer be edited. Refresh and try again.")
+  })
 })

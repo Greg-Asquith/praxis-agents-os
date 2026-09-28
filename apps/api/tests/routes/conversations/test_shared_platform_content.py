@@ -28,7 +28,7 @@ from tests.support.platform_artifacts import seed_published_artifact
 from tests.support.requests import build_test_request
 
 
-@pytest.mark.parametrize("lifecycle", ["withdraw", "delete"])
+@pytest.mark.parametrize("lifecycle", ["withdraw"])
 async def test_shared_platform_references_recheck_publication(
     db_session, db_async_client, management_context, lifecycle
 ):

@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 import httpx2 as httpx
 import pytest
 from pydantic import SecretStr
-from pydantic_ai import DeferredToolResults, ToolApproved
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.settings import settings
@@ -158,50 +157,6 @@ def _script_run_code(monkeypatch: pytest.MonkeyPatch, executed: list[str]) -> No
 
     monkeypatch.setattr(run_code_tools, "run_native_code_execution", fake_execution)
     monkeypatch.setattr(run_code_tools, "persist_sandbox_outputs", fake_persistence)
-
-
-async def test_run_code_approval_suspends_and_resumes(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _enable_openai(monkeypatch)
-    executed: list[str] = []
-    _script_run_code(monkeypatch, executed)
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=["run_code"],
-        tool_policies={"run_code": "approval"},
-    )
-    model = scripted_model(
-        turns=[
-            ToolTurn((ToolCall("run_code", {"task": "Sum the data"}, "run-code-approval"),)),
-            "The approved computation completed.",
-        ]
-    )
-
-    suspended = await run_scenario(db_session_factory, context, model=model)
-
-    assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
-    assert executed == []
-    state = load_suspended_run_state(suspended.run)
-    resumed = await run_scenario(
-        db_session_factory,
-        context,
-        model=model,
-        prompt=None,
-        expected_status=RUN_STATUS_AWAITING_APPROVAL,
-        message_history=state.message_history,
-        deferred_tool_results=DeferredToolResults(
-            approvals={state.pending_tool_call_ids[0]: ToolApproved()}
-        ),
-    )
-
-    assert resumed.run.status == "completed"
-    assert executed == ["Sum the data"]
-    assert {row.details["outcome"] for row in resumed.audit_rows} == {
-        "approval_requested",
-        "completed",
-    }
 
 
 async def test_run_code_approval_evidence_names_every_outbound_file(

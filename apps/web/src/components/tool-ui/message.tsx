@@ -17,7 +17,7 @@ import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export function MessageListRow({
+function MessageListRow({
   date,
   onSelect,
   provenance,

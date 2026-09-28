@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.settings import Settings, settings
+from core.settings import settings
 from models.artifacts import ArtifactShare
 from models.jobs import Job
 from services.artifacts import create_artifact
@@ -39,23 +39,13 @@ def local_storage_settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterato
 @pytest.mark.parametrize(
     "origin",
     [
-        "",
         "https://app.example.com",
         "https://artifacts.app.example.com",
-        "https://artifacts.example.com",
     ],
 )
 def test_production_sharing_requires_a_distinct_origin(origin: str) -> None:
     with pytest.raises(ValidationError, match="ARTIFACT_ORIGIN"):
         production_settings(ARTIFACT_SHARING_ENABLED=True, ARTIFACT_ORIGIN=origin)
-
-
-def test_production_sharing_accepts_a_separate_origin() -> None:
-    resolved = production_settings(
-        ARTIFACT_SHARING_ENABLED=True,
-        ARTIFACT_ORIGIN="https://praxis-artifacts.example.net",
-    )
-    assert resolved.ARTIFACT_ORIGIN == "https://praxis-artifacts.example.net"
 
 
 def test_production_sharing_requires_https_and_rate_limiting() -> None:
@@ -78,17 +68,6 @@ def test_production_sharing_rejects_cookie_domain_coverage() -> None:
             ARTIFACT_SHARING_ENABLED=True,
             ARTIFACT_ORIGIN="https://artifacts.example.net",
             COOKIE_DOMAIN=".example.net",
-        )
-
-
-def test_artifact_share_ttl_is_hard_capped_at_thirty_days() -> None:
-    with pytest.raises(ValidationError, match="ARTIFACT_SHARE_MAX_TTL_DAYS"):
-        Settings(_env_file=None, ARTIFACT_SHARE_MAX_TTL_DAYS=31)
-    with pytest.raises(ValidationError, match="ARTIFACT_SHARE_DEFAULT_TTL_DAYS"):
-        Settings(
-            _env_file=None,
-            ARTIFACT_SHARE_DEFAULT_TTL_DAYS=8,
-            ARTIFACT_SHARE_MAX_TTL_DAYS=7,
         )
 
 

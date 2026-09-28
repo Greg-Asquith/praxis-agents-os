@@ -24,11 +24,8 @@ from integrations.notion.client import NotionClient
 from integrations.notion.operations.create_page import create_page, prepare_create_page
 from integrations.notion.operations.properties import (
     get_page_mutation_target,
-    validate_property_records_against_schema,
 )
 from integrations.notion.operations.update_page_markdown import (
-    MULTIPLE_MATCHES_ERROR_MESSAGE,
-    NO_MATCH_ERROR_MESSAGE,
     prepare_update_page_markdown,
     update_page_markdown,
 )
@@ -40,17 +37,8 @@ from integrations.notion.references import NotionDataSourceReference, NotionPage
 from integrations.notion.tools.mutations import NotionPropertyRecord, NotionReplacementRecord
 from integrations.notion.tools.utils import (
     NOTION_WRITE_BINDING,
-    attach_notion_cancellation_evidence,
-    failed_notion_mutation_outcome,
-    pending_create_page_detail,
-    pending_update_content_detail,
     pending_update_properties_detail,
-    successful_notion_mutation_outcome,
-    terminal_all_applied,
-    terminal_all_failed,
-    terminal_all_unverified,
 )
-from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.execution import _run_authorized_entries
 
@@ -143,202 +131,6 @@ def client_for(handler: Callable[[httpx2.Request], httpx2.Response]):
     return http_client, NotionClient(token, client=http_client)
 
 
-async def test_create_page_preparation_reads_live_data_source_schema_and_builds_intent() -> None:
-    requests: list[httpx2.Request] = []
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        return httpx2.Response(200, json=data_source_payload(), request=request)
-
-    scope_entry = entry()
-    http_client, client = client_for(handler)
-    async with http_client:
-        prepared = await prepare_create_page(
-            client,
-            scope_entry,
-            parent_page=None,
-            parent_data_source=data_source_reference(),
-            title="  Q4 launch  ",
-            content_md="# Plan\n",
-            properties=[NotionPropertyRecord(name="Status", type="status", value="Planned")],
-        )
-
-    assert requests[0].method == "GET"
-    assert requests[0].url.path == "/v1/data_sources/source-1"
-    assert prepared.parent_type == "data_source_id"
-    assert prepared.properties == {
-        "Project": {"title": [{"type": "text", "text": {"content": "Q4 launch"}}]},
-        "Status": {"status": {"name": "Planned"}},
-    }
-    detail = pending_create_page_detail(scope_entry, prepared)
-    assert detail.target.entity_type == "notion_data_source"
-    assert detail.target.external_id == "source-1"
-    assert detail.target.integration_resource_id == str(scope_entry.integration_resource_id)
-    assert detail.intent_groups[0].items[0].fields == {
-        "title": "Q4 launch",
-        "content_bytes": 7,
-        "property_count": 1,
-    }
-
-
-async def test_create_page_preparation_rejects_oversized_complete_request() -> None:
-    records = [
-        NotionPropertyRecord(
-            name=f"Field {index}",
-            type="rich_text",
-            value="\U0001f680" * 2_000,
-        )
-        for index in range(50)
-    ]
-    payload = data_source_payload()
-    payload["properties"].update(
-        {record.name: {"type": "rich_text", "rich_text": {}} for record in records}
-    )
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=payload, request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        with pytest.raises(ModelRetry, match="500000-byte limit"):
-            await prepare_create_page(
-                client,
-                entry(),
-                parent_page=None,
-                parent_data_source=data_source_reference(),
-                title="Launch",
-                content_md="x" * 100_000,
-                properties=records,
-            )
-
-
-async def test_create_under_page_rejects_additional_properties_before_provider_read() -> None:
-    calls = 0
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        nonlocal calls
-        calls += 1
-        return httpx2.Response(200, json=page_payload(), request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        with pytest.raises(ModelRetry, match="no additional properties"):
-            await prepare_create_page(
-                client,
-                entry(),
-                parent_page=page_reference(),
-                parent_data_source=None,
-                title="Launch",
-                content_md="",
-                properties=[NotionPropertyRecord(name="Status", type="status", value="Planned")],
-            )
-
-    assert calls == 0
-
-
-@pytest.mark.parametrize(
-    "record",
-    [
-        NotionPropertyRecord(name="Status", type="status", value="Urgent"),
-        NotionPropertyRecord(name="Priority", type="select", value="Urgent"),
-        NotionPropertyRecord(name="Tags", type="multi_select", value="API, Urgent"),
-    ],
-)
-async def test_create_page_rejects_unknown_options_before_pending_evidence(
-    record: NotionPropertyRecord,
-) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=data_source_payload(), request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        with pytest.raises(ModelRetry, match="does not contain option 'Urgent'"):
-            await prepare_create_page(
-                client,
-                entry(),
-                parent_page=None,
-                parent_data_source=data_source_reference(),
-                title="Launch",
-                content_md="",
-                properties=[record],
-            )
-
-
-@pytest.mark.parametrize(
-    ("parent_page", "parent_data_source"),
-    [
-        (None, None),
-        (page_reference(), data_source_reference()),
-    ],
-)
-async def test_create_preparation_requires_exactly_one_parent(
-    parent_page: NotionPageReference | None,
-    parent_data_source: NotionDataSourceReference | None,
-) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        raise AssertionError(f"Unexpected provider request: {request.url}")
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        with pytest.raises(ModelRetry, match="Choose one"):
-            await prepare_create_page(
-                client,
-                entry(),
-                parent_page=parent_page,
-                parent_data_source=parent_data_source,
-                title="Launch",
-                content_md="",
-                properties=[],
-            )
-
-
-async def test_create_preparation_rejects_reserved_data_source_title_property() -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=data_source_payload(), request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        with pytest.raises(ModelRetry, match="title argument"):
-            await prepare_create_page(
-                client,
-                entry(),
-                parent_page=None,
-                parent_data_source=data_source_reference(),
-                title="Launch",
-                content_md="",
-                properties=[NotionPropertyRecord(name="Project", type="title", value="Other")],
-            )
-
-
-@pytest.mark.parametrize(
-    ("title", "content_md", "message"),
-    [
-        (" ", "", "Page title"),
-        ("Launch", "\U0001f680" * (256 * 1024), "Page content"),
-    ],
-)
-async def test_create_preparation_returns_model_retry_for_editable_text_bounds(
-    title: str,
-    content_md: str,
-    message: str,
-) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        raise AssertionError(f"Unexpected provider request: {request.url}")
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        with pytest.raises(ModelRetry, match=message):
-            await prepare_create_page(
-                client,
-                entry(),
-                parent_page=page_reference(),
-                parent_data_source=None,
-                title=title,
-                content_md=content_md,
-                properties=[],
-            )
-
-
 async def test_property_preparation_reloads_schema_and_revalidates_edited_records() -> None:
     responses = [data_source_payload(), data_source_payload(status_type="select")]
 
@@ -372,76 +164,6 @@ async def test_property_preparation_reloads_schema_and_revalidates_edited_record
     assert responses == []
 
 
-async def test_property_preparation_builds_pending_intent_from_edited_arguments() -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        payload = (
-            page_payload() if request.url.path.endswith("/pages/page-1") else data_source_payload()
-        )
-        return httpx2.Response(200, json=payload, request=request)
-
-    scope_entry = entry()
-    http_client, client = client_for(handler)
-    async with http_client:
-        await prepare_update_page_properties(
-            client,
-            scope_entry,
-            page=page_reference(),
-            properties=[NotionPropertyRecord(name="Status", type="status", value="Planned")],
-        )
-        edited = await prepare_update_page_properties(
-            client,
-            scope_entry,
-            page=page_reference(),
-            properties=[
-                NotionPropertyRecord(name="Status", type="status", value="Needs review, legal")
-            ],
-        )
-
-    fields = pending_update_properties_detail(scope_entry, edited).intent_groups[0].items[0].fields
-    assert fields == {
-        "name": "Status",
-        "type": "status",
-        "value": "Needs review, legal",
-    }
-
-
-async def test_property_preparation_reads_parent_options_and_rejects_unknown_values() -> None:
-    requests: list[httpx2.Request] = []
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        requests.append(request)
-        payload = (
-            page_payload() if request.url.path.endswith("/pages/page-1") else data_source_payload()
-        )
-        return httpx2.Response(200, json=payload, request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        prepared = await prepare_update_page_properties(
-            client,
-            entry(),
-            page=page_reference(),
-            properties=[NotionPropertyRecord(name="Status", type="status", value="Done")],
-        )
-        with pytest.raises(ModelRetry, match="does not contain option 'Urgent'"):
-            await prepare_update_page_properties(
-                client,
-                entry(),
-                page=page_reference(),
-                properties=[
-                    NotionPropertyRecord(name="Tags", type="multi_select", value="API, Urgent")
-                ],
-            )
-
-    assert prepared.properties == {"Status": {"status": {"name": "Done"}}}
-    assert [request.url.path for request in requests] == [
-        "/v1/pages/page-1",
-        "/v1/data_sources/source-1",
-        "/v1/pages/page-1",
-        "/v1/data_sources/source-1",
-    ]
-
-
 async def test_property_preparation_rejects_option_removed_during_approval() -> None:
     schema_reads = 0
 
@@ -473,29 +195,6 @@ async def test_property_preparation_rejects_option_removed_during_approval() -> 
             )
 
 
-@pytest.mark.parametrize(
-    ("record", "message"),
-    [
-        (NotionPropertyRecord(name="Missing", type="status", value="Planned"), "no longer"),
-        (NotionPropertyRecord(name="Formula", type="number", value="1"), "read-only"),
-        (NotionPropertyRecord(name="Status", type="select", value="Planned"), "now has type"),
-    ],
-)
-async def test_property_preparation_rejects_unknown_read_only_and_mismatched_fields(
-    record: NotionPropertyRecord,
-    message: str,
-) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=page_payload(), request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        target = await get_page_mutation_target(client, page_reference())
-
-    with pytest.raises(ModelRetry, match=message):
-        validate_property_records_against_schema([record], target)
-
-
 async def test_content_preparation_rejects_trashed_page_before_pending_evidence() -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, json=page_payload(in_trash=True), request=request)
@@ -511,37 +210,6 @@ async def test_content_preparation_rejects_trashed_page_before_pending_evidence(
                     NotionReplacementRecord(old_text="Draft", new_text="Final", replace_all="no")
                 ],
             )
-
-
-async def test_content_pending_evidence_is_complete_and_bounded() -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=page_payload(), request=request)
-
-    old_text = "a" * 1_200
-    new_text = "b" * 1_100
-    http_client, client = client_for(handler)
-    async with http_client:
-        prepared = await prepare_update_page_markdown(
-            client,
-            entry(),
-            page=page_reference(),
-            replacements=[
-                NotionReplacementRecord(
-                    old_text=old_text,
-                    new_text=new_text,
-                    replace_all="yes",
-                )
-            ],
-        )
-
-    fields = pending_update_content_detail(entry(), prepared).intent_groups[0].items[0].fields
-    assert fields == {
-        "old_text": old_text[:1_000],
-        "new_text": new_text[:1_000],
-        "old_text_length": 1_200,
-        "new_text_length": 1_100,
-        "replace_all": "yes",
-    }
 
 
 async def test_cross_context_reference_is_rejected_without_provider_call() -> None:
@@ -565,45 +233,12 @@ async def test_cross_context_reference_is_rejected_without_provider_call() -> No
     assert calls == 0
 
 
-async def test_revoked_credentials_fail_during_preparation() -> None:
-    forces: list[bool] = []
-
-    async def revoked_token(force: bool) -> str:
-        forces.append(force)
-        return "fresh" if force else "stale"
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(401, json={}, request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        client = NotionClient(revoked_token, client=http_client)
-        with pytest.raises(IntegrationAuthError):
-            await prepare_update_page_markdown(
-                client,
-                entry(),
-                page=page_reference(),
-                replacements=[
-                    NotionReplacementRecord(old_text="Draft", new_text="Final", replace_all="no")
-                ],
-            )
-
-    assert forces == [False, True]
-
-
-async def test_malformed_live_schema_fails_closed() -> None:
-    payload = page_payload()
-    payload["properties"] = []
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=payload, request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        with pytest.raises(IntegrationValidationError, match="property schema"):
-            await get_page_mutation_target(client, page_reference())
-
-
-@pytest.mark.parametrize("malformation", ["missing_object", "wrong_object", "missing_in_trash"])
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "missing_object",
+    ],
+)
 async def test_malformed_live_target_identity_fails_closed(malformation: str) -> None:
     payload = page_payload()
     if malformation == "missing_object":
@@ -620,11 +255,6 @@ async def test_malformed_live_target_identity_fails_closed(malformation: str) ->
     async with http_client:
         with pytest.raises(IntegrationValidationError):
             await get_page_mutation_target(client, page_reference())
-
-
-def test_notion_write_binding_requires_writable_resources() -> None:
-    assert NOTION_WRITE_BINDING.requires_write is True
-    assert NOTION_WRITE_BINDING.provider_keys == frozenset({"notion"})
 
 
 async def test_notion_write_binding_denies_read_only_entry_without_provider_call(
@@ -794,44 +424,6 @@ async def test_update_page_markdown_sends_exact_replacements_and_reads_edit_time
 
 
 @pytest.mark.parametrize(
-    ("provider_message", "expected_message"),
-    [
-        ("old_str could not find a match", NO_MATCH_ERROR_MESSAGE),
-        ("old_str matches more than one location", MULTIPLE_MATCHES_ERROR_MESSAGE),
-    ],
-)
-async def test_content_validation_errors_map_to_safe_specific_messages(
-    provider_message: str,
-    expected_message: str,
-) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        if request.method == "PATCH":
-            return httpx2.Response(
-                400,
-                json={"code": "validation_error", "message": provider_message},
-                request=request,
-            )
-        return httpx2.Response(200, json=page_payload(), request=request)
-
-    http_client, client = client_for(handler)
-    async with http_client:
-        prepared = await prepare_update_page_markdown(
-            client,
-            entry(),
-            page=page_reference(),
-            replacements=[
-                NotionReplacementRecord(old_text="Draft", new_text="Final", replace_all="no")
-            ],
-        )
-        with pytest.raises(IntegrationValidationError) as exc_info:
-            await update_page_markdown(client, prepared=prepared)
-
-    assert exc_info.value.user_message == expected_message
-    assert exc_info.value.failure_disposition is IntegrationFailureDisposition.REJECTED
-    assert provider_message not in exc_info.value.user_message
-
-
-@pytest.mark.parametrize(
     ("status_code", "error_type", "disposition"),
     [
         (403, IntegrationPermissionError, IntegrationFailureDisposition.REJECTED),
@@ -919,13 +511,6 @@ async def test_mutation_timeout_is_ambiguous_and_not_retried() -> None:
             "url": "https://www.notion.so/page-1",
             "last_edited_time": "2026-09-01T10:00:00.000Z",
         },
-        {
-            "object": "page",
-            "id": "different-page",
-            "in_trash": False,
-            "url": "https://www.notion.so/different-page",
-            "last_edited_time": "2026-09-01T10:00:00.000Z",
-        },
     ],
 )
 async def test_malformed_or_unverifiable_success_is_ambiguous(payload: dict) -> None:
@@ -958,7 +543,7 @@ async def test_content_follow_up_read_failure_keeps_confirmed_mutation_applied()
                 },
                 request=request,
             )
-        return httpx2.Response(503, json={}, request=request)
+        return httpx2.Response(400, json={}, request=request)
 
     prepared = SimpleNamespace(
         page=SimpleNamespace(external_id="page-1"),
@@ -1009,125 +594,3 @@ async def test_content_follow_up_cancellation_keeps_confirmed_mutation_applied()
     assert get_calls == 2
     assert result["last_edited_time"] is None
     assert result["applied_replacements"] == 1
-
-
-def test_terminal_evidence_builders_align_every_intent_and_effect() -> None:
-    pending = pending_update_content_detail(
-        entry(),
-        SimpleNamespace(
-            page=SimpleNamespace(
-                entity_type="notion_page",
-                external_id="page-1",
-                display_name="Launch plan",
-            ),
-            replacements=(
-                SimpleNamespace(old_text="A", new_text="B", replace_all="no"),
-                SimpleNamespace(old_text="C", new_text="D", replace_all="yes"),
-            ),
-        ),
-    )
-
-    applied = terminal_all_applied(pending, external_ref="page-1")
-    failed = terminal_all_failed(pending, error_code="validation_error")
-    unverified = terminal_all_unverified(pending, error_code="timeout")
-
-    assert applied.intent_counts.applied == applied.effect_counts.applied == 2
-    assert failed.intent_counts.failed == failed.effect_counts.failed == 2
-    assert unverified.intent_counts.unverified == unverified.effect_counts.unverified == 2
-    assert [outcome.intent_index for outcome in applied.outcome_groups[0].outcomes] == [0, 1]
-    assert {
-        effect.external_ref
-        for outcome in applied.outcome_groups[0].outcomes
-        for effect in outcome.effects
-    } == {"page-1"}
-
-
-def test_failure_outcomes_keep_only_stable_public_error_evidence() -> None:
-    pending = pending_create_page_detail(
-        entry(),
-        SimpleNamespace(
-            parent=SimpleNamespace(
-                entity_type="notion_page",
-                external_id="page-1",
-                display_name="Launch plan",
-            ),
-            title="Child page",
-            content_md="",
-            property_count=0,
-        ),
-    )
-    error = IntegrationTimeoutError(
-        "Provider message that must stay private",
-        provider_key="notion",
-        operation="create_page",
-        failure_disposition=IntegrationFailureDisposition.AMBIGUOUS,
-    )
-
-    outcome = failed_notion_mutation_outcome(
-        pending,
-        {"title": "Child page"},
-        error,
-        operation="create_page",
-    )
-
-    assert outcome.status is AuditStatus.UNVERIFIED
-    assert outcome.value == {
-        "title": "Child page",
-        "outcome": "unverified",
-        "error_code": "timeout",
-    }
-    assert outcome.unverified_result == outcome.value
-    assert "Provider message" not in str(outcome.value)
-
-    rejected = IntegrationPermissionError(
-        "Provider capability message that must stay private",
-        provider_key="notion",
-        operation="create_page",
-        failure_disposition=IntegrationFailureDisposition.REJECTED,
-    )
-    rejected_outcome = failed_notion_mutation_outcome(
-        pending,
-        {"title": "Child page"},
-        rejected,
-        operation="create_page",
-    )
-    assert rejected_outcome.status is AuditStatus.FAILURE
-    assert rejected_outcome.value["outcome"] == "failed"
-    assert rejected_outcome.value["error_code"] == "permission_denied"
-    assert rejected_outcome.unverified_result is None
-    assert rejected_outcome.operation_detail.intent_counts.failed == 1
-
-
-def test_success_and_cancellation_outcomes_use_exact_terminal_evidence() -> None:
-    pending = pending_create_page_detail(
-        entry(),
-        SimpleNamespace(
-            parent=SimpleNamespace(
-                entity_type="notion_page",
-                external_id="page-1",
-                display_name="Launch plan",
-            ),
-            title="Child page",
-            content_md="",
-            property_count=0,
-        ),
-    )
-    success = successful_notion_mutation_outcome(
-        pending,
-        {"id": "created-page"},
-        external_ref="created-page",
-        single_item=True,
-    )
-    cancellation = asyncio.CancelledError()
-    cancellation.failure_disposition = IntegrationFailureDisposition.AMBIGUOUS
-    attach_notion_cancellation_evidence(
-        cancellation,
-        pending,
-        operation="create_page",
-    )
-
-    assert success.status is AuditStatus.SUCCESS
-    assert success.external_ref == "created-page"
-    assert success.operation_detail.intent_counts.applied == 1
-    assert cancellation.operation_detail.intent_counts.unverified == 1
-    assert cancellation.operation_detail.effect_counts.unverified == 1

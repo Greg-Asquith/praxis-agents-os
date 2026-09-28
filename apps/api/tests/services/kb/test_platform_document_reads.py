@@ -85,11 +85,8 @@ async def test_platform_document_get_respects_tenant_and_publication(
     "scope,is_private,expected",
     [
         (None, None, {"workspace", "private", "platform"}),
-        (ContentScope.WORKSPACE, None, {"workspace", "private"}),
         (ContentScope.PLATFORM, None, {"platform"}),
         (None, True, {"private"}),
-        (ContentScope.PLATFORM, True, set()),
-        (None, False, {"workspace", "platform"}),
     ],
 )
 async def test_platform_document_list_filters_before_pagination(
@@ -139,11 +136,10 @@ async def test_platform_document_reads_do_not_authorise_workspace_mutations(
         assert local.id == documents["private"].id
 
 
-@pytest.mark.parametrize("source_type", ["url", "integration"])
-@pytest.mark.parametrize("sync_status", ["pending", "error", "unavailable", "disconnected"])
 async def test_unready_local_source_keeps_recovery_metadata_without_cached_content(
-    db_session_factory, mixed_documents, source_type, sync_status
+    db_session_factory, mixed_documents
 ):
+    source_type, sync_status = "integration", "disconnected"
     actor, workspace, _, documents = mixed_documents
     document_id = documents["unavailable"].id
     async with maintenance_async_db_session() as db:

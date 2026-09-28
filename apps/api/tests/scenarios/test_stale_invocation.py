@@ -29,8 +29,15 @@ from services.ai_usage.utils import usage_values
 from tests.support.scenario import build_scenario_agent
 
 
-@pytest.mark.parametrize("replacement_status", ["running", "completed", "awaiting_approval"])
-@pytest.mark.parametrize("attempt", ["success", "suspension", "failure", "cancellation"])
+@pytest.mark.parametrize(
+    ("attempt", "replacement_status"),
+    [
+        ("success", "completed"),
+        ("suspension", "running"),
+        ("failure", "awaiting_approval"),
+        ("cancellation", "running"),
+    ],
+)
 async def test_old_invocation_cannot_settle_replacement(
     committed_db_session_factory, replacement_status, attempt
 ):

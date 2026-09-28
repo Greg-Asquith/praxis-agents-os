@@ -12,12 +12,10 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.settings import settings
 from models.conversation import ConversationMessage
-from models.conversation_summary import ConversationSummary
 from services.agents.runtime.persistence import persist_new_messages
 from services.agents.runtime.untrusted import (
     UNTRUSTED_CONTENT_END,
@@ -80,56 +78,6 @@ async def test_summary_job_frames_hostile_span_and_caps_output(
     assert UNTRUSTED_CONTENT_END in prompt
     assert "<<<END_PRAXIS_UNTRUSTED-CONTENT>>>" in prompt
     assert "attacker@example.com" in prompt
-
-
-async def test_chained_summary_folds_prior_summary_without_stacking_rows_in_prompt(
-    db_session: AsyncSession,
-) -> None:
-    conversation, user_rows = await _persist_history(
-        db_session,
-        prompts=["first", "second", "third", "fourth", "fifth"],
-    )
-    first_job = await enqueue_history_summary(
-        db_session,
-        conversation_id=conversation.id,
-        workspace_id=conversation.workspace_id,
-        watermark_key=user_rows[2].id,
-    )
-    assert first_job is not None
-    first = await summarize_history_job(
-        db_session,
-        first_job,
-        model=_summary_model("First automatic summary."),
-    )
-    assert first is not None
-
-    second_job = await enqueue_history_summary(
-        db_session,
-        conversation_id=conversation.id,
-        workspace_id=conversation.workspace_id,
-        watermark_key=user_rows[4].id,
-    )
-    assert second_job is not None
-    captured: list[str] = []
-    second = await summarize_history_job(
-        db_session,
-        second_job,
-        model=_summary_model("Second automatic summary.", prompts=captured),
-    )
-
-    assert second is not None
-    assert second.source_message_count > first.source_message_count
-    assert "First automatic summary." in captured[0]
-    assert "first" not in captured[0]
-    assert "third" in captured[0]
-    assert (
-        await db_session.scalar(
-            select(func.count(ConversationSummary.id)).where(
-                ConversationSummary.conversation_id == conversation.id
-            )
-        )
-        == 2
-    )
 
 
 async def test_summary_enqueue_deduplicates_and_skips_completed_watermark(

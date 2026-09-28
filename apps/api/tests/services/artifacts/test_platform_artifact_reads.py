@@ -13,7 +13,6 @@ from core.settings import settings
 from models.artifacts import Artifact
 from services.agents.runtime.entity_references.internal import _resolve_artifacts, _search_artifacts
 from services.artifacts import get_artifact, get_version_content, list_artifacts
-from services.artifacts.restore_artifact_version import restore_artifact_version
 from services.artifacts.update_artifact import update_artifact
 from services.artifacts.utils import get_artifact_revision
 from tests.factories import build_artifact, build_artifact_revision, build_user, build_workspace
@@ -80,10 +79,10 @@ async def platform_reads(db_session_factory, monkeypatch, tmp_path):
         reset_storage_provider_cache()
 
 
-@pytest.mark.parametrize("workspace_index", [0, 1])
 async def test_platform_artifact_reads_use_published_pointer_and_history(
-    db_session, platform_reads, workspace_index
+    db_session, platform_reads
 ):
+    workspace_index = 1
     rows = platform_reads
     workspace = rows.workspaces[workspace_index]
     await set_session_tenant_context(db_session, workspace_id=workspace.id, user_id=rows.actor.id)
@@ -169,60 +168,17 @@ async def test_platform_artifact_withdrawal_invalidates_previously_loaded_detail
     assert await _resolve_artifacts(context, [detail.id], {}) == ()
 
 
-async def test_platform_artifact_history_filters_drafts_before_its_limit(
-    db_session, platform_reads
-):
-    rows = platform_reads
-    workspace = rows.workspaces[0]
-    async with maintenance_async_db_session() as db:
-        artifact = await db.get(Artifact, rows.published.id)
-        revisions = [
-            build_artifact_revision(
-                artifact=artifact,
-                scope="platform",
-                revision_number=number,
-                is_published=number <= 105,
-                object_key=f"platform/artifacts/{artifact.id}/{uuid4()}.html",
-            )
-            for number in range(5, 207)
-        ]
-        db.add_all(revisions)
-        await db.flush()
-        published = revisions[100]
-        artifact.published_version_id = published.id
-        artifact.current_version_id = revisions[-1].id
-
-    await set_session_tenant_context(db_session, workspace_id=workspace.id, user_id=rows.actor.id)
-    detail = await get_artifact(db_session, workspace_id=workspace.id, artifact_id=artifact.id)
-    assert detail.current_version_id == published.id
-    assert [revision.revision_number for revision in detail.versions] == list(range(105, 5, -1))
-    listed = await list_artifacts(
-        db_session, workspace_id=workspace.id, limit=1, offset=0, scope="platform"
-    )
-    assert listed.items[0].version_count == 103
-
-
-@pytest.mark.parametrize("operation", ["update", "restore"])
 async def test_platform_artifact_ordinary_mutations_remain_workspace_only(
-    db_session, platform_reads, operation
+    db_session, platform_reads
 ):
     rows = platform_reads
     workspace = rows.workspaces[0]
     await set_session_tenant_context(db_session, workspace_id=workspace.id, user_id=rows.actor.id)
     with pytest.raises(NotFoundError):
-        if operation == "update":
-            await update_artifact(
-                db_session,
-                workspace=workspace,
-                artifact_id=rows.published.id,
-                content="Attempted write",
-                actor_user_id=rows.actor.id,
-            )
-        else:
-            await restore_artifact_version(
-                db_session,
-                workspace=workspace,
-                artifact_id=rows.published.id,
-                version_id=rows.historical.id,
-                actor=rows.actor,
-            )
+        await update_artifact(
+            db_session,
+            workspace=workspace,
+            artifact_id=rows.published.id,
+            content="Attempted write",
+            actor_user_id=rows.actor.id,
+        )

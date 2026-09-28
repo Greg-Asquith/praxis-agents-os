@@ -10,10 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.agent import Agent
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs import (
-    complete_agent_run,
     create_agent_run,
     fail_agent_run,
-    start_agent_run,
 )
 from services.conversations import prune_failed_empty_conversation_for_run
 from tests.factories import build_user, build_workspace
@@ -89,45 +87,6 @@ async def test_failed_run_with_message_is_preserved(db_session: AsyncSession) ->
         )
     )
     await db_session.flush()
-
-    pruned = await prune_failed_empty_conversation_for_run(
-        db_session,
-        conversation_id=conversation.id,
-        run_id=run.id,
-        deleted_by_user_id=user.id,
-    )
-
-    assert pruned is False
-    assert conversation.deleted is False
-
-
-async def test_completed_run_with_zero_messages_is_preserved(db_session: AsyncSession) -> None:
-    user, _workspace, _agent, conversation, run = await _conversation_context(db_session)
-    await start_agent_run(db_session, run)
-    await complete_agent_run(db_session, run)
-
-    pruned = await prune_failed_empty_conversation_for_run(
-        db_session,
-        conversation_id=conversation.id,
-        run_id=run.id,
-        deleted_by_user_id=user.id,
-    )
-
-    assert pruned is False
-    assert conversation.deleted is False
-
-
-async def test_failed_run_with_another_run_is_preserved(db_session: AsyncSession) -> None:
-    user, workspace, agent, conversation, run = await _conversation_context(db_session)
-    await fail_agent_run(db_session, run, error_code="provider", error_message="boom")
-    await create_agent_run(
-        db_session,
-        conversation_id=conversation.id,
-        agent_id=agent.id,
-        workspace_id=workspace.id,
-        user_id=user.id,
-        trigger="interactive",
-    )
 
     pruned = await prune_failed_empty_conversation_for_run(
         db_session,

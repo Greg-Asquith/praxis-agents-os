@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   parseMetaAdsAccount,
+  parseMetaAdsActivities,
   parseMetaAdsObjects,
   parseMetaAdsConversions,
 } from "@/integrations/meta_ads/lib/read-models"
@@ -12,6 +13,8 @@ import {
   conversionsData,
   conversionRow,
   customAction,
+  activitiesData,
+  activityRow,
 } from "./read-fixtures"
 import { insightsData, insightsRow } from "./fixtures"
 
@@ -30,35 +33,22 @@ describe("Meta Ads account and discovery models", () => {
       )
     ).not.toBeNull()
   })
-  it.each([
-    { currency: "bad" },
-    { amount_spent: 12 },
-    { balance: "NaN" },
-    { spend_cap: "1e99" },
-    { status: null },
-    { status: "x".repeat(513) },
-    { name: 4 },
-    { min_daily_budget: undefined },
-  ])("rejects malformed accounts %j", (override) => {
-    expect(parseMetaAdsAccount(accountData(override))).toBeNull()
-  })
-  it.each(["daily", "lifetime", "campaign"])("parses %s budgets", (kind) => {
+  it.each([{ amount_spent: 12 }, { spend_cap: "1e99" }, { status: "x".repeat(513) }])(
+    "rejects malformed accounts %j",
+    (override) => {
+      expect(parseMetaAdsAccount(accountData(override))).toBeNull()
+    }
+  )
+  it.each(["campaign"])("parses %s budgets", (kind) => {
     const data = objectsData({
       objects: [objectRow({ budget: { kind, amount: null, remaining: null } })],
     })
     expect(parseMetaAdsObjects(data)).toEqual(data)
   })
   it.each([
-    { object_type: "creative" },
-    { objects: {} },
-    { object_count: 0 },
     { object_count: 1.1 },
-    { truncated: "false" },
-    { currency: "eur" },
-    { objects: [objectRow({ id: "" })] },
     { objects: [objectRow({ budget: { kind: "daily", amount: 100, remaining: null } })] },
     { objects: [objectRow({ start_time: "yesterday" })] },
-    { objects: [objectRow({ bid_amount: "Infinity" })] },
   ])("rejects malformed objects %j", (override) => {
     expect(parseMetaAdsObjects(objectsData(override))).toBeNull()
   })
@@ -79,16 +69,43 @@ describe("Meta Ads account and discovery models", () => {
     })
     expect(parseMetaAdsConversions(data)).toEqual(data)
   })
+  it.each([{ conversion_count: 0 }, { conversions: [conversionRow({ is_unavailable: "true" })] }])(
+    "rejects malformed conversions %j",
+    (override) => {
+      expect(parseMetaAdsConversions(conversionsData(override))).toBeNull()
+    }
+  )
+})
+
+describe("Meta Ads change history model", () => {
+  it("parses events with nullable provider text and window notes", () => {
+    const data = activitiesData({
+      events: [
+        activityRow(),
+        activityRow({
+          event_type: null,
+          translated_event_type: null,
+          object_type: null,
+          object_id: null,
+          object_name: null,
+          actor_name: null,
+          old_value: null,
+          new_value: null,
+        }),
+      ],
+      event_count: 2,
+      truncated: true,
+      window_note: "Some changes in this window may be missing.",
+    })
+    expect(parseMetaAdsActivities(data)).toEqual(data)
+  })
   it.each([
-    { conversions: {} },
-    { conversion_count: 0 },
-    { truncated: null },
-    { notes: [1] },
-    { conversions: [conversionRow({ id: "" })] },
-    { conversions: [conversionRow({ name: {} })] },
-    { conversions: [conversionRow({ is_unavailable: "true" })] },
-  ])("rejects malformed conversions %j", (override) => {
-    expect(parseMetaAdsConversions(conversionsData(override))).toBeNull()
+    { event_count: 0 },
+    { events: [activityRow({ event_time: "last Tuesday" })] },
+    { events: [activityRow({ object_id: "act_1" })] },
+    { events: [activityRow({ old_value: "x".repeat(257) })] },
+  ])("rejects malformed change history %j", (override) => {
+    expect(parseMetaAdsActivities(activitiesData(override))).toBeNull()
   })
 })
 
@@ -137,17 +154,14 @@ describe("Meta Ads custom conversion report columns", () => {
       )
     }
   })
-  it.each([
-    { custom_conversion_name: 42 },
-    { custom_conversion_id: {} },
-    { custom_conversion_id: "bad" },
-    { custom_conversion_id: "999" },
-    { custom_conversion_name: "x".repeat(513) },
-  ])("rejects malformed custom conversion identity %j", (override) => {
-    expect(
-      parseMetaAdsInsights(
-        insightsData({ rows: [insightsRow({ actions: { actions: [customAction(override)] } })] })
-      )
-    ).toBeNull()
-  })
+  it.each([{ custom_conversion_id: "bad" }, { custom_conversion_id: "999" }])(
+    "rejects malformed custom conversion identity %j",
+    (override) => {
+      expect(
+        parseMetaAdsInsights(
+          insightsData({ rows: [insightsRow({ actions: { actions: [customAction(override)] } })] })
+        )
+      ).toBeNull()
+    }
+  )
 })

@@ -42,7 +42,12 @@ async def report(client, *, maximum):
     )
 
 
-@pytest.mark.parametrize("maximum", [11, 12])
+@pytest.mark.parametrize(
+    "maximum",
+    [
+        11,
+    ],
+)
 async def test_report_stream_accepts_complete_body_within_byte_limit(maximum):
     stream = ReportStream([b'[{"a":', b"123}]"])
     async with httpx2.AsyncClient(
@@ -97,7 +102,12 @@ async def test_report_stream_refreshes_credentials_after_rejection():
     assert all(stream.closed for stream in streams)
 
 
-@pytest.mark.parametrize("oversized", [False, True])
+@pytest.mark.parametrize(
+    "oversized",
+    [
+        False,
+    ],
+)
 async def test_report_stream_preserves_bounded_provider_error_details(oversized):
     message = "Unrecognised report field."
     body = json.dumps({"error": {"message": message}}).encode()

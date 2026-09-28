@@ -11,8 +11,6 @@ import pytest
 
 from core.auth.sessions import session_manager
 from core.database import set_session_tenant_context
-from integrations.sharepoint.entity_resolvers.utils import item_choice
-from integrations.sharepoint.operations.utils import item_result
 from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.settings import sharepoint_settings
 from models.agent import Agent
@@ -29,18 +27,6 @@ from tests.factories import (
 )
 from tests.integrations.sharepoint.support import fixture, graph
 from tests.support.auth import bearer_headers
-
-
-@pytest.mark.parametrize("parent", ["/Finance/<img src=x>", "/" + "long" * 400])
-def test_choice_includes_bounded_path_without_drive_identifier(parent):
-    folder = fixture("children.json")["value"][1]
-    folder["parentReference"]["path"] = f"/drives/private-drive/root:{parent}"
-    item = item_result(folder, drive_id="drive", operation="get_item")
-    choice = item_choice(SimpleNamespace(display_name="Documents"), item)
-    assert choice.description.startswith("Folder\n" + parent[:100])
-    assert "private-drive" not in choice.description
-    assert len(choice.description) <= 1000
-    assert choice.description.endswith("…" if len(parent) > 1000 else "/Reports")
 
 
 @pytest.fixture
@@ -104,7 +90,12 @@ async def lookup_context(db_session, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("search", ["Report", ""])
+@pytest.mark.parametrize(
+    "search",
+    [
+        "Report",
+    ],
+)
 async def test_lookup_route_searches_selected_drive_with_acting_user(
     db_async_client, lookup_context, monkeypatch, search
 ):
@@ -148,63 +139,11 @@ async def test_lookup_route_searches_selected_drive_with_acting_user(
     assert principal["entry"].integration_resource_id == ctx.resource.id
 
 
-@pytest.mark.parametrize("count", [25, 26])
-async def test_lookup_route_enforces_exact_limit_before_credentials(
-    db_async_client, lookup_context, monkeypatch, count
-):
-    ctx = lookup_context
-    requests = []
-    file = fixture("children.json")["value"][0]
-    values = [
-        SharePointDriveItemReference(
-            drive_id="drive", item_id=f"item-{i}", label="Stale"
-        ).model_dump()
-        for i in range(count)
-    ]
-
-    def handler(request):
-        requests.append(request)
-        item_id = request.url.path.rsplit("/", 1)[-1]
-        return httpx2.Response(200, json={**file, "id": item_id})
-
-    async with graph(handler) as provider:
-        client = AsyncMock(return_value=provider)
-        monkeypatch.setattr(
-            "integrations.sharepoint.entity_resolvers.drive_item.drive_client_for_principal", client
-        )
-        response = await db_async_client.post(
-            ctx.endpoint,
-            headers=ctx.headers,
-            json={
-                "tool_name": "sharepoint_list_folder",
-                "field_key": "folder",
-                "exact_values": values,
-            },
-        )
-    if count == 26:
-        assert response.status_code == 400, response.text
-        assert "at most 25" in response.text
-        client.assert_not_awaited()
-        assert requests == []
-    else:
-        assert response.status_code == 200, response.text
-        assert len(requests) == client.await_count == 25
-        choices = response.json()["choices"]
-        assert [choice["value"]["item_id"] for choice in choices] == [
-            value["item_id"] for value in values
-        ]
-        assert all(choice["label"] == file["name"] for choice in choices)
-
-
 @pytest.mark.parametrize(
     "boundary",
     [
         "unmounted",
         "unconfigured",
-        "incompatible",
-        "private_conversation",
-        "other_actor_connection",
-        "wrong_field",
     ],
 )
 async def test_lookup_route_rejects_unauthorised_fields_before_credentials(

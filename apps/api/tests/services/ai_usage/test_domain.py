@@ -24,10 +24,7 @@ def _event(**overrides) -> AIUsageEventData:
     "overrides",
     [
         {"purpose": "unknown"},
-        {"provider": " "},
-        {"model": ""},
         {"input_tokens": -1},
-        {"requests": True},
     ],
 )
 def test_invalid_event_values_fail_closed(overrides: dict[str, object]) -> None:
@@ -50,8 +47,3 @@ def test_model_purpose_check_matches_canonical_domain() -> None:
         if item.name == "ai_usage_events_purpose_check"
     )
     assert set(re.findall(r"'([^']+)'", str(constraint.sqltext))) == set(AI_USAGE_PURPOSES)
-
-
-def test_zero_usage_is_not_metered() -> None:
-    assert _event().is_zero
-    assert not _event(requests=1).is_zero

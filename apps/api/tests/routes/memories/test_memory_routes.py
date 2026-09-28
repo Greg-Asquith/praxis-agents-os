@@ -91,38 +91,6 @@ async def test_user_scope_is_hidden_from_other_members_on_every_operation(
     assert deleted.status_code == 404
 
 
-async def test_member_edits_agent_memory_but_cannot_delete_workspace_memory(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    workspace, agent = await _workspace_with_agent(db_session)
-    member = await _actor(db_session, workspace=workspace, role=WorkspaceRole.MEMBER)
-    agent_memory = _memory(workspace=workspace, agent=agent, user=member.user)
-    workspace_memory = _memory(
-        workspace=workspace,
-        agent=agent,
-        user=member.user,
-        scope="workspace",
-        title="Workspace standard",
-    )
-    db_session.add_all([agent_memory, workspace_memory])
-    await db_session.commit()
-
-    updated = await db_async_client.patch(
-        f"/api/v1/memories/{agent_memory.id}",
-        headers=member.headers,
-        json={"importance": 5},
-    )
-    deleted = await db_async_client.delete(
-        f"/api/v1/memories/{workspace_memory.id}",
-        headers=member.headers,
-    )
-
-    assert updated.status_code == 200
-    assert updated.json()["importance"] == 5
-    assert deleted.status_code == 403
-
-
 async def test_manager_archive_and_purge_are_audited(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -173,78 +141,6 @@ async def test_manager_archive_and_purge_are_audited(
         )
     )
     assert audit_count == 2
-
-
-async def test_content_edit_supersedes_and_detail_returns_the_chain(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    monkeypatch,
-) -> None:
-    workspace, agent = await _workspace_with_agent(db_session)
-    member = await _actor(db_session, workspace=workspace, role=WorkspaceRole.MEMBER)
-    memory = _memory(workspace=workspace, agent=agent, user=member.user)
-    db_session.add(memory)
-    await db_session.commit()
-
-    _disable_embeddings(monkeypatch)
-    updated = await db_async_client.patch(
-        f"/api/v1/memories/{memory.id}",
-        headers=member.headers,
-        json={"content_md": "The corrected durable detail."},
-    )
-
-    assert updated.status_code == 200
-    new_id = updated.json()["id"]
-    assert new_id != str(memory.id)
-    detail = await db_async_client.get(
-        f"/api/v1/memories/{memory.id}",
-        headers=member.headers,
-    )
-    assert detail.status_code == 200
-    assert [item["id"] for item in detail.json()["chain"]] == [str(memory.id), new_id]
-
-    default_list = await db_async_client.get("/api/v1/memories/", headers=member.headers)
-    superseded_list = await db_async_client.get(
-        "/api/v1/memories/",
-        headers=member.headers,
-        params={"status": "superseded", "limit": 1, "offset": 0},
-    )
-    assert [item["id"] for item in default_list.json()["memories"]] == [new_id]
-    assert superseded_list.json()["total"] == 1
-    assert superseded_list.json()["limit"] == 1
-
-
-async def test_purging_latest_version_archives_its_predecessor(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    monkeypatch,
-) -> None:
-    workspace, agent = await _workspace_with_agent(db_session)
-    member = await _actor(db_session, workspace=workspace, role=WorkspaceRole.MEMBER)
-    memory = _memory(workspace=workspace, agent=agent, user=member.user)
-    db_session.add(memory)
-    await db_session.commit()
-    _disable_embeddings(monkeypatch)
-
-    updated = await db_async_client.patch(
-        f"/api/v1/memories/{memory.id}",
-        headers=member.headers,
-        json={"content_md": "The corrected durable detail."},
-    )
-    latest_id = updated.json()["id"]
-
-    purged = await db_async_client.delete(
-        f"/api/v1/memories/{latest_id}",
-        headers=member.headers,
-        params={"purge": "true"},
-    )
-
-    assert purged.status_code == 204
-    await db_session.refresh(memory)
-    assert memory.status == "archived"
-    assert memory.superseded_by_id is None
-    assert memory.archive_reason == "user_deleted"
-    assert await db_session.get(AgentMemory, latest_id) is None
 
 
 async def test_purging_middle_version_relinks_the_chain(

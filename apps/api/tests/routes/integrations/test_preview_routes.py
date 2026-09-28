@@ -3,7 +3,6 @@
 """Gmail message preview route coverage: scoping, sanitization, bounds, audit."""
 
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
@@ -13,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import integrations.gmail.operations.preview_message as preview_message_module
 from core.exceptions.integration import IntegrationValidationError
-from core.settings import settings
 from models.audit_event import AuditEvent
 from models.workspace import WorkspaceRole
 from tests.factories import build_external_credential, build_integration_connection
@@ -60,59 +58,6 @@ def _stub_preview(monkeypatch: pytest.MonkeyPatch, payload: dict[str, Any]) -> N
     monkeypatch.setattr(preview_message_module, "preview_message", fake_preview_message)
 
 
-async def test_outlook_preview_accepts_immutable_id_and_sanitizes_html(
-    db_session, db_async_client, integration_identity, monkeypatch
-):
-    from integrations.outlook_mail import PROVIDER
-    from services.integrations.microsoft_graph import MicrosoftGraphClient
-    from services.integrations.plugin import PROVIDER_PLUGINS
-
-    monkeypatch.setitem(PROVIDER_PLUGINS, "outlook_mail", PROVIDER)
-
-    credential = build_external_credential(provider_key="outlook_mail")
-    connection = build_integration_connection(
-        credential=credential,
-        user=integration_identity["user"],
-        owner_user_id=integration_identity["user"].id,
-        status="active",
-    )
-    db_session.add_all([credential, connection])
-    await db_session.commit()
-    get = AsyncMock(
-        return_value={
-            "subject": "Invoice",
-            "body": {"contentType": "html", "content": HOSTILE_HTML},
-        }
-    )
-    monkeypatch.setattr(MicrosoftGraphClient, "get", get)
-    reference = "A" * 180 + "+/=="
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/outlook_message",
-        params={"ref": reference},
-        headers=integration_identity["headers"],
-    )
-    assert response.status_code == 200, response.text
-    assert "<script" not in response.json()["content"]
-    assert "javascript:" not in response.json()["content"]
-    assert get.call_args.args[0].endswith("%2B%2F%3D%3D")
-
-
-@pytest.mark.parametrize("reference", ["message=", "A" * 129])
-async def test_gmail_keeps_its_reference_restrictions(
-    db_session, db_async_client, integration_identity, monkeypatch, reference
-):
-    connection = await _gmail_connection(db_session, integration_identity)
-    fetch = AsyncMock()
-    monkeypatch.setattr(preview_message_module, "preview_message", fetch)
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
-        params={"ref": reference},
-        headers=integration_identity["headers"],
-    )
-    assert response.status_code == 400
-    fetch.assert_not_awaited()
-
-
 async def test_preview_sanitizes_html_and_returns_meta(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -157,34 +102,6 @@ async def test_preview_sanitizes_html_and_returns_meta(
     assert 'style="color:red"' in content
     assert body["meta"]["labels"] == ["Inbox", "Clients"]
     assert body["meta"]["thread_message_count"] == 3
-
-
-async def test_successful_preview_records_no_audit_row(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    connection = await _gmail_connection(db_session, integration_identity)
-    _stub_preview(
-        monkeypatch,
-        {"content_type": "text", "content": "secret body text", "meta": {}},
-    )
-
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
-        params={"ref": "message-9"},
-        headers=integration_identity["headers"],
-    )
-    assert response.status_code == 200, response.text
-
-    # The governed tool call already audited the read; per-render previews stay quiet.
-    events = (
-        await db_session.scalars(
-            select(AuditEvent).where(AuditEvent.resource_id == str(connection.id))
-        )
-    ).all()
-    assert events == []
 
 
 async def test_failed_preview_commits_failure_audit_before_request_rollback(
@@ -238,59 +155,6 @@ async def test_failed_preview_commits_failure_audit_before_request_rollback(
     }
 
 
-async def test_preview_enforces_size_bound(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    connection = await _gmail_connection(db_session, integration_identity)
-    _stub_preview(
-        monkeypatch,
-        {"content_type": "html", "content": "<p>" + "x" * 64 + "</p>", "meta": {}},
-    )
-    monkeypatch.setattr(settings, "INTEGRATION_PREVIEW_MAX_BYTES", 16)
-
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
-        params={"ref": "message-1"},
-        headers=integration_identity["headers"],
-    )
-    assert response.status_code == 400
-
-
-async def test_preview_404_for_non_gmail_connection(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection = await _gmail_connection(
-        db_session, integration_identity, provider_key="test_provider"
-    )
-
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
-        params={"ref": "message-1"},
-        headers=integration_identity["headers"],
-    )
-    assert response.status_code == 404
-
-
-async def test_preview_404_for_kind_not_contributed_by_provider(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection = await _gmail_connection(db_session, integration_identity)
-
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/unknown_kind",
-        params={"ref": "message-1"},
-        headers=integration_identity["headers"],
-    )
-    assert response.status_code == 404
-
-
 async def test_preview_404_outside_workspace_visibility(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -308,32 +172,3 @@ async def test_preview_404_outside_workspace_visibility(
         headers=outsider_headers,
     )
     assert response.status_code == 404
-
-
-async def test_preview_rejects_malformed_refs(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection = await _gmail_connection(db_session, integration_identity)
-
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
-        params={"ref": "../escape attempt"},
-        headers=integration_identity["headers"],
-    )
-    assert response.status_code == 422
-
-
-async def test_preview_requires_authentication(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection = await _gmail_connection(db_session, integration_identity)
-
-    response = await db_async_client.get(
-        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
-        params={"ref": "message-1"},
-    )
-    assert response.status_code == 401

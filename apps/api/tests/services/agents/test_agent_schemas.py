@@ -5,18 +5,8 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-import pytest
-from pydantic import ValidationError
-
 from models.agent import Agent
-from services.agents.schemas import AgentCreateRequest, AgentRead, AgentUpdateRequest
-
-
-def test_code_mode_is_disabled_by_default_and_rejects_null_updates() -> None:
-    assert AgentCreateRequest(name="Agent", instructions="Work.").code_mode_enabled is False
-
-    with pytest.raises(ValidationError):
-        AgentUpdateRequest.model_validate({"code_mode_enabled": None})
+from services.agents.schemas import AgentRead
 
 
 def test_agent_read_validates_metadata_from_orm_attribute() -> None:

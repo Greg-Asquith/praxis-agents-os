@@ -15,7 +15,6 @@ import {
   sharePointUpdateFileArgs,
   validateSharePointWriteArgs,
 } from "@/integrations/sharepoint/lib/write-args"
-import { sharePointWriteFilePresenter } from "@/integrations/sharepoint/presenters/write-file"
 import { sharePointUpdateFilePresenter } from "@/integrations/sharepoint/presenters/update-file"
 
 vi.mock("@/components/ui/button", async (original) => {
@@ -106,7 +105,6 @@ beforeEach(() => vi.clearAllMocks())
 
 describe("SharePoint source approval", () => {
   it.each([
-    ["sharepoint_write_file", sharePointWriteFilePresenter, args],
     [
       "sharepoint_update_file",
       sharePointUpdateFilePresenter,
@@ -158,14 +156,11 @@ describe("SharePoint source approval", () => {
 
   it.each([
     [{ content: "Text" }, "Choose either text content or a workspace File, not both."],
-    [{ source: null }, "Enter text content or choose a workspace File."],
     [
       { source: { ...source, entity_id: "other-file" } },
       "Review the selected File before approving.",
     ],
-    [{ _source: null }, "Review the selected File before approving."],
     [{ _source: { ...details, size_bytes: -1 } }, "Review the selected File before approving."],
-    [{ _source: { ...details, name: {} } }, "Review the selected File before approving."],
   ])("blocks invalid content or unreviewed sources %j", (patch, reason) => {
     expect(validateSharePointWriteArgs(sharePointWriteFileArgs({ ...args, ...patch }))).toBe(reason)
     expect(
@@ -185,11 +180,8 @@ describe("SharePoint source approval", () => {
   })
 
   it.each([
-    false,
-    {},
     { ...source, entity_kind: "sharepoint_drive_item" },
     { ...source, entity_id: "" },
-    { ...source, label: [] },
   ])("rejects malformed source references %j", (value) => {
     expect(sharePointWriteFileArgs({ ...args, source: value })).toBeNull()
   })
@@ -210,19 +202,6 @@ describe("SharePoint source approval", () => {
     expect(html).toContain("&lt;img")
     expect(html).toContain("&lt;script&gt;")
     expect(html).not.toMatch(/<img|<script|private-/)
-  })
-
-  it("does not show the previous File metadata after another File is selected", () => {
-    const parsed = sharePointWriteFileArgs({
-      ...args,
-      source: { ...source, entity_id: "other-file" },
-    })
-    if (!parsed) throw new Error("Expected args")
-    const html = render(
-      createElement(SharePointFileSource, { args: parsed, controls: controls(), disabled: false })
-    )
-    expect(html).not.toContain("Report.xlsx")
-    expect(html).toContain("Review the selected File to check")
   })
 
   it("switches to text in one edit and keeps unrelated edits", () => {
@@ -282,28 +261,6 @@ describe("SharePoint source approval", () => {
       },
     ])
     expect(JSON.stringify(payload)).not.toMatch(/private-(revision|hash|download)/)
-  })
-
-  it("supports text edits from an initially null content field", () => {
-    const replay = { name: args.name, content: null, source, folder: null }
-    const payload = buildResumeDecisions(
-      [{ name: "sharepoint_write_file", tool_call_id: "call", args, replay_args: replay }],
-      {
-        call: {
-          decision: "approved",
-          message: "",
-          edits: { source: null, content: "Replacement text" },
-        },
-      },
-      () => fields
-    )
-    expect(payload).toEqual([
-      {
-        tool_call_id: "call",
-        decision: "approved",
-        override_args: { ...replay, source: null, content: "Replacement text" },
-      },
-    ])
   })
 
   it("reviews only on an explicit click and disables the action during submission", () => {

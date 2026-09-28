@@ -105,11 +105,7 @@ async def test_conversation_outlook_preview_encodes_id_sanitizes_and_closes_tran
 @pytest.mark.parametrize(
     "case",
     [
-        "empty",
-        "no_match",
         "ambiguous",
-        "other_personal",
-        "other_conversation",
         "other_actor",
         "other_workspace",
     ],
@@ -178,8 +174,6 @@ async def test_conversation_preview_denies_unavailable_targets_without_provider_
     "provider,reference,status",
     [
         ("outlook_mail", "message!", 422),
-        ("outlook_mail", "A" * 513, 422),
-        ("gmail", "message=", 400),
         ("gmail", "A" * 129, 400),
     ],
 )

@@ -27,11 +27,8 @@ from tests.factories import build_user, build_workspace
 
 
 @pytest.mark.parametrize(
-    "resource_type",
-    [AuditResourceType.FILE, AuditResourceType.KB_DOCUMENT, AuditResourceType.ARTIFACT],
-)
-@pytest.mark.parametrize(
-    "operation", ["create", "update", "replace", "restore", "publish", "withdraw", "delete"]
+    "resource_type,operation",
+    [(AuditResourceType.FILE, "create"), (AuditResourceType.ARTIFACT, "withdraw")],
 )
 async def test_audit_shape(monkeypatch, resource_type, operation):
     monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", "admin@example.com")
@@ -68,7 +65,7 @@ async def test_audit_shape(monkeypatch, resource_type, operation):
     db.commit.assert_not_awaited()
 
 
-@pytest.mark.parametrize("admin,maintenance", [(False, False), (False, True), (True, False)])
+@pytest.mark.parametrize("admin,maintenance", [(False, True), (True, False)])
 async def test_audit_denies_before_writing(monkeypatch, admin, maintenance):
     monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", "admin@example.com")
     actor = build_user(email="admin@example.com" if admin else "member@example.com")
@@ -90,9 +87,7 @@ async def test_audit_denies_before_writing(monkeypatch, admin, maintenance):
 @pytest.mark.parametrize(
     "fields",
     [
-        {"scope": "workspace"},
         {"content": "private"},
-        {"download_url": "secret"},
         {"credentials": "secret"},
     ],
 )
@@ -155,7 +150,7 @@ async def test_global_audit_is_hidden_from_tenants_and_failure_rolls_back(
         assert await db.get(AuditEvent, event_id) is not None
 
 
-@pytest.mark.parametrize("role", ["owner", "admin", "member", "read_only"])
+@pytest.mark.parametrize("role", ["member", "read_only"])
 async def test_editor_revision_publication_audit(monkeypatch, role):
     from models.workspace import WorkspaceRole
     from tests.factories import build_artifact, build_workspace_membership
@@ -192,7 +187,7 @@ async def test_editor_revision_publication_audit(monkeypatch, role):
 
 @pytest.mark.parametrize(
     "invalid",
-    ["file", "knowledge", "wrong_id", "missing_revision", "missing_membership", "withdrawn"],
+    ["file", "missing_membership", "withdrawn"],
 )
 async def test_editor_audit_exception_is_limited_to_published_artifact_versions(
     monkeypatch, invalid

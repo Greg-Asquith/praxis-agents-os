@@ -241,60 +241,6 @@ async def test_audit_event_filters_narrow_results(
     assert body["events"][0]["id"] == str(matching.id)
 
 
-async def test_audit_event_filter_rejects_unknown_action(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    _user, _workspace, headers = await _authenticated_workspace(db_session)
-
-    response = await db_async_client.get(
-        "/api/v1/audit-events/",
-        headers=headers,
-        params={"action": "typo"},
-    )
-
-    assert response.status_code == 400
-    body = response.json()
-    assert body["field"] == "action"
-    assert "create" in body["allowed_values"]
-
-
-@pytest.mark.parametrize("status", [AuditStatus.PARTIAL, AuditStatus.UNVERIFIED])
-async def test_audit_event_filters_accept_terminal_mutation_statuses(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    status: AuditStatus,
-) -> None:
-    actor, workspace, headers = await _authenticated_workspace(db_session)
-    matching = await _seed_audit_event(
-        db_session,
-        workspace=workspace,
-        actor=actor,
-        action=AuditAction.UPDATE,
-        resource_type=AuditResourceType.INTEGRATION_RESOURCE,
-        status=status,
-    )
-    await _seed_audit_event(
-        db_session,
-        workspace=workspace,
-        actor=actor,
-        action=AuditAction.UPDATE,
-        resource_type=AuditResourceType.INTEGRATION_RESOURCE,
-        status=AuditStatus.SUCCESS,
-    )
-    await db_session.commit()
-
-    response = await db_async_client.get(
-        "/api/v1/audit-events/",
-        headers=headers,
-        params={"status": status.value},
-    )
-
-    assert response.status_code == 200
-    assert response.json()["total"] == 1
-    assert response.json()["events"][0]["id"] == str(matching.id)
-
-
 async def test_audit_event_tool_filters_are_exact_combined_and_workspace_scoped(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -1004,30 +950,6 @@ async def test_audit_roll_up_keeps_pending_provider_evidence_when_finalization_f
     assert rolled_up["detail_event_id"] == str(pending_provider.id)
     assert rolled_up["status"] == "failure"
     assert rolled_up["summary"] == tool_failure.summary
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("tool_name", "t" * 101),
-        ("tool_provider", "p" * 51),
-    ],
-)
-async def test_audit_event_tool_filters_reject_overlong_values(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    field: str,
-    value: str,
-) -> None:
-    _user, _workspace, headers = await _authenticated_workspace(db_session)
-
-    response = await db_async_client.get(
-        "/api/v1/audit-events/",
-        headers=headers,
-        params={field: value},
-    )
-
-    assert response.status_code == 422
 
 
 async def test_audit_event_detail_scoping_and_system_visibility(

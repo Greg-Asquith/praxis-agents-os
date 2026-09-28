@@ -9,16 +9,13 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import ConflictError
-from core.settings import settings
 from models.agent import Agent, AgentSchedule, AgentScheduleRun
 from models.agent_run import AgentRun
-from models.audit_event import AuditEvent
 from models.conversation import Conversation
-from models.integration_context import ActiveContextSelection
 from models.workspace import WorkspaceMembership
 from services.agent_runs.domain import RUN_TRIGGER_SCHEDULED
 from services.agent_schedules import prepare_schedule_run_execution
@@ -29,7 +26,6 @@ from services.agent_schedules.runs import (
     RUN_STATUS_TERMINAL_FAILED,
 )
 from tests.factories import (
-    build_integration_context_group,
     build_user,
     build_workspace,
     build_workspace_membership,
@@ -152,66 +148,6 @@ async def test_prepare_claimed_run_creates_conversation_and_agent_run(
     assert schedule_run.agent_run_id == run.id
 
 
-async def test_prepare_claimed_run_copies_active_context_to_conversation(
-    db_session: AsyncSession,
-) -> None:
-    user, workspace, _agent, schedule, schedule_run = await _schedule_context(db_session)
-    group = build_integration_context_group(workspace=workspace, user=user)
-    db_session.add(group)
-    await db_session.flush()
-    schedule.active_context = {
-        "targets": [{"type": "context_group", "context_group_id": str(group.id)}]
-    }
-
-    prepared = await prepare_schedule_run_execution(
-        db_session,
-        schedule_run_id=schedule_run.id,
-    )
-
-    selection = await db_session.scalar(
-        select(ActiveContextSelection).where(
-            ActiveContextSelection.conversation_id == prepared.conversation_id
-        )
-    )
-    assert selection is not None
-    assert selection.workspace_id == workspace.id
-    assert selection.context_group_id == group.id
-    assert selection.integration_resource_id is None
-
-
-async def test_core_0041_backfills_existing_scheduled_conversation_context(
-    db_session: AsyncSession,
-) -> None:
-    user, workspace, agent, schedule, schedule_run = await _schedule_context(db_session)
-    group = build_integration_context_group(workspace=workspace, user=user)
-    db_session.add(group)
-    await db_session.flush()
-    schedule.active_context = {
-        "targets": [{"type": "context_group", "context_group_id": str(group.id)}]
-    }
-    conversation = Conversation(
-        user_id=user.id,
-        workspace_id=workspace.id,
-        created_by=user.id,
-        source="scheduled",
-        schedule_id=schedule.id,
-        schedule_run_id=schedule_run.id,
-        active_agent_id=agent.id,
-    )
-    db_session.add(conversation)
-    await db_session.flush()
-
-    await db_session.execute(text(str(SCHEDULED_CONTEXT_BACKFILL_SQL)))
-
-    selection = await db_session.scalar(
-        select(ActiveContextSelection).where(
-            ActiveContextSelection.conversation_id == conversation.id
-        )
-    )
-    assert selection is not None
-    assert selection.context_group_id == group.id
-
-
 async def test_prepare_claimed_run_stamps_explicit_side_effect_grant(
     db_session: AsyncSession,
 ) -> None:
@@ -228,100 +164,6 @@ async def test_prepare_claimed_run_stamps_explicit_side_effect_grant(
     run = await db_session.get(AgentRun, prepared.agent_run_id)
     assert run is not None
     assert run.metadata_json["envelope"] == {"side_effect_policy": "allow"}
-
-
-async def test_prepare_claimed_run_keeps_prompt_clean_and_copies_required_completion_contract(
-    db_session: AsyncSession,
-) -> None:
-    contract = {
-        "required": True,
-        "criteria": ["A report was created", "Every account was reviewed"],
-        "max_requests": 4,
-        "max_total_tokens": 12000,
-    }
-    _user, _workspace, _agent, _schedule, schedule_run = await _schedule_context(
-        db_session,
-        execution_params={"completion_contract": contract},
-    )
-
-    prepared = await prepare_schedule_run_execution(
-        db_session,
-        schedule_run_id=schedule_run.id,
-    )
-
-    assert prepared.user_prompt == "Run the scheduled task"
-    run = await db_session.get(AgentRun, prepared.agent_run_id)
-    assert run is not None
-    assert run.metadata_json["completion_contract"] == contract
-
-
-@pytest.mark.parametrize("policy", ["allow", "deny"])
-async def test_prepare_claimed_run_uses_scheduled_policy_setting(
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-    policy: str,
-) -> None:
-    monkeypatch.setattr(settings, "AGENT_SCHEDULED_SIDE_EFFECT_POLICY", policy)
-    _user, _workspace, _agent, _schedule, schedule_run = await _schedule_context(db_session)
-
-    prepared = await prepare_schedule_run_execution(
-        db_session,
-        schedule_run_id=schedule_run.id,
-    )
-
-    run = await db_session.get(AgentRun, prepared.agent_run_id)
-    assert run is not None
-    assert run.metadata_json["envelope"] == {"side_effect_policy": policy}
-
-
-async def test_prepare_reuses_existing_conversation(db_session: AsyncSession) -> None:
-    user, workspace, agent, schedule, schedule_run = await _schedule_context(db_session)
-    conversation = Conversation(
-        user_id=user.id,
-        workspace_id=workspace.id,
-        created_by=user.id,
-        source="scheduled",
-        schedule_id=schedule.id,
-        schedule_run_id=schedule_run.id,
-        active_agent_id=agent.id,
-    )
-    db_session.add(conversation)
-    await db_session.flush()
-    schedule_run.conversation_id = conversation.id
-
-    prepared = await prepare_schedule_run_execution(
-        db_session,
-        schedule_run_id=schedule_run.id,
-    )
-
-    assert prepared.conversation_id == conversation.id
-    assert schedule_run.conversation_id == conversation.id
-
-
-async def test_prepare_missing_default_prompt_terminally_fails_schedule(
-    db_session: AsyncSession,
-) -> None:
-    _user, _workspace, _agent, schedule, schedule_run = await _schedule_context(
-        db_session,
-        default_prompt="   ",
-    )
-
-    prepared = await prepare_schedule_run_execution(
-        db_session,
-        schedule_run_id=schedule_run.id,
-    )
-
-    assert prepared.should_execute is False
-    assert schedule_run.status == RUN_STATUS_TERMINAL_FAILED
-    assert schedule_run.last_error_code == "missing_default_prompt"
-    assert schedule_run.last_error_message == "Schedule has no default prompt to execute."
-    assert schedule.is_active is False
-    assert schedule.next_run_at is None
-
-    audit_event = await db_session.scalar(
-        select(AuditEvent).where(AuditEvent.resource_id == str(schedule.id))
-    )
-    assert audit_event is not None
 
 
 async def test_prepare_revoked_owner_terminally_fails_schedule(

@@ -47,16 +47,6 @@ describe("retained result reads", () => {
     )
   })
 
-  it.each(["not JSON", JSON.stringify({ results: [{ data: { rows: [] } }] })])(
-    "rejects incomplete or invalid saved data",
-    async (content) => {
-      vi.mocked(apiRequest)
-        .mockResolvedValueOnce({ revisions: [{ id: "original", revision_number: 1 }] })
-        .mockResolvedValueOnce({ content })
-      await expect(new QueryClient().fetchQuery(options())).rejects.toThrow()
-    }
-  )
-
   it("does not substitute an edited revision when the original is unavailable", async () => {
     vi.mocked(apiRequest).mockResolvedValueOnce({
       revisions: [{ id: "edited", revision_number: 2 }],

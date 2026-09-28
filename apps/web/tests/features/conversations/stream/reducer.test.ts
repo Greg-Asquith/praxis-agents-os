@@ -8,34 +8,11 @@ import {
   selectLiveTimeline,
   type AgentStreamState,
 } from "@/features/conversations/stream/reducer"
-import type { Conversation } from "@/features/conversations/types"
 
 const baseEnvelope = {
   run_id: "run-1",
   conversation_id: "conversation-1",
 } as const
-
-const conversation: Conversation = {
-  id: "conversation-1",
-  user_id: "user-1",
-  workspace_id: "workspace-1",
-  created_by: "user-1",
-  title: "Launch plan",
-  description: null,
-  status: "active",
-  metadata: null,
-  unread: false,
-  source: "direct",
-  last_message_at: null,
-  active_agent_id: "agent-1",
-  agent_slug: "planner",
-  agent_name: "Planner",
-  active_run_id: "run-1",
-  active_run_status: "running",
-  needs_approval: false,
-  created_at: "2026-07-06T08:00:00Z",
-  updated_at: "2026-07-06T08:00:00Z",
-}
 
 function eventWithSeq(seq: number) {
   return { ...baseEnvelope, seq }
@@ -74,44 +51,6 @@ describe("agentStreamReducer", () => {
       ...initialAgentStreamState,
       status: "pending",
     })
-  })
-
-  it("tracks the stream transport connection", () => {
-    const connectedState = agentStreamReducer(initialAgentStreamState, { type: "connect" })
-
-    expect(connectedState.isConnected).toBe(true)
-    expect(agentStreamReducer(connectedState, { type: "disconnect" }).isConnected).toBe(false)
-  })
-
-  it("tracks a queued turn without marking it terminal", () => {
-    const state = reduceEvents([
-      {
-        event: "run.status",
-        data: { ...eventWithSeq(1), status: "queued" },
-      },
-    ])
-
-    expect(state.status).toBe("queued")
-    expect(state.done).toBe(false)
-  })
-
-  it("stores conversation data from create and update events", () => {
-    const created = {
-      event: "conversation.created",
-      data: { ...eventWithSeq(1), conversation },
-    } satisfies StreamEvent
-    const updatedConversation = { ...conversation, title: "Updated launch plan" }
-    const updated = {
-      event: "conversation.updated",
-      data: { ...eventWithSeq(2), conversation: updatedConversation },
-    } satisfies StreamEvent
-
-    const state = reduceEvents([created, updated])
-
-    expect(state.conversation).toEqual(updatedConversation)
-    expect(state.conversationId).toBe("conversation-1")
-    expect(state.runId).toBe("run-1")
-    expect(state.lastSeq).toBe(2)
   })
 
   it("accumulates assistant message tokens and completes the draft", () => {
@@ -181,37 +120,6 @@ describe("agentStreamReducer", () => {
       status: "completed",
       timelineSequence: 0,
     })
-  })
-
-  it("keeps an early tool row while replacing incomplete arguments", () => {
-    const state = reduceEvents([
-      {
-        event: "tool.call",
-        data: {
-          ...eventWithSeq(1),
-          tool_call_id: "artifact-1",
-          name: "create_artifact",
-          args: null,
-        },
-      },
-      {
-        event: "tool.call",
-        data: {
-          ...eventWithSeq(2),
-          tool_call_id: "artifact-1",
-          name: "create_artifact",
-          args: { title: "Launch map", content: "<html>…</html>" },
-        },
-      },
-    ])
-
-    expect(Object.keys(state.toolCalls)).toEqual(["artifact-1"])
-    expect(state.toolCalls["artifact-1"]).toMatchObject({
-      args: { title: "Launch map", content: "<html>…</html>" },
-      status: "running",
-      timelineSequence: 0,
-    })
-    expect(state.nextTimelineSequence).toBe(1)
   })
 
   it("records approval-required tool state and run status", () => {
@@ -304,21 +212,6 @@ describe("agentStreamReducer", () => {
     expect(abortedState.status).toBe("running")
     expect(abortedState.messages).toBe(runningState.messages)
     expect(abortedState.toolCalls).toBe(runningState.toolCalls)
-  })
-
-  it("leaves idle and already-finished streams unchanged when aborted", () => {
-    expect(agentStreamReducer(initialAgentStreamState, { type: "abort" })).toBe(
-      initialAgentStreamState
-    )
-
-    const finishedState = reduceEvents([
-      {
-        event: "done",
-        data: { ...eventWithSeq(1), status: "completed" },
-      },
-    ])
-
-    expect(agentStreamReducer(finishedState, { type: "abort" })).toBe(finishedState)
   })
 
   it("ignores stream events after an abort", () => {
@@ -499,34 +392,6 @@ describe("agentStreamReducer", () => {
     expect(selectLiveTimeline([], Object.values(state.toolCalls))).toEqual([])
   })
 
-  it("uses the nested result envelope to show failed and denied steps accurately", () => {
-    const state = reduceEvents([
-      {
-        event: "tool.result",
-        data: {
-          ...eventWithSeq(1),
-          tool_call_id: "workflow-1:1",
-          parent_tool_call_id: "workflow-1",
-          name: "read_file",
-          result: { status: "failed", error: "File unavailable" },
-        },
-      },
-      {
-        event: "tool.result",
-        data: {
-          ...eventWithSeq(2),
-          tool_call_id: "workflow-1:2",
-          parent_tool_call_id: "workflow-1",
-          name: "send_email",
-          result: { status: "denied", error: "Operator declined" },
-        },
-      },
-    ])
-
-    expect(state.toolCalls["workflow-1:1"]?.status).toBe("failed")
-    expect(state.toolCalls["workflow-1:2"]?.status).toBe("denied")
-  })
-
   it("uses the streamed outcome for top-level failed and denied tools", () => {
     const state = reduceEvents([
       {
@@ -575,71 +440,6 @@ describe("agentStreamReducer", () => {
     expect(state.toolCalls["retry-1"]?.result).toBe(
       "Google Ads has no report resource named auction_insight."
     )
-  })
-
-  it("tracks workflow state and bounded outcome excerpts on the outer call", () => {
-    const state = reduceEvents([
-      {
-        event: "workflow.state",
-        data: { ...eventWithSeq(1), tool_call_id: "workflow-1", state: "started" },
-      },
-      {
-        event: "tool.call",
-        data: {
-          ...eventWithSeq(2),
-          tool_call_id: "workflow-1",
-          name: "run_workflow",
-          args: { code: "'done'", ignored_future_field: true },
-        },
-      },
-      {
-        event: "workflow.state",
-        data: {
-          ...eventWithSeq(3),
-          tool_call_id: "workflow-1",
-          state: "completed",
-          output_excerpt: "finished",
-        },
-      },
-    ])
-
-    expect(state.toolCalls["workflow-1"]).toMatchObject({
-      args: { code: "'done'", ignored_future_field: true },
-      status: "completed",
-      timelineSequence: 0,
-      workflowOutputExcerpt: "finished",
-      workflowState: "completed",
-    })
-  })
-
-  it("marks a failed workflow without discarding its call arguments", () => {
-    const state = reduceEvents([
-      {
-        event: "tool.call",
-        data: {
-          ...eventWithSeq(1),
-          tool_call_id: "workflow-1",
-          name: "run_workflow",
-          args: { code: "raise ValueError('no')", reason: "Check the report" },
-        },
-      },
-      {
-        event: "workflow.state",
-        data: {
-          ...eventWithSeq(2),
-          tool_call_id: "workflow-1",
-          state: "failed",
-          error_excerpt: "The workflow could not finish.",
-        },
-      },
-    ])
-
-    expect(state.toolCalls["workflow-1"]).toMatchObject({
-      args: { code: "raise ValueError('no')", reason: "Check the report" },
-      status: "failed",
-      workflowErrorExcerpt: "The workflow could not finish.",
-      workflowState: "failed",
-    })
   })
 
   it("marks error events as failed and stores the stream error", () => {

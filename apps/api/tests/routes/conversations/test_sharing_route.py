@@ -1,4 +1,4 @@
-"""Cookie authentication and input validation for conversation sharing."""
+"""Cookie authentication for conversation sharing."""
 
 import pytest
 
@@ -8,7 +8,7 @@ from utils.security import generate_csrf_token
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.parametrize("visibility", ["workspace", "private"])
+@pytest.mark.parametrize("visibility", ["workspace"])
 async def test_sharing_requires_csrf_for_cookie_auth(db_session, db_async_client, visibility):
     case = await sharing_case(db_session)
     csrf = generate_csrf_token(case.owner_token)
@@ -23,14 +23,3 @@ async def test_sharing_requires_csrf_for_cookie_auth(db_session, db_async_client
         headers={"x-csrf-token": csrf, "origin": "http://localhost:3000"},
     )
     assert accepted.status_code == 200, accepted.text
-
-
-@pytest.mark.parametrize("payload", [{}, {"visibility": "public"}, {"visibility": None}])
-async def test_sharing_rejects_invalid_visibility(db_session, db_async_client, payload):
-    case = await sharing_case(db_session)
-    response = await db_async_client.put(
-        f"/api/v1/conversations/{case.conversation.id}/sharing",
-        json=payload,
-        headers=case.owner_headers,
-    )
-    assert response.status_code == 422

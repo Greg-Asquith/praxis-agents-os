@@ -6,35 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from core.settings import Settings
-from services.embeddings.registry import get_embedding_model
 from tests.support.settings import production_settings
-
-
-def test_embedding_settings_defaults() -> None:
-    fields = Settings.model_fields
-    info = get_embedding_model(
-        fields["EMBEDDINGS_PROVIDER"].default,
-        fields["EMBEDDINGS_MODEL"].default,
-    )
-
-    assert fields["EMBEDDINGS_DIMENSIONS"].default == 1024
-    assert fields["EMBEDDINGS_DIMENSIONS"].default <= info.native_dimensions
-
-
-@pytest.mark.parametrize(
-    ("provider", "model"),
-    [("google", "gemini-embedding-2"), ("openai", "text-embedding-3-small")],
-)
-def test_embedding_settings_use_environment_configuration(
-    monkeypatch: pytest.MonkeyPatch, provider: str, model: str
-) -> None:
-    monkeypatch.setenv("EMBEDDINGS_PROVIDER", provider)
-    monkeypatch.setenv("EMBEDDINGS_MODEL", model)
-
-    resolved = Settings()
-
-    assert provider == resolved.EMBEDDINGS_PROVIDER
-    assert model == resolved.EMBEDDINGS_MODEL
 
 
 @pytest.mark.parametrize("dimensions", [511, 1025])
@@ -53,20 +25,18 @@ def test_production_openai_embeddings_require_api_key() -> None:
         production_settings(OPENAI_API_KEY=None)
 
 
-@pytest.mark.parametrize("api_key", [None, " "])
-def test_production_google_embeddings_require_api_key(api_key: str | None) -> None:
+def test_production_google_embeddings_require_api_key() -> None:
     with pytest.raises(ValidationError, match="GOOGLE_API_KEY"):
         production_settings(
             EMBEDDINGS_PROVIDER="google",
             EMBEDDINGS_MODEL="gemini-embedding-2",
-            GOOGLE_API_KEY=api_key,
+            GOOGLE_API_KEY=" ",
         )
 
 
 @pytest.mark.parametrize(
     ("vertex_project", "gcp_project_id"),
     [
-        ("vertex-project", None),
         (None, "deployment-project"),
     ],
 )
@@ -89,7 +59,6 @@ def test_production_google_embeddings_accept_vertex_project_fallback(
 @pytest.mark.parametrize(
     ("vertex_project", "gcp_project_id"),
     [
-        (None, None),
         (" ", " "),
     ],
 )

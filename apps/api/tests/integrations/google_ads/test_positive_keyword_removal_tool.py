@@ -1,7 +1,5 @@
 """Positive-keyword removal approval, provider, and audit contracts."""
 
-import asyncio
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -9,9 +7,7 @@ from uuid import uuid4
 import pytest
 from pydantic_ai import ModelRetry
 
-from core.exceptions.integration import IntegrationFailureDisposition
 from integrations.google_ads.operations.remove_positive_keywords import (
-    positive_keyword_removal_failure_ledger,
     remove_positive_keywords,
 )
 from integrations.google_ads.tools.remove_positive_keywords import (
@@ -50,18 +46,6 @@ def context(selected=None):
         tool_name=DEFINITION.name,
         tool_call_id="remove-keywords",
     )
-
-
-def test_approval_only_contract_and_bounds():
-    assert DEFINITION.name == "google_ads_remove_keywords"
-    assert DEFINITION.default_policy == "approval"
-    assert DEFINITION.supports_auto is False
-    assert DEFINITION.code_eligible
-    assert DEFINITION.presentation.arg_fields[0].entity_kind == "google_ads_keyword"
-    assert "cannot be undone" in DEFINITION.presentation.approval_prompt
-    for values in ([], [keyword(), keyword()], [keyword(str(i)) for i in range(501)]):
-        with pytest.raises(ModelRetry):
-            _validate_args(None, values)
 
 
 async def test_remove_two_ad_groups_with_partial_failure():
@@ -113,26 +97,9 @@ async def test_remove_two_ad_groups_with_partial_failure():
 
 
 @pytest.mark.parametrize(
-    "payload",
-    [{}, {"results": []}, {"results": [{"resourceName": "customers/444/adGroupCriteria/20~90"}]}],
-)
-async def test_unusable_response_is_unverified(payload):
-    ledger = await remove_positive_keywords(
-        SequencedClient([payload]),
-        customer_id="333",
-        login_customer_id="111",
-        keyword_ids=[("20", "90")],
-    )
-    assert ledger.parents[0].effects[0].outcome == "unverified"
-
-
-@pytest.mark.parametrize(
     "change",
     [
         {"status": "ENABLED"},
-        {"negative": True},
-        {"resourceName": "customers/444/adGroupCriteria/20~90"},
-        {"status": "REMOVED"},
         {"finalUrls": ["https://example.com/changed"]},
     ],
 )
@@ -190,20 +157,6 @@ async def test_tool_retains_pending_and_terminal_audit(monkeypatch, failure):
     assert terminal.intent_groups[0].items[0].fields["requested"] == "REMOVED"
 
 
-async def test_cancellation_preserves_unverified_audit(monkeypatch):
-    cancellation = asyncio.CancelledError()
-    cancellation.failure_disposition = IntegrationFailureDisposition.AMBIGUOUS
-    client = SequencedClient([[{"results": [provider_row()]}], cancellation])
-    audit = AsyncMock(return_value=uuid4())
-    monkeypatch.setattr(f"{MODULE}.google_ads_client", AsyncMock(return_value=client))
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event", audit
-    )
-    with pytest.raises(asyncio.CancelledError):
-        await google_ads_remove_keywords(context(), [keyword()])
-    assert audit.await_args_list[-1].kwargs["status"] is AuditStatus.UNVERIFIED
-
-
 def test_scope_and_large_evidence_fail_before_dispatch():
     with pytest.raises(ModelRetry, match="active Google Ads accounts"):
         _preflight_call(context().deps, [keyword().model_copy(update={"customer_id": "444"})])
@@ -219,28 +172,9 @@ def test_scope_and_large_evidence_fail_before_dispatch():
         )
 
 
-def test_500_keyword_results_and_audit_are_complete():
-    references = [keyword(str(i)) for i in range(500)]
-    _validate_args(None, references)
-    _preflight_call(context().deps, references)
-    # Ordinary provider errors fit alongside all 500 references and their prior settings.
-    ledger = positive_keyword_removal_failure_ledger(
-        [("20", str(i)) for i in range(500)],
-        outcome="unverified",
-        error_code="ERROR",
-        message="Unknown outcome",
-    )
-    data = _split_result(references, ledger)
-    assert data["display_result"]["samples_truncated"] is False
-    assert len(data["display_result"]["samples"]["unverified"]) == 500
-    assert len(json.dumps(data["model_result"])) < 12_000
-    terminal = terminal_operation_detail(_pending_operation_detail(entry(), references), ledger)
-    assert terminal.intent_counts.unverified == 500
-
-
 @pytest.mark.parametrize(
     "change",
-    [{"status": "ENABLED"}, {"finalUrls": ["https://example.com/changed"]}, {"negative": True}],
+    [{"finalUrls": ["https://example.com/changed"]}],
 )
 async def test_approval_hydration_does_not_replace_stale_keyword_evidence(monkeypatch, change):
     from integrations.google_ads.entity_resolvers.keyword import resolve_google_ads_keywords

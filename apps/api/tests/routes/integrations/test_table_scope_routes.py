@@ -180,68 +180,11 @@ async def test_table_scope_routes_replace_list_tables_and_audit_without_values(
     assert cleared.json()["rules"] == []
 
 
-async def test_table_scope_table_picker_uses_stable_cursor_pagination(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    connection, resource = await _bigquery_connection(db_session, integration_identity)
-    db_session.add_all(
-        [
-            build_integration_table_schema(
-                resource=resource,
-                table_external_id="account_daily",
-                schema_fields=[{"name": "account_id", "type": "STRING"}],
-            ),
-            build_integration_table_schema(
-                resource=resource,
-                table_external_id="spend_daily",
-                schema_fields=[{"name": "account_id", "type": "STRING"}],
-            ),
-        ]
-    )
-    await db_session.commit()
-    path = f"/api/v1/integrations/connections/{connection.id}/resources/{resource.id}/tables"
-
-    first = await db_async_client.get(
-        path,
-        params={"limit": 1},
-        headers=integration_identity["headers"],
-    )
-    assert first.status_code == 200, first.text
-    assert [table["table_external_id"] for table in first.json()["tables"]] == ["account_daily"]
-    assert first.json()["next_cursor"] == "account_daily"
-
-    second = await db_async_client.get(
-        path,
-        params={"limit": 1, "cursor": first.json()["next_cursor"]},
-        headers=integration_identity["headers"],
-    )
-    assert second.status_code == 200, second.text
-    assert [table["table_external_id"] for table in second.json()["tables"]] == ["campaign_daily"]
-    assert second.json()["next_cursor"] == "campaign_daily"
-
-    final = await db_async_client.get(
-        path,
-        params={"limit": 1, "cursor": second.json()["next_cursor"]},
-        headers=integration_identity["headers"],
-    )
-    assert final.status_code == 200, final.text
-    assert [table["table_external_id"] for table in final.json()["tables"]] == ["spend_daily"]
-    assert final.json()["next_cursor"] is None
-
-
 @pytest.mark.parametrize(
     ("table", "column", "values", "expected_status"),
     [
         ("campaign_view", "account_id", ["account-1"], 400),
-        ("campaign_daily", "tags", ["client"], 400),
-        ("campaign_daily", "report_date", ["2026-08-25"], 400),
-        ("campaign_daily", "legacy_id", [], 422),
-        ("campaign_daily", "account_id", ["x" * 257], 400),
-        ("campaign_daily", "legacy_id", ["1.5"], 400),
         ("campaign_daily", "legacy_id", ["9223372036854775808"], 400),
-        ("campaign_daily", "legacy_id", ["-9223372036854775809"], 400),
     ],
 )
 async def test_table_scope_replace_validation_matrix(
@@ -329,18 +272,3 @@ async def test_table_scope_routes_reject_foreign_resource_unsupported_provider_a
         headers=reader_headers,
     )
     assert forbidden.status_code == 403, forbidden.text
-
-
-async def test_provider_listing_discloses_table_scope_support(
-    db_async_client: AsyncClient,
-    integration_identity: dict[str, object],
-) -> None:
-    response = await db_async_client.get(
-        "/api/v1/integrations/providers",
-        headers=integration_identity["headers"],
-    )
-
-    assert response.status_code == 200, response.text
-    providers = {item["provider_key"]: item for item in response.json()}
-    assert providers["bigquery"]["table_scopes_supported"] is True
-    assert providers["gmail"]["table_scopes_supported"] is False

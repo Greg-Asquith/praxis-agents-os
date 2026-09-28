@@ -14,7 +14,6 @@ from tests.factories import (
     build_file,
     build_file_reference,
     build_file_revision,
-    build_file_upload,
     build_user,
     build_workspace,
 )
@@ -115,93 +114,6 @@ async def test_file_revision_requires_exactly_one_actor(db_session: AsyncSession
     await db_session.flush()
     db_session.add(build_file_revision(file, created_by_system=True))
     await db_session.flush()
-
-
-@pytest.mark.parametrize(
-    ("revision_kind", "restored_from_revision_id", "should_raise"),
-    [
-        ("unknown", None, True),
-        ("restore", None, True),
-        ("create", uuid4(), True),
-    ],
-)
-async def test_file_revision_kind_and_restore_constraints(
-    db_session: AsyncSession,
-    revision_kind: str,
-    restored_from_revision_id,
-    should_raise: bool,
-) -> None:
-    _workspace, user, file, _revision = await _file_with_revision(db_session, suffix=revision_kind)
-    candidate = build_file_revision(
-        file,
-        revision_number=2,
-        revision_kind=revision_kind,
-        created_by_user_id=user.id,
-        restored_from_revision_id=restored_from_revision_id,
-    )
-    db_session.add(candidate)
-
-    if should_raise:
-        with pytest.raises(IntegrityError):
-            await db_session.flush()
-
-
-async def test_duplicate_revision_number_is_rejected(db_session: AsyncSession) -> None:
-    _workspace, user, file, _revision = await _file_with_revision(db_session, suffix="dupe-rev")
-    db_session.add(build_file_revision(file, revision_number=1, created_by_user_id=user.id))
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
-async def test_file_rejects_unknown_processing_status(db_session: AsyncSession) -> None:
-    workspace, _user = await _workspace_and_user(db_session, suffix="bad-processing")
-    db_session.add(build_file(workspace=workspace, processing_status="missing"))
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
-async def test_file_reference_duplicate_target_is_rejected(db_session: AsyncSession) -> None:
-    _workspace, user, file, revision = await _file_with_revision(db_session, suffix="ref-dupe")
-    target_id = uuid4()
-    db_session.add_all(
-        [
-            build_file_reference(
-                file,
-                target_id=target_id,
-                file_revision_id=revision.id,
-                created_by_user_id=user.id,
-            ),
-            build_file_reference(
-                file,
-                target_id=target_id,
-                file_revision_id=revision.id,
-                created_by_user_id=user.id,
-            ),
-        ]
-    )
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
-async def test_file_upload_duplicate_object_key_is_rejected(db_session: AsyncSession) -> None:
-    workspace, user = await _workspace_and_user(db_session, suffix="upload-dupe")
-    object_key = f"workspaces/{workspace.id}/files/{uuid4()}/{uuid4()}.pdf"
-    db_session.add_all(
-        [
-            build_file_upload(
-                workspace=workspace, object_key=object_key, created_by_user_id=user.id
-            ),
-            build_file_upload(
-                workspace=workspace, object_key=object_key, created_by_user_id=user.id
-            ),
-        ]
-    )
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
 
 
 async def test_file_hard_delete_cascades_revisions_and_references(

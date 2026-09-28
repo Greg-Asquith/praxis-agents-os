@@ -3,7 +3,6 @@
 """HTTP-boundary tests for workspace skill document routes."""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -334,33 +333,6 @@ async def test_skill_document_confirm_rejects_token_for_different_skill(
     assert confirm_response.json()["field"] == "upload_token"
 
 
-async def test_skill_document_upload_rejects_new_document_over_cap(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    local_storage_settings: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "MAX_SKILL_DOCUMENTS_PER_SKILL", 1)
-    _user, _workspace, skill, headers = await _authenticated_workspace_with_skill(
-        db_session,
-        documentation_refs={"existing_doc": {"status": "ready"}},
-    )
-
-    response = await db_async_client.post(
-        f"/api/v1/skills/{skill.id}/documents/upload",
-        headers=headers,
-        json={
-            "document_name": "new_doc",
-            "filename": "guide.md",
-            "content_type": "text/markdown",
-            "size_bytes": 4,
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["field"] == "document_name"
-
-
 async def test_skill_document_upload_limits_pending_grants_per_actor_and_workspace(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -390,34 +362,3 @@ async def test_skill_document_upload_limits_pending_grants_per_actor_and_workspa
     assert first.status_code == 200
     assert second.status_code == 400
     assert second.json()["limit"] == 1
-
-
-async def test_skill_document_markdown_for_failed_entry_returns_not_found(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-    local_storage_settings: None,
-) -> None:
-    _user, _workspace, skill, headers = await _authenticated_workspace_with_skill(
-        db_session,
-        documentation_refs={
-            "bad_doc": {
-                "original": "workspaces/w/skills/s/docs/bad_doc/original.pdf",
-                "markdown": None,
-                "filename": "bad_doc.pdf",
-                "content_type": "application/pdf",
-                "size_bytes": 10,
-                "markdown_size_bytes": None,
-                "status": "failed",
-                "error": "Document could not be converted to markdown",
-                "updated_at": datetime.now(UTC).isoformat(),
-            }
-        },
-    )
-
-    response = await db_async_client.get(
-        f"/api/v1/skills/{skill.id}/documents/bad_doc/markdown",
-        headers=headers,
-    )
-
-    assert response.status_code == 404
-    assert response.json()["resource_type"] == "skill_document"

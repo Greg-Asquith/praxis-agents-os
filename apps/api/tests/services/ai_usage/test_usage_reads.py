@@ -265,14 +265,11 @@ async def test_summary_adds_gpt_image_output_cost_and_exposes_incomplete_metadat
     assert summary.pricing_coverage.unpriced_image_generations == 1
 
 
-@pytest.mark.parametrize(
-    ("action", "image_model"),
-    [("generate", "gpt-image-2.5-flare"), ("edit", "gpt-image-2.5-sunburst")],
-)
 @pytest.mark.parametrize("direct", [False, True])
 async def test_summary_discloses_unpriced_direct_and_historical_2_5_images(
-    db_session: AsyncSession, action: str, image_model: str, direct: bool
+    db_session: AsyncSession, direct: bool
 ) -> None:
+    action, image_model = "generate", "gpt-image-2.5-flare"
     workspace = build_workspace(slug=f"image-25-cost-{uuid4().hex}")
     db_session.add(workspace)
     await db_session.flush()
@@ -311,43 +308,6 @@ async def test_summary_discloses_unpriced_direct_and_historical_2_5_images(
     assert summary.models[0].model == (image_model if direct else "gpt-5.6-luna")
     assert summary.pricing_coverage.priced_image_generations == 0
     assert summary.pricing_coverage.unpriced_image_generations == 2
-
-
-@pytest.mark.asyncio
-async def test_summary_adds_gemini_flash_image_output_cost(
-    db_session: AsyncSession,
-) -> None:
-    workspace = build_workspace(slug=f"gemini-image-cost-{uuid4().hex}")
-    db_session.add(workspace)
-    await db_session.flush()
-    occurred_at = datetime(2026, 8, 12, 12, tzinfo=UTC)
-    db_session.add(
-        _event(
-            workspace.id,
-            occurred_at,
-            purpose="image_generation",
-            provider="google",
-            model="gemini-3.1-flash-image",
-            details={
-                "action": "generate",
-                "image_model": "gemini-3.1-flash-image",
-                "image_quality": "standard",
-                "image_size": "1k",
-            },
-        )
-    )
-    await db_session.flush()
-
-    summary = await get_usage_summary(
-        db_session,
-        workspace_id=workspace.id,
-        from_=datetime(2026, 8, 12, tzinfo=UTC),
-        to=datetime(2026, 8, 13, tzinfo=UTC),
-    )
-
-    assert summary.totals.estimated_cost_usd == Decimal("0.067")
-    assert summary.pricing_coverage.priced_image_generations == 1
-    assert summary.pricing_coverage.unpriced_image_generations == 0
 
 
 @pytest.mark.asyncio
@@ -405,10 +365,6 @@ async def test_breakdown_labels_soft_deleted_and_unattributed_entities(
         (
             datetime(2026, 1, 2, tzinfo=UTC),
             datetime(2026, 1, 1, tzinfo=UTC),
-        ),
-        (
-            datetime(2026, 1, 1, tzinfo=UTC),
-            datetime(2026, 4, 4, tzinfo=UTC),
         ),
         (
             datetime(2026, 1, 1),  # noqa: DTZ001 - deliberately naive

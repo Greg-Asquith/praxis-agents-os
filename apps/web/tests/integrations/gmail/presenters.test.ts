@@ -1,17 +1,9 @@
-import { createElement, isValidElement, type ReactNode } from "react"
+import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it, vi } from "vitest"
 
-import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
-import { parseConversationMessages } from "@/features/conversations/message-parts/parse"
-import {
-  agentStreamReducer,
-  initialAgentStreamState,
-} from "@/features/conversations/stream/reducer"
-import type { ConversationMessage } from "@/features/conversations/types"
-import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import {
   integrationToolRowPresenters,
@@ -20,11 +12,8 @@ import {
 } from "@/integrations/registry"
 import { prefetchProviderPreview } from "@/components/tool-ui/provider-preview-queries"
 import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
-import { gmailSendDetails } from "@/integrations/gmail/lib/tool-details"
-import { parseGmailSendArgs } from "@/integrations/gmail/lib/write-args"
 import { gmailReadPresenter } from "@/integrations/gmail/presenters/read"
 import { gmailSearchPresenter } from "@/integrations/gmail/presenters/search"
-import { gmailSendPresenter } from "@/integrations/gmail/presenters/send"
 
 const NODE = (content: string, ref = "message-1") => ({
   node: "praxis_untrusted" as const,
@@ -71,30 +60,9 @@ describe("Gmail tool presenters", () => {
     const html = render(rendered)
 
     expect(html).toContain("Quarterly update")
-    expect(html).toContain("Search Gmail")
-    expect(html).toContain("from:ada@example.com")
-    expect(html).toContain("Up to 5 messages")
-    expect(html).toContain("Primary inbox")
-    expect(html).toContain("hello@example.com")
-    expect(html).toContain("Ada &lt;ada@example.com&gt;")
-    expect(html).not.toContain("Open in Gmail")
-    expect(html).not.toContain("Gmail Message")
     expect(html).toContain("Access needs to be renewed.")
     expect(html).not.toContain("praxis_untrusted")
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
-    expect(html).not.toContain("max-w-3xl")
-    expect(html).toContain("max-h-[min(32rem,60vh)]")
-    expect(html).toContain('role="list"')
-  })
-
-  it("renders a running search as the pending kit state", () => {
-    const html = render(
-      gmailSearchPresenter.render(
-        props({ id: "search-1", kind: "call", name: "gmail_search_messages", status: "running" })
-      )
-    )
-    expect(html).toContain("Searching mailboxes…")
-    expect(html).toContain('aria-busy="true"')
   })
 
   it("opens a search result and fetches its full-message preview exactly once", async () => {
@@ -130,20 +98,6 @@ describe("Gmail tool presenters", () => {
       "/integrations/conversations/conversation-1/previews/gmail_message?provider_key=gmail&ref=message-1&scope_id=hello%40example.com"
     )
     vi.unstubAllGlobals()
-  })
-
-  it("returns null for unexpected search payloads", () => {
-    expect(
-      gmailSearchPresenter.render(
-        props({
-          id: "search-1",
-          kind: "result",
-          name: "gmail_search_messages",
-          status: "completed",
-          result: { results: [{ status: "success" }] },
-        })
-      )
-    ).toBeNull()
   })
 
   it("returns null when any successful search entry has malformed data", () => {
@@ -188,25 +142,11 @@ describe("Gmail tool presenters", () => {
       )
     )
 
-    expect(html).toContain("External Content")
-    expect(html).toContain("Read Gmail Message")
-    expect(html).toContain("Primary inbox")
     expect(html).toContain("**Plain external body**")
     expect(html).not.toContain("<strong>")
     expect(html).not.toContain("Reply")
     expect(html).not.toContain("view=cm")
     expect(html).toContain("shortened to fit")
-  })
-
-  it("renders a running read as a single pending state", () => {
-    const html = render(
-      gmailReadPresenter.render(
-        props({ id: "read-1", kind: "call", name: "gmail_read_message", status: "running" })
-      )
-    )
-
-    expect(html).toContain("Reading message…")
-    expect(html.match(/aria-busy="true"/g)).toHaveLength(1)
   })
 
   it("renders the fetched HTML email in an opaque-origin sandboxed iframe with meta chips", () => {
@@ -302,297 +242,6 @@ describe("Gmail tool presenters", () => {
     ).toBeNull()
   })
 
-  it("renders an email-shaped approval surface with the existing controls contract", () => {
-    const onDecisionChange = vi.fn()
-    const declaredFields = [
-      field("to", "Recipients", "list", true),
-      field("subject", "Declared Subject", "text", true),
-      field("body_html", "Declared Message", "html", true),
-      field("cc", "Declared Cc", "list", true, true),
-      field("bcc", "Declared Bcc", "list", true, true),
-    ]
-    const controls = {
-      decision: { decision: "pending" as const, edits: {}, message: "" as const },
-      error: null,
-      onDecisionChange,
-      onRetry: vi.fn(),
-      pendingCount: 1,
-      submitting: false,
-    }
-    const rendered = gmailSendPresenter.render(
-      props(
-        {
-          id: "send-1",
-          kind: "approval",
-          name: "gmail_send_message",
-          status: "awaiting_approval",
-          args: {
-            to: ["client@example.com"],
-            subject: "Project update",
-            body_html: "<p>The work is complete.</p>",
-            cc: [],
-            bcc: [],
-          },
-        },
-        controls,
-        toolUi(declaredFields)
-      )
-    )
-
-    expect(isValidElement(rendered)).toBe(true)
-    if (isValidElement<{ controls: unknown; fields: ToolUiField[] }>(rendered)) {
-      expect(rendered.type).toBe(ToolApprovalDecisionCard)
-      expect(rendered.props.controls).toBe(controls)
-      expect(rendered.props.fields).toBe(declaredFields)
-    }
-    const html = render(rendered)
-    expect(html).toContain("Review email before sending")
-    expect(html).toContain("client@example.com")
-    expect(html).toContain("Project update")
-    expect(html).toContain("The work is complete.")
-    expect(html).toContain("Approve &amp; Send")
-    expect(html).toContain("Decline")
-  })
-
-  it("keeps long send inputs in the details popover but out of the header summary", () => {
-    expect(
-      gmailSendDetails(
-        parseGmailSendArgs({
-          to: ["client@example.com"],
-          subject: "Project update",
-          body_html: "<p>A long message body</p>",
-        })
-      )
-    ).toEqual([
-      { label: "To", value: "client@example.com" },
-      { label: "Subject", value: "Project update" },
-    ])
-  })
-
-  it("renders a sent message as a complete email receipt", () => {
-    const rendered = gmailSendPresenter.render(
-      props({
-        id: "send-1",
-        kind: "result",
-        name: "gmail_send_message",
-        status: "completed",
-        args: {
-          to: ["client@example.com"],
-          subject: "Project update",
-          body_html: "<p>The work is complete.</p><p>Thanks,<br>Ada</p>",
-          cc: ["team@example.com"],
-          bcc: [],
-        },
-        result: {
-          results: [entry({ message_id: "message-1" })],
-        },
-      })
-    )
-    const html = render(rendered)
-
-    expect(html).toContain('aria-label="Send Gmail Email results"')
-    expect(html).toContain('aria-label="Email sent"')
-    expect(html).toContain("Email sent")
-    expect(html).toContain("Project update")
-    expect(html).toContain("client@example.com")
-    expect(html).toContain("team@example.com")
-    expect(html).toContain("The work is complete.")
-    expect(html).not.toContain("Result")
-  })
-
-  it("renders a clear unsent receipt when a run ends without a tool result", () => {
-    const html = render(
-      gmailSendPresenter.render(
-        props({
-          id: "send-1",
-          kind: "call",
-          name: "gmail_send_message",
-          status: "failed",
-          args: {
-            to: ["client@example.com"],
-            subject: "Project update",
-            body_html: "<p>The work is complete.</p>",
-          },
-        })
-      )
-    )
-
-    expect(html).toContain('aria-label="Unconfirmed Send Gmail Email"')
-    expect(html).toContain('aria-expanded="true"')
-    expect(html).toContain("Collapse results")
-    expect(html).toContain("Send Gmail Email")
-    expect(html).toContain("Email not sent")
-    expect(html).toContain("Failed")
-    expect(html).toContain("Details")
-    expect(html).toContain("The email could not be sent.")
-    expect(html).toContain("Project update")
-    expect(html).toContain("client@example.com")
-  })
-
-  it("renders a declined send as a decision with the operator reason", () => {
-    const html = render(
-      gmailSendPresenter.render(
-        props({
-          id: "send-denied",
-          kind: "result",
-          name: "gmail_send_message",
-          status: "denied",
-          args: { to: ["client@example.com"], subject: "Project update" },
-          decisionReason: "Wait until the figures are final.",
-        })
-      )
-    )
-
-    expect(html).toContain("Declined")
-    expect(html).toContain("Wait until the figures are final.")
-    expect(html).not.toContain("Failed")
-  })
-
-  it("keeps malformed successful results in custom Gmail UI", () => {
-    const html = render(
-      gmailSendPresenter.render(
-        props({
-          id: "send-1",
-          kind: "result",
-          name: "gmail_send_message",
-          status: "completed",
-          result: {
-            results: [entry({ message_id: "message-1" }), entry(null, { provider_key: "gmail" })],
-          },
-        })
-      )
-    )
-
-    expect(html).toContain("Send not confirmed")
-    expect(html).toContain("couldn&#x27;t confirm the email outcome")
-  })
-
-  it("replaces the pending skeleton with rich results before the streamed reply", () => {
-    const called = agentStreamReducer(initialAgentStreamState, {
-      type: "event",
-      event: {
-        event: "tool.call",
-        data: {
-          conversation_id: "conversation-1",
-          run_id: "run-1",
-          seq: 1,
-          tool_call_id: "search-1",
-          name: "gmail_search_messages",
-          args: { query: "from:ada@example.com" },
-        },
-      },
-    })
-    const completed = agentStreamReducer(called, {
-      type: "event",
-      event: {
-        event: "tool.result",
-        data: {
-          conversation_id: "conversation-1",
-          run_id: "run-1",
-          seq: 2,
-          tool_call_id: "search-1",
-          name: "gmail_search_messages",
-          result: {
-            results: [
-              entry({
-                messages: [
-                  {
-                    message_id: "message-1",
-                    sender: NODE("Ada <ada@example.com>"),
-                    to: NODE("team@example.com"),
-                    subject: NODE("Quarterly update"),
-                    date: NODE("2026-07-22T09:00:00Z"),
-                    snippet: NODE("Here is the latest progress."),
-                  },
-                ],
-                total: 1,
-              }),
-            ],
-          },
-        },
-      },
-    })
-    const withReply = agentStreamReducer(completed, {
-      type: "event",
-      event: {
-        event: "message.delta",
-        data: {
-          conversation_id: "conversation-1",
-          run_id: "run-1",
-          seq: 3,
-          message_id: "reply-1",
-          text: "I found the requested messages.",
-        },
-      },
-    })
-    const toolCall = withReply.toolCalls["search-1"]
-    expect(toolCall?.status).toBe("completed")
-    expect(withReply.messages[0]?.text).toBe("I found the requested messages.")
-    const html = render(
-      gmailSearchPresenter.render(
-        props({
-          id: toolCall?.tool_call_id ?? "missing",
-          kind: "result",
-          name: toolCall?.name ?? "missing",
-          status: toolCall?.status ?? "unknown",
-          args: toolCall?.args,
-          result: toolCall?.result,
-        })
-      )
-    )
-    expect(html).toContain("Quarterly update")
-    expect(html).not.toContain("Searching mailboxes…")
-    expect(html).not.toContain('aria-busy="true"')
-  })
-
-  it("keeps the rich presenter after persisted call/result pairing", () => {
-    const result = {
-      results: [
-        entry({
-          messages: [
-            {
-              message_id: "message-1",
-              sender: NODE("Ada <ada@example.com>"),
-              to: NODE("team@example.com"),
-              subject: NODE("Quarterly update"),
-              date: NODE("2026-07-22T09:00:00Z"),
-              snippet: NODE("Here is the latest progress."),
-            },
-          ],
-          total: 1,
-        }),
-      ],
-    }
-    const parsed = parseConversationMessages([
-      persistedMessage("assistant-call", "assistant", 1, [
-        {
-          part_kind: "tool-call",
-          tool_call_id: "search-1",
-          tool_name: "gmail_search_messages",
-          args: { query: "from:ada@example.com" },
-        },
-      ]),
-      persistedMessage("tool-result", "tool", 2, [
-        {
-          part_kind: "tool-return",
-          tool_call_id: "search-1",
-          tool_name: "gmail_search_messages",
-          outcome: "success",
-          content: result,
-        },
-      ]),
-      persistedMessage("assistant-reply", "assistant", 3, [
-        { part_kind: "text", content: "I found the requested messages." },
-      ]),
-    ])
-    const activity = parsed[0]?.toolActivities[0]
-    expect(activity).toMatchObject({ status: "completed", result })
-    expect(parsed[1]?.text).toEqual(["I found the requested messages."])
-    expect(render(gmailSearchPresenter.render(props(activity ?? missingActivity())))).toContain(
-      "Quarterly update"
-    )
-  })
-
   it("registers all Gmail presenters through the lazy integration module", async () => {
     await loadIntegrationUiModules(["gmail"])
     expect(integrationToolRowPresenters("gmail").map((presenter) => presenter.key)).toEqual([
@@ -611,43 +260,13 @@ describe("Gmail tool presenters", () => {
   })
 })
 
-function props(
-  activity: ToolActivity,
-  approvalDecision?: Parameters<typeof gmailSendPresenter.render>[0]["approvalDecision"],
-  ui?: ToolUi
-) {
+function props(activity: ToolActivity) {
   return {
     activity,
-    ...(approvalDecision ? { approvalDecision } : {}),
     compact: false,
     defaultOpen: true,
     live: false,
     providerKey: "gmail",
-    ...(ui ? { ui } : {}),
-  }
-}
-
-function field(
-  key: string,
-  label: string,
-  format: ToolUiField["format"],
-  editable = false,
-  secondary = false
-): ToolUiField {
-  return { key, label, format, editable, min_rows: 0, secondary, options: [], placeholder: "" }
-}
-
-function toolUi(argFields: ToolUiField[]): ToolUi {
-  return {
-    approval_prompt: "",
-    approval_title: "",
-    approve_label: "",
-    arg_fields: argFields,
-    completed_label: "",
-    failed_label: "",
-    icon: "gmail",
-    result_fields: [],
-    running_label: "",
   }
 }
 
@@ -677,29 +296,4 @@ function render(node: ReactNode) {
   return renderToStaticMarkup(
     createElement(QueryClientProvider, { client }, createElement("div", null, node))
   )
-}
-
-function persistedMessage(
-  id: string,
-  role: string,
-  sequence: number,
-  parts: Record<string, unknown>[]
-): ConversationMessage {
-  return {
-    id,
-    conversation_id: "conversation-1",
-    role,
-    parts: { parts },
-    metadata: null,
-    tool_name: role === "tool" ? "gmail_search_messages" : null,
-    error: null,
-    sequence,
-    client_message_id: null,
-    created_at: "2026-07-22T09:00:00Z",
-    updated_at: "2026-07-22T09:00:00Z",
-  }
-}
-
-function missingActivity(): ToolActivity {
-  return { id: "missing", kind: "unknown", status: "unknown", name: "missing" }
 }

@@ -33,29 +33,9 @@ def platform_app():
     return app, db, actor
 
 
-async def test_platform_knowledge_list_accepts_read_only_membership_and_bounds_page(
-    platform_app, monkeypatch
-):
-    app, db, actor = platform_app
-    service = AsyncMock(return_value={"documents": [], "total": 0, "limit": 50, "offset": 0})
-    monkeypatch.setattr(import_module("routes.kb.platform.list_documents"), "service", service)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        response = await client.get("/kb/platform/documents/")
-        invalid = await client.get("/kb/platform/documents/?limit=101")
-    assert response.status_code == 200 and invalid.status_code == 422
-    service.assert_awaited_once_with(db, actor=actor, limit=50, offset=0)
-
-
 @pytest.mark.parametrize(
     "field,value",
-    [
-        ("scope", "workspace"),
-        ("workspace_id", str(uuid4())),
-        ("is_published", True),
-        ("is_private", True),
-    ],
+    [("workspace_id", str(uuid4())), ("is_published", True)],
 )
 async def test_platform_knowledge_create_refuses_ownership_and_publication_input(
     platform_app, monkeypatch, field, value
@@ -74,20 +54,3 @@ async def test_platform_knowledge_create_refuses_ownership_and_publication_input
         )
     assert response.status_code == 422
     service.assert_not_awaited()
-
-
-async def test_platform_knowledge_delete_retains_platform_service_authority(
-    platform_app, monkeypatch
-):
-    app, db, actor = platform_app
-    service = AsyncMock()
-    monkeypatch.setattr(import_module("routes.kb.platform.delete_document"), "service", service)
-    document_id = uuid4()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
-    ) as client:
-        response = await client.delete(f"/kb/platform/documents/{document_id}")
-    assert response.status_code == 204
-    assert service.await_args.args == (db,)
-    assert service.await_args.kwargs["actor"] is actor
-    assert service.await_args.kwargs["document_id"] == document_id

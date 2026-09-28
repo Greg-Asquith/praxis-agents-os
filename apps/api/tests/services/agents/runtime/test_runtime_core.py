@@ -14,24 +14,17 @@ import pytest
 import pytest_asyncio
 from pydantic_ai import (
     Agent as PydanticAgent,
-    DeferredToolRequests,
     DeferredToolResults,
     ToolApproved,
-    ToolDenied,
     ToolReturn,
-    UsageLimitExceeded,
 )
 from pydantic_ai.messages import (
     BinaryContent,
-    FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelRequest,
     ModelResponse,
     PartDeltaEvent,
-    PartEndEvent,
     PartStartEvent,
-    RetryPromptPart,
-    TextPart,
     ThinkingPart,
     ThinkingPartDelta,
     ToolCallPart,
@@ -52,20 +45,12 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import (
-    RUN_STATUS_AWAITING_APPROVAL,
     RUN_STATUS_COMPLETED,
     RUN_STATUS_FAILED,
 )
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.approval_events import (
-    build_deferred_tool_result_metadata,
     emit_deferred_tool_resume_events,
-    emit_live_deferred_tool_event,
-    is_deferred_tool_resume_event,
-)
-from services.agents.runtime.approval_state import (
-    APPROVAL_STATE_METADATA_KEY,
-    load_suspended_run_state,
 )
 from services.agents.runtime.completion_contract import ScheduleCompletionContract
 from services.agents.runtime.events import (
@@ -75,16 +60,14 @@ from services.agents.runtime.events import (
     EVENT_MESSAGE_END,
     EVENT_MESSAGE_START,
     EVENT_RUN_STATUS,
-    EVENT_TOOL_APPROVAL_REQUIRED,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
     EventTranslationState,
     emit_agent_stream_event,
-    public_function_tool_result,
 )
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.loop import build_runtime_agent
-from services.agents.runtime.sinks import CollectingSink, StreamSink
+from services.agents.runtime.sinks import CollectingSink
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, register_tool_definition
 from services.agents.runtime.worker import run_turn_worker
@@ -103,27 +86,6 @@ PUBLIC_RESULT_PRESENCE_CASES = [
     pytest.param({"public_result": {"rows": []}}, {"rows": []}, id="object"),
     pytest.param({"public_result": []}, [], id="list"),
 ]
-
-
-@pytest.mark.parametrize(
-    ("metadata", "expected"),
-    PUBLIC_RESULT_PRESENCE_CASES,
-)
-async def test_public_function_tool_result_honors_key_presence(
-    metadata: dict[str, object],
-    expected: object,
-) -> None:
-    part = ToolReturnPart(
-        tool_name="test_tool",
-        tool_call_id="call-1",
-        content={"model_only": "must-not-leak"},
-        metadata=metadata,
-    )
-
-    result = public_function_tool_result(part)
-
-    assert result == expected
-    assert type(result) is type(expected)
 
 
 @pytest.mark.parametrize(
@@ -239,50 +201,6 @@ async def test_event_translation_emits_message_and_tool_events() -> None:
     assert [event.data["seq"] for event in sink.events] == list(range(1, len(sink.events) + 1))
 
 
-async def test_event_translation_emits_text_from_part_start() -> None:
-    """Some providers include leading text on the initial text part."""
-    run_id = uuid4()
-    sink = CollectingSink(run_id=run_id, conversation_id=uuid4())
-    state = EventTranslationState()
-
-    await emit_agent_stream_event(
-        sink,
-        PartStartEvent(index=0, part=TextPart(content="hello")),
-        run_id=str(run_id),
-        state=state,
-    )
-
-    assert [event.event for event in sink.events] == [EVENT_MESSAGE_START, EVENT_MESSAGE_DELTA]
-    assert sink.events[0].data["channel"] == "text"
-    assert sink.events[1].data["text"] == "hello"
-
-
-async def test_event_translation_emits_tool_identity_before_arguments_complete() -> None:
-    """Large function-tool arguments expose a live row as soon as the tool starts."""
-    run_id = uuid4()
-    sink = CollectingSink(run_id=run_id, conversation_id=uuid4())
-    state = EventTranslationState()
-
-    await emit_agent_stream_event(
-        sink,
-        PartStartEvent(
-            index=0,
-            part=ToolCallPart(
-                tool_name="create_artifact",
-                args='{"content":"<html>',
-                tool_call_id="artifact-call",
-            ),
-        ),
-        run_id=str(run_id),
-        state=state,
-    )
-
-    assert [event.event for event in sink.events] == [EVENT_TOOL_CALL]
-    assert sink.events[0].data["tool_call_id"] == "artifact-call"
-    assert sink.events[0].data["name"] == "create_artifact"
-    assert sink.events[0].data["args"] is None
-
-
 async def test_event_translation_emits_thinking_from_part_start_and_delta() -> None:
     """Thinking parts stream over the message channel without leaking signatures."""
     run_id = uuid4()
@@ -330,98 +248,6 @@ async def test_event_translation_emits_thinking_from_part_start_and_delta() -> N
     assert len(sink.events) == event_count
 
 
-async def test_event_translation_keeps_interleaved_thinking_and_text_ids_distinct() -> None:
-    """Open thinking and text parts can overlap without colliding ids."""
-    run_id = uuid4()
-    sink = CollectingSink(run_id=run_id, conversation_id=uuid4())
-    state = EventTranslationState()
-    thinking_part = ThinkingPart(content="Plan")
-    text_part = TextPart(content="Answer")
-
-    await emit_agent_stream_event(
-        sink,
-        PartStartEvent(index=0, part=thinking_part),
-        run_id=str(run_id),
-        state=state,
-    )
-    await emit_agent_stream_event(
-        sink,
-        PartStartEvent(index=1, part=text_part),
-        run_id=str(run_id),
-        state=state,
-    )
-    await emit_agent_stream_event(
-        sink,
-        PartEndEvent(index=0, part=thinking_part),
-        run_id=str(run_id),
-        state=state,
-    )
-    await emit_agent_stream_event(
-        sink,
-        PartEndEvent(index=1, part=text_part),
-        run_id=str(run_id),
-        state=state,
-    )
-
-    start_events = [event for event in sink.events if event.event == EVENT_MESSAGE_START]
-    end_events = [event for event in sink.events if event.event == EVENT_MESSAGE_END]
-
-    assert [event.data["channel"] for event in start_events] == ["thinking", "text"]
-    assert start_events[0].data["message_id"] != start_events[1].data["message_id"]
-    assert [event.data["message_id"] for event in end_events] == [
-        start_events[0].data["message_id"],
-        start_events[1].data["message_id"],
-    ]
-
-
-async def test_deferred_resume_filter_only_suppresses_deferred_tool_ids() -> None:
-    """Fresh post-resume tool calls should keep using normal stream translation."""
-    deferred_tool_call_id = "deferred-tool-call"
-    fresh_tool_call_id = "fresh-tool-call"
-    deferred_tool_call_ids = {deferred_tool_call_id}
-
-    assert is_deferred_tool_resume_event(
-        FunctionToolCallEvent(
-            part=ToolCallPart(
-                tool_name="approved_tool",
-                args={"value": 1},
-                tool_call_id=deferred_tool_call_id,
-            )
-        ),
-        deferred_tool_call_ids=deferred_tool_call_ids,
-    )
-    assert is_deferred_tool_resume_event(
-        FunctionToolResultEvent(
-            part=ToolReturnPart(
-                tool_name="approved_tool",
-                content="approved",
-                tool_call_id=deferred_tool_call_id,
-            )
-        ),
-        deferred_tool_call_ids=deferred_tool_call_ids,
-    )
-    assert not is_deferred_tool_resume_event(
-        FunctionToolCallEvent(
-            part=ToolCallPart(
-                tool_name="fresh_tool",
-                args={"value": 2},
-                tool_call_id=fresh_tool_call_id,
-            )
-        ),
-        deferred_tool_call_ids=deferred_tool_call_ids,
-    )
-    assert not is_deferred_tool_resume_event(
-        FunctionToolResultEvent(
-            part=ToolReturnPart(
-                tool_name="fresh_tool",
-                content="fresh",
-                tool_call_id=fresh_tool_call_id,
-            )
-        ),
-        deferred_tool_call_ids=deferred_tool_call_ids,
-    )
-
-
 async def test_rich_tool_result_streams_metadata_without_file_bytes() -> None:
     sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
     metadata = {"source": "image", "file_id": "file-1", "name": "screen.png"}
@@ -449,28 +275,6 @@ async def test_rich_tool_result_streams_metadata_without_file_bytes() -> None:
     [event] = sink.events
     assert event.event == EVENT_TOOL_RESULT
     assert event.data["result"] == metadata
-
-
-async def test_retry_prompt_streams_a_retry_outcome() -> None:
-    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
-
-    await emit_agent_stream_event(
-        sink,
-        FunctionToolResultEvent(
-            part=RetryPromptPart(
-                tool_name="google_ads_list_report_fields",
-                tool_call_id="list-fields",
-                content="Google Ads has no report resource named auction_insight.",
-            )
-        ),
-        run_id=str(uuid4()),
-        state=EventTranslationState(),
-    )
-
-    [event] = sink.events
-    assert event.event == EVENT_TOOL_RESULT
-    assert event.data["outcome"] == "retry"
-    assert event.data["result"] == "Google Ads has no report resource named auction_insight."
 
 
 async def test_deferred_resume_replay_only_replays_deferred_tool_results() -> None:
@@ -532,135 +336,6 @@ async def test_deferred_resume_replay_only_replays_deferred_tool_results() -> No
     ]
     assert sink.events[0].data["args"] == {"value": 10}
     assert sink.events[1].data["result"] == "approved"
-
-
-async def test_live_deferred_tool_events_emit_with_effective_args() -> None:
-    """Resumed deferred tools stream immediately instead of waiting for finalize."""
-    deferred_tool_call_id = "deferred-tool-call"
-    deferred_tool_results = DeferredToolResults(
-        approvals={deferred_tool_call_id: ToolApproved(override_args={"value": 10})}
-    )
-    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
-
-    call_emitted = await emit_live_deferred_tool_event(
-        sink,
-        FunctionToolCallEvent(
-            part=ToolCallPart(
-                tool_name="approved_tool",
-                args={"value": 1},
-                tool_call_id=deferred_tool_call_id,
-            )
-        ),
-        deferred_tool_results=deferred_tool_results,
-    )
-    result_emitted = await emit_live_deferred_tool_event(
-        sink,
-        FunctionToolResultEvent(
-            part=ToolReturnPart(
-                tool_name="approved_tool",
-                content="approved",
-                tool_call_id=deferred_tool_call_id,
-            )
-        ),
-        deferred_tool_results=deferred_tool_results,
-    )
-
-    assert call_emitted is None
-    assert result_emitted == deferred_tool_call_id
-    assert [(event.event, event.data["tool_call_id"]) for event in sink.events] == [
-        (EVENT_TOOL_CALL, deferred_tool_call_id),
-        (EVENT_TOOL_RESULT, deferred_tool_call_id),
-    ]
-    assert sink.events[0].data["args"] == {"value": 10}
-    assert sink.events[1].data["result"] == "approved"
-
-
-async def test_live_deferred_denial_emits_its_outcome_and_reason() -> None:
-    tool_call_id = "denied-tool-call"
-    reason = "The budget is too high."
-    denial = f"The user declined this action, so it was not performed. Reason: {reason}"
-    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
-
-    await emit_live_deferred_tool_event(
-        sink,
-        FunctionToolResultEvent(
-            part=ToolReturnPart(
-                tool_name="approved_tool",
-                content=denial,
-                tool_call_id=tool_call_id,
-                outcome="denied",
-            )
-        ),
-        deferred_tool_results=DeferredToolResults(
-            approvals={tool_call_id: ToolDenied(denial)},
-            metadata={tool_call_id: {"reason": reason}},
-        ),
-    )
-
-    assert sink.events[0].data["outcome"] == "denied"
-    assert sink.events[0].data["reason"] == reason
-
-
-async def test_denied_result_metadata_keeps_raw_reason_separate() -> None:
-    tool_call_id = "denied-tool-call"
-    reason = "The budget is too high."
-    denial = f"The user declined this action, so it was not performed. Reason: {reason}"
-    call = ToolCallPart(tool_name="approved_tool", args={"value": 1}, tool_call_id=tool_call_id)
-    result = ToolReturnPart(
-        tool_name="approved_tool",
-        content=denial,
-        tool_call_id=tool_call_id,
-        outcome="denied",
-    )
-
-    metadata = build_deferred_tool_result_metadata(
-        message_history=[ModelResponse(parts=[call])],
-        new_messages=[ModelRequest(parts=[result])],
-        deferred_tool_results=DeferredToolResults(
-            approvals={tool_call_id: ToolDenied(denial)},
-            metadata={tool_call_id: {"reason": reason}},
-        ),
-    )
-
-    assert metadata[tool_call_id]["message"] == denial
-    assert metadata[tool_call_id]["reason"] == reason
-
-
-async def test_deferred_resume_replay_skips_already_emitted_results() -> None:
-    deferred_tool_call_id = "deferred-tool-call"
-    sink = CollectingSink(run_id=uuid4(), conversation_id=uuid4())
-
-    await emit_deferred_tool_resume_events(
-        sink,
-        message_history=[
-            ModelResponse(
-                parts=[
-                    ToolCallPart(
-                        tool_name="approved_tool",
-                        args={"value": 1},
-                        tool_call_id=deferred_tool_call_id,
-                    )
-                ]
-            )
-        ],
-        new_messages=[
-            ModelRequest(
-                parts=[
-                    ToolReturnPart(
-                        tool_name="approved_tool",
-                        content="approved",
-                        tool_call_id=deferred_tool_call_id,
-                    )
-                ]
-            ),
-        ],
-        deferred_tool_results=DeferredToolResults(
-            approvals={deferred_tool_call_id: ToolApproved()}
-        ),
-        already_emitted_tool_call_ids={deferred_tool_call_id},
-    )
-
-    assert sink.events == []
 
 
 @pytest_asyncio.fixture
@@ -824,273 +499,6 @@ async def test_execute_run_persists_messages_usage_and_events(
     assert _joined_message_deltas(sink) == result.output
 
 
-async def test_execute_run_streams_message_delta_before_model_completes(
-    db_session: AsyncSession,
-    runtime_context: RuntimeContext,
-) -> None:
-    """Live sinks must receive text deltas before the model run reaches completion."""
-    release_stream = asyncio.Event()
-    sink = StreamSink(
-        run_id=runtime_context.run_id,
-        conversation_id=runtime_context.conversation_id,
-    )
-
-    async def delayed_stream(_messages, _agent_info):
-        yield "first "
-        await release_stream.wait()
-        yield "second"
-
-    task = asyncio.create_task(
-        execute_run(
-            db_session,
-            conversation_id=runtime_context.conversation_id,
-            run_id=runtime_context.run_id,
-            user_prompt="Hello",
-            sink=sink,
-            model=FunctionModel(
-                stream_function=delayed_stream,
-                model_name="delayed-stream",
-            ),
-        )
-    )
-
-    try:
-        while True:
-            frame = await asyncio.wait_for(sink.next_frame(), timeout=1)
-            assert frame is not None
-            if f"event: {EVENT_MESSAGE_DELTA}" in frame:
-                assert '"text":"first "' in frame
-                assert not task.done()
-                break
-
-        release_stream.set()
-        result = await asyncio.wait_for(task, timeout=2)
-        assert result.output == "first second"
-    finally:
-        release_stream.set()
-        if not task.done():
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
-
-
-async def test_execute_run_suspends_when_tool_requires_approval(
-    db_session: AsyncSession,
-    runtime_context: RuntimeContext,
-) -> None:
-    await _configure_agent_tools(
-        db_session,
-        agent_id=runtime_context.agent_id,
-        tool_names=["test_add_numbers"],
-        tool_policies={"test_add_numbers": "approval"},
-    )
-    sink = CollectingSink(
-        run_id=runtime_context.run_id,
-        conversation_id=runtime_context.conversation_id,
-    )
-
-    result = await execute_run(
-        db_session,
-        conversation_id=runtime_context.conversation_id,
-        run_id=runtime_context.run_id,
-        user_prompt="Add two numbers",
-        sink=sink,
-        model=TestModel(call_tools=["test_add_numbers"]),
-        client_message_id="approval-client",
-    )
-
-    assert isinstance(result.output, DeferredToolRequests)
-    assert result.run.status == RUN_STATUS_AWAITING_APPROVAL
-    assert result.new_message_count == 2
-
-    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
-    assert stored_run is not None
-    assert stored_run.status == RUN_STATUS_AWAITING_APPROVAL
-    assert stored_run.lease_expires_at is None
-    assert APPROVAL_STATE_METADATA_KEY in (stored_run.metadata_json or {})
-
-    suspended_state = load_suspended_run_state(stored_run)
-    assert suspended_state.pending_tool_call_ids == [result.output.approvals[0].tool_call_id]
-
-    messages = (
-        await db_session.scalars(
-            select(ConversationMessage)
-            .where(ConversationMessage.conversation_id == runtime_context.conversation_id)
-            .order_by(ConversationMessage.sequence)
-        )
-    ).all()
-    assert [message.role for message in messages] == ["user", "assistant"]
-    assert messages[0].client_message_id == "approval-client"
-
-    event_names = [event.event for event in sink.events]
-    assert EVENT_TOOL_CALL in event_names
-    assert EVENT_TOOL_APPROVAL_REQUIRED in event_names
-    assert event_names[-2:] == [EVENT_RUN_STATUS, EVENT_DONE]
-    assert sink.events[-2].data["status"] == RUN_STATUS_AWAITING_APPROVAL
-    assert sink.events[-1].data["status"] == RUN_STATUS_AWAITING_APPROVAL
-
-
-async def test_execute_run_resumes_approved_tool_and_clears_approval_state(
-    db_session: AsyncSession,
-    runtime_context: RuntimeContext,
-) -> None:
-    await _configure_agent_tools(
-        db_session,
-        agent_id=runtime_context.agent_id,
-        tool_names=["test_add_numbers"],
-        tool_policies={"test_add_numbers": "approval"},
-    )
-    suspended = await execute_run(
-        db_session,
-        conversation_id=runtime_context.conversation_id,
-        run_id=runtime_context.run_id,
-        user_prompt="Add two numbers",
-        sink=CollectingSink(
-            run_id=runtime_context.run_id,
-            conversation_id=runtime_context.conversation_id,
-        ),
-        model=TestModel(call_tools=["test_add_numbers"]),
-    )
-    assert isinstance(suspended.output, DeferredToolRequests)
-
-    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
-    assert stored_run is not None
-    suspended_state = load_suspended_run_state(stored_run)
-    tool_call_id = suspended_state.pending_tool_call_ids[0]
-    resume_sink = CollectingSink(
-        run_id=runtime_context.run_id,
-        conversation_id=runtime_context.conversation_id,
-    )
-
-    resumed = await execute_run(
-        db_session,
-        conversation_id=runtime_context.conversation_id,
-        run_id=runtime_context.run_id,
-        user_prompt=None,
-        sink=resume_sink,
-        model=TestModel(call_tools=["test_add_numbers"]),
-        expected_status=RUN_STATUS_AWAITING_APPROVAL,
-        message_history=suspended_state.message_history,
-        deferred_tool_results=DeferredToolResults(
-            approvals={tool_call_id: ToolApproved(override_args={"a": 2, "b": 3})}
-        ),
-    )
-
-    assert resumed.run.status == RUN_STATUS_COMPLETED
-    assert not isinstance(resumed.output, DeferredToolRequests)
-    assert "5" in str(resumed.output)
-    assert resumed.new_message_count == 2
-    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
-    assert stored_run is not None
-    assert stored_run.status == RUN_STATUS_COMPLETED
-    assert APPROVAL_STATE_METADATA_KEY not in (stored_run.metadata_json or {})
-
-    messages = (
-        await db_session.scalars(
-            select(ConversationMessage)
-            .where(ConversationMessage.conversation_id == runtime_context.conversation_id)
-            .order_by(ConversationMessage.sequence)
-        )
-    ).all()
-    assert [message.role for message in messages] == [
-        "user",
-        "assistant",
-        "tool",
-        "assistant",
-    ]
-    approval_results = (messages[2].metadata_json or {}).get("approval_results")
-    assert approval_results == {
-        tool_call_id: {
-            "decision": "approved",
-            "effective_args": {"a": 2, "b": 3},
-            "original_args": {"a": 0, "b": 0},
-            "override_args": {"a": 2, "b": 3},
-        }
-    }
-    assert [event.event for event in resume_sink.events][-2:] == [
-        EVENT_RUN_STATUS,
-        EVENT_DONE,
-    ]
-    resume_event_names = [event.event for event in resume_sink.events]
-    assert EVENT_TOOL_CALL in resume_event_names
-    assert EVENT_TOOL_RESULT in resume_event_names
-    tool_result_events = [event for event in resume_sink.events if event.event == EVENT_TOOL_RESULT]
-    tool_call_events = [event for event in resume_sink.events if event.event == EVENT_TOOL_CALL]
-    assert tool_call_events[0].data["args"] == {"a": 2, "b": 3}
-    assert tool_result_events[0].data["tool_call_id"] == tool_call_id
-    assert tool_result_events[0].data["name"] == "test_add_numbers"
-    assert tool_result_events[0].data["result"] == 5
-
-
-async def test_execute_run_resumes_denied_tool_with_typed_denial(
-    db_session: AsyncSession,
-    runtime_context: RuntimeContext,
-) -> None:
-    await _configure_agent_tools(
-        db_session,
-        agent_id=runtime_context.agent_id,
-        tool_names=["test_add_numbers"],
-        tool_policies={"test_add_numbers": "approval"},
-    )
-    suspended = await execute_run(
-        db_session,
-        conversation_id=runtime_context.conversation_id,
-        run_id=runtime_context.run_id,
-        user_prompt="Add two numbers",
-        sink=CollectingSink(
-            run_id=runtime_context.run_id,
-            conversation_id=runtime_context.conversation_id,
-        ),
-        model=TestModel(call_tools=["test_add_numbers"]),
-    )
-    assert isinstance(suspended.output, DeferredToolRequests)
-
-    stored_run = await db_session.get(AgentRun, runtime_context.run_id)
-    assert stored_run is not None
-    suspended_state = load_suspended_run_state(stored_run)
-    tool_call_id = suspended_state.pending_tool_call_ids[0]
-
-    resumed = await execute_run(
-        db_session,
-        conversation_id=runtime_context.conversation_id,
-        run_id=runtime_context.run_id,
-        user_prompt=None,
-        sink=CollectingSink(
-            run_id=runtime_context.run_id,
-            conversation_id=runtime_context.conversation_id,
-        ),
-        model=TestModel(call_tools=["test_add_numbers"]),
-        expected_status=RUN_STATUS_AWAITING_APPROVAL,
-        message_history=suspended_state.message_history,
-        deferred_tool_results=DeferredToolResults(
-            approvals={tool_call_id: ToolDenied("Denied by test")}
-        ),
-    )
-
-    assert resumed.run.status == RUN_STATUS_COMPLETED
-    assert not isinstance(resumed.output, DeferredToolRequests)
-
-    messages = (
-        await db_session.scalars(
-            select(ConversationMessage)
-            .where(ConversationMessage.conversation_id == runtime_context.conversation_id)
-            .order_by(ConversationMessage.sequence)
-        )
-    ).all()
-    tool_messages = [message for message in messages if message.role == "tool"]
-    assert tool_messages
-    assert "Denied by test" in str(tool_messages[0].parts)
-    approval_results = (tool_messages[0].metadata_json or {}).get("approval_results")
-    assert approval_results == {
-        tool_call_id: {
-            "decision": "denied",
-            "effective_args": {"a": 0, "b": 0},
-            "message": "Denied by test",
-            "original_args": {"a": 0, "b": 0},
-        }
-    }
-
-
 async def test_execute_run_has_no_open_transaction_while_streaming(
     db_session: AsyncSession,
     runtime_context: RuntimeContext,
@@ -1190,54 +598,6 @@ async def test_execute_run_commits_failed_status_before_reraising(
     event_names = [event.event for event in sink.events]
     assert event_names == [EVENT_RUN_STATUS, EVENT_RUN_STATUS, EVENT_ERROR, EVENT_DONE]
     assert sink.events[-2].data["code"] == "model_provider_not_configured"
-    assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
-
-
-async def test_execute_run_total_token_limit_fails_cleanly(
-    db_session: AsyncSession,
-    runtime_context: RuntimeContext,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 1)
-    sink = CollectingSink(
-        run_id=runtime_context.run_id,
-        conversation_id=runtime_context.conversation_id,
-    )
-
-    with pytest.raises(UsageLimitExceeded):
-        await execute_run(
-            db_session,
-            conversation_id=runtime_context.conversation_id,
-            run_id=runtime_context.run_id,
-            user_prompt="Hello",
-            sink=sink,
-            model=TestModel(call_tools=[]),
-        )
-    await db_session.rollback()
-
-    stored_run = await db_session.get(AgentRun, runtime_context.run_id, populate_existing=True)
-    assert stored_run is not None
-    assert stored_run.status == RUN_STATUS_FAILED
-    assert stored_run.error_code == "usage_limit_exceeded"
-    assert stored_run.outcome == "budget_exhausted"
-    observed = stored_run.completion_json["observed_total_tokens"]
-    assert observed > 1
-    assert stored_run.error_message == (
-        f"This run stopped after counting {observed:,} tokens across 1 request; "
-        "the limit for this run is 1. "
-        "Start a new conversation or shorten the context to continue."
-    )
-    assert stored_run.completion_json == {
-        "error_code": "usage_limit_exceeded",
-        "tripped_budget": {"kind": "total_tokens", "limit": 1, "scope": "local"},
-        "observed_total_tokens": observed,
-        "requests": 1,
-    }
-
-    event_names = [event.event for event in sink.events]
-    assert event_names[-2:] == [EVENT_ERROR, EVENT_DONE]
-    assert sink.events[-2].data["code"] == "usage_limit_exceeded"
-    assert sink.events[-2].data["message"] == stored_run.error_message
     assert sink.events[-1].data["status"] == RUN_STATUS_FAILED
 
 

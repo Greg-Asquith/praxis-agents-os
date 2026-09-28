@@ -124,8 +124,7 @@ async def test_parent_and_child_visibility_matrix(db_session_factory, kind):
             assert child_ids == ({local[1].id, published[1].id} if local else set())
 
 
-@pytest.mark.parametrize("private_only", [False, True])
-@pytest.mark.parametrize("user_present", [False, True])
+@pytest.mark.parametrize("private_only,user_present", [(False, True), (True, False)])
 async def test_kb_sql_matches_orm_privacy_source_access_and_scope(
     db_session_factory, private_only, user_present
 ):

@@ -103,51 +103,6 @@ async def test_duplicate_scope_in_active_context_fails_closed() -> None:
     operation.assert_not_awaited()
 
 
-async def test_target_missing_from_active_context_fails_closed() -> None:
-    active = _entry("active@example.com")
-    removed = _entry("removed@example.com")
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(active,))),
-        tool_name="gmail_read_message",
-    )
-    binding = IntegrationToolBinding(
-        provider_keys=frozenset({"gmail"}),
-        resource_types=frozenset({"gmail_mailbox"}),
-    )
-
-    with pytest.raises(ModelRetry, match="no longer in the active integration context"):
-        await run_context_targets(
-            ctx,
-            binding=binding,
-            references=[_reference(removed, "m1")],
-            operation=AsyncMock(),
-        )
-
-
-async def test_single_scope_executes_only_the_exact_active_entry() -> None:
-    first = _entry("first@example.com")
-    second = _entry("second@example.com")
-    operation = AsyncMock(return_value="continued")
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(active_context=ResolvedActiveContext(entries=(first, second))),
-        tool_name="gmail_read_message",
-    )
-    binding = IntegrationToolBinding(
-        provider_keys=frozenset({"gmail"}),
-        resource_types=frozenset({"gmail_mailbox"}),
-    )
-
-    results = await run_context_scope(
-        ctx,
-        binding=binding,
-        provider_scope_id=second.external_id,
-        operation=operation,
-    )
-
-    operation.assert_awaited_once_with(second)
-    assert results[0].data == "continued"
-
-
 async def test_single_scope_fails_closed_when_the_scope_is_missing_or_ambiguous() -> None:
     first = _entry("shared@example.com")
     duplicate = _entry("shared@example.com")

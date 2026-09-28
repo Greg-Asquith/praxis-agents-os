@@ -6,31 +6,6 @@ import type { ToolActivity } from "@/integrations/contract"
 import { googleAdsReportFieldsPresenter } from "@/integrations/google_ads/presenters/report-fields"
 
 describe("Google Ads report-field presenter", () => {
-  it("matches both report-field tools and renders their running states", () => {
-    expect(
-      googleAdsReportFieldsPresenter.matches(activity("google_ads_list_report_fields", "running"))
-    ).toBe(true)
-    expect(
-      googleAdsReportFieldsPresenter.matches(activity("google_ads_get_report_field", "running"))
-    ).toBe(true)
-
-    const listHtml = render(
-      googleAdsReportFieldsPresenter.render(
-        props(activity("google_ads_list_report_fields", "running"))
-      )
-    )
-    const getHtml = render(
-      googleAdsReportFieldsPresenter.render(
-        props(activity("google_ads_get_report_field", "running"))
-      )
-    )
-
-    expect(listHtml).toContain("List Google Ads Report Fields")
-    expect(listHtml).toContain("Listing Google Ads report field metadata")
-    expect(getHtml).toContain("Get Google Ads Report Field")
-    expect(getHtml).toContain("Getting Google Ads report field metadata")
-  })
-
   it("renders field rows, flags, collapsed compatibility counts, and truncation", () => {
     const html = render(
       googleAdsReportFieldsPresenter.render(
@@ -63,110 +38,8 @@ describe("Google Ads report-field presenter", () => {
     expect(html).toContain('aria-label="Google Ads report fields"')
     expect(html).toContain("campaign.id")
     expect(html).toContain("campaign.name")
-    expect(html).toContain("Data type")
-    expect(html).toContain("Selectable")
-    expect(html).toContain("Filterable")
-    expect(html).toContain("Sortable")
-    expect(html).toContain("Repeated")
     expect(html).toContain("2 of 6 fields shown")
-    expect(html).toContain("Search: cost")
     expect(html).toContain("Matches: 6 resource fields, 3 metrics, 2 segments")
-    expect(html).toContain("One or more compatibility lists are shortened")
-    expect(html).toContain("Attribute resources")
-    expect(html).toContain("2 of 4")
-    expect(html).toContain("Metrics")
-    expect(html).toContain("2 of 3")
-    expect(html).toContain("Segments")
-    expect(html).toContain("Download Report CSV")
-    expect(html).toContain('aria-label="Copy Resource"')
-    expect(html).toContain("customer")
-    expect(html).not.toContain("<details open=")
-  })
-
-  it("renders an empty field result without discarding compatibility metadata", () => {
-    const html = render(
-      googleAdsReportFieldsPresenter.render(
-        props({
-          ...activity("google_ads_list_report_fields"),
-          result: listResult({
-            fields: [],
-            field_count: 0,
-            metrics: [],
-            metric_count: 0,
-            segments: [],
-            segment_count: 0,
-          }),
-        })
-      )
-    )
-
-    expect(html).toContain("No resource fields were returned")
-    expect(html).toContain("No compatible metrics returned")
-    expect(html).toContain("No compatible segments returned")
-  })
-
-  it("explains when no search term matched and the whole catalog is shown", () => {
-    const html = render(
-      googleAdsReportFieldsPresenter.render(
-        props({
-          ...activity("google_ads_list_report_fields"),
-          args: { resource: "shared_criterion", search: "nothing here", limit: 50 },
-          result: listResult({
-            resource: "shared_criterion",
-            search_matched: false,
-            fields: [field("shared_criterion.keyword.text", "ATTRIBUTE", "STRING")],
-            field_count: 1,
-          }),
-        })
-      )
-    )
-
-    expect(html).toContain("Matches: No matches, all shown")
-    expect(html).toContain("Nothing matched “nothing here”")
-    expect(html).toContain("shared_criterion.keyword.text")
-  })
-
-  it("distinguishes successful metric searches from calls with no matches", () => {
-    const metricsHtml = render(
-      googleAdsReportFieldsPresenter.render(
-        props({
-          ...activity("google_ads_list_report_fields"),
-          args: { resource: "campaign", search: "metrics.a", limit: 100 },
-          result: listResult({
-            fields: [],
-            field_count: 0,
-            metrics: ["metrics.average_cost"],
-            metric_count: 76,
-            segments: [],
-            segment_count: 0,
-            truncated: true,
-          }),
-        })
-      )
-    )
-    const noMatchesHtml = render(
-      googleAdsReportFieldsPresenter.render(
-        props({
-          ...activity("google_ads_list_report_fields"),
-          args: { resource: "campaign", search: "metrics.d", limit: 100 },
-          result: listResult({
-            fields: [],
-            field_count: 0,
-            metrics: [],
-            metric_count: 0,
-            segments: [],
-            segment_count: 0,
-          }),
-        })
-      )
-    )
-
-    expect(metricsHtml).toContain("Search: metrics.a")
-    expect(metricsHtml).toContain("Matches: 76 metrics")
-    expect(metricsHtml).toContain("No resource fields matched “metrics.a”")
-    expect(noMatchesHtml).toContain("Search: metrics.d")
-    expect(noMatchesHtml).toContain("Matches: No matches")
-    expect(noMatchesHtml).not.toContain("Fields: 0")
   })
 
   it("renders exact metadata, enum values, selectable-with fields, and raw-name copy actions", () => {
@@ -194,52 +67,8 @@ describe("Google Ads report-field presenter", () => {
       )
     )
 
-    expect(html).toContain('aria-label="Google Ads report field metadata"')
-    expect(html).toContain("campaign.status")
-    expect(html).toContain('aria-label="campaign.id metadata"')
-    expect(html).toContain("Fields: campaign.status, campaign.id")
     expect(html).toContain("Not found: campaign.nope")
-    expect(html).toContain("Not found in Google Ads")
-    expect(html).toContain('aria-label="Copy API name"')
-    expect(html).toContain("Enum values")
-    expect(html).toContain("Selectable with")
-    expect(html).toContain("3")
-    expect(html).toContain("2")
-    expect(html).toContain("Type URL")
-    expect(html).toContain("Yes")
-    expect(html).toContain("No")
     expect(html).toContain("ENABLED")
-    expect(html).toContain('aria-label="Copy Enum values"')
-    expect(html).not.toContain("<details open=")
-  })
-
-  it("renders complete exact metadata lists beyond the list-tool limit", () => {
-    const enumValues = Array.from({ length: 101 }, (_, index) => `VALUE_${String(index)}`)
-    const html = render(
-      googleAdsReportFieldsPresenter.render(
-        props({
-          ...activity("google_ads_get_report_field"),
-          result: getResult([
-            {
-              ...field("campaign.status", "ATTRIBUTE", "ENUM"),
-              type_url: null,
-              enum_values: enumValues,
-              selectable_with: [],
-              attribute_resources: ["customer"],
-              metrics: ["metrics.clicks"],
-              segments: ["segments.date"],
-            },
-          ]),
-        })
-      )
-    )
-
-    expect(html).toContain("Not found: None")
-    expect(html).not.toContain("Not found in Google Ads")
-    expect(html).toContain("101")
-    expect(html).toContain("VALUE_100")
-    expect(html).not.toContain("limited to 100 values")
-    expect(html).toContain("Not provided")
   })
 
   it("renders a retry returned to the model as a failure, not a result", () => {
@@ -263,17 +92,9 @@ describe("Google Ads report-field presenter", () => {
       )
     )
 
-    expect(listHtml).toContain('aria-label="List Google Ads Report Fields failed"')
-    expect(listHtml).toContain("Failed")
-    expect(listHtml).toContain("What Went Wrong")
     expect(listHtml).toContain("has no report resource named auction_insight")
-    expect(listHtml).toContain("Resource: auction_insight")
-    expect(listHtml).toContain("Search: campaign metrics")
     expect(listHtml).not.toContain("Done")
-    expect(getHtml).toContain('aria-label="Get Google Ads Report Field failed"')
     expect(getHtml).toContain("Unconfirmed")
-    expect(getHtml).toContain("The field lookup did not finish")
-    expect(getHtml).toContain("Fields: campaign.id, campaign.nope")
   })
 
   it("falls back for malformed payloads from either tool", () => {

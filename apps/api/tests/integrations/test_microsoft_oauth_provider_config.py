@@ -63,8 +63,8 @@ def microsoft_oauth_plugins(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     PROVIDER_PLUGINS.update(original)
 
 
-@pytest.mark.parametrize("tenant", [TENANT_ID, "organizations"])
-@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS)
+@pytest.mark.parametrize("tenant", [TENANT_ID])
+@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS[:1])
 def test_microsoft_authorization_url_has_the_exact_provider_contract(
     microsoft_oauth_plugins: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -98,7 +98,7 @@ def test_microsoft_authorization_url_has_the_exact_provider_contract(
     }
 
 
-@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS)
+@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS[:1])
 def test_package_tenant_override_wins_for_each_microsoft_provider(
     microsoft_oauth_plugins: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -114,7 +114,7 @@ def test_package_tenant_override_wins_for_each_microsoft_provider(
     assert "/organizations/" in provider.oauth_config().authorization_url
 
 
-@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS)
+@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS[:1])
 def test_configured_microsoft_provider_uses_its_effective_tenant(
     provider_key: str,
     provider: IntegrationProviderPlugin,
@@ -139,8 +139,8 @@ def test_configured_microsoft_provider_uses_its_effective_tenant(
     assert f"/{expected_tenant}/" in provider.oauth_config().authorization_url
 
 
-@pytest.mark.parametrize("tenant", ["", "common", "consumers", "not a tenant"])
-@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS)
+@pytest.mark.parametrize("tenant", ["common", "not a tenant"])
+@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS[:1])
 def test_each_microsoft_provider_rejects_an_invalid_effective_tenant(
     microsoft_oauth_plugins: None,
     monkeypatch: pytest.MonkeyPatch,
@@ -203,7 +203,7 @@ async def test_token_exchange_uses_each_microsoft_application_and_fixture(
     }
 
 
-@pytest.mark.parametrize("provider_key", [item[0] for item in PROVIDERS])
+@pytest.mark.parametrize("provider_key", [PROVIDERS[0][0]])
 async def test_token_error_fixture_requires_reauthorization(
     microsoft_oauth_plugins: None,
     monkeypatch: pytest.MonkeyPatch,

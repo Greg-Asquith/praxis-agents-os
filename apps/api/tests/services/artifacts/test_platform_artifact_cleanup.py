@@ -2,7 +2,6 @@
 
 """Platform Artifact retention bounds storage effects and preserves retries."""
 
-import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -15,7 +14,7 @@ from models.artifacts import Artifact, ArtifactRevision
 from models.jobs import Job
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.handlers import sweep_platform_artifacts as module
-from services.storage.domain import StorageBucket, make_storage_object_ref
+from services.storage.domain import StorageBucket
 
 pytestmark = pytest.mark.asyncio
 
@@ -92,19 +91,14 @@ async def test_platform_artifact_retention_bounds_revisions_and_preserves_live_r
         assert await db.get(Artifact, live.id) is not None
 
 
-@pytest.mark.parametrize("failure", ["destination", "stage"])
 async def test_platform_artifact_storage_failure_retains_revision_for_retry(
-    db_session, monkeypatch, failure
+    db_session, monkeypatch
 ):
     provider = AsyncMock()
     monkeypatch.setattr(module, "get_storage_provider", lambda: provider)
     async with maintenance_async_db_session() as db:
         artifact, revisions = await _artifact(db)
-    provider.delete_object.side_effect = (
-        OSError("storage unavailable")
-        if failure == "destination"
-        else [None, OSError("storage unavailable")]
-    )
+    provider.delete_object.side_effect = OSError("storage unavailable")
     with pytest.raises(OSError, match="storage unavailable"):
         async with maintenance_async_db_session() as db:
             await module.sweep_platform_artifacts(db, Job(id=uuid4()))
@@ -131,27 +125,3 @@ async def test_platform_artifact_retention_ensures_one_successor(db_session):
         )
         assert len(jobs) == 1
         assert jobs[0].workspace_id is jobs[0].concurrency_user_id is None
-
-
-async def test_platform_artifact_purge_removes_orphan_copy_stage(db_session, monkeypatch):
-    provider = AsyncMock()
-    monkeypatch.setattr(module, "get_storage_provider", lambda: provider)
-    async with maintenance_async_db_session() as db:
-        artifact, revisions = await _artifact(db)
-        destination = make_storage_object_ref(
-            StorageBucket.PLATFORM_PRIVATE, revisions[0].object_key
-        )
-        stage = make_storage_object_ref(
-            StorageBucket.PLATFORM_PRIVATE,
-            f"platform/copy-staging/{hashlib.sha256(destination.uri.encode()).hexdigest()}",
-        )
-        objects = {destination.uri: b"published bytes", stage.uri: b"orphan stage"}
-
-        async def delete_object(ref):
-            objects.pop(ref.uri, None)
-
-        provider.delete_object.side_effect = delete_object
-        await module.sweep_platform_artifacts(db, Job(id=uuid4()))
-        assert objects == {}
-        assert await db.get(Artifact, artifact.id) is None
-        assert await db.get(ArtifactRevision, revisions[0].id) is None

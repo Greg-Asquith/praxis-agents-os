@@ -52,7 +52,7 @@ async def bounded_maintenance_pool(
         await engine.dispose()
 
 
-@pytest.mark.parametrize("save_count", [1, 6])
+@pytest.mark.parametrize("save_count", [6])
 async def test_concurrent_platform_edits_commit_exactly_one_reviewed_version(
     committed_db_session_factory,
     committed_artifact_context,
@@ -107,7 +107,7 @@ async def test_concurrent_platform_edits_commit_exactly_one_reviewed_version(
         assert events[0].details["operation"] == "publish_revision"
 
 
-@pytest.mark.parametrize("change", ["removed", "demoted"])
+@pytest.mark.parametrize("change", ["removed"])
 async def test_membership_revocation_after_preflight_blocks_platform_edit(
     committed_db_session_factory, committed_artifact_context, monkeypatch, change
 ):

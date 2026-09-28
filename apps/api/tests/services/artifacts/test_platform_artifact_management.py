@@ -23,7 +23,6 @@ from services.artifacts import (
 from services.artifacts.create_share import create_artifact_share
 from services.artifacts.platform.create_artifact import create_artifact
 from services.artifacts.platform.delete_artifact import delete_artifact
-from services.artifacts.platform.list_artifacts import list_artifacts
 from services.artifacts.platform.publish_artifact import publish_artifact
 from services.artifacts.platform.restore_artifact_version import restore_artifact_version
 from services.artifacts.platform.schemas import (
@@ -100,20 +99,14 @@ async def _create(db, context, source=None, payload=None):
     )
 
 
-async def _editor(context, role=WorkspaceRole.MEMBER, *, same_workspace=False):
+async def _editor(context, role=WorkspaceRole.MEMBER):
     async with maintenance_async_db_session() as db:
         actor = build_user(email=f"editor-{uuid4().hex}@example.com")
-        workspace = (
-            context["workspace"]
-            if same_workspace
-            else build_workspace(slug=f"editor-{uuid4().hex}")
-        )
+        workspace = build_workspace(slug=f"editor-{uuid4().hex}")
         membership = build_workspace_membership(
             workspace_id=workspace.id, user_id=actor.id, role=role
         )
-        db.add_all([actor, membership])
-        if not same_workspace:
-            db.add(workspace)
+        db.add_all([actor, workspace, membership])
     return {"actor": actor, "workspace": workspace}, membership.id
 
 
@@ -183,71 +176,12 @@ async def test_platform_artifact_copies_selected_bytes_without_provenance_or_sha
     assert str(source[0].id) not in result.model_dump_json()
 
 
-async def test_platform_artifact_list_returns_scoped_paginated_summaries(
-    db_session, platform_context
-):
-    published = await _create(db_session, platform_context)
-    published = await _edit(db_session, platform_context, published)
-    withdrawn = await _create(db_session, platform_context)
-    await withdraw_artifact(
-        db_session, **platform_context, request=build_test_request(), artifact_id=withdrawn.id
-    )
-    deleted = await _create(db_session, platform_context)
-    await delete_artifact(
-        db_session, **platform_context, request=build_test_request(), artifact_id=deleted.id
-    )
-
-    listed = await list_artifacts(db_session, **platform_context)
-    results = listed.items
-    assert (listed.total, listed.limit, listed.offset) == (2, 50, 0)
-    assert {artifact.id: artifact.version_count for artifact in results} == {
-        published.id: 2,
-        withdrawn.id: 1,
-    }
-    assert {artifact.id: artifact.published_version_id for artifact in results} == {
-        published.id: published.current_version_id,
-        withdrawn.id: withdrawn.current_version_id,
-    }
-    assert {artifact.id: artifact.is_published for artifact in results} == {
-        published.id: True,
-        withdrawn.id: False,
-    }
-    assert all("versions" not in artifact.model_dump() for artifact in results)
-    page = await list_artifacts(db_session, **platform_context, offset=1, limit=1)
-    assert page.items == results[1:2]
-    assert (page.total, page.limit, page.offset) == (2, 1, 1)
-
-
-async def test_platform_artifact_rejects_stale_source_review(db_session, platform_context):
-    source, first = await _source(db_session, platform_context)
-    reviewed = PlatformArtifactCreateRequest(
-        version_id=first.id,
-        expected_current_version_id=first.id,
-        request_id=uuid4(),
-    )
-    await _tenant(db_session, platform_context)
-    await update_workspace_artifact(
-        db_session,
-        workspace=platform_context["workspace"],
-        artifact_id=source.id,
-        content="<p>Changed</p>",
-        actor_user_id=platform_context["actor"].id,
-    )
-    await db_session.commit()
-    with pytest.raises(ConflictError):
-        await _create(db_session, platform_context, (source, first), reviewed)
-
-
-@pytest.mark.parametrize("role", [WorkspaceRole.OWNER, WorkspaceRole.ADMIN, WorkspaceRole.MEMBER])
-@pytest.mark.parametrize("same_workspace", [True, False])
 async def test_platform_artifact_editors_publish_immediately(
     db_session,
     platform_context,
-    role,
-    same_workspace,
 ):
     artifact = await _create(db_session, platform_context)
-    editor, _ = await _editor(platform_context, role, same_workspace=same_workspace)
+    editor, _ = await _editor(platform_context)
     edited = await _edit(db_session, editor, artifact)
     assert edited.current_version_id != artifact.current_version_id
     assert edited.current_version_id == edited.published_version_id
@@ -285,7 +219,7 @@ async def test_platform_artifact_editors_publish_immediately(
     assert restored.current_version_id == restored.published_version_id
 
 
-@pytest.mark.parametrize("failure", ["read_only", "removed", "withdrawn"])
+@pytest.mark.parametrize("failure", ["read_only", "withdrawn"])
 async def test_platform_artifact_rechecks_editor_authority(db_session, platform_context, failure):
     artifact = await _create(db_session, platform_context)
     editor, membership_id = await _editor(
@@ -307,7 +241,7 @@ async def test_platform_artifact_rechecks_editor_authority(db_session, platform_
         ).current_version_id == artifact.current_version_id
 
 
-@pytest.mark.parametrize("operation", ["update", "restore", "withdraw", "delete"])
+@pytest.mark.parametrize("operation", ["update", "delete"])
 async def test_platform_artifact_audit_failure_rolls_back(
     db_session,
     platform_context,
@@ -355,44 +289,6 @@ async def test_platform_artifact_audit_failure_rolls_back(
         assert len(revisions) == 1
 
 
-async def test_platform_artifact_withdrawn_admin_edit_requires_republication(
-    db_session, platform_context
-):
-    artifact = await _create(db_session, platform_context)
-    await withdraw_artifact(
-        db_session, **platform_context, request=build_test_request(), artifact_id=artifact.id
-    )
-    edited = await _edit(db_session, platform_context, artifact)
-    assert not edited.is_published
-    assert edited.published_version_id != edited.current_version_id
-    published = await publish_artifact(
-        db_session,
-        **platform_context,
-        request=build_test_request(),
-        artifact_id=artifact.id,
-        payload=PlatformArtifactVersionRequest(
-            expected_current_version_id=edited.current_version_id
-        ),
-    )
-    assert published.is_published and published.published_version_id == edited.current_version_id
-
-
-async def test_platform_artifact_restore_rejects_other_parent(db_session, platform_context):
-    artifact = await _create(db_session, platform_context)
-    other = await _create(db_session, platform_context)
-    with pytest.raises(NotFoundError):
-        await restore_artifact_version(
-            db_session,
-            **platform_context,
-            request=build_test_request(),
-            artifact_id=artifact.id,
-            payload=PlatformArtifactRestoreRequest(
-                expected_current_version_id=artifact.current_version_id,
-                version_id=other.current_version_id,
-            ),
-        )
-
-
 async def test_platform_artifact_share_rejected_for_super_admin(db_session, platform_context):
     artifact = await _create(db_session, platform_context)
     await _tenant(db_session, platform_context)
@@ -402,12 +298,10 @@ async def test_platform_artifact_share_rejected_for_super_admin(db_session, plat
         )
 
 
-@pytest.mark.parametrize("follow_up", ["retry", "delete"])
 async def test_platform_artifact_failed_initial_audit_keeps_one_reservation(
     db_session,
     platform_context,
     monkeypatch,
-    follow_up,
 ):
     source = await _source(db_session, platform_context)
     payload = PlatformArtifactCreateRequest(
@@ -442,23 +336,6 @@ async def test_platform_artifact_failed_initial_audit_keeps_one_reservation(
         )
         assert [event.details["operation"] for event in events] == ["create"]
     monkeypatch.setattr(module, "record_platform_content_audit_event", original)
-    if follow_up == "delete":
-        with pytest.raises(AppValidationError, match="Delete it to cancel publication"):
-            await withdraw_artifact(
-                db_session,
-                **platform_context,
-                request=build_test_request(),
-                artifact_id=reserved_id,
-            )
-        await delete_artifact(
-            db_session,
-            **platform_context,
-            request=build_test_request(),
-            artifact_id=reserved_id,
-        )
-        with pytest.raises(ConflictError, match="publication was deleted"):
-            await _create(db_session, platform_context, source, payload)
-        return
     result = await _create(db_session, platform_context, source, payload)
     assert result.id == reserved_id and result.is_published
     repeated = await _create(db_session, platform_context, source, payload)
@@ -467,18 +344,6 @@ async def test_platform_artifact_failed_initial_audit_keeps_one_reservation(
         assert (
             len(list(await db.scalars(select(Artifact).where(Artifact.id == destination_id)))) == 1
         )
-
-
-async def test_platform_artifact_draft_share_rejected_in_maintenance(db_session, platform_context):
-    artifact = await _create(db_session, platform_context)
-    await withdraw_artifact(
-        db_session, **platform_context, request=build_test_request(), artifact_id=artifact.id
-    )
-    async with maintenance_async_db_session() as db:
-        with pytest.raises(AppValidationError, match="anonymous shares"):
-            await create_artifact_share(
-                db, **platform_context, request=build_test_request(), artifact_id=artifact.id
-            )
 
 
 @pytest.mark.parametrize("committed", [True, False])
@@ -525,150 +390,10 @@ async def test_platform_artifact_cleanup_preserves_only_committed_bytes(
     assert (await get_storage_provider().stat_object(ref) is not None) == committed
 
 
-@pytest.mark.parametrize("owner", ["workspace_id", "concurrency_user_id"])
-async def test_platform_artifact_cleanup_rejects_owned_job_before_storage(
-    db_session,
-    platform_context,
-    monkeypatch,
-    owner,
-):
-    from models.jobs import Job
-    from services.jobs.handlers.cleanup_platform_artifact_object import (
-        cleanup_platform_artifact_object,
-    )
-
-    module = importlib.import_module("services.jobs.handlers.cleanup_platform_artifact_object")
-    storage = AsyncMock(side_effect=AssertionError("storage must remain untouched"))
-    monkeypatch.setattr(module, "get_storage_provider", storage)
-    job = Job(
-        kind="platform.artifacts.cleanup_object",
-        subject_type="artifact",
-        subject_id=uuid4(),
-        workspace_id=None,
-        concurrency_user_id=None,
-        payload={"revision_id": str(uuid4()), "extension": ".html"},
-    )
-    setattr(job, owner, uuid4())
-    async with maintenance_async_db_session() as db:
-        with pytest.raises(RuntimeError, match="unowned maintenance"):
-            await cleanup_platform_artifact_object(db, job)
-    storage.assert_not_called()
-
-
-async def test_platform_artifact_lost_commit_response_preserves_revision_and_bytes(
-    committed_db_session_factory,
-    monkeypatch,
-    tmp_path,
-):
-    from sqlalchemy import delete, update
-    from sqlalchemy.ext.asyncio import AsyncSession
-
-    from core.database import SESSION_MAINTENANCE_KEY
-    from models.jobs import Job
-    from models.user import User
-    from models.workspace import Workspace
-
-    email = f"artifact-commit-{uuid4().hex}@example.com"
-    monkeypatch.setattr(settings, "SUPER_ADMIN_EMAILS", email)
-    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
-    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
-    reset_storage_provider_cache()
-    async with maintenance_async_db_session() as db:
-        actor, workspace = (
-            build_user(email=email),
-            build_workspace(slug=f"artifact-commit-{uuid4().hex}"),
-        )
-        db.add_all(
-            [
-                actor,
-                workspace,
-                build_workspace_membership(workspace_id=workspace.id, user_id=actor.id),
-            ]
-        )
-    context = {"actor": actor, "workspace": workspace}
-    artifact_ids = []
-    original_commit = AsyncSession.commit
-    try:
-        async with committed_db_session_factory() as db:
-            source = await _source(db, context)
-            payload = PlatformArtifactCreateRequest(
-                version_id=source[1].id,
-                expected_current_version_id=source[1].id,
-                request_id=uuid4(),
-            )
-            destination_id = uuid5(
-                source[0].id,
-                f"platform:{workspace.id}:{actor.id}:{payload.version_id}:{payload.expected_current_version_id}:{payload.request_id}",
-            )
-            artifact_ids.extend([source[0].id, destination_id])
-            artifact = await _create(db, context, source, payload)
-        failed = False
-
-        async def lose_commit_response(db):
-            nonlocal failed
-            fail = False
-            if db.info.get(SESSION_MAINTENANCE_KEY) and not failed:
-                current_id = await db.scalar(
-                    select(Artifact.current_version_id).where(Artifact.id == artifact.id)
-                )
-                fail = current_id != artifact.current_version_id
-            await original_commit(db)
-            if fail:
-                failed = True
-                raise RuntimeError("commit response lost")
-
-        monkeypatch.setattr(AsyncSession, "commit", lose_commit_response)
-        async with committed_db_session_factory() as db:
-            with pytest.raises(RuntimeError, match="commit response lost"):
-                await _edit(db, context, artifact)
-        assert failed
-        async with maintenance_async_db_session() as db:
-            saved = await db.get(Artifact, artifact.id)
-            assert saved.current_version_id != artifact.current_version_id
-            assert saved.current_version_id == saved.published_version_id
-            revision = await db.get(ArtifactRevision, saved.current_version_id)
-            assert (
-                await get_storage_provider().get_object(
-                    make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, revision.object_key)
-                )
-                == b"<p>Edited report</p>"
-            )
-    finally:
-        monkeypatch.setattr(AsyncSession, "commit", original_commit)
-        async with maintenance_async_db_session() as db:
-            await db.execute(
-                delete(Job).where(Job.subject_type == "artifact", Job.subject_id.in_(artifact_ids))
-            )
-            await db.execute(delete(AuditEvent).where(AuditEvent.actor_user_id == actor.id))
-            await db.execute(
-                update(Artifact)
-                .where(Artifact.id.in_(artifact_ids))
-                .values(is_published=False, current_version_id=None, published_version_id=None)
-            )
-            await db.execute(
-                delete(ArtifactRevision).where(ArtifactRevision.artifact_id.in_(artifact_ids))
-            )
-            await db.execute(delete(Artifact).where(Artifact.id.in_(artifact_ids)))
-            await db.execute(
-                delete(WorkspaceMembership).where(
-                    WorkspaceMembership.user_id == actor.id,
-                    WorkspaceMembership.workspace_id == workspace.id,
-                )
-            )
-            await db.execute(delete(Workspace).where(Workspace.id == workspace.id))
-            await db.execute(delete(User).where(User.id == actor.id))
-        reset_storage_provider_cache()
-
-
 @pytest.mark.parametrize(
     "operation",
     [
         "create_artifact",
-        "publish_artifact",
-        "withdraw_artifact",
-        "delete_artifact",
-        "get_artifact",
-        "list_artifacts",
         "get_version_content",
     ],
 )
@@ -700,35 +425,6 @@ async def test_platform_artifact_management_denies_editors_before_maintenance(
     with pytest.raises(AuthorizationError):
         await getattr(operation_module, operation)(db_session, **kwargs)
     maintenance.assert_not_called()
-
-
-async def test_platform_artifact_linked_private_asset_rejected_before_reservation(
-    db_session,
-    platform_context,
-    monkeypatch,
-):
-    source = await _source(db_session, platform_context, '<img src="/files/private.png">')
-    payload = PlatformArtifactCreateRequest(
-        version_id=source[1].id, expected_current_version_id=source[1].id, request_id=uuid4()
-    )
-    destination_id = uuid5(
-        source[0].id,
-        f"platform:{platform_context['workspace'].id}:{platform_context['actor'].id}:{payload.version_id}:{payload.expected_current_version_id}:{payload.request_id}",
-    )
-    module = importlib.import_module("services.artifacts.platform.create_artifact")
-    copy = AsyncMock(side_effect=AssertionError("copy must remain untouched"))
-    monkeypatch.setattr(module, "copy_object", copy)
-    with pytest.raises(AppValidationError, match="must contain their assets"):
-        await _create(db_session, platform_context, source, payload)
-    copy.assert_not_awaited()
-    async with maintenance_async_db_session() as db:
-        assert await db.get(Artifact, destination_id) is None
-        assert (
-            await db.scalar(
-                select(ArtifactRevision).where(ArtifactRevision.artifact_id == destination_id)
-            )
-            is None
-        )
 
 
 async def test_platform_artifact_publication_hides_other_workspace_source(

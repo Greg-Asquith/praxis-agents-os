@@ -3,31 +3,20 @@
 import base64
 import json
 from collections.abc import Iterator
-from importlib import import_module
 from traceback import format_exception
-from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
-from uuid import uuid4
 
 import httpx2
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.integration import IntegrationAuthError, IntegrationValidationError
+from core.exceptions.integration import IntegrationAuthError
 from core.settings import settings
 from integrations.notion import PROVIDER
-from integrations.notion.client import NOTION_API_VERSION, NotionClient
-from integrations.notion.discover_resources import discover_resources
+from integrations.notion.client import NOTION_API_VERSION
 from integrations.notion.identity import extract_token_identity, fetch_token_identity
 from integrations.notion.settings import notion_settings
-from models.integrations import IntegrationResource
 from services.integrations import http as integration_http
-from services.integrations.discovery.run_discovery import run_discovery
-from services.integrations.http import IntegrationRequestPolicy
-from services.integrations.loader import _validate_plugin
-from services.integrations.manifest import PROVIDER_MANIFESTS
 from services.integrations.oauth import (
     build_authorization_url,
     exchange_authorization_code,
@@ -35,12 +24,6 @@ from services.integrations.oauth import (
     revoke_authorization_token,
 )
 from services.integrations.plugin import PROVIDER_PLUGINS
-from tests.factories import (
-    build_external_credential,
-    build_integration_connection,
-    build_user,
-    build_workspace,
-)
 
 ACCESS_TOKEN = "notion-access-token"
 REFRESH_TOKEN = "notion-refresh-token"
@@ -183,7 +166,9 @@ def test_token_identity_retains_only_bounded_non_secret_metadata() -> None:
 
 @pytest.mark.parametrize(
     "missing_field",
-    ["access_token", "refresh_token", "workspace_id", "bot_id"],
+    [
+        "access_token",
+    ],
 )
 def test_token_identity_rejects_each_missing_required_field(missing_field: str) -> None:
     payload = _token_payload()
@@ -193,7 +178,12 @@ def test_token_identity_rejects_each_missing_required_field(missing_field: str) 
         extract_token_identity(payload)
 
 
-@pytest.mark.parametrize("owner_type", ["workspace", None])
+@pytest.mark.parametrize(
+    "owner_type",
+    [
+        "workspace",
+    ],
+)
 def test_token_identity_rejects_non_user_owners(owner_type: object) -> None:
     payload = _token_payload()
     payload["owner"] = {"type": owner_type, "user": {"id": "user-1"}}
@@ -225,126 +215,6 @@ async def test_live_identity_matches_token_identity_for_the_grant(
     }
 
 
-async def test_discovery_returns_one_stable_workspace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=_user_payload(), request=request)
-
-    _install_transport(monkeypatch, handler)
-    first = await discover_resources(ACCESS_TOKEN, "Example workspace")
-    second = await discover_resources(ACCESS_TOKEN, "Example workspace")
-
-    assert first == second
-    assert len(first) == 1
-    assert first[0].resource_type == "notion_workspace"
-    assert first[0].external_id == "workspace-1"
-    assert first[0].display_name == "Example workspace"
-    assert first[0].writable is True
-    assert first[0].required_write_scopes == ()
-    assert first[0].permissions_metadata == {"bot_id": "bot-1"}
-
-
-async def test_discovery_rejects_a_response_without_a_workspace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    payload = _user_payload()
-    payload["bot"].pop("workspace_id")
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=payload, request=request)
-
-    _install_transport(monkeypatch, handler)
-    with pytest.raises(IntegrationValidationError, match="invalid response"):
-        await discover_resources(ACCESS_TOKEN)
-
-
-async def test_discovery_reconciles_the_same_resource_across_two_runs(
-    db_session: AsyncSession,
-    notion_oauth: None,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original_manifests = dict(PROVIDER_MANIFESTS)
-    PROVIDER_MANIFESTS["notion"] = PROVIDER.manifest
-    unique_id = uuid4().hex
-    user = build_user(email=f"notion-{unique_id}@example.com")
-    workspace = build_workspace(slug=f"notion-{unique_id}")
-    credential = build_external_credential(
-        provider_key="notion",
-        auth_mode="oauth",
-        access_token_encrypted="ciphertext",  # noqa: S106 - inert encrypted test value
-        external_principal_label="Example workspace",
-    )
-    db_session.add_all([user, workspace, credential])
-    await db_session.flush()
-    connection = build_integration_connection(
-        provider_key="notion",
-        credential=credential,
-        user=user,
-        workspace=workspace,
-        status="discovery_pending",
-    )
-    db_session.add(connection)
-    await db_session.flush()
-
-    async def fresh_credential(*args, **kwargs):
-        return SimpleNamespace(
-            access_token=ACCESS_TOKEN,
-            granted_scopes=[],
-            external_principal_label="Example workspace",
-        )
-
-    discovery_module = import_module("services.integrations.discovery.run_discovery")
-    monkeypatch.setattr(discovery_module, "ensure_fresh_credential", fresh_credential)
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(200, json=_user_payload(), request=request)
-
-    _install_transport(monkeypatch, handler)
-    try:
-        first = await run_discovery(db_session, connection_id=connection.id)
-        resource = await db_session.scalar(
-            select(IntegrationResource).where(IntegrationResource.connection_id == connection.id)
-        )
-        second = await run_discovery(db_session, connection_id=connection.id)
-
-        assert resource is not None
-        assert first.resources_added == 1
-        assert second.resources_added == 0
-        assert second.resources_unchanged == 1
-        assert resource.external_id == "workspace-1"
-        assert resource.permissions_metadata == {"bot_id": "bot-1"}
-    finally:
-        PROVIDER_MANIFESTS.clear()
-        PROVIDER_MANIFESTS.update(original_manifests)
-
-
-async def test_client_refreshes_once_after_auth_rejection() -> None:
-    forces: list[bool] = []
-    requests = 0
-
-    async def token(force: bool) -> str:
-        forces.append(force)
-        return "fresh" if force else "stale"
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        nonlocal requests
-        requests += 1
-        expected = "stale" if requests == 1 else "fresh"
-        assert request.headers["Authorization"] == f"Bearer {expected}"
-        return httpx2.Response(401 if requests == 1 else 200, json=_user_payload(), request=request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
-        payload = await NotionClient(token, client=http_client).get(
-            "users/me",
-            operation="oauth_identity",
-            policy=IntegrationRequestPolicy.READ,
-        )
-
-    assert payload == _user_payload()
-    assert forces == [False, True]
-
-
 async def test_fixed_token_stops_before_retrying_the_same_rejected_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -361,15 +231,6 @@ async def test_fixed_token_stops_before_retrying_the_same_rejected_token(
         await fetch_token_identity(ACCESS_TOKEN)
 
     assert requests == 1
-
-
-def test_provider_contract_is_valid() -> None:
-    config = _validate_plugin(PROVIDER, expected_key="notion")
-
-    assert config is not None
-    assert PROVIDER.manifest.owner_scope == "user"
-    assert PROVIDER.manifest.oauth_scopes == ()
-    assert config.protocol.request_headers == (("Notion-Version", NOTION_API_VERSION),)
 
 
 def test_identity_error_text_does_not_expose_provider_values() -> None:

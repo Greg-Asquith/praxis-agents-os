@@ -164,56 +164,6 @@ async def test_extract_file_markdown_does_not_clobber_newer_current_revision(
     assert file.processing_status == "ready"
 
 
-async def test_extract_file_markdown_skips_deleted_files(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    _workspace, file, revision, job = await _persist_pdf_file(db_session)
-    file.soft_delete()
-    await db_session.flush()
-
-    await extract_file_markdown(db_session, job)
-    await db_session.refresh(revision)
-
-    assert revision.markdown_object_key is None
-
-
-async def test_extract_file_markdown_restore_fast_path_copies_source_markdown(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    _workspace, file, source, _old_job = await _persist_pdf_file(db_session)
-    source.markdown_object_key = "workspaces/example/source.extracted.md"
-    source.markdown_size_bytes = 12
-    restore_revision = build_file_revision(
-        file,
-        revision_number=2,
-        revision_kind="restore",
-        created_by_system=True,
-        restored_from_revision_id=source.id,
-        object_key=source.object_key,
-    )
-    db_session.add(restore_revision)
-    await db_session.flush()
-    file.current_revision_id = restore_revision.id
-    file.revision_count = 2
-    file.processing_status = "pending"
-    await db_session.flush()
-    job = build_job(
-        kind="files.extract",
-        workspace_id=file.workspace_id,
-        payload={"file_id": str(file.id), "revision_id": str(restore_revision.id)},
-    )
-
-    await extract_file_markdown(db_session, job)
-    await db_session.refresh(file)
-    await db_session.refresh(restore_revision)
-
-    assert restore_revision.markdown_object_key == source.markdown_object_key
-    assert restore_revision.markdown_size_bytes == source.markdown_size_bytes
-    assert file.processing_status == "ready"
-
-
 async def test_extract_file_markdown_failure_marks_current_file_error(
     db_session: AsyncSession,
     local_storage_settings: None,

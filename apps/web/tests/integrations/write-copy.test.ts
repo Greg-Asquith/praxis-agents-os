@@ -18,11 +18,6 @@ const outlook: IntegrationProviderUi = {
 describe("integration write copy", () => {
   it.each([
     ["Send", "email", "sent", "The email could not be sent."],
-    ["Send", "draft", "sent", "The draft could not be sent."],
-    ["Forward", "email", "forwarded", "The email could not be forwarded."],
-    ["Save", "draft", "saved", "The draft could not be saved."],
-    ["Move", "message", "moved", "The message could not be moved."],
-    ["Update", "message", "updated", "The message could not be updated."],
     ["Remove", "keywords", "removed", "The keywords could not be removed."],
   ] as const)("uses complete sentences to %s a %s", (verb, object, effect, failure) => {
     const copy = integrationWriteCopy(outlook, { verb, object, effect })

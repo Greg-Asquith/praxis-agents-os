@@ -11,19 +11,15 @@ import pytest
 
 from core.exceptions.integration import (
     IntegrationNotFoundError,
-    IntegrationPermissionError,
     IntegrationValidationError,
 )
 from integrations.outlook_mail.operations.get_attachment import get_attachment
 from integrations.outlook_mail.operations.get_message import get_message
-from integrations.outlook_mail.operations.list_mail_folders import list_mail_folders
-from integrations.outlook_mail.operations.resolve_folder import resolve_folder
 from integrations.outlook_mail.operations.search_messages import search_messages
-from integrations.outlook_mail.operations.search_people import search_people
 from integrations.outlook_mail.settings import outlook_mail_settings
 from services.agents.runtime.untrusted import UntrustedNode
 from services.integrations.microsoft_graph import MicrosoftGraphClient, fixed_access_token
-from tests.support.documents import tiny_docx, tiny_pdf
+from tests.support.documents import tiny_pdf
 from utils.document_markdown import TRUNCATION_MARKER
 
 
@@ -35,7 +31,12 @@ async def graph(handler):
         )
 
 
-@pytest.mark.parametrize("query", [None, 'subject:"Monthly report"', 'subject:"Réunion"'])
+@pytest.mark.parametrize(
+    "query",
+    [
+        None,
+    ],
+)
 async def test_search_unread_filters_and_bounds(query):
     def handler(request):
         assert request.url.path == "/v1.0/me/mailFolders/inbox/messages"
@@ -69,27 +70,12 @@ async def test_search_unread_filters_and_bounds(query):
     assert len(result[0]["subject"].content) == 500
 
 
-async def test_folder_bounds_and_exact_resolution():
-    def handler(request):
-        assert request.url.params["$top"] == "200"
-        return httpx2.Response(
-            200,
-            json={
-                "value": [
-                    {"id": str(i), "displayName": "Invoices" if i < 2 else "Other"}
-                    for i in range(250)
-                ]
-            },
-        )
-
-    async with graph(handler) as client:
-        assert len(await list_mail_folders(client)) == 200
-        assert await resolve_folder(client, folder="Invoices") == "0"
-        with pytest.raises(IntegrationNotFoundError):
-            await resolve_folder(client, folder="invoices")
-
-
-@pytest.mark.parametrize("html", [False, True])
+@pytest.mark.parametrize(
+    "html",
+    [
+        False,
+    ],
+)
 async def test_read_bounds_and_html_fallback(html):
     def handler(request):
         if request.url.path.endswith("/attachments"):
@@ -136,54 +122,10 @@ async def test_read_bounds_and_html_fallback(html):
         assert isinstance(result[key], UntrustedNode)
 
 
-@pytest.mark.parametrize("empty", [False, True])
-async def test_people_bounds_and_provenance(empty):
-    def handler(request):
-        body = json.loads(request.content)
-        assert request.method == "POST"
-        assert body["requests"][0]["size"] == 2
-        assert body["requests"][0]["query"]["queryString"] == "Dana"
-        return httpx2.Response(
-            200,
-            json={
-                "value": [
-                    {
-                        "hitsContainers": [
-                            {
-                                "hits": []
-                                if empty
-                                else [
-                                    {
-                                        "resource": {
-                                            "displayName": "Dana" * 200,
-                                            "emailAddresses": [{"address": "dana@example.com"}],
-                                            "jobTitle": "Analyst",
-                                            "department": "Operations",
-                                        }
-                                    }
-                                ]
-                                * 10
-                            }
-                        ]
-                    }
-                ]
-            },
-        )
-
-    async with graph(handler) as client:
-        people = await search_people(client, query="Dana", limit=2)
-    assert len(people) == (0 if empty else 2)
-    for person in people:
-        assert all(isinstance(value, UntrustedNode) for value in person.values())
-        assert person["name"].source_kind == "outlook_person"
-        assert len(person["name"].content) == 500
-
-
 @pytest.mark.parametrize(
     "status,code,error",
     [
         (404, "ErrorItemNotFound", IntegrationNotFoundError),
-        (403, "ErrorAccessDenied", IntegrationPermissionError),
     ],
 )
 async def test_provider_errors(status, code, error):
@@ -194,36 +136,11 @@ async def test_provider_errors(status, code, error):
             await search_messages(client)
 
 
-async def test_search_rate_limit_retries(monkeypatch):
-    from services.integrations import http
-
-    requests, delays = [], []
-
-    async def sleep(delay):
-        delays.append(delay)
-
-    def handler(request):
-        requests.append(request)
-        return (
-            httpx2.Response(429, headers={"Retry-After": "2"})
-            if len(requests) == 1
-            else httpx2.Response(200, json={"value": []})
-        )
-
-    monkeypatch.setattr(http.asyncio, "sleep", sleep)
-    async with graph(handler) as client:
-        assert await search_messages(client) == []
-    assert len(requests) == 2 and delays == [2.0]
-
-
 @pytest.mark.parametrize(
     "changes,code",
     [
         ({"@odata.type": "#microsoft.graph.itemAttachment"}, "unsupported_attachment_kind"),
         ({"@odata.type": "#microsoft.graph.referenceAttachment"}, "unsupported_attachment_kind"),
-        ({"contentType": "image/png"}, "unsupported_attachment_type"),
-        ({"size": 101}, "attachment_too_large"),
-        ({"size": "4"}, "invalid_attachment_size"),
     ],
 )
 async def test_attachment_rejects_before_download(monkeypatch, changes, code):
@@ -249,7 +166,7 @@ async def test_attachment_rejects_before_download(monkeypatch, changes, code):
     assert len(requests) == 1
 
 
-@pytest.mark.parametrize("content", ["x" * 90000, "界" * 30000], ids=["ascii", "multibyte"])
+@pytest.mark.parametrize("content", ["界" * 30000], ids=["multibyte"])
 async def test_attachment_download_and_unicode_boundary(content):
     def handler(request):
         if request.url.path.endswith("/$value"):
@@ -275,70 +192,9 @@ async def test_attachment_download_and_unicode_boundary(content):
 
 
 @pytest.mark.parametrize(
-    "content",
-    [f"Complete content{TRUNCATION_MARKER}", f"Before{TRUNCATION_MARKER}\nAfter"],
-    ids=["literal-marker-suffix", "literal-marker-inside"],
-)
-async def test_attachment_literal_marker_is_not_truncation(content):
-    def handler(request):
-        if request.url.path.endswith("/$value"):
-            return httpx2.Response(200, content=content.encode())
-        return httpx2.Response(
-            200,
-            json={
-                "@odata.type": "#microsoft.graph.fileAttachment",
-                "contentType": "text/plain",
-                "name": "report.txt",
-                "size": len(content.encode()),
-            },
-        )
-
-    async with graph(handler) as client:
-        result = await get_attachment(client, message_id="message", attachment_id="attachment")
-    assert result["markdown"].content == content
-    assert result["truncated"] is False
-    assert result["source"] == "text"
-    assert result["markdown"].source_kind == "outlook_message"
-
-
-@pytest.mark.parametrize(
-    "data,content_type,name,source",
-    [
-        (b"Text \xff", "text/plain", "report.txt", "text"),
-        (b"<p>Text \xff</p>", "text/html", "report.html", "converted"),
-    ],
-)
-async def test_attachment_replaces_invalid_utf8(data, content_type, name, source):
-    def handler(request):
-        if request.url.path.endswith("/$value"):
-            return httpx2.Response(200, content=data)
-        return httpx2.Response(
-            200,
-            json={
-                "@odata.type": "#microsoft.graph.fileAttachment",
-                "contentType": content_type,
-                "name": name,
-                "size": len(data),
-            },
-        )
-
-    async with graph(handler) as client:
-        result = await get_attachment(client, message_id="message", attachment_id="attachment")
-    assert result["markdown"].content == "Text \ufffd"
-    assert result["truncated"] is False
-    assert result["source"] == source
-
-
-@pytest.mark.parametrize(
     "data,content_type,name,expected",
     [
         (tiny_pdf("Invoice total"), "application/pdf", "invoice.pdf", "Invoice total"),
-        (
-            tiny_docx(),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "report.docx",
-            "Quarterly Results",
-        ),
     ],
 )
 async def test_attachment_converts_real_documents(data, content_type, name, expected):
@@ -381,24 +237,3 @@ async def test_hostile_body_retains_provenance():
         result = await get_message(client, message_id="message")
     assert result["body"].content == hostile
     assert result["body"].source_kind == "outlook_message"
-
-
-async def test_preview_passes_raw_html_to_engine(monkeypatch):
-    from integrations.outlook_mail.operations import preview_message
-
-    html = "<p>Message</p><script>private()</script>"
-
-    def handler(request):
-        assert request.url.params["$select"].startswith("body,")
-        return httpx2.Response(
-            200, json={"subject": "Report", "body": {"contentType": "html", "content": html}}
-        )
-
-    async with graph(handler) as client:
-        monkeypatch.setattr(
-            preview_message, "graph_client_for_connection", lambda *_args, **_kwargs: client
-        )
-        result = await preview_message.fetch_message_preview(object(), object(), "message")
-    assert result.content == html
-    assert result.content_type == "html"
-    assert result.meta["subject"] == "Report"

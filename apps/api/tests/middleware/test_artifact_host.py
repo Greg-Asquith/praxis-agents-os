@@ -76,14 +76,3 @@ async def test_artifact_host_comparison_ignores_case_and_port() -> None:
 
     assert shared.status_code == 200
     assert api.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_gate_inactive_without_artifact_origin() -> None:
-    app = _build_app("")
-    async with _client(app, "http://localhost:8000") as client:
-        shared = await client.get(f"/artifacts/shared/{'a' * 43}")
-        api = await client.get("/api/v1/users/me")
-
-    assert shared.status_code == 200
-    assert api.status_code == 200

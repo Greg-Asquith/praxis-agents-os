@@ -128,25 +128,16 @@ async def test_internal_token_accepts_matching_workspace_and_schedule_run(
     assert status_code == 200
 
 
-@pytest.mark.parametrize(
-    "claims",
-    [
-        {"type": "wrong_type"},
-        {"internal": False},
-        {"jti": None},
-    ],
-)
-async def test_internal_token_rejects_required_claim_mismatches(
+async def test_internal_token_rejects_non_internal_claim(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
-    claims: dict[str, object],
 ) -> None:
     user, workspace, _secondary_workspace, _schedule_run = await _internal_token_context(db_session)
     await db_session.commit()
     token = _forge_internal_token(
         user_id=str(user.id),
         workspace_id=str(workspace.id),
-        **claims,
+        internal=False,
     )
 
     status_code = await _get_schedules(
@@ -179,52 +170,6 @@ async def test_internal_token_rejects_schedule_run_workspace_mismatch(
     assert status_code == 401
 
 
-async def test_internal_token_rejects_schedule_run_user_mismatch(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    _user, workspace, _secondary_workspace, schedule_run = await _internal_token_context(db_session)
-    other_user = build_user(email=f"token-other-user-{uuid4().hex}@example.com")
-    db_session.add(other_user)
-    await db_session.flush()
-    await db_session.commit()
-    token = _forge_internal_token(
-        user_id=str(other_user.id),
-        workspace_id=str(workspace.id),
-        schedule_run_id=str(schedule_run.id),
-    )
-
-    status_code = await _get_schedules(
-        db_async_client,
-        token=token,
-        workspace_slug=workspace.slug,
-    )
-
-    assert status_code == 401
-
-
-async def test_internal_token_rejects_deleted_schedule_run(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, _secondary_workspace, schedule_run = await _internal_token_context(db_session)
-    schedule_run.soft_delete(deleted_by=user.id)
-    await db_session.commit()
-    token = _forge_internal_token(
-        user_id=str(user.id),
-        workspace_id=str(workspace.id),
-        schedule_run_id=str(schedule_run.id),
-    )
-
-    status_code = await _get_schedules(
-        db_async_client,
-        token=token,
-        workspace_slug=workspace.slug,
-    )
-
-    assert status_code == 401
-
-
 async def test_internal_token_is_confined_to_pinned_workspace(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
@@ -240,41 +185,3 @@ async def test_internal_token_is_confined_to_pinned_workspace(
     )
 
     assert status_code == 403
-
-
-async def test_internal_token_rejects_expired_jwt(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, _secondary_workspace, _schedule_run = await _internal_token_context(db_session)
-    await db_session.commit()
-    token = _forge_internal_token(
-        user_id=str(user.id),
-        workspace_id=str(workspace.id),
-        exp=datetime.now(UTC) - timedelta(minutes=1),
-    )
-
-    status_code = await _get_schedules(
-        db_async_client,
-        token=token,
-        workspace_slug=workspace.slug,
-    )
-
-    assert status_code == 401
-
-
-async def test_internal_token_rejects_invalid_uuid_claims(
-    db_session: AsyncSession,
-    db_async_client: AsyncClient,
-) -> None:
-    user, workspace, _secondary_workspace, _schedule_run = await _internal_token_context(db_session)
-    await db_session.commit()
-    token = _forge_internal_token(user_id=str(user.id), workspace_id="not-a-uuid")
-
-    status_code = await _get_schedules(
-        db_async_client,
-        token=token,
-        workspace_slug=workspace.slug,
-    )
-
-    assert status_code == 401

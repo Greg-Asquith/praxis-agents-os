@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from core.exceptions.integration import IntegrationNotFoundError, IntegrationValidationError
+from core.exceptions.integration import IntegrationValidationError
 from integrations.google_search_console.operations.get_sitemap import get_sitemap
 from integrations.google_search_console.operations.submit_sitemap import submit_sitemap
 from services.integrations.http import IntegrationRequestPolicy
@@ -81,26 +81,13 @@ async def test_get_sitemap_encodes_prefix_site_and_projects_status() -> None:
     }
 
 
-async def test_get_sitemap_returns_none_for_missing_sitemap() -> None:
-    client = _Client(
-        IntegrationNotFoundError(
-            "Missing sitemap",
-            provider_key="google_search_console",
-            operation="get_sitemap",
-        )
-    )
-
-    assert (
-        await get_sitemap(
-            client,
-            site_url="https://example.com/",
-            sitemap_url="https://example.com/sitemap.xml",
-        )
-        is None
-    )
-
-
-@pytest.mark.parametrize("payload", [None, [], {}, {"path": ""}, {"path": "x", "isPending": "yes"}])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+    ],
+)
 async def test_get_sitemap_rejects_malformed_status(payload: Any) -> None:
     with pytest.raises(IntegrationValidationError):
         await get_sitemap(

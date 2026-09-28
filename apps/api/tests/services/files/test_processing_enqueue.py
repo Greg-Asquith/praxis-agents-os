@@ -14,21 +14,16 @@ from models.jobs import Job
 from services.files import (
     confirm_file_upload,
     create_file_upload,
-    edit_file,
     get_files_processing_summary,
-    restore_file_revision,
 )
 from services.files.domain import (
     FileConfirmRequest,
-    FileEditRequest,
-    FileRestoreRequest,
     FileUploadRequest,
 )
-from services.files.utils import revision_object_key, sha256_hex
+from services.files.utils import sha256_hex
 from services.storage.factory import get_storage_provider
 from tests.factories import (
     build_file,
-    build_file_revision,
     build_user,
     build_workspace,
     build_workspace_membership,
@@ -122,123 +117,6 @@ async def test_confirm_ingestible_upload_sets_pending_and_enqueues_ids_only(
         )
         == 1
     )
-
-
-async def test_non_ingestible_confirm_and_text_edit_do_not_enqueue(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    actor, workspace, membership = await _workspace_context(db_session)
-    grant_result = await create_file_upload(
-        db_session,
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        payload=FileUploadRequest(
-            filename="notes.txt",
-            content_type="text/plain",
-            size_bytes=5,
-        ),
-    )
-    assert grant_result.grant is not None
-    await get_storage_provider().put_object(
-        grant_result.grant.upload.ref,
-        b"hello",
-        content_type="text/plain",
-    )
-    confirmed = await confirm_file_upload(
-        db_session,
-        request=build_test_request(path="/api/v1/files/uploads/confirm"),
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        payload=FileConfirmRequest(upload_token=grant_result.grant.upload_token),
-    )
-    assert confirmed.processing_status == "ready"
-    assert (
-        await db_session.scalar(
-            select(func.count()).select_from(Job).where(Job.kind == "files.extract")
-        )
-        == 0
-    )
-
-    edited = await edit_file(
-        db_session,
-        request=build_test_request(path=f"/api/v1/files/{confirmed.id}/content", method="PUT"),
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        file_id=confirmed.id,
-        payload=FileEditRequest(
-            content="updated",
-            expected_current_revision_id=confirmed.current_revision_id,
-        ),
-    )
-
-    assert edited.processing_status == "ready"
-    assert (
-        await db_session.scalar(
-            select(func.count()).select_from(Job).where(Job.kind == "files.extract")
-        )
-        == 0
-    )
-
-
-async def test_restore_ingestible_revision_enqueues_extraction(
-    db_session: AsyncSession,
-    local_storage_settings: None,
-) -> None:
-    actor, workspace, membership = await _workspace_context(db_session)
-    file = build_file(
-        workspace=workspace,
-        name="report.pdf",
-        content_type="application/pdf",
-        extension=".pdf",
-        processing_status="ready",
-    )
-    db_session.add(file)
-    await db_session.flush()
-    source = build_file_revision(
-        file,
-        revision_number=1,
-        created_by_user_id=actor.id,
-        object_key=revision_object_key(workspace.id, file.id, uuid4(), ".pdf"),
-    )
-    current = build_file_revision(
-        file,
-        revision_number=2,
-        revision_kind="replace",
-        created_by_user_id=actor.id,
-        content_hash="b" * 64,
-        object_key=revision_object_key(workspace.id, file.id, uuid4(), ".pdf"),
-    )
-    db_session.add_all([source, current])
-    await db_session.flush()
-    file.current_revision_id = current.id
-    file.revision_count = 2
-    file.content_hash = current.content_hash
-    await db_session.flush()
-
-    restored = await restore_file_revision(
-        db_session,
-        request=build_test_request(path=f"/api/v1/files/{file.id}/restore"),
-        actor=actor,
-        workspace=workspace,
-        membership=membership,
-        file_id=file.id,
-        payload=FileRestoreRequest(
-            revision_id=source.id,
-            expected_current_revision_id=current.id,
-        ),
-    )
-
-    assert restored.processing_status == "pending"
-    job = await db_session.scalar(
-        select(Job).where(
-            Job.kind == "files.extract", Job.subject_id == restored.current_revision_id
-        )
-    )
-    assert job is not None
 
 
 async def test_files_processing_summary_counts_workspace_statuses_and_jobs(

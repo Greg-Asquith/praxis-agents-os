@@ -22,7 +22,6 @@ from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.exceptions.integration import (
     IntegrationAuthError,
-    IntegrationRateLimitError,
     IntegrationTimeoutError,
 )
 from models.audit_event import AuditEvent
@@ -396,27 +395,6 @@ async def test_import_rechecks_source_access_after_provider_preview(
     )
 
 
-async def test_import_honors_explicit_title_and_workspace_sharing(
-    db_session: AsyncSession,
-    kb_actors: KBActors,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scenario = await _scenario(db_session, kb_actors, monkeypatch)
-
-    imported = await _import(
-        db_session,
-        kb_actors,
-        scenario,
-        title="Workspace handbook",
-        is_private=False,
-    )
-
-    document = await db_session.get(KBDocument, imported.id)
-    assert document is not None
-    assert document.title == "Workspace handbook"
-    assert document.is_private is False
-
-
 async def test_ingest_uses_dedicated_creator_context_without_provider_transaction(
     db_session: AsyncSession,
     kb_actors: KBActors,
@@ -652,14 +630,6 @@ async def test_provider_failures_do_not_publish_new_content(
                 operation="fetch_knowledge_source",
             ),
             "timeout",
-        ),
-        (
-            IntegrationRateLimitError(
-                "Notion request limit reached",
-                provider_key="notion",
-                operation="fetch_knowledge_source",
-            ),
-            "rate_limited",
         ),
     ],
 )

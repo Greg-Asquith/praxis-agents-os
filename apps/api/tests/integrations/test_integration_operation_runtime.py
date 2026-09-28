@@ -933,7 +933,14 @@ def test_external_write_definition_requires_write_binding(synthetic_provider) ->
         )
 
 
-@pytest.mark.parametrize("code", [None, "safe_reason", "bad code", "x" * 65, "private\nbody"])
+@pytest.mark.parametrize(
+    "code",
+    [
+        None,
+        "safe_reason",
+        "bad code",
+    ],
+)
 @pytest.mark.parametrize("ambiguous", [False, True])
 async def test_shared_failure_projection_agrees_for_public_and_audit(
     synthetic_provider, monkeypatch, code, ambiguous

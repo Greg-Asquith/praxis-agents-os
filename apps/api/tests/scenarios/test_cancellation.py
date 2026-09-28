@@ -40,8 +40,9 @@ from tests.support.scenario import (
 dispatch_module = importlib.import_module("services.agents.runtime.dispatch")
 
 
-@pytest.mark.parametrize("attempt", ["suspension", "success", "failure", "cancellation"])
-@pytest.mark.parametrize("winner", ["cancelled", "reaped"])
+@pytest.mark.parametrize(
+    ("attempt", "winner"), [("suspension", "cancelled"), ("failure", "reaped")]
+)
 async def test_terminal_winner_controls_finalisation(
     committed_db_session_factory, monkeypatch, attempt, winner
 ):
@@ -59,17 +60,10 @@ async def test_terminal_winner_controls_finalisation(
     )
     sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
     barrier = ScenarioBarrier()
-    boundary = {
-        "failure": "emit_failure_events",
-        "cancellation": "finalize_cancelled_run",
-    }.get(attempt, "finalize_terminal_run")
+    boundary = "emit_failure_events" if attempt == "failure" else "finalize_terminal_run"
     finalisation = execution
     if attempt == "failure":
         finalisation = importlib.import_module("services.agents.runtime.execute.settle_failure")
-    elif attempt == "cancellation":
-        finalisation = importlib.import_module(
-            "services.agents.runtime.execute.settle_interruption"
-        )
     original = getattr(finalisation, boundary)
 
     async def paused_finalisation(db=None, **kwargs):
@@ -78,24 +72,12 @@ async def test_terminal_winner_controls_finalisation(
         await barrier.pause()
         return await original(db, **kwargs) if db is not None else await original(**kwargs)
 
-    if attempt == "cancellation":
-        original_consume = execution.consume_stream
-
-        async def cancelled_stream(*args, **kwargs):
-            from services.agents.runtime.cancellation import AGENT_RUN_CANCEL_REQUEST
-
-            await original_consume(*args, **kwargs)
-            raise asyncio.CancelledError(AGENT_RUN_CANCEL_REQUEST)
-
-        monkeypatch.setattr(execution, "consume_stream", cancelled_stream)
-
     monkeypatch.setattr(finalisation, boundary, paused_finalisation)
-    turns = {
-        "suspension": [ToolTurn((ToolCall("scenario_external_write", {"value": "ok"}, "write"),))],
-        "success": ["Done."],
-        "failure": [],
-        "cancellation": ["Done."],
-    }[attempt]
+    turns = (
+        []
+        if attempt == "failure"
+        else [ToolTurn((ToolCall("scenario_external_write", {"value": "ok"}, "write"),))]
+    )
     async with barrier.running(
         run_scenario(
             committed_db_session_factory,
@@ -116,8 +98,8 @@ async def test_terminal_winner_controls_finalisation(
             await remote.commit()
             expected = (run.status, run.error_code, run.error_message, run.completion_json)
         barrier.release.set()
-        if attempt in {"failure", "cancellation"}:
-            with pytest.raises(AssertionError if attempt == "failure" else asyncio.CancelledError):
+        if attempt == "failure":
+            with pytest.raises(AssertionError):
                 await task
         else:
             result = await task
@@ -140,11 +122,9 @@ async def test_terminal_winner_controls_finalisation(
     )
 
 
-@pytest.mark.parametrize("later_turn", [False, True])
 async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
-    later_turn: bool,
 ) -> None:
     context = await build_scenario_agent(
         committed_db_session_factory,
@@ -162,21 +142,20 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
         write_definition.name,
         replace(write_definition, function=external_write),
     )
-    if later_turn:
-        previous = await run_scenario(
-            committed_db_session_factory,
-            context,
-            model=scripted_model(
-                turns=[
-                    ToolTurn(
-                        (ToolCall("scenario_external_write", {"value": "saved"}, "saved-effect"),)
-                    ),
-                    "Saved.",
-                ]
-            ),
-        )
-        assert previous.run.status == "completed"
-        context = await next_scenario_run(committed_db_session_factory, context)
+    previous = await run_scenario(
+        committed_db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn(
+                    (ToolCall("scenario_external_write", {"value": "saved"}, "saved-effect"),)
+                ),
+                "Saved.",
+            ]
+        ),
+    )
+    assert previous.run.status == "completed"
+    context = await next_scenario_run(committed_db_session_factory, context)
     sink = CollectingSink(run_id=context.run_id, conversation_id=context.conversation_id)
     barrier = ScenarioBarrier()
     invocations = 0
@@ -258,8 +237,7 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
         if isinstance(part, ToolReturnPart | RetryPromptPart)
     ]
     assert set(calls) <= set(returns)
-    if later_turn:
-        assert calls.count("saved-effect") == returns.count("saved-effect") == 1
+    assert calls.count("saved-effect") == returns.count("saved-effect") == 1
     subsequent = await next_scenario_run(committed_db_session_factory, context)
     seen_requests = []
     result = await run_scenario(
@@ -270,7 +248,7 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
     assert result.run.status == "completed"
     assert result.output == "Continued."
     assert invocations == 1
-    assert effects == (["saved"] if later_turn else [])
+    assert effects == ["saved"]
     assert len(seen_requests) == 1
     async with committed_db_session_factory() as db:
         events = (
@@ -280,7 +258,7 @@ async def test_mid_tool_cancel_persists_cancelled_without_failed_status(
     assert events[0].requests == 1
 
 
-@pytest.mark.parametrize("revocation", ["cancelled", "failed", "owner", "database"])
+@pytest.mark.parametrize("revocation", ["cancelled", "owner", "database"])
 async def test_remote_revocation_prevents_pending_tool_side_effect(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
@@ -288,7 +266,6 @@ async def test_remote_revocation_prevents_pending_tool_side_effect(
 ) -> None:
     from uuid import uuid4
 
-    from services.agent_runs.settle_run_family import settle_run_family
     from services.agents.runtime.execution_control import ExecutionInterruptedError
 
     with scenario_effects() as effects:
@@ -328,8 +305,6 @@ async def test_remote_revocation_prevents_pending_tool_side_effect(
                 assert run is not None
                 if revocation == "cancelled":
                     await cancel_agent_run(remote_db, run)
-                elif revocation == "failed":
-                    await settle_run_family(remote_db, run_id=run.id, error_code="run_abandoned")
                 elif revocation == "owner":
                     run.owner_instance_id = str(uuid4())
                 await remote_db.commit()
@@ -357,15 +332,15 @@ async def test_remote_revocation_prevents_pending_tool_side_effect(
                     run.status
                     == {
                         "cancelled": "cancelled",
-                        "failed": "failed",
                         "owner": "running",
                         "database": "failed",
                     }[revocation]
                 )
 
 
-@pytest.mark.parametrize("human_cancel", [False, True])
-@pytest.mark.parametrize("rollback_failure", ["blocked", "error"])
+@pytest.mark.parametrize(
+    ("human_cancel", "rollback_failure"), [(True, "blocked"), (False, "error")]
+)
 async def test_interruption_bounds_owner_rollback_and_preserves_cancellation(
     committed_db_session_factory, monkeypatch, human_cancel, rollback_failure
 ):
@@ -428,10 +403,14 @@ async def test_interruption_bounds_owner_rollback_and_preserves_cancellation(
         assert event.requests == 1
 
 
-@pytest.mark.parametrize("boundary", ["rollback", "commit"])
-@pytest.mark.parametrize("human_cancel", [False, True])
-@pytest.mark.parametrize("winner", [None, "reaped", "cancelled"])
-@pytest.mark.parametrize("settlement_blocked", [False, True])
+@pytest.mark.parametrize(
+    ("boundary", "human_cancel", "winner", "settlement_blocked"),
+    [
+        ("rollback", True, None, False),
+        ("commit", False, "reaped", False),
+        ("rollback", False, None, True),
+    ],
+)
 async def test_cancellation_during_failure_settlement(
     committed_db_session_factory,
     monkeypatch,

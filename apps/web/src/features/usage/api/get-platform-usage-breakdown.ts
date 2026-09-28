@@ -20,10 +20,7 @@ async function getPlatformUsageBreakdown(params: PlatformUsageBreakdownParams) {
   })
 }
 
-export function platformUsageBreakdownQueryOptions(
-  userId: string,
-  params: PlatformUsageBreakdownParams
-) {
+function platformUsageBreakdownQueryOptions(userId: string, params: PlatformUsageBreakdownParams) {
   return queryOptions({
     queryKey: platformUsageQueryKeys.breakdown(userId, params),
     queryFn: () => getPlatformUsageBreakdown(params),

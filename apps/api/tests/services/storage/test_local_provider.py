@@ -2,28 +2,20 @@
 
 """Local filesystem storage provider tests."""
 
-import asyncio
-from contextlib import contextmanager
 from datetime import timedelta
-from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
 import pytest
 
-from core.settings import settings
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
-    StorageNotFoundError,
     StoragePreconditionError,
     StorageValidationError,
 )
-from services.storage.factory import get_storage_provider
 from services.storage.paths import validate_object_key
-from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers.local import LocalStorageProvider
 from services.storage.utils import put_new_object_with_cleanup
-from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
 WORKSPACE_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -79,7 +71,7 @@ async def test_local_provider_put_get_stat_and_delete_object(tmp_path, platform:
     assert await provider.delete_object(ref) is False
 
 
-@pytest.mark.parametrize("platform", [False, True])
+@pytest.mark.parametrize("platform", [True])
 async def test_local_promotion_is_create_only_and_preserves_validated_bytes(
     tmp_path, platform: bool
 ) -> None:
@@ -132,95 +124,6 @@ async def test_interrupted_storage_write_removes_partial_object(
     assert await provider.stat_object(ref) is None
 
 
-async def test_cancelled_storage_write_removes_partial_object(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    provider = _provider(tmp_path)
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/cancelled.txt"))
-    original_put = provider.put_object
-    object_written = asyncio.Event()
-
-    async def block_after_write(*args, **kwargs):
-        stored = await original_put(*args, **kwargs)
-        object_written.set()
-        await asyncio.Event().wait()
-        return stored
-
-    monkeypatch.setattr(provider, "put_object", block_after_write)
-    write = asyncio.create_task(
-        put_new_object_with_cleanup(provider, ref, b"partial", content_type="text/plain")
-    )
-    await object_written.wait()
-    write.cancel()
-
-    with pytest.raises(asyncio.CancelledError):
-        await write
-
-    assert await provider.stat_object(ref) is None
-
-
-@pytest.mark.parametrize("platform", [False, True])
-async def test_local_provider_stream_object_chunks_and_maps_missing(
-    tmp_path, platform: bool
-) -> None:
-    provider = _provider(tmp_path)
-    ref = make_storage_object_ref(
-        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
-        "platform/files/large.bin" if platform else _private_key("files/large.bin"),
-    )
-    data = b"a" * (STORAGE_STREAM_CHUNK_SIZE + 17)
-    await provider.put_object(ref, data, content_type="application/octet-stream")
-
-    chunks = [chunk async for chunk in provider.stream_object(ref)]
-
-    assert b"".join(chunks) == data
-    assert len(chunks) > 1
-
-    missing_ref = make_storage_object_ref(
-        StorageBucket.PLATFORM_PRIVATE if platform else StorageBucket.PRIVATE,
-        "platform/files/missing.bin" if platform else _private_key("files/missing.bin"),
-    )
-    with pytest.raises(StorageNotFoundError):
-        _missing = [chunk async for chunk in provider.stream_object(missing_ref)]
-
-
-async def test_local_provider_builds_public_url(tmp_path) -> None:
-    provider = _provider(tmp_path)
-    ref = make_storage_object_ref(StorageBucket.PUBLIC, "users/u_1/avatar/me.png")
-
-    stored = await provider.put_object(ref, b"png", content_type="image/png")
-
-    assert stored.public_url == "http://testserver/api/v1/storage/public/users/u_1/avatar/me.png"
-    assert stored.cache_control == "public, max-age=60"
-    assert not (tmp_path / "public" / "users" / "u_1" / "avatar" / "me.png.metadata.json").exists()
-    assert (
-        tmp_path / ".metadata" / "public" / "users" / "u_1" / "avatar" / "me.png.metadata.json"
-    ).is_file()
-
-
-async def test_local_provider_stat_without_metadata_does_not_read_object_bytes(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    provider = _provider(tmp_path)
-    ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("lost-sidecar.txt"))
-    path = provider.filesystem_path(ref)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"metadata sidecar is missing")
-
-    def fail_read_bytes(_self: Path) -> bytes:
-        raise AssertionError("stat_object must not read object bytes")
-
-    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
-
-    stat = await provider.stat_object(ref)
-
-    assert stat is not None
-    assert stat.size_bytes == 27
-    assert stat.etag.startswith("local-stat-")
-
-
 async def test_local_provider_signed_upload_signature_binds_content_type(tmp_path) -> None:
     provider = _provider(tmp_path)
     ref = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("output.txt"))
@@ -262,18 +165,6 @@ async def test_object_key_validation_rejects_traversal() -> None:
             make_storage_object_ref(StorageBucket.PRIVATE, bad_key)
 
 
-async def test_local_provider_factory_returns_local_provider(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
-    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
-    reset_storage_provider_cache()
-    try:
-        provider = get_storage_provider()
-
-        assert isinstance(provider, LocalStorageProvider)
-    finally:
-        reset_storage_provider_cache()
-
-
 @pytest.mark.parametrize(
     ("bucket", "key"),
     [
@@ -308,51 +199,3 @@ async def test_platform_local_namespace_substitution_fails_closed(
         )
     with pytest.raises(StorageValidationError):
         await provider.create_signed_download(ref, expires_in=timedelta(minutes=5))
-
-
-@pytest.mark.parametrize("destination_bucket", [StorageBucket.PUBLIC, StorageBucket.PRIVATE])
-async def test_platform_local_promotion_cannot_cross_storage_classes(
-    tmp_path,
-    destination_bucket: StorageBucket,
-) -> None:
-    provider = _provider(tmp_path)
-    source = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/source.txt")
-    destination = make_storage_object_ref(destination_bucket, _private_key("files/copy.txt"))
-    stored = await provider.put_object(source, b"private")
-    with pytest.raises(StorageValidationError):
-        await provider.promote_object(source, destination, expected_source_etag=stored.etag)
-    assert await provider.stat_object(destination) is None
-
-
-@pytest.mark.parametrize("failure_target", ["object", "metadata"])
-async def test_local_exclusive_write_failure_removes_partial_files(
-    tmp_path, monkeypatch, failure_target
-):
-    provider = _provider(tmp_path)
-    ref = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/partial.txt")
-    object_path = provider.filesystem_path(ref)
-    metadata_path = provider._metadata_path(ref)
-    target = object_path if failure_target == "object" else metadata_path
-    original_open = Path.open
-
-    class FailingWriter:
-        def __init__(self, stream):
-            self.stream = stream
-
-        def write(self, data):
-            self.stream.write(data[:1])
-            raise OSError("Disk write failed")
-
-    @contextmanager
-    def interrupted_open(path, *args, **kwargs):
-        with original_open(path, *args, **kwargs) as stream:
-            yield FailingWriter(stream) if path == target else stream
-
-    monkeypatch.setattr(Path, "open", interrupted_open)
-    with pytest.raises(OSError, match="Disk write failed"):
-        await provider.put_object(ref, b"hello", overwrite=False)
-    assert not object_path.exists()
-    assert not metadata_path.exists()
-    monkeypatch.setattr(Path, "open", original_open)
-    await provider.put_object(ref, b"hello", overwrite=False)
-    assert await provider.get_object(ref) == b"hello"

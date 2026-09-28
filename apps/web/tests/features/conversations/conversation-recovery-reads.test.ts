@@ -160,7 +160,7 @@ describe("coordinated conversation recovery reads", () => {
     }
   )
 
-  it.each(["running", "completed", "failed", "cancelled"] as const)(
+  it.each(["running", "failed"] as const)(
     "does not reload old approvals when the durable run is %s",
     async (status) => {
       const current = { ...run, status }

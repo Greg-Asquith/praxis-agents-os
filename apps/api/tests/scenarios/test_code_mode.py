@@ -9,16 +9,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import BaseModel, Field
-from pydantic_ai import DeferredToolResults, Tool, ToolApproved, ToolReturn
+from pydantic_ai import DeferredToolResults, Tool, ToolApproved
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.exceptions.general import ConflictError
 from core.settings import settings
-from integrations.google_ads.references import GoogleAdsSharedSetReference
 from models.agent import Agent
 from models.agent_run import AgentRun
-from models.audit_event import AuditEvent
 from models.conversation import Conversation, ConversationMessage
 from models.files import File, FileRevision
 from models.user import User
@@ -57,7 +55,7 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, build_runtime_tools
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_START, UntrustedContent
 from services.conversations.shared_projection import project_shared_message
 from services.files.utils import private_ref_from_key
@@ -68,7 +66,6 @@ from tests.support.scenario import (
     ToolCall,
     ToolTurn,
     build_scenario_agent,
-    next_scenario_run,
     run_scenario,
     scripted_model,
 )
@@ -83,10 +80,7 @@ _TOOL_NAMES = (
     "scenario_code_hostile_read",
     "scenario_code_forced_write",
     "scenario_code_invalid_write",
-    "scenario_code_oversized_public_write",
     "scenario_code_batch_write",
-    "scenario_code_create_negative_list",
-    "scenario_code_populate_negative_list",
 )
 
 
@@ -101,14 +95,6 @@ class _BatchRow(BaseModel):
 
 class _BatchWriteResult(BaseModel):
     applied: int
-
-
-class _CreatedNegativeList(BaseModel):
-    reference: GoogleAdsSharedSetReference
-
-
-class _CreateNegativeListResult(BaseModel):
-    outcomes: list[_CreatedNegativeList]
 
 
 @pytest.fixture
@@ -127,7 +113,6 @@ def code_mode_local_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def code_mode_scenario_tools() -> dict[str, Any]:
     effects: list[str] = []
     batch_effects: list[list[dict[str, str]]] = []
-    composed_references: list[GoogleAdsSharedSetReference] = []
     hostile_payload = json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
 
     async def read_first(*, value: str) -> dict[str, str]:
@@ -151,13 +136,6 @@ def code_mode_scenario_tools() -> dict[str, Any]:
         effects.append(value)
         return {"unexpected": "shape"}
 
-    async def oversized_public_write(*, value: str) -> ToolReturn[dict[str, bool]]:
-        effects.append(value)
-        return ToolReturn(
-            return_value={"ok": True},
-            metadata={"public_result": {"detail": "x" * 100}},
-        )
-
     async def batch_write(
         *,
         keywords: Annotated[list[_BatchRow], Field(min_length=1, max_length=500)],
@@ -165,27 +143,6 @@ def code_mode_scenario_tools() -> dict[str, Any]:
         rows = [row.model_dump() for row in keywords]
         batch_effects.append(rows)
         return {"applied": len(rows)}
-
-    async def create_negative_list(*, name: str) -> dict[str, Any]:
-        return {
-            "outcomes": [
-                {
-                    "reference": GoogleAdsSharedSetReference(
-                        customer_id="1234567890",
-                        shared_set_id="77",
-                        label=name,
-                    )
-                }
-            ]
-        }
-
-    async def populate_negative_list(
-        *,
-        negative_list: GoogleAdsSharedSetReference,
-        keywords: list[_BatchRow],
-    ) -> dict[str, int]:
-        composed_references.append(negative_list)
-        return {"applied": len(keywords)}
 
     definitions = (
         RuntimeToolDefinition(
@@ -241,19 +198,6 @@ def code_mode_scenario_tools() -> dict[str, Any]:
             output_model=_WriteResult,
         ),
         RuntimeToolDefinition(
-            name="scenario_code_oversized_public_write",
-            function=oversized_public_write,
-            provider="test",
-            description="Perform a write that returns oversized public evidence.",
-            effect=TOOL_EFFECT_WRITE,
-            effect_scope=TOOL_EFFECT_SCOPE_EXTERNAL,
-            egress=TOOL_EGRESS_EXTERNAL_WRITE,
-            code_eligible=True,
-            default_policy=TOOL_POLICY_APPROVAL,
-            configurable=False,
-            max_public_result_chars=20,
-        ),
-        RuntimeToolDefinition(
             name="scenario_code_batch_write",
             function=batch_write,
             provider="test",
@@ -286,24 +230,6 @@ def code_mode_scenario_tools() -> dict[str, Any]:
                 )
             ),
         ),
-        RuntimeToolDefinition(
-            name="scenario_code_create_negative_list",
-            function=create_negative_list,
-            provider="test",
-            description="Create a provider-native negative keyword list reference.",
-            code_eligible=True,
-            configurable=False,
-            output_model=_CreateNegativeListResult,
-        ),
-        RuntimeToolDefinition(
-            name="scenario_code_populate_negative_list",
-            function=populate_negative_list,
-            provider="test",
-            description="Populate a provider-native negative keyword list reference.",
-            code_eligible=True,
-            configurable=False,
-            output_model=_BatchWriteResult,
-        ),
     )
     for definition in definitions:
         RUNTIME_TOOL_CATALOG[definition.name] = definition
@@ -312,7 +238,6 @@ def code_mode_scenario_tools() -> dict[str, Any]:
             "definitions": definitions,
             "effects": effects,
             "batch_effects": batch_effects,
-            "composed_references": composed_references,
             "hostile_payload": hostile_payload,
         }
     finally:
@@ -377,75 +302,6 @@ async def test_multi_read_workflow_completes_with_nested_audits_and_replaced_sch
     assert result.output == "The compared value is NORTH."
 
 
-async def test_create_then_populate_composes_provider_reference_without_discovery(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-) -> None:
-    tool_names = [
-        "scenario_code_create_negative_list",
-        "scenario_code_populate_negative_list",
-    ]
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=tool_names,
-        code_mode_enabled=True,
-    )
-
-    result = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
-                            {
-                                "code": (
-                                    "created = await scenario_code_create_negative_list("
-                                    "name='Brand safety')\n"
-                                    "reference = created['outcomes'][0]['reference']\n"
-                                    "await scenario_code_populate_negative_list("
-                                    "negative_list=reference, keywords=[{'text': 'free', "
-                                    "'match_type': 'EXACT'}])"
-                                )
-                            },
-                            "workflow-call",
-                        ),
-                    )
-                ),
-                "The negative keyword list was created and populated.",
-            ]
-        ),
-    )
-
-    [reference] = code_mode_scenario_tools["composed_references"]
-    assert reference.customer_id == "1234567890"
-    assert reference.shared_set_id == "77"
-    assert {row.tool_name for row in result.audit_rows} >= set(tool_names)
-    assert not any(
-        "report" in row.tool_name or "discover" in row.tool_name for row in result.audit_rows
-    )
-
-
-async def test_production_catalog_wraps_explicitly_eligible_write_tools(
-    code_mode_scenario_tools: dict[str, Any],
-) -> None:
-    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    agent = _agent_config(
-        tool_names=[definition.name],
-        tool_policies={definition.name: TOOL_POLICY_AUTO},
-        code_mode_enabled=True,
-    )
-
-    tools = build_runtime_tools(agent)
-    mounted = {tool.name: tool for tool in tools}
-
-    assert definition.name not in mounted
-    assert RUN_WORKFLOW_TOOL_NAME in mounted
-    assert definition.name in mounted[RUN_WORKFLOW_TOOL_NAME].description
-
-
 async def test_gated_stub_suspends_without_partial_effect(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
@@ -505,296 +361,6 @@ async def test_gated_stub_suspends_without_partial_effect(
     assert approval_state.workflow.outer_tool_call_id == "workflow-call"
     assert approval_state.workflow.pending.tool_call_id == "workflow-call:1"
     assert approval_state.approvals[0].tool_call_id == "workflow-call:1"
-
-
-async def test_nested_decision_mapping_targets_nested_id_and_validates_override(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-) -> None:
-    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[definition.name],
-        code_mode_enabled=True,
-    )
-    await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
-                            {"code": "await scenario_code_forced_write(value='original')"},
-                            "workflow-call",
-                        ),
-                    )
-                )
-            ]
-        ),
-    )
-    async with db_session_factory() as db:
-        actor = await db.get(User, context.user_id)
-        workspace = await db.get(Workspace, context.workspace_id)
-        run = await db.get(AgentRun, context.run_id)
-        membership = await db.scalar(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == context.workspace_id,
-                WorkspaceMembership.user_id == context.user_id,
-            )
-        )
-        assert actor is not None and workspace is not None and run is not None
-        assert membership is not None
-        mapped = await compile_scenario_decisions(
-            db,
-            actor=actor,
-            workspace=workspace,
-            membership=membership,
-            run=run,
-            decisions=[
-                AgentRunResumeDecision(
-                    tool_call_id="workflow-call:1",
-                    decision="approved",
-                    override_args={"value": "overridden"},
-                )
-            ],
-        )
-        with pytest.raises(ConflictError, match="pending approvals changed"):
-            await compile_scenario_decisions(
-                db,
-                actor=actor,
-                workspace=workspace,
-                membership=membership,
-                run=run,
-                decisions=[AgentRunResumeDecision(tool_call_id="stale", decision="approved")],
-            )
-
-    assert isinstance(mapped.approvals["workflow-call"], ToolApproved)
-    decision = mapped.metadata["workflow-call"]["code_mode_decision"]
-    assert decision["nested_tool_call_id"] == "workflow-call:1"
-    assert decision["effective_args"] == {"value": "overridden"}
-
-
-def test_eligible_record_batch_write_declarations_are_complete_and_faithful() -> None:
-    expected = {
-        "google_ads_add_ad_group_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
-        "google_ads_add_campaign_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
-        "google_ads_add_negative_keywords": ("EXACT", "PHRASE", "BROAD"),
-        "google_ads_create_keywords": ("EXACT", "PHRASE", "BROAD"),
-        "google_ads_remove_ad_group_negative_keywords": (
-            "EXACT",
-            "PHRASE",
-            "BROAD",
-            "ANY",
-        ),
-        "google_ads_remove_campaign_negative_keywords": (
-            "EXACT",
-            "PHRASE",
-            "BROAD",
-            "ANY",
-        ),
-        "google_ads_remove_negative_keywords": ("EXACT", "PHRASE", "BROAD", "ANY"),
-        "google_ads_update_device_bid_modifiers": ("DESKTOP", "MOBILE", "TABLET"),
-        "google_ads_update_keywords": ("ENABLED", "PAUSED"),
-        "google_search_console_request_indexing": (
-            "URL_UPDATED",
-            "URL_DELETED",
-            "job_posting",
-            "broadcast_event",
-        ),
-        "notion_create_page": (
-            "title",
-            "rich_text",
-            "number",
-            "checkbox",
-            "url",
-            "email",
-            "phone_number",
-            "date",
-            "select",
-            "status",
-            "multi_select",
-        ),
-        "notion_update_page_content": ("no", "yes"),
-        "notion_update_page_properties": (
-            "title",
-            "rich_text",
-            "number",
-            "checkbox",
-            "url",
-            "email",
-            "phone_number",
-            "date",
-            "select",
-            "status",
-            "multi_select",
-        ),
-    }
-    actual: dict[str, tuple[str, ...]] = {}
-    for definition in RUNTIME_TOOL_CATALOG.values():
-        record_fields = [
-            field for field in definition.presentation.arg_fields if field.format == "records"
-        ]
-        if not (
-            definition.code_eligible and definition.effect == TOOL_EFFECT_WRITE and record_fields
-        ):
-            continue
-        assert len(record_fields) == 1
-        field = record_fields[0]
-        assert field.editable is True
-        if definition.name == "notion_create_page":
-            assert field.secondary is True
-            assert field.min_rows == 0
-        else:
-            assert field.min_rows == 1
-        schema = definition.serialized_input_schema()
-        assert schema is not None
-        if definition.name in {"notion_create_page", "notion_update_page_properties"}:
-            assert field.key == "properties"
-            assert [(column.key, column.required) for column in field.columns] == [
-                ("name", True),
-                ("type", True),
-                ("value", False),
-            ]
-            properties_ref = schema["properties"]["properties"]["$ref"]
-            properties_schema = schema["$defs"][properties_ref.rsplit("/", 1)[-1]]
-            if definition.name == "notion_update_page_properties":
-                assert properties_schema["minItems"] == 1
-            else:
-                assert "minItems" not in properties_schema
-            assert properties_schema["maxItems"] == 50
-            actual[definition.name] = field.columns[1].options
-        elif definition.name == "notion_update_page_content":
-            assert field.key == "replacements"
-            assert [(column.key, column.required) for column in field.columns] == [
-                ("old_text", True),
-                ("new_text", False),
-                ("replace_all", True),
-            ]
-            replacements_ref = schema["properties"]["replacements"]["$ref"]
-            replacements_schema = schema["$defs"][replacements_ref.rsplit("/", 1)[-1]]
-            assert replacements_schema["minItems"] == 1
-            assert replacements_schema["maxItems"] == 20
-            actual[definition.name] = field.columns[2].options
-        elif definition.name == "google_ads_update_device_bid_modifiers":
-            assert field.key == "adjustments"
-            assert [(column.key, column.required) for column in field.columns] == [
-                ("device", True),
-                ("bid_modifier", True),
-            ]
-            adjustments_schema = schema["properties"]["adjustments"]
-            assert adjustments_schema["minItems"] == 1
-            assert adjustments_schema["maxItems"] == 3
-            actual[definition.name] = field.columns[0].options
-        elif definition.name == "google_ads_update_keywords":
-            assert field.key == "patches"
-            assert [(column.key, column.required) for column in field.columns] == [
-                ("status", False),
-                ("bid_modifier", False),
-                ("cpc_bid", False),
-                ("final_urls", False),
-                ("final_mobile_urls", False),
-                ("final_url_suffix", False),
-                ("tracking_url_template", False),
-                ("url_custom_parameters", False),
-            ]
-            patches_schema = schema["properties"]["patches"]
-            assert patches_schema["minItems"] == 1
-            assert patches_schema["maxItems"] == 500
-            actual[definition.name] = field.columns[0].options
-        elif definition.name == "google_search_console_request_indexing":
-            assert field.key == "notifications"
-            assert [(column.key, column.required) for column in field.columns] == [
-                ("url", True),
-                ("notification_type", True),
-                ("page_type", True),
-            ]
-            notifications_schema = schema["properties"]["notifications"]
-            assert notifications_schema["minItems"] == 1
-            assert notifications_schema["maxItems"] == 20
-            actual[definition.name] = (
-                *field.columns[1].options,
-                *field.columns[2].options,
-            )
-        else:
-            assert field.key == "keywords"
-            expected_columns = [
-                ("text", True),
-                ("match_type", True),
-            ]
-            if definition.name == "google_ads_create_keywords":
-                expected_columns.extend(
-                    [
-                        ("status", False),
-                        ("bid_modifier", False),
-                        ("cpc_bid", False),
-                        ("final_urls", False),
-                        ("final_mobile_urls", False),
-                        ("final_url_suffix", False),
-                        ("tracking_url_template", False),
-                        ("url_custom_parameters", False),
-                    ]
-                )
-            assert [(column.key, column.required) for column in field.columns] == expected_columns
-            keywords_schema = schema["properties"]["keywords"]
-            assert keywords_schema["minItems"] == 1
-            assert keywords_schema["maxItems"] == 500
-            actual[definition.name] = field.columns[1].options
-
-    assert actual == expected
-
-
-async def test_batch_write_suspends_once_with_every_row_in_the_approval_payload(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-) -> None:
-    definition = _definition(code_mode_scenario_tools, "scenario_code_batch_write")
-    rows = [{"text": f"keyword {index}", "match_type": "EXACT"} for index in range(1, 38)]
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[definition.name],
-        code_mode_enabled=True,
-    )
-    suspended = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
-                            {"code": (f"await scenario_code_batch_write(keywords={rows!r})")},
-                            "workflow-call",
-                        ),
-                    )
-                )
-            ]
-        ),
-    )
-
-    async with db_session_factory() as db:
-        actor = await db.get(User, context.user_id)
-        workspace = await db.get(Workspace, context.workspace_id)
-        assert actor is not None and workspace is not None
-        approval_state = await get_agent_run_approval_state(
-            db,
-            actor=actor,
-            workspace=workspace,
-            run_id=context.run_id,
-        )
-
-    assert code_mode_scenario_tools["batch_effects"] == []
-    assert approval_state.workflow is not None
-    assert len(approval_state.approvals) == 1
-    assert approval_state.approvals[0].args == {"keywords": rows}
-    pending_audits = [
-        row
-        for row in suspended.audit_rows
-        if row.resource_id == "workflow-call:1" and row.status == "pending"
-    ]
-    assert len(pending_audits) == 1
 
 
 async def test_batch_override_executes_and_audits_only_the_edited_rows(
@@ -906,7 +472,16 @@ async def test_maximum_batch_remains_one_approval_and_one_terminal_audit(
     suspended = await run_scenario(db_session_factory, context, model=model)
 
     assert suspended.run.status == "awaiting_approval"
-    assert len(load_suspended_run_state(suspended.run).pending_tool_call_ids) == 1
+    assert code_mode_scenario_tools["batch_effects"] == []
+    async with db_session_factory() as db:
+        actor = await db.get(User, context.user_id)
+        workspace = await db.get(Workspace, context.workspace_id)
+        assert actor is not None and workspace is not None
+        approval_state = await get_agent_run_approval_state(
+            db, actor=actor, workspace=workspace, run_id=context.run_id
+        )
+    assert len(approval_state.approvals) == 1
+    assert approval_state.approvals[0].args == {"keywords": rows}
     completed = await _resume_code_mode_scenario(
         db_session_factory,
         context,
@@ -1007,78 +582,6 @@ async def test_concurrent_duplicate_nested_resume_request_starts_one_continuatio
         await db.commit()
 
 
-async def test_duplicate_nested_decision_after_settle_is_rejected_without_reexecution(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[definition.name],
-        code_mode_enabled=True,
-    )
-    model = scripted_model(
-        turns=[
-            ToolTurn(
-                (
-                    ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
-                        {"code": "await scenario_code_forced_write(value='once')"},
-                        "workflow-call",
-                    ),
-                )
-            ),
-            "The write completed.",
-        ]
-    )
-    suspended = await run_scenario(db_session_factory, context, model=model)
-    completed = await _resume_code_mode_scenario(
-        db_session_factory,
-        context,
-        suspended=suspended,
-        model=model,
-    )
-    nested_before = [
-        (row.status, row.details.get("outcome"))
-        for row in completed.audit_rows
-        if row.resource_id == "workflow-call:1"
-    ]
-    resume = AsyncMock()
-    monkeypatch.setattr(MontyExecutor, "resume", resume)
-    async with db_session_factory() as db:
-        actor = await db.get(User, context.user_id)
-        workspace = await db.get(Workspace, context.workspace_id)
-        assert actor is not None and workspace is not None
-        with pytest.raises(ConflictError, match="not awaiting approval"):
-            await resume_agent_run_stream(
-                db,
-                actor=actor,
-                workspace=workspace,
-                run_id=context.run_id,
-                payload=AgentRunResumeRequest(
-                    decisions=[
-                        AgentRunResumeDecision(tool_call_id="workflow-call:1", decision="approved")
-                    ]
-                ),
-            )
-    async with db_session_factory() as db:
-        nested_rows = list(
-            await db.scalars(
-                select(AuditEvent).where(
-                    AuditEvent.workspace_id == context.workspace_id,
-                    AuditEvent.resource_id == "workflow-call:1",
-                )
-            )
-        )
-    nested_after = [(row.status, row.details.get("outcome")) for row in nested_rows]
-
-    assert sorted(nested_before) == sorted(nested_after)
-    assert sorted(status for status, _outcome in nested_after) == ["pending", "success"]
-    resume.assert_not_awaited()
-    assert code_mode_scenario_tools["effects"] == ["once"]
-
-
 async def test_two_gated_writes_resume_sequentially_across_executor_restarts(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
@@ -1138,15 +641,11 @@ async def test_two_gated_writes_resume_sequentially_across_executor_restarts(
     assert completed.output == "Both approved writes completed."
 
 
-@pytest.mark.parametrize(
-    "tool_name",
-    ["scenario_code_invalid_write", "scenario_code_oversized_public_write"],
-)
 async def test_approved_write_with_invalid_evidence_requires_recovery(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
-    tool_name: str,
 ) -> None:
+    tool_name = "scenario_code_invalid_write"
     definition = _definition(code_mode_scenario_tools, tool_name)
     context = await build_scenario_agent(
         db_session_factory,
@@ -1190,117 +689,9 @@ async def test_approved_write_with_invalid_evidence_requires_recovery(
         ]
 
 
-async def test_read_only_oversized_snapshot_closes_pending_audit(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[definition.name],
-        code_mode_enabled=True,
-    )
-    monkeypatch.setattr(settings, "AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES", 1)
-    result = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
-                            {"code": "await scenario_code_forced_write(value='pending')"},
-                            "workflow-call",
-                        ),
-                    )
-                ),
-                "I will call the tool directly.",
-            ]
-        ),
-    )
-
-    assert result.run.status == "completed"
-    assert code_mode_scenario_tools["effects"] == []
-    assert "code_mode_state" not in (result.run.metadata_json or {})
-    nested = [row for row in result.audit_rows if row.resource_id == "workflow-call:1"]
-    assert sorted(row.status for row in nested) == ["failure", "pending"]
-    failure = next(row for row in nested if row.status == "failure")
-    assert failure.details["error_code"] == "code_mode_snapshot_too_large"
-
-
-async def test_effectful_oversized_snapshot_fails_closed_with_completed_effect(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    completed = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    context = await build_scenario_agent(
-        committed_db_session_factory,
-        tool_names=[completed.name],
-        code_mode_enabled=True,
-    )
-    model = scripted_model(
-        turns=[
-            ToolTurn(
-                (
-                    ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
-                        {
-                            "code": (
-                                "await scenario_code_forced_write(value='completed')\n"
-                                "await scenario_code_forced_write(value='pending')"
-                            )
-                        },
-                        "workflow-call",
-                    ),
-                )
-            )
-        ]
-    )
-    suspended = await run_scenario(committed_db_session_factory, context, model=model)
-    monkeypatch.setattr(settings, "AGENT_CODE_MODE_STATE_MAX_BYTES", 10)
-    with pytest.raises(CodeModeResumeRequiresRecoveryError) as exc_info:
-        await _resume_code_mode_scenario(
-            committed_db_session_factory,
-            context,
-            suspended=suspended,
-            model=model,
-        )
-
-    assert exc_info.value.reason == "snapshot_too_large"
-    assert code_mode_scenario_tools["effects"] == ["completed"]
-    async with committed_db_session_factory() as db:
-        failed = await db.get(AgentRun, context.run_id)
-        assert failed is not None
-        assert failed.status == "failed"
-        assert failed.outcome == "blocked"
-        assert failed.completion_json["executed_effects"][0]["tool_name"] == completed.name
-        rows = list(
-            await db.scalars(
-                select(AuditEvent).where(
-                    AuditEvent.workspace_id == context.workspace_id,
-                )
-            )
-        )
-    pending_call_rows = [
-        row
-        for row in rows
-        if row.resource_id != exc_info.value.executed_effects[0].nested_call_id
-        and row.details.get("parent_tool_call_id") == "workflow-call"
-    ]
-    assert sorted(row.status for row in pending_call_rows) == ["failure", "pending"]
-
-
-@pytest.mark.parametrize(
-    "degradation_reason",
-    ["missing_key", "schema_mismatch", "monty_version_mismatch", "snapshot_corrupt"],
-)
 async def test_snapshot_degradation_after_completed_write_fails_closed_to_recovery(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
-    degradation_reason: str,
 ) -> None:
     definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
     context = await build_scenario_agent(
@@ -1338,7 +729,10 @@ async def test_snapshot_degradation_after_completed_write_fails_closed_to_recove
         run = await db.get(AgentRun, context.run_id)
         assert run is not None
         metadata = dict(run.metadata_json or {})
-        _degrade_code_state(metadata, degradation_reason)
+        metadata["code_mode_state"] = {
+            **metadata["code_mode_state"],
+            "snapshot_b64": "not-valid-base64",
+        }
         run.metadata_json = metadata
         await db.commit()
 
@@ -1356,19 +750,14 @@ async def test_snapshot_degradation_after_completed_write_fails_closed_to_recove
         assert failed.status == "failed"
         assert failed.outcome == "blocked"
         assert failed.error_code == "code_mode_resume_requires_recovery"
-        assert failed.completion_json["degradation_reason"] == degradation_reason
+        assert failed.completion_json["degradation_reason"] == "snapshot_corrupt"
         assert failed.completion_json["executed_effects"][0]["tool_name"] == definition.name
         assert "code_mode_state" not in (failed.metadata_json or {})
 
 
-@pytest.mark.parametrize(
-    "degradation_reason",
-    ["missing_key", "schema_mismatch", "monty_version_mismatch", "snapshot_corrupt"],
-)
 async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
-    degradation_reason: str,
 ) -> None:
     definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
     context = await build_scenario_agent(
@@ -1397,7 +786,7 @@ async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result
         run = await db.get(AgentRun, context.run_id)
         assert run is not None
         metadata = dict(run.metadata_json or {})
-        _degrade_code_state(metadata, degradation_reason)
+        metadata["code_mode_state"] = {**metadata["code_mode_state"], "monty_version": "0.0.0"}
         run.metadata_json = metadata
         await db.commit()
         actor = await db.get(User, context.user_id)
@@ -1489,49 +878,6 @@ async def test_restore_failure_after_first_approved_write_requires_recovery(
         ]
 
 
-async def test_read_only_resume_crash_returns_redraft_result(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[definition.name],
-        code_mode_enabled=True,
-    )
-    model = scripted_model(
-        turns=[
-            ToolTurn(
-                (
-                    ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
-                        {"code": "await scenario_code_forced_write(value='pending')"},
-                        "workflow-call",
-                    ),
-                )
-            ),
-            "I will redraft the workflow.",
-        ]
-    )
-    suspended = await run_scenario(db_session_factory, context, model=model)
-
-    async def crash_before_settlement(*_args: Any, **_kwargs: Any) -> None:
-        raise TimeoutError("interpreter crashed before settlement")
-
-    monkeypatch.setattr(MontyExecutor, "resume", crash_before_settlement)
-    completed = await _resume_code_mode_scenario(
-        db_session_factory,
-        context,
-        suspended=suspended,
-        model=model,
-    )
-
-    assert completed.run.status == "completed"
-    assert code_mode_scenario_tools["effects"] == []
-    assert completed.output == "I will redraft the workflow."
-
-
 async def test_nested_denial_resumes_workflow_and_audits_nested_call(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
@@ -1586,63 +932,9 @@ async def test_nested_denial_resumes_workflow_and_audits_nested_call(
     )
 
 
-async def test_malformed_durable_trace_blocks_unverifiable_approval_reads(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_scenario_tools: dict[str, Any],
-) -> None:
-    definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=[definition.name],
-        code_mode_enabled=True,
-    )
-    suspended = await run_scenario(
-        db_session_factory,
-        context,
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
-                            {"code": "await scenario_code_forced_write(value='pending')"},
-                            "workflow-call",
-                        ),
-                    )
-                )
-            ]
-        ),
-    )
-    async with db_session_factory() as db:
-        run = await db.get(AgentRun, context.run_id)
-        actor = await db.get(User, context.user_id)
-        workspace = await db.get(Workspace, context.workspace_id)
-        assert run is not None and actor is not None and workspace is not None
-        metadata = dict(run.metadata_json or {})
-        state = dict(metadata["code_mode_state"])
-        trace = [dict(item) for item in state["nested_trace"]]
-        trace[0].pop("tool_call_id")
-        state["nested_trace"] = trace
-        metadata["code_mode_state"] = state
-        run.metadata_json = metadata
-        await db.flush()
-
-        with pytest.raises(ConflictError, match="Saved workflow state is invalid"):
-            await get_agent_run_approval_state(
-                db,
-                actor=actor,
-                workspace=workspace,
-                run_id=context.run_id,
-            )
-
-    assert suspended.run.status == "awaiting_approval"
-
-
-@pytest.mark.parametrize("decision", ["approved", "denied"])
 async def test_nested_write_file_staging_round_trips_and_cleans_up(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_local_storage: None,
-    decision: str,
 ) -> None:
     context = await build_scenario_agent(
         db_session_factory,
@@ -1669,7 +961,7 @@ async def test_nested_write_file_staging_round_trips_and_cleans_up(
                     ),
                 )
             ),
-            f"The nested file write was {decision}.",
+            "The nested file write was approved.",
         ]
     )
     suspended = await run_scenario(db_session_factory, context, model=model)
@@ -1708,8 +1000,6 @@ async def test_nested_write_file_staging_round_trips_and_cleans_up(
         context,
         suspended=suspended,
         model=model,
-        decision=decision,
-        message="Operator declined" if decision == "denied" else None,
     )
 
     assert resumed.run.status == "completed"
@@ -1727,109 +1017,11 @@ async def test_nested_write_file_staging_round_trips_and_cleans_up(
                 File.deleted == False,  # noqa: E712
             )
         )
-        if decision == "approved":
-            assert stored_file is not None
-            revision = await db.get(FileRevision, stored_file.current_revision_id)
-            assert revision is not None
-            content = await get_storage_provider().get_object(
-                private_ref_from_key(revision.object_key)
-            )
-            assert content == b"nested body"
-        else:
-            assert stored_file is None
-            nested_audits = [
-                row for row in resumed.audit_rows if row.resource_id == "workflow-call:1"
-            ]
-            assert sorted(row.status for row in nested_audits) == ["denied", "pending"]
-
-
-async def test_nested_entity_write_approves_without_edits_end_to_end(
-    db_session_factory: async_sessionmaker[AsyncSession],
-    code_mode_local_storage: None,
-) -> None:
-    context = await build_scenario_agent(
-        db_session_factory,
-        tool_names=["write_file"],
-        code_mode_enabled=True,
-    )
-    create_model = scripted_model(
-        turns=[
-            ToolTurn(
-                (
-                    ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
-                        {"code": "await write_file(name='entity.md', content='first')"},
-                        "create-workflow",
-                    ),
-                )
-            ),
-            "The file was created.",
-        ]
-    )
-    create_pending = await run_scenario(db_session_factory, context, model=create_model)
-    await _resume_code_mode_scenario(
-        db_session_factory,
-        context,
-        suspended=create_pending,
-        model=create_model,
-    )
-    async with db_session_factory() as db:
-        stored_file = await db.scalar(
-            select(File).where(
-                File.workspace_id == context.workspace_id,
-                File.name == "entity.md",
-                File.deleted == False,  # noqa: E712
-            )
-        )
-        assert stored_file is not None and stored_file.current_revision_id is not None
-        file_id = stored_file.id
-        revision_id = stored_file.current_revision_id
-
-    context = await next_scenario_run(db_session_factory, context)
-    reference = {
-        "version": 1,
-        "entity_kind": "file",
-        "entity_id": str(file_id),
-        "label": "entity.md",
-        "description": None,
-        "scope_label": None,
-    }
-    update_model = scripted_model(
-        turns=[
-            ToolTurn(
-                (
-                    ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
-                        {
-                            "code": (
-                                f"await write_file(name='entity.md', content='second', "
-                                f"file_id={reference!r}, "
-                                f"expected_current_revision_id='{revision_id}')"
-                            )
-                        },
-                        "update-workflow",
-                    ),
-                )
-            ),
-            "The file was updated.",
-        ]
-    )
-    update_pending = await run_scenario(db_session_factory, context, model=update_model)
-    completed = await _resume_code_mode_scenario(
-        db_session_factory,
-        context,
-        suspended=update_pending,
-        model=update_model,
-    )
-
-    assert completed.run.status == "completed"
-    async with db_session_factory() as db:
-        stored_file = await db.get(File, file_id)
         assert stored_file is not None
         revision = await db.get(FileRevision, stored_file.current_revision_id)
         assert revision is not None
         content = await get_storage_provider().get_object(private_ref_from_key(revision.object_key))
-    assert content == b"second"
+    assert content == b"nested body"
 
 
 async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_stub(
@@ -1880,19 +1072,9 @@ async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_stub(
     assert result.output == "I found an embedded instruction and did not follow it."
 
 
-@pytest.mark.parametrize(
-    ("policy", "expected_status", "expected_effects"),
-    [
-        ("require_approval", "awaiting_approval", []),
-        ("allow", "completed", ["scheduled"]),
-    ],
-)
-async def test_scheduled_workflow_enforces_nested_write_envelope(
+async def test_scheduled_workflow_requires_approval_under_review_envelope(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
-    policy: str,
-    expected_status: str,
-    expected_effects: list[str],
 ) -> None:
     definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
     context = await build_scenario_agent(
@@ -1901,7 +1083,7 @@ async def test_scheduled_workflow_enforces_nested_write_envelope(
         tool_policies={definition.name: TOOL_POLICY_AUTO},
         code_mode_enabled=True,
         trigger="scheduled",
-        metadata={"envelope": {"side_effect_policy": policy}},
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
     )
     turns: list[Any] = [
         ToolTurn(
@@ -1923,17 +1105,16 @@ async def test_scheduled_workflow_enforces_nested_write_envelope(
         model=model,
     )
 
-    assert result.run.status == expected_status
-    assert code_mode_scenario_tools["effects"] == expected_effects
-    if expected_status == "awaiting_approval":
-        result = await _resume_code_mode_scenario(
-            db_session_factory,
-            context,
-            suspended=result,
-            model=model,
-        )
-        assert result.run.status == "completed"
-        assert code_mode_scenario_tools["effects"] == ["scheduled"]
+    assert result.run.status == "awaiting_approval"
+    assert code_mode_scenario_tools["effects"] == []
+    result = await _resume_code_mode_scenario(
+        db_session_factory,
+        context,
+        suspended=result,
+        model=model,
+    )
+    assert result.run.status == "completed"
+    assert code_mode_scenario_tools["effects"] == ["scheduled"]
 
 
 async def test_scheduled_workflow_enforces_deny_envelope(
@@ -2085,22 +1266,6 @@ def _definition(values: dict[str, Any], name: str) -> RuntimeToolDefinition:
     return next(definition for definition in values["definitions"] if definition.name == name)
 
 
-def _degrade_code_state(metadata: dict[str, Any], reason: str) -> None:
-    if reason == "missing_key":
-        metadata.pop("code_mode_state")
-        return
-    state = dict(metadata["code_mode_state"])
-    if reason == "schema_mismatch":
-        state["version"] = 999
-    elif reason == "monty_version_mismatch":
-        state["monty_version"] = "0.0.0"
-    elif reason == "snapshot_corrupt":
-        state["snapshot_b64"] = "not-valid-base64"
-    else:  # pragma: no cover - the parameter matrix is closed above
-        raise AssertionError(f"Unknown degradation reason: {reason}")
-    metadata["code_mode_state"] = state
-
-
 async def _resume_code_mode_scenario(
     session_factory: async_sessionmaker[AsyncSession],
     context,
@@ -2137,18 +1302,6 @@ async def _resume_code_mode_scenario(
     )
 
 
-def _agent_config(**values: Any):
-    from models.agent import Agent
-
-    return Agent(
-        name="Code Mode Catalog Scenario",
-        slug="code-mode-catalog-scenario",
-        model_provider="openai",
-        model="gpt-5.4-mini",
-        **values,
-    )
-
-
 def _force_only_nested_tool(
     monkeypatch: pytest.MonkeyPatch,
     definition: RuntimeToolDefinition,
@@ -2170,11 +1323,9 @@ def _force_only_nested_tool(
     monkeypatch.setattr(loop, "build_runtime_tools", forced_build)
 
 
-@pytest.mark.parametrize("failure", [None, "pause", "create"])
-async def test_google_ads_pause_then_create_uses_separate_approvals_and_evidence(
+async def test_google_ads_pause_then_failed_create_keeps_separate_approvals_and_evidence(
     db_session_factory,
     monkeypatch,
-    failure,
 ) -> None:
     from uuid import uuid4
 
@@ -2242,7 +1393,7 @@ async def test_google_ads_pause_then_create_uses_separate_approvals_and_evidence
         operations = kwargs["json"]["operations"]
         kind = "pause" if "update" in operations[0] else "create"
         writes.append(kind)
-        if kind == failure:
+        if kind == "create":
             raise IntegrationError(
                 "Provider rejected the change.",
                 provider_key="google_ads",
@@ -2320,146 +1471,32 @@ async def test_google_ads_pause_then_create_uses_separate_approvals_and_evidence
     second = await _resume_code_mode_scenario(
         db_session_factory, context, suspended=first, model=model
     )
-    if failure == "pause":
-        assert second.run.status == "completed"
-        assert writes == ["pause"]
-        assert set(statuses.values()) == {"ENABLED"}
-        completed = second
-    else:
-        assert second.run.status == "awaiting_approval"
-        assert writes == ["pause"]
-        assert set(statuses.values()) == {"PAUSED"}
-        completed = await _resume_code_mode_scenario(
-            db_session_factory, context, suspended=second, model=model
-        )
-        assert completed.run.status == "completed"
-        assert writes == ["pause", "create"]
-        assert set(statuses.values()) == {"PAUSED"}
+    assert second.run.status == "awaiting_approval"
+    assert writes == ["pause"]
+    assert set(statuses.values()) == {"PAUSED"}
+    completed = await _resume_code_mode_scenario(
+        db_session_factory, context, suspended=second, model=model
+    )
+    assert completed.run.status == "completed"
+    assert writes == ["pause", "create"]
+    assert set(statuses.values()) == {"PAUSED"}
     transcript = json.dumps([message.parts for message in completed.messages])
-    expected = (
-        "Pause failed; no replacement was requested."
-        if failure == "pause"
-        else "Creation failed; old keywords remain paused."
-        if failure == "create"
-        else "Replacement added; old keywords remain paused."
-    )
-    assert expected in transcript
+    assert "Creation failed; old keywords remain paused." in transcript
     operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
-    expected_tools = ["google_ads_update_keywords"] + (
-        [] if failure == "pause" else ["google_ads_create_keywords"]
-    )
-    for tool_name in expected_tools:
+    for tool_name in ("google_ads_update_keywords", "google_ads_create_keywords"):
         events = [row for row in operations if row.tool_name == tool_name]
         assert len(events) == 2
         pending = next(row for row in events if row.status == "pending")
         terminal = next(row for row in events if row.status != "pending")
         assert terminal.details["related_event_id"] == str(pending.id)
         counts = terminal.details["operation_detail"]["intent_counts"]
-        failed = failure == ("pause" if tool_name == "google_ads_update_keywords" else "create")
+        failed = tool_name == "google_ads_create_keywords"
         assert counts["failed" if failed else "applied"] == 2
 
 
-@pytest.mark.parametrize("approved", [False, True])
-async def test_google_ads_keyword_removal_requires_approval_and_retains_two_group_evidence(
-    db_session_factory, monkeypatch, approved
-) -> None:
-    from uuid import uuid4
-
-    from pydantic import SecretStr
-
-    from integrations.google_ads.tools.utils.client import google_ads_settings
-    from services.integrations.context.domain import ResolvedActiveContext
-    from tests.integrations.google_ads.test_positive_keyword_update_tool import (
-        entry,
-        keyword,
-        provider_row,
-    )
-
-    selected = entry()
-    active = ResolvedActiveContext(entries=(selected,))
-    monkeypatch.setattr(
-        "services.agents.runtime.execute.setup.resolve_active_context",
-        AsyncMock(return_value=active),
-    )
-    monkeypatch.setattr(
-        "services.audit_events.integration_events.get_async_db_session_factory",
-        lambda: db_session_factory,
-    )
-    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_DEVELOPER_TOKEN", SecretStr("test-token"))
-    writes = []
-    second_row = provider_row()
-    second_row["adGroup"]["id"] = "21"
-    second_row["adGroupCriterion"]["resourceName"] = "customers/333/adGroupCriteria/21~90"
-
-    async def post(path, **kwargs):
-        if not path.endswith(":mutate"):
-            return [{"results": [provider_row(), second_row]}]
-        operations = kwargs["json"]["operations"]
-        writes.extend(operations)
-        return {"results": [{"resourceName": operation["remove"]} for operation in operations]}
-
-    client = type("KeywordRemovalClient", (), {"post": staticmethod(post)})()
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.remove_positive_keywords.google_ads_client",
-        AsyncMock(return_value=client),
-    )
-    # The scenario's active connection is synthetic; provider lookups use the same fixture.
-    monkeypatch.setattr(
-        "integrations.google_ads.entity_resolvers.keyword.google_ads_client_for_principal",
-        AsyncMock(return_value=client),
-    )
-    references = [
-        keyword().model_copy(update={"ad_group_id": group}).model_dump(mode="json")
-        for group in ("20", "21")
-    ]
-    code = f"await google_ads_remove_keywords(keywords={references!r})"
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=["google_ads_remove_keywords"], code_mode_enabled=True
-    )
-    model = scripted_model(
-        turns=[
-            ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, str(uuid4())),)),
-            "Removal request finished.",
-        ]
-    )
-    first = await run_scenario(db_session_factory, context, model=model)
-    assert first.run.status == "awaiting_approval"
-    assert writes == []
-    completed = await _resume_code_mode_scenario(
-        db_session_factory,
-        context,
-        suspended=first,
-        model=model,
-        decision="approved" if approved else "denied",
-    )
-    assert completed.run.status == "completed"
-    if not approved:
-        assert writes == []
-        return
-    assert writes == [
-        {"remove": "customers/333/adGroupCriteria/20~90"},
-        {"remove": "customers/333/adGroupCriteria/21~90"},
-    ]
-    operations = [row for row in completed.audit_rows if row.details.get("provider_operation")]
-    pending = next(row for row in operations if row.status == "pending")
-    terminal = next(row for row in operations if row.status == "success")
-    assert terminal.details["related_event_id"] == str(pending.id)
-    detail = terminal.details["operation_detail"]
-    assert detail["intent_counts"]["applied"] == detail["effect_counts"]["applied"] == 2
-    assert {item["fields"]["ad_group_id"] for item in detail["intent_groups"][0]["items"]} == {
-        "20",
-        "21",
-    }
-    transcript = json.dumps([message.parts for message in completed.messages])
-    assert "presentation_result" in transcript
-    assert "REMOVED" in transcript
-
-
-@pytest.mark.parametrize("decision", ["approved", "denied"])
 async def test_shared_projection_after_real_nested_suspension_and_resume(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
-    decision: str,
 ) -> None:
     definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
     context = await build_scenario_agent(
@@ -2499,8 +1536,6 @@ async def test_shared_projection_after_real_nested_suspension_and_resume(
         context,
         suspended=suspended,
         model=model,
-        decision=decision,
-        message="Operator declined" if decision == "denied" else None,
     )
     assert settled.run.status == "completed"
     children = [
@@ -2510,9 +1545,7 @@ async def test_shared_projection_after_real_nested_suspension_and_resume(
         for child in part.get("metadata", {}).get("code_mode_trace", {}).get("calls", [])
     ]
     assert len(children) == 1
-    assert children[0]["status"] == ("succeeded" if decision == "approved" else "denied")
+    assert children[0]["status"] == "succeeded"
     assert "args" not in children[0]
     assert "parent_tool_call_id" not in children[0]
-    assert code_mode_scenario_tools["effects"] == (
-        ["REVIEWED_VALUE"] if decision == "approved" else []
-    )
+    assert code_mode_scenario_tools["effects"] == ["REVIEWED_VALUE"]

@@ -5,7 +5,6 @@
 from types import SimpleNamespace
 
 from core.database import maintenance_async_db_session
-from services.agents.runtime.entity_references.domain import KnowledgeDocumentReference
 from services.agents.runtime.entity_references.internal import _resolve_documents, _search_documents
 from tests.factories import build_kb_document, build_user, build_workspace
 
@@ -82,9 +81,3 @@ async def test_platform_knowledge_picker_filters_before_pagination(db_session_fa
         assert await _resolve_documents(context, [platform.id], {}) == ()
         page = await _search_documents(context, "Policy platform", {}, 10, None)
         assert page.choices == ()
-
-
-def test_historical_knowledge_reference_defaults_to_workspace():
-    document = build_kb_document(workspace=build_workspace())
-    reference = KnowledgeDocumentReference(entity_id=document.id, label="Policy")
-    assert reference.scope == "workspace"

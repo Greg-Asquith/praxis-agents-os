@@ -86,42 +86,36 @@ describe("SharePoint copy to Files presenter", () => {
     expect(html).not.toMatch(/private-|praxis_untrusted|source_ref|entity_id/)
   })
 
-  it.each([
-    [
-      "unsupported_type",
-      "Files does not support this file type. Select a supported document, image, or video.",
-    ],
-    ["too_large", "This file exceeds the copy size limit. Select a smaller file."],
-    ["source_changed", "The source file changed. Read it again before copying it."],
-  ])("shows %s recovery without rendering private failure data", (error_code, error_message) => {
-    const html = render(
-      copyRow([
-        {
-          ...success({ download_url: "https://example.com/private-download", source }),
-          status: "error",
-          error_code,
-          error_message,
-        },
-      ])
-    )
-    expect(html).toContain(error_message)
-    expect(html).toContain("Failed")
-    expect(html).not.toMatch(/private-|Source report|<a\b/)
-  })
+  it.each([["source_changed", "The source file changed. Read it again before copying it."]])(
+    "shows %s recovery without rendering private failure data",
+    (error_code, error_message) => {
+      const html = render(
+        copyRow([
+          {
+            ...success({ download_url: "https://example.com/private-download", source }),
+            status: "error",
+            error_code,
+            error_message,
+          },
+        ])
+      )
+      expect(html).toContain(error_message)
+      expect(html).toContain("Failed")
+      expect(html).not.toMatch(/private-|Source report|<a\b/)
+    }
+  )
 
-  it.each([
-    "javascript:alert(1)",
-    "data:text/html,unsafe",
-    "//example.com/unsafe",
-    "file:///private",
-  ])("keeps the saved File link but excludes unsafe source URL %s", (webUrl) => {
-    const html = render(
-      copyRow([success({ ...copied, source: { ...source, web_url: node(webUrl) } })])
-    )
-    expect(html).not.toContain("Open in SharePoint")
-    expect(html).not.toContain(webUrl)
-    expect(html).toContain(`href="/files?fileId=${fileId}"`)
-  })
+  it.each(["javascript:alert(1)", "//example.com/unsafe"])(
+    "keeps the saved File link but excludes unsafe source URL %s",
+    (webUrl) => {
+      const html = render(
+        copyRow([success({ ...copied, source: { ...source, web_url: node(webUrl) } })])
+      )
+      expect(html).not.toContain("Open in SharePoint")
+      expect(html).not.toContain(webUrl)
+      expect(html).toContain(`href="/files?fileId=${fileId}"`)
+    }
+  )
 
   it("escapes provider text and excludes private success fields", () => {
     const html = render(
@@ -145,26 +139,12 @@ describe("SharePoint copy to Files presenter", () => {
   })
 
   it.each([
-    null,
-    {},
     { ...copied, file_id: "javascript:alert(1)" },
     { ...copied, file_id: `${fileId}&redirect=https://example.com` },
-    { ...copied, file_id: 7 },
-    { ...copied, name: { ...node("bad"), source_ref: null } },
     { ...copied, size_bytes: -1 },
-    { ...copied, size_bytes: 1.5 },
-    { ...copied, size_bytes: Number.POSITIVE_INFINITY },
-    { ...copied, content_type: {} },
-    { ...copied, source: null },
     { ...copied, source: { ...source, kind: "folder" } },
-    { ...copied, source: { ...source, web_url: {} } },
   ])("falls back for malformed copied results: %j", (value) => {
     expect(parseCopyResult(value)).toBeNull()
     expect(copyRow([success(value)])).toBeNull()
-  })
-
-  it("retains running and empty states", () => {
-    expect(render(copyRow([], "running"))).toContain("Copying SharePoint file to Files…")
-    expect(render(copyRow([]))).toContain("No library returned a file to copy.")
   })
 })

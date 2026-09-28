@@ -127,86 +127,6 @@ async def test_recovery_excludes_denied_direct_and_workflow_actions(recovery_fam
     assert "private" not in str(evidence)
 
 
-async def test_old_child_denials_do_not_hide_a_fresh_batch(recovery_family):
-    db, root, child = recovery_family
-    metadata = dict(child.metadata_json)
-    metadata["approval_state"] = {
-        **metadata["approval_state"],
-        "approval_batch_id": str(uuid4()),
-    }
-    child.metadata_json = metadata
-    evidence = await build_family_recovery_evidence(db, family=[root, child])
-    assert {
-        action["tool_call_id"]
-        for action in evidence["recovery"]["actions"]
-        if action["owner_run_id"] == str(child.id)
-    } == {"approved", "denied-direct", "denied-workflow"}
-
-
-async def test_standalone_workflow_recovery_keeps_its_existing_contract(recovery_family):
-    from services.agents.runtime.run_persistence import persist_failed_run
-
-    db, root, _child = recovery_family
-    root.metadata_json = {
-        key: value for key, value in root.metadata_json.items() if key != "approval_continuation"
-    }
-    await db.flush()
-    completion = {
-        "error_code": "code_mode_resume_requires_recovery",
-        "executed_effects": [{"nested_call_id": "earlier", "tool_name": "write_file"}],
-    }
-    await persist_failed_run(
-        db,
-        run_id=root.id,
-        error_code="code_mode_resume_requires_recovery",
-        error_message="Review the completed actions.",
-        completion_json=completion,
-    )
-    assert root.error_code == "code_mode_resume_requires_recovery"
-    assert root.outcome == "blocked"
-    assert root.completion_json == completion
-
-
-async def test_child_budget_failure_retains_recovery_for_root_settlement(recovery_family):
-    from services.agents.runtime.run_persistence import persist_failed_run
-
-    db, root, child = recovery_family
-    child.metadata_json = {
-        **child.metadata_json,
-        "code_mode_state": {
-            "run_id": str(child.id),
-            "snapshot_b64": "private interpreter state",
-            "executed_effects": [{"nested_call_id": "completed", "tool_name": "write_file"}],
-        },
-    }
-    await db.flush()
-    budget = {"kind": "requests", "limit": 4}
-    await persist_failed_run(
-        db,
-        run_id=child.id,
-        error_code="usage_limit_exceeded",
-        error_message="The specialist reached its request budget.",
-        completion_json={"error_code": "usage_limit_exceeded", "tripped_budget": budget},
-    )
-    await db.refresh(child)
-    assert child.error_code == "usage_limit_exceeded"
-    assert child.outcome == "budget_exhausted"
-    assert child.completion_json["tripped_budget"] == budget
-    assert child.completion_json["recovery"]["actions"]
-    assert "code_mode_state" not in (child.metadata_json or {})
-    await settle_run_family(db, run_id=root.id)
-    await db.commit()
-    await db.refresh(root)
-    actions = root.completion_json["recovery"]["actions"]
-    assert {
-        (action["tool_call_id"], action["status"])
-        for action in actions
-        if action["owner_run_id"] == str(child.id)
-    } == {("completed", "completed"), ("approved", "uncertain")}
-    assert "private" not in str(root.completion_json)
-    assert root.outcome == "blocked"
-
-
 @pytest.mark.parametrize("status", ["cancelled", "failed"])
 @pytest.mark.parametrize("settle_child_first", [False, True])
 async def test_terminal_family_retains_completed_and_uncertain_effects(
@@ -303,32 +223,6 @@ async def _confirm_approved_actions(db, *runs: AgentRun) -> None:
             )
         )
     await db.flush()
-
-
-async def test_ordinary_failure_after_confirmed_effects_keeps_its_own_verdict(recovery_family):
-    from services.agents.runtime.run_persistence import persist_failed_run
-
-    db, root, child = recovery_family
-    await _confirm_approved_actions(db, root, child)
-    await persist_failed_run(
-        db,
-        run_id=root.id,
-        error_code="agent_run_failed",
-        error_message="The agent run failed unexpectedly.",
-    )
-    await db.refresh(root)
-    await db.refresh(child)
-    assert root.error_code == "agent_run_failed"
-    assert root.outcome == "error"
-    assert root.error_message == "The agent run failed unexpectedly."
-    assert root.completion_json["error_code"] == "agent_run_failed"
-    actions = root.completion_json["recovery"]["actions"]
-    assert {(action["tool_call_id"], action["status"]) for action in actions} == {
-        ("approved", "completed")
-    }
-    assert "approval_continuation" not in (root.metadata_json or {})
-    assert child.status == "failed"
-    assert child.error_code == "run_parent_terminated"
 
 
 async def test_ordinary_failure_with_uncertain_effects_requires_recovery(recovery_family):

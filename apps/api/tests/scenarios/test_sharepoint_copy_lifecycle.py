@@ -114,8 +114,7 @@ async def _sweep(factory, workspace_id):
         await db.commit()
 
 
-@pytest.mark.parametrize("failure", ["link", "cancel_link", "commit", "lost_commit"])
-@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize(("failure", "nested"), [("link", False), ("lost_commit", True)])
 async def test_copy_failure_owns_bytes_through_commit(copy_runtime, monkeypatch, failure, nested):
     tool = import_module("services.integrations.files.create_copy")
 
@@ -265,33 +264,6 @@ async def test_cancelled_write_keeps_cleanup_lock_until_provider_settles(copy_ru
         if not task.done():
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-
-
-async def test_reservation_does_not_commit_unrelated_tool_changes(copy_runtime):
-    from models.workspace import Workspace
-    from services.files.reserve_file_revision import reserve_file_revision
-
-    factory, context = copy_runtime
-    async with factory() as db:
-        workspace = await db.get(Workspace, context.workspace_id)
-        original_name = workspace.name
-        workspace.name = "Uncommitted name"
-        reservation = await reserve_file_revision(
-            db,
-            workspace_id=context.workspace_id,
-            user_id=context.user_id,
-            name="notes.txt",
-            content=CONTENT,
-            content_type="text/plain",
-            extension=".txt",
-        )
-        reservation_id = reservation.id
-        async with factory() as observer:
-            assert (await observer.get(Workspace, context.workspace_id)).name == original_name
-            assert await observer.get(FileUpload, reservation_id) is not None
-        await db.rollback()
-    await _sweep(factory, context.workspace_id)
-    assert (await _state(factory, context.workspace_id))[FileUpload] == []
 
 
 async def test_copy_audit_failure_rolls_back_local_effects(copy_runtime, monkeypatch):

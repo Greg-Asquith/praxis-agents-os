@@ -1,6 +1,5 @@
 """Runtime planning tool tests."""
 
-import importlib
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -22,16 +21,11 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_STATUS_COMPLETED
-from services.agents.runtime.dispatch import digest_args
-from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.execute_run import ExecuteRunResult, execute_run
 from services.agents.runtime.sinks import CollectingSink
-from services.agents.runtime.tools.planning import TodoItemInput
 from tests.factories import build_user, build_workspace, build_workspace_membership
 
 pytestmark = pytest.mark.asyncio
-
-runtime_setup_module = importlib.import_module("services.agents.runtime.execute.setup")
 
 
 @dataclass(frozen=True)
@@ -81,50 +75,6 @@ async def test_write_read_round_trip_and_replace_semantics(
         await _delete_committed_planning_context(committed_db_session_factory, context)
 
 
-async def test_write_todos_rejects_caps_and_bad_status(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    cap_context = await _create_committed_planning_context(committed_db_session_factory)
-    status_context = await _create_committed_planning_context(committed_db_session_factory)
-    too_many = [{"content": f"Item {index}", "status": "pending"} for index in range(51)]
-    cap_messages: list[ModelMessage] = []
-    status_messages: list[ModelMessage] = []
-
-    try:
-        cap_result, _sink, _run_id = await _execute_tool_turn(
-            committed_db_session_factory,
-            cap_context,
-            tool_name="write_todos",
-            args={"items": too_many},
-            final_text="cap recovered",
-            seen_messages=cap_messages,
-        )
-        status_result, _sink, _run_id = await _execute_tool_turn(
-            committed_db_session_factory,
-            status_context,
-            tool_name="write_todos",
-            args={"items": [{"content": "Bad status", "status": "blocked"}]},
-            final_text="status recovered",
-            seen_messages=status_messages,
-        )
-
-        assert cap_result.output == "cap recovered"
-        assert status_result.output == "status recovered"
-        assert await _todo_list(committed_db_session_factory, cap_context) is None
-        assert await _todo_list(committed_db_session_factory, status_context) is None
-        assert "limited to 50" in " ".join(map(str, cap_messages))
-        assert "pending" in " ".join(map(str, status_messages))
-    finally:
-        await _delete_committed_planning_context(
-            committed_db_session_factory,
-            cap_context,
-        )
-        await _delete_committed_planning_context(
-            committed_db_session_factory,
-            status_context,
-        )
-
-
 async def test_todos_are_conversation_scoped(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -160,77 +110,6 @@ async def test_todos_are_conversation_scoped(
             other_context,
             delete_shared=False,
         )
-        await _delete_committed_planning_context(committed_db_session_factory, context)
-
-
-async def test_write_todos_audit_uses_digest_only(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-) -> None:
-    context = await _create_committed_planning_context(committed_db_session_factory)
-    marker = f"todo-secret-{uuid4().hex}"
-    items = [{"content": marker, "status": "pending"}]
-
-    try:
-        _result, _sink, run_id = await _execute_tool_turn(
-            committed_db_session_factory,
-            context,
-            tool_name="write_todos",
-            args={"items": items},
-        )
-
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            run_id=run_id,
-            tool_name="write_todos",
-        )
-        expected_sha, expected_bytes = digest_args(
-            {"items": [TodoItemInput(content=marker, status="pending")]}
-        )
-        assert event.status == "success"
-        assert event.details["outcome"] == "completed"
-        assert event.details["args_sha256"] == expected_sha
-        assert event.details["args_bytes"] == expected_bytes
-        assert "args" not in event.details
-        assert marker not in str(event.details)
-    finally:
-        await _delete_committed_planning_context(committed_db_session_factory, context)
-
-
-async def test_write_todos_denied_by_envelope_before_execution(
-    committed_db_session_factory: async_sessionmaker[AsyncSession],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    context = await _create_committed_planning_context(committed_db_session_factory)
-    monkeypatch.setattr(
-        runtime_setup_module,
-        "build_run_envelope",
-        lambda _run: RunEnvelope(
-            principal="interactive",
-            side_effect_policy="deny",
-        ),
-    )
-
-    try:
-        result, _sink, run_id = await _execute_tool_turn(
-            committed_db_session_factory,
-            context,
-            tool_name="write_todos",
-            args={"items": [{"content": "Denied", "status": "pending"}]},
-            final_text="denied recovered",
-        )
-
-        assert result.output == "denied recovered"
-        assert await _todo_list(committed_db_session_factory, context) is None
-        [event] = await _tool_audit_events(
-            committed_db_session_factory,
-            context,
-            run_id=run_id,
-            tool_name="write_todos",
-        )
-        assert event.status == "denied"
-        assert event.details["outcome"] == "denied_envelope"
-    finally:
         await _delete_committed_planning_context(committed_db_session_factory, context)
 
 
@@ -388,30 +267,6 @@ async def _todo_list(
                 ConversationTodoList.workspace_id == context.workspace_id,
                 ConversationTodoList.deleted == False,  # noqa: E712
             )
-        )
-
-
-async def _tool_audit_events(
-    session_factory: async_sessionmaker[AsyncSession],
-    context: PlanningRuntimeContext,
-    *,
-    run_id: UUID,
-    tool_name: str,
-) -> list[AuditEvent]:
-    async with session_factory() as db:
-        await _use_context(db, context)
-        return list(
-            (
-                await db.scalars(
-                    select(AuditEvent)
-                    .where(
-                        AuditEvent.workspace_id == context.workspace_id,
-                        AuditEvent.tool_name == tool_name,
-                        AuditEvent.details["run_id"].astext == str(run_id),
-                    )
-                    .order_by(AuditEvent.occurred_at)
-                )
-            ).all()
         )
 
 

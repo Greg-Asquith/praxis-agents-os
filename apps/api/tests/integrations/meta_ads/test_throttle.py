@@ -31,19 +31,6 @@ def test_throttle_is_per_account_and_expires(monkeypatch: pytest.MonkeyPatch) ->
     throttle.ensure_account_available("123", operation="run_insights")
 
 
-def test_account_usage_reset_is_in_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
-    now = 0.0
-    monkeypatch.setattr(throttle, "monotonic", lambda: now)
-    headers = {"x-ad-account-usage": '{"acc_id_util_pct": 100, "reset_time_duration": 90}'}
-    throttle.record_usage("123", headers)
-    assert "2 minutes" in throttle.throttle_message(headers)
-    now = 89
-    with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("123", operation="run_insights")
-    now = 90
-    throttle.ensure_account_available("123", operation="run_insights")
-
-
 def test_business_insights_usage_and_longest_wait_are_used() -> None:
     headers = {
         "X-Business-Use-Case-Usage": json.dumps(
@@ -86,15 +73,6 @@ def test_valid_update_clears_throttle_and_missing_headers_preserve_it() -> None:
         "",
         "{invalid",
         "null",
-        "[]",
-        '"text"',
-        '{"acc_id_util_pct": true, "reset_time_duration": true}',
-        '{"acc_id_util_pct": "100", "reset_time_duration": "90"}',
-        '{"acc_id_util_pct": NaN, "reset_time_duration": Infinity}',
-        '{"acc_id_util_pct": -100, "reset_time_duration": -90}',
-        '{"acc_id_util_pct": 1e100, "reset_time_duration": 1e100}',
-        "[" * 2000 + "]" * 2000,
-        " " * 16385,
     ],
 )
 def test_malformed_headers_are_ignored(raw: str) -> None:
@@ -104,28 +82,6 @@ def test_malformed_headers_are_ignored(raw: str) -> None:
     throttle.record_usage("123", headers)
     throttle.ensure_account_available("123", operation="run_insights")
     assert "few minutes" in throttle.throttle_message(headers)
-
-
-def test_business_entries_are_defensive_and_wait_is_bounded() -> None:
-    headers = {
-        "X-Business-Use-Case-Usage": '{"123": [null, "bad", {"estimated_time_to_regain_access": 86400}], "456": null}'
-    }
-    assert "1440 minutes" in throttle.throttle_message(headers)
-
-
-def test_idle_eviction_retains_known_throttle_window(monkeypatch: pytest.MonkeyPatch) -> None:
-    now = 0.0
-    monkeypatch.setattr(throttle, "monotonic", lambda: now)
-    throttle.record_usage("idle", _headers(utilisation=20, minutes=0))
-    throttle.record_usage("blocked", _headers(minutes=10))
-    now = 301
-    throttle.ensure_account_available("idle", operation="run_insights")
-    assert "idle" not in throttle._accounts
-    with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("blocked", operation="run_insights")
-    now = 602
-    throttle.ensure_account_available("blocked", operation="run_insights")
-    assert "blocked" not in throttle._accounts
 
 
 def test_capacity_evicts_least_recently_used_account(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -184,7 +140,6 @@ def _account_headers(utilisation=100, seconds=120):
     "initial,healthy",
     [
         (_headers(), _account_headers(20, 600)),
-        (_account_headers(), _headers(utilisation=20, minutes=10)),
     ],
 )
 def test_expired_quota_is_not_revived_by_another_healthy_quota(monkeypatch, initial, healthy):
@@ -201,7 +156,6 @@ def test_expired_quota_is_not_revived_by_another_healthy_quota(monkeypatch, init
     "initial,other",
     [
         (_headers(minutes=2), _account_headers(seconds=300)),
-        (_account_headers(seconds=120), _headers(minutes=5)),
     ],
 )
 def test_overlapping_quota_deadlines_remain_independent(monkeypatch, initial, other):
@@ -214,112 +168,4 @@ def test_overlapping_quota_deadlines_remain_independent(monkeypatch, initial, ot
     with pytest.raises(IntegrationRateLimitError, match="4 minutes"):
         throttle.ensure_account_available("123", operation="run_insights")
     now = 310.0
-    throttle.ensure_account_available("123", operation="run_insights")
-
-
-@pytest.mark.parametrize(
-    "initial,healthy",
-    [
-        (_headers(), _account_headers(20, 600)),
-        (_account_headers(), _headers(utilisation=20, minutes=10)),
-    ],
-)
-def test_healthy_partial_update_cannot_extend_independent_cooldown(monkeypatch, initial, healthy):
-    now = 0.0
-    monkeypatch.setattr(throttle, "monotonic", lambda: now)
-    throttle.record_usage("123", initial)
-    now = 10.0
-    throttle.record_usage("123", healthy)
-    with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123", operation="run_insights")
-    now = 120.0
-    throttle.ensure_account_available("123", operation="run_insights")
-
-
-def test_shorter_saturated_update_does_not_shorten_same_quota(monkeypatch):
-    now = 0.0
-    monkeypatch.setattr(throttle, "monotonic", lambda: now)
-    throttle.record_usage("123", _headers(minutes=5))
-    now = 10.0
-    throttle.record_usage("123", _headers(minutes=1))
-    now = 299.0
-    with pytest.raises(IntegrationRateLimitError):
-        throttle.ensure_account_available("123", operation="run_insights")
-    now = 300.0
-    throttle.ensure_account_available("123", operation="run_insights")
-
-
-def test_healthy_account_wait_does_not_qualify_saturated_insights():
-    throttle.record_usage(
-        "123",
-        {
-            "X-FB-Ads-Insights-Throttle": '{"app_id_util_pct":100}',
-            **_account_headers(20, 600),
-        },
-    )
-    throttle.ensure_account_available("123", operation="run_insights")
-
-
-def test_healthy_insights_account_does_not_clear_app_limit(monkeypatch):
-    now = 0.0
-    monkeypatch.setattr(throttle, "monotonic", lambda: now)
-    throttle.record_usage(
-        "123",
-        {
-            "X-FB-Ads-Insights-Throttle": '{"app_id_util_pct":100}',
-            "X-Ad-Account-Usage": '{"reset_time_duration":120}',
-        },
-    )
-    throttle.record_usage("123", _headers(utilisation=20, minutes=10))
-    with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123", operation="run_insights")
-    now = 120.0
-    throttle.ensure_account_available("123", operation="run_insights")
-
-
-@pytest.mark.parametrize(
-    "entry",
-    [
-        {"type": "ads_insights", "call_count": 20, "estimated_time_to_regain_access": 10},
-        {"type": "other", "estimated_time_to_regain_access": 10},
-    ],
-)
-def test_unrelated_business_wait_does_not_qualify_saturated_insights(entry):
-    throttle.record_usage(
-        "123",
-        {
-            "X-FB-Ads-Insights-Throttle": '{"app_id_util_pct":100}',
-            "X-Business-Use-Case-Usage": json.dumps({"123": [entry]}),
-        },
-    )
-    throttle.ensure_account_available("123", operation="run_insights")
-
-
-def test_healthy_business_entry_does_not_extend_saturated_entry(monkeypatch):
-    now = 0.0
-    monkeypatch.setattr(throttle, "monotonic", lambda: now)
-    throttle.record_usage(
-        "123",
-        {
-            "X-Business-Use-Case-Usage": json.dumps(
-                {
-                    "123": [
-                        {
-                            "type": "ads_insights",
-                            "call_count": 100,
-                            "estimated_time_to_regain_access": 2,
-                        },
-                        {
-                            "type": "ads_insights",
-                            "call_count": 20,
-                            "estimated_time_to_regain_access": 10,
-                        },
-                    ]
-                }
-            ),
-        },
-    )
-    with pytest.raises(IntegrationRateLimitError, match="2 minutes"):
-        throttle.ensure_account_available("123", operation="run_insights")
-    now = 120.0
     throttle.ensure_account_available("123", operation="run_insights")

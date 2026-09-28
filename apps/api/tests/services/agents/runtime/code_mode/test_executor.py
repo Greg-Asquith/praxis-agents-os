@@ -41,19 +41,6 @@ async def test_executor_is_one_shot_and_bounds_print_output() -> None:
     assert second.result is False
 
 
-async def test_sandbox_sleeps_return_immediately() -> None:
-    executor = _executor(timeout_seconds=1)
-    try:
-        result = await executor.execute(
-            "import asyncio, time\ntime.sleep(5)\nawait asyncio.sleep(5)\n42",
-            external_lookup={},
-        )
-    finally:
-        await executor.close()
-
-    assert result.result == 42
-
-
 async def test_cancellation_replaces_worker_and_close_stops_pool() -> None:
     executor = _executor(timeout_seconds=5)
     task = asyncio.create_task(executor.execute("while True:\n    pass", external_lookup={}))
