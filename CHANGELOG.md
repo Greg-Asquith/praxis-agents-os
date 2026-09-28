@@ -21,7 +21,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Meta Ads account overview, filtered campaign, ad set and ad listings with
   budgets in account currency, and custom conversion discovery. Insights
   returns conversion names alongside unchanged metrics and IDs, including
-  Code Mode and retained results. Change history and writes are pending.
+  Code Mode and retained results.
+- Meta Ads change history for up to 31 days per request, with object filters,
+  bounded before and after values, and retained-result previews. Meta writes
+  are pending.
 
 ### Changed
 

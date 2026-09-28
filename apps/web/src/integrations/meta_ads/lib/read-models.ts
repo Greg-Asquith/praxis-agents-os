@@ -63,6 +63,25 @@ type MetaAdsConversions = {
   notes: string[]
 }
 
+type MetaAdsActivity = {
+  event_time: string
+  event_type: string | null
+  translated_event_type: string | null
+  object_type: string | null
+  object_id: string | null
+  object_name: string | null
+  actor_name: string | null
+  old_value: string | null
+  new_value: string | null
+}
+type MetaAdsActivities = {
+  events: MetaAdsActivity[]
+  event_count: number
+  truncated: boolean
+  window_note: string | null
+  timezone_name: string
+}
+
 export const UNRESOLVED_CONVERSION_NAME = "Custom conversion (name unavailable)"
 
 const OBJECT_TYPES: ReadonlySet<MetaAdsObjects["object_type"]> = new Set([
@@ -90,6 +109,9 @@ function isMoney(value: unknown): value is string | null {
     value === null ||
     (typeof value === "string" && value.length <= 520 && /^-?\d+(?:\.\d+)?$/.test(value))
   )
+}
+function isNullableChangeValue(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && value.length <= 256)
 }
 function isNullableBoolean(value: unknown): value is boolean | null {
   return value === null || typeof value === "boolean"
@@ -201,5 +223,40 @@ export function parseMetaAdsConversions(value: unknown): MetaAdsConversions | nu
     conversion_count: value["conversion_count"],
     truncated: value["truncated"],
     notes: value["notes"],
+  }
+}
+function isActivity(value: unknown): value is MetaAdsActivity {
+  return (
+    isRecord(value) &&
+    isDateTimeString(value["event_time"]) &&
+    isNullableMetaText(value["event_type"]) &&
+    isNullableMetaText(value["translated_event_type"]) &&
+    isNullableMetaText(value["object_type"]) &&
+    isNullableId(value["object_id"]) &&
+    isNullableMetaText(value["object_name"]) &&
+    isNullableMetaText(value["actor_name"]) &&
+    isNullableChangeValue(value["old_value"]) &&
+    isNullableChangeValue(value["new_value"])
+  )
+}
+export function parseMetaAdsActivities(value: unknown): MetaAdsActivities | null {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value["events"]) ||
+    !value["events"].every(isActivity) ||
+    !isNonNegativeInteger(value["event_count"]) ||
+    value["event_count"] < value["events"].length ||
+    typeof value["truncated"] !== "boolean" ||
+    !isNullableMetaText(value["window_note"]) ||
+    !isNonEmptyString(value["timezone_name"]) ||
+    value["timezone_name"].length > 512
+  )
+    return null
+  return {
+    events: value["events"],
+    event_count: value["event_count"],
+    truncated: value["truncated"],
+    window_note: value["window_note"],
+    timezone_name: value["timezone_name"],
   }
 }

@@ -2,6 +2,7 @@
 
 """Read bounded account edges without following provider-supplied URLs."""
 
+from collections.abc import Callable
 from typing import Any
 
 from services.integrations.http import IntegrationRequestPolicy
@@ -23,13 +24,15 @@ async def read_pages(
     operation: str,
     page_size: int = 100,
     max_pages: int = 10,
+    include: Callable[[dict[str, Any]], bool] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
+    # Only included rows count towards the limit, so filtered reads request full pages.
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     query = dict(params)
     for _ in range(max_pages):
         ensure_account_available(account_id, operation=operation)
-        query["limit"] = min(limit - len(rows), page_size)
+        query["limit"] = page_size if include else min(limit - len(rows), page_size)
         payload = await client.graph_get(
             path,
             params=dict(query),
@@ -46,10 +49,11 @@ async def read_pages(
         if not isinstance(paging, dict):
             raise invalid_response("Meta Ads returned invalid pagination.", operation=operation)
         next_url = paging.get("next")
+        matches = [row for row in page if include(row)] if include else page
         remaining = limit - len(rows)
-        rows.extend(page[:remaining])
+        rows.extend(matches[:remaining])
         if len(rows) >= limit:
-            return rows, bool(next_url) or len(page) > remaining
+            return rows, bool(next_url) or len(matches) > remaining
         if not next_url:
             return rows, False
         cursor = next_cursor(next_url, path, operation)

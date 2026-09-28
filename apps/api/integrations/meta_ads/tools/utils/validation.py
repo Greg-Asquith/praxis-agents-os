@@ -45,7 +45,8 @@ def validation_retry(exc: ValidationError) -> ModelRetry:
     """Names the first invalid argument without echoing its value."""
     error = exc.errors(include_url=False, include_input=False)[0]
     argument = ".".join(str(part) for part in error["loc"])
-    message = error["msg"].rstrip(".")
+    message = str(error["ctx"]["error"]) if error["type"] == "value_error" else error["msg"]
+    message = message.rstrip(".")
     return ModelRetry(f"Correct {argument}: {message}." if argument else f"{message}.")
 
 

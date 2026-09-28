@@ -13,6 +13,7 @@ from services.audit_events import (
     terminal_applied_operation_detail,
 )
 
+from ..schemas.activities import MetaAdsActivitiesData, MetaAdsActivitiesInput
 from ..schemas.custom_conversions import MetaAdsCustomConversionsData
 from ..schemas.insights import MetaAdsInsightsData, MetaAdsInsightsInput
 from ..schemas.objects import DEFAULT_STATUSES, MetaAdsObjectsData, MetaAdsObjectsInput
@@ -39,6 +40,21 @@ def _read_audit_detail(
 
 def accounts_audit_detail(account_id: str) -> TerminalIntegrationOperationDetail:
     return _read_audit_detail(account_id, "accounts", {"account_count": 1})
+
+
+def activities_audit_detail(
+    account_id: str, request: MetaAdsActivitiesInput, result: MetaAdsActivitiesData
+) -> TerminalIntegrationOperationDetail:
+    return _read_audit_detail(
+        account_id,
+        "activities",
+        {
+            "since": request.since.isoformat(),
+            "until": request.until.isoformat(),
+            "object_id_count": len(request.object_ids or ()),
+            "event_count": result.event_count,
+        },
+    )
 
 
 def custom_conversions_audit_detail(

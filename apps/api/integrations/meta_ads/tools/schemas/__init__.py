@@ -3,6 +3,13 @@
 """Meta Ads tool contracts."""
 
 from .accounts import MetaAdsAccountData, MetaAdsAccountEntry, MetaAdsAccountsOutput
+from .activities import (
+    MetaAdsActivitiesData,
+    MetaAdsActivitiesEntry,
+    MetaAdsActivitiesInput,
+    MetaAdsActivitiesOutput,
+    MetaAdsActivity,
+)
 from .custom_conversions import (
     MetaAdsCustomConversion,
     MetaAdsCustomConversionsData,
@@ -30,6 +37,11 @@ __all__ = [
     "MetaAdsAccountData",
     "MetaAdsAccountEntry",
     "MetaAdsAccountsOutput",
+    "MetaAdsActivitiesData",
+    "MetaAdsActivitiesEntry",
+    "MetaAdsActivitiesInput",
+    "MetaAdsActivitiesOutput",
+    "MetaAdsActivity",
     "MetaAdsCustomConversion",
     "MetaAdsCustomConversionsData",
     "MetaAdsCustomConversionsEntry",
