@@ -2,6 +2,7 @@
 
 """Update workspace metadata."""
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import Request
@@ -37,12 +38,17 @@ async def update_workspace(
         allowed_roles=MANAGER_ROLES,
     )
     changed_fields: list[str] = []
-    audit_details = {}
+    audit_details: dict[str, Any] = {}
 
     if "conversations_shared_by_default" in payload.model_fields_set:
-        if payload.conversations_shared_by_default is None or workspace.is_personal:
+        if workspace.is_personal:
             raise AppValidationError(
-                "Conversation sharing requires a boolean value and a team workspace",
+                "Personal workspaces cannot share conversations by default",
+                field="conversations_shared_by_default",
+            )
+        if payload.conversations_shared_by_default is None:
+            raise AppValidationError(
+                "conversations_shared_by_default cannot be null",
                 field="conversations_shared_by_default",
             )
         if payload.conversations_shared_by_default != workspace.conversations_shared_by_default:

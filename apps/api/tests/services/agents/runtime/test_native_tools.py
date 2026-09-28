@@ -863,10 +863,14 @@ def image_usage_events(monkeypatch):
     return events
 
 
-@pytest.mark.parametrize("action", ["generate", "edit"])
 @pytest.mark.parametrize(
-    ("aspect_ratio", "size"),
-    [(None, "auto"), ("1:1", "1024x1024"), ("2:3", "1024x1536"), ("3:2", "1536x1024")],
+    ("action", "aspect_ratio", "size"),
+    [
+        ("generate", None, "auto"),
+        ("edit", "1:1", "1024x1024"),
+        ("generate", "2:3", "1024x1536"),
+        ("edit", "3:2", "1536x1024"),
+    ],
 )
 async def test_openai_images_receive_exact_prompt_without_helper(
     monkeypatch, image_usage_events, action, aspect_ratio, size
@@ -924,8 +928,16 @@ async def test_openai_images_receive_exact_prompt_without_helper(
     }
 
 
-@pytest.mark.parametrize("action", ["generate", "edit"])
-@pytest.mark.parametrize("failure", ["refusal", "auth", "rate_limit", "connection", "cancelled"])
+@pytest.mark.parametrize(
+    ("action", "failure"),
+    [
+        ("generate", "refusal"),
+        ("edit", "auth"),
+        ("generate", "rate_limit"),
+        ("edit", "connection"),
+        ("generate", "cancelled"),
+    ],
+)
 async def test_openai_image_errors_are_safe_metered_and_transport_owned(
     monkeypatch, image_usage_events, action, failure
 ):

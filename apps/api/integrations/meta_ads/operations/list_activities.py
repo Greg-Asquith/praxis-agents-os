@@ -19,7 +19,7 @@ from ..tools.schemas.activities import (
     MetaAdsActivity,
 )
 from .paging import read_pages
-from .values import bounded_string, invalid_response, iso_datetime
+from .values import bounded_string, invalid_response
 
 _OPERATION = "list_activities"
 _FIELDS = "event_type,translated_event_type,event_time,object_type,object_id,object_name,actor_name,extra_data"
@@ -92,8 +92,11 @@ def _zone(name: str) -> ZoneInfo:
 
 
 def _event_time(value: Any) -> datetime:
-    text = iso_datetime(value, operation=_OPERATION)
-    parsed = datetime.fromisoformat(text) if text else None
+    text = bounded_string(value, operation=_OPERATION)
+    try:
+        parsed = datetime.fromisoformat(text) if text else None
+    except ValueError:
+        parsed = None
     if parsed is None or parsed.tzinfo is None:
         raise invalid_response("Meta Ads returned an invalid activity time.", operation=_OPERATION)
     return parsed

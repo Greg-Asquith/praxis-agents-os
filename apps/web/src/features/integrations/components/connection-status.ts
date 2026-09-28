@@ -1,5 +1,7 @@
 // apps/web/src/features/integrations/components/connection-status.ts
 
+import { DEFAULT_CREDENTIAL_LABEL } from "@/integrations/contract"
+
 type ConnectionStatusAction =
   "replace_credential" | "select_resources" | "reauthenticate" | "retry_discovery" | "retry_test"
 
@@ -42,7 +44,7 @@ const CONNECTION_STATUS_PRESENTATIONS = {
 
 export function connectionStatusPresentation({
   authMode,
-  credentialLabel = "API key",
+  credentialLabel = DEFAULT_CREDENTIAL_LABEL,
   discoveryStalled = false,
   status,
   supportsDiscovery = false,

@@ -67,7 +67,7 @@ export function buildResumeDecisions(
         decision: "denied",
         message: normalizeOptionalText(effectiveDecision.message),
         tool_call_id: approval.tool_call_id,
-        ...(approval.approval_id ? { approval_id: approval.approval_id } : {}),
+        approval_id: approval.approval_id,
       })
       continue
     }
@@ -86,7 +86,7 @@ export function buildResumeDecisions(
       decision: "approved",
       override_args: mergedArgs,
       tool_call_id: approval.tool_call_id,
-      ...(approval.approval_id ? { approval_id: approval.approval_id } : {}),
+      approval_id: approval.approval_id,
     })
   }
 
@@ -276,7 +276,7 @@ function structurallyEqual(left: unknown, right: unknown): boolean {
 }
 
 export function approvalDecisionKey(approval: PendingToolApproval): string {
-  return approval.approval_id ?? approval.tool_call_id
+  return approval.approval_id
 }
 
 export function hasAmbiguousApprovals(approvals: PendingToolApproval[]): boolean {

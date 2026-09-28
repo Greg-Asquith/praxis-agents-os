@@ -14,13 +14,13 @@ from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.tools.create_folder import DEFINITION as FOLDER_DEFINITION
 from integrations.sharepoint.tools.update_file import DEFINITION as UPDATE_DEFINITION
 from integrations.sharepoint.tools.write_file import DEFINITION as WRITE_DEFINITION
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.sharepoint.support import entry, file_metadata, fixture
+from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import resume_scenario
 from tests.support.scenario import (
     ToolCall,
@@ -190,7 +190,7 @@ async def test_sharepoint_write_approval_resume(
         context,
         model=model,
         decisions=[
-            AgentRunResumeDecision(
+            ScenarioDecision(
                 tool_call_id="workflow:1" if nested else "write",
                 decision="approved",
                 override_args=edited,

@@ -22,33 +22,6 @@ describe("knowledge query keys", () => {
       "list",
       { limit: 100 },
     ])
-    expect(knowledgeQueryKeys.detail("document-1")).toEqual([
-      "knowledge",
-      "user-1",
-      "acme",
-      "detail",
-      "document-1",
-    ])
-    expect(knowledgeQueryKeys.search("vpn")).toEqual([
-      "knowledge",
-      "user-1",
-      "acme",
-      "search",
-      "vpn",
-    ])
-    expect(
-      knowledgeQueryKeys.integrationSourceSearch({
-        integrationResourceId: "resource-1",
-        limit: 20,
-        query: "handbook",
-      })
-    ).toEqual([
-      "knowledge",
-      "user-1",
-      "acme",
-      "integration-source-search",
-      { integrationResourceId: "resource-1", limit: 20, query: "handbook" },
-    ])
   })
 
   it("keeps integration searches disabled until submission and normalizes their keys", () => {

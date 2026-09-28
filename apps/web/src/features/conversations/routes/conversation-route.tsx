@@ -184,11 +184,9 @@ function ConversationDetail({
         pendingDelegations,
         pendingUserMessages,
         pendingWorkflow:
-          approvalStateQuery.data?.workflow ??
           approvalStateQuery.data?.workflows?.find(
             (workflow) => workflow.owner_run_id === activeRunId
-          ) ??
-          null,
+          ) ?? null,
         pendingWorkflows: approvalStateQuery.data?.workflows ?? [],
         approvalRevision,
         readOnly:
@@ -206,7 +204,6 @@ function ConversationDetail({
         transcriptRun,
       }),
     [
-      approvalStateQuery.data?.workflow,
       approvalStateQuery.data?.workflows,
       approvalRevision,
       approvalReady,
@@ -260,7 +257,7 @@ function ConversationDetail({
     if (isReadOnlyTranscript || activeRun?.parent_run_id) {
       throw new Error("Review these requests in the main conversation.")
     }
-    if (!approvalReady || revision !== (approvalRevision ?? undefined)) {
+    if (!approvalReady || !revision || revision !== approvalRevision) {
       throw new Error("These requests have changed. Refresh and review them again.")
     }
     if (!activeRun) {
@@ -274,7 +271,7 @@ function ConversationDetail({
         () =>
           stream.resumeRun({
             runId,
-            payload: { decisions, ...(revision ? { approval_revision: revision } : {}) },
+            payload: { decisions, approval_revision: revision },
           }),
         recovery.refresh
       )

@@ -13,6 +13,7 @@ import type { PendingToolApproval } from "@/features/conversations/types"
 import type { EntityChoice, ToolUi, ToolUiField } from "@/features/tools/types"
 import { notionWritePresenter } from "@/integrations/notion/presenters/write"
 import { isRecord } from "@/lib/guards"
+import { approvalIdentity } from "../../support/approvals"
 
 const page = {
   version: 1,
@@ -86,6 +87,7 @@ describe("Notion write approval and result fidelity", () => {
       properties: [{ name: "Status", type: "status", value: "Ready" }],
     }
     const approval: PendingToolApproval = {
+      ...approvalIdentity("notion-create-1"),
       tool_call_id: "notion-create-1",
       name: "notion_create_page",
       args,
@@ -103,6 +105,7 @@ describe("Notion write approval and result fidelity", () => {
       {
         decision: "approved",
         override_args: { ...args, ...edits },
+        approval_id: "notion-create-1",
         tool_call_id: "notion-create-1",
       },
     ])

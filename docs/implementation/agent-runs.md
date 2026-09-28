@@ -28,7 +28,7 @@ configured model window once per turn. Stable user-turn watermarks select the
 matching stored summary. Deferred skill-load pairs survive trimming and reload.
 Disabling compaction retains the full history.
 
-Pydantic AI 2.42's `RunContext.context_window_used` does not drive compaction.
+Pydantic AI 2.50's `RunContext.context_window_used` does not drive compaction.
 It describes the last response, can remain high after trimming, and can refer
 to another model or window. It also excludes subsequent prompt and tool-result
 additions. The character estimate remains approximate and is not recomputed
@@ -426,26 +426,6 @@ If delegation permission or depth is revoked while approval is pending, the
 accepted continuation stops before another model request or specialist action.
 
 
-## Legacy approval recovery during upgrades
-
-A legacy approval can resume after a client refresh when its saved proposal and
-owning context remain verifiable. Saved Monty 0.0.21 interpreter state preserves
-completed effects across repeated approval rounds. Staged file content remains
-owned by the suspended run. Unsupported versions, ambiguous native histories,
-and stale revisions cannot authorise execution.
-
-The old acceptance path persisted running state but held approved decisions only
-in memory. If that execution is interrupted, a retained approval without a
-reservation requires blocked recovery. Family settlement preserves completed
-and uncertain action references before clearing executable state. Cancellation
-keeps its cancelled outcome and retains the same evidence. Existing standalone
-Code Mode recovery keeps its specific failure contract.
-
-A coordinated backend and worker replacement is required for ownership and
-approval metadata changes. The tolerant client can load old server payloads;
-that wire compatibility does not make old lease-renewal code safe to run beside
-new owners. Stop all old executions before any replacement process starts.
-
 ## Workspace chat sharing
 
 Chats default to private unless the team workspace enables
@@ -455,8 +435,8 @@ chats keep their visibility when the setting changes.
 Owners can share team-workspace root chats through
 `PUT /conversations/{id}/sharing`. `scope=workspace_shared` selects shared
 conversation discovery; `scope=all` combines own and shared root chats using
-the appropriate projection per owner. The omitted scope remains owner-only. Detail and
-message responses distinguish owner and viewer access. Viewer responses omit
+the appropriate projection per owner. The omitted scope remains owner-only.
+Detail and message responses distinguish owner and viewer access. Viewer responses omit
 execution state and expose server-derived sharing and reply capabilities.
 Owner creation and title-update stream events, detail and list reads, and
 mark-read responses derive capabilities from the same ownership and workspace

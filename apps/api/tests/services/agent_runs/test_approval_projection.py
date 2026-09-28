@@ -10,7 +10,7 @@ from pydantic_ai.messages import ToolCallPart
 from core.exceptions.general import ConflictError
 from models.agent_run import AgentRun
 from models.conversation import Conversation
-from services.agents.runtime.approval_identity import APPROVAL_BATCH_KEY, proposal_digest
+from services.agents.runtime.approval_identity import proposal_digest
 from services.agents.runtime.approval_projection import (
     DelegatedApprovalNode,
     build_approval_graph,
@@ -24,7 +24,7 @@ from services.agents.runtime.code_mode.approval import build_code_mode_approval_
 from services.agents.runtime.code_mode.state import build_code_mode_state_metadata
 
 
-def saved_run(*, parent=None, calls=None, metadata=None, legacy=False):
+def saved_run(*, parent=None, calls=None, metadata=None):
     run = AgentRun(
         id=uuid4(),
         conversation_id=uuid4(),
@@ -37,21 +37,17 @@ def saved_run(*, parent=None, calls=None, metadata=None, legacy=False):
         trigger="delegated" if parent else "interactive",
         deleted=False,
     )
-    suspend(
-        run, calls or [ToolCallPart("update", {"value": 1}, "same-id")], metadata, legacy=legacy
-    )
+    suspend(run, calls or [ToolCallPart("update", {"value": 1}, "same-id")], metadata)
     return run
 
 
-def suspend(run, calls, metadata=None, *, legacy=False):
+def suspend(run, calls, metadata=None):
     run.metadata_json = build_suspended_run_metadata(
         run=run,
         conversation=Conversation(id=run.conversation_id),
         message_history=[],
         deferred_tool_requests=DeferredToolRequests(approvals=calls, metadata=metadata or {}),
     )
-    if legacy:
-        run.metadata_json["approval_state"].pop(APPROVAL_BATCH_KEY)
 
 
 def delegate(root, children):
@@ -148,16 +144,10 @@ def test_sibling_and_root_native_collisions_remain_distinct():
 
 @pytest.mark.parametrize(
     "fields",
-    [
-        {"approval_batch_id": None},
-        {"approval_batch_id": "bad"},
-        {"approval_revision": None},
-        {"approval_revision": "bad"},
-        {"approval_revision": "a" * 64},
-    ],
+    [{"approval_batch_id": None}, {"approval_batch_id": "bad"}, {"approval_revision": "bad"}],
 )
-def test_invalid_present_metadata_never_uses_legacy_identity(fields):
-    root = saved_run(legacy=True)
+def test_invalid_identity_metadata_fails_closed(fields):
+    root = saved_run()
     root.metadata_json["approval_state"].update(fields)
     with pytest.raises(ConflictError):
         build_approval_graph(root, {})

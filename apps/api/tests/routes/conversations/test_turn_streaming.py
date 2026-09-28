@@ -32,7 +32,6 @@ from services.agent_runs import (
     create_agent_run,
     start_agent_run,
 )
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_projection import build_approval_graph
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.events import (
@@ -62,7 +61,7 @@ from tests.factories import (
     build_workspace,
     build_workspace_membership,
 )
-from tests.support.approvals import approval_submission
+from tests.support.approvals import ScenarioDecision, approval_submission
 from tests.support.auth import bearer_headers
 
 pytestmark = pytest.mark.asyncio
@@ -587,7 +586,7 @@ async def test_resume_run_streams_approved_tool_to_completion(
         payload = approval_submission(
             build_approval_graph(stored_run, {}),
             [
-                AgentRunResumeDecision(
+                ScenarioDecision(
                     tool_call_id=tool_call_id,
                     decision="approved",
                     override_args={"a": 4, "b": 7},

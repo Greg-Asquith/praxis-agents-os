@@ -1,6 +1,0 @@
-{
-  "error": {
-    "code": "nameAlreadyExists",
-    "message": "An item with the same name already exists."
-  }
-}

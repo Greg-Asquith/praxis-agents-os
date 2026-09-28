@@ -34,7 +34,7 @@ class SuspendedRunState:
     message_history: list[ModelMessage]
     deferred_tool_requests: DeferredToolRequests
     pending_tool_call_ids: list[str]
-    approval_batch_id: UUID | None = None
+    approval_batch_id: UUID
 
 
 def build_suspended_run_metadata(

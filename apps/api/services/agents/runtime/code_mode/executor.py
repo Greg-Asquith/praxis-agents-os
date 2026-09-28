@@ -162,9 +162,10 @@ class MontyExecutor:
         pool = await self._get_pool()
         output = _BoundedOutput(max(0, self._output_max_chars - len(prior_output)))
         output.truncated = prior_output_truncated
+        # Restored snapshots keep their saved limits, so the host timeout bounds remaining time.
         async with asyncio.timeout(timeout_seconds):
             async with pool.checkout(
-                limits={**self._limits, "max_feed_duration_secs": timeout_seconds},
+                limits=self._limits,
                 os_policy=_OS_POLICY,
             ) as session:
                 restored = await session.load_snapshot(

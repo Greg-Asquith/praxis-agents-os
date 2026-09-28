@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.run_persistence import restored_run_usage
@@ -23,7 +22,11 @@ from services.agents.runtime.tools.contract import (
     TOOL_EGRESS_EXTERNAL_WRITE,
 )
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
-from tests.support.approvals import approval_submission, compile_scenario_decisions
+from tests.support.approvals import (
+    ScenarioDecision,
+    approval_submission,
+    compile_scenario_decisions,
+)
 from tests.support.scenario import ScenarioContext, ScenarioResult, run_scenario
 
 
@@ -64,7 +67,7 @@ async def resume_scenario(
     context: ScenarioContext,
     *,
     model: Model,
-    decisions: Sequence[AgentRunResumeDecision],
+    decisions: Sequence[ScenarioDecision],
 ) -> ScenarioResult:
     """Rehydrates committed state and compiles decisions through the production seam."""
     from services.agent_runs.claim_approval_continuation import claim_approval_continuation

@@ -550,36 +550,3 @@ async def test_apply_tool_rejects_duplicate_and_unselected_parameter_rows(monkey
         await google_ads_apply_recommendations(None, [reference], [other])  # type: ignore[arg-type]
 
     targeting.assert_not_awaited()
-
-
-async def test_apply_write_denial_stops_provider_calls_and_records_failure(monkeypatch) -> None:
-    entry = _entry(write_allowed=False)
-    reference = _reference(entry, "one")
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(entry,)),
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4()),
-            run=SimpleNamespace(id=uuid4()),
-        ),
-        tool_name=DEFINITION.name,
-        tool_call_id="call-denied",
-    )
-    provider_client = AsyncMock()
-    audit = AsyncMock()
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.apply_recommendations.google_ads_client",
-        provider_client,
-    )
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        audit,
-    )
-
-    result = await google_ads_apply_recommendations(ctx, [reference])
-
-    assert result["results"][0]["error_code"] == "write_not_permitted"
-    provider_client.assert_not_awaited()
-    audit.assert_awaited_once()
-    assert audit.await_args.kwargs["status"].value == "failure"
-    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"

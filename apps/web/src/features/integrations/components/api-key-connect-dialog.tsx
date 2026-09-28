@@ -15,7 +15,7 @@ import {
   type ApiKeyConnectFormState,
 } from "@/features/integrations/components/api-key-connect-form-model"
 import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
-import { useIntegrationUiModule } from "@/integrations/registry"
+import { useCredentialLabel } from "@/integrations/registry"
 import { getErrorMessage } from "@/lib/api/errors"
 import { buildFieldErrors } from "@/lib/forms"
 
@@ -32,8 +32,7 @@ export function ApiKeyConnectForm({
   provider: IntegrationProvider
   replacementConnection?: IntegrationConnection
 }) {
-  const credentialLabel =
-    useIntegrationUiModule(provider.provider_key)?.credentialLabel ?? "API key"
+  const credentialLabel = useCredentialLabel(provider.provider_key)
   const [form, setForm] = useState<ApiKeyConnectFormState>(() => ({
     ...EMPTY_FORM,
     label: replacementConnection?.label ?? "",

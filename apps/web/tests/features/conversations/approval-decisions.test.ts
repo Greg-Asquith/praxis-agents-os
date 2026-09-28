@@ -10,19 +10,23 @@ import {
   type ApprovalDecisionMap,
 } from "@/features/conversations/approval-decisions"
 import type { PendingToolApproval } from "@/features/conversations/types"
+import { approvalIdentity } from "../../support/approvals"
 
 const approvals: PendingToolApproval[] = [
   {
+    ...approvalIdentity("tool-1"),
     tool_call_id: "tool-1",
     name: "read_file",
     args: { file_id: "file-1" },
   },
   {
+    ...approvalIdentity("tool-2"),
     tool_call_id: "tool-2",
     name: "send_email",
     args: { to: "user@example.com" },
   },
   {
+    ...approvalIdentity("tool-3"),
     tool_call_id: "tool-3",
     name: "write_file",
     args: { name: "draft.md" },
@@ -32,6 +36,7 @@ const approvals: PendingToolApproval[] = [
 describe("approval decision helpers", () => {
   it.each([true])("serialises boolean edits from %s with replay arguments", (original) => {
     const approval: PendingToolApproval = {
+      ...approvalIdentity("scalar"),
       tool_call_id: "scalar",
       name: "update_settings",
       args: { enabled: original, _label: "Display only" },
@@ -42,6 +47,7 @@ describe("approval decision helpers", () => {
     }
     expect(buildResumeDecisions([approval], decisions)).toEqual([
       {
+        approval_id: "scalar",
         tool_call_id: "scalar",
         decision: "approved",
         override_args: { enabled: !original, target: "retained", metadata: { version: 1 } },
@@ -50,6 +56,7 @@ describe("approval decision helpers", () => {
     decisions["scalar"] = { decision: "approved", edits: { enabled: original }, message: "" }
     expect(buildResumeDecisions([approval], decisions)).toEqual([
       {
+        approval_id: "scalar",
         tool_call_id: "scalar",
         decision: "approved",
         override_args: null,
@@ -60,7 +67,14 @@ describe("approval decision helpers", () => {
   it.each(["true", null])("rejects a boolean edit over original %j", (enabled) => {
     expect(
       buildResumeDecisions(
-        [{ tool_call_id: "scalar", name: "update_settings", args: { enabled } }],
+        [
+          {
+            ...approvalIdentity("scalar"),
+            tool_call_id: "scalar",
+            name: "update_settings",
+            args: { enabled },
+          },
+        ],
         { scalar: { decision: "approved", edits: { enabled: true }, message: "" } }
       )
     ).toBe("This request can no longer be edited. Refresh and try again.")
@@ -131,6 +145,7 @@ describe("approval decision helpers", () => {
 
   it("merges trimmed edits into the full original argument object", () => {
     const searchApproval: PendingToolApproval = {
+      ...approvalIdentity("search-1"),
       tool_call_id: "search-1",
       name: "web_search",
       args: { query: "Praxis Agents", model_provider: "openai", metadata: { source: "agent" } },
@@ -148,6 +163,7 @@ describe("approval decision helpers", () => {
           model_provider: "openai",
           metadata: { source: "agent" },
         },
+        approval_id: "search-1",
         tool_call_id: "search-1",
       },
     ])
@@ -155,6 +171,7 @@ describe("approval decision helpers", () => {
 
   it("sends no override when edits are unchanged or only whitespace", () => {
     const searchApproval: PendingToolApproval = {
+      ...approvalIdentity("search-1"),
       tool_call_id: "search-1",
       name: "web_search",
       args: { query: "Praxis Agents", model_provider: "openai" },
@@ -164,16 +181,31 @@ describe("approval decision helpers", () => {
       buildResumeDecisions([searchApproval], {
         "search-1": { decision: "approved", message: "", edits: { query: " Praxis Agents " } },
       })
-    ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "search-1" }])
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: null,
+        approval_id: "search-1",
+        tool_call_id: "search-1",
+      },
+    ])
     expect(
       buildResumeDecisions([searchApproval], {
         "search-1": { decision: "approved", message: "", edits: { query: "   " } },
       })
-    ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "search-1" }])
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: null,
+        approval_id: "search-1",
+        tool_call_id: "search-1",
+      },
+    ])
   })
 
   it("merges edited staged writes over replay args instead of the display projection", () => {
     const writeApproval: PendingToolApproval = {
+      ...approvalIdentity("write-1"),
       tool_call_id: "write-1",
       name: "write_file",
       args: {
@@ -199,6 +231,7 @@ describe("approval decision helpers", () => {
           name: "final.md",
           content_ref: "workspaces/ws/agent-runs/run/staged-tool-inputs/content.txt",
         },
+        approval_id: "write-1",
         tool_call_id: "write-1",
       },
     ])
@@ -206,6 +239,7 @@ describe("approval decision helpers", () => {
 
   it("merges typed number, list, and key/value edits structurally", () => {
     const approval: PendingToolApproval = {
+      ...approvalIdentity("typed-1"),
       tool_call_id: "typed-1",
       name: "typed_write",
       args: {
@@ -245,6 +279,7 @@ describe("approval decision helpers", () => {
             Linked: [{ id: "record-1" }],
           },
         },
+        approval_id: "typed-1",
         tool_call_id: "typed-1",
       },
     ])
@@ -252,6 +287,7 @@ describe("approval decision helpers", () => {
 
   it("replaces record rows exactly while preserving typed cell values", () => {
     const approval: PendingToolApproval = {
+      ...approvalIdentity("records-1"),
       tool_call_id: "records-1",
       name: "records_write",
       args: {
@@ -279,6 +315,7 @@ describe("approval decision helpers", () => {
       {
         decision: "approved",
         override_args: { rows: editedRows, mode: "apply" },
+        approval_id: "records-1",
         tool_call_id: "records-1",
       },
     ])
@@ -287,6 +324,7 @@ describe("approval decision helpers", () => {
   it("sends no override for untouched record rows", () => {
     const rows = [{ text: "jobs", match_type: "EXACT" }]
     const approval: PendingToolApproval = {
+      ...approvalIdentity("records-1"),
       tool_call_id: "records-1",
       name: "records_write",
       args: { rows },
@@ -300,11 +338,19 @@ describe("approval decision helpers", () => {
           edits: { rows: rows.map((row) => ({ ...row })) },
         },
       })
-    ).toEqual([{ decision: "approved", override_args: null, tool_call_id: "records-1" }])
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: null,
+        approval_id: "records-1",
+        tool_call_id: "records-1",
+      },
+    ])
   })
 
   it("rejects incomplete record edits using the declared presentation", () => {
     const approval: PendingToolApproval = {
+      ...approvalIdentity("records-1"),
       tool_call_id: "records-1",
       name: "records_write",
       args: { rows: [{ text: "jobs", match_type: "EXACT" }] },
@@ -352,6 +398,7 @@ describe("approval decision helpers", () => {
 
   it("does not classify an empty array as records or entity references without metadata", () => {
     const approval: PendingToolApproval = {
+      ...approvalIdentity("records-1"),
       tool_call_id: "records-1",
       name: "records_write",
       args: { rows: [{ text: "jobs", match_type: "EXACT" }] },
@@ -373,6 +420,7 @@ describe("approval decision helpers", () => {
     }
     const selected = { ...original, entity_id: "file-2", label: "Final plan.md" }
     const approval: PendingToolApproval = {
+      ...approvalIdentity("file-1"),
       tool_call_id: "file-1",
       name: "read_file",
       args: { file_id: original, mode: "content" },
@@ -390,13 +438,54 @@ describe("approval decision helpers", () => {
       {
         decision: "approved",
         override_args: { file_id: selected, mode: "content" },
+        approval_id: "file-1",
         tool_call_id: "file-1",
+      },
+    ])
+  })
+
+  it("submits scoped multi-entity references without flattening their account scope", () => {
+    const first = {
+      version: 1 as const,
+      entity_kind: "google_ads_campaign",
+      customer_id: "1234567890",
+      campaign_id: "111",
+      label: "Spring campaign",
+    }
+    const second = {
+      ...first,
+      customer_id: "2222222222",
+      campaign_id: "222",
+      label: "Summer campaign",
+    }
+    const approval: PendingToolApproval = {
+      ...approvalIdentity("campaigns-1"),
+      tool_call_id: "campaigns-1",
+      name: "google_ads_update_campaign_status",
+      args: { campaign_ids: [first], status: "PAUSED" },
+    }
+
+    expect(
+      buildResumeDecisions([approval], {
+        "campaigns-1": {
+          decision: "approved",
+          message: "",
+          edits: { campaign_ids: [first, second] },
+        },
+      })
+    ).toEqual([
+      {
+        decision: "approved",
+        override_args: { campaign_ids: [first, second], status: "PAUSED" },
+        approval_id: "campaigns-1",
+        tool_call_id: "campaigns-1",
       },
     ])
   })
 
   it("preserves integer shape and rejects unsupported edited value shapes", () => {
     const integerApproval: PendingToolApproval = {
+      ...approvalIdentity("integer-1"),
       tool_call_id: "integer-1",
       name: "save_memory",
       args: { importance: 3 },
@@ -413,6 +502,7 @@ describe("approval decision helpers", () => {
     ).toBe("This request can no longer be edited. Refresh and try again.")
 
     const unsupportedApproval: PendingToolApproval = {
+      ...approvalIdentity("unsupported-1"),
       tool_call_id: "unsupported-1",
       name: "typed_write",
       args: { recipients: [{ address: "one@example.com" }] },
@@ -430,6 +520,7 @@ describe("approval decision helpers", () => {
 
   it("allows removing scalar rows and cannot overwrite complex read-only rows", () => {
     const approval: PendingToolApproval = {
+      ...approvalIdentity("fields-1"),
       tool_call_id: "fields-1",
       name: "airtable_update_record",
       args: {
@@ -455,6 +546,7 @@ describe("approval decision helpers", () => {
         override_args: {
           fields: { Name: "Praxis", Linked: [{ id: "record-1" }] },
         },
+        approval_id: "fields-1",
         tool_call_id: "fields-1",
       },
     ])
@@ -470,11 +562,13 @@ describe("approval decision helpers", () => {
       {
         decision: "approved",
         override_args: null,
+        approval_id: "tool-1",
         tool_call_id: "tool-1",
       },
       {
         decision: "denied",
         message: "Too risky.",
+        approval_id: "tool-2",
         tool_call_id: "tool-2",
       },
     ])
@@ -483,8 +577,7 @@ describe("approval decision helpers", () => {
 
 describe("approval leaf identity", () => {
   const siblings: PendingToolApproval[] = ["child-a", "child-b"].map((owner) => ({
-    approval_id: `approval-${owner}`,
-    owner_run_id: owner,
+    ...approvalIdentity(`approval-${owner}`, owner),
     tool_call_id: "same-native-id",
     name: "write_file",
     args: { name: `${owner}.txt` },
@@ -521,11 +614,11 @@ describe("approval leaf identity", () => {
     ).toContain("every tool request")
   })
 
-  it("rejects ambiguous consent from legacy native IDs", () => {
-    const legacy = siblings.map(({ tool_call_id, name, args }) => ({ tool_call_id, name, args }))
+  it("rejects duplicated approval identities", () => {
+    const duplicated = siblings.map((sibling) => ({ ...sibling, approval_id: "same-approval" }))
     expect(
-      buildResumeDecisions(legacy, {
-        "same-native-id": { decision: "approved", message: "", edits: {} },
+      buildResumeDecisions(duplicated, {
+        "same-approval": { decision: "approved", message: "", edits: {} },
       })
     ).toContain("cannot be reviewed separately")
   })
@@ -561,12 +654,13 @@ describe("optional entity approval edits", () => {
     const args = folder === undefined ? { name: "notes.txt" } : { name: "notes.txt", folder }
     expect(
       buildResumeDecisions(
-        [{ tool_call_id: "write", name: "write_file", args }],
+        [{ ...approvalIdentity("write"), tool_call_id: "write", name: "write_file", args }],
         { write: { decision: "approved", message: "", edits: { folder: null } } },
         () => [field]
       )
     ).toEqual([
       {
+        approval_id: "write",
         tool_call_id: "write",
         decision: "approved",
         override_args: folder == null ? null : { name: "notes.txt", folder: null },
@@ -579,7 +673,14 @@ describe("optional entity approval edits", () => {
     (declaration) => {
       expect(
         buildResumeDecisions(
-          [{ tool_call_id: "write", name: "write_file", args: { folder: reference } }],
+          [
+            {
+              ...approvalIdentity("write"),
+              tool_call_id: "write",
+              name: "write_file",
+              args: { folder: reference },
+            },
+          ],
           { write: { decision: "approved", message: "", edits: { folder: null } } },
           () => (declaration ? [declaration] : undefined)
         )
@@ -592,7 +693,14 @@ describe("optional entity approval edits", () => {
     (folder) => {
       expect(
         buildResumeDecisions(
-          [{ tool_call_id: "write", name: "write_file", args: { folder: reference } }],
+          [
+            {
+              ...approvalIdentity("write"),
+              tool_call_id: "write",
+              name: "write_file",
+              args: { folder: reference },
+            },
+          ],
           { write: { decision: "approved", message: "", edits: { folder } } },
           () => [{ ...field, editable: false }]
         )
@@ -603,7 +711,14 @@ describe("optional entity approval edits", () => {
   it.each(["folder-id", {}])("rejects clearing a malformed entity value %j", (folder) => {
     expect(
       buildResumeDecisions(
-        [{ tool_call_id: "write", name: "write_file", args: { folder } }],
+        [
+          {
+            ...approvalIdentity("write"),
+            tool_call_id: "write",
+            name: "write_file",
+            args: { folder },
+          },
+        ],
         { write: { decision: "approved", message: "", edits: { folder: null } } },
         () => [field]
       )

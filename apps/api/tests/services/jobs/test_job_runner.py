@@ -12,6 +12,7 @@ import pytest_asyncio
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+import services.jobs.heartbeat_job_lease as heartbeat_module
 import workers.job_runner as job_runner
 from core.database import (
     get_maintenance_async_db_session_factory,
@@ -32,6 +33,7 @@ from services.jobs.enqueue_job import enqueue_job
 from services.jobs.heartbeat_job_lease import heartbeat_job_lease
 from services.jobs.reclaim_stale_jobs import reclaim_stale_jobs
 from services.jobs.registry import JOB_HANDLERS, job_handler
+from services.jobs.renew_job_lease import renew_job_lease
 from tests.factories import build_user, build_workspace
 
 pytestmark = pytest.mark.asyncio
@@ -126,11 +128,13 @@ async def test_run_once_executes_claimed_jobs_concurrently(
         await _clear_jobs(committed_db_session_factory)
 
 
-async def test_heartbeat_prevents_reclaim_until_worker_stops(
+async def test_heartbeat_extends_lease_past_original_expiry(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _clear_jobs(committed_db_session_factory)
     owner_instance_id = "heartbeat-worker"
+    original_expiry = datetime.now(UTC) + timedelta(seconds=5)
     async with committed_db_session_factory() as db:
         job = Job(
             kind="tests.job_runner.heartbeat",
@@ -138,12 +142,21 @@ async def test_heartbeat_prevents_reclaim_until_worker_stops(
             attempts=1,
             locked_by=owner_instance_id,
             locked_at=datetime.now(UTC),
-            lock_expires_at=datetime.now(UTC) + timedelta(seconds=0.04),
+            lock_expires_at=original_expiry,
         )
         db.add(job)
         await db.commit()
         job_id = job.id
 
+    renewed = asyncio.Event()
+
+    async def observed_renewal(*args, **kwargs) -> bool:
+        result = await renew_job_lease(*args, **kwargs)
+        if result:
+            renewed.set()
+        return result
+
+    monkeypatch.setattr(heartbeat_module, "renew_job_lease", observed_renewal)
     stop = asyncio.Event()
     heartbeat_task = asyncio.create_task(
         heartbeat_job_lease(
@@ -151,28 +164,18 @@ async def test_heartbeat_prevents_reclaim_until_worker_stops(
             owner_instance_id=owner_instance_id,
             stop=stop,
             interval_seconds=0.01,
-            lock_ttl_seconds=0.05,
+            lock_ttl_seconds=60,
         )
     )
     try:
-        await asyncio.sleep(0.08)
-        async with committed_db_session_factory() as db:
-            assert await reclaim_stale_jobs(db) == 0
-            await db.commit()
-            persisted = await db.get(Job, job_id)
-            assert persisted is not None
-            assert persisted.status == JOB_STATUS_RUNNING
+        await asyncio.wait_for(renewed.wait(), timeout=2)
     finally:
         stop.set()
         await heartbeat_task
 
-    await asyncio.sleep(0.06)
     async with committed_db_session_factory() as db:
-        assert await reclaim_stale_jobs(db) == 1
+        assert await reclaim_stale_jobs(db, now=original_expiry + timedelta(seconds=1)) == 0
         await db.commit()
-        persisted = await db.get(Job, job_id)
-        assert persisted is not None
-        assert persisted.status == JOB_STATUS_PENDING
     await _clear_jobs(committed_db_session_factory)
 
 

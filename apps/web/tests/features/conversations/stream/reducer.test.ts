@@ -8,6 +8,7 @@ import {
   selectLiveTimeline,
   type AgentStreamState,
 } from "@/features/conversations/stream/reducer"
+import { approvalIdentity } from "../../../support/approvals"
 
 const baseEnvelope = {
   run_id: "run-1",
@@ -136,6 +137,8 @@ describe("agentStreamReducer", () => {
         event: "tool.approval_required",
         data: {
           ...eventWithSeq(1),
+          ...approvalIdentity("tool-1", "run-2", "run-1"),
+          approval_revision: "a".repeat(64),
           tool_call_id: "tool-1",
           name: "send_email",
           args: { to: "user@example.com" },
@@ -147,7 +150,7 @@ describe("agentStreamReducer", () => {
 
     expect(state.status).toBe("awaiting_approval")
     expect(Object.values(state.approvals)[0]).toEqual({
-      owner_run_id: "run-2",
+      ...approvalIdentity("tool-1", "run-2", "run-1"),
       tool_call_id: "tool-1",
       name: "send_email",
       args: { to: "user@example.com" },
@@ -156,6 +159,7 @@ describe("agentStreamReducer", () => {
       status: "pending",
     })
     expect(Object.values(state.toolCalls)[0]).toEqual({
+      approval_id: "tool-1",
       owner_run_id: "run-2",
       tool_call_id: "tool-1",
       name: "send_email",
@@ -377,6 +381,8 @@ describe("agentStreamReducer", () => {
         event: "tool.approval_required",
         data: {
           ...eventWithSeq(1),
+          ...approvalIdentity("workflow-1:3"),
+          approval_revision: "a".repeat(64),
           tool_call_id: "workflow-1:3",
           parent_tool_call_id: "workflow-1",
           name: "send_email",
@@ -385,7 +391,7 @@ describe("agentStreamReducer", () => {
       },
     ])
 
-    expect(state.toolCalls["workflow-1:3"]).toMatchObject({
+    expect(state.toolCalls[JSON.stringify(["run-1", "workflow-1:3"])]).toMatchObject({
       parentToolCallId: "workflow-1",
       status: "awaiting_approval",
     })
@@ -472,6 +478,7 @@ it("retains distinct owner calls and opaque approvals with colliding native IDs"
         owner_run_id: owner,
         approval_id: `approval-${owner}`,
         approval_revision: "round-1",
+        root_run_id: "run-1",
         tool_call_id: "same",
         name: "write_file",
         args: { name: owner },

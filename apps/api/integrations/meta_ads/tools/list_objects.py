@@ -24,6 +24,7 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
+from utils.metadata import metadata_str
 
 from ..operations.list_objects import list_objects
 from ..throttle import ensure_account_available
@@ -70,7 +71,7 @@ async def meta_ads_list_objects(
                 client,
                 account_id=entry.external_id,
                 **request.model_dump(),
-                currency=str(entry.permissions_metadata.get("currency", "")),
+                currency=metadata_str(entry.permissions_metadata.get("currency")) or "",
                 max_response_bytes=budget.remaining,
             )
             return IntegrationAuditOutcome(

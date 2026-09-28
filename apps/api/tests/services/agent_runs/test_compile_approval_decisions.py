@@ -22,10 +22,10 @@ from services.agents.runtime.approval_state import build_suspended_run_metadata
 from services.agents.runtime.code_mode.approval import build_code_mode_approval_metadata
 from services.agents.runtime.code_mode.state import build_code_mode_state_metadata
 from services.agents.runtime.dispatch import digest_args
-from tests.support.approvals import approval_submission
+from tests.support.approvals import ScenarioDecision, approval_submission
 
 
-def saved_run(parent=None, *, workflow=False, legacy=False):
+def saved_run(parent=None, *, workflow=False):
     run = AgentRun(
         id=uuid4(),
         conversation_id=uuid4(),
@@ -52,7 +52,7 @@ def saved_run(parent=None, *, workflow=False, legacy=False):
         if workflow
         else {}
     )
-    suspend(run, [call], metadata, legacy=legacy)
+    suspend(run, [call], metadata)
     if workflow:
         run.metadata_json = build_code_mode_state_metadata(
             run=run,
@@ -81,20 +81,18 @@ def saved_run(parent=None, *, workflow=False, legacy=False):
     return run
 
 
-def suspend(run, calls, metadata, *, legacy=False):
+def suspend(run, calls, metadata):
     run.metadata_json = build_suspended_run_metadata(
         run=run,
         conversation=Conversation(id=run.conversation_id),
         message_history=[ModelResponse(parts=calls)],
         deferred_tool_requests=DeferredToolRequests(approvals=calls, metadata=metadata),
     )
-    if legacy:
-        run.metadata_json["approval_state"].pop("approval_batch_id")
 
 
-def family(*, workflow=False, legacy=False):
-    root = saved_run(legacy=legacy)
-    children = [saved_run(root, workflow=workflow, legacy=legacy) for _ in range(2)]
+def family(*, workflow=False):
+    root = saved_run()
+    children = [saved_run(root, workflow=workflow) for _ in range(2)]
     calls = [
         ToolCallPart("delegate_to_agent", {"task": "Update"}, f"delegate-{index}")
         for index in range(2)
@@ -108,7 +106,7 @@ def family(*, workflow=False, legacy=False):
         }
         for call, child in zip(calls, children, strict=True)
     }
-    suspend(root, calls, metadata, legacy=legacy)
+    suspend(root, calls, metadata)
     return root, {run.id: run for run in [root, *children]}
 
 
@@ -172,13 +170,13 @@ async def test_sibling_native_ids_compile_in_each_owner(workflow, canonicalizer)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fault", ["stale", "missing", "forged", "native", "duplicate", "legacy"])
+@pytest.mark.parametrize("fault", ["stale", "missing", "forged", "native", "duplicate"])
 async def test_invalid_consent_never_validates_arguments(fault, canonicalizer):
     root = saved_run()
     runs = {root.id: root}
     graph = build_approval_graph(root, runs)
     payload = approval_submission(
-        graph, [AgentRunResumeDecision(tool_call_id="same", decision="approved")]
+        graph, [ScenarioDecision(tool_call_id="same", decision="approved")]
     )
     if fault == "stale":
         payload.approval_revision = "a" * 64
@@ -188,11 +186,8 @@ async def test_invalid_consent_never_validates_arguments(fault, canonicalizer):
         payload.decisions[0].approval_id = uuid4()
     elif fault == "native":
         payload.decisions[0].tool_call_id = "outer"
-    elif fault == "duplicate":
-        payload.decisions *= 2
     else:
-        payload.approval_revision = None
-        payload.decisions[0].approval_id = None
+        payload.decisions *= 2
     with pytest.raises(ConflictError):
         await compile_for(root, runs, payload)
     canonicalizer.assert_not_awaited()
@@ -203,7 +198,7 @@ async def test_aggregate_result_bound_rejects_expanded_workflow_metadata(canonic
     root = saved_run(workflow=True)
     graph = build_approval_graph(root, {root.id: root})
     payload = approval_submission(
-        graph, [AgentRunResumeDecision(tool_call_id="same", decision="approved")]
+        graph, [ScenarioDecision(tool_call_id="same", decision="approved")]
     )
     canonicalizer.side_effect = None
     canonicalizer.return_value = {"value": "x" * (4 * 1024 * 1024)}

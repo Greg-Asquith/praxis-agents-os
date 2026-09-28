@@ -123,7 +123,7 @@ export type ConversationTurnCreateRequest = {
 }
 
 export type AgentRunResumeDecision = {
-  approval_id?: string
+  approval_id: string
   tool_call_id: string
   decision: "approved" | "denied"
   message?: string | null
@@ -131,14 +131,14 @@ export type AgentRunResumeDecision = {
 }
 
 export type AgentRunResumeRequest = {
-  approval_revision?: string
+  approval_revision: string
   decisions: AgentRunResumeDecision[]
 }
 
 export type PendingToolApproval = {
-  root_run_id?: string
-  approval_id?: string
-  owner_run_id?: string
+  root_run_id: string
+  approval_id: string
+  owner_run_id: string
   parent_tool_call_id?: string
   tool_call_id: string
   name: string
@@ -164,7 +164,7 @@ export type PendingDelegatedApproval = {
 }
 
 export type AgentRunApprovalStateResponse = {
-  approval_revision?: string | null
+  approval_revision: string
   root_run_id?: string
   root_conversation_id?: string
   workflows?: PendingWorkflowState[]
@@ -172,7 +172,6 @@ export type AgentRunApprovalStateResponse = {
   conversation_id: string
   approvals: PendingToolApproval[]
   delegations: PendingDelegatedApproval[]
-  workflow?: PendingWorkflowState | null
 }
 
 type NestedWorkflowTraceEntry = {
@@ -186,8 +185,8 @@ type NestedWorkflowTraceEntry = {
 }
 
 export type PendingWorkflowState = {
-  root_run_id?: string
-  owner_run_id?: string
+  root_run_id: string
+  owner_run_id: string
   delegation?: PendingDelegatedApproval | null
   outer_tool_call_id: string
   code: string

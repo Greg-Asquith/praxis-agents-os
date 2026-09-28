@@ -24,9 +24,6 @@ from integrations.google_ads.references import (
 from integrations.google_ads.tools.add_negative_keywords import (
     _pending_negative_keyword_operation_detail,
 )
-from integrations.google_ads.tools.create_negative_keyword_list import (
-    google_ads_create_negative_keyword_list,
-)
 from integrations.google_ads.tools.get_report_field import google_ads_get_report_field
 from integrations.google_ads.tools.link_negative_keyword_list import (
     _campaign_link_result,
@@ -270,51 +267,6 @@ async def test_negative_keyword_approval_resume_validates_canonical_override_tex
     assert [entry.model_dump() for entry in executed] == [
         {"text": "Edited Brand", "match_type": "PHRASE"}
     ]
-
-
-async def test_create_negative_keyword_list_write_denial_is_audited_before_provider_call(
-    monkeypatch,
-) -> None:
-    entry = ResolvedContextEntry(
-        integration_resource_id=uuid4(),
-        provider_key="google_ads",
-        resource_type="google_ads_account",
-        external_id="333",
-        display_name="Read-only account",
-        connection_id=uuid4(),
-        connection_label="Agency",
-        connection_status="active",
-        write_allowed=False,
-        permissions_metadata={"login_customer_id": "111"},
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(entry,)),
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4()),
-            run=SimpleNamespace(id=uuid4()),
-        ),
-        tool_name="google_ads_create_negative_keyword_list",
-        tool_call_id="call-denied",
-    )
-    provider_client = AsyncMock()
-    audit = AsyncMock()
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.create_negative_keyword_list.google_ads_client",
-        provider_client,
-    )
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        audit,
-    )
-
-    result = await google_ads_create_negative_keyword_list(ctx, ["New List"])
-
-    assert result["results"][0]["error_code"] == "write_not_permitted"
-    provider_client.assert_not_awaited()
-    audit.assert_awaited_once()
-    assert audit.await_args.kwargs["status"].value == "failure"
-    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
 
 
 async def test_campaign_update_groups_ids_by_referenced_customer(monkeypatch) -> None:

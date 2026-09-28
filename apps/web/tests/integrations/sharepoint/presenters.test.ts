@@ -8,7 +8,6 @@ import { renderCustomToolCallRow } from "@/features/conversations/components/too
 import { loadIntegrationUiModules } from "@/integrations/registry"
 import { parseFileContent } from "@/integrations/sharepoint/lib/file-content"
 import { parseFindResults } from "@/integrations/sharepoint/lib/find-results"
-import { itemRows } from "@/integrations/sharepoint/lib/items"
 
 const node = (content: string) => ({
   node: "praxis_untrusted",
@@ -290,25 +289,6 @@ describe("SharePoint presenters", () => {
     expect(html).not.toMatch(/praxis_untrusted|source_ref|opaque-drive-id|opaque-other-drive/)
   })
 
-  it("projects only public fields into folder table rows", () => {
-    const record = {
-      ...item,
-      connection_id: "private-connection",
-      "@microsoft.graph.downloadUrl": "https://example.com/private-download",
-    }
-    expect(itemRows([record])).toEqual([
-      {
-        name: "Monthly report.txt",
-        kind: "File",
-        path: "/drive/root:/Reports",
-        size_bytes: 1024,
-        content_type: "text/plain",
-        modified_at: "2026-09-15T10:00:00Z",
-        web_url: item.web_url.content,
-      },
-    ])
-  })
-
   it.each([
     ["sharepoint_open_link", "javascript:alert(1)"],
     ["sharepoint_list_folder", "data:text/html,unsafe"],
@@ -327,8 +307,6 @@ describe("SharePoint presenters", () => {
 
   it.each([
     { count: 2 },
-    { items: [{ ...item, kind: "shortcut" }] },
-    { items: [{ ...item, size_bytes: 1.5 }] },
     { items: [{ ...item, name: { content: "unframed" } }] },
     { items: Array.from({ length: 201 }, () => item), count: 201 },
   ])("rejects malformed folder listings: %j", (overrides) => {

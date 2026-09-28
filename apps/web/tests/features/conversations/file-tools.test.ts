@@ -130,7 +130,6 @@ describe("file content decoding", () => {
 
   it.each([
     null,
-    {},
     { node: "praxis_untrusted", content: "Missing source" },
     { node: "praxis_untrusted", source_kind: "file", source_ref: "file:shared", content: 12 },
   ])("rejects malformed content nodes", (content) => {

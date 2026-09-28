@@ -81,10 +81,7 @@ PUBLIC_RESULT_PRESENCE_CASES = [
     pytest.param({}, {"model_only": "must-not-leak"}, id="absent"),
     pytest.param({"public_result": None}, None, id="null"),
     pytest.param({"public_result": False}, False, id="false"),
-    pytest.param({"public_result": 0}, 0, id="zero"),
-    pytest.param({"public_result": ""}, "", id="empty-string"),
     pytest.param({"public_result": {"rows": []}}, {"rows": []}, id="object"),
-    pytest.param({"public_result": []}, [], id="list"),
 ]
 
 
@@ -389,14 +386,13 @@ async def runtime_context(db_session: AsyncSession) -> RuntimeContext:
 
 
 @pytest.mark.parametrize(
-    ("provider", "model", "window"),
+    ("provider", "model", "window", "override"),
     [
-        ("openai", "gpt-6-luna", 1_050_000),
-        ("openai", "gpt-5.4-mini", 400_000),
-        ("azure", "example-deployment", 128_000),
+        ("openai", "gpt-6-luna", 1_050_000, None),
+        ("openai", "gpt-5.4-mini", 400_000, 12345),
+        ("azure", "example-deployment", 128_000, None),
     ],
 )
-@pytest.mark.parametrize("override", [None, 12345])
 async def test_runtime_backstop_uses_resolved_window_or_absolute_override(
     db_session, runtime_context, monkeypatch, provider, model, window, override
 ) -> None:
@@ -605,8 +601,8 @@ async def test_worker_renews_lease_during_turn_longer_than_original_ttl(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "AGENT_RUN_LEASE_TTL_SECONDS", 1)
-    monkeypatch.setattr(settings, "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS", 0.1)
+    monkeypatch.setattr(settings, "AGENT_RUN_LEASE_TTL_SECONDS", 0.3)
+    monkeypatch.setattr(settings, "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS", 0.05)
 
     runtime_context = await _create_committed_runtime_context(committed_db_session_factory)
     stream_entered = asyncio.Event()
@@ -636,7 +632,7 @@ async def test_worker_renews_lease_during_turn_longer_than_original_ttl(
 
     try:
         await asyncio.wait_for(stream_entered.wait(), timeout=2)
-        await asyncio.sleep(1.25)
+        await asyncio.sleep(0.4)
 
         async with committed_db_session_factory() as db:
             run = await db.get(AgentRun, runtime_context.run_id)

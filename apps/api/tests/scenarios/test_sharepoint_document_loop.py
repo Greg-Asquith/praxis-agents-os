@@ -23,7 +23,6 @@ from models.agent_run import AgentRun
 from models.files import File, FileFolder, FileReference, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.entity_references.domain import FileReference as SourceReference
@@ -36,7 +35,7 @@ from services.integrations.context.domain import ResolvedActiveContext
 from services.storage.factory import get_storage_provider
 from tests.factories import build_file, build_file_revision, build_workspace
 from tests.integrations.sharepoint.support import entry, file_metadata
-from tests.support.approvals import compile_scenario_decisions
+from tests.support.approvals import ScenarioDecision, compile_scenario_decisions
 from tests.support.delegation import resume_scenario
 from tests.support.scenario import (
     ToolCall,
@@ -250,9 +249,7 @@ async def test_sharepoint_document_loop(
         context,
         model=model,
         decisions=[
-            AgentRunResumeDecision(
-                tool_call_id="replace:1" if nested else "replace", decision="approved"
-            )
+            ScenarioDecision(tool_call_id="replace:1" if nested else "replace", decision="approved")
         ],
     )
     assert completed.run.status == "completed"
@@ -391,9 +388,7 @@ async def test_file_source_approval_uses_real_core_authorisation(
         "size_bytes": len(content),
     }
     credentials.assert_not_awaited()
-    decision = AgentRunResumeDecision(
-        tool_call_id="save:1" if nested else "save", decision="approved"
-    )
+    decision = ScenarioDecision(tool_call_id="save:1" if nested else "save", decision="approved")
     if outcome == "substituted":
         substitute, _ = await _source_file(context, _edited_workbook())
         decision.override_args = args | {
@@ -486,9 +481,7 @@ async def test_foreign_file_source_cannot_produce_usable_approval(
     ]
     assert "_source" not in display
     assert "_approval_display_error" in display
-    decision = AgentRunResumeDecision(
-        tool_call_id="save:1" if nested else "save", decision="approved"
-    )
+    decision = ScenarioDecision(tool_call_id="save:1" if nested else "save", decision="approved")
     with pytest.raises(AppValidationError) as caught:
         await resume_scenario(db_session_factory, context, model=model, decisions=[decision])
     assert caught.value.field == "source"

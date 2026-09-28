@@ -20,11 +20,11 @@ from models.artifacts import Artifact, ArtifactRevision
 from models.audit_event import AuditEvent
 from models.jobs import Job
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.entity_references.domain import AgentReference, ArtifactReference
 from services.artifacts.utils import artifact_revision_ref
 from services.storage.factory import get_storage_provider
 from tests.factories import build_user, build_workspace_membership
+from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import resume_scenario
 from tests.support.platform_artifacts import add_platform_artifact_revision, seed_published_artifact
 from tests.support.scenario import (
@@ -298,7 +298,7 @@ async def test_platform_artifact_delegated_approval_resume_rechecks_live_authori
             committed_db_session_factory,
             context,
             model=parent_model,
-            decisions=[AgentRunResumeDecision(tool_call_id="child-update", decision="approved")],
+            decisions=[ScenarioDecision(tool_call_id="child-update", decision="approved")],
         )
 
     if change == "removed":

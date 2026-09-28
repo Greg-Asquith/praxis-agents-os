@@ -20,13 +20,13 @@ from models.ai_usage_event import AIUsageEvent
 from models.conversation import Conversation, ConversationMessage
 from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_projection import build_approval_graph, project_approval_graph
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.code_mode.state import load_code_mode_state
 from services.agents.runtime.entity_references.domain import AgentReference
 from services.agents.runtime.usage_limits import EFFECTIVE_USAGE_LIMITS_KEY, BudgetLimitExceeded
+from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import ScenarioEffects, resume_scenario, scenario_effects
 from tests.support.scenario import (
     ToolCall,
@@ -52,8 +52,7 @@ async def code_mode_executor_cleanup() -> AsyncIterator[None]:
         await close_code_mode_executor()
 
 
-@pytest.mark.parametrize("specialist_count", [1, 2])
-@pytest.mark.parametrize("token_override", [None, 1_000_000])
+@pytest.mark.parametrize(("specialist_count", "token_override"), [(1, None), (2, 1_000_000)])
 async def test_parent_delegates_to_child_run_and_receives_result(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
@@ -231,7 +230,7 @@ async def test_child_approval_then_parent_resume(
                 committed_db_session_factory,
                 context,
                 model=model,
-                decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+                decisions=[ScenarioDecision(tool_call_id="child-write", decision="approved")],
             )
         assert effects.calls == []
         assert len(seen_requests) == request_count
@@ -247,7 +246,7 @@ async def test_child_approval_then_parent_resume(
         committed_db_session_factory,
         context,
         model=model,
-        decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+        decisions=[ScenarioDecision(tool_call_id="child-write", decision="approved")],
     )
     assert resumed.run.status == "completed"
     assert resumed.run.parent_run_id is None
@@ -334,14 +333,13 @@ async def test_top_level_workflow_approval_restores_interpreter_and_completes(
     assert pending.parent_tool_call_id == "workflow-call"
     assert pending.owner_run_id == context.run_id
     assert pending.args == {"value": "retained"}
-    assert projection.workflow == projection.workflows[0]
     assert "snapshot_b64" not in projection.model_dump_json()
     await close_code_mode_executor()
     resumed = await resume_scenario(
         committed_db_session_factory,
         context,
         model=model,
-        decisions=[AgentRunResumeDecision(tool_call_id=state.nested_call_id, decision="approved")],
+        decisions=[ScenarioDecision(tool_call_id=state.nested_call_id, decision="approved")],
     )
     assert resumed.run.status == "completed"
     assert resumed.run.parent_run_id is None
@@ -669,7 +667,7 @@ async def test_reaped_resumed_child_does_not_propagate_another_approval(
             committed_db_session_factory,
             context,
             model=model,
-            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+            decisions=[ScenarioDecision(tool_call_id="child-write", decision="approved")],
         )
     async with committed_db_session_factory() as db:
         root = await db.get(AgentRun, context.run_id)
@@ -738,7 +736,7 @@ async def test_unavailable_resumed_delegate_preserves_terminal_winner(
             committed_db_session_factory,
             context,
             model=model,
-            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+            decisions=[ScenarioDecision(tool_call_id="child-write", decision="approved")],
         )
     assert effects.calls == []
     async with committed_db_session_factory() as db:
@@ -754,14 +752,12 @@ async def test_unavailable_resumed_delegate_preserves_terminal_winner(
 
 
 @pytest.mark.parametrize("second_decision", ["approved", "denied"])
-@pytest.mark.parametrize("legacy", [False, True])
 async def test_delegated_workflow_resumes_twice_without_repeating_effects(
     committed_db_session_factory,
     monkeypatch,
     effects,
     code_mode_executor_cleanup,
     second_decision,
-    legacy,
 ):
     from dataclasses import replace
 
@@ -809,17 +805,10 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
         child_run = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
         for run in [root, child_run]:
             assert run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 5
-            if legacy:
-                run.metadata_json = {
-                    key: value
-                    for key, value in run.metadata_json.items()
-                    if key != EFFECTIVE_USAGE_LIMITS_KEY
-                }
-        if not legacy:
-            root.metadata_json = {
-                **root.metadata_json,
-                "completion_contract": {"required": False, "max_requests": 10},
-            }
+        root.metadata_json = {
+            **root.metadata_json,
+            "completion_contract": {"required": False, "max_requests": 10},
+        }
         await db.commit()
     await close_code_mode_executor()
     second = await resume_scenario(
@@ -827,7 +816,7 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
         context,
         model=model,
         decisions=[
-            AgentRunResumeDecision(
+            ScenarioDecision(
                 tool_call_id=pending["tool_call_id"],
                 decision="approved",
                 override_args={"value": "edited"},
@@ -850,7 +839,7 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
         context,
         model=model,
         decisions=[
-            AgentRunResumeDecision(
+            ScenarioDecision(
                 tool_call_id=next_pending["tool_call_id"],
                 decision=second_decision,
                 message="Skip the second action" if second_decision == "denied" else None,
@@ -884,7 +873,7 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
         )
 
 
-@pytest.mark.parametrize("request_limit", [2, 3, 5])
+@pytest.mark.parametrize("request_limit", [2, 5])
 async def test_schedule_budget_stops_delegation_at_exact_shared_request_count(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
@@ -944,8 +933,7 @@ async def test_schedule_budget_stops_delegation_at_exact_shared_request_count(
         assert sum(event.requests for event in events) == request_limit
 
 
-@pytest.mark.parametrize("decision", ["approved", "denied"])
-@pytest.mark.parametrize("updated_limit", [2, 20])
+@pytest.mark.parametrize(("decision", "updated_limit"), [("approved", 20), ("denied", 2)])
 async def test_last_request_approval_settles_without_widening_saved_budget(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
@@ -985,7 +973,7 @@ async def test_last_request_approval_settles_without_widening_saved_budget(
             committed_db_session_factory,
             context,
             model=model,
-            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision=decision)],
+            decisions=[ScenarioDecision(tool_call_id="child-write", decision=decision)],
         )
     assert len(seen_requests) == 3
     assert len(effects.calls) == (1 if decision == "approved" else 0)
@@ -1046,7 +1034,7 @@ async def test_stricter_child_ceiling_returns_failure_while_parent_can_finish(
             committed_db_session_factory,
             context,
             model=model,
-            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+            decisions=[ScenarioDecision(tool_call_id="child-write", decision="approved")],
         )
     else:
         result = await run_scenario(committed_db_session_factory, context, model=model)
@@ -1062,9 +1050,8 @@ async def test_stricter_child_ceiling_returns_failure_while_parent_can_finish(
         assert result.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["request_limit"] == 20
 
 
-@pytest.mark.parametrize("updated_weight", [0.0, 1.0])
 async def test_cached_budget_survives_delegated_approval_and_settings_changes(
-    committed_db_session_factory, monkeypatch, effects, updated_weight
+    committed_db_session_factory, monkeypatch, effects
 ):
     from pydantic_ai.usage import RequestUsage
 
@@ -1092,13 +1079,13 @@ async def test_cached_budget_survives_delegated_approval_and_settings_changes(
     assert len(requests) == 3
     assert parked.run.usage_json["cache_read_tokens"] == 2700
     monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 7000)
-    monkeypatch.setattr(settings, "AGENT_RUN_CACHED_TOKEN_WEIGHT", updated_weight)
+    monkeypatch.setattr(settings, "AGENT_RUN_CACHED_TOKEN_WEIGHT", 0.0)
     with pytest.raises(BudgetLimitExceeded) as error:
         await resume_scenario(
             committed_db_session_factory,
             context,
             model=model,
-            decisions=[AgentRunResumeDecision(tool_call_id="child-write", decision="approved")],
+            decisions=[ScenarioDecision(tool_call_id="child-write", decision="approved")],
         )
     assert error.value.kind == "total_tokens_limit"
     assert error.value.inherited and error.value.limit == 700

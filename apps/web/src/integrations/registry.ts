@@ -2,7 +2,11 @@
 
 import { useEffect, useSyncExternalStore, type ComponentType, type SVGProps } from "react"
 
-import type { IntegrationUiModule, ToolRowPresenter } from "@/integrations/contract"
+import {
+  DEFAULT_CREDENTIAL_LABEL,
+  type IntegrationUiModule,
+  type ToolRowPresenter,
+} from "@/integrations/contract"
 
 type IntegrationUiModuleImport = { default: IntegrationUiModule }
 type IntegrationUiModuleLoader = () => Promise<IntegrationUiModuleImport>
@@ -62,6 +66,10 @@ export function useIntegrationUiModule(providerKey: string | null) {
     () => (providerKey ? (loadedModules.get(providerKey) ?? null) : null),
     () => null
   )
+}
+
+export function useCredentialLabel(providerKey: string | null): string {
+  return useIntegrationUiModule(providerKey)?.credentialLabel ?? DEFAULT_CREDENTIAL_LABEL
 }
 
 async function loadIntegrationUiModule(providerKey: string) {

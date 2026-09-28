@@ -11,7 +11,6 @@ from pydantic_ai import DeferredToolResults, ToolApproved, ToolDenied
 from models.agent_run import AgentRun
 from services.agent_runs.schemas import AgentRunResumeRequest
 from services.agents.runtime.approval_identity import (
-    APPROVAL_BATCH_KEY,
     MAX_PROJECTION_LEAVES,
     invalid_approval_state,
     proposal_digest,
@@ -19,19 +18,6 @@ from services.agents.runtime.approval_identity import (
 
 CONTINUATION_KEY = "approval_continuation"
 DEFERRED_RESULTS_ADAPTER = TypeAdapter(DeferredToolResults)
-
-
-def has_unreserved_approval_execution(run: AgentRun) -> bool:
-    """Identifies interrupted legacy acceptance whose decisions were only in memory."""
-    metadata = run.metadata_json or {}
-    state = metadata.get("approval_state")
-    return (
-        run.status == "running"
-        and isinstance(state, dict)
-        and state.get("version") == 1
-        and APPROVAL_BATCH_KEY not in state
-        and CONTINUATION_KEY not in metadata
-    )
 
 
 class ApprovalContinuation(BaseModel):
@@ -42,7 +28,7 @@ class ApprovalContinuation(BaseModel):
     owner_instance_id: UUID
     approval_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    child_batches: dict[UUID, UUID | None] = Field(max_length=MAX_PROJECTION_LEAVES)
+    child_batches: dict[UUID, UUID] = Field(max_length=MAX_PROJECTION_LEAVES)
     claimed_child_ids: list[UUID] = Field(default_factory=list, max_length=MAX_PROJECTION_LEAVES)
     deferred_tool_results: dict[str, Any]
     phase: Literal["reserved", "started"] = "reserved"
@@ -68,7 +54,7 @@ def resume_request_digest(payload: AgentRunResumeRequest) -> str:
     """Compares submissions without storing another copy of reviewed arguments."""
     raw = payload.model_dump(mode="json")
     raw["decisions"] = sorted(
-        raw["decisions"], key=lambda item: (item.get("approval_id") or "", item["tool_call_id"])
+        raw["decisions"], key=lambda item: (item["approval_id"], item["tool_call_id"])
     )
     return proposal_digest(raw)
 

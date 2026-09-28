@@ -798,20 +798,6 @@
       },
       "additionalProperties": false,
       "properties": {
-        "approval_revision": {
-          "anyOf": [
-            {
-              "maxLength": 256,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Approval Revision"
-        },
         "conversation_id": {
           "minLength": 1,
           "type": "string"
@@ -906,31 +892,14 @@
       "additionalProperties": false,
       "properties": {
         "approval_id": {
-          "anyOf": [
-            {
-              "format": "uuid",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Approval Id"
+          "format": "uuid",
+          "title": "Approval Id",
+          "type": "string"
         },
         "approval_revision": {
-          "anyOf": [
-            {
-              "maxLength": 256,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Approval Revision"
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Approval Revision",
+          "type": "string"
         },
         "args": {
           "title": "Args"
@@ -968,17 +937,9 @@
           "type": "string"
         },
         "owner_run_id": {
-          "anyOf": [
-            {
-              "format": "uuid",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Owner Run Id"
+          "format": "uuid",
+          "title": "Owner Run Id",
+          "type": "string"
         },
         "parent_tool_call_id": {
           "anyOf": [
@@ -998,17 +959,9 @@
           "title": "Replay Args"
         },
         "root_run_id": {
-          "anyOf": [
-            {
-              "format": "uuid",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Root Run Id"
+          "format": "uuid",
+          "title": "Root Run Id",
+          "type": "string"
         },
         "run_id": {
           "minLength": 1,
@@ -1043,9 +996,13 @@
         "run_id",
         "conversation_id",
         "seq",
+        "owner_run_id",
+        "root_run_id",
         "tool_call_id",
         "name",
-        "args"
+        "args",
+        "approval_id",
+        "approval_revision"
       ],
       "title": "ToolApprovalRequiredEvent",
       "type": "object"

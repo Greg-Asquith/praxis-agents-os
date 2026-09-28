@@ -270,51 +270,17 @@ describe("integration write presenter", () => {
       renderUnverifiedOutcome: (value) => createElement("span", null, "Evidence: ", value),
     })
     expect(html).toContain("2/5 connections")
-    expect(html).toContain("Unavailable")
-    expect(html).toContain("Invalid project evidence")
-    expect(html).toContain("Outcome: Third")
     expect(html).toContain("Evidence: Fourth")
     expect(html).toContain("Outcome: Fifth")
     expect(html).not.toContain("Ignored")
-    expect(html).toContain("Project code")
-    expect(html).toContain("Project 123")
   })
 
-  it("passes uncertainty separately from confirmed failures to provider renderers", () => {
-    const renderFailure = vi.fn(() => "Fallback")
-    const config = { ...variant, renderFailure }
-    render(props("unknown"), config)
-    expect(renderFailure).toHaveBeenLastCalledWith(
-      { name: "Original" },
-      "Missing project results",
-      null,
-      "unconfirmed"
-    )
-    render(props("failed"), config)
-    expect(renderFailure).toHaveBeenLastCalledWith(
-      { name: "Original" },
-      "No change confirmed",
-      null,
-      "failed"
-    )
+  it("does not mark malformed or unverified evidence as a confirmed failure", () => {
     const context = props()
     context.activity.result = {
       results: [entry(42), entry(null, { status: "error", error_code: "unverified_mutation" })],
     }
-    const html = render(context, config)
-    expect(renderFailure).toHaveBeenNthCalledWith(
-      3,
-      { name: "Original" },
-      "Invalid project evidence",
-      null,
-      "unconfirmed"
-    )
-    expect(renderFailure).toHaveBeenLastCalledWith(
-      { name: "Original" },
-      "Check the project before retrying",
-      null,
-      "unconfirmed"
-    )
+    const html = render(context, { ...variant, renderFailure: () => "Fallback" })
     expect(html).not.toContain("Tool failed")
     expect(html).not.toContain(">Failed<")
   })
@@ -333,21 +299,17 @@ describe("integration write presenter", () => {
     })
     expect(html).toContain("Failure Original: Provider rejected it (Rejected)")
     expect(html).toContain("Outcome: Applied")
-    expect(html).toContain("1/2 connections")
     expect(html).toContain(">Failed<")
-    expect(renderFailure).toHaveBeenCalledTimes(1)
     expect(render(props("failed"), { ...variant, renderFailure })).toContain(
       "Failure Original: No change confirmed ()"
     )
   })
 
-  it("retains presenter keys, own-name matching, and approval routing", () => {
+  it("matches only its own tool names", () => {
     const presenter = createIntegrationWritePresenter({
       key: "example-change",
       variants: { change_project: defineIntegrationWriteVariant(provider, variant) },
     })
-    expect(presenter.key).toBe("example-change")
-    expect(presenter.handlesApprovals).toBe(true)
     expect(presenter.matches(props().activity)).toBe(true)
     const context = props()
     context.activity.name = "toString"

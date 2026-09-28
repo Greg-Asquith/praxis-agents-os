@@ -7,6 +7,8 @@ import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { IntegrationProvider } from "@/features/integrations/types"
 import type { ToolUi } from "@/features/tools/types"
 
+export const DEFAULT_CREDENTIAL_LABEL = "API key"
+
 export type { ToolActivity } from "@/features/conversations/message-parts"
 export type { ToolUi } from "@/features/tools/types"
 

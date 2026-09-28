@@ -76,10 +76,11 @@ describe("Meta Ads Insights model", () => {
     })
   })
 
-  it.each(["EUR", ""])("formats social spend with account currency %j", (currency) => {
+  it.each(["EUR", ""])("formats backend money fields with account currency %j", (currency) => {
     const report = parseMetaAdsInsights(
       insightsData({
         currency,
+        money_fields: ["social_spend"],
         rows: [
           insightsRow({
             metrics: { social_spend: 125.5, ctr: 0.5 },

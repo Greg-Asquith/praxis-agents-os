@@ -16,7 +16,7 @@ import { ApiKeyConnectForm } from "@/features/integrations/components/api-key-co
 import { OAuthConnectionForm } from "@/features/integrations/components/connect-oauth-button"
 import { ServiceAccountConnectForm } from "@/features/integrations/components/service-account-connect-dialog"
 import type { IntegrationProvider } from "@/features/integrations/types"
-import { useIntegrationUiModule } from "@/integrations/registry"
+import { useCredentialLabel } from "@/integrations/registry"
 import { isOneOf } from "@/lib/guards"
 
 type SupportedAuthMode = "api_key" | "oauth" | "service_account"
@@ -69,8 +69,7 @@ function AuthModeChoice({
   provider: IntegrationProvider
 }) {
   const modes = configuredModes(provider)
-  const credentialLabel =
-    useIntegrationUiModule(provider.provider_key)?.credentialLabel ?? "API key"
+  const credentialLabel = useCredentialLabel(provider.provider_key)
 
   return (
     <>
@@ -125,7 +124,7 @@ function AuthModeChoice({
                 variant="outline"
               >
                 <KeyRoundIcon data-icon="inline-start" />
-                Use an {credentialLabel}
+                Use {credentialLabel}
               </Button>
             ) : null}
           </div>

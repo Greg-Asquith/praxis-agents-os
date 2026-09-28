@@ -5,6 +5,7 @@ from pathlib import Path
 import httpx2
 import pytest
 
+from core.exceptions.integration import IntegrationValidationError
 from integrations.meta_ads.discover_resources import discover_resources
 from tests.integrations.meta_ads.support import (
     TOKEN,
@@ -44,30 +45,35 @@ async def test_discovery_sorts_deduplicates_and_records_full_metadata(monkeypatc
         "currency": "GBP",
         "timezone_name": "Europe/London",
         "account_status": "ACTIVE",
-        "business_id": "",
-        "business_name": "",
         "tasks": ["MANAGE"],
         "token_permissions": ["ads_management", "ads_read"],
     }
     account_requests = [r for r in transport.requests if r.url.path.endswith("/adaccounts")]
     assert len(account_requests) == 2
     assert account_requests[0].url.params["limit"] == "100"
-    assert all("business" not in request.url.params["fields"] for request in account_requests)
     assert "user_tasks" in account_requests[0].url.params["fields"]
 
 
-@pytest.mark.parametrize(
-    "status",
-    [
-        2,
-    ],
-)
-async def test_non_active_accounts_remain_read_only(monkeypatch, status) -> None:
-    install_transport(monkeypatch, DiscoveryTransport([[account(account_status=status)]]))
+async def test_non_active_accounts_remain_read_only(monkeypatch) -> None:
+    install_transport(monkeypatch, DiscoveryTransport([[account(account_status=2)]]))
     result = (await discover_resources(TOKEN)).resources
     assert len(result) == 1
     assert result[0].writable is False
     assert isinstance(result[0].permissions_metadata["account_status"], str)
+
+
+async def test_pending_closure_account_is_omitted_across_duplicate_pages(monkeypatch) -> None:
+    pages = [[account()], [account(account_status=101)]]
+    install_transport(monkeypatch, DiscoveryTransport(pages))
+    assert (await discover_resources(TOKEN)).resources == ()
+
+
+async def test_missing_system_user_identity_fails_before_account_discovery(monkeypatch) -> None:
+    transport = DiscoveryTransport(identity={"name": "No identity"})
+    install_transport(monkeypatch, transport)
+    with pytest.raises(IntegrationValidationError, match=r"[Ss]ystem [Uu]ser"):
+        await discover_resources(TOKEN)
+    assert len(transport.requests) == 1
 
 
 async def test_rediscovery_rechecks_removed_permissions(monkeypatch) -> None:

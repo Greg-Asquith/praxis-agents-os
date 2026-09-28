@@ -47,8 +47,6 @@ type StreamEnvelope = {
   seq: number
   root_run_id?: string
   owner_run_id?: string
-  approval_revision?: string
-  approval_id?: string
 }
 
 export function parseStreamEvent(eventName: StreamEventName, value: unknown): StreamEvent {
@@ -180,6 +178,18 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         event: "tool.approval_required",
         data: {
           ...envelope,
+          root_run_id: requiredNonEmptyString(eventName, "data.root_run_id", data["root_run_id"]),
+          owner_run_id: requiredNonEmptyString(
+            eventName,
+            "data.owner_run_id",
+            data["owner_run_id"]
+          ),
+          approval_id: requiredNonEmptyString(eventName, "data.approval_id", data["approval_id"]),
+          approval_revision: requiredNonEmptyString(
+            eventName,
+            "data.approval_revision",
+            data["approval_revision"]
+          ),
           tool_call_id: requiredNonEmptyString(
             eventName,
             "data.tool_call_id",
@@ -655,13 +665,8 @@ function invalidField(eventName: StreamEventName, field: string, expectation: st
 }
 
 function optionalIdentity(eventName: StreamEventName, data: Record<string, unknown>) {
-  const result: {
-    root_run_id?: string
-    owner_run_id?: string
-    approval_id?: string
-    approval_revision?: string
-  } = {}
-  for (const key of ["root_run_id", "owner_run_id", "approval_id", "approval_revision"] as const) {
+  const result: { root_run_id?: string; owner_run_id?: string } = {}
+  for (const key of ["root_run_id", "owner_run_id"] as const) {
     if (Object.hasOwn(data, key) && data[key] !== null) {
       result[key] = requiredNonEmptyString(eventName, `data.${key}`, data[key])
     }

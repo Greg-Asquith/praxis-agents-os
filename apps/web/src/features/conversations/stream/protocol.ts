@@ -35,8 +35,6 @@ type StreamEnvelope = {
   seq: number
   root_run_id?: string
   owner_run_id?: string
-  approval_revision?: string
-  approval_id?: string
 }
 
 export type MessageChannel = "text" | "thinking"
@@ -101,6 +99,10 @@ export type StreamEvent =
   | {
       event: "tool.approval_required"
       data: StreamEnvelope & {
+        root_run_id: string
+        owner_run_id: string
+        approval_id: string
+        approval_revision: string
         tool_call_id: string
         name: string
         args: unknown

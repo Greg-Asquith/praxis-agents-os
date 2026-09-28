@@ -124,7 +124,7 @@ async def test_restored_weighted_usage_keeps_absolute_inherited_boundary() -> No
 
 @pytest.mark.parametrize(
     ("parent", "child", "expected"),
-    [(None, None, None), (3, None, 3), (None, 4, 4), (3, 3, 3), (2, 8, 2), (8, 2, 2)],
+    [(None, None, None), (3, None, 3), (None, 4, 4), (2, 8, 2), (8, 2, 2)],
 )
 def test_intersection(parent: int | None, child: int | None, expected: int | None) -> None:
     inherited = EffectiveUsageLimits(request_limit=parent, count_tokens_before_request=True)

@@ -25,7 +25,7 @@ import { integrationToolRowPresenters } from "@/integrations/registry"
 // config can express; everything else should be configured on its backend
 // runtime_tool definition.
 
-export const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
+const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   runCodeToolPresenter,
   codeModeWorkflowPresenter,
   completionReportPresenter,

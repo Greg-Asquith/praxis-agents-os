@@ -57,11 +57,7 @@ def approval_events_for_projection(
         ToolApprovalRequiredEvent.model_validate(
             {
                 **approval.model_dump(mode="json", exclude_none=True),
-                **(
-                    {"approval_revision": projection.approval_revision}
-                    if projection.approval_revision is not None
-                    else {}
-                ),
+                "approval_revision": projection.approval_revision,
             }
         )
         for approval in projection.approvals

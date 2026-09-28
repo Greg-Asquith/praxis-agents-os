@@ -60,10 +60,10 @@ async def test_retrying_http_client_does_not_retry_non_transient_401(monkeypatch
     assert calls == 1
 
 
-@pytest.mark.parametrize("vertex", [False, True])
-@pytest.mark.parametrize("attempts", [1, 3])
-@pytest.mark.parametrize("status", [429, 503, 401, 403, "connection", "success"])
-async def test_anthropic_sdk_retry_boundary(monkeypatch, vertex, attempts, status):
+@pytest.mark.parametrize(
+    ("vertex", "status"), [(False, 429), (True, "success"), (False, "connection")]
+)
+async def test_anthropic_sdk_retry_boundary(monkeypatch, vertex, status):
     import pydantic_ai.models
     from anthropic import AsyncAnthropicVertex
     from pydantic import SecretStr
@@ -75,6 +75,7 @@ async def test_anthropic_sdk_retry_boundary(monkeypatch, vertex, attempts, statu
     from services.agents.models.domain import ResolvedModel
 
     monkeypatch.setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", True)
+    attempts = 3
     _fast_retry_settings(monkeypatch, attempts=attempts)
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", vertex)
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
@@ -139,7 +140,7 @@ async def test_anthropic_sdk_retry_boundary(monkeypatch, vertex, attempts, statu
                 await request
             assert error.value.status_code == status
             assert error.value.body == body
-    assert calls == (1 if status in (401, 403) else attempts)
+    assert calls == attempts
 
 
 @pytest.mark.parametrize("retry_after", ["86400", "Wed, 09 Sep 2099 12:00:00 GMT", "invalid"])

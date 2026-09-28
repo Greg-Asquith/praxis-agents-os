@@ -44,7 +44,7 @@ import {
   integrationOwnershipDescription,
 } from "@/features/integrations/format"
 import type { IntegrationConnection, IntegrationProvider } from "@/features/integrations/types"
-import { useIntegrationUiModule } from "@/integrations/registry"
+import { useCredentialLabel } from "@/integrations/registry"
 import { getErrorMessage } from "@/lib/api/errors"
 import { formatDateTime } from "@/lib/format"
 
@@ -59,8 +59,7 @@ export function ConnectionRow({
   connection: IntegrationConnection
   provider: IntegrationProvider
 }) {
-  const credentialLabel =
-    useIntegrationUiModule(provider.provider_key)?.credentialLabel ?? "API key"
+  const credentialLabel = useCredentialLabel(provider.provider_key)
   const testMutation = useTestConnectionMutation()
   const queryClient = useQueryClient()
   const refreshMutation = useRefreshConnectionMutation()

@@ -55,12 +55,13 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
     return
   }
 
-  if (streamEvent.event === "tool.approval_required" && streamEvent.data.approval_revision) {
+  if (streamEvent.event === "tool.approval_required") {
+    const approvalRevision = streamEvent.data.approval_revision
     queryClient.setQueryData<ConversationActiveRunResponse>(
       conversationsQueryKeys.activeRun(streamEvent.data.conversation_id),
       (current) =>
         current?.active_run?.id === streamEvent.data.run_id
-          ? { ...current, approval_revision: streamEvent.data.approval_revision ?? null }
+          ? { ...current, approval_revision: approvalRevision }
           : current
     )
   }
@@ -105,12 +106,10 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
             status,
           },
           latest_run: current.latest_run,
-          ...(streamEvent.data.approval_revision || current.approval_revision
+          ...(current.approval_revision
             ? {
                 approval_revision:
-                  status === "awaiting_approval"
-                    ? (streamEvent.data.approval_revision ?? current.approval_revision ?? null)
-                    : null,
+                  status === "awaiting_approval" ? current.approval_revision : null,
               }
             : {}),
           approval_expires_at:
@@ -126,9 +125,6 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
           ? buildStreamAgentRun(conversation, streamEvent.data.run_id, status)
           : null,
         latest_run: current?.latest_run ?? null,
-        ...(streamEvent.data.approval_revision
-          ? { approval_revision: streamEvent.data.approval_revision }
-          : {}),
         approval_expires_at: null,
       }
     }

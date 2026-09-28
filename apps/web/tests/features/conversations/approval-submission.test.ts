@@ -12,6 +12,7 @@ import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-ap
 import { parseApiError } from "@/lib/api/errors"
 import { setActiveUserId, setActiveWorkspaceSlug } from "@/lib/workspace"
 import { jsonResponse, stubFetch } from "../../support/fetch-stub"
+import { approvalIdentity } from "../../support/approvals"
 
 const revision = "a".repeat(64)
 
@@ -62,7 +63,12 @@ describe("approval submission recovery", () => {
           activeRunId: "root",
           approvalRevision: revision,
           approvals: [
-            { approval_id: "leaf", tool_call_id: "native", name: "write_file", args: {} },
+            {
+              ...approvalIdentity("leaf", "root"),
+              tool_call_id: "native",
+              name: "write_file",
+              args: {},
+            },
           ],
           enabled: true,
           isSubmitting: false,
@@ -136,7 +142,14 @@ describe("approval submission recovery", () => {
       const { resolveApprovalControls } = useInlineApprovals({
         activeRunId: "root",
         approvalRevision: revision,
-        approvals: [{ tool_call_id: "native", name: "write_file", args: {} }],
+        approvals: [
+          {
+            ...approvalIdentity("native", "root"),
+            tool_call_id: "native",
+            name: "write_file",
+            args: {},
+          },
+        ],
         enabled: true,
         isSubmitting: true,
         onSubmit: submit,

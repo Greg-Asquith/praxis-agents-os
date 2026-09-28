@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/tools/utils/validation.py
 
-"""Validate Insights requests before contacting Meta."""
+"""Validate Meta Ads tool arguments before contacting Meta."""
 
 import calendar
 import re
@@ -10,7 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 
-from ...insights_fields import ACTION_FIELDS, UNSUPPORTED_STRUCTURED_FIELDS
+from ...insights_fields import ACTION_FIELDS, RETAINED_METRICS, UNSUPPORTED_STRUCTURED_FIELDS
 from ..schemas.insights import (
     ACTION_BREAKDOWNS,
     ATTRIBUTION_WINDOWS,
@@ -74,6 +74,7 @@ def validate_insights_request(
         field, _, direction = request.sort.rpartition("_")
         if field not in request.fields or direction not in SORT_DIRECTIONS:
             raise ModelRetry("Set sort to a requested field followed by _ascending or _descending.")
+    _validate_retained_metrics(request, today)
     if request.limit > max_rows:
         raise ModelRetry(f"Set limit between 1 and {max_rows}.")
 
@@ -128,6 +129,19 @@ def _validate_breakdowns(request: MetaAdsInsightsInput) -> None:
         )
     if request.action_breakdowns and not ACTION_FIELDS.intersection(request.fields):
         raise ModelRetry("Add an action field to fields before setting action_breakdowns.")
+
+
+def _validate_retained_metrics(request: MetaAdsInsightsInput, today: date) -> None:
+    if not request.breakdowns or date.fromisoformat(request.since) >= months_before(today, 13):
+        return
+    referenced = {item.field for item in request.filters or []}
+    if request.sort:
+        referenced.add(request.sort.rpartition("_")[0])
+    if RETAINED_METRICS.intersection(referenced):
+        raise ModelRetry(
+            "Meta omits reach, frequency, and cpp with breakdowns beyond 13 months. "
+            "Remove them from sort and filters, or start the report within 13 months."
+        )
 
 
 def _validate_filters(request: MetaAdsInsightsInput) -> None:

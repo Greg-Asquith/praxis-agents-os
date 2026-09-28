@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.agent_run import AgentRun
-from services.agent_runs.continuation_state import has_unreserved_approval_execution
 from services.agent_runs.domain import RUN_STATUS_CANCELLED, RUN_STATUS_FAILED, is_terminal
 from services.agent_runs.staged_content_cleanup import enqueue_staged_approval_content_cleanup
 
@@ -69,11 +68,8 @@ async def settle_run_family(
     ):
         return []
     completion_json = None
-    legacy_execution = any(has_unreserved_approval_execution(run) for run in family)
-    if (
-        (status == RUN_STATUS_FAILED and error_code == "agent_run_resume_requires_recovery")
-        or ((family[0].metadata_json or {}).get("approval_continuation") is not None)
-        or (error_code != "code_mode_resume_requires_recovery" and legacy_execution)
+    if (status == RUN_STATUS_FAILED and error_code == "agent_run_resume_requires_recovery") or (
+        (family[0].metadata_json or {}).get("approval_continuation") is not None
     ):
         from services.agent_runs.build_family_recovery_evidence import (
             RECOVERY_ERROR_CODE,
@@ -89,10 +85,7 @@ async def settle_run_family(
                 target.id == family[0].id
                 or error_code in {RECOVERY_ERROR_CODE, "code_mode_resume_requires_recovery"}
             )
-            and (
-                legacy_execution
-                or recovery_required(error_code=error_code, evidence=completion_json)
-            )
+            and recovery_required(error_code=error_code, evidence=completion_json)
         ):
             error_code = RECOVERY_ERROR_CODE
             error_message = (

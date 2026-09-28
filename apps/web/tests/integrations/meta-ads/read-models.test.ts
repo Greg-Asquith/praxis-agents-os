@@ -113,6 +113,7 @@ describe("Meta Ads custom conversion report columns", () => {
   it("preserves IDs, numbers, windows and breakdowns with duplicate resolved names", () => {
     const report = parseMetaAdsInsights(
       insightsData({
+        money_fields: ["action_values", "cost_per_action_type"],
         rows: [
           insightsRow({
             actions: {

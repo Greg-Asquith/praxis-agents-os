@@ -61,7 +61,7 @@ from services.conversations.shared_projection import project_shared_message
 from services.files.utils import private_ref_from_key
 from services.storage.errors import StorageNotFoundError
 from services.storage.factory import get_storage_provider
-from tests.support.approvals import compile_scenario_decisions
+from tests.support.approvals import ScenarioDecision, compile_scenario_decisions
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -357,9 +357,9 @@ async def test_gated_stub_suspends_without_partial_effect(
             workspace=workspace,
             run_id=context.run_id,
         )
-    assert approval_state.workflow is not None
-    assert approval_state.workflow.outer_tool_call_id == "workflow-call"
-    assert approval_state.workflow.pending.tool_call_id == "workflow-call:1"
+    [workflow] = approval_state.workflows
+    assert workflow.outer_tool_call_id == "workflow-call"
+    assert workflow.pending.tool_call_id == "workflow-call:1"
     assert approval_state.approvals[0].tool_call_id == "workflow-call:1"
 
 
@@ -416,7 +416,7 @@ async def test_batch_override_executes_and_audits_only_the_edited_rows(
             membership=membership,
             run=run,
             decisions=[
-                AgentRunResumeDecision(
+                ScenarioDecision(
                     tool_call_id="workflow-call:1",
                     decision="approved",
                     override_args={"keywords": edited},
@@ -536,15 +536,20 @@ async def test_concurrent_duplicate_nested_resume_request_starts_one_continuatio
         coroutine.close()
 
     monkeypatch.setattr(run_task_registry, "spawn", discard_worker)
-    payload = AgentRunResumeRequest(
-        decisions=[AgentRunResumeDecision(tool_call_id="workflow-call:1", decision="approved")]
-    )
     async with committed_db_session_factory() as db:
         projection = await get_agent_run_approval_state(
             db, actor=actor, workspace=workspace, run_id=context.run_id
         )
-        payload.approval_revision = projection.approval_revision
-        payload.decisions[0].approval_id = projection.approvals[0].approval_id
+    payload = AgentRunResumeRequest(
+        approval_revision=projection.approval_revision,
+        decisions=[
+            AgentRunResumeDecision(
+                tool_call_id="workflow-call:1",
+                approval_id=projection.approvals[0].approval_id,
+                decision="approved",
+            )
+        ],
+    )
 
     barrier = asyncio.Barrier(2)
 

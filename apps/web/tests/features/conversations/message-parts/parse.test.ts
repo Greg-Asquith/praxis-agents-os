@@ -10,6 +10,7 @@ import type {
   ConversationMessage,
   PendingDelegatedApproval,
 } from "@/features/conversations/types"
+import { approvalIdentity } from "../../../support/approvals"
 
 const createdAt = "2026-07-07T10:00:00.000Z"
 const run = (id: string, status: AgentRunStatus): Pick<AgentRun, "id" | "status"> => ({
@@ -523,6 +524,8 @@ describe("parseConversationMessages", () => {
       [],
       undefined,
       {
+        owner_run_id: "run-1",
+        root_run_id: "run-1",
         code: "report = await check_report(account='one')\nawait send_email(report=report)",
         nested_trace: [
           {
@@ -550,6 +553,7 @@ describe("parseConversationMessages", () => {
           taint_sources: [{ source_kind: "gmail_message", source_ref: "message-1" }],
           name: "send_email",
           parent_tool_call_id: "workflow-1",
+          ...approvalIdentity("workflow-1:2"),
           tool_call_id: "workflow-1:2",
         },
         reason: "Check the account and share an update",
@@ -586,7 +590,10 @@ describe("parseConversationMessages", () => {
       code: "await send_email(subject='Update')",
       nested_trace: [],
       outer_tool_call_id: "workflow-1",
+      owner_run_id: "run-1",
+      root_run_id: "run-1",
       pending: {
+        ...approvalIdentity("workflow-1:1"),
         args: { subject: "Update" },
         name: "send_email",
         parent_tool_call_id: "workflow-1",
@@ -634,7 +641,10 @@ describe("parseConversationMessages", () => {
       code: "await send_email(subject='Update')",
       nested_trace: [],
       outer_tool_call_id: "workflow-1",
+      owner_run_id: "run-1",
+      root_run_id: "run-1",
       pending: {
+        ...approvalIdentity("workflow-1:1"),
         args: { subject: "Update" },
         name: "send_email",
         parent_tool_call_id: "workflow-1",

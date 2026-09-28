@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
 from core.exceptions.auth import AuthorizationError
-from core.exceptions.general import AppValidationError, NotFoundError
+from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from models.audit_event import AuditEvent
 from models.files import File, FileRevision, FileUpload
@@ -172,6 +172,33 @@ async def test_confirmation_rejects_swapped_capability(db_session, upload_contex
         assert await db.get(File, grant.file_id) is None
         upload = await db.scalar(select(FileUpload).where(FileUpload.file_id == grant.file_id))
         assert upload.consumed_at is None
+
+
+async def test_confirmation_requires_exact_declared_size(db_session, upload_context):
+    grant = await _grant(db_session, upload_context)
+    await get_storage_provider().put_object(grant.upload.ref, b"four", content_type="text/plain")
+    with pytest.raises(AppValidationError, match="declared size"):
+        await _confirm(db_session, upload_context, grant.upload_token)
+    async with maintenance_async_db_session() as db:
+        assert await db.get(File, grant.file_id) is None
+
+
+async def test_confirmation_does_not_overwrite_existing_destination(db_session, upload_context):
+    grant = await _grant(db_session, upload_context)
+    async with maintenance_async_db_session() as db:
+        upload = await db.scalar(select(FileUpload).where(FileUpload.file_id == grant.file_id))
+        final_ref = make_storage_object_ref(
+            StorageBucket.PLATFORM_PRIVATE,
+            f"platform/files/{upload.file_id}/{upload.revision_id}.txt",
+        )
+    provider = get_storage_provider()
+    await provider.put_object(final_ref, b"other", content_type="text/plain")
+    await provider.put_object(grant.upload.ref, b"hello", content_type="text/plain")
+    with pytest.raises(ConflictError):
+        await _confirm(db_session, upload_context, grant.upload_token)
+    assert await provider.get_object(final_ref) == b"other"
+    async with maintenance_async_db_session() as db:
+        assert await db.get(File, grant.file_id) is None
 
 
 async def test_platform_upload_cannot_replace_workspace_file(db_session, upload_context):

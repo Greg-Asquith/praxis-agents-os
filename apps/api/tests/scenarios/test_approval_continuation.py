@@ -22,10 +22,12 @@ from services.agent_runs.continuation_state import CONTINUATION_KEY, load_approv
 from services.agent_runs.get_approval_state import get_agent_run_approval_state
 from services.agent_runs.resume_run_stream import resume_agent_run_stream
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
+from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.run_manager import run_task_registry
+from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
-from tests.support.approval_fixtures import restore_approval_fixture
-from tests.support.delegation import scenario_effects
+from tests.support.approvals import ScenarioDecision
+from tests.support.delegation import resume_scenario, scenario_effects
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -389,6 +391,55 @@ async def test_unavailable_child_stops_public_resume_without_replacement(
         assert effects.calls == []
 
 
+async def _park_for_corruption(factory, monkeypatch, effects, target):
+    """Parks a direct write, a delegated write, or a workflow on its second write."""
+    from services.agents.runtime.entity_references.domain import AgentReference
+
+    context = await build_scenario_agent(
+        factory,
+        tool_names=[] if target == "delegated" else [effects.name],
+        code_mode_enabled=target == "nested-decision",
+        trigger="scheduled",
+        metadata={"envelope": {"side_effect_policy": "require_approval"}},
+    )
+    write = ToolCall(effects.name, {"value": "first"}, "write")
+    if target == "delegated":
+        specialist = await add_scenario_delegate(factory, context, tool_names=[effects.name])
+        reference = AgentReference(entity_id=str(specialist.id), label=specialist.name)
+        turns = [
+            ToolTurn(
+                (
+                    ToolCall(
+                        "delegate_to_agent",
+                        {"agent_id": reference.model_dump(mode="json"), "task": "Write."},
+                        "delegate",
+                    ),
+                )
+            ),
+            ToolTurn((write,)),
+        ]
+    elif target == "nested-decision":
+        code = f"await {effects.name}(value='first')\nawait {effects.name}(value='second')\n'done'"
+        turns = [ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, "workflow"),))]
+    else:
+        turns = [ToolTurn((write,))]
+    model = scripted_model(turns=turns)
+    monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+    parked = await run_scenario(factory, context, model=model)
+    assert parked.run.status == "awaiting_approval"
+    if target == "nested-decision":
+        await close_code_mode_executor()
+        parked = await resume_scenario(
+            factory,
+            context,
+            model=model,
+            decisions=[ScenarioDecision(tool_call_id="workflow:1", decision="approved")],
+        )
+        assert parked.run.status == "awaiting_approval"
+        await close_code_mode_executor()
+    return context
+
+
 @pytest.mark.parametrize(
     ("target", "invalid"),
     [
@@ -401,10 +452,7 @@ async def test_unavailable_child_stops_public_resume_without_replacement(
 async def test_corrupt_saved_decisions_settle_without_replaying_effects(
     committed_db_session_factory, monkeypatch, target, invalid
 ):
-    from services.agents.runtime.code_mode.executor import close_code_mode_executor
-
     factory = committed_db_session_factory
-    fixture = "workflow-second" if target == "nested-decision" else target
     delegation = import_module("services.agents.runtime.delegation.resume_approved_delegate_run")
     adapter = Mock(wraps=delegation._DEFERRED_TOOL_RESULTS_ADAPTER)
     monkeypatch.setattr(delegation, "_DEFERRED_TOOL_RESULTS_ADAPTER", adapter)
@@ -412,8 +460,9 @@ async def test_corrupt_saved_decisions_settle_without_replaying_effects(
     monkeypatch.setattr(
         run_task_registry, "spawn", lambda _id, coroutine, **_kwargs: queued.append(coroutine)
     )
-    with scenario_effects(name="scenario_release_write") as effects:
-        context = await restore_approval_fixture(factory, fixture)
+    with scenario_effects() as effects:
+        context = await _park_for_corruption(factory, monkeypatch, effects, target)
+        executed = list(effects.calls)
         model = scripted_model(turns=["Finished."])
         monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
         try:
@@ -466,7 +515,7 @@ async def test_corrupt_saved_decisions_settle_without_replaying_effects(
                 assert root.error_code == "agent_run_resume_requires_recovery"
                 assert CONTINUATION_KEY not in (root.metadata_json or {})
                 evidence = deepcopy(root.completion_json)
-                if fixture == "workflow-second":
+                if target == "nested-decision":
                     assert any(
                         action["tool_call_id"] == "workflow:1" and action["status"] == "completed"
                         for action in evidence["recovery"]["actions"]
@@ -483,8 +532,143 @@ async def test_corrupt_saved_decisions_settle_without_replaying_effects(
             async with factory() as db:
                 assert (await db.get(AgentRun, context.run_id)).completion_json == evidence
             assert len(queued) == 1
-            assert effects.calls == []
+            assert effects.calls == executed
         finally:
+            for coroutine in queued:
+                coroutine.close()
+            await close_code_mode_executor()
+
+
+async def test_shutdown_of_delegated_continuation_settles_linked_schedule(
+    committed_db_session_factory, monkeypatch
+):
+    from pydantic_ai.models.function import FunctionModel
+
+    from models.agent import Agent, AgentSchedule, AgentScheduleRun
+    from services.agents.runtime.entity_references.domain import AgentReference
+
+    factory = committed_db_session_factory
+    queued = []
+    entered = asyncio.Event()
+
+    async def waiting_provider(_messages, _info):
+        entered.set()
+        await asyncio.Event().wait()
+        yield "unreachable"
+
+    with scenario_effects() as effects:
+        context = await build_scenario_agent(
+            factory,
+            trigger="scheduled",
+            metadata={"envelope": {"side_effect_policy": "require_approval"}},
+        )
+        specialist = await add_scenario_delegate(factory, context, tool_names=[effects.name])
+        async with factory() as db:
+            (await db.get(Agent, specialist.id)).code_mode_enabled = True
+            await db.commit()
+        reference = AgentReference(entity_id=str(specialist.id), label=specialist.name)
+        code = f"await {effects.name}(value='first')\nawait {effects.name}(value='second')\n'done'"
+        model = scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            "delegate_to_agent",
+                            {"agent_id": reference.model_dump(mode="json"), "task": "Write."},
+                            "delegate",
+                        ),
+                    )
+                ),
+                ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, "workflow"),)),
+            ]
+        )
+        monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
+        parked = await run_scenario(factory, context, model=model)
+        assert parked.run.status == "awaiting_approval"
+        await close_code_mode_executor()
+        waiting = FunctionModel(stream_function=waiting_provider)
+        monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: waiting)
+        monkeypatch.setattr(
+            run_task_registry, "spawn", lambda _id, coroutine, **_kwargs: queued.append(coroutine)
+        )
+        task = None
+        try:
+            for round_number in (1, 2):
+                async with factory() as db:
+                    actor = await db.get(User, context.user_id)
+                    workspace = await db.get(Workspace, context.workspace_id)
+                    projection = await get_agent_run_approval_state(
+                        db, actor=actor, workspace=workspace, run_id=context.run_id
+                    )
+                    if round_number == 2:
+                        now = datetime.now(UTC)
+                        schedule = AgentSchedule(
+                            agent_id=context.agent_id,
+                            user_id=context.user_id,
+                            workspace_id=context.workspace_id,
+                            schedule_type="once",
+                            run_once_at=now,
+                        )
+                        db.add(schedule)
+                        await db.flush()
+                        schedule_run = AgentScheduleRun(
+                            schedule_id=schedule.id,
+                            workspace_id=context.workspace_id,
+                            user_id=context.user_id,
+                            agent_id=context.agent_id,
+                            scheduled_for=now,
+                            status="awaiting_approval",
+                            conversation_id=context.conversation_id,
+                            agent_run_id=context.run_id,
+                        )
+                        db.add(schedule_run)
+                        await db.commit()
+                        schedule_run_id = schedule_run.id
+                    [leaf] = projection.approvals
+                    await resume_agent_run_stream(
+                        db,
+                        actor=actor,
+                        workspace=workspace,
+                        run_id=context.run_id,
+                        payload=AgentRunResumeRequest(
+                            approval_revision=projection.approval_revision,
+                            decisions=[
+                                AgentRunResumeDecision(
+                                    approval_id=leaf.approval_id,
+                                    tool_call_id=leaf.tool_call_id,
+                                    decision="approved",
+                                )
+                            ],
+                        ),
+                    )
+                task = asyncio.create_task(queued[-1])
+                if round_number == 1:
+                    await asyncio.wait_for(task, timeout=5)
+                    assert [value for _, value in effects.calls] == ["first"]
+                    await close_code_mode_executor()
+            await asyncio.wait_for(entered.wait(), timeout=5)
+            assert [value for _, value in effects.calls] == ["first", "second"]
+            task.cancel("shutdown")
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=10)
+            async with factory() as db:
+                root = await db.get(AgentRun, context.run_id)
+                child = await db.scalar(select(AgentRun).where(AgentRun.parent_run_id == root.id))
+                linked = await db.get(AgentScheduleRun, schedule_run_id)
+                assert root.status == child.status == "failed"
+                assert root.outcome == "blocked"
+                assert linked.status == "terminal_failed"
+                assert linked.last_error_code == "agent_run_resume_requires_recovery"
+                assert {
+                    action["tool_call_id"]
+                    for action in root.completion_json["recovery"]["actions"]
+                    if action["status"] == "completed"
+                } >= {"workflow:1", "workflow:2"}
+            assert [value for _, value in effects.calls] == ["first", "second"]
+        finally:
+            if task is not None and not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
             for coroutine in queued:
                 coroutine.close()
             await close_code_mode_executor()

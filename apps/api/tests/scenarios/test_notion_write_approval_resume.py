@@ -15,13 +15,12 @@ from integrations.notion.tools.create_page import DEFINITION as CREATE_PAGE_DEFI
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.execution import _run_authorized_entries
-from tests.support.approvals import compile_scenario_decisions
+from tests.support.approvals import ScenarioDecision, compile_scenario_decisions
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -169,7 +168,7 @@ async def test_direct_create_resume_reauthorizes_edited_parent_and_records_exact
             membership=membership,
             run=run,
             decisions=[
-                AgentRunResumeDecision(
+                ScenarioDecision(
                     tool_call_id="notion-create",
                     decision="approved",
                     override_args=edited_args,

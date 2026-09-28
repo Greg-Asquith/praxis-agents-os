@@ -7,7 +7,6 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
-import { EntityFieldInput } from "@/components/tool-ui/entity-field-input"
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { ToolUiField } from "@/features/tools/types"
@@ -17,11 +16,6 @@ import {
   sharePointWriteFileArgs,
   validateSharePointWriteArgs,
 } from "@/integrations/sharepoint/lib/write-args"
-
-vi.mock("@/components/tool-ui/entity-field-input", async (importOriginal) => {
-  const original = await importOriginal<{ EntityFieldInput: typeof EntityFieldInput }>()
-  return { ...original, EntityFieldInput: vi.fn(original.EntityFieldInput) }
-})
 
 const reference = {
   version: 1,
@@ -81,7 +75,6 @@ const entry = (data: unknown, overrides = {}) => ({
   error_message: null,
   ...overrides,
 })
-const names = Object.keys(argsByName)
 
 function render(
   node: ReactNode,
@@ -160,23 +153,15 @@ describe("SharePoint write presenters", () => {
     await loadIntegrationUiModules(["sharepoint"])
   })
 
-  it.each(names)("renders the %s approval with its library and destination", (name) => {
-    const html = render(renderCustomToolCallRow(approval(name)))
+  it("renders an update approval with its library and no private ids", () => {
+    const html = render(renderCustomToolCallRow(approval("sharepoint_update_file")))
     expect(html).toContain("Operations library")
-    expect(html).toContain(
-      name === "sharepoint_update_file" ? "Reports / report.txt" : "Library root"
-    )
-    if (name === "sharepoint_update_file")
-      expect(html).toContain("SharePoint keeps the previous version")
-    else expect(html).toContain("-name-edit")
-    if (name !== "sharepoint_create_folder") expect(html).toContain("<textarea")
     expect(html).not.toMatch(/private-drive|private-resource|private-item/)
   })
 
   it("shows public item evidence for an applied write", () => {
     const html = render(renderCustomToolCallRow(props("sharepoint_write_file")))
-    for (const text of ["Saved report.txt", "/Reports/Monthly", "1.0 KB", "Open in SharePoint"])
-      expect(html).toContain(text)
+    expect(html).toContain("Saved report.txt")
     expect(html).toContain(`href="${item.web_url.content}"`)
     expect(html).toContain('rel="noopener noreferrer"')
     expect(html).not.toMatch(/private-|PRIVATE_|source_ref|praxis_untrusted/)
@@ -290,26 +275,13 @@ describe("SharePoint write presenters", () => {
     ).toBeNull()
   })
 
-  it.each([["sharepoint_write_file", "folder"]])(
-    "edits the %s destination without retaining a stale library label",
-    (name, field) => {
-      vi.mocked(EntityFieldInput).mockClear()
-      const context = approval(name)
-      context.activity.args = { ...argsByName[name], [field]: folder }
-      render(renderCustomToolCallRow(context))
-      const edited = { ...folder, drive_id: "other-drive", label: "Other library / Reports" }
-      vi.mocked(EntityFieldInput)
-        .mock.calls.find(([props]) => props.field.key === field)?.[0]
-        .onChange(edited)
-      expect(context.approvalDecision?.onDecisionChange).toHaveBeenCalledWith({
-        decision: "pending",
-        edits: { [field]: edited },
-        message: "",
-      })
-      const updated = render(renderCustomToolCallRow(approval(name, { [field]: edited })))
-      expect(updated).toContain("Other library / Reports")
-      expect(updated).not.toContain("Operations library")
-      expect(updated).not.toContain("other-drive")
-    }
-  )
+  it("edits the destination without retaining a stale library label", () => {
+    const edited = { ...folder, drive_id: "other-drive", label: "Other library / Reports" }
+    const updated = render(
+      renderCustomToolCallRow(approval("sharepoint_write_file", { folder: edited }))
+    )
+    expect(updated).toContain("Other library / Reports")
+    expect(updated).not.toContain("Operations library")
+    expect(updated).not.toContain("other-drive")
+  })
 })

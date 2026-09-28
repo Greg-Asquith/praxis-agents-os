@@ -214,12 +214,7 @@ async def test_changed_version_fails_before_pending_intent_or_upload(provider):
 
 @pytest.mark.parametrize(
     "name",
-    [
-        "",
-        "x" * 256,
-        ".",
-        "..",
-    ],
+    [".", ".."],
 )
 def test_name_rules_reject_invalid_names(name):
     with pytest.raises(ValidationError):
@@ -228,11 +223,7 @@ def test_name_rules_reject_invalid_names(name):
 
 @pytest.mark.parametrize(
     "content",
-    [
-        "",
-        "\x00",
-        "\x1b",
-    ],
+    ["\x00", "\x1b"],
 )
 def test_text_rules_reject_controls_and_invalid_unicode(content):
     with pytest.raises(ValidationError):

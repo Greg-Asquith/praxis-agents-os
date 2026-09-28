@@ -8,6 +8,15 @@ import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
 import { compactDetails, listDetail, stringDetail } from "@/integrations/tool-details"
 import { formatCurrencyAmount, titleCaseToken } from "@/lib/format"
 
+function budgetLabel(
+  budget: { kind: string; amount: string | null } | null,
+  money: (amount: string | null) => string
+): string | null {
+  if (!budget) return null
+  if (budget.kind === "campaign") return "Set at campaign level"
+  return `${money(budget.amount)} ${budget.kind}`
+}
+
 const columns: DataColumn[] = [
   { key: "name", label: "Name", kind: "text" },
   { key: "status", label: "Status", kind: "status" },
@@ -49,12 +58,7 @@ export const metaAdsObjectsPresenter = defineIntegrationReadPresenter(metaAdsPro
         rows={result.objects.map((object) => ({
           ...object,
           name: object.name ?? "Unnamed object",
-          budget:
-            object.budget?.kind === "campaign"
-              ? "Set at campaign level"
-              : object.budget
-                ? `${money(object.budget.amount)} ${object.budget.kind}`
-                : null,
+          budget: budgetLabel(object.budget, money),
           budget_remaining: object.budget ? money(object.budget.remaining) : null,
           bid_strategy: object.bid_strategy
             ? titleCaseToken(object.bid_strategy.toLowerCase(), object.bid_strategy)

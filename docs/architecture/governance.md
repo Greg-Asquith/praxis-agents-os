@@ -200,8 +200,7 @@ per-agent `tool_policies`. The following rules define the policy:
 
 The main run owns approval mutations for its specialist runs. Consent names
 one current proposal revision and exactly one decision for every leaf action.
-Repeated native tool-call IDs in different runs do not share consent. Legacy
-consent is accepted only when it maps unambiguously to the same direct action.
+Repeated native tool-call IDs in different runs do not share consent.
 
 Accepted decisions are durable before execution starts. One execution owner
 claims the reservation, and a repeated submission cannot execute it again.
@@ -321,14 +320,9 @@ _(enforced)_ are `[default — confirm at review]`.
 | Every tool invocation, successful runs, routine refreshes | — (audit only)  | —                                               |
 
 
-## Approval upgrade and rollback boundary
+## Approval rollback boundary
 
-Legacy approvals authorise only verifiable saved proposals. Interrupted legacy
-acceptance has no durable decision reservation, so recovery retains completed
-and uncertain evidence and blocks replay. A fresh reviewed action needs fresh
-consent; replay is not a recovery mechanism.
-
-After new owner, approval-batch, reservation, or effective-budget metadata is
-written, an old backend is not a compatible rollback target. Stop admission and
-execution before a reviewed metadata-compatible repair. Keep saved approvals
-and effect evidence intact. A tolerant client may remain deployed.
+A backend that predates saved owner, approval-batch, reservation, or
+effective-budget metadata is not a compatible rollback target. Stop admission
+and execution before a reviewed metadata-compatible repair. Keep saved
+approvals and effect evidence intact.

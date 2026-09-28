@@ -14,7 +14,6 @@ from services.agents.models import factory
 from services.agents.models.domain import ResolvedModel
 
 
-@pytest.mark.parametrize("model_id", ["gpt-5.4-mini", "gpt-6-sol", "gpt-6-luna"])
 @pytest.mark.parametrize(
     ("status", "reason", "expected"),
     [
@@ -24,9 +23,8 @@ from services.agents.models.domain import ResolvedModel
         ("failed", None, "error"),
     ],
 )
-async def test_responses_stream_preserves_terminal_reason(
-    monkeypatch, model_id, status, reason, expected
-):
+async def test_responses_stream_preserves_terminal_reason(monkeypatch, status, reason, expected):
+    model_id = "gpt-6-sol"
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("test-key"))
     response = {

@@ -5,6 +5,7 @@ import json
 from datetime import date
 from unittest.mock import AsyncMock
 
+import httpx2
 import pytest
 from pydantic_ai import ModelRetry
 
@@ -14,6 +15,7 @@ from integrations.meta_ads.operations.run_insights import run_insights
 from integrations.meta_ads.operations.values import numeric_value
 from integrations.meta_ads.tools.utils.validation import months_before, validated_insights_request
 from services.integrations.http import IntegrationRequestPolicy
+from tests.integrations.meta_ads.support import static_token
 
 module = importlib.import_module("integrations.meta_ads.operations.run_insights")
 TODAY = date(2026, 9, 24)
@@ -82,6 +84,16 @@ def test_calendar_retention_boundaries():
     assert request(since="2025-08-24", fields=["unique_clicks"])
 
 
+def test_retained_metric_sort_is_rejected_with_old_breakdowns():
+    with pytest.raises(ModelRetry, match="13 months"):
+        request(
+            since="2025-07-01",
+            fields=["spend", "reach"],
+            breakdowns=["age"],
+            sort="reach_descending",
+        )
+
+
 async def test_every_parameter_and_action_window_is_preserved():
     provider = client(
         {
@@ -133,6 +145,7 @@ async def test_every_parameter_and_action_window_is_preserved():
     ]
     assert json.loads(params["sort"]) == ["spend_descending"]
     assert result.rows[0].metrics == {"spend": 5339.5, "impressions": 12345}
+    assert result.money_fields == ["spend"]
     assert type(result.rows[0].metrics["impressions"]) is int
     assert result.rows[0].keys["age"] == "25-34"
     assert result.rows[0].actions["actions"][0].model_dump() == {
@@ -237,6 +250,25 @@ async def test_background_timeout_uses_bounded_backoff(fake_clock):
     with pytest.raises(IntegrationValidationError, match="in time"):
         await run(provider)
     assert fake_clock == [1, 2, 4, 5, 5, 3]
+
+
+async def test_background_report_read_error_is_not_a_correctable_request():
+    def handler(request):
+        if request.method == "POST":
+            return httpx2.Response(200, json={"report_run_id": "99"}, request=request)
+        if request.url.path.endswith("/act_1/insights"):
+            error = {"code": 100, "error_subcode": 1487534, "message": "Too much data"}
+        elif request.url.path.endswith("/99"):
+            status = {"async_status": "Job Completed", "async_percent_completion": 100}
+            return httpx2.Response(200, json=status, request=request)
+        else:
+            error = {"code": 100, "message": "Report unavailable"}
+        return httpx2.Response(400, json={"error": error}, request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http:
+        with pytest.raises(IntegrationValidationError) as failure:
+            await run(MetaAdsClient(static_token, client=http))
+    assert failure.value.error_code != "meta_ads_invalid_insights"
 
 
 async def test_byte_budget_stops_before_next_page():

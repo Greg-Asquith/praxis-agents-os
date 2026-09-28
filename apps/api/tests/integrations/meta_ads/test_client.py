@@ -11,6 +11,7 @@ import pytest
 from pydantic import SecretStr
 
 from core.exceptions.integration import (
+    IntegrationAuthError,
     IntegrationConnectionError,
     IntegrationFailureDisposition,
     IntegrationRateLimitError,
@@ -57,6 +58,48 @@ async def test_bearer_and_optional_proof_stay_out_of_logs(configured, caplog) ->
     assert requests[0].url.params.get("appsecret_proof") == (proof if configured else None)
     assert TOKEN not in caplog.text
     assert proof not in caplog.text
+
+
+async def test_revoked_token_code_maps_to_auth_error_with_safe_details() -> None:
+    def handler(request):
+        return httpx2.Response(
+            400,
+            json={"error": {"code": 190, "message": TOKEN * 100, "fbtrace_id": "trace-123"}},
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http:
+        with pytest.raises(IntegrationAuthError) as failure:
+            await MetaAdsClient(static_token, client=http).graph_get(
+                "me", operation="identity", policy=READ
+            )
+    assert "trace-123" in str(failure.value)
+    assert TOKEN not in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    ("message", "configured", "guidance"),
+    [
+        ("Invalid appsecret_proof provided in the API argument", True, "different Meta app"),
+        (
+            "API calls from the server require an appsecret_proof argument",
+            False,
+            "administrator to add the app secret",
+        ),
+    ],
+)
+async def test_app_secret_mismatches_explain_operator_action(message, configured, guidance) -> None:
+    def handler(request):
+        return httpx2.Response(
+            400, json={"error": {"code": 100, "message": message}}, request=request
+        )
+
+    secret = SecretStr("test-app-secret") if configured else None
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http:
+        with pytest.raises(IntegrationValidationError, match=guidance):
+            await MetaAdsClient(static_token, app_secret=secret, client=http).graph_get(
+                "me", operation="identity", policy=READ
+            )
 
 
 @pytest.mark.parametrize(

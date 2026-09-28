@@ -404,13 +404,10 @@ async def _create_committed_delegation_context(
     child_tool_policies: dict[str, str] | None = None,
     trigger: str = "interactive",
     metadata: dict[str, object] | None = None,
-    shared_by_default: bool = False,
 ) -> DelegationRuntimeContext:
     async with session_factory() as db:
         user = build_user(email=f"runtime-delegation-{uuid4().hex}@example.com")
         workspace = build_workspace(slug=f"runtime-delegation-{uuid4().hex[:8]}")
-        if shared_by_default:
-            workspace.conversations_shared_by_default = True
         membership = build_workspace_membership(
             workspace_id=workspace.id,
             user_id=user.id,

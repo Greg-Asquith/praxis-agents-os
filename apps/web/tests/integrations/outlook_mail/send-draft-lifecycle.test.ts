@@ -11,6 +11,7 @@ import { projectConversationTimeline } from "@/features/conversations/message-pa
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { PendingToolApproval } from "@/features/conversations/types"
 import { loadIntegrationUiModules } from "@/integrations/registry"
+import { approvalIdentity } from "../../support/approvals"
 
 vi.mock("@/components/ui/button", async (importOriginal) => {
   const original = await importOriginal<{ Button: typeof Button }>()
@@ -39,6 +40,7 @@ const snapshot = {
 
 function pending(nested: boolean, draft: unknown = snapshot): PendingToolApproval {
   return {
+    ...approvalIdentity(nested ? "workflow:1" : "send-draft", "active-run"),
     tool_call_id: nested ? "workflow:1" : "send-draft",
     name: "outlook_mail_send_draft",
     args: { message, ...(draft === null ? {} : { _draft: draft }) },
@@ -64,6 +66,8 @@ function project(approval: PendingToolApproval, nested: boolean) {
     },
     pendingWorkflow: nested
       ? {
+          owner_run_id: "active-run",
+          root_run_id: "active-run",
           outer_tool_call_id: "workflow",
           code: "await outlook_mail_send_draft(message=message)",
           reason: null,
@@ -224,7 +228,14 @@ describe.each(approvalCases)("saved-draft approval (%s, %s)", (nested, revision)
       click("Approve & Send")
       await vi.waitFor(() => {
         expect(submit).toHaveBeenCalledExactlyOnceWith(
-          [{ tool_call_id: approval.tool_call_id, decision: "approved", override_args: null }],
+          [
+            {
+              approval_id: approval.tool_call_id,
+              tool_call_id: approval.tool_call_id,
+              decision: "approved",
+              override_args: null,
+            },
+          ],
           revision ?? undefined
         )
       })
@@ -255,7 +266,14 @@ describe.each(approvalCases)("saved-draft approval (%s, %s)", (nested, revision)
     bound.onDecisionChange({ decision: "denied", edits: {}, message: "Keep this draft" })
     await vi.waitFor(() => {
       expect(submit).toHaveBeenCalledExactlyOnceWith(
-        [{ tool_call_id: approval.tool_call_id, decision: "denied", message: "Keep this draft" }],
+        [
+          {
+            approval_id: approval.tool_call_id,
+            tool_call_id: approval.tool_call_id,
+            decision: "denied",
+            message: "Keep this draft",
+          },
+        ],
         revision ?? undefined
       )
     })
@@ -294,6 +312,13 @@ describe.each(approvalCases)("saved-draft approval (%s, %s)", (nested, revision)
       buildResumeDecisions([approval], {
         [approval.tool_call_id]: { decision: "approved", edits: { message }, message: "" },
       })
-    ).toEqual([{ tool_call_id: approval.tool_call_id, decision: "approved", override_args: null }])
+    ).toEqual([
+      {
+        approval_id: approval.tool_call_id,
+        tool_call_id: approval.tool_call_id,
+        decision: "approved",
+        override_args: null,
+      },
+    ])
   })
 })

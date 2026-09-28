@@ -39,7 +39,7 @@ nested value bound so a faulty reduction cannot flood every later request.
 ## Signature rendering
 
 `services/agents/runtime/code_mode/stubs.py` owns signature rendering and its
-strict schema adapter. Pydantic AI 2.42.0's public renderer is not adopted:
+strict schema adapter. Pydantic AI 2.50.0's public renderer is not adopted:
 recursive value types, input/output collisions, and required/default semantics
 lose information. See the architecture's
 [renderer decision](../architecture/code-mode.md#signature-renderer-ownership).
@@ -75,9 +75,8 @@ infer effects from proposed arguments or a model-authored reason.
 Approval reloads expose a `workflows` list for root and delegated workflows.
 Each workflow retains its owning run and delegation reference. Its pending
 leaf carries the nested action's identity, editable arguments, and untrusted
-data warning. The singular `workflow` field remains available for one root
-workflow. Root stream approval events use these same leaves after suspension
-commits, so child workflow arguments and warnings match reload.
+data warning. Root stream approval events use these same leaves after
+suspension commits, so child workflow arguments and warnings match reload.
 
 Approval reads reject malformed or unavailable workflow state instead of
 presenting an unverifiable action. A root resume against that state stops with

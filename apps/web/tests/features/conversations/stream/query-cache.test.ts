@@ -10,6 +10,7 @@ import {
 import type { ConversationActiveRunResponse } from "@/features/conversations/types"
 import type { StreamEvent } from "@/features/conversations/stream/protocol"
 import { filesQueryKeys } from "@/features/files/api/list-files"
+import { approvalIdentity } from "../../../support/approvals"
 
 const envelope = { run_id: "run-1", conversation_id: "conversation-1", seq: 1 }
 
@@ -114,6 +115,7 @@ it("preserves the same-run proposal revision through awaiting status and clears 
     event: "tool.approval_required",
     data: {
       ...envelope,
+      ...approvalIdentity("call"),
       tool_call_id: "call",
       name: "write_file",
       args: {},

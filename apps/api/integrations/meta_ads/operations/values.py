@@ -46,6 +46,11 @@ def disable_reason(value: Any) -> str | None:
 
 
 def require_currency(currency: Any, *, operation: str) -> str:
+    if not currency:
+        raise invalid_response(
+            "Meta Ads account currency is missing. Use Look for New Resources on the connection.",
+            operation=operation,
+        )
     if not isinstance(currency, str) or not is_supported_currency(currency):
         raise invalid_response("Meta Ads account currency is unsupported.", operation=operation)
     return currency

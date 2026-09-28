@@ -500,7 +500,12 @@ async def test_shared_run_approvals_and_context_remain_owner_only(
     resume = await db_async_client.post(
         approval_path + "/resume",
         headers=case.viewer_headers,
-        json={"decisions": [{"tool_call_id": "pending", "decision": "approved"}]},
+        json={
+            "approval_revision": "0" * 64,
+            "decisions": [
+                {"tool_call_id": "pending", "approval_id": str(uuid4()), "decision": "approved"}
+            ],
+        },
     )
     assert resume.status_code == 404, resume.text
     context_path = f"/api/v1/integrations/conversations/{case.conversation.id}/context"

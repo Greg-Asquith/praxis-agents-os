@@ -52,8 +52,7 @@ relying on it. Personal user tokens and token renewal are unsupported.
 
 ## Configure app-secret proof
 
-`META_ADS_APP_ID` is optional deployment metadata. `META_ADS_APP_SECRET` is
-optional; unset and blank values both disable proof generation. Store the
+`META_ADS_APP_SECRET` is optional; unset and blank values both disable proof generation. Store the
 agency's app secret in the deployment's secret store and enable **Require App
 Secret** in that same Meta app when using this protection.
 
@@ -79,14 +78,13 @@ page, with a 20-page cap. A cap or repeated cursor retains discovered accounts
 and marks the connection degraded with `page_cap`.
 
 Pagination accepts only HTTPS URLs on `graph.facebook.com` with the same
-versioned path. The client extracts the next cursor and rebuilds the request
+versioned path, where the numeric system user ID may stand in for `me`. The client extracts the next cursor and rebuilds the request
 with its own bearer token and proof; it does not forward the supplied URL.
 
 Each `meta_ads_ad_account` resource uses its bare numeric account ID. Discovery
 deduplicates by ID, sorts by name, and falls back to `Ad account ID`, with the
 account ID substituted, when a name is absent. Metadata includes currency,
-time zone, the account status label, business ID and name, tasks, and granted
-token permissions.
+time zone, the account status label, tasks, and granted token permissions.
 
 An account is writable only when all these conditions hold:
 
@@ -179,9 +177,11 @@ characters. Missing text and metrics remain null; missing action lists remain
 empty lists. Each action retains its action type, value, attribution
 windows, and requested device or destination breakdown values. Custom actions
 also carry nullable `custom_conversion_id` and `custom_conversion_name` fields.
-Money metrics
-stay in major currency units; Insights spend is never divided by 100. Counts
-are integers and rates remain decimal numbers. CTR is percentage points.
+Money metrics stay in major currency units; Insights spend is never divided by
+100. `MONEY_FIELDS` in `insights_fields.py` is the only list of amounts in the
+account currency, and each result's `money_fields` names the requested ones.
+Marketing messages spend is excluded because Meta reports its own currency.
+Counts are integers and rates remain decimal numbers. CTR is percentage points.
 Account currency and time zone come from discovery metadata. Missing metadata
 is displayed as unavailable rather than inferred.
 
@@ -249,8 +249,8 @@ Complete bounded results use the shared internal retained-result File path
 when they exceed the transcript preview budget. These Files stay outside
 ordinary Files discovery. The presenter supports preview expansion and keeps
 source truncation separate from preview truncation. Table cells and detail
-views use the shared table currency formatter for money, including spend and
-social spend, and show CTR in percentage points. ROAS remains a ratio. Provider
+views use the shared table currency formatter for the result's `money_fields`
+and show CTR in percentage points. ROAS remains a ratio. Provider
 names render as plain text.
 
 Audits contain the account target, requested level and dates, field count,
@@ -298,8 +298,8 @@ account. Truncated results retain the returned rows with `truncated=true`.
 
 Objects include names, configured and effective status, objective or
 optimisation goal, bid strategy, budgets, bids, schedules, and parent IDs when
-available. Schedule times are ISO 8601 with the offset Meta returns, for
-example `2026-09-01T00:00:00+01:00`. Ad sets without their own budget identify
+available. Schedule times are normalised to ISO 8601 and keep any offset Meta
+returns, for example `2026-09-01T00:00:00+01:00`. Ad sets without their own budget identify
 the campaign as the budget holder; ads have no separate budget. The provider operation also accepts
 exact object IDs for later write verification, still through the selected
 account's edge. Write tools remain pending.

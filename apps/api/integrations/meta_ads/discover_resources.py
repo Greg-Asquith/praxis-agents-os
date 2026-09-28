@@ -99,8 +99,6 @@ def _resource(
         if isinstance(raw_tasks, list)
         else []
     )
-    business = account.get("business")
-    business = business if isinstance(business, dict) else {}
     return DiscoveredIntegrationResource(
         resource_type="meta_ads_ad_account",
         external_id=account_id,
@@ -116,8 +114,6 @@ def _resource(
             "currency": (metadata_str(account.get("currency")) or "").strip(),
             "timezone_name": (metadata_str(account.get("timezone_name")) or "").strip(),
             "account_status": ACCOUNT_STATUSES.get(status_code, "UNKNOWN"),
-            "business_id": (metadata_str(business.get("id")) or "").strip(),
-            "business_name": (metadata_str(business.get("name")) or "").strip(),
             "tasks": tasks,
             "token_permissions": granted,
         },

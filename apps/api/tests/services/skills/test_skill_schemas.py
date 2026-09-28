@@ -5,25 +5,9 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-import pytest
-from pydantic import ValidationError
-
 from models.skills import Skill
-from services.skills.schemas import SkillCreateRequest, SkillRead
+from services.skills.schemas import SkillRead
 from utils.content import ContentScope
-
-
-@pytest.mark.parametrize(
-    "name",
-    ["Bad Name", "two--hyphens"],
-)
-def test_skill_create_rejects_invalid_names(name: str) -> None:
-    with pytest.raises(ValidationError):
-        SkillCreateRequest(
-            name=name,
-            description="Use this for focused work.",
-            instructions="Follow the workflow.",
-        )
 
 
 def test_skill_read_validates_metadata_from_orm_attribute() -> None:

@@ -1,10 +1,13 @@
 """Custom conversion discovery and account-scoped Insights enrichment."""
 
+import json
 from unittest.mock import AsyncMock
 
 import pytest
 
 from core.exceptions.integration import (
+    IntegrationAuthError,
+    IntegrationReportTooLargeError,
     IntegrationValidationError,
 )
 from integrations.meta_ads.client import META_GRAPH_API_VERSION, MetaAdsClient
@@ -136,6 +139,20 @@ async def test_unresolved_names_keep_ids_metrics_and_safe_note(metadata):
     assert action.custom_conversion_id == "123" and action.custom_conversion_name is None
     assert action.value == 2 and any("unresolved" in note for note in result.notes)
     assert "private provider text" not in result.model_dump_json()
+
+
+async def test_lookup_preserves_authentication_errors():
+    with pytest.raises(IntegrationAuthError):
+        await _report(_client({"data": [_row()]}, IntegrationAuthError("Auth")))
+
+
+async def test_lookup_shares_report_byte_limit():
+    report_payload = {"data": [_row()]}
+    maximum = len(json.dumps(report_payload, separators=(",", ":")).encode()) + 20
+    client = _client(report_payload, {"data": [{"id": "123", "name": "Long conversion name"}]})
+    with pytest.raises(IntegrationReportTooLargeError):
+        await _report(client, max_response_bytes=maximum)
+    assert client.graph_get.call_args_list[1].kwargs["max_response_bytes"] == 20
 
 
 async def test_lookup_has_no_cross_account_or_cross_call_cache():

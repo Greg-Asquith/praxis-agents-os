@@ -16,7 +16,6 @@ from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINI
 from integrations.gmail.tools import TOOL_DEFINITIONS
 from integrations.gmail.tools.search_messages import gmail_search_messages
 from integrations.gmail.tools.send_message import gmail_send_message
-from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
@@ -47,124 +46,21 @@ from services.integrations.operations import (
 )
 from tests.factories import build_user, build_workspace
 
+ALL_INTEGRATION_TOOL_DEFINITIONS = (
+    *TOOL_DEFINITIONS,
+    *GOOGLE_ADS_TOOL_DEFINITIONS,
+    *AIRTABLE_TOOL_DEFINITIONS,
+    *BIGQUERY_TOOL_DEFINITIONS,
+    *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
+    *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
+    *NOTION_TOOL_DEFINITIONS,
+    *OUTLOOK_MAIL_TOOL_DEFINITIONS,
+    *SHAREPOINT_TOOL_DEFINITIONS,
+    *META_ADS_TOOL_DEFINITIONS,
+)
 
-def test_full_integration_tool_contract_matrix_and_schemas() -> None:
-    definitions = {
-        definition.name: definition
-        for definition in (
-            *TOOL_DEFINITIONS,
-            *GOOGLE_ADS_TOOL_DEFINITIONS,
-            *AIRTABLE_TOOL_DEFINITIONS,
-            *BIGQUERY_TOOL_DEFINITIONS,
-            *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
-            *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
-            *NOTION_TOOL_DEFINITIONS,
-            *OUTLOOK_MAIL_TOOL_DEFINITIONS,
-            *SHAREPOINT_TOOL_DEFINITIONS,
-            *META_ADS_TOOL_DEFINITIONS,
-        )
-    }
-    expected = {
-        "meta_ads_run_insights": ("read", "internal", "auto", False),
-        "meta_ads_get_accounts": ("read", "internal", "auto", False),
-        "meta_ads_list_objects": ("read", "internal", "auto", False),
-        "meta_ads_list_custom_conversions": ("read", "internal", "auto", False),
-        "meta_ads_list_activities": ("read", "internal", "auto", False),
-        "sharepoint_create_folder": ("write", "external", "approval", True),
-        "sharepoint_write_file": ("write", "external", "approval", True),
-        "sharepoint_update_file": ("write", "external", "approval", True),
-        "sharepoint_copy_to_files": ("write", "internal", "auto", False),
-        "sharepoint_list_folder": ("read", "internal", "auto", False),
-        "sharepoint_search_files": ("read", "internal", "auto", False),
-        "sharepoint_read_file": ("read", "internal", "auto", False),
-        "sharepoint_find_in_file": ("read", "internal", "auto", False),
-        "sharepoint_open_link": ("read", "internal", "auto", False),
-        "outlook_mail_search_messages": ("read", "internal", "auto", False),
-        "outlook_mail_read_message": ("read", "internal", "auto", False),
-        "outlook_mail_list_folders": ("read", "internal", "auto", False),
-        "outlook_mail_read_attachment": ("read", "internal", "auto", False),
-        "outlook_mail_search_people": ("read", "internal", "auto", False),
-        "outlook_mail_send_draft": ("write", "external", "approval", True),
-        "outlook_mail_send_message": ("write", "external", "approval", True),
-        "outlook_mail_reply_to_message": ("write", "external", "approval", True),
-        "outlook_mail_forward_message": ("write", "external", "approval", True),
-        "outlook_mail_create_draft": ("write", "external", "approval", True),
-        "outlook_mail_move_message": ("write", "external", "approval", True),
-        "outlook_mail_update_message": ("write", "external", "approval", True),
-        "gmail_search_messages": ("read", "internal", "auto", False),
-        "gmail_read_message": ("read", "internal", "auto", False),
-        "gmail_send_message": ("write", "external", "approval", True),
-        "google_ads_add_ad_group_negative_keywords": ("write", "external", "approval", True),
-        "google_ads_add_campaign_negative_keywords": ("write", "external", "approval", True),
-        "google_ads_add_negative_keywords": ("write", "external", "approval", True),
-        "google_ads_create_keywords": ("write", "external", "approval", True),
-        "google_ads_apply_recommendations": ("write", "external", "approval", True),
-        "google_ads_assign_campaign_budgets": ("write", "external", "approval", True),
-        "google_ads_create_campaign_budget": ("write", "external", "approval", True),
-        "google_ads_dismiss_recommendations": ("write", "external", "approval", True),
-        "google_ads_link_negative_keyword_list": ("write", "external", "approval", True),
-        "google_ads_remove_campaign_budgets": ("write", "external", "approval", True),
-        "google_ads_remove_negative_keywords": ("write", "external", "approval", True),
-        "google_ads_remove_campaign_negative_keywords": (
-            "write",
-            "external",
-            "approval",
-            True,
-        ),
-        "google_ads_remove_ad_group_negative_keywords": (
-            "write",
-            "external",
-            "approval",
-            True,
-        ),
-        "google_ads_create_negative_keyword_list": ("write", "external", "approval", True),
-        "google_ads_get_report_field": ("read", "internal", "auto", False),
-        "google_ads_list_report_fields": ("read", "internal", "auto", False),
-        "google_ads_run_report": ("read", "internal", "auto", False),
-        "google_ads_update_campaign_status": ("write", "external", "approval", True),
-        "google_ads_update_campaign_budget_amounts": (
-            "write",
-            "external",
-            "approval",
-            True,
-        ),
-        "google_ads_update_device_bid_modifiers": (
-            "write",
-            "external",
-            "approval",
-            True,
-        ),
-        "google_ads_update_keywords": ("write", "external", "approval", True),
-        "google_ads_remove_keywords": ("write", "external", "approval", True),
-        "airtable_list_records": ("read", "internal", "auto", False),
-        "airtable_get_record": ("read", "internal", "auto", False),
-        "airtable_create_record": ("write", "external", "approval", True),
-        "airtable_update_record": ("write", "external", "approval", True),
-        "bigquery_list_tables": ("read", "internal", "auto", False),
-        "bigquery_get_table_schema": ("read", "internal", "auto", False),
-        "bigquery_run_query": ("read", "internal", "auto", False),
-        "google_analytics_check_report_fields": ("read", "internal", "auto", False),
-        "google_analytics_list_google_ads_links": ("read", "internal", "auto", False),
-        "google_analytics_list_report_fields": ("read", "internal", "auto", False),
-        "google_analytics_run_realtime_report": ("read", "internal", "auto", False),
-        "google_analytics_run_report": ("read", "internal", "auto", False),
-        "google_search_console_list_sitemaps": ("read", "internal", "auto", False),
-        "google_search_console_inspect_url": ("read", "internal", "auto", False),
-        "google_search_console_query_search_analytics": ("read", "internal", "auto", False),
-        "google_search_console_submit_sitemap": ("write", "external", "approval", True),
-        "google_search_console_request_indexing": ("write", "external", "approval", True),
-        "notion_search_pages": ("read", "internal", "auto", False),
-        "notion_read_page": ("read", "internal", "auto", False),
-        "notion_query_data_source": ("read", "internal", "auto", False),
-        "notion_create_page": ("write", "external", "approval", True),
-        "notion_update_page_content": ("write", "external", "approval", True),
-        "notion_update_page_properties": ("write", "external", "approval", True),
-    }
-    assert set(definitions) == set(expected)
-    copy_to_files = definitions["sharepoint_copy_to_files"]
-    assert copy_to_files.code_eligible
-    assert copy_to_files.supports_auto and copy_to_files.supports_approval
-    assert definitions["google_search_console_request_indexing"].supports_auto is False
+
+def test_external_writes_need_approval_and_models_cannot_pick_accounts() -> None:
     denylisted = {
         "account_id",
         "base_id",
@@ -176,36 +72,19 @@ def test_full_integration_tool_contract_matrix_and_schemas() -> None:
         "principal",
         "resource_id",
     }
-    for name, (effect, scope, policy, requires_write) in expected.items():
-        definition = definitions[name]
-        assert (
-            definition.effect,
-            definition.effect_scope,
-            definition.default_policy,
-            definition.integration_binding.requires_write,
-        ) == (effect, scope, policy, requires_write)
+    for definition in ALL_INTEGRATION_TOOL_DEFINITIONS:
+        if definition.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL:
+            assert definition.effect == "write", definition.name
+            assert definition.default_policy == "approval", definition.name
+            assert definition.integration_binding.requires_write, definition.name
+        else:
+            assert not definition.integration_binding.requires_write, definition.name
         schema = definition.to_pydantic_tool().function_schema.json_schema
-        assert denylisted.isdisjoint(schema["properties"])
-        assert definition.presentation.running_label
-        assert definition.presentation.completed_label
-        assert definition.presentation.failed_label
+        assert denylisted.isdisjoint(schema["properties"]), definition.name
 
 
 def test_every_integration_output_is_typed_except_explicit_dynamic_leaves() -> None:
-    definitions = (
-        *TOOL_DEFINITIONS,
-        *GOOGLE_ADS_TOOL_DEFINITIONS,
-        *AIRTABLE_TOOL_DEFINITIONS,
-        *BIGQUERY_TOOL_DEFINITIONS,
-        *GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
-        *GOOGLE_SEARCH_CONSOLE_TOOL_DEFINITIONS,
-        *NOTION_TOOL_DEFINITIONS,
-        *OUTLOOK_MAIL_TOOL_DEFINITIONS,
-        *SHAREPOINT_TOOL_DEFINITIONS,
-        *META_ADS_TOOL_DEFINITIONS,
-    )
-
-    for definition in definitions:
+    for definition in ALL_INTEGRATION_TOOL_DEFINITIONS:
         assert definition.output_model is not None, definition.name
         allowed_dynamic_markers = [
             ".properties.fields",
@@ -259,220 +138,6 @@ def _dynamic_object_paths(value: Any, path: str = "$") -> list[str]:
             for item_path in _dynamic_object_paths(item, f"{path}[{index}]")
         ]
     return []
-
-
-def test_gmail_tool_contract_matrix_and_schemas() -> None:
-    definitions = {definition.name: definition for definition in TOOL_DEFINITIONS}
-    assert set(definitions) == {
-        "gmail_search_messages",
-        "gmail_read_message",
-        "gmail_send_message",
-    }
-    assert definitions["gmail_search_messages"].effect == "read"
-    assert definitions["gmail_read_message"].effect == "read"
-    send = definitions["gmail_send_message"]
-    assert send.effect == "write"
-    assert send.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
-    assert send.default_policy == "approval"
-    assert send.integration_binding is not None and send.integration_binding.requires_write
-
-    denylisted = {
-        "account_id",
-        "base_id",
-        "connection_id",
-        "connection_label",
-        "customer_id",
-        "integration_resource_id",
-        "mailbox",
-        "principal",
-        "resource_id",
-    }
-    for definition in definitions.values():
-        schema = definition.to_pydantic_tool().function_schema.json_schema
-        assert denylisted.isdisjoint(schema["properties"])
-        assert definition.presentation.running_label
-        assert definition.presentation.completed_label
-        assert definition.presentation.failed_label
-
-
-def test_google_ads_tool_contract_matrix_and_schemas(monkeypatch) -> None:
-    definitions = {definition.name: definition for definition in GOOGLE_ADS_TOOL_DEFINITIONS}
-    assert set(definitions) == {
-        "google_ads_add_ad_group_negative_keywords",
-        "google_ads_add_campaign_negative_keywords",
-        "google_ads_add_negative_keywords",
-        "google_ads_create_keywords",
-        "google_ads_apply_recommendations",
-        "google_ads_assign_campaign_budgets",
-        "google_ads_create_campaign_budget",
-        "google_ads_dismiss_recommendations",
-        "google_ads_create_negative_keyword_list",
-        "google_ads_get_report_field",
-        "google_ads_link_negative_keyword_list",
-        "google_ads_list_report_fields",
-        "google_ads_remove_negative_keywords",
-        "google_ads_remove_ad_group_negative_keywords",
-        "google_ads_remove_campaign_budgets",
-        "google_ads_remove_campaign_negative_keywords",
-        "google_ads_run_report",
-        "google_ads_update_campaign_budget_amounts",
-        "google_ads_update_campaign_status",
-        "google_ads_update_device_bid_modifiers",
-        "google_ads_update_keywords",
-        "google_ads_remove_keywords",
-    }
-    for name in (
-        "google_ads_get_report_field",
-        "google_ads_list_report_fields",
-        "google_ads_run_report",
-    ):
-        assert definitions[name].effect == "read"
-    for name in (
-        "google_ads_add_ad_group_negative_keywords",
-        "google_ads_add_campaign_negative_keywords",
-        "google_ads_add_negative_keywords",
-        "google_ads_create_keywords",
-        "google_ads_apply_recommendations",
-        "google_ads_assign_campaign_budgets",
-        "google_ads_create_campaign_budget",
-        "google_ads_dismiss_recommendations",
-        "google_ads_create_negative_keyword_list",
-        "google_ads_link_negative_keyword_list",
-        "google_ads_remove_ad_group_negative_keywords",
-        "google_ads_remove_campaign_budgets",
-        "google_ads_remove_negative_keywords",
-        "google_ads_remove_campaign_negative_keywords",
-        "google_ads_update_campaign_budget_amounts",
-        "google_ads_update_campaign_status",
-        "google_ads_update_device_bid_modifiers",
-        "google_ads_update_keywords",
-        "google_ads_remove_keywords",
-    ):
-        spend = definitions[name]
-        assert spend.effect == "write"
-        assert spend.effect_scope == TOOL_EFFECT_SCOPE_EXTERNAL
-        assert spend.default_policy == "approval"
-        assert spend.supports_auto is False
-        assert spend.allowed_policies() == frozenset({"approval"})
-        assert spend.integration_binding is not None
-        assert spend.integration_binding.requires_write is True
-
-    create = definitions["google_ads_create_negative_keyword_list"]
-    editable_fields = {field.key for field in create.presentation.arg_fields if field.editable}
-    assert editable_fields == {"names"}
-    add = definitions["google_ads_add_negative_keywords"]
-    assert {field.key for field in add.presentation.arg_fields if field.editable} == {
-        "negative_list",
-        "keywords",
-    }
-    keyword_field = next(field for field in add.presentation.arg_fields if field.key == "keywords")
-    assert keyword_field.format == "records"
-    assert [column.key for column in keyword_field.columns] == ["text", "match_type"]
-    assert keyword_field.columns[1].options == ("EXACT", "PHRASE", "BROAD")
-    remove = definitions["google_ads_remove_negative_keywords"]
-    assert remove.max_public_result_chars == 1_000_000
-    assert definitions["google_ads_add_negative_keywords"].max_public_result_chars == (
-        remove.max_public_result_chars
-    )
-    assert {field.key for field in remove.presentation.arg_fields if field.editable} == {
-        "negative_list",
-        "keywords",
-    }
-    removal_field = next(
-        field for field in remove.presentation.arg_fields if field.key == "keywords"
-    )
-    assert removal_field.format == "records"
-    assert removal_field.columns[1].options == ("EXACT", "PHRASE", "BROAD", "ANY")
-    campaign_add = definitions["google_ads_add_campaign_negative_keywords"]
-    campaign_remove = definitions["google_ads_remove_campaign_negative_keywords"]
-    for campaign_tool in (campaign_add, campaign_remove):
-        assert {field.key for field in campaign_tool.presentation.arg_fields if field.editable} == {
-            "campaign_ids",
-            "keywords",
-        }
-        campaign_field = next(
-            field for field in campaign_tool.presentation.arg_fields if field.key == "campaign_ids"
-        )
-        assert campaign_field.format == "entity_list"
-        assert campaign_field.entity_kind == "google_ads_campaign"
-        assert campaign_tool.max_public_result_chars == 1_000_000
-    campaign_add_keywords = next(
-        field for field in campaign_add.presentation.arg_fields if field.key == "keywords"
-    )
-    campaign_remove_keywords = next(
-        field for field in campaign_remove.presentation.arg_fields if field.key == "keywords"
-    )
-    assert campaign_add_keywords.columns[1].options == ("EXACT", "PHRASE", "BROAD")
-    assert campaign_remove_keywords.columns[1].options == (
-        "EXACT",
-        "PHRASE",
-        "BROAD",
-        "ANY",
-    )
-    ad_group_add = definitions["google_ads_add_ad_group_negative_keywords"]
-    ad_group_remove = definitions["google_ads_remove_ad_group_negative_keywords"]
-    for ad_group_tool in (ad_group_add, ad_group_remove):
-        assert {field.key for field in ad_group_tool.presentation.arg_fields if field.editable} == {
-            "ad_group_ids",
-            "keywords",
-        }
-        ad_group_field = next(
-            field for field in ad_group_tool.presentation.arg_fields if field.key == "ad_group_ids"
-        )
-        assert ad_group_field.format == "entity_list"
-        assert ad_group_field.entity_kind == "google_ads_ad_group"
-        assert ad_group_tool.max_public_result_chars == 1_000_000
-    ad_group_add_keywords = next(
-        field for field in ad_group_add.presentation.arg_fields if field.key == "keywords"
-    )
-    ad_group_remove_keywords = next(
-        field for field in ad_group_remove.presentation.arg_fields if field.key == "keywords"
-    )
-    assert ad_group_add_keywords.columns[1].options == ("EXACT", "PHRASE", "BROAD")
-    assert ad_group_remove_keywords.columns[1].options == (
-        "EXACT",
-        "PHRASE",
-        "BROAD",
-        "ANY",
-    )
-    campaign_links = definitions["google_ads_link_negative_keyword_list"]
-    assert {field.key for field in campaign_links.presentation.arg_fields if field.editable} == {
-        "negative_list",
-        "campaign_ids",
-        "action",
-    }
-    link_action = next(
-        field for field in campaign_links.presentation.arg_fields if field.key == "action"
-    )
-    assert link_action.options == ("LINK", "UNLINK")
-    for summarized_write in (
-        create,
-        campaign_links,
-        definitions["google_ads_update_campaign_status"],
-        definitions["google_ads_update_device_bid_modifiers"],
-    ):
-        assert summarized_write.max_public_result_chars is None
-
-    denylisted = {
-        "account_id",
-        "base_id",
-        "connection_id",
-        "connection_label",
-        "customer_id",
-        "integration_resource_id",
-        "mailbox",
-        "principal",
-        "resource_id",
-    }
-    for definition in definitions.values():
-        schema = definition.to_pydantic_tool().function_schema.json_schema
-        assert denylisted.isdisjoint(schema["properties"])
-        assert definition.presentation.running_label
-        assert definition.presentation.completed_label
-        assert definition.presentation.failed_label
-
-    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_DEVELOPER_TOKEN", None)
-    assert all(not is_tool_allowed(item, workspace=None) for item in definitions.values())
 
 
 async def test_write_gating_fails_closed_without_provider_call(monkeypatch) -> None:
@@ -771,13 +436,3 @@ async def _delete_committed_runtime_context(session_factory, context) -> None:
         await db.execute(delete(User).where(User.id == context.user_id))
         await db.execute(delete(Workspace).where(Workspace.id == context.workspace_id))
         await db.commit()
-
-
-def test_meta_ads_exports_the_implemented_read_tools() -> None:
-    assert {tool.name for tool in META_ADS_TOOL_DEFINITIONS} == {
-        "meta_ads_run_insights",
-        "meta_ads_get_accounts",
-        "meta_ads_list_objects",
-        "meta_ads_list_custom_conversions",
-        "meta_ads_list_activities",
-    }

@@ -22,9 +22,9 @@ from tests.support.openai_images import IMAGE_BYTES
 
 
 @pytest.mark.parametrize(
-    "vertex,location", [(False, "global"), (True, "auto"), (True, "eu"), (True, "us")]
+    ("vertex", "location", "action"),
+    [(False, "global", "generate"), (True, "auto", "edit"), (True, "us", "video_to_image")],
 )
-@pytest.mark.parametrize("action", ["generate", "edit", "video_to_image"])
 async def test_google_image_adapter_preserves_media_and_transport(
     monkeypatch, vertex, location, action
 ):

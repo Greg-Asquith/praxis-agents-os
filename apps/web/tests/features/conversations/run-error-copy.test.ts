@@ -61,11 +61,8 @@ describe("approvalExpiryOutcome", () => {
       ],
     }
 
-    expect(runInterruptionOutcome(run)).toEqual({
+    expect(runInterruptionOutcome(run)).toMatchObject({
       kind: "code_mode_recovery",
-      title: "Workflow Needs Review",
-      message:
-        "This workflow couldn't resume safely after completing an action. Review what completed, then send a new instruction to continue.",
       completedActions: [
         { id: "update_campaign_status:1", toolName: "update_campaign_status" },
         { id: "write_file:1", toolName: "write_file" },

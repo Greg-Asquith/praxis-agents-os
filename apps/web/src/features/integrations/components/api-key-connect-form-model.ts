@@ -1,5 +1,6 @@
 // apps/web/src/features/integrations/components/api-key-connect-form-model.ts
 
+import { DEFAULT_CREDENTIAL_LABEL } from "@/integrations/contract"
 import type { FormValidationEntry } from "@/lib/forms"
 
 export type ApiKeyConnectFormState = {
@@ -9,7 +10,7 @@ export type ApiKeyConnectFormState = {
 
 export function validateApiKeyConnectForm(
   state: ApiKeyConnectFormState,
-  credentialLabel = "API key"
+  credentialLabel = DEFAULT_CREDENTIAL_LABEL
 ): FormValidationEntry[] {
   const errors: FormValidationEntry[] = []
   if (!state.label.trim()) {

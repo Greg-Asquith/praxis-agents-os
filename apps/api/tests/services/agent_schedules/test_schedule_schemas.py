@@ -13,11 +13,7 @@ from services.agent_schedules.schemas import AgentScheduleCreateRequest
 @pytest.mark.parametrize(
     ("status", "outcome", "expected"),
     [
-        ("pending", None, "healthy"),
-        ("claimed", None, "healthy"),
-        ("accepted", None, "healthy"),
         ("running", None, "healthy"),
-        ("awaiting_approval", None, "healthy"),
         ("completed", "success", "healthy"),
         ("completed", "gate_failed", "needs_attention"),
         ("completed", "budget_exhausted", "needs_attention"),

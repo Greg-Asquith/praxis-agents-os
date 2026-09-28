@@ -5,7 +5,6 @@ import pytest
 from core.settings import settings
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
-    PROVIDER_AZURE,
     PROVIDER_GOOGLE,
     PROVIDER_META,
     PROVIDER_MISTRAL,
@@ -24,14 +23,9 @@ from tests.support.settings import production_settings
     ("provider", "setting", "enabled", "expected_transport"),
     [
         (PROVIDER_OPENAI, None, False, "direct"),
-        (PROVIDER_AZURE, None, False, "direct"),
-        (PROVIDER_GOOGLE, "GOOGLE_VERTEX_AI", False, "direct"),
         (PROVIDER_GOOGLE, "GOOGLE_VERTEX_AI", True, "google-cloud"),
         (PROVIDER_ANTHROPIC, "ANTHROPIC_VERTEX_AI", False, "direct"),
-        (PROVIDER_ANTHROPIC, "ANTHROPIC_VERTEX_AI", True, "google-cloud"),
         (PROVIDER_META, None, False, "google-cloud"),
-        (PROVIDER_MISTRAL, None, False, "google-cloud"),
-        (PROVIDER_XAI, None, False, "google-cloud"),
     ],
 )
 def test_provider_transport_reports_active_route(

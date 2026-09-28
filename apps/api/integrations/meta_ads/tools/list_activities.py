@@ -24,6 +24,7 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
+from utils.metadata import metadata_str
 
 from ..operations.list_activities import list_activities
 from ..throttle import ensure_account_available
@@ -59,7 +60,7 @@ async def meta_ads_list_activities(
                 client,
                 account_id=entry.external_id,
                 request=request,
-                timezone_name=str(entry.permissions_metadata.get("timezone_name", "")),
+                timezone_name=metadata_str(entry.permissions_metadata.get("timezone_name")) or "",
                 max_response_bytes=budget.remaining,
             )
             return IntegrationAuditOutcome(

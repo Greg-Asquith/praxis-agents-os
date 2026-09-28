@@ -5,7 +5,7 @@
 from typing import Annotated, Any
 
 from pydantic import Field
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import RunContext
 
 from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
@@ -37,12 +37,6 @@ async def meta_ads_list_custom_conversions(
     ctx: RunContext[RuntimeDeps],
     limit: Annotated[int, Field(ge=1, le=CUSTOM_CONVERSIONS_MAX_ROWS)] = 100,
 ) -> dict[str, Any]:
-    if (
-        isinstance(limit, bool)
-        or not isinstance(limit, int)
-        or not 1 <= limit <= CUSTOM_CONVERSIONS_MAX_ROWS
-    ):
-        raise ModelRetry(f"limit must be between 1 and {CUSTOM_CONVERSIONS_MAX_ROWS}.")
     budget = ReportResultBudget("meta_ads", "list_custom_conversions")
 
     async def operation(entry: ResolvedContextEntry) -> Any:

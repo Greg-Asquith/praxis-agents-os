@@ -4,7 +4,6 @@
 
 from pydantic import ValidationError
 
-from core.exceptions.integration import IntegrationValidationError
 from services.integrations.report_results import ReportResultBudget
 
 from ..client import MetaAdsClient, ad_account_path
@@ -14,7 +13,7 @@ from ..tools.schemas.custom_conversions import (
     MetaAdsCustomConversionsData,
 )
 from .paging import read_pages
-from .values import bounded_string
+from .values import bounded_string, invalid_response
 
 _OPERATION = "list_custom_conversions"
 
@@ -31,10 +30,8 @@ async def list_custom_conversions(
         or not isinstance(limit, int)
         or not 1 <= limit <= CUSTOM_CONVERSIONS_MAX_ROWS
     ):
-        raise IntegrationValidationError(
-            f"limit must be between 1 and {CUSTOM_CONVERSIONS_MAX_ROWS}.",
-            provider_key="meta_ads",
-            operation=_OPERATION,
+        raise invalid_response(
+            f"limit must be between 1 and {CUSTOM_CONVERSIONS_MAX_ROWS}.", operation=_OPERATION
         )
     rows, truncated = await read_pages(
         client,
@@ -57,10 +54,8 @@ async def list_custom_conversions(
             for row in rows
         ]
     except ValidationError:
-        raise IntegrationValidationError(
-            "Meta Ads returned invalid custom conversion metadata.",
-            provider_key="meta_ads",
-            operation=_OPERATION,
+        raise invalid_response(
+            "Meta Ads returned invalid custom conversion metadata.", operation=_OPERATION
         ) from None
     return MetaAdsCustomConversionsData(
         conversions=conversions,

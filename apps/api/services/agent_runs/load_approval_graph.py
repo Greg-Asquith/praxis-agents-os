@@ -25,7 +25,7 @@ async def load_approval_graph(
     db: AsyncSession, *, actor: User, workspace: Workspace, run_id: UUID
 ) -> ApprovalGraph:
     """Validates canonical ownership and retains unavailable child classifications."""
-    # Disable autoflush so repeated legacy reads cannot persist unrelated state.
+    # Disable autoflush so projection reads cannot persist unrelated state.
     with db.no_autoflush:
         root = await db.scalar(
             select(AgentRun).where(

@@ -9,6 +9,7 @@ import type { ToolActivity } from "@/features/conversations/message-parts"
 import { toolUiApprovalPrompt } from "@/features/conversations/tool-ui"
 import type { PendingToolApproval } from "@/features/conversations/types"
 import type { ToolUi } from "@/features/tools/types"
+import { approvalIdentity } from "../../support/approvals"
 
 const folderReference = {
   version: 1 as const,
@@ -91,6 +92,7 @@ describe("SharePoint write approval display", () => {
 
   it.each(["_library", "_target"])("rejects injected edits to %s", (key) => {
     const approval: PendingToolApproval = {
+      ...approvalIdentity("write"),
       tool_call_id: "write",
       name: "sharepoint_create_folder",
       args: { name: "Report", _library: "Documents", _target: target },
@@ -106,8 +108,8 @@ describe("SharePoint write approval display", () => {
 
 describe.each(["folder"])("SharePoint %s destination replay", (field) => {
   describe.each(["direct", "nested"])("%s approval path", (path) => {
-    const identity = path === "nested" ? { approval_id: "nested-write" } : {}
-    const key = identity.approval_id ?? "write"
+    const key = path === "nested" ? "nested-write" : "write"
+    const identity = approvalIdentity(key)
 
     it.each(["null"])("selects another library from an %s root", (initial) => {
       const replayArgs = { name: "Report", ...(initial === "null" ? { [field]: null } : {}) }
@@ -126,7 +128,7 @@ describe.each(["folder"])("SharePoint %s destination replay", (field) => {
         )
       ).toEqual([
         {
-          ...identity,
+          approval_id: key,
           tool_call_id: "write",
           decision: "approved",
           override_args: { ...replayArgs, [field]: folderReference },
@@ -151,7 +153,7 @@ describe.each(["folder"])("SharePoint %s destination replay", (field) => {
         )
       ).toEqual([
         {
-          ...identity,
+          approval_id: key,
           tool_call_id: "write",
           decision: "approved",
           override_args: { name: "Report", [field]: null },

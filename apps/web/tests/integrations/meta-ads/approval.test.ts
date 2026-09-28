@@ -14,6 +14,7 @@ import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/ins
 
 import formSchema from "./insights-form-schema.json"
 import { parseInsightsOptions } from "@/integrations/meta_ads/lib/insights-options"
+import { approvalIdentity } from "../../support/approvals"
 
 const options = parseInsightsOptions(formSchema)
 if (!options) throw new Error("Invalid backend form schema fixture")
@@ -91,7 +92,14 @@ function render(
 
 function resume(original: Record<string, unknown>, edits: EditedValues) {
   return buildResumeDecisions(
-    [{ tool_call_id: "report", name: "meta_ads_run_insights", args: original }],
+    [
+      {
+        ...approvalIdentity("report"),
+        tool_call_id: "report",
+        name: "meta_ads_run_insights",
+        args: original,
+      },
+    ],
     { report: { decision: "approved", edits, message: "" } },
     () => fields
   )
@@ -172,7 +180,12 @@ describe("Meta Insights approval", () => {
       ],
     }
     expect(resume(args, edits)).toEqual([
-      { tool_call_id: "report", decision: "approved", override_args: { ...args, ...edits } },
+      {
+        approval_id: "report",
+        tool_call_id: "report",
+        decision: "approved",
+        override_args: { ...args, ...edits },
+      },
     ])
     expect(
       insightsApprovalError(parseInsightsApproval({ ...args, ...edits }, options), options)
@@ -186,7 +199,12 @@ describe("Meta Insights approval", () => {
       time_increment: "monthly",
     }
     expect(resume(original, edits)).toEqual([
-      { tool_call_id: "report", decision: "approved", override_args: { ...original, ...edits } },
+      {
+        approval_id: "report",
+        tool_call_id: "report",
+        decision: "approved",
+        override_args: { ...original, ...edits },
+      },
     ])
   })
 

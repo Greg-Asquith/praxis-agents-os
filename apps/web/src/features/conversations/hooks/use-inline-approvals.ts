@@ -212,8 +212,7 @@ export function useInlineApprovals({
     if ((activity.rootRunId ?? activity.agentRunId) !== activeRunId) return null
     const key = activity.approvalId ?? activity.id
     const approval = approvalsById.get(key)
-    if (!approval || (approval.owner_run_id && approval.owner_run_id !== activity.agentRunId))
-      return null
+    if (!approval || approval.owner_run_id !== activity.agentRunId) return null
 
     return {
       formKey: JSON.stringify([activeRunId, approvalRevision, key]),

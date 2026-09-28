@@ -17,11 +17,11 @@ from services.agents.models import factory
 from services.agents.models.resolution import resolve_catalog_model
 
 
-@pytest.mark.parametrize("model_id", ["gpt-6-sol", "gpt-6-luna"])
 @pytest.mark.parametrize(
     "thinking,effort", [(None, None), (False, "none"), ("minimal", "low"), ("high", "high")]
 )
-async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, model_id, thinking, effort):
+async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, thinking, effort):
+    model_id = "gpt-6-sol"
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("test-key"))
     requests = []

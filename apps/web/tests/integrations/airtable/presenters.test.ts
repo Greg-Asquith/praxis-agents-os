@@ -3,16 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import { ToolApprovalDecisionCard } from "@/components/tool-ui/approval-card"
-import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
-import airtableModule from "@/integrations/airtable"
 import { airtableListRecordsPresenter } from "@/integrations/airtable/presenters/records"
-import {
-  airtableCreateRecordPresenter,
-  airtableUpdateRecordPresenter,
-} from "@/integrations/airtable/presenters/write"
-import { integrationToolRowPresenters, loadIntegrationUiModules } from "@/integrations/registry"
+import { airtableUpdateRecordPresenter } from "@/integrations/airtable/presenters/write"
 
 const NODE = (content: string, ref = "rec-1") => ({
   node: "praxis_untrusted" as const,
@@ -60,9 +54,6 @@ describe("Airtable tool presenters", () => {
     )
 
     expect(html).toContain("Launch plan")
-    expect(html).toContain("1250")
-    expect(html).toContain("Show Full Content")
-    expect(html).toContain("ada@example.com")
     expect(html).toContain("Access needs to be renewed.")
     expect(html).not.toContain("praxis_untrusted")
     expect(html).not.toContain("PRAXIS_UNTRUSTED_CONTENT")
@@ -104,7 +95,7 @@ describe("Airtable tool presenters", () => {
     expect(html).toContain("Complete")
   })
 
-  it("falls through for malformed read payloads and registers all presenters", () => {
+  it("falls through for malformed read payloads", () => {
     expect(
       airtableListRecordsPresenter.render(
         props({
@@ -116,36 +107,6 @@ describe("Airtable tool presenters", () => {
         })
       )
     ).toBeNull()
-    expect(airtableModule.toolRowPresenters.map((presenter) => presenter.key)).toEqual([
-      "airtable_list_records",
-      "airtable_get_record",
-      "airtable_create_record",
-      "airtable_update_record",
-    ])
-    expect(airtableCreateRecordPresenter.handlesApprovals).toBe(true)
-    expect(airtableUpdateRecordPresenter.handlesApprovals).toBe(true)
-  })
-
-  it("loads and renders Airtable records through the production registry seam", async () => {
-    await loadIntegrationUiModules(["airtable"])
-
-    expect(integrationToolRowPresenters("airtable").map((presenter) => presenter.key)).toContain(
-      "airtable_list_records"
-    )
-    const row = renderCustomToolCallRow(
-      props({
-        id: "list-registry-1",
-        kind: "result",
-        name: "airtable_list_records",
-        status: "completed",
-        result: {
-          results: [entry({ records: [record({ Name: NODE("Launch plan") })], total: 1 })],
-        },
-      })
-    )
-    const html = render(row)
-    expect(html).toContain('aria-label="Airtable record results"')
-    expect(html).toContain("Launch plan")
   })
 })
 

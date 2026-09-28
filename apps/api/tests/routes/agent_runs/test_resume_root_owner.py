@@ -3,6 +3,7 @@
 """Approval mutations belong to the verified main conversation."""
 
 from copy import deepcopy
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
@@ -76,7 +77,12 @@ async def test_child_resume_is_rejected_before_decisions_or_effects(
         response = await async_client.post(
             f"/api/v1/agent-runs/{child_id}/resume",
             headers=headers,
-            json={"decisions": [{"tool_call_id": "write", "decision": "approved"}]},
+            json={
+                "approval_revision": "0" * 64,
+                "decisions": [
+                    {"tool_call_id": "write", "approval_id": str(uuid4()), "decision": "approved"}
+                ],
+            },
         )
         assert response.status_code == 409
         problem = response.json()
@@ -93,19 +99,15 @@ async def test_child_resume_is_rejected_before_decisions_or_effects(
         assert effects.calls == []
 
 
-@pytest.mark.parametrize("generation", ["current"])
 async def test_resume_http_contract_reserves_once_and_returns_stream_version(
-    committed_db_session_factory, async_client, monkeypatch, generation
+    committed_db_session_factory, async_client, monkeypatch
 ):
-    from uuid import uuid4
-
     from services.agent_runs.get_approval_state import get_agent_run_approval_state
     from services.agents.runtime.run_manager import run_task_registry
     from services.agents.runtime.stream_protocol import (
         STREAM_PROTOCOL_VERSION,
         STREAM_VERSION_HEADER,
     )
-    from tests.support.approval_fixtures import restore_approval_fixture
 
     factory = committed_db_session_factory
     queued = []
@@ -115,32 +117,44 @@ async def test_resume_http_contract_reserves_once_and_returns_stream_version(
         coroutine.close()
         sink.detach()
 
-    monkeypatch.setattr(run_task_registry, "spawn", disconnect)
-    with scenario_effects(name="scenario_release_write") as effects:
-        context = await restore_approval_fixture(factory, "direct")
+    with scenario_effects() as effects:
+        context = await build_scenario_agent(
+            factory,
+            tool_names=[effects.name],
+            trigger="scheduled",
+            metadata={"envelope": {"side_effect_policy": "require_approval"}},
+        )
+        model = scripted_model(
+            turns=[ToolTurn((ToolCall(effects.name, {"value": "review"}, "write"),))]
+        )
+        parked = await run_scenario(factory, context, model=model)
+        assert parked.run.status == "awaiting_approval"
+        monkeypatch.setattr(run_task_registry, "spawn", disconnect)
         async with factory() as db:
             actor = await db.get(User, context.user_id)
             workspace = await db.get(Workspace, context.workspace_id)
-            root = await db.get(AgentRun, context.run_id)
-            if generation == "current":
-                metadata = deepcopy(root.metadata_json)
-                metadata["approval_state"]["approval_batch_id"] = str(uuid4())
-                root.metadata_json = metadata
             session = await session_manager.create_session(db, str(actor.id))
             await db.commit()
             projection = await get_agent_run_approval_state(
-                db, actor=actor, workspace=workspace, run_id=root.id
+                db, actor=actor, workspace=workspace, run_id=context.run_id
             )
             headers = {**bearer_headers(session["session_token"]), "X-Workspace": workspace.slug}
-        payload = {"decisions": [{"tool_call_id": "write", "decision": "approved"}]}
+        payload = {
+            "approval_revision": "0" * 64,
+            "decisions": [
+                {
+                    "tool_call_id": "write",
+                    "approval_id": str(projection.approvals[0].approval_id),
+                    "decision": "approved",
+                }
+            ],
+        }
         url = f"/api/v1/agent-runs/{context.run_id}/resume"
-        if generation == "current":
-            stale = await async_client.post(url, headers=headers, json=payload)
-            assert stale.status_code == 409
-            assert stale.json()["error_code"] == "approval_refresh_required"
-            assert queued == []
-            payload["approval_revision"] = projection.approval_revision
-            payload["decisions"][0]["approval_id"] = str(projection.approvals[0].approval_id)
+        wrong = await async_client.post(url, headers=headers, json=payload)
+        assert wrong.status_code == 409
+        assert wrong.json()["error_code"] == "approval_refresh_required"
+        assert queued == []
+        payload["approval_revision"] = projection.approval_revision
         accepted = await async_client.post(url, headers=headers, json=payload)
         assert accepted.status_code == 200
         assert accepted.headers[STREAM_VERSION_HEADER] == STREAM_PROTOCOL_VERSION

@@ -38,6 +38,7 @@ const selectedSource = { ...originalSource, entity_id: "selected-file", label: "
 const replay = { source: originalSource, name: "Report.xlsx", content: null }
 const approval: PendingToolApproval = {
   approval_id: "approval-leaf",
+  root_run_id: "run-1",
   tool_call_id: "native-call",
   owner_run_id: "root",
   name: "sharepoint_write_file",

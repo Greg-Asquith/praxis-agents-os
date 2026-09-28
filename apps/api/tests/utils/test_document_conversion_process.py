@@ -23,11 +23,11 @@ async def test_conversion_timeout_and_cancellation_kill_worker(monkeypatch, tmp_
             str(started).encode(),
             content_type="text/plain",
             filename="probe.txt",
-            timeout_seconds=5,
+            timeout_seconds=2,
             max_bytes=100,
         )
     )
-    async with asyncio.timeout(4):
+    async with asyncio.timeout(2):
         while not started.exists():  # noqa: ASYNC110 - A separate process publishes the PID.
             await asyncio.sleep(0.01)
     pid = int(started.read_text())

@@ -152,6 +152,15 @@ async def test_paging_limit_truncation_and_cumulative_byte_budget():
     assert calls[1].kwargs["max_response_bytes"] < calls[0].kwargs["max_response_bytes"]
 
 
+async def test_repeated_cursor_and_empty_page_stop():
+    repeated = provider(page({"id": "10"}, cursor="same"), page({"id": "11"}, cursor="same"))
+    assert (await read(repeated)).truncated
+    assert repeated.graph_get.await_count == 2
+    empty = provider(page(cursor="one"))
+    assert (await read(empty)).truncated
+    assert empty.graph_get.await_count == 1
+
+
 @pytest.mark.parametrize(
     "payload",
     [

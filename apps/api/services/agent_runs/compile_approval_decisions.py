@@ -143,38 +143,19 @@ def _identity(node: ApprovalLeaf) -> str:
 def _resolve_decisions(
     graph: ApprovalGraph, leaves: tuple[ApprovalLeaf, ...], payload: AgentRunResumeRequest
 ) -> dict[str, AgentRunResumeDecision]:
-    from services.agents.runtime.approval_projection import (
-        WorkflowApprovalNode,
-        project_approval_graph,
-    )
+    from services.agents.runtime.approval_projection import project_approval_graph
 
     if len(payload.decisions) != len(leaves) or len(leaves) > MAX_PROJECTION_LEAVES:
         raise _refresh_required()
     projection = project_approval_graph(graph)
-    legacy = payload.approval_revision is None and all(
-        decision.approval_id is None for decision in payload.decisions
-    )
-    if legacy:
-        if graph.root_batch_id is not None or any(
-            isinstance(node, WorkflowApprovalNode) or node.batch_id is not None for node in leaves
-        ):
-            raise _refresh_required()
-        native_ids = [node.call.tool_call_id for node in leaves]
-        if len(set(native_ids)) != len(native_ids):
-            raise _refresh_required()
-        expected = {node.call.tool_call_id: _identity(node) for node in leaves}
-        keys = [expected.get(decision.tool_call_id) for decision in payload.decisions]
-    else:
-        if payload.approval_revision != projection.approval_revision:
-            raise _refresh_required()
-        expected = {str(item.approval_id): item.tool_call_id for item in projection.approvals}
-        keys = []
-        for decision in payload.decisions:
-            key = str(decision.approval_id)
-            if expected.get(key) != decision.tool_call_id:
-                raise _refresh_required()
-            keys.append(key)
-    if None in keys or len(set(keys)) != len(keys):
+    if payload.approval_revision != projection.approval_revision:
+        raise _refresh_required()
+    expected = {str(item.approval_id): item.tool_call_id for item in projection.approvals}
+    keys = [str(decision.approval_id) for decision in payload.decisions]
+    if len(set(keys)) != len(keys) or any(
+        expected.get(key) != decision.tool_call_id
+        for key, decision in zip(keys, payload.decisions, strict=True)
+    ):
         raise _refresh_required()
     return {str(key): decision for key, decision in zip(keys, payload.decisions, strict=True)}
 

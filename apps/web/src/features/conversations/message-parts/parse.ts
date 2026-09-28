@@ -68,10 +68,7 @@ export function parseConversationMessages(
   )
   const pendingApprovalsByCallId = new Map(
     pendingApprovals.map((approval) => [
-      toolActivityIdentity(
-        approval.owner_run_id ?? approval.delegation?.child_run_id ?? activeRun?.id,
-        approval.tool_call_id
-      ),
+      toolActivityIdentity(approval.owner_run_id, approval.tool_call_id),
       approval,
     ])
   )
@@ -103,7 +100,7 @@ export function parseConversationMessages(
         const matchingWorkflow =
           pendingWorkflows.find(
             (workflow) =>
-              (workflow.owner_run_id ?? activeRun?.id) === activity.agentRunId &&
+              workflow.owner_run_id === activity.agentRunId &&
               workflow.outer_tool_call_id === activity.id
           ) ?? pendingWorkflow
         const activityWithPendingWorkflow =
@@ -505,7 +502,7 @@ export function codeModeScriptFromPendingWorkflow(
   const pendingIndex = children.findIndex((child) => child.id === workflow.pending.tool_call_id)
   const pendingFields = {
     args: normalizeToolArgs(workflow.pending.args),
-    ...(workflow.pending.approval_id ? { approvalId: workflow.pending.approval_id } : {}),
+    approvalId: workflow.pending.approval_id,
     ...(workflow.pending.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
     ...(workflow.pending.taint_sources === undefined
       ? {}

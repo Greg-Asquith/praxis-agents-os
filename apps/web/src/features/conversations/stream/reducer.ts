@@ -42,8 +42,9 @@ export type ToolCallState = {
 }
 
 export type ApprovalState = {
-  owner_run_id?: string
-  approval_id?: string
+  root_run_id: string
+  owner_run_id: string
+  approval_id: string
   tool_call_id: string
   name: string
   args: unknown
@@ -148,9 +149,6 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
     conversationId: streamEvent.data.conversation_id,
     runId: streamEvent.data.run_id,
     lastSeq: streamEvent.data.seq,
-    ...(streamEvent.data.approval_revision
-      ? { approvalRevision: streamEvent.data.approval_revision }
-      : {}),
   }
 
   switch (streamEvent.event) {
@@ -225,7 +223,6 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             ...(streamEvent.data.owner_run_id
               ? { owner_run_id: streamEvent.data.owner_run_id }
               : {}),
-            ...(streamEvent.data.approval_id ? { approval_id: streamEvent.data.approval_id } : {}),
             ...(streamEvent.data.parent_tool_call_id === undefined
               ? {}
               : { parentToolCallId: streamEvent.data.parent_tool_call_id }),
@@ -267,7 +264,6 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             ...(streamEvent.data.owner_run_id
               ? { owner_run_id: streamEvent.data.owner_run_id }
               : {}),
-            ...(streamEvent.data.approval_id ? { approval_id: streamEvent.data.approval_id } : {}),
             ...(streamEvent.data.reason == null ? {} : { decisionReason: streamEvent.data.reason }),
             ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
             ...(existing?.workflowState === undefined
@@ -284,7 +280,7 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
       }
     }
     case "tool.approval_required": {
-      const ownerRunId = streamEvent.data.owner_run_id ?? streamEvent.data.delegation?.child_run_id
+      const ownerRunId = streamEvent.data.owner_run_id
       const existing = nextState.toolCalls[streamToolKey(streamEvent.data)]
       const timelineSequence = existing?.timelineSequence ?? nextState.nextTimelineSequence
       const parentToolCallId = streamEvent.data.parent_tool_call_id ?? existing?.parentToolCallId
@@ -303,24 +299,20 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
           : { taint_sources: streamEvent.data.taint_sources }),
         status: "pending" as const,
         tool_call_id: streamEvent.data.tool_call_id,
-        ...(ownerRunId ? { owner_run_id: ownerRunId } : {}),
-        ...(streamEvent.data.approval_id ? { approval_id: streamEvent.data.approval_id } : {}),
+        root_run_id: streamEvent.data.root_run_id,
+        owner_run_id: ownerRunId,
+        approval_id: streamEvent.data.approval_id,
       }
 
       return {
         ...nextState,
+        approvalRevision: streamEvent.data.approval_revision,
         nextTimelineSequence: existing
           ? nextState.nextTimelineSequence
           : nextState.nextTimelineSequence + 1,
         approvals: {
           ...nextState.approvals,
-          [streamEvent.data.approval_id ??
-          (streamEvent.data.delegation
-            ? JSON.stringify([
-                streamEvent.data.delegation.child_run_id,
-                streamEvent.data.tool_call_id,
-              ])
-            : streamToolKey(streamEvent.data))]: approval,
+          [streamEvent.data.approval_id]: approval,
         },
         status: "awaiting_approval",
         toolCalls: {
@@ -332,8 +324,8 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             status: "awaiting_approval",
             timelineSequence,
             tool_call_id: streamEvent.data.tool_call_id,
-            ...(ownerRunId ? { owner_run_id: ownerRunId } : {}),
-            ...(streamEvent.data.approval_id ? { approval_id: streamEvent.data.approval_id } : {}),
+            owner_run_id: ownerRunId,
+            approval_id: streamEvent.data.approval_id,
             ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
           },
         },
@@ -365,7 +357,6 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
             ...(streamEvent.data.owner_run_id
               ? { owner_run_id: streamEvent.data.owner_run_id }
               : {}),
-            ...(streamEvent.data.approval_id ? { approval_id: streamEvent.data.approval_id } : {}),
             workflowState: streamEvent.data.state,
             ...(existing?.parentToolCallId === undefined
               ? {}

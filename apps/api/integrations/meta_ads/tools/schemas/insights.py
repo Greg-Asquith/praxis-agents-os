@@ -100,6 +100,7 @@ class MetaAdsInsightsData(MetaAdsStrictModel):
     mode: Literal["direct", "background"]
     notes: list[str]
     currency: str = ""
+    money_fields: list[str]
     timezone_name: str = ""
     level: MetaAdsInsightsLevel
     since: str

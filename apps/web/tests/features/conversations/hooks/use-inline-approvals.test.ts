@@ -11,9 +11,11 @@ import {
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import type { PendingToolApproval } from "@/features/conversations/types"
+import { approvalIdentity } from "../../../support/approvals"
 
 const approvals: PendingToolApproval[] = [
   {
+    ...approvalIdentity("reused-call", "run-active"),
     tool_call_id: "reused-call",
     name: "write_file",
     args: { name: "active.txt" },
@@ -61,6 +63,7 @@ function approvalActivity(agentRunId: string): ToolActivity {
 it("binds siblings to their owner and explicit submission root", () => {
   function Probe() {
     const siblings = ["a", "b"].map((owner): PendingToolApproval => ({
+      root_run_id: "run-1",
       tool_call_id: "same",
       owner_run_id: owner,
       approval_id: `approval-${owner}`,
@@ -118,7 +121,12 @@ it("remounts editor state when the proposal revision changes while the leaf ID s
       activeRunId: "root",
       approvalRevision: revision,
       approvals: [
-        { approval_id: "stable-leaf", tool_call_id: "reused-call", name: "write_file", args: {} },
+        {
+          ...approvalIdentity("stable-leaf", "root"),
+          tool_call_id: "reused-call",
+          name: "write_file",
+          args: {},
+        },
       ],
       enabled: true,
       isSubmitting: false,
@@ -172,8 +180,7 @@ it("keeps sequential streamed siblings unavailable until done or a complete matc
         conversation_id: "conversation",
         seq,
         tool_call_id: "native",
-        owner_run_id: owner,
-        approval_id: `approval-${owner}`,
+        ...approvalIdentity(`approval-${owner}`, owner),
         approval_revision: "round",
         name: "write_file",
         args: {},

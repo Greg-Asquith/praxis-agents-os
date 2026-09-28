@@ -2,10 +2,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import {
-  TOOL_ROW_PRESENTERS,
-  renderCustomToolCallRow,
-} from "@/features/conversations/components/tool-call-row-registry"
+import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
 
 const integrationToolRowPresenters = vi.hoisted(() => vi.fn())
@@ -17,28 +14,6 @@ afterEach(() => {
 })
 
 describe("renderCustomToolCallRow", () => {
-  it("keeps native presenter precedence explicit", () => {
-    expect(TOOL_ROW_PRESENTERS.map((presenter) => presenter.key)).toEqual([
-      "run-code",
-      "code-mode-workflow",
-      "completion-report",
-      "artifact-tools",
-      "classifier",
-      "build-chart",
-      "web-fetch",
-      "web-search",
-      "delegate-agent-list",
-      "delegation",
-      "skill-activation",
-      "skill-document-read",
-      "todo-plan",
-      "todo-lookup",
-      "file-tools",
-      "kb-tools",
-      "memory-tools",
-    ])
-  })
-
   it("does not let a matching presenter replace the default approval row without opting in", () => {
     const render = vi.fn(() => createElement("p", null, "Custom presenter"))
     integrationToolRowPresenters.mockReturnValue([

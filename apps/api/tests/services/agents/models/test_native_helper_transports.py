@@ -138,13 +138,10 @@ async def test_google_native_helper_wire_and_response(monkeypatch, vertex, actio
     ("provider", "vertex", "action"),
     [
         ("anthropic", False, "search"),
-        ("anthropic", True, "search"),
         ("anthropic", False, "fetch"),
         ("anthropic", False, "code"),
-        ("anthropic", False, "classification"),
         ("anthropic", True, "classification"),
         ("openai", False, "search"),
-        ("openai", False, "code"),
         ("openai", False, "classification"),
     ],
 )

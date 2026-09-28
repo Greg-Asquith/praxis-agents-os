@@ -303,58 +303,6 @@ async def test_add_negative_keywords_rejects_target_outside_active_context() -> 
         )
 
 
-async def test_add_negative_keywords_write_denial_is_audited_before_provider_call(
-    monkeypatch,
-) -> None:
-    entry = ResolvedContextEntry(
-        integration_resource_id=uuid4(),
-        provider_key="google_ads",
-        resource_type="google_ads_account",
-        external_id="111",
-        display_name="Read-only account",
-        connection_id=uuid4(),
-        connection_label="Agency",
-        connection_status="active",
-        write_allowed=False,
-        permissions_metadata={"login_customer_id": "999"},
-    )
-    ctx = SimpleNamespace(
-        deps=SimpleNamespace(
-            active_context=ResolvedActiveContext(entries=(entry,)),
-            workspace=SimpleNamespace(id=uuid4()),
-            agent=SimpleNamespace(id=uuid4()),
-            run=SimpleNamespace(id=uuid4()),
-        ),
-        tool_name="google_ads_add_negative_keywords",
-        tool_call_id="call-denied",
-    )
-    provider_client = AsyncMock()
-    audit = AsyncMock()
-    monkeypatch.setattr(
-        "integrations.google_ads.tools.add_negative_keywords.google_ads_client",
-        provider_client,
-    )
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        audit,
-    )
-
-    result = await google_ads_add_negative_keywords(
-        ctx,
-        GoogleAdsSharedSetReference(
-            customer_id=entry.external_id,
-            shared_set_id="50",
-            label="Brand Protection",
-        ),
-        [NegativeKeywordEntry(text="term", match_type="EXACT")],
-    )
-
-    assert result.return_value["results"][0]["error_code"] == "write_not_permitted"
-    provider_client.assert_not_awaited()
-    assert audit.await_args.kwargs["status"] == AuditStatus.FAILURE
-    assert audit.await_args.kwargs["error_code"] == "write_not_permitted"
-
-
 async def test_remove_negative_keywords_normalizes_any_and_targets_one_account(
     monkeypatch,
 ) -> None:

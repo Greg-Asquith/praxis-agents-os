@@ -3,6 +3,9 @@
 """Builds current approval submissions for deterministic runtime scenarios."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 
@@ -10,6 +13,17 @@ from models.agent_run import AgentRun
 from services.agent_runs.compile_approval_decisions import compile_approval_decisions
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agents.runtime.approval_projection import build_approval_graph, project_approval_graph
+
+
+@dataclass
+class ScenarioDecision:
+    """A decision whose approval identity is filled from the saved projection."""
+
+    tool_call_id: str
+    decision: str
+    approval_id: UUID | None = None
+    message: str | None = None
+    override_args: dict[str, Any] | None = None
 
 
 async def compile_scenario_decisions(db, *, actor, workspace, membership, run, decisions):
@@ -35,7 +49,7 @@ async def compile_scenario_decisions(db, *, actor, workspace, membership, run, d
     )
 
 
-def approval_submission(graph, decisions: Sequence[AgentRunResumeDecision]):
+def approval_submission(graph, decisions: Sequence[ScenarioDecision]):
     """Adds current opaque identities to unambiguous scenario decisions."""
     projection = project_approval_graph(graph)
     submitted = []
@@ -44,7 +58,15 @@ def approval_submission(graph, decisions: Sequence[AgentRunResumeDecision]):
             item for item in projection.approvals if item.tool_call_id == decision.tool_call_id
         ]
         identity = matches[0].approval_id if len(matches) == 1 else decision.approval_id
-        submitted.append(decision.model_copy(update={"approval_id": identity}))
+        submitted.append(
+            AgentRunResumeDecision(
+                tool_call_id=decision.tool_call_id,
+                approval_id=identity,
+                decision=decision.decision,
+                message=decision.message,
+                override_args=decision.override_args,
+            )
+        )
     return AgentRunResumeRequest(
         approval_revision=projection.approval_revision, decisions=submitted
     )

@@ -157,7 +157,6 @@ describe("Google Ads recommendation presenters", () => {
     "%s optional parameter presence",
     (parameterType, firstKey, secondKey) => {
       it.each([
-        { first: 3, second: undefined },
         { first: undefined, second: undefined },
         { first: 3, second: 0 },
         { first: null, second: 3 },

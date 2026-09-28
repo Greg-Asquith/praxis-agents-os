@@ -1,7 +1,6 @@
 // apps/web/src/integrations/meta_ads/lib/insights-model.ts
 
 import type { DataColumn, DataRow } from "@/components/ui/data-table"
-import { isMoneyField } from "@/integrations/meta_ads/lib/money"
 import { UNRESOLVED_CONVERSION_NAME } from "@/integrations/meta_ads/lib/read-models"
 import { titleCaseToken } from "@/lib/format"
 import {
@@ -23,6 +22,9 @@ export type MetaAdsInsights = {
   truncationNote: string | null
 }
 
+// The backend owns which requested fields are amounts in the account currency.
+type MoneyFormat = { currency: string; fields: ReadonlySet<string> }
+
 const LEVELS = new Set(["account", "campaign", "adset", "ad"])
 const MODES: ReadonlySet<MetaAdsInsights["mode"]> = new Set(["direct", "background"])
 
@@ -41,12 +43,15 @@ export function parseMetaAdsInsights(value: unknown): MetaAdsInsights | null {
     value["since"] > value["until"] ||
     typeof value["currency"] !== "string" ||
     (value["currency"] !== "" && !/^[A-Z]{3}$/.test(value["currency"])) ||
+    !Array.isArray(value["money_fields"]) ||
+    !value["money_fields"].every((field): field is string => typeof field === "string") ||
     typeof value["timezone_name"] !== "string" ||
     !Array.isArray(value["notes"]) ||
     !value["notes"].every((note): note is string => typeof note === "string")
   )
     return null
 
+  const money: MoneyFormat = { currency: value["currency"], fields: new Set(value["money_fields"]) }
   const keyColumns = new Map<string, DataColumn>()
   const metricColumns = new Map<string, DataColumn>()
   const actionColumns = new Map<string, DataColumn>()
@@ -76,9 +81,9 @@ export function parseMetaAdsInsights(value: unknown): MetaAdsInsights | null {
       if (!isNullableFiniteNumber(item)) return null
       const key = `metrics.${name}`
       row[key] = item
-      metricColumns.set(key, metricColumn(key, name, titleCaseToken(name, name), value["currency"]))
+      metricColumns.set(key, metricColumn(key, name, titleCaseToken(name, name), money))
     }
-    if (!parseActions(raw["actions"], row, actionColumns, value["currency"])) return null
+    if (!parseActions(raw["actions"], row, actionColumns, money)) return null
     rows.push(row)
   }
   return {
@@ -102,7 +107,7 @@ function parseActions(
   actions: Record<string, unknown>,
   row: DataRow,
   columns: Map<string, DataColumn>,
-  currency: string
+  money: MoneyFormat
 ): boolean {
   for (const [field, items] of Object.entries(actions)) {
     if (!Array.isArray(items)) return false
@@ -128,14 +133,14 @@ function parseActions(
         customConversionLabel(item) ?? titleCaseToken(item["action_type"], item["action_type"])
       const label = `${titleCaseToken(field, field)}: ${actionLabel}${context ? ` (${context})` : ""}`
       row[key] = item["value"]
-      columns.set(key, metricColumn(key, field, label, currency))
+      columns.set(key, metricColumn(key, field, label, money))
       for (const [window, amount] of Object.entries(item["windows"])) {
         if (!isNullableFiniteNumber(amount)) return false
         const windowKey = `${key}.${window}`
         row[windowKey] = amount
         columns.set(
           windowKey,
-          metricColumn(windowKey, field, `${label} (${titleCaseToken(window, window)})`, currency)
+          metricColumn(windowKey, field, `${label} (${titleCaseToken(window, window)})`, money)
         )
       }
     }
@@ -154,8 +159,8 @@ function parseActionBreakdowns(value: unknown): [string, string | null][] | null
   return entries.sort(([left], [right]) => left.localeCompare(right))
 }
 
-function metricColumn(key: string, field: string, label: string, currency: string): DataColumn {
-  const kind = isMoneyField(field)
+function metricColumn(key: string, field: string, label: string, money: MoneyFormat): DataColumn {
+  const kind = money.fields.has(field)
     ? "currency"
     : field === "ctr" || field.endsWith("_ctr")
       ? "percent"
@@ -164,7 +169,7 @@ function metricColumn(key: string, field: string, label: string, currency: strin
     key,
     kind,
     label,
-    ...(kind === "currency" ? { currencyCode: currency } : {}),
+    ...(kind === "currency" ? { currencyCode: money.currency } : {}),
     ...(kind === "percent" ? { unit: "percentage-points" as const } : {}),
   }
 }

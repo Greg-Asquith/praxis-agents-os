@@ -157,6 +157,41 @@ async def test_replacement_rejects_another_workspaces_secret_reference(
     ) == original_reference
 
 
+async def test_replacement_rejects_member_and_revoked_connection(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+) -> None:
+    api_key = await db_async_client.post(
+        "/api/v1/integrations/connections/api-key",
+        headers=integration_identity["headers"],
+        json={"provider_key": "airtable", "label": "Key", "api_key": "initial-key"},
+    )
+    assert api_key.status_code == 200, api_key.text
+    connection_id = api_key.json()["id"]
+    _user, _workspace, _membership, member_headers = await create_identity(
+        db_session,
+        role=WorkspaceRole.MEMBER,
+        workspace=integration_identity["workspace"],
+    )
+    denied = await db_async_client.put(
+        f"/api/v1/integrations/connections/{connection_id}/credential",
+        headers=member_headers,
+        json={"api_key": "replacement"},
+    )
+    assert denied.status_code == 403
+
+    connection = await db_session.get(IntegrationConnection, connection_id)
+    connection.status = "revoked"
+    await db_session.commit()
+    revoked = await db_async_client.put(
+        f"/api/v1/integrations/connections/{connection_id}/credential",
+        headers=integration_identity["headers"],
+        json={"api_key": "replacement"},
+    )
+    assert revoked.status_code == 400
+
+
 async def test_new_local_version_is_cleaned_up_when_locked_rows_changed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

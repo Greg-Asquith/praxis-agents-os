@@ -63,6 +63,7 @@ def _report():
         truncation_note=None,
         mode="direct",
         notes=[],
+        money_fields=["spend"],
         level="campaign",
         since=TODAY,
         until=TODAY,

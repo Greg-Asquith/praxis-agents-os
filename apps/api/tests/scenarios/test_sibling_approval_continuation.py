@@ -17,11 +17,11 @@ from models.conversation import ConversationMessage
 from models.user import User
 from models.workspace import Workspace
 from services.agent_runs.get_approval_state import get_agent_run_approval_state
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.entity_references.domain import AgentReference
 from services.agents.runtime.tools.contract import ToolFieldPresentation, ToolPresentation
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import ScenarioEffects, resume_scenario, scenario_effects
 from tests.support.scenario import add_scenario_delegate, build_scenario_agent, run_scenario
 
@@ -167,7 +167,7 @@ async def test_sibling_workflows_with_identical_native_ids_resume_exact_owner_de
         context,
         model=model,
         decisions=[
-            AgentRunResumeDecision(
+            ScenarioDecision(
                 approval_id=leaf.approval_id,
                 tool_call_id=leaf.tool_call_id,
                 decision="approved",
@@ -193,7 +193,7 @@ async def test_sibling_workflows_with_identical_native_ids_resume_exact_owner_de
         context,
         model=model,
         decisions=[
-            AgentRunResumeDecision(
+            ScenarioDecision(
                 approval_id=leaf.approval_id,
                 tool_call_id=leaf.tool_call_id,
                 decision="approved" if leaf.owner_run_id == owners[0] else "denied",
@@ -332,7 +332,7 @@ async def test_delegated_workflow_staged_content_and_taint_use_child_owner(
             context,
             model=model,
             decisions=[
-                AgentRunResumeDecision(
+                ScenarioDecision(
                     approval_id=leaf.approval_id,
                     tool_call_id=leaf.tool_call_id,
                     decision=decision,

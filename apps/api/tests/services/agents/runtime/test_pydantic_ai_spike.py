@@ -7,7 +7,7 @@ and the serialization shape before any runtime abstraction sits on top of them.
 
 These tests are deterministic and provider-free (TestModel only), so they run in CI
 without a database or model credentials. They pin the behaviours the runtime design
-depends on against the installed pydantic-ai version (currently 2.1.0):
+depends on against the installed pydantic-ai version (currently 2.50.0):
 
 - message history round-trips byte-stable through ModelMessagesTypeAdapter and stays
   storable per-row in ConversationMessage.parts;

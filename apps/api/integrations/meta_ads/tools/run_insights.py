@@ -29,6 +29,7 @@ from services.integrations.operations import (
     run_audited_integration_operation,
 )
 from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
+from utils.metadata import metadata_str
 
 from ..operations.run_insights import run_insights
 from ..settings import meta_ads_settings
@@ -109,8 +110,9 @@ async def meta_ads_run_insights(
                 ) from None
             result = result.model_copy(
                 update={
-                    "currency": str(entry.permissions_metadata.get("currency", "")),
-                    "timezone_name": str(entry.permissions_metadata.get("timezone_name", "")),
+                    "currency": metadata_str(entry.permissions_metadata.get("currency")) or "",
+                    "timezone_name": metadata_str(entry.permissions_metadata.get("timezone_name"))
+                    or "",
                 }
             )
             return IntegrationAuditOutcome(

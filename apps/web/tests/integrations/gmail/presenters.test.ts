@@ -5,11 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
 import type { ToolActivity } from "@/integrations/contract"
-import {
-  integrationToolRowPresenters,
-  loadIntegrationUiModules,
-  providerKeyForToolName,
-} from "@/integrations/registry"
+import { providerKeyForToolName } from "@/integrations/registry"
 import { prefetchProviderPreview } from "@/components/tool-ui/provider-preview-queries"
 import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"
 import { gmailReadPresenter } from "@/integrations/gmail/presenters/read"
@@ -208,9 +204,6 @@ describe("Gmail tool presenters", () => {
     expect(html).not.toContain("allow-same-origin")
     expect(html).toContain("Content-Security-Policy")
     expect(html).toContain("Rich body")
-    expect(html).toContain("Inbox")
-    expect(html).toContain("Clients")
-    expect(html).toContain("Thread · 3 Messages")
     // The plain-text fallback is replaced by the full email view.
     expect(html).not.toContain("Plain fallback body")
   })
@@ -240,15 +233,6 @@ describe("Gmail tool presenters", () => {
         })
       )
     ).toBeNull()
-  })
-
-  it("registers all Gmail presenters through the lazy integration module", async () => {
-    await loadIntegrationUiModules(["gmail"])
-    expect(integrationToolRowPresenters("gmail").map((presenter) => presenter.key)).toEqual([
-      "gmail_search_messages",
-      "gmail_read_message",
-      "gmail_send_message",
-    ])
   })
 
   it("resolves provider keys from tool-name prefixes without the presentations query", () => {

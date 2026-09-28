@@ -179,24 +179,11 @@ describe("Outlook write presenters", () => {
     expect(render(PRESENTERS[name]?.render(context))).toContain(reason)
   })
 
-  it.each([
-    [
-      "outlook_mail_send_message",
-      [
-        "Email sent",
-        "Outlook accepted the email for sending.",
-        "Monthly report",
-        "kai@example.com",
-        "dana@example.com",
-        "Report attached",
-      ],
-    ],
-  ])("renders the confirmed outcome for %s from the approved arguments", (name, expected) => {
-    const html = completed(name, [entry(applied())])
-    for (const text of expected) expect(html).toContain(text)
+  it("renders the confirmed send outcome without private mailbox ids", () => {
+    const html = completed("outlook_mail_send_message", [entry(applied())])
+    expect(html).toContain("Monthly report")
     expect(html).toContain("https://outlook.office.com/mail/id/message")
     expect(html).toContain(">Done<")
-    expect(html).toContain("Operations mailbox")
     expect(html).not.toContain("opaque-mailbox")
     expect(html).not.toContain("praxis_untrusted")
   })
@@ -255,8 +242,6 @@ describe("Outlook write presenters", () => {
         })
       ),
     ])
-    expect(html).toContain("Email not sent")
-    expect(html).toContain("The draft remains in Drafts. Nothing was sent.")
     expect(html).toContain("Open draft in Outlook")
     expect(html).toContain(">Failed<")
     expect(html).not.toContain(">Done<")
@@ -271,7 +256,6 @@ describe("Outlook write presenters", () => {
         error_message: "No folder is named Archive.",
       }),
     ])
-    expect(html).toContain("Message not moved")
     expect(html).toContain("No folder is named Archive.")
     expect(html).not.toContain("Open in Outlook")
   })

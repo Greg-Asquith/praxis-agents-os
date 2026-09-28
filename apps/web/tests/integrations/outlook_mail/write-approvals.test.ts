@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { buildResumeDecisions } from "@/features/conversations/approval-decisions"
 import type { EditedValues } from "@/components/tool-ui/edited-values"
+import { approvalIdentity } from "../../support/approvals"
 
 vi.mock("@/components/ui/checkbox", async (importOriginal) => {
   const original = await importOriginal<{ Checkbox: typeof Checkbox }>()
@@ -87,7 +88,14 @@ describe("Outlook approval fidelity", () => {
     expect(html).not.toContain("Target unavailable")
     expect(html).toContain("Review")
     const decisions = buildResumeDecisions(
-      [{ tool_call_id: "draft", name: "outlook_mail_create_draft", args }],
+      [
+        {
+          ...approvalIdentity("draft"),
+          tool_call_id: "draft",
+          name: "outlook_mail_create_draft",
+          args,
+        },
+      ],
       {
         draft: { decision: "approved", edits: { subject: "Updated review" }, message: "" },
       },
@@ -95,6 +103,7 @@ describe("Outlook approval fidelity", () => {
     )
     expect(decisions).toEqual([
       {
+        approval_id: "draft",
         tool_call_id: "draft",
         decision: "approved",
         override_args: { ...args, subject: "Updated review", reply_to: null },
@@ -133,14 +142,26 @@ describe("Outlook approval fidelity", () => {
     expect(edits).toEqual({ reply_all: true })
     expect(
       buildResumeDecisions(
-        [{ tool_call_id: "reply", name: "outlook_mail_reply_to_message", args }],
+        [
+          {
+            ...approvalIdentity("reply"),
+            tool_call_id: "reply",
+            name: "outlook_mail_reply_to_message",
+            args,
+          },
+        ],
         {
           reply: { decision: "approved", edits, message: "" },
         },
         () => fields
       )
     ).toEqual([
-      { tool_call_id: "reply", decision: "approved", override_args: { ...args, reply_all: true } },
+      {
+        approval_id: "reply",
+        tool_call_id: "reply",
+        decision: "approved",
+        override_args: { ...args, reply_all: true },
+      },
     ])
   })
 
@@ -148,14 +169,26 @@ describe("Outlook approval fidelity", () => {
     const args = { message, to: ["kai@example.com"], body_html: "<p>Original</p>" }
     expect(
       buildResumeDecisions(
-        [{ tool_call_id: "forward", name: "outlook_mail_forward_message", args }],
+        [
+          {
+            ...approvalIdentity("forward"),
+            tool_call_id: "forward",
+            name: "outlook_mail_forward_message",
+            args,
+          },
+        ],
         {
           forward: { decision: "approved", edits: { body_html }, message: "" },
         },
         () => [field("body_html", "html")]
       )
     ).toEqual([
-      { tool_call_id: "forward", decision: "approved", override_args: { ...args, body_html } },
+      {
+        approval_id: "forward",
+        tool_call_id: "forward",
+        decision: "approved",
+        override_args: { ...args, body_html },
+      },
     ])
   })
 })
@@ -183,6 +216,7 @@ describe("Reply draft recipient inheritance", () => {
       const result = buildResumeDecisions(
         [
           {
+            ...approvalIdentity("draft"),
             tool_call_id: "draft",
             name: "outlook_mail_create_draft",
             args: display,
@@ -194,6 +228,7 @@ describe("Reply draft recipient inheritance", () => {
       )
       expect(result).toEqual([
         {
+          approval_id: "draft",
           tool_call_id: "draft",
           decision: "approved",
           override_args: { ...replay, body_html: "<p>Edited</p>" },
@@ -238,11 +273,25 @@ describe("Reply draft recipient inheritance", () => {
     expect(onFieldEdit).toHaveBeenCalledWith("cc", [])
     expect(
       buildResumeDecisions(
-        [{ tool_call_id: "draft", name: "outlook_mail_create_draft", args }],
+        [
+          {
+            ...approvalIdentity("draft"),
+            tool_call_id: "draft",
+            name: "outlook_mail_create_draft",
+            args,
+          },
+        ],
         { draft: { decision: "approved", edits: { cc: [] }, message: "" } },
         () => [field("cc", "list", true)]
       )
-    ).toEqual([{ tool_call_id: "draft", decision: "approved", override_args: { ...args, cc: [] } }])
+    ).toEqual([
+      {
+        approval_id: "draft",
+        tool_call_id: "draft",
+        decision: "approved",
+        override_args: { ...args, cc: [] },
+      },
+    ])
   })
 
   it("replaces inherited recipients only for declared optional lists", () => {
@@ -254,9 +303,21 @@ describe("Reply draft recipient inheritance", () => {
         message: "" as const,
       },
     }
-    const approvals = [{ tool_call_id: "draft", name: "outlook_mail_create_draft", args }]
+    const approvals = [
+      {
+        ...approvalIdentity("draft"),
+        tool_call_id: "draft",
+        name: "outlook_mail_create_draft",
+        args,
+      },
+    ]
     expect(buildResumeDecisions(approvals, decisions, () => [field("cc", "list", true)])).toEqual([
-      { tool_call_id: "draft", decision: "approved", override_args: { cc: ["lee@example.com"] } },
+      {
+        approval_id: "draft",
+        tool_call_id: "draft",
+        decision: "approved",
+        override_args: { cc: ["lee@example.com"] },
+      },
     ])
     expect(typeof buildResumeDecisions(approvals, decisions, () => [field("cc", "list")])).toBe(
       "string"
@@ -290,7 +351,14 @@ describe("Optional update flags", () => {
   }
   function resume(args: Record<string, unknown>, edits: EditedValues) {
     return buildResumeDecisions(
-      [{ tool_call_id: "update", name: "outlook_mail_update_message", args }],
+      [
+        {
+          ...approvalIdentity("update"),
+          tool_call_id: "update",
+          name: "outlook_mail_update_message",
+          args,
+        },
+      ],
       {
         update: { decision: "approved", edits, message: "" },
       },
@@ -315,7 +383,7 @@ describe("Optional update flags", () => {
     expect(first.html).toContain("No change")
     expect(first.onEditsChange).not.toHaveBeenCalled()
     expect(resume(args, {})).toEqual([
-      { tool_call_id: "update", decision: "approved", override_args: null },
+      { approval_id: "update", tool_call_id: "update", decision: "approved", override_args: null },
     ])
     for (const value of [true, false]) {
       const control = show(args)
@@ -325,6 +393,7 @@ describe("Optional update flags", () => {
       expect(edits).toEqual({ flagged: value })
       expect(resume(args, edits)).toEqual([
         {
+          approval_id: "update",
           tool_call_id: "update",
           decision: "approved",
           override_args: { ...args, flagged: value },
@@ -336,6 +405,7 @@ describe("Optional update flags", () => {
       expect(remaining).toEqual({ subject: "Changed" })
       expect(resume(args, remaining)).toEqual([
         {
+          approval_id: "update",
           tool_call_id: "update",
           decision: "approved",
           override_args: { ...args, subject: "Changed" },
@@ -351,7 +421,7 @@ describe("Optional update flags", () => {
     const props = vi.mocked(Checkbox).mock.calls[0]?.[0]
     expect(props?.checked).toBe(initial)
     expect(resume(args, { is_read: initial })).toEqual([
-      { tool_call_id: "update", decision: "approved", override_args: null },
+      { approval_id: "update", tool_call_id: "update", decision: "approved", override_args: null },
     ])
   })
 
@@ -375,6 +445,7 @@ describe("Optional update flags", () => {
         typeof buildResumeDecisions(
           [
             {
+              ...approvalIdentity("update"),
               tool_call_id: "update",
               name: "outlook_mail_update_message",
               args: { flagged: null },

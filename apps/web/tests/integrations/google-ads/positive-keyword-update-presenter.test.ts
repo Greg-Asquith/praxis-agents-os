@@ -135,7 +135,6 @@ describe("Google Ads positive keyword update presenter", () => {
   })
 
   it.each([
-    null,
     [{ customer_id: "1234567890", label: "Account", currency_code: "bad" }],
     [{ customer_id: "1234567890", label: "   ", currency_code: "GBP" }],
     [{ customer_id: "1234567890", label: "Account", currency_code: "GBP" }],

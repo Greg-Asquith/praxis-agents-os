@@ -195,17 +195,17 @@ export function projectConversationTimeline({
           message.toolActivities.some(
             (activity) =>
               activity.script &&
-              activity.agentRunId === (workflow.owner_run_id ?? transcriptRun?.id) &&
+              activity.agentRunId === workflow.owner_run_id &&
               activity.id === workflow.outer_tool_call_id
           )
         )
     )
     .map((workflow): ToolActivity => {
-      const script = codeModeScriptFromPendingWorkflow(workflow, workflow.owner_run_id ?? null)
+      const script = codeModeScriptFromPendingWorkflow(workflow, workflow.owner_run_id)
       const delegation = workflow.delegation ?? workflow.pending.delegation
       return {
         id: workflow.outer_tool_call_id,
-        agentRunId: workflow.owner_run_id ?? null,
+        agentRunId: workflow.owner_run_id,
         rootRunId: transcriptRun?.id ?? null,
         kind: "approval",
         name: "run_workflow",
@@ -277,12 +277,7 @@ function projectOrphanApprovals(
   return approvals
     .filter(
       (approval) =>
-        !renderedAwaitingIds.has(
-          toolActivityIdentity(
-            approval.owner_run_id ?? approval.delegation?.child_run_id ?? runId,
-            approval.tool_call_id
-          )
-        )
+        !renderedAwaitingIds.has(toolActivityIdentity(approval.owner_run_id, approval.tool_call_id))
     )
     .map((approval) => orphanApprovalActivity(approval, runId))
 }
@@ -291,9 +286,9 @@ function orphanApprovalActivity(approval: PendingToolApproval, agentRunId: strin
   const args = normalizeToolArgs(approval.args)
   const activity: ToolActivity = {
     id: approval.tool_call_id,
-    agentRunId: approval.owner_run_id ?? approval.delegation?.child_run_id ?? agentRunId,
+    agentRunId: approval.owner_run_id,
     rootRunId: agentRunId,
-    ...(approval.approval_id ? { approvalId: approval.approval_id } : {}),
+    approvalId: approval.approval_id,
     kind: "approval",
     status: "awaiting_approval",
     name: approval.name,

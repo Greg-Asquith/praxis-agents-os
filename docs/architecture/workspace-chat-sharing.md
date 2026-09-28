@@ -2,10 +2,9 @@
 
 Chats have separate execution ownership and visibility. Chats start private
 unless their team workspace enables default sharing. An active chat owner can
-share a direct, scheduled, or event
-root chat with their team workspace, including when their role is read-only.
-All active workspace members, including future members, can read its saved
-transcript. A link identifies the workspace and chat; it grants no authority.
+share a direct, scheduled, or event root chat with their team workspace,
+including when their role is read-only. All active workspace members, including
+future members, can read its saved transcript. A link identifies the workspace and chat; it grants no authority.
 Personal workspaces and delegated child chats cannot be shared.
 
 ## Workspace default audience
@@ -47,9 +46,9 @@ The home page and conversation runtime retain owner-only queries.
 
 Before the first message, the New Conversation page shows
 **Shared with everyone in WORKSPACE_NAME.** The Home composer is unchanged.
-Other members discover saved chats
-on the next sidebar refetch. The list has a 15-second stale time and refreshes
-on focus or remount when stale; there is no realtime fan-out or timed polling.
+Other members discover saved chats on the next sidebar refetch. The list has a
+15-second stale time and refreshes on focus or remount when stale; there is no
+realtime fan-out or timed polling.
 
 ## Read and execution boundaries
 

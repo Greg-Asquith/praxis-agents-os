@@ -20,6 +20,8 @@ from integrations.airtable.entity_resolvers.record import (
     resolve_airtable_records,
     search_airtable_records,
 )
+from integrations.airtable.operations.get_record import get_record
+from integrations.airtable.operations.list_records import list_records
 from integrations.airtable.references import AirtableRecordReference
 from integrations.airtable.tools import TOOL_DEFINITIONS
 from integrations.airtable.tools.get_record import airtable_get_record
@@ -99,6 +101,59 @@ async def test_discovery_paginates_and_maps_write_permissions(monkeypatch) -> No
     assert [item.writable for item in resources] == [True, True, False, False]
     assert resources[0].permissions_metadata == {"permission_level": "edit"}
     assert requests[1].url.params["offset"] == "next-page"
+
+
+async def test_list_and_get_records_frame_provider_text() -> None:
+    list_request: httpx2.Request | None = None
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal list_request
+        if request.url.path.endswith("/rec-one"):
+            return httpx2.Response(
+                200,
+                json={"id": "rec-one", "fields": {"Name": "One"}},
+                request=request,
+            )
+        list_request = request
+        return httpx2.Response(
+            200,
+            json={
+                "records": [
+                    {
+                        "id": "rec-one",
+                        "createdTime": "2026-07-22T10:00:00.000Z",
+                        "fields": {"Name": "One", "Tags": ["A", "B"]},
+                    }
+                ]
+            },
+            request=request,
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http_client:
+        client = AirtableClient(_static_token, client=http_client)
+        listed = await list_records(
+            client,
+            base_id="app-one",
+            table="Table / One",
+            view="Grid",
+            filter_by_formula="{Active}=1",
+            max_records=250,
+        )
+        fetched = await get_record(
+            client,
+            base_id="app-one",
+            table="Table / One",
+            record_id="rec-one",
+        )
+
+    assert listed["total"] == 1
+    assert list_request is not None
+    assert list_request.url.params["maxRecords"] == "100"
+    assert list_request.url.params["view"] == "Grid"
+    assert list_request.url.params["filterByFormula"] == "{Active}=1"
+    assert listed["records"][0]["fields"]["Name"].content == "One"
+    assert listed["records"][0]["fields"]["Tags"][1].source_ref == "rec-one"
+    assert fetched["fields"]["Name"].content == "One"
 
 
 async def test_record_hydration_omits_stale_item_without_aborting_batch(monkeypatch) -> None:

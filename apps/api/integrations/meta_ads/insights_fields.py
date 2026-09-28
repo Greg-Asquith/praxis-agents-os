@@ -263,4 +263,58 @@ NUMERIC_FIELDS = frozenset(
     }
 )
 
+# Amounts in the account currency. Marketing messages spend has its own currency field.
+MONEY_FIELDS = frozenset(
+    {
+        "action_values",
+        "auction_bid",
+        "auction_max_competitor_bid",
+        "average_purchases_conversion_value",
+        "catalog_segment_value",
+        "configurable_attribution_actionvalue",
+        "configurable_audience_overlap_with_conv_exposure_cost",
+        "configurable_reachbyfrequency_impressions_cost",
+        "conversion_values",
+        "converted_product_app_custom_event_fb_mobile_purchase_value",
+        "converted_product_offline_purchase_value",
+        "converted_product_omni_purchase_values",
+        "converted_product_value",
+        "converted_product_website_pixel_purchase_value",
+        "converted_promoted_product_app_custom_event_fb_mobile_purchase_value",
+        "converted_promoted_product_offline_purchase_value",
+        "converted_promoted_product_omni_purchase_values",
+        "converted_promoted_product_value",
+        "converted_promoted_product_website_pixel_purchase_value",
+        "cost_per_15_sec_video_view",
+        "cost_per_2_sec_continuous_video_view",
+        "cost_per_6_sec_video_view",
+        "cost_per_action_type",
+        "cost_per_ad_click",
+        "cost_per_conversion",
+        "cost_per_conversion_lead",
+        "cost_per_dda_countby_convs",
+        "cost_per_estimated_ad_recallers",
+        "cost_per_inline_link_click",
+        "cost_per_inline_post_engagement",
+        "cost_per_message_delivered",
+        "cost_per_one_thousand_ad_impression",
+        "cost_per_outbound_click",
+        "cost_per_thruplay",
+        "cost_per_unique_action_type",
+        "cost_per_unique_click",
+        "cost_per_unique_conversion",
+        "cost_per_unique_inline_link_click",
+        "cost_per_unique_outbound_click",
+        "cpc",
+        "cpm",
+        "cpp",
+        "social_spend",
+        "spend",
+        "wish_bid",
+    }
+)
+
+# Meta omits these with breakdowns that start more than 13 months ago.
+RETAINED_METRICS = frozenset({"reach", "frequency", "cpp"})
+
 REPORT_FIELDS = tuple(sorted(COUNT_FIELDS | NUMERIC_FIELDS | ACTION_FIELDS | TEXT_FIELDS))

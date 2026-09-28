@@ -321,7 +321,7 @@ async def test_share_management_requires_admin_but_member_can_edit_and_restore(
     assert restored_content.json()["content"] == original_content.json()["content"]
 
 
-async def test_share_listing_hides_tokens_and_disabled_gate(
+async def test_share_lifetime_cap_listing_and_disabled_gate(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     local_storage_settings: None,
@@ -331,13 +331,16 @@ async def test_share_listing_hides_tokens_and_disabled_gate(
         db_session,
         role=WorkspaceRole.OWNER,
     )
+    before = datetime.now(UTC)
     created = await db_async_client.post(
         f"/api/v1/artifacts/{artifact.id}/shares",
         headers=headers,
-        json={},
+        json={"expires_in_days": 90},
     )
     assert created.status_code == 201
     assert created.json()["version_id"] == str(version_id)
+    expiry = datetime.fromisoformat(created.json()["expires_at"])
+    assert timedelta(days=29, hours=23) < expiry - before < timedelta(days=30, minutes=1)
 
     listed = await db_async_client.get(
         f"/api/v1/artifacts/{artifact.id}/shares",

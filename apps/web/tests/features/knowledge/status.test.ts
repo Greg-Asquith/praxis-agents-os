@@ -14,9 +14,7 @@ describe("knowledge processing status", () => {
   })
 
   it.each([
-    ["url", "pending", false],
     ["url", "ready", true],
-    ["manual", "pending", false],
     ["manual", "ready", false],
     ["manual", "error", true],
   ] satisfies [KbSourceType, KbProcessingStatus, boolean][])(

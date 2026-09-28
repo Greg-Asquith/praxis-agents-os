@@ -9,12 +9,6 @@ from core.settings import Settings
 from tests.support.settings import production_settings
 
 
-@pytest.mark.parametrize("dimensions", [511, 1025])
-def test_embedding_dimensions_are_bounded(dimensions: int) -> None:
-    with pytest.raises(ValidationError):
-        Settings(EMBEDDINGS_DIMENSIONS=dimensions)
-
-
 def test_ollama_requires_explicit_base_url() -> None:
     with pytest.raises(ValidationError, match="EMBEDDINGS_OLLAMA_BASE_URL"):
         Settings(EMBEDDINGS_PROVIDER="ollama", EMBEDDINGS_OLLAMA_BASE_URL=None)

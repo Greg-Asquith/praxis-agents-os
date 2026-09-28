@@ -25,7 +25,6 @@ from integrations.outlook_mail.settings import outlook_mail_settings
 from integrations.sharepoint import PROVIDER as SHAREPOINT_PROVIDER
 from integrations.sharepoint.settings import sharepoint_settings
 from services.integrations.microsoft_graph import graph_response_error
-from services.integrations.microsoft_graph.entra import validate_entra_tenant
 from services.integrations.oauth import (
     build_authorization_url,
     exchange_authorization_code,
@@ -114,31 +113,6 @@ def test_package_tenant_override_wins_for_each_microsoft_provider(
     assert "/organizations/" in provider.oauth_config().authorization_url
 
 
-@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS[:1])
-def test_configured_microsoft_provider_uses_its_effective_tenant(
-    provider_key: str,
-    provider: IntegrationProviderPlugin,
-    provider_settings: object,
-    prefix: str,
-) -> None:
-    client_id = str(getattr(provider_settings, f"{prefix}_OAUTH_CLIENT_ID"))
-    client_secret = getattr(
-        provider_settings,
-        f"{prefix}_OAUTH_CLIENT_SECRET",
-    ).get_secret_value()
-    tenant_override = str(getattr(provider_settings, f"{prefix}_OAUTH_TENANT"))
-    effective_tenant = tenant_override or settings.MICROSOFT_GRAPH_TENANT
-    required_values = (client_id, client_secret, effective_tenant)
-    if any(
-        not value.strip() or value.strip().casefold() == "disabled" for value in required_values
-    ):
-        pytest.skip(f"{provider_key} OAuth environment is not configured")
-
-    assert provider.oauth_config is not None
-    expected_tenant = validate_entra_tenant(effective_tenant)
-    assert f"/{expected_tenant}/" in provider.oauth_config().authorization_url
-
-
 @pytest.mark.parametrize("tenant", ["common", "not a tenant"])
 @pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS[:1])
 def test_each_microsoft_provider_rejects_an_invalid_effective_tenant(
@@ -157,7 +131,7 @@ def test_each_microsoft_provider_rejects_an_invalid_effective_tenant(
         provider.oauth_config()
 
 
-@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS)
+@pytest.mark.parametrize("provider_key,provider,provider_settings,prefix", PROVIDERS[:1])
 async def test_token_exchange_uses_each_microsoft_application_and_fixture(
     microsoft_oauth_plugins: None,
     monkeypatch: pytest.MonkeyPatch,

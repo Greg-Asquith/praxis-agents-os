@@ -7,6 +7,7 @@ export function insightsData(overrides: Record<string, unknown> = {}) {
     mode: "direct",
     notes: [],
     currency: "EUR",
+    money_fields: ["action_values", "cpc", "spend"],
     timezone_name: "Europe/Paris",
     level: "campaign",
     since: "2026-09-01",

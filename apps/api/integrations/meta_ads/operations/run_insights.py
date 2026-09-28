@@ -14,7 +14,13 @@ from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.report_results import ReportResultBudget, report_result_max_bytes
 
 from ..client import MetaAdsClient, ad_account_path
-from ..insights_fields import ACTION_FIELDS, COUNT_FIELDS, TEXT_FIELDS
+from ..insights_fields import (
+    ACTION_FIELDS,
+    COUNT_FIELDS,
+    MONEY_FIELDS,
+    RETAINED_METRICS,
+    TEXT_FIELDS,
+)
 from ..throttle import ensure_account_available
 from ..tools.schemas.insights import (
     MetaAdsInsightsAction,
@@ -29,7 +35,8 @@ from .values import bounded_string, invalid_response, numeric_value
 
 _READ = IntegrationRequestPolicy.READ
 _OPERATION = "run_insights"
-_RETAINED_METRICS = frozenset({"reach", "frequency", "cpp"})
+# Code 100 on a submitted report is not a request the model can correct.
+_REPORT_OPERATION = "read_insights_report"
 _PAGE_SIZE = 1000
 _NARROW_REPORT = "Narrow the date range, level, or breakdowns and try again."
 
@@ -55,13 +62,17 @@ async def run_insights(
     path = f"{ad_account_path(account_id)}/insights"
     mode: Literal["direct", "background"] = "direct"
     try:
-        rows, truncated = await _read_rows(client, path, params, account_id, limit, budget)
+        rows, truncated = await _read_rows(
+            client, path, params, account_id, limit, budget, operation=_OPERATION
+        )
     except IntegrationValidationError as exc:
         if exc.error_code != "meta_ads_insights_too_large":
             raise
         mode = "background"
         job_path = await _background_report(client, path, params, account_id, poll_seconds, budget)
-        rows, truncated = await _read_rows(client, job_path, {}, account_id, limit, budget)
+        rows, truncated = await _read_rows(
+            client, job_path, {}, account_id, limit, budget, operation=_REPORT_OPERATION
+        )
     typed_rows = [_row(row, request, fields) for row in rows]
     notes.extend(
         await enrich_custom_conversions(
@@ -77,6 +88,7 @@ async def run_insights(
         else None,
         mode=mode,
         notes=notes,
+        money_fields=sorted(MONEY_FIELDS.intersection(fields)),
         level=request.level,
         since=request.since,
         until=request.until,
@@ -100,8 +112,8 @@ def _parameters(
     if request.breakdowns and date.fromisoformat(request.since) < months_before(
         datetime.now(UTC).date(), 13
     ):
-        removed = [field for field in fields if field in _RETAINED_METRICS]
-        fields = [field for field in fields if field not in _RETAINED_METRICS]
+        removed = [field for field in fields if field in RETAINED_METRICS]
+        fields = [field for field in fields if field not in RETAINED_METRICS]
         if removed:
             notes.append(
                 f"Meta omits {', '.join(removed)} with breakdowns beyond 13 months; these fields were removed."
@@ -146,6 +158,8 @@ async def _read_rows(
     account_id: str,
     limit: int,
     budget: ReportResultBudget,
+    *,
+    operation: str,
 ) -> tuple[list[dict[str, Any]], bool]:
     # Each non-final page holds at least one row, so the limit bounds the page count.
     return await read_pages(
@@ -155,7 +169,7 @@ async def _read_rows(
         params=params,
         limit=limit,
         budget=budget,
-        operation=_OPERATION,
+        operation=operation,
         page_size=_PAGE_SIZE,
         max_pages=limit,
     )
@@ -192,7 +206,7 @@ async def _background_report(
                 status = await client.graph_get(
                     report_id,
                     params={"fields": "async_status,async_percent_completion"},
-                    operation=_OPERATION,
+                    operation=_REPORT_OPERATION,
                     policy=_READ,
                     max_response_bytes=budget.remaining,
                     usage_account_id=account_id,

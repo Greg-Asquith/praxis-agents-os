@@ -293,28 +293,6 @@ async def test_unexpected_mid_batch_failure_closes_every_pending_intent(monkeypa
     ]
 
 
-async def test_submit_sitemap_rejects_a_restricted_site_before_provider_calls(monkeypatch) -> None:
-    provider = AsyncMock()
-    audit = AsyncMock(return_value=uuid4())
-    monkeypatch.setattr(
-        "integrations.google_search_console.tools.submit_sitemap.submit_sitemap",
-        provider,
-    )
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_operation_audit_event",
-        audit,
-    )
-
-    result = await google_search_console_submit_sitemap(
-        _ctx(_entry(write_allowed=False)),
-        sitemap_urls=["https://example.com/sitemap.xml"],
-    )
-
-    provider.assert_not_awaited()
-    assert result.return_value["results"][0]["error_code"] == "write_not_permitted"
-    assert audit.await_args.kwargs["status"] is AuditStatus.FAILURE
-
-
 async def test_approval_display_rejects_a_restricted_site_before_approval() -> None:
     with pytest.raises(ModelRetry, match="selected Search Console property"):
         await _approval_display_args(

@@ -10,13 +10,13 @@ import pytest
 from integrations.outlook_mail.references import OutlookMessageReference
 from integrations.outlook_mail.tools.create_draft import DEFINITION as DRAFT_DEFINITION
 from integrations.outlook_mail.tools.reply_to_message import DEFINITION
-from services.agent_runs.schemas import AgentRunResumeDecision
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.outlook_mail.support import entry
+from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import resume_scenario
 from tests.support.scenario import (
     ToolCall,
@@ -119,7 +119,7 @@ async def test_reply_resume_preserves_consent_and_durable_evidence(
         context,
         model=model,
         decisions=[
-            AgentRunResumeDecision(
+            ScenarioDecision(
                 tool_call_id="workflow:1" if nested else "reply",
                 decision="approved",
                 override_args=edited,

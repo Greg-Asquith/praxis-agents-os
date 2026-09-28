@@ -95,10 +95,7 @@ export function buildLiveToolActivities(
 
   for (const approval of approvals) {
     const existingIndex = activityIndexesById.get(
-      toolActivityIdentity(
-        approval.owner_run_id ?? approval.delegation?.child_run_id ?? agentRunId,
-        approval.tool_call_id
-      )
+      toolActivityIdentity(approval.owner_run_id, approval.tool_call_id)
     )
     if (existingIndex !== undefined) {
       const existing = activities[existingIndex]
@@ -109,7 +106,7 @@ export function buildLiveToolActivities(
           ...(approval.delegation
             ? { delegate: delegationDetailsForPendingApproval(approval.delegation, approval.args) }
             : {}),
-          ...(approval.approval_id ? { approvalId: approval.approval_id } : {}),
+          approvalId: approval.approval_id,
           args,
           ...(approval.derived_from_untrusted === true ? { derivedFromUntrusted: true } : {}),
           ...(approval.taint_sources === undefined ? {} : { taintSources: approval.taint_sources }),
@@ -120,9 +117,9 @@ export function buildLiveToolActivities(
     const args = normalizeToolArgs(approval.args)
     const activity: ToolActivity = {
       id: approval.tool_call_id,
-      agentRunId: approval.owner_run_id ?? approval.delegation?.child_run_id ?? agentRunId,
+      agentRunId: approval.owner_run_id,
       rootRunId: agentRunId,
-      ...(approval.approval_id ? { approvalId: approval.approval_id } : {}),
+      approvalId: approval.approval_id,
       kind: "approval",
       status: "awaiting_approval",
       name: approval.name,

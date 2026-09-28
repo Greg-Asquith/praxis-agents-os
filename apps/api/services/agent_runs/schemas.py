@@ -17,7 +17,7 @@ ResumeDecision = Literal["approved", "denied"]
 
 class AgentRunResumeDecision(BaseModel):
     tool_call_id: str = Field(min_length=1, max_length=256)
-    approval_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    approval_id: UUID
     decision: ResumeDecision
     message: str | None = Field(default=None, max_length=1000)
     override_args: dict[str, Any] | None = None
@@ -44,9 +44,7 @@ class AgentRunResumeDecision(BaseModel):
 
 class AgentRunResumeRequest(BaseModel):
     decisions: list[AgentRunResumeDecision] = Field(min_length=1)
-    approval_revision: str | None = Field(
-        default=None, min_length=1, max_length=256, pattern=r"^\S+$"
-    )
+    approval_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class AgentRunReviewApprovalRequest(BaseModel):
@@ -67,9 +65,9 @@ class PendingDelegatedApprovalRead(BaseModel):
 
 
 class PendingToolApprovalRead(BaseModel):
-    approval_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
-    owner_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
-    root_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    approval_id: UUID
+    owner_run_id: UUID
+    root_run_id: UUID
     parent_tool_call_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
     tool_call_id: str
     name: str
@@ -97,8 +95,8 @@ class PendingWorkflowToolApprovalRead(PendingToolApprovalRead):
 
 
 class PendingWorkflowStateRead(BaseModel):
-    owner_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
-    root_run_id: UUID | None = Field(default=None, exclude_if=lambda value: value is None)
+    owner_run_id: UUID
+    root_run_id: UUID
     delegation: PendingDelegatedApprovalRead | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -113,9 +111,7 @@ class PendingWorkflowStateRead(BaseModel):
 
 
 class AgentRunApprovalStateResponse(BaseModel):
-    approval_revision: str | None = Field(
-        default=None, min_length=1, max_length=256, exclude_if=lambda value: value is None
-    )
+    approval_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     workflows: list[PendingWorkflowStateRead] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )
@@ -123,7 +119,6 @@ class AgentRunApprovalStateResponse(BaseModel):
     conversation_id: UUID
     approvals: list[PendingToolApprovalRead]
     delegations: list[PendingDelegatedApprovalRead] = Field(default_factory=list)
-    workflow: PendingWorkflowStateRead | None = None
 
 
 class PendingApprovalRunRead(BaseModel):

@@ -34,21 +34,23 @@ def test_openai_thinking_requests_reasoning_summary():
 
 
 @pytest.mark.parametrize(
-    "resolver",
+    ("resolver", "missing_id"),
     [
-        lambda: resolution.resolve_agent_model(_agent("anthropic", "claude-sonnet-4-6")),
-        lambda: resolution.require_helper_model(
-            provider="anthropic",
-            model="claude-sonnet-4-6",
-            supported=("anthropic",),
-            defaults={"anthropic": "claude-sonnet-4-6"},
-            tool_name="web_search",
+        (lambda: resolution.resolve_agent_model(_agent("anthropic", "claude-sonnet-4-6")), None),
+        (
+            lambda: resolution.require_helper_model(
+                provider="anthropic",
+                model="claude-sonnet-4-6",
+                supported=("anthropic",),
+                defaults={"anthropic": "claude-sonnet-4-6"},
+                tool_name="web_search",
+            ),
+            "",
         ),
-        resolution.resolve_naming_model,
-        resolution.resolve_history_summary_model,
+        (resolution.resolve_naming_model, "   "),
+        (resolution.resolve_history_summary_model, None),
     ],
 )
-@pytest.mark.parametrize("missing_id", [None, "", "   "])
 def test_vertex_resolution_fails_closed_without_transport_model(
     monkeypatch: pytest.MonkeyPatch,
     resolver,

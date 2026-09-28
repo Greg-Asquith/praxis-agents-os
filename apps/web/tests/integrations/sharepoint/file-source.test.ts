@@ -16,6 +16,7 @@ import {
   validateSharePointWriteArgs,
 } from "@/integrations/sharepoint/lib/write-args"
 import { sharePointUpdateFilePresenter } from "@/integrations/sharepoint/presenters/update-file"
+import { approvalIdentity } from "../../support/approvals"
 
 vi.mock("@/components/ui/button", async (original) => {
   const module = await original<{ Button: typeof Button }>()
@@ -245,6 +246,7 @@ describe("SharePoint source approval", () => {
       [
         {
           name: "sharepoint_write_file",
+          ...approvalIdentity("call"),
           tool_call_id: "call",
           args: textArgs,
           replay_args: replay,
@@ -255,6 +257,7 @@ describe("SharePoint source approval", () => {
     )
     expect(payload).toEqual([
       {
+        approval_id: "call",
         tool_call_id: "call",
         decision: "approved",
         override_args: { ...replay, source, content: null },

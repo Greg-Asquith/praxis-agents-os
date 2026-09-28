@@ -20,16 +20,11 @@ def _payload(**overrides):
     return payload
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("name", "Complaint-Triage"),
-        ("labels", [{"label": "same"}, {"label": " same "}]),
-    ],
-)
-def test_classifier_create_rejects_invalid_names_and_label_sets(field, value) -> None:
+def test_classifier_create_rejects_labels_duplicated_after_trimming() -> None:
     with pytest.raises(ValidationError):
-        ClassifierCreateRequest.model_validate(_payload(**{field: value}))
+        ClassifierCreateRequest.model_validate(
+            _payload(labels=[{"label": "same"}, {"label": " same "}])
+        )
 
 
 def test_classifier_model_override_requires_catalog_valid_pair() -> None:

@@ -249,12 +249,14 @@ async def test_sweep_expires_old_approval_and_unblocks_conversation(
             workspace=expired.workspace,
             run_id=expired.run.id,
             payload=AgentRunResumeRequest(
+                approval_revision="0" * 64,
                 decisions=[
                     AgentRunResumeDecision(
                         tool_call_id=expired.tool_call_id,
+                        approval_id=uuid4(),
                         decision="approved",
                     )
-                ]
+                ],
             ),
         )
 

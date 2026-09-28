@@ -4,6 +4,7 @@ import { buildLiveToolActivities } from "@/features/conversations/live-tool-acti
 import { parseConversationMessages } from "@/features/conversations/message-parts"
 import type { ApprovalState, ToolCallState } from "@/features/conversations/stream/reducer"
 import type { ConversationMessage, PendingWorkflowState } from "@/features/conversations/types"
+import { approvalIdentity } from "../../../support/approvals"
 
 describe("code-mode live and replay parity", () => {
   it("builds the same normalized activity tree from stream events and persisted trace metadata", () => {
@@ -18,6 +19,7 @@ describe("code-mode live and replay parity", () => {
     const [activity] = buildLiveToolActivities(
       [
         {
+          ...approvalIdentity("workflow-1:1"),
           args: { value: "change" },
           name: "write_setting",
           parentToolCallId: "workflow-1",
@@ -82,6 +84,8 @@ describe("code-mode live and replay parity", () => {
 
 function pendingWorkflow(): PendingWorkflowState {
   return {
+    owner_run_id: "run-1",
+    root_run_id: "run-1",
     outer_tool_call_id: "workflow-1",
     code: "await check_report(account='one')\nawait write_setting(value='change')",
     reason: null,
@@ -106,6 +110,7 @@ function pendingWorkflow(): PendingWorkflowState {
     ],
     trace_truncated: false,
     pending: {
+      ...approvalIdentity("workflow-1:2"),
       tool_call_id: "workflow-1:2",
       name: "write_setting",
       args: { value: "change" },
@@ -138,6 +143,7 @@ function taintedApproval(): ApprovalState {
     name: "write_setting",
     status: "pending",
     taint_sources: [{ source_kind: "integration", source_ref: "row-1" }],
+    ...approvalIdentity("workflow-1:1"),
     tool_call_id: "workflow-1:1",
   }
 }
@@ -257,6 +263,7 @@ it("preserves owner identity and specialist labels in live workflow approval lea
       {
         owner_run_id: owner,
         approval_id: "opaque",
+        root_run_id: "run-1",
         tool_call_id: "native",
         name: "write_file",
         args: { name: "report.txt" },

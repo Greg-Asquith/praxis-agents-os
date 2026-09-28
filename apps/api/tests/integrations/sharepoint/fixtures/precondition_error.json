@@ -1,6 +1,0 @@
-{
-  "error": {
-    "code": "preconditionFailed",
-    "message": "The item version no longer matches."
-  }
-}

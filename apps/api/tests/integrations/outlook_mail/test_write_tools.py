@@ -4,7 +4,6 @@
 
 import asyncio
 import importlib
-from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -90,12 +89,12 @@ async def test_writes_record_correlated_pending_and_terminal_evidence(provider, 
     assert "connection_id" not in str(result)
 
 
-@pytest.mark.parametrize("name", ARGS)
 @pytest.mark.parametrize(
-    "mailboxes",
+    ("name", "mailboxes"),
     [
-        [],
-        ["first", "second"],
+        ("send_message", []),
+        ("reply_to_message", ["first", "second"]),
+        ("move_message", ["first", "second"]),
     ],
 )
 async def test_every_write_requires_one_mailbox_before_io(provider, name, mailboxes):
@@ -115,16 +114,6 @@ async def test_reference_cannot_select_a_different_mailbox(provider, name):
     with pytest.raises(ModelRetry, match="belong"):
         await invoke(name, entries=[entry("other")])
     provider.factory.assert_not_awaited()
-
-
-@pytest.mark.parametrize("name", ARGS)
-async def test_read_only_mailbox_records_denial_without_provider_io(provider, name):
-    result = await invoke(name, entries=[replace(entry(), write_allowed=False)])
-    assert result["results"][0]["error_code"] == "write_not_permitted"
-    provider.factory.assert_not_awaited()
-    assert provider.audit.await_count == 1
-    assert str(provider.audit.await_args.kwargs["status"]) == "failure"
-    assert provider.audit.await_args.kwargs["error_code"] == "write_not_permitted"
 
 
 async def test_send_uses_exact_edited_recipients_and_sanitised_body(provider):

@@ -44,7 +44,7 @@ from services.agents.runtime.staged_tool_content import (
 @dataclass(frozen=True)
 class DirectApprovalNode:
     owner_run_id: UUID
-    batch_id: UUID | None
+    batch_id: UUID
     call: ToolCallPart
     metadata: Mapping[str, Any]
 
@@ -73,7 +73,7 @@ class DelegatedApprovalNode:
 class ApprovalGraph:
     root_run_id: UUID
     conversation_id: UUID
-    root_batch_id: UUID | None
+    root_batch_id: UUID
     nodes: tuple[ApprovalLeaf | DelegatedApprovalNode, ...]
 
 
@@ -262,18 +262,12 @@ def project_approval_graph(graph: ApprovalGraph) -> AgentRunApprovalStateRespons
     revision = approval_revision(
         root_run_id=graph.root_run_id, root_batch_id=graph.root_batch_id, leaves=fingerprints
     )
-    legacy = (
-        workflows[0]
-        if len(workflows) == 1 and workflows[0].owner_run_id == graph.root_run_id
-        else None
-    )
     response = AgentRunApprovalStateResponse(
         run_id=graph.root_run_id,
         conversation_id=graph.conversation_id,
         approvals=approvals,
         delegations=delegations,
         workflows=workflows,
-        workflow=legacy,
         approval_revision=revision,
     )
     proposal_digest(response.model_dump(mode="json"))

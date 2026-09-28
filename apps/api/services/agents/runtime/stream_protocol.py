@@ -56,7 +56,6 @@ class RunStatusEvent(StreamEventPayload):
     event_name: ClassVar[Literal["run.status"]] = "run.status"
 
     status: StreamRunStatus
-    approval_revision: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class MessageStartEvent(StreamEventPayload):
@@ -114,15 +113,15 @@ class TaintSource(BaseModel):
 class ToolApprovalRequiredEvent(StreamEventPayload):
     event_name: ClassVar[Literal["tool.approval_required"]] = "tool.approval_required"
 
-    owner_run_id: UUID | None = None
-    root_run_id: UUID | None = None
+    owner_run_id: UUID
+    root_run_id: UUID
     tool_call_id: str = Field(min_length=1)
     parent_tool_call_id: str | None = Field(default=None, min_length=1)
     name: str = Field(min_length=1)
     args: Any
     replay_args: Any = None
-    approval_id: UUID | None = None
-    approval_revision: str | None = Field(default=None, min_length=1, max_length=256)
+    approval_id: UUID
+    approval_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     delegation: PendingDelegatedApprovalRead | None = None
     derived_from_untrusted: bool | None = None
     taint_sources: list[TaintSource] | None = None

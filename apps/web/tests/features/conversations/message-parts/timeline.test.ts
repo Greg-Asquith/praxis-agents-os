@@ -11,6 +11,7 @@ import type {
   ConversationMessage,
   PendingToolApproval,
 } from "@/features/conversations/types"
+import { approvalIdentity } from "../../../support/approvals"
 
 const createdAt = "2026-08-21T10:00:00.000Z"
 const normalizedWorkflow = {
@@ -117,6 +118,7 @@ const scenarios: TimelineScenario[] = [
             args: { value: "input" },
             name: "test_tool",
             status: "pending",
+            ...approvalIdentity("workflow-1:1"),
             tool_call_id: "workflow-1:1",
           },
         ],
@@ -183,6 +185,7 @@ describe("projectConversationTimeline", () => {
           {
             args: { value: "display value" },
             name: "test_tool",
+            ...approvalIdentity("call-1"),
             tool_call_id: "call-1",
           },
         ],
@@ -331,7 +334,12 @@ function replayWorkflowMessages(): ConversationMessage[] {
 }
 
 function approval(toolCallId: string): PendingToolApproval {
-  return { args: { value: "input" }, name: "test_tool", tool_call_id: toolCallId }
+  return {
+    args: { value: "input" },
+    name: "test_tool",
+    ...approvalIdentity(toolCallId),
+    tool_call_id: toolCallId,
+  }
 }
 
 function transcriptActivities(timeline: ConversationTimeline) {
@@ -349,6 +357,7 @@ function transcriptActivities(timeline: ConversationTimeline) {
 it("renders multiple child workflows with independently owned reviewable leaves after reload", () => {
   const workflows = ["child-a", "child-b"].map((owner) => ({
     owner_run_id: owner,
+    root_run_id: "root",
     outer_tool_call_id: "workflow",
     code: "await write_file(name='report.txt')",
     reason: "Save report",

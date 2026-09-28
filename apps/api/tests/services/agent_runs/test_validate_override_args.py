@@ -323,28 +323,23 @@ def scalar_definition(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "format,value",
+    "format,value,edited",
     [
-        ("datetime", "2026-09-08T09:30+01:00"),
-        ("datetime", "2026-09-08T09:30Z"),
-        ("datetime", "2026-02-30T09:30"),
-        ("datetime", "2026-09-08T24:00"),
-        ("datetime", "2026-09-08T09:30:60"),
-        ("datetime", "2026-09-08T09:30:00.123"),
-        ("datetime", "2026-09-08 09:30"),
-        ("datetime", "2026-09-08"),
-        ("datetime", "2026-09-08T09:30\n"),
-        ("datetime", 123),
-        ("datetime", None),
-        ("datetime", ""),
-        ("boolean", "true"),
-        ("boolean", "false"),
-        ("boolean", 1),
-        ("boolean", 0),
-        ("boolean", None),
+        ("datetime", "2026-09-08T09:30+01:00", True),
+        ("datetime", "2026-02-30T09:30", False),
+        ("datetime", "2026-09-08T24:00", True),
+        ("datetime", "2026-09-08T09:30:60", True),
+        ("datetime", "2026-09-08T09:30:00.123", True),
+        ("datetime", "2026-09-08 09:30", True),
+        ("datetime", "2026-09-08", True),
+        ("datetime", "2026-09-08T09:30\n", True),
+        ("datetime", 123, True),
+        ("datetime", None, True),
+        ("boolean", "true", True),
+        ("boolean", 1, True),
+        ("boolean", None, False),
     ],
 )
-@pytest.mark.parametrize("edited", [False, True])
 async def test_scalar_approval_rejects_malformed_effective_values(
     scalar_definition, format, value, edited
 ):

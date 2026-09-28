@@ -2,6 +2,23 @@
 
 import type { PricingCoverage, TokenCounts, UsageBreakdownRow } from "@/features/usage/types"
 
+// Mirrors AIUsagePurpose in apps/api/services/ai_usage/domain.py.
+type AIUsagePurpose =
+  | "agent_run"
+  | "classification"
+  | "code_execution"
+  | "conversation_naming"
+  | "history_summary"
+  | "kb_annotation"
+  | "web_search"
+  | "web_fetch"
+  | "image_generation"
+  | "embedding_kb_ingest"
+  | "embedding_kb_search"
+  | "embedding_memory_write"
+  | "embedding_memory_search"
+  | "embedding_memory_dedup"
+
 const AI_TYPE_LABEL_BY_PURPOSE = {
   agent_run: "Agent conversations",
   classification: "Classification",
@@ -17,9 +34,7 @@ const AI_TYPE_LABEL_BY_PURPOSE = {
   embedding_memory_write: "Search & document indexing",
   embedding_memory_search: "Search & document indexing",
   embedding_memory_dedup: "Search & document indexing",
-} as const
-
-type AIUsagePurpose = keyof typeof AI_TYPE_LABEL_BY_PURPOSE
+} as const satisfies Record<AIUsagePurpose, string>
 
 const INTEGER_FORMATTER = new Intl.NumberFormat(undefined, { notation: "compact" })
 const USD_FORMATTER = new Intl.NumberFormat("en-US", {

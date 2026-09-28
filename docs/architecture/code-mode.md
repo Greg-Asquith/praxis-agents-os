@@ -69,9 +69,9 @@ mounted (with a logged warning) rather than receiving a lossy stub.
 ### Signature renderer ownership
 
 Praxis retains `code_mode/stubs.py` as the schema renderer. The public
-Pydantic AI 2.42.0 `FunctionSignature` API does not preserve the complete
+Pydantic AI 2.50.0 `FunctionSignature` API does not preserve the complete
 catalogue contract. Its tagged implementation is documented in the
-[upstream signature source](https://github.com/pydantic/pydantic-ai/blob/v2.42.0/pydantic_ai_slim/pydantic_ai/function_signature.py).
+[upstream signature source](https://github.com/pydantic/pydantic-ai/blob/v2.50.0/pydantic_ai_slim/pydantic_ai/function_signature.py).
 
 The comparison establishes these adoption blockers:
 

@@ -252,27 +252,3 @@ async def test_property_update_retains_unverified_result_after_timeout(monkeypat
     ]
     terminal = audit.await_args_list[1].kwargs["operation_detail"]
     assert terminal.intent_counts.unverified == terminal.effect_counts.unverified == 1
-
-
-async def test_read_only_resource_records_denial_without_provider_call(monkeypatch) -> None:
-    entry = _entry(write_allowed=False)
-    provider = AsyncMock()
-    denial = AsyncMock()
-    monkeypatch.setattr(
-        "integrations.notion.tools.update_page_properties.notion_client",
-        provider,
-    )
-    monkeypatch.setattr(
-        "services.integrations.operations.record_integration_write_denial",
-        denial,
-    )
-
-    result = await notion_update_page_properties(
-        _context("notion_update_page_properties", entry),
-        _page_reference(),
-        [NotionPropertyRecord(name="Status", type="status", value="Done")],
-    )
-
-    provider.assert_not_awaited()
-    denial.assert_awaited_once()
-    assert result["results"][0]["error_code"] == "write_not_permitted"

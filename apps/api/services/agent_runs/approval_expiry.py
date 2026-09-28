@@ -65,7 +65,7 @@ def has_live_approval_reservation(
             if child.status == "awaiting_approval":
                 state = (child.metadata_json or {}).get("approval_state")
                 saved_batch = state.get("approval_batch_id") if isinstance(state, dict) else None
-                if saved_batch != (str(batch_id) if batch_id is not None else None):
+                if saved_batch != str(batch_id):
                     return False
     return bool(
         str(reservation.owner_instance_id) == root.owner_instance_id

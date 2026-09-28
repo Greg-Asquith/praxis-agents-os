@@ -181,11 +181,8 @@ def _confirmed_evidence(**overrides):
     ("error_code", "evidence", "expected"),
     [
         ("agent_run_failed", _confirmed_evidence(), False),
-        ("model_rate_limited", _confirmed_evidence(), False),
         (None, _confirmed_evidence(), True),
         ("run_abandoned", _confirmed_evidence(), True),
-        ("run_lease_lost", _confirmed_evidence(), True),
-        ("run_process_shutdown", _confirmed_evidence(), True),
         ("agent_run_resume_requires_recovery", _confirmed_evidence(), True),
         (
             "agent_run_failed",
