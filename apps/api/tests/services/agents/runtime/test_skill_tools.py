@@ -1,4 +1,4 @@
-"""Skill-writing runtime tools stay inside the workspace and the user's role."""
+"""Skill runtime tools stay inside the workspace and the user's role."""
 
 from types import SimpleNamespace
 from uuid import uuid4
@@ -12,7 +12,13 @@ from core.database import maintenance_async_db_session
 from models.audit_event import AuditEvent
 from models.skills import Skill
 from models.workspace import WorkspaceRole
-from services.agents.runtime.tools.skill_authoring import create_skill, read_skill, update_skill
+from services.agents.runtime.tools.skills import (
+    create_skill,
+    load_skill,
+    read_skill_document,
+    search_skills,
+    update_skill,
+)
 from tests.factories import build_skill, build_user, build_workspace, build_workspace_membership
 from utils.content import ContentScope
 
@@ -31,7 +37,7 @@ async def _context(db: AsyncSession, *, role: WorkspaceRole = WorkspaceRole.MEMB
     db.add_all([user, workspace, membership])
     await db.flush()
     deps = SimpleNamespace(db=db, user=user, workspace=workspace, membership=membership)
-    return SimpleNamespace(deps=deps)
+    return SimpleNamespace(deps=deps, messages=[])
 
 
 async def test_create_skill_saves_an_unshared_workspace_skill_audited_to_the_user(
@@ -134,8 +140,6 @@ async def test_update_skill_refuses_others_shared_skills_and_other_workspaces(
         await update_skill(ctx, name=platform_skill.name, instructions="Hijacked.")
     with pytest.raises(ModelRetry, match="No skill named"):
         await update_skill(ctx, name=foreign_skill.name, instructions="Hijacked.")
-    with pytest.raises(ModelRetry, match="No skill named"):
-        await read_skill(ctx, name=foreign_skill.name)
 
     async with maintenance_async_db_session() as maintenance:
         instructions = set(
@@ -146,3 +150,75 @@ async def test_update_skill_refuses_others_shared_skills_and_other_workspaces(
             )
         )
     assert instructions == {"Platform steps.", "Foreign steps."}
+
+
+async def test_search_and_load_see_only_active_skills_from_this_workspace_or_shared(
+    db_session: AsyncSession,
+) -> None:
+    suffix = uuid4().hex
+    other_user = build_user(email=f"skill-search-other-{suffix}@example.com")
+    other_workspace = build_workspace(slug=f"skill-search-other-{suffix[:12]}")
+    shared = build_skill(
+        workspace=other_workspace,
+        created_by=other_user,
+        name=f"shared-report-{suffix[:8]}",
+        description="Use for the shared report.",
+        scope=ContentScope.PLATFORM,
+        workspace_id=None,
+    )
+    foreign = build_skill(
+        workspace=other_workspace,
+        created_by=other_user,
+        name=f"foreign-report-{suffix[:8]}",
+        description="Use for the foreign report.",
+    )
+    async with maintenance_async_db_session() as maintenance:
+        maintenance.add_all([other_user, other_workspace])
+        await maintenance.flush()
+        maintenance.add_all([shared, foreign])
+    ctx = await _context(db_session)
+    own = build_skill(
+        workspace=ctx.deps.workspace,
+        created_by=ctx.deps.user,
+        name="weekly-report",
+        description="Use for the weekly report.",
+    )
+    inactive = build_skill(
+        workspace=ctx.deps.workspace,
+        created_by=ctx.deps.user,
+        name="old-report",
+        description="Use for the old report.",
+        is_active=False,
+    )
+    unrelated = build_skill(
+        workspace=ctx.deps.workspace,
+        created_by=ctx.deps.user,
+        name="triage",
+        description="Use for inbox triage.",
+    )
+    db_session.add_all([own, inactive, unrelated])
+    await db_session.flush()
+
+    found = await search_skills(ctx, query=f"report {suffix[:8]}")
+    loaded = await load_skill(ctx, name="weekly-report")
+    loaded_shared = await load_skill(ctx, name=shared.name)
+
+    names = [skill["name"] for skill in found["skills"]]
+    assert {"weekly-report", shared.name} <= set(names)
+    assert not {foreign.name, "old-report", "triage"} & set(names)
+    assert names[0] == shared.name
+    assert loaded["instructions"] == own.instructions
+    assert own.last_used_at is not None
+    assert loaded_shared["scope"] == ContentScope.PLATFORM
+    for hidden in (foreign.name, "old-report"):
+        with pytest.raises(ModelRetry, match="No skill named"):
+            await load_skill(ctx, name=hidden)
+
+
+async def test_read_skill_document_requires_the_skill_loaded_in_this_conversation(
+    db_session: AsyncSession,
+) -> None:
+    ctx = await _context(db_session)
+
+    with pytest.raises(ModelRetry, match="Call load_skill"):
+        await read_skill_document(ctx, skill="weekly-report", document="guide")

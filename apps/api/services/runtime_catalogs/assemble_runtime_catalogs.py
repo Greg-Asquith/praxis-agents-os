@@ -118,7 +118,7 @@ def _assemble_runtime_catalogs() -> None:
         kb,
         memory,
         planning,
-        skill_authoring,
+        skills,
     )
     from services.agents.runtime.tools.files import list_files, read_file, write_file
     from services.agents.runtime.tools.native import (
@@ -145,7 +145,7 @@ def _assemble_runtime_catalogs() -> None:
         planning,
         read_file,
         run_code,
-        skill_authoring,
+        skills,
         video_to_image,
         web_fetch,
         web_search,

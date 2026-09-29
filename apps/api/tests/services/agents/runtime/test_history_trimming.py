@@ -77,9 +77,11 @@ async def test_trim_history_preserves_trailing_approval_tool_calls() -> None:
     assert "approval-1" in _tool_call_ids(trimmed)
 
 
-async def test_trim_history_preserves_dropped_capability_loads_without_duplicates() -> None:
+async def test_trim_history_preserves_dropped_capability_and_skill_loads_without_duplicates() -> (
+    None
+):
     history = _history_with_capability_loads(
-        dropped_ids=["skill:a", "skill:b"],
+        dropped_ids=["internal-a", "skill:a", "skill:b"],
         kept_ids=["skill:b"],
     )
 
@@ -89,16 +91,14 @@ async def test_trim_history_preserves_dropped_capability_loads_without_duplicate
     synthetic_request = trimmed[2]
     assert isinstance(synthetic_response, ModelResponse)
     assert isinstance(synthetic_request, ModelRequest)
-    assert [
-        part.capability_id
-        for part in synthetic_response.parts
-        if isinstance(part, LoadCapabilityCallPart)
-    ] == ["skill:a"]
-    assert [
-        part.tool_call_id
-        for part in synthetic_request.parts
-        if isinstance(part, LoadCapabilityReturnPart)
-    ] == ["load-skill-a"]
+    assert [part.tool_call_id for part in synthetic_response.parts] == [
+        "load-internal-a",
+        "load-skill-a",
+    ]
+    assert [part.tool_call_id for part in synthetic_request.parts] == [
+        "load-internal-a",
+        "load-skill-a",
+    ]
 
 
 async def test_summary_is_injected_once_after_the_kept_boundary() -> None:
@@ -149,10 +149,10 @@ async def test_history_trimmer_does_not_pollute_new_messages(
 
     result = await agent.run(
         "current prompt",
-        message_history=_history_with_capability_loads(dropped_ids=["skill:a"]),
+        message_history=_history_with_capability_loads(dropped_ids=["internal-a"]),
     )
 
-    assert _load_capability_call_ids(result.all_messages()) == ["load-skill-a"]
+    assert _load_capability_call_ids(result.all_messages()) == ["load-internal-a"]
     assert _load_capability_call_ids(result.new_messages()) == []
     assert _boundary_texts(result.new_messages()) == ["current prompt"]
 
@@ -247,26 +247,26 @@ def _history_turn(index: int) -> list[ModelMessage]:
 
 
 def _capability_turn(index: int, capability_id: str) -> list[ModelMessage]:
+    """Load `skill:<name>` with load_skill and anything else with load_capability."""
     suffix = capability_id.replace(":", "-")
     tool_call_id = f"load-{suffix}"
+    content = {"instructions": f"Instructions for {capability_id}"}
+    if capability_id.startswith("skill:"):
+        call: ToolCallPart = ToolCallPart(
+            tool_name="load_skill",
+            args={"name": capability_id.removeprefix("skill:")},
+            tool_call_id=tool_call_id,
+        )
+        result: ToolReturnPart = ToolReturnPart(
+            tool_name="load_skill", content=content, tool_call_id=tool_call_id
+        )
+    else:
+        call = LoadCapabilityCallPart(args={"id": capability_id}, tool_call_id=tool_call_id)
+        result = LoadCapabilityReturnPart(content=content, tool_call_id=tool_call_id)
     return [
         _user_request(f"turn {index}"),
-        ModelResponse(
-            parts=[
-                LoadCapabilityCallPart(
-                    args={"id": capability_id},
-                    tool_call_id=tool_call_id,
-                )
-            ]
-        ),
-        ModelRequest(
-            parts=[
-                LoadCapabilityReturnPart(
-                    content={"instructions": f"Instructions for {capability_id}"},
-                    tool_call_id=tool_call_id,
-                )
-            ]
-        ),
+        ModelResponse(parts=[call]),
+        ModelRequest(parts=[result]),
         ModelResponse(parts=[TextPart(f"reply {index}")]),
     ]
 

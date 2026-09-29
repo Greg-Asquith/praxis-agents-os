@@ -19,7 +19,6 @@ class DelegateAgentSummary(BaseModel):
     description: str | None = None
     model: str | None = None
     tool_count: int
-    skill_count: int
     reference: AgentReference
 
 

@@ -1,7 +1,6 @@
 // apps/web/src/features/agents/components/agent-form.tsx
 
 import { useId, useMemo, useRef, useState, type SyntheticEvent } from "react"
-import { useQueries } from "@tanstack/react-query"
 
 import { FormAlerts } from "@/components/forms/form-alerts"
 import { FormWizard, type FormWizardNavigation } from "@/components/forms/form-wizard"
@@ -26,13 +25,10 @@ import {
 } from "@/features/agents/components/agent-form-wizard-config"
 import { AgentModelSection } from "@/features/agents/components/agent-model-section"
 import { AgentProfileSection } from "@/features/agents/components/agent-profile-section"
-import { AgentSkillsSection } from "@/features/agents/components/agent-skills-section"
 import { AgentToolsSection } from "@/features/agents/components/agent-tools-section"
 import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { Agent, AgentCreateRequest, AgentUpdateRequest } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
-import { skillQueryOptions } from "@/features/skills/api/get-skill"
-import { useSkillsQuery } from "@/features/skills/api/list-skills"
 import { useToolCatalogQuery } from "@/features/tools/api/list-tool-catalog"
 import { getErrorMessage } from "@/lib/api/errors"
 import { buildFieldErrors } from "@/lib/forms"
@@ -56,8 +52,6 @@ type AgentFormProps =
       onSubmit: (payload: AgentUpdateRequest) => Promise<void>
     }
 
-const SKILL_PAGE_SIZE = 50
-
 export function AgentForm(props: AgentFormProps) {
   const formId = useId()
   const wizardNavigationRef = useRef<FormWizardNavigation<AgentWizardStepId>>(null)
@@ -68,21 +62,6 @@ export function AgentForm(props: AgentFormProps) {
     [agent, toolCatalog.tools]
   )
   const [state, setState] = useState<AgentFormState>(() => initialState)
-  const [skillOffset, setSkillOffset] = useState(0)
-  const { data: skillsData } = useSkillsQuery({ limit: SKILL_PAGE_SIZE, offset: skillOffset })
-  const pagedSkillIds = new Set(skillsData.skills.map((skill) => skill.id))
-  const selectedSkillQueries = useQueries({
-    queries: state.skillIds
-      .filter((skillId) => !pagedSkillIds.has(skillId))
-      .map((skillId) => ({ ...skillQueryOptions(skillId), retry: false })),
-  })
-  const skillsById = new Map(skillsData.skills.map((skill) => [skill.id, skill]))
-  for (const query of selectedSkillQueries) {
-    if (query.data) {
-      skillsById.set(query.data.id, query.data)
-    }
-  }
-  const skills = [...skillsById.values()]
   const [formError, setFormError] = useState<string | null>(null)
   const [validationStep, setValidationStep] = useState<AgentWizardStepId | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(
@@ -206,30 +185,19 @@ export function AgentForm(props: AgentFormProps) {
                 />
               ) : null}
               {activeStepId === "model" ? (
-                <div className="flex flex-col gap-6">
-                  <AgentModelSection
-                    advancedOpen={advancedOpen}
-                    fieldErrors={{
-                      maxSteps: fieldErrors["agent-max-steps"],
-                      modelSelection: fieldErrors["agent-model"],
-                    }}
-                    modelCatalog={props.modelCatalog}
-                    modelOptions={modelOptions}
-                    onAdvancedOpenChange={setAdvancedOpen}
-                    selectedModelLabel={selectedModelOption?.label ?? "Workspace default"}
-                    setField={setField}
-                    state={state}
-                  />
-                  <AgentSkillsSection
-                    limit={skillsData.limit}
-                    offset={skillsData.offset}
-                    onPageChange={setSkillOffset}
-                    setField={setField}
-                    skillIds={state.skillIds}
-                    skills={skills}
-                    total={skillsData.total}
-                  />
-                </div>
+                <AgentModelSection
+                  advancedOpen={advancedOpen}
+                  fieldErrors={{
+                    maxSteps: fieldErrors["agent-max-steps"],
+                    modelSelection: fieldErrors["agent-model"],
+                  }}
+                  modelCatalog={props.modelCatalog}
+                  modelOptions={modelOptions}
+                  onAdvancedOpenChange={setAdvancedOpen}
+                  selectedModelLabel={selectedModelOption?.label ?? "Workspace default"}
+                  setField={setField}
+                  state={state}
+                />
               ) : null}
               {activeStepId === "tools" ? (
                 <AgentToolsSection

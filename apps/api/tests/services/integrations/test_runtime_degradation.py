@@ -20,7 +20,6 @@ def test_missing_saved_tool_is_skipped_and_logged(caplog, monkeypatch) -> None:
         created_by=uuid4(),
         tool_names=["gmail_removed_tool"],
         tool_policies={},
-        skill_ids=[],
         allowed_agent_ids=[],
     )
     with caplog.at_level(

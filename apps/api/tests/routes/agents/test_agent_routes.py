@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth.sessions import session_manager
 from models.agent import Agent
 from models.audit_event import AuditEvent
-from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
@@ -47,14 +46,6 @@ async def test_create_agent_route_persists_public_model_shape(
     db_async_client: AsyncClient,
 ) -> None:
     user, workspace, headers = await _authenticated_workspace(db_session)
-    skill = Skill(
-        name="research",
-        human_name="Research",
-        description="Research guidance",
-        instructions="Use verified sources.",
-        workspace_id=workspace.id,
-        created_by=user.id,
-    )
     delegate = Agent(
         name="Delegate Agent",
         slug=f"delegate-{uuid4().hex[:8]}",
@@ -64,7 +55,7 @@ async def test_create_agent_route_persists_public_model_shape(
         model_provider="openai",
         model="gpt-5.4-mini",
     )
-    db_session.add_all([skill, delegate])
+    db_session.add(delegate)
     await db_session.commit()
 
     response = await db_async_client.post(
@@ -88,7 +79,6 @@ async def test_create_agent_route_persists_public_model_shape(
                 "google_ads_list_report_fields": "approval",
             },
             "code_mode_enabled": True,
-            "skill_ids": [str(skill.id)],
             "allowed_agent_ids": [str(delegate.id)],
             "model_provider": "OPENAI",
             "model": "gpt-5.4-mini",
@@ -108,7 +98,6 @@ async def test_create_agent_route_persists_public_model_shape(
     assert body["tool_names"] == ["web_search"]
     assert body["tool_policies"] == {"web_search": "auto"}
     assert body["code_mode_enabled"] is True
-    assert body["skill_ids"] == [str(skill.id)]
     assert body["allowed_agent_ids"] == [str(delegate.id)]
     assert body["model_provider"] == "openai"
     assert body["model"] == "gpt-5.4-mini"

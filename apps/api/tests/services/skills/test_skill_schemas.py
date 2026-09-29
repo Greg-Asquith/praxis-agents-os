@@ -24,7 +24,6 @@ def test_skill_read_validates_metadata_from_orm_attribute() -> None:
         created_by=uuid4(),
         documentation_refs={"quick-start": {"markdown": "QUICKSTART.md"}},
         is_active=True,
-        is_favorite=False,
         metadata_json={"accent": "green"},
         created_at=now,
         updated_at=now,

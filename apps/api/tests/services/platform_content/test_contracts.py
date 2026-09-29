@@ -73,7 +73,6 @@ def test_parent_projections_expose_ownership_and_platform_authority(
         id=uuid4(),
         documentation_refs={},
         is_active=True,
-        is_favorite=False,
         **skill_fields,
     )
     skill_response = SkillRead.from_skill(skill, actor=actor)

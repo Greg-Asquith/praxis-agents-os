@@ -15,7 +15,6 @@ from pydantic_ai.usage import UsageLimits
 
 from core.settings import settings
 from models.agent import Agent
-from models.skills import Skill
 from services.agents.models import (
     build_model,
     resolve_agent_model,
@@ -31,10 +30,7 @@ from services.agents.runtime.prompt import (
     build_system_prompt,
     runtime_prompt_blocks,
 )
-from services.agents.runtime.skills import (
-    build_internal_skill_capabilities,
-    build_skill_capabilities,
-)
+from services.agents.runtime.skills import build_internal_skill_capabilities
 from services.agents.runtime.tools import build_runtime_tools
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.usage_limits import EffectiveUsageLimits, intersect_usage_limits
@@ -60,7 +56,6 @@ def build_runtime_agent(
     delegate_agents: Sequence[Agent] = (),
     enable_delegation: bool = True,
     force_delegation_tools: bool = False,
-    skills: Sequence[Skill] = (),
     conversation_context_block: str = "",
     core_memory_block: str = "",
     completion_contract_block: str = "",
@@ -115,7 +110,6 @@ def build_runtime_agent(
                     trimmer_out=trimmer_out,
                 ),
                 *build_internal_skill_capabilities(),
-                *build_skill_capabilities(skills),
             ],
         ),
         resolved_model=resolved_model,

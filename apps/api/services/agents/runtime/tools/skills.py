@@ -1,17 +1,25 @@
-# apps/api/services/agents/runtime/tools/skill_authoring.py
+# apps/api/services/agents/runtime/tools/skills.py
 
-"""Runtime tools that let agents read and write workspace skills."""
+"""Runtime tools that let agents find, follow, and write skills."""
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from pydantic import Field, ValidationError
 from pydantic_ai import ModelRetry, RunContext
-from sqlalchemy import case, select
+from sqlalchemy import case, func, or_, select
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from models.skills import Skill
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.skills import (
+    LOAD_SKILL_TOOL_NAME,
+    READ_SKILL_DOCUMENT_TOOL_NAME,
+    SEARCH_SKILLS_TOOL_NAME,
+    loaded_skill_names,
+    ready_skill_documents,
+)
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
     TOOL_EFFECT_WRITE,
@@ -23,9 +31,10 @@ from services.agents.runtime.tools.contract import (
 from services.agents.runtime.tools.registry import runtime_tool
 from services.skills import (
     create_skill as create_skill_service,
-    list_skills as list_skills_service,
     update_skill as update_skill_service,
 )
+from services.skills.documents.domain import SkillDocumentEntry
+from services.skills.documents.utils import private_ref_from_key
 from services.skills.schemas import (
     SKILL_NAME_PATTERN,
     SkillCreateRequest,
@@ -33,9 +42,11 @@ from services.skills.schemas import (
     SkillUpdateRequest,
 )
 from services.skills.utils import visible_skill_filter
+from services.storage.errors import StorageNotFoundError
+from services.storage.factory import get_storage_provider
 from utils.content import ContentScope
 
-LIST_SKILLS_LIMIT = 100
+SEARCH_SKILLS_LIMIT = 50
 
 SkillName = Annotated[
     str,
@@ -84,7 +95,6 @@ def _skill_summary(skill: SkillRead) -> dict[str, object]:
         "description": skill.description,
         "scope": skill.scope,
         "owner": skill.created_by_name,
-        "is_active": skill.is_active,
     }
 
 
@@ -103,29 +113,61 @@ def _service_retry(exc: Exception) -> ModelRetry:
     return ModelRetry(getattr(exc, "message", str(exc)))
 
 
-async def _visible_skill_by_name(ctx: RunContext[RuntimeDeps], name: str) -> Skill:
+async def _visible_skill_by_name(
+    ctx: RunContext[RuntimeDeps],
+    name: str,
+    *,
+    active_only: bool,
+) -> Skill:
     """Return the named skill, preferring a workspace skill over a platform one."""
+    filters = [
+        Skill.name == name,
+        visible_skill_filter(ctx.deps.workspace),
+        Skill.deleted == False,  # noqa: E712
+    ]
+    if active_only:
+        filters.append(Skill.is_active.is_(True))
     skill = await ctx.deps.db.scalar(
         select(Skill)
-        .where(
-            Skill.name == name,
-            visible_skill_filter(ctx.deps.workspace),
-            Skill.deleted == False,  # noqa: E712
-        )
+        .where(*filters)
         .order_by(case((Skill.scope == ContentScope.WORKSPACE, 0), else_=1))
         .limit(1)
     )
     if skill is None:
-        raise ModelRetry(f"No skill named {name!r}. Call list_skills to see valid names.")
+        raise ModelRetry(
+            f"No skill named {name!r}. Call {SEARCH_SKILLS_TOOL_NAME} to see valid names."
+        )
     return skill
 
 
+def _search_rank(query: str | None):
+    """Return a filter and rank that match any query word in a skill's name or description."""
+    terms = [term for term in (query or "").split() if len(term) > 1][:10]
+    if not terms:
+        return None, None
+    matches = [
+        or_(
+            Skill.name.ilike(f"%{term}%"),
+            Skill.human_name.ilike(f"%{term}%"),
+            Skill.description.ilike(f"%{term}%"),
+        )
+        for term in terms
+    ]
+    rank = case((matches[0], 1), else_=0)
+    for match in matches[1:]:
+        rank = rank + case((match, 1), else_=0)
+    return or_(*matches), rank
+
+
 @runtime_tool(
-    name="list_skills",
+    name=SEARCH_SKILLS_TOOL_NAME,
     provider="core",
-    label="List Skills",
+    label="Search Skills",
     code_eligible=False,
-    description="List the workspace and platform skills, including inactive ones, by name.",
+    description=(
+        "Find skills: saved instructions for doing a kind of task well. Pass words that "
+        "describe the task, or omit query to list every skill. Load a match with load_skill."
+    ),
     effect=TOOL_EFFECT_READ,
     default_policy=TOOL_POLICY_AUTO,
     takes_ctx=True,
@@ -134,33 +176,45 @@ async def _visible_skill_by_name(ctx: RunContext[RuntimeDeps], name: str) -> Ski
     auto_mount=True,
     presentation=ToolPresentation(
         icon="sparkles",
-        running_label="Listing Skills",
-        completed_label="Listed Skills",
-        failed_label="Couldn't List Skills",
+        running_label="Searching Skills",
+        completed_label="Searched Skills",
+        failed_label="Couldn't Search Skills",
+        arg_fields=(ToolFieldPresentation(key="query", label="Search"),),
         result_fields=(ToolFieldPresentation(key="skills", label="Skills", format="list"),),
     ),
 )
-async def list_skills(ctx: RunContext[RuntimeDeps]) -> dict[str, object]:
-    """List skills visible in this workspace, newest first."""
-    result = await list_skills_service(
-        ctx.deps.db,
-        workspace=ctx.deps.workspace,
-        limit=LIST_SKILLS_LIMIT,
-        offset=0,
-        include_inactive=True,
+async def search_skills(
+    ctx: RunContext[RuntimeDeps],
+    query: Annotated[str | None, Field(max_length=200)] = None,
+) -> dict[str, object]:
+    """Return active skills visible in this workspace, best matches first."""
+    match, rank = _search_rank(query)
+    statement = select(Skill).where(
+        visible_skill_filter(ctx.deps.workspace),
+        Skill.deleted == False,  # noqa: E712
+        Skill.is_active.is_(True),
     )
+    order_by = [case((Skill.scope == ContentScope.WORKSPACE, 0), else_=1), Skill.name]
+    if match is not None:
+        statement = statement.where(match)
+        order_by.insert(0, rank.desc())
+    total = await ctx.deps.db.scalar(select(func.count()).select_from(statement.subquery()))
+    skills = await ctx.deps.db.scalars(statement.order_by(*order_by).limit(SEARCH_SKILLS_LIMIT))
     return {
-        "skills": [_skill_summary(skill) for skill in result.skills],
-        "total": result.total,
+        "skills": [_skill_summary(SkillRead.from_skill(skill)) for skill in skills],
+        "total": total or 0,
     }
 
 
 @runtime_tool(
-    name="read_skill",
+    name=LOAD_SKILL_TOOL_NAME,
     provider="core",
-    label="Read Skill",
+    label="Load Skill",
     code_eligible=False,
-    description="Read a skill's full instructions by name. Read a skill before updating it.",
+    description=(
+        "Load a skill's full instructions by name. Follow them for the task, and read "
+        "them before updating the skill."
+    ),
     effect=TOOL_EFFECT_READ,
     default_policy=TOOL_POLICY_AUTO,
     takes_ctx=True,
@@ -169,16 +223,100 @@ async def list_skills(ctx: RunContext[RuntimeDeps]) -> dict[str, object]:
     auto_mount=True,
     presentation=ToolPresentation(
         icon="sparkles",
-        running_label="Reading Skill {name}",
-        completed_label="Read Skill {name}",
-        failed_label="Couldn't Read Skill",
+        running_label="Loading Skill {name}",
+        completed_label="Loaded Skill {name}",
+        failed_label="Couldn't Load Skill",
         arg_fields=(ToolFieldPresentation(key="name", label="Skill"),),
     ),
 )
-async def read_skill(ctx: RunContext[RuntimeDeps], name: SkillName) -> dict[str, object]:
-    """Return one visible skill with its full instructions."""
-    skill = await _visible_skill_by_name(ctx, name)
-    return {**_skill_summary(SkillRead.from_skill(skill)), "instructions": skill.instructions}
+async def load_skill(ctx: RunContext[RuntimeDeps], name: SkillName) -> dict[str, object]:
+    """Return one active skill's instructions and record that it was used."""
+    skill = await _visible_skill_by_name(ctx, name, active_only=True)
+    result: dict[str, object] = {
+        **_skill_summary(SkillRead.from_skill(skill)),
+        "instructions": skill.instructions,
+    }
+    documents = [
+        {"name": document_name, "filename": entry.filename}
+        for document_name, entry in ready_skill_documents(skill)
+    ]
+    if documents:
+        result["documents"] = documents
+        result["documents_note"] = f"Read these with {READ_SKILL_DOCUMENT_TOOL_NAME}."
+    # Tenant sessions can't write platform rows, so only workspace skills track use.
+    if skill.scope == ContentScope.WORKSPACE:
+        skill.last_used_at = datetime.now(UTC)
+        await ctx.deps.db.flush()
+    return result
+
+
+@runtime_tool(
+    name=READ_SKILL_DOCUMENT_TOOL_NAME,
+    provider="core",
+    label="Read Skill Document",
+    code_eligible=False,
+    description="Read one of a loaded skill's reference documents as Markdown.",
+    effect=TOOL_EFFECT_READ,
+    default_policy=TOOL_POLICY_AUTO,
+    takes_ctx=True,
+    timeout=30,
+    configurable=False,
+    auto_mount=True,
+    presentation=ToolPresentation(
+        icon="sparkles",
+        running_label="Reading Skill Document",
+        completed_label="Read Skill Document",
+        failed_label="Couldn't Read Skill Document",
+        arg_fields=(
+            ToolFieldPresentation(key="skill", label="Skill"),
+            ToolFieldPresentation(key="document", label="Document"),
+        ),
+    ),
+)
+async def read_skill_document(
+    ctx: RunContext[RuntimeDeps],
+    skill: SkillName,
+    document: Annotated[str, Field(min_length=1, max_length=255)],
+) -> str:
+    """Read a reference document from a skill this conversation has loaded."""
+    if skill not in loaded_skill_names(ctx.messages):
+        raise ModelRetry(f"Call {LOAD_SKILL_TOOL_NAME} for {skill!r} before reading its documents.")
+    matched = await _visible_skill_by_name(ctx, skill, active_only=True)
+    document_name, entry = _resolve_ready_document(matched, document)
+    try:
+        data = await get_storage_provider().get_object(private_ref_from_key(entry.markdown))
+    except StorageNotFoundError:
+        raise ModelRetry("Document content is unavailable.") from None
+    content = data.decode("utf-8", errors="replace")
+    return (
+        f"<skill-document skill={skill!r} document={document_name!r}>\n{content}\n</skill-document>"
+    )
+
+
+def _resolve_ready_document(skill: Skill, document: str) -> tuple[str, SkillDocumentEntry]:
+    requested = document.strip()
+    ready_entries = ready_skill_documents(skill)
+    for name, entry in ready_entries:
+        if name == requested:
+            return name, entry
+    filename_matches = [
+        (name, entry)
+        for name, entry in ready_entries
+        if entry.filename.casefold() == requested.casefold()
+    ]
+    if len(filename_matches) == 1:
+        return filename_matches[0]
+    if len(filename_matches) > 1:
+        matching_names = ", ".join(name for name, _entry in filename_matches)
+        raise ModelRetry(
+            f"Document filename is ambiguous. Use one of these document names: {matching_names}."
+        )
+    valid_documents = (
+        ", ".join(f"{name} ({entry.filename})" for name, entry in ready_entries) or "none"
+    )
+    raise ModelRetry(
+        f"Unknown or unavailable document. Ready documents by name or filename: {valid_documents}."
+    )
 
 
 @runtime_tool(
@@ -188,8 +326,7 @@ async def read_skill(ctx: RunContext[RuntimeDeps], name: SkillName) -> dict[str,
     code_eligible=False,
     description=(
         "Save a new skill. Load the skill-authoring guide and agree the content with the "
-        "user first. "
-        "Assigning it to agents happens in the agent editor."
+        "user first. Once saved, every agent that can see it finds it with search_skills."
     ),
     effect=TOOL_EFFECT_WRITE,
     default_policy=TOOL_POLICY_APPROVAL,
@@ -258,7 +395,7 @@ async def create_skill(
     label="Update Skill",
     code_eligible=False,
     description=(
-        "Change a skill. Call read_skill first. Instructions replace the whole text, so "
+        "Change a skill. Call load_skill first. Instructions replace the whole text, so "
         "send the complete revised version. Omit fields that stay the same. A skill shared "
         "with every workspace can be changed only by the person who shared it."
     ),
@@ -288,7 +425,7 @@ async def update_skill(
     instructions: SkillInstructions | None = None,
 ) -> dict[str, object]:
     """Update one visible skill under the same permissions as the Skills page."""
-    target = await _visible_skill_by_name(ctx, name)
+    target = await _visible_skill_by_name(ctx, name, active_only=False)
     changes = {
         field: value
         for field, value in (

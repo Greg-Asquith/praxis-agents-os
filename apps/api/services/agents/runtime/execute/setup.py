@@ -23,7 +23,6 @@ from core.settings import settings
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
-from models.skills import Skill
 from models.workspace import Workspace
 from services.agent_runs.domain import RUN_TRIGGER_DELEGATED, RUN_TRIGGER_SCHEDULED
 from services.agent_runs.start_with_lease import start_agent_run_with_lease
@@ -189,7 +188,6 @@ async def prepare_runtime(
     attachment_file_ids: Sequence[UUID],
     message_history: Sequence[ModelMessage] | None,
     deferred_tool_results: DeferredToolResults | None,
-    skills: Sequence[Skill],
     available_files: Sequence[AvailableFile],
     inherited_usage_limits: EffectiveUsageLimits | None = None,
 ) -> PreparedRuntime:
@@ -252,7 +250,6 @@ async def prepare_runtime(
         conversation=conversation,
         message_history=message_history,
         deferred_tool_results=deferred_tool_results,
-        skills=skills,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
@@ -330,7 +327,6 @@ async def build_agent_for_run(
     conversation: Conversation,
     message_history: Sequence[ModelMessage] | None,
     deferred_tool_results: DeferredToolResults | None,
-    skills: Sequence[Skill],
     conversation_context_block: str,
     core_memory_block: str,
     completion_contract_block: str,
@@ -375,7 +371,6 @@ async def build_agent_for_run(
         delegate_agents=delegate_agents,
         enable_delegation=enable_delegation,
         force_delegation_tools=force_delegation_tools,
-        skills=skills,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,

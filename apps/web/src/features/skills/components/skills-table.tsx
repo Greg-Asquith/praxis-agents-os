@@ -267,9 +267,6 @@ function SkillStatusBadges({ skill }: { skill: Skill }) {
         {skill.is_active ? "Active" : "Inactive"}
       </Badge>
       {skill.scope === "platform" ? <Badge variant="secondary">Platform</Badge> : null}
-      {skill.scope === "workspace" && skill.is_favorite ? (
-        <Badge variant="outline">Favorite</Badge>
-      ) : null}
     </div>
   )
 }

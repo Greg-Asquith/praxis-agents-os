@@ -1,16 +1,14 @@
 # apps/api/tests/scenarios/test_prompt_assembly.py
 
-"""System-prompt and deferred-skill behavior at the scenario boundary."""
+"""System-prompt and skill-loading behavior at the scenario boundary."""
 
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.agent_memories import AgentMemory
-from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace
-from services.agents.runtime.skills import skill_capability_id
 from tests.factories import build_skill
 from tests.support.scenario import (
     ToolCall,
@@ -55,19 +53,15 @@ async def test_core_memory_is_injected_but_notes_are_not(
     assert "Search-only note" not in request_text
 
 
-async def test_loaded_skill_instructions_are_injected_after_load_capability(
+async def test_unassigned_workspace_skill_loads_by_name_into_history(
     db_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    context = await _assign_skill(db_session_factory)
-    async with db_session_factory() as db:
-        skill = await db.get(Skill, context.agent.skill_ids[0])
-        assert skill is not None
+    context = await build_scenario_agent(db_session_factory)
+    skill_name = await _add_workspace_skill(db_session_factory, context)
     seen = []
     model = scripted_model(
         turns=[
-            ToolTurn(
-                (ToolCall("load_capability", {"id": skill_capability_id(skill)}, "load-skill"),)
-            ),
+            ToolTurn((ToolCall("load_skill", {"name": skill_name}, "load-skill"),)),
             "done",
         ],
         seen_requests=seen,
@@ -80,15 +74,13 @@ async def test_loaded_skill_instructions_are_injected_after_load_capability(
     assert "Follow the scenario workflow." in str(seen[1][0])
 
 
-async def _assign_skill(
+async def _add_workspace_skill(
     session_factory: async_sessionmaker[AsyncSession],
-):
-    context = await build_scenario_agent(session_factory)
+    context,
+) -> str:
     async with session_factory() as db:
-        agent = await db.get(type(context.agent), context.agent_id)
         workspace = await db.get(Workspace, context.workspace_id)
         user = await db.get(User, context.user_id)
-        assert agent is not None
         assert workspace is not None
         assert user is not None
         skill = build_skill(
@@ -100,11 +92,8 @@ async def _assign_skill(
             instructions="Follow the scenario workflow.",
         )
         db.add(skill)
-        await db.flush()
-        agent.skill_ids = [str(skill.id)]
         await db.commit()
-        context.agent.skill_ids = [str(skill.id)]
-    return context
+        return skill.name
 
 
 def _scenario_memory(context, *, title: str, kind: str) -> AgentMemory:

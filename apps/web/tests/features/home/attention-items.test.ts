@@ -69,7 +69,6 @@ const agent: Agent = {
   code_mode_enabled: false,
   tool_names: [],
   tool_policies: null,
-  skill_ids: [],
   allowed_agent_ids: [],
   model_provider: null,
   model: null,

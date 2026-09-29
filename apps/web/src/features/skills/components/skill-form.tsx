@@ -101,7 +101,6 @@ export function SkillForm(props: SkillFormProps) {
         await props.onSubmit(
           {
             ...payload,
-            is_favorite: props.scope === "platform" ? false : (payload.is_favorite ?? false),
             scope: props.scope,
           },
           props.scope === "platform" ? [] : pendingDocuments
@@ -206,14 +205,9 @@ export function SkillForm(props: SkillFormProps) {
             {activeStepId === "availability" && props.mode === "edit" ? (
               <SkillAvailabilitySection
                 isActive={state.isActive}
-                isFavorite={state.isFavorite}
                 onActiveChange={(isActive) => {
                   setField("isActive", isActive)
                 }}
-                onFavoriteChange={(isFavorite) => {
-                  setField("isFavorite", isFavorite)
-                }}
-                showFavorite={!isPlatform}
               />
             ) : null}
           </div>

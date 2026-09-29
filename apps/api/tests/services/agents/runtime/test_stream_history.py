@@ -34,7 +34,6 @@ async def _consume(stream, messages, *, deferred_tool_results=None):
     return await consume_stream(
         stream,
         deps=cast(RuntimeDeps, SimpleNamespace()),
-        skills=(),
         run=cast(AgentRun, SimpleNamespace(id=run_id)),
         deferred_tool_results=deferred_tool_results,
         event_sink=CollectingSink(run_id=run_id, conversation_id=uuid4()),
@@ -189,7 +188,6 @@ async def test_checkpoint_waits_for_native_tool_audit(monkeypatch) -> None:
                     execution_control=SimpleNamespace(owner_instance_id=str(uuid4())),
                 ),
             ),
-            skills=(),
             run=cast(AgentRun, SimpleNamespace(id=run_id)),
             deferred_tool_results=None,
             event_sink=CollectingSink(run_id=run_id, conversation_id=uuid4()),

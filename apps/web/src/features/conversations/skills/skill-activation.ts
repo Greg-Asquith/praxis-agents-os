@@ -4,58 +4,55 @@ import type { Skill } from "@/features/skills/types"
 import { isRecord } from "@/lib/guards"
 
 export const LOAD_CAPABILITY_TOOL_NAME = "load_capability"
-const SKILL_CAPABILITY_PREFIX = "skill-"
+export const LOAD_SKILL_TOOL_NAME = "load_skill"
 const INTERNAL_SKILL_CAPABILITY_PREFIX = "internal-"
 
-type SkillActivationDisplay = Pick<Skill, "human_name" | "id" | "name">
+type SkillActivationDisplay = Pick<Skill, "human_name" | "name">
 
-export function skillIdFromCapabilityArgs(args: unknown): string | null {
-  return capabilitySuffix(args, SKILL_CAPABILITY_PREFIX)
+export function loadedSkillNameFromArgs(args: unknown): string | null {
+  const value = recordArg(args, "name")?.trim()
+  if (!value) {
+    return null
+  }
+  return value
 }
 
 // Internal skills ship with the platform, so their label derives from the kebab-case name.
 export function internalSkillLabelFromCapabilityArgs(args: unknown): string | null {
-  const name = capabilitySuffix(args, INTERNAL_SKILL_CAPABILITY_PREFIX)
-  if (!name) {
+  const capabilityId = recordArg(args, "id")
+  if (!capabilityId?.startsWith(INTERNAL_SKILL_CAPABILITY_PREFIX)) {
     return null
   }
-  const words = name.replaceAll("-", " ")
-  return words.charAt(0).toUpperCase() + words.slice(1)
+  const name = capabilityId.slice(INTERNAL_SKILL_CAPABILITY_PREFIX.length).trim()
+  return name ? sentenceFromIdentifier(name) : null
 }
 
 export function skillActivationDisplayName(
   skill: SkillActivationDisplay | null | undefined,
-  fallbackId: string
+  fallbackName: string
 ) {
   const humanName = skill?.human_name?.trim()
   if (humanName) {
     return humanName
   }
-
-  const name = skill?.name.trim()
-  if (name) {
-    return name
-  }
-
-  return shortenSkillId(fallbackId)
+  return sentenceFromIdentifier(fallbackName)
 }
 
-function capabilitySuffix(args: unknown, prefix: string): string | null {
-  const normalized = normalizeCapabilityArgs(args)
+function sentenceFromIdentifier(name: string) {
+  const words = name.replaceAll("-", " ")
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+function recordArg(args: unknown, key: string): string | null {
+  const normalized = normalizeArgs(args)
   if (!isRecord(normalized)) {
     return null
   }
-
-  const capabilityId = normalized["id"]
-  if (typeof capabilityId !== "string" || !capabilityId.startsWith(prefix)) {
-    return null
-  }
-
-  const suffix = capabilityId.slice(prefix.length).trim()
-  return suffix.length > 0 ? suffix : null
+  const value = normalized[key]
+  return typeof value === "string" ? value : null
 }
 
-function normalizeCapabilityArgs(args: unknown) {
+function normalizeArgs(args: unknown) {
   if (typeof args !== "string") {
     return args
   }
@@ -66,8 +63,4 @@ function normalizeCapabilityArgs(args: unknown) {
   } catch {
     return args
   }
-}
-
-function shortenSkillId(skillId: string) {
-  return skillId.length > 12 ? skillId.slice(0, 8) : skillId
 }

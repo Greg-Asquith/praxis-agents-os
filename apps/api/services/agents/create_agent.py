@@ -54,10 +54,9 @@ async def create_agent(
         model=payload.model,
         azure_deployment=payload.azure_deployment,
     )
-    skill_ids, allowed_agent_ids = await validate_agent_references(
+    allowed_agent_ids = await validate_agent_references(
         db,
         workspace=workspace,
-        skill_ids=payload.skill_ids,
         allowed_agent_ids=payload.allowed_agent_ids,
     )
 
@@ -77,7 +76,6 @@ async def create_agent(
             tool_names=tool_names,
             tool_policies=tool_policies,
             code_mode_enabled=payload.code_mode_enabled,
-            skill_ids=skill_ids,
             allowed_agent_ids=allowed_agent_ids,
             model_provider=model_provider,
             model=payload.model,
@@ -126,7 +124,6 @@ async def create_agent(
             "model": agent.model,
             "tool_names": agent.tool_names,
             "code_mode_enabled": agent.code_mode_enabled,
-            "skill_count": len(agent.skill_ids or []),
             "allowed_agent_count": len(agent.allowed_agent_ids or []),
         },
     )

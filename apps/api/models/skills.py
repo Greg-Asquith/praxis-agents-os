@@ -77,7 +77,6 @@ class Skill(BaseModel):
 
     # Status
     is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
-    is_favorite = Column(Boolean, nullable=False, default=False, server_default=text("false"))
     last_used_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
@@ -91,8 +90,7 @@ class Skill(BaseModel):
             name="skills_scope_owner_check",
         ),
         CheckConstraint(
-            "scope = 'workspace' OR "
-            "(is_favorite = false AND COALESCE(documentation_refs, '{}'::jsonb) = '{}'::jsonb)",
+            "scope = 'workspace' OR COALESCE(documentation_refs, '{}'::jsonb) = '{}'::jsonb",
             name="skills_platform_content_check",
         ),
         # Unique name per workspace

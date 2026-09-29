@@ -62,7 +62,6 @@ async def test_create_skill_route_persists_public_model_shape_and_audit(
             "human_name": " Research ",
             "description": " Use verified sources. ",
             "instructions": " Follow the research workflow. ",
-            "is_favorite": True,
             "metadata": {"accent": "green"},
         },
     )
@@ -78,7 +77,6 @@ async def test_create_skill_route_persists_public_model_shape_and_audit(
     assert body["created_by"] == str(user.id)
     assert body["documentation_refs"] == {}
     assert body["is_active"] is True
-    assert body["is_favorite"] is True
     assert body["metadata"] == {"accent": "green"}
 
     audit_event = await db_session.scalar(
@@ -184,7 +182,7 @@ async def test_get_skill_from_another_workspace_returns_not_found(
     assert response.json()["resource_type"] == "skill"
 
 
-async def test_platform_skills_are_global_assignable_and_managed_by_their_sharer(
+async def test_platform_skills_are_global_and_managed_by_their_sharer(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -195,7 +193,7 @@ async def test_platform_skills_are_global_assignable_and_managed_by_their_sharer
         db_session,
         email=admin_email,
     )
-    _member, member_workspace, member_headers = await _authenticated_workspace(db_session)
+    _member, _member_workspace, member_headers = await _authenticated_workspace(db_session)
 
     create_response = await db_async_client.post(
         "/api/v1/skills/",
@@ -215,7 +213,6 @@ async def test_platform_skills_are_global_assignable_and_managed_by_their_sharer
     assert platform_skill["workspace_id"] is None
     assert platform_skill["created_by"] == str(admin.id)
     assert platform_skill["documentation_refs"] == {}
-    assert platform_skill["is_favorite"] is False
 
     list_response = await db_async_client.get("/api/v1/skills/", headers=member_headers)
     assert list_response.status_code == 200
@@ -244,21 +241,6 @@ async def test_platform_skills_are_global_assignable_and_managed_by_their_sharer
     )
     assert denied_update.status_code == 403
     assert denied_delete.status_code == 403
-
-    agent_response = await db_async_client.post(
-        "/api/v1/agents/",
-        headers=member_headers,
-        json={
-            "name": "Platform skill agent",
-            "instructions": "Use assigned guidance.",
-            "skill_ids": [platform_skill["id"]],
-            "model_provider": "openai",
-            "model": "gpt-5.4-mini",
-        },
-    )
-    assert agent_response.status_code == 201
-    assert agent_response.json()["workspace_id"] == str(member_workspace.id)
-    assert agent_response.json()["skill_ids"] == [platform_skill["id"]]
 
     document_response = await db_async_client.post(
         f"/api/v1/skills/{platform_skill['id']}/documents/upload",

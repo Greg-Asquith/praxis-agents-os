@@ -8,7 +8,6 @@ export type SkillFormState = {
   description: string
   instructions: string
   isActive: "true" | "false"
-  isFavorite: "true" | "false"
   name: string
 }
 
@@ -19,7 +18,6 @@ export function initialSkillFormState(skill: Skill | null): SkillFormState {
     description: skill?.description ?? "",
     instructions: skill?.instructions ?? "",
     isActive: skill?.is_active === false ? "false" : "true",
-    isFavorite: skill?.is_favorite ? "true" : "false",
     name: skill?.human_name ?? humanNameFromIdentifier(skill?.name ?? ""),
   }
 }
@@ -45,7 +43,6 @@ export function buildSkillPayload(
     human_name: visibleName,
     instructions: state.instructions.trim(),
     is_active: state.isActive === "true",
-    is_favorite: state.isFavorite === "true",
     name: skillIdentifierFromName(visibleName),
   }
 }
@@ -119,7 +116,6 @@ export function isSkillFormDirty(current: SkillFormState, initial: SkillFormStat
     current.name !== initial.name ||
     current.description !== initial.description ||
     current.instructions !== initial.instructions ||
-    current.isActive !== initial.isActive ||
-    current.isFavorite !== initial.isFavorite
+    current.isActive !== initial.isActive
   )
 }

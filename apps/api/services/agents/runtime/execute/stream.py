@@ -14,7 +14,6 @@ from pydantic_ai.agent import AgentRunEvents
 from pydantic_ai.capabilities import AgentNode, Hooks, NodeResult
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import (
-    FunctionToolCallEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
@@ -24,7 +23,6 @@ from pydantic_ai.messages import (
 from pydantic_ai.run import AgentRunResultEvent
 
 from models.agent_run import AgentRun
-from models.skills import Skill
 from services.agents.runtime.approval_events import (
     build_deferred_tool_result_metadata,
     emit_live_deferred_tool_event,
@@ -36,7 +34,6 @@ from services.agents.runtime.dispatch import record_native_tool_invocation_audit
 from services.agents.runtime.events import EventTranslationState, emit_agent_stream_event
 from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.sinks import EventSink
-from services.agents.runtime.skills import record_skill_activation
 
 CHECKPOINT_TIMEOUT = 3.0
 
@@ -45,7 +42,6 @@ async def consume_stream(
     stream: AsyncIterable[Any],
     *,
     deps: RuntimeDeps,
-    skills: Sequence[Skill],
     run: AgentRun,
     deferred_tool_results: DeferredToolResults | None,
     event_sink: EventSink,
@@ -145,11 +141,6 @@ async def consume_stream(
                             None if started is None else max(1, int((monotonic() - started) * 1000))
                         ),
                     )
-            if (
-                isinstance(event, FunctionToolCallEvent)
-                and getattr(part, "tool_kind", None) == "capability-load"
-            ):
-                record_skill_activation(skills, part, run=run)
             await emit_agent_stream_event(
                 event_sink,
                 event,

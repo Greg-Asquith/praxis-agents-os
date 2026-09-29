@@ -53,7 +53,6 @@ const agent: Agent = {
   code_mode_enabled: true,
   tool_names: ["read_file", "missing_tool"],
   tool_policies: { read_file: "approval" },
-  skill_ids: ["skill-1"],
   allowed_agent_ids: ["agent-2"],
   model_provider: "openai",
   model: "gpt-5.4-mini",
@@ -207,7 +206,6 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
     modelSelection: "openai:gpt-5.4-mini",
     modelSettings: { temperature: 0.1 },
     name: "  Launch planner  ",
-    skillIds: ["skill-1"],
     thinking: "low",
     toolModes: {
       read_file: "auto",
@@ -235,7 +233,6 @@ describe("initialAgentFormState", () => {
       modelSelection: "Default",
       modelSettings: {},
       name: "",
-      skillIds: [],
       thinking: "Default",
       toolModes: {
         read_file: "off",
@@ -261,7 +258,6 @@ describe("initialAgentFormState", () => {
       modelSelection: "openai:gpt-5.4-mini",
       modelSettings: { temperature: 0.2, thinking: "high" },
       name: "Planner",
-      skillIds: ["skill-1"],
       thinking: "high",
       toolModes: {
         read_file: "approval",
@@ -318,7 +314,6 @@ describe("buildAgentPayload", () => {
       model_provider: "openai",
       model_settings: { temperature: 0.1, thinking: "low" },
       name: "Launch planner",
-      skill_ids: ["skill-1"],
       tool_names: ["read_file", "send_email"],
       tool_policies: {
         read_file: "auto",

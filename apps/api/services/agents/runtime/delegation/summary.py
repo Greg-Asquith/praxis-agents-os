@@ -21,7 +21,6 @@ def summarize_delegate_agent(agent: Agent) -> DelegateAgentSummary:
         description=agent.description,
         model=model,
         tool_count=len(agent.tool_names or []),
-        skill_count=len(agent.skill_ids or []),
         reference=AgentReference(
             entity_id=agent.id,
             label=agent.name,

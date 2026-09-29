@@ -33,7 +33,6 @@ class SkillRead(BaseModel):
     created_by_name: str | None = None
     documentation_refs: dict[str, Any] = Field(default_factory=dict)
     is_active: bool
-    is_favorite: bool
     last_used_at: datetime | None = None
     metadata_json: dict[str, Any] | None = Field(default=None, serialization_alias="metadata")
     created_at: datetime
@@ -64,7 +63,6 @@ class SkillCreateRequest(BaseModel):
     description: str = Field(min_length=1, max_length=1024)
     instructions: str = Field(min_length=1, max_length=20000)
     is_active: bool = True
-    is_favorite: bool = False
     metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
     scope: ContentScope = ContentScope.WORKSPACE
 
@@ -100,7 +98,6 @@ class SkillUpdateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=1024)
     instructions: str | None = Field(default=None, max_length=20000)
     is_active: bool | None = None
-    is_favorite: bool | None = None
     metadata_json: dict[str, Any] | None = Field(default=None, alias="metadata")
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")

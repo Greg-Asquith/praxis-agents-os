@@ -31,7 +31,6 @@ export type Skill = {
   created_by_name: string | null
   documentation_refs: Record<string, SkillDocumentManifestEntry>
   is_active: boolean
-  is_favorite: boolean
   last_used_at: string | null
   metadata: Record<string, unknown> | null
   created_at: string
@@ -53,7 +52,6 @@ export type SkillCreateRequest = {
   description: string
   instructions: string
   is_active?: boolean
-  is_favorite?: boolean
   metadata?: Record<string, unknown> | null
   scope?: "workspace" | "platform"
 }

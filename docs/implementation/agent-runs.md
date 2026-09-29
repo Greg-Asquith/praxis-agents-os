@@ -8,24 +8,20 @@ Backend paths are relative to `apps/api/`; frontend paths to `apps/web/`.
 
 ## Skill history
 
-Assigned skills use deferred instruction capabilities with `skill-UUID` IDs.
-Migration `core_0052` converts historical `skill:UUID` IDs in typed capability-load
-calls in conversation messages and saved approval histories, including delegated
-runs. It preserves call IDs, message metadata, decisions, and interpreter state.
-Ordinary tool results and prompt content are unchanged and cannot restore a
-loaded skill. Reading a skill document requires its assigned capability to be
-loaded. Runtime history loading performs no compatibility conversion.
+Stored skills load through the `load_skill` tool, so their instructions live in
+an ordinary tool return. A document can be read only after a successful
+`load_skill` for that skill appears in the conversation's history. Internal
+skills remain deferred capabilities loaded with `load_capability`.
 
-Stop old API and worker processes before applying this migration, then start
-the upgraded processes after it succeeds. A restored pre-upgrade database must
-run migrations before use. Downgrading the migration restores the historical
-prefix and requires the same stopped-process boundary.
+Conversations from before migration `core_0059` may contain `load_capability`
+records for removed `skill-UUID` capabilities. They replay as ordinary history
+and are not converted.
 
 ## Context pressure and history retention
 
 Runtime setup estimates loaded history and assembled instructions against the
 configured model window once per turn. Stable user-turn watermarks select the
-matching stored summary. Deferred skill-load pairs survive trimming and reload.
+matching stored summary. Skill and capability load pairs survive trimming and reload.
 Disabling compaction retains the full history.
 
 Pydantic AI 2.50's `RunContext.context_window_used` does not drive compaction.

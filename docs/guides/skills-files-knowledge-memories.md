@@ -16,20 +16,22 @@ A skill contains instructions for a repeatable task. For example, a skill can
 define how to write a weekly report, qualify a sales lead, or format customer
 emails.
 
-Create a skill once, then assign it to the agents that need it. An agent sees a
-short description first and loads the full instructions only when the task
-requires them. A skill can also include supporting documents, such as a report
-template or style guide.
+Create a skill once and every agent in your workspace can use it. You don't
+assign skills to agents. When a task starts, the agent searches your skills
+and loads the full instructions of any that fit, so write a description that
+says what the skill is for and when to use it. A skill can also include
+supporting documents, such as a report template or style guide. To stop agents
+using a skill without deleting it, set it to **Inactive**.
 
 To create or improve a skill in conversation, ask any agent. The agent asks
 about the task, drafts the skill with you, and shows it for your approval
-before saving. To use the new skill, assign it to your agents.
+before saving. Agents can use it as soon as it is saved.
 
 To share a skill with every workspace, select **Make available to every
 workspace** when you create it. Shared skills contain instructions only and
 are marked **Platform** in the Skills list with the name of the person who
-owns them. Everyone can assign them to agents, but only you and super admins
-can edit or delete a skill you shared. To change someone else's shared skill,
+owns them. Agents in every workspace can use them straight away, but only you
+and super admins can edit or delete a skill you shared. To change someone else's shared skill,
 ask its owner.
 
 Use a skill if you repeat the same instructions in several conversations. For

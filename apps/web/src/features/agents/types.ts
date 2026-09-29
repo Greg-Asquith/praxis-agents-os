@@ -13,7 +13,6 @@ export type Agent = {
   code_mode_enabled: boolean
   tool_names: string[]
   tool_policies: Record<string, ToolPolicyValue> | null
-  skill_ids: string[]
   allowed_agent_ids: string[]
   model_provider: string | null
   model: string | null
@@ -45,7 +44,6 @@ export type AgentCreateRequest = {
   code_mode_enabled?: boolean
   tool_names?: string[]
   tool_policies?: Record<string, ToolPolicyValue> | null
-  skill_ids?: string[]
   allowed_agent_ids?: string[]
   model_provider?: string | null
   model?: string | null

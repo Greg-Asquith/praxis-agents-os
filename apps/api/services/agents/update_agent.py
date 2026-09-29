@@ -115,12 +115,6 @@ async def update_agent(
         agent.tool_policies = candidate_tool_policies
         changed_fields.append("tool_policies")
 
-    candidate_skill_ids = [UUID(value) for value in (agent.skill_ids or [])]
-    if "skill_ids" in payload.model_fields_set:
-        if payload.skill_ids is None:
-            raise AppValidationError("skill_ids cannot be null", field="skill_ids")
-        candidate_skill_ids = payload.skill_ids
-
     candidate_allowed_agent_ids = [UUID(value) for value in (agent.allowed_agent_ids or [])]
     if "allowed_agent_ids" in payload.model_fields_set:
         if payload.allowed_agent_ids is None:
@@ -130,16 +124,12 @@ async def update_agent(
             )
         candidate_allowed_agent_ids = payload.allowed_agent_ids
 
-    skill_ids, allowed_agent_ids = await validate_agent_references(
+    allowed_agent_ids = await validate_agent_references(
         db,
         workspace=workspace,
-        skill_ids=candidate_skill_ids,
         allowed_agent_ids=candidate_allowed_agent_ids,
         current_agent_id=agent.id,
     )
-    if skill_ids != list(agent.skill_ids or []):
-        agent.skill_ids = skill_ids
-        changed_fields.append("skill_ids")
     if allowed_agent_ids != list(agent.allowed_agent_ids or []):
         agent.allowed_agent_ids = allowed_agent_ids
         changed_fields.append("allowed_agent_ids")

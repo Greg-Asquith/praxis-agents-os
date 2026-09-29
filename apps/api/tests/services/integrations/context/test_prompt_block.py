@@ -54,6 +54,7 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
         "file_links",
         "delegation",
         "available_files",
+        "skills",
         "knowledge",
         "memory_policy",
         "untrusted_content_policy",

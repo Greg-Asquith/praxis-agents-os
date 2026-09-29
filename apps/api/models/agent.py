@@ -4,7 +4,7 @@
 Agent models for saving config & scheduling.
 
 Agents are separate entities with their own model/instructions configuration.
-They can use both hardcoded tools AND user-created skills.
+They can use hardcoded tools and find workspace skills at run time.
 """
 
 from sqlalchemy import (
@@ -27,7 +27,7 @@ from models.base import BaseModel
 
 
 class Agent(BaseModel):
-    """Agent with instructions, tools, and skills.
+    """Agent with instructions and tools.
 
     Agents are separate entities that can be delegated complex tasks.
     Unlike skills (which inject into the current agent), agents run
@@ -60,9 +60,6 @@ class Agent(BaseModel):
         default=False,
         server_default=text("false"),
     )
-
-    # Skill access (IDs of user-created skills this agent can use)
-    skill_ids = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
 
     # Agent collaboration (IDs of agents this agent can call)
     allowed_agent_ids = Column(

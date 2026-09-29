@@ -22,9 +22,9 @@ Knowledge Base, and memories](../guides/skills-files-knowledge-memories.md).
 | Answers            | "How do I do this task?"                                                | "Work with this specific document"                                                         | "What does the workspace know?"                                           | "What has the agent learned over time?"                                                             |
 | Content            | Procedural instructions + reference docs                                | Arbitrary documents with revision history                                                  | Canonical markdown, chunked and embedded                                  | Durable facts with provenance                                                                       |
 | Storage            | `skills` table; docs in object storage                                  | `files` / `file_revisions` / `file_references` / `file_uploads`; content in object storage | `kb_documents` / `kb_chunks` (markdown in Postgres, `HALFVEC` embeddings) | `agent_memories` (markdown in Postgres, `HALFVEC` embeddings)                                       |
-| Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Budgeted core-memory prompt block + auto-mounted memory tools                                       |
-| Retrieval          | None                                                                    | None                                                                                       | Hybrid RRF: lexical + pgvector semantic + recency                         | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`)                           |
-| Scope              | Workspace or platform rows, assigned per agent via `Agent.skill_ids`    | Workspace and published platform; conversation visibility via `file_references`                                   | Workspace and published platform, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
+| Enters context via | `skills` prompt block + auto-mounted `search_skills` / `load_skill`      | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Budgeted core-memory prompt block + auto-mounted memory tools                                       |
+| Retrieval          | Lexical match on name and description                                   | None                                                                                       | Hybrid RRF: lexical + pgvector semantic + recency                         | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`)                           |
+| Scope              | Workspace rows plus platform rows shared with every workspace           | Workspace and published platform; conversation visibility via `file_references`                                   | Workspace and published platform, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
 | Agent-writable     | Yes (`create_skill` / `update_skill`; workspace skills, always approval) | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
 | Status             | Shipped end to end                                                      | Shipped end to end                                                                         | Shipped end to end                                                        | Shipped end to end                                                                                  |
 
@@ -38,40 +38,44 @@ Reusable _procedural_ knowledge: how an agent should perform a class of task.
   storage under `workspaces/{workspace_id}/skills/{skill_id}/`). Workspace
   skills have a workspace owner. Text-only platform skills have no workspace
   owner and are available to every workspace.
-- **Runtime.** Three-level progressive disclosure. Skills assigned to the
-  agent (`Agent.skill_ids`) become Pydantic AI capabilities with
-  `defer_loading=True` (`services/agents/runtime/skills.py`): the model sees
-  only `"{human_name}: {description}"` until it calls `load_capability`,
-  which injects the full `instructions`. A conditional `read_skill_document`
-  tool serves attached documents on demand, and refuses until the owning
-  skill capability is loaded. Skills are _not_ a system-prompt block.
+- **Runtime.** Agents aren't assigned skills. Every agent can use each
+  active skill its workspace can see: the workspace's own skills plus
+  platform skills. A short `skills` prompt block tells the model to search
+  before a task. Auto-mounted tools (`services/agents/runtime/tools/skills.py`)
+  provide three-level progressive disclosure: `search_skills` matches query
+  words against name, display name, and description (no query lists every
+  skill, capped at 50); `load_skill` returns the full `instructions` and the
+  list of ready documents; `read_skill_document` serves one document and
+  refuses until this conversation has loaded the skill. A workspace skill
+  shadows a platform skill with the same name. Inactive skills are hidden.
+  The system prompt never lists skills, so skill edits don't change it.
 - **Internal skills.** Markdown files with `name`, `human_name`, and
   `description` frontmatter under `services/agents/runtime/internal_skills/`
   ship with the code and mount on every agent as deferred capabilities with
   the `internal-` id prefix. They have no rows, so workspaces can't edit or
   delete them, and each release updates them. `skill-authoring` teaches agents
   to interview the user, draft a skill, and save it.
-- **Agent authoring.** Auto-mounted `list_skills` and `read_skill` read
-  visible skills by name. Auto-mounted `create_skill` creates a workspace skill,
+- **Agent authoring.** Agents find and read skills with `search_skills` and
+  `load_skill`. Auto-mounted `create_skill` creates a workspace skill,
   or a platform skill when the user ticks the required share option on the
   approval card, and `update_skill` changes any skill the run's user may change, both through
   the same services and permission checks as the UI, with that user as actor.
-  Both are approval-only, because a saved skill becomes instructions for every
-  agent it is assigned to. The tools never assign skills to agents or attach
-  documents.
+  Both are approval-only, because a saved skill becomes instructions that
+  every agent in its audience can load. The tools never attach documents.
 - **Management.** `/skills` routes, `services/skills/`, web UI at `/skills`.
   Workspace editors manage workspace skills and can share a skill with every
   workspace by creating it with platform scope. Only its creator, while still a
   workspace editor, or a configured super admin can update or delete a
-  platform skill; other users see it read-only. Assigned to agents in the agent
-  editor.
-- **Lifecycle notes.** `load_capability` call/return pairs are preserved
-  across history trimming so activated skills survive compaction.
-  `last_used_at` is stamped on workspace-skill activation. Platform activation
-  remains read-only in the tenant transaction.
+  platform skill; other users see it read-only. Sharing is the only consent
+  step: a platform skill is available to every workspace's agents as soon as
+  it is saved.
+- **Lifecycle notes.** `load_skill` and `load_capability` call/return pairs
+  are preserved across history trimming, so loaded skills survive compaction.
+  `load_skill` stamps `last_used_at` on workspace skills. Platform loads stay
+  read-only in the tenant transaction.
 
-Use a skill for instructions that selected agents must follow, including
-procedures and required formats.
+Use a skill for instructions that agents must follow for a kind of task,
+including procedures and required formats.
 
 ## Files
 
@@ -244,7 +248,7 @@ should never be described as memory.
 
 ## Choose a home for context
 
-- For selectively assigned instructions about how to act, use a **Skill**.
+- For instructions about how to do a kind of task, use a **Skill**.
 - For a durable uploaded or generated document to read or edit, use a **File**.
 - For a versioned agent-authored report, page, diagram, or table that someone
   views, presents, or shares, use an **Artifact**.

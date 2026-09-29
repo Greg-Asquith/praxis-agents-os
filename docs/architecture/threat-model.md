@@ -77,9 +77,11 @@ Any workspace editor can create a platform skill. Only its creator, while
 still an editor, or a configured super admin can update or delete it. The
 skill services enforce this before writing through the maintenance role, with
 global audit events. Tenant sessions cannot create, update, or delete platform
-rows. A platform skill affects an agent only after someone in that workspace
-assigns it, but its creator can later change instructions that other
-workspaces already use. Global audit events record each change.
+rows. Skills aren't assigned to agents, so sharing is the only consent step:
+once saved, a platform skill's instructions are available to every
+workspace's agents, and its creator can later change them. Search results and
+the Skills page name the owner, and global audit events record each change.
+Workspace skills stay invisible outside their workspace.
 
 ### Object-storage workspace-isolation backstop
 

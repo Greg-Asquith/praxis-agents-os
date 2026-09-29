@@ -58,9 +58,6 @@ export function SkillDetailRoute() {
               </h1>
               {!skill.is_active ? <Badge variant="outline">Inactive</Badge> : null}
               {skill.scope === "platform" ? <Badge variant="secondary">Platform</Badge> : null}
-              {skill.scope === "workspace" && skill.is_favorite ? (
-                <Badge variant="outline">Favorite</Badge>
-              ) : null}
             </div>
             <p className="text-muted-foreground max-w-3xl text-sm">{skill.description}</p>
           </div>
@@ -121,7 +118,8 @@ export function SkillDetailRoute() {
                 {skill.created_by_name ? `Owned by ${skill.created_by_name}` : "Shared Skill"}
               </AlertTitle>
               <AlertDescription>
-                This skill is available in every workspace. To change it, ask its owner or a platform admin.
+                This skill is available in every workspace. To change it, ask its owner or a
+                platform admin.
               </AlertDescription>
             </Alert>
             <FormSection

@@ -8,8 +8,9 @@ import { ActivityStatusBadge } from "@/features/conversations/components/tool-ac
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   internalSkillLabelFromCapabilityArgs,
+  LOAD_SKILL_TOOL_NAME,
+  loadedSkillNameFromArgs,
   skillActivationDisplayName,
-  skillIdFromCapabilityArgs,
 } from "@/features/conversations/skills/skill-activation"
 import { skillsQueryOptions } from "@/features/skills/api/list-skills"
 
@@ -18,18 +19,21 @@ type SkillActivationRowProps = {
 }
 
 export function SkillActivationRow({ activity }: SkillActivationRowProps) {
-  const skillId = skillIdFromCapabilityArgs(activity.args)
+  const skillName =
+    activity.name === LOAD_SKILL_TOOL_NAME ? loadedSkillNameFromArgs(activity.args) : null
   const internalLabel = internalSkillLabelFromCapabilityArgs(activity.args)
   const skillsQuery = useQuery({
     ...skillsQueryOptions({ includeInactive: true }),
-    enabled: skillId !== null,
+    enabled: skillName !== null,
   })
-  if (!skillId && !internalLabel) {
+  if (!skillName && !internalLabel) {
     return null
   }
 
-  const skill = skillsQuery.data?.skills.find((item) => item.id === skillId)
-  const label = internalLabel ?? skillActivationDisplayName(skill, skillId ?? "")
+  // A workspace skill shadows a shared skill with the same name, matching the runtime.
+  const matches = skillsQuery.data?.skills.filter((item) => item.name === skillName) ?? []
+  const skill = matches.find((item) => item.scope === "workspace") ?? matches[0]
+  const label = internalLabel ?? skillActivationDisplayName(skill, skillName ?? "")
   return (
     <ToolResultCard
       ariaLabel={`Activated skill: ${label}`}

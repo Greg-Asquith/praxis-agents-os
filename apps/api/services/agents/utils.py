@@ -13,13 +13,11 @@ from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, NotFoundError
 from core.settings import settings
 from models.agent import Agent
-from models.skills import Skill
 from models.workspace import Workspace, WorkspaceMembership
 from services.agents.models.domain import ALL_PROVIDERS, PROVIDER_AZURE
 from services.agents.models.registry import find_model
 from services.agents.runtime.tools.contract import VALID_TOOL_POLICIES
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
-from services.skills.utils import visible_skill_filter
 from services.workspaces.utils import EDITOR_ROLES
 
 AGENT_SLUG_UNIQUE_INDEX = "ix_agents_slug_workspace"
@@ -65,11 +63,9 @@ async def validate_agent_references(
     db: AsyncSession,
     *,
     workspace: Workspace,
-    skill_ids: list[UUID],
     allowed_agent_ids: list[UUID],
     current_agent_id: UUID | None = None,
-) -> tuple[list[str], list[str]]:
-    normalized_skill_ids = _dedupe_uuid_strings(skill_ids)
+) -> list[str]:
     normalized_agent_ids = _dedupe_uuid_strings(allowed_agent_ids)
 
     if current_agent_id is not None and str(current_agent_id) in normalized_agent_ids:
@@ -78,12 +74,6 @@ async def validate_agent_references(
             field="allowed_agent_ids",
         )
 
-    if normalized_skill_ids:
-        await _ensure_active_skills_exist(
-            db,
-            workspace=workspace,
-            skill_ids=[UUID(value) for value in normalized_skill_ids],
-        )
     if normalized_agent_ids:
         await _ensure_active_agents_exist(
             db,
@@ -91,7 +81,7 @@ async def validate_agent_references(
             agent_ids=[UUID(value) for value in normalized_agent_ids],
         )
 
-    return normalized_skill_ids, normalized_agent_ids
+    return normalized_agent_ids
 
 
 def validate_tool_configuration(
@@ -285,31 +275,6 @@ def is_agent_slug_integrity_error(exc: IntegrityError) -> bool:
         return True
 
     return AGENT_SLUG_UNIQUE_INDEX in str(exc)
-
-
-async def _ensure_active_skills_exist(
-    db: AsyncSession,
-    *,
-    workspace: Workspace,
-    skill_ids: list[UUID],
-) -> None:
-    found = set(
-        await db.scalars(
-            select(Skill.id).where(
-                Skill.id.in_(skill_ids),
-                visible_skill_filter(workspace),
-                Skill.deleted == False,  # noqa: E712
-                Skill.is_active.is_(True),
-            )
-        )
-    )
-    missing = sorted(str(skill_id) for skill_id in skill_ids if skill_id not in found)
-    if missing:
-        raise NotFoundError(
-            "Skill not found",
-            resource_type="skill",
-            details={"missing_skill_ids": missing},
-        )
 
 
 async def _ensure_active_agents_exist(

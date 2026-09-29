@@ -13,25 +13,19 @@ import {
 
 export function SkillAvailabilitySection({
   isActive,
-  isFavorite,
   onActiveChange,
-  onFavoriteChange,
-  showFavorite,
 }: {
   isActive: "true" | "false"
-  isFavorite: "true" | "false"
   onActiveChange: (isActive: "true" | "false") => void
-  onFavoriteChange: (isFavorite: "true" | "false") => void
-  showFavorite: boolean
 }) {
   return (
     <FormSection
-      description="Control whether agents can be given this skill."
+      description="Control whether agents can find and use this skill."
       eyebrow="State"
       title="Availability"
     >
-      <FieldGroup className={showFavorite ? "grid gap-5 sm:grid-cols-2" : undefined}>
-        <Field className={showFavorite ? undefined : "max-w-sm"}>
+      <FieldGroup>
+        <Field className="max-w-sm">
           <FieldLabel htmlFor="skill-active">Status</FieldLabel>
           <Select
             onValueChange={(value) => {
@@ -50,32 +44,9 @@ export function SkillAvailabilitySection({
             </SelectContent>
           </Select>
           <FieldDescription>
-            Inactive skills cannot be assigned to agents, but their content is kept.
+            Agents can't find inactive skills, but their content is kept.
           </FieldDescription>
         </Field>
-
-        {showFavorite ? (
-          <Field>
-            <FieldLabel htmlFor="skill-favorite">Favorite</FieldLabel>
-            <Select
-              onValueChange={(value) => {
-                onFavoriteChange(value === "true" ? "true" : "false")
-              }}
-              value={isFavorite}
-            >
-              <SelectTrigger id="skill-favorite" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value="false">No</SelectItem>
-                  <SelectItem value="true">Yes</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <FieldDescription>Favorites are easier to find when choosing skills.</FieldDescription>
-          </Field>
-        ) : null}
       </FieldGroup>
     </FormSection>
   )

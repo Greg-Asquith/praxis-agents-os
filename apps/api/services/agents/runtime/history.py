@@ -10,17 +10,18 @@ from uuid import UUID
 
 from pydantic_ai.messages import (
     LoadCapabilityCallPart,
-    LoadCapabilityReturnPart,
     ModelMessage,
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     RetryPromptPart,
+    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
 
 from core.settings import settings
+from services.agents.runtime.skills import loaded_skill_name
 from utils.tokens import estimate_tokens
 
 PERSISTED_MESSAGE_ID_METADATA_KEY = "praxis_conversation_message_id"
@@ -123,9 +124,9 @@ def trim_history(
     cut_index = boundary_indexes[cut_boundary]
     dropped = prior_messages[:cut_index]
     kept = list(prior_messages[cut_index:])
-    capability_pairs = _capability_load_pairs(
+    capability_pairs = _context_load_pairs(
         dropped,
-        loaded_capability_ids=_loaded_capability_ids(kept),
+        loaded_keys=_loaded_context_keys(kept),
     )
     synthetic_timestamp = _stable_message_timestamp(kept[0])
     injected: list[ModelMessage] = []
@@ -260,45 +261,45 @@ def _split_current_run_tail(
     return messages, []
 
 
-def _loaded_capability_ids(messages: Sequence[ModelMessage]) -> set[str]:
-    return {
-        capability_id for capability_id, _call, _return in _iter_capability_load_pairs(messages)
-    }
+def _loaded_context_keys(messages: Sequence[ModelMessage]) -> set[str]:
+    return {key for key, _call, _return in _iter_context_load_pairs(messages)}
 
 
-def _capability_load_pairs(
+def _context_load_pairs(
     messages: Sequence[ModelMessage],
     *,
-    loaded_capability_ids: set[str],
-) -> list[tuple[LoadCapabilityCallPart, LoadCapabilityReturnPart]]:
-    pairs: list[tuple[LoadCapabilityCallPart, LoadCapabilityReturnPart]] = []
-    preserved_capability_ids: set[str] = set()
-    for capability_id, call, return_part in _iter_capability_load_pairs(messages):
-        if capability_id in loaded_capability_ids or capability_id in preserved_capability_ids:
+    loaded_keys: set[str],
+) -> list[tuple[ToolCallPart, ToolReturnPart]]:
+    pairs: list[tuple[ToolCallPart, ToolReturnPart]] = []
+    preserved_keys: set[str] = set()
+    for key, call, return_part in _iter_context_load_pairs(messages):
+        if key in loaded_keys or key in preserved_keys:
             continue
-        preserved_capability_ids.add(capability_id)
+        preserved_keys.add(key)
         pairs.append((call, return_part))
     return pairs
 
 
-def _iter_capability_load_pairs(
+def _context_load_key(part: ToolCallPart) -> str | None:
+    """Key capability and skill loads so trimming keeps the instructions a run follows."""
+    if isinstance(part, LoadCapabilityCallPart):
+        return part.capability_id
+    skill_name = loaded_skill_name(part)
+    return None if skill_name is None else f"skill:{skill_name}"
+
+
+def _iter_context_load_pairs(
     messages: Sequence[ModelMessage],
-) -> list[tuple[str, LoadCapabilityCallPart, LoadCapabilityReturnPart]]:
-    calls_by_id: dict[str, LoadCapabilityCallPart] = {}
-    capability_by_call_id: dict[str, str] = {}
-    pairs: list[tuple[str, LoadCapabilityCallPart, LoadCapabilityReturnPart]] = []
+) -> list[tuple[str, ToolCallPart, ToolReturnPart]]:
+    calls_by_id: dict[str, tuple[str, ToolCallPart]] = {}
+    pairs: list[tuple[str, ToolCallPart, ToolReturnPart]] = []
     for message in messages:
         for part in message.parts:
-            if isinstance(part, LoadCapabilityCallPart):
-                capability_id = part.capability_id
-                if capability_id is None:
-                    continue
-                calls_by_id[part.tool_call_id] = part
-                capability_by_call_id[part.tool_call_id] = capability_id
-            elif isinstance(part, LoadCapabilityReturnPart):
-                capability_id = capability_by_call_id.get(part.tool_call_id)
-                call = calls_by_id.get(part.tool_call_id)
-                if capability_id is None or call is None:
-                    continue
-                pairs.append((capability_id, call, part))
+            if isinstance(part, ToolCallPart):
+                key = _context_load_key(part)
+                if key is not None:
+                    calls_by_id[part.tool_call_id] = (key, part)
+            elif isinstance(part, ToolReturnPart) and part.tool_call_id in calls_by_id:
+                key, call = calls_by_id[part.tool_call_id]
+                pairs.append((key, call, part))
     return pairs

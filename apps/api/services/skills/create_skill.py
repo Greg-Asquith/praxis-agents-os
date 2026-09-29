@@ -7,7 +7,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
-from core.exceptions.general import AppValidationError
 from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
@@ -36,11 +35,6 @@ async def create_skill(
 ) -> SkillRead:
     if payload.scope == ContentScope.PLATFORM:
         require_platform_skill_create_access(actor, membership)
-        if payload.is_favorite:
-            raise AppValidationError(
-                "Platform skills cannot be marked as favorites",
-                field="is_favorite",
-            )
         await db.commit()
         return await _create_platform_skill(request=request, actor=actor, payload=payload)
 
@@ -55,7 +49,6 @@ async def create_skill(
         created_by=actor.id,
         scope=ContentScope.WORKSPACE,
         is_active=payload.is_active,
-        is_favorite=payload.is_favorite,
         metadata_json=payload.metadata_json,
     )
     try:
@@ -101,7 +94,6 @@ async def _create_platform_skill(
         created_by=actor.id,
         documentation_refs={},
         is_active=payload.is_active,
-        is_favorite=False,
         metadata_json=payload.metadata_json,
     )
     async with maintenance_async_db_session() as maintenance_db:

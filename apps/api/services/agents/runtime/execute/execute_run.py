@@ -37,7 +37,6 @@ from services.agents.runtime.heartbeat import heartbeat_agent_run_lease, stop_ag
 from services.agents.runtime.interrupted_history import InterruptedHistory
 from services.agents.runtime.load_context import (
     load_actor_context,
-    load_agent_skills,
     load_available_files,
     load_run_context,
 )
@@ -148,7 +147,6 @@ async def execute_run(
                     )
                 )
                 execution_timeout.reschedule(execution_control.deadline)
-                skills = await load_agent_skills(db, agent)
                 available_files = await load_available_files(db, conversation)
                 prepared_user_prompt = user_prompt
                 attachment_file_ids_for_prepare = attachment_file_ids
@@ -195,7 +193,6 @@ async def execute_run(
                     attachment_file_ids=attachment_file_ids_for_prepare,
                     message_history=runtime_message_history,
                     deferred_tool_results=deferred_tool_results,
-                    skills=skills,
                     available_files=available_files,
                     inherited_usage_limits=inherited_usage_limits,
                 )
@@ -258,7 +255,6 @@ async def execute_run(
                             terminal_result, _ = await consume_stream(
                                 stream,
                                 deps=prepared.deps,
-                                skills=skills,
                                 run=run,
                                 deferred_tool_results=deferred_tool_results,
                                 event_sink=event_sink,

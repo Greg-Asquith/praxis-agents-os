@@ -27,7 +27,7 @@ describe("shared MessageList", () => {
           tool_kind: "capability-load",
           tool_call_id: "load_cap",
           tool_name: "load_capability",
-          args: '{"id":"skill-research"}',
+          args: '{"id":"internal-skill-authoring"}',
         },
       ]),
       message("tool", 3, [
@@ -91,7 +91,7 @@ describe("shared MessageList", () => {
     )
     expect(html).toContain("Find sources")
     expect(html).toContain("Saved answer")
-    expect(html).toContain("Activated Skill: research")
+    expect(html).toContain("Activated Skill: Skill authoring")
     expect(html).not.toContain("Ran load_capability")
     expect(html).toContain('aria-label="Web search results for Praxis"')
     expect(html).not.toContain("Approval request")

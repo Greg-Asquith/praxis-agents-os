@@ -68,7 +68,6 @@ async def update_skill(
         "description",
         "instructions",
         "is_active",
-        "is_favorite",
         "metadata_json",
     ):
         if field_name in payload.model_fields_set:
@@ -111,11 +110,6 @@ async def _update_platform_skill(
     payload: SkillUpdateRequest,
 ) -> SkillRead:
     """Update one platform skill through the maintenance role."""
-    if payload.is_favorite is True:
-        raise AppValidationError(
-            "Platform skills cannot be marked as favorites",
-            field="is_favorite",
-        )
     for required_field in ("name", "description", "instructions"):
         if required_field in payload.model_fields_set and getattr(payload, required_field) is None:
             raise AppValidationError(f"{required_field} cannot be null", field=required_field)

@@ -58,6 +58,12 @@ When a tool result includes a file reference, link that file in user-facing Mark
 When a tool result includes an artifact reference, link that artifact as `[label](/artifacts/<entity_id>)`. Keep artifact IDs out of File link targets.
 """
 
+SKILL_INSTRUCTIONS = """\
+## Skills
+
+Skills are saved instructions for doing a kind of task well. At the start of a task, call search_skills with words that describe it, or with no query to see every skill. When a skill fits, call load_skill and follow its instructions. Skip the search for small talk or quick factual answers.
+"""
+
 KNOWLEDGE_INSTRUCTIONS = """\
 ## Knowledge Base
 
@@ -163,6 +169,7 @@ def runtime_prompt_blocks(
             _render_available_files(available_files),
             budget=settings.AVAILABLE_FILES_PROMPT_BUDGET,
         ),
+        PromptBlock("skills", SKILL_INSTRUCTIONS),
         PromptBlock(
             "knowledge",
             KNOWLEDGE_INSTRUCTIONS,

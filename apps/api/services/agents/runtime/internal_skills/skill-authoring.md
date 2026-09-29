@@ -7,8 +7,9 @@ description: Use when someone asks you to create, write, improve, or fix a skill
 # Skill authoring
 
 A skill is a reusable set of instructions that teaches agents how to do one
-kind of task. Agents in this workspace see only each assigned skill's name and
-description until they load it, then they follow its full instructions.
+kind of task. Every agent in the workspace can use every active skill. Agents
+find skills by searching their names and descriptions, then load one and
+follow its full instructions.
 
 Use this guide to help the person you're working with turn what they know into
 a skill. They are usually not technical. Talk about outcomes, not fields,
@@ -16,8 +17,9 @@ formats, or identifiers.
 
 ## Tools
 
-- `list_skills`: see which skills already exist in the workspace.
-- `read_skill`: read a skill's full instructions before you change it.
+- `search_skills`: find skills that already exist. Leave the query out to
+  list them all.
+- `load_skill`: read a skill's full instructions before you change it.
 - `create_skill`: save a new skill for this workspace, or for every
   workspace when the person asks. The person reviews it and can edit it
   before it is saved.
@@ -32,7 +34,7 @@ else's, create a workspace skill instead.
 
 ### 1. Check what exists
 
-Call `list_skills` first. When a skill already covers the task, offer to
+Call `search_skills` first. When a skill already covers the task, offer to
 improve it instead of creating a near-duplicate.
 
 ### 2. Understand the task
@@ -61,9 +63,9 @@ Write four parts:
 - **Display name**: the plain title people see, such as "Weekly client
   report".
 - **Description**: one or two sentences that say what the skill does and
-  when to use it. This is the only text an agent sees before it decides to
-  load the skill, so include the words people use when they ask for this
-  task. Maximum 1,024 characters.
+  when to use it. Agents find skills by searching names and descriptions, and
+  this is the only text they see before deciding to load one. Include the
+  words people use when they ask for this task. Maximum 1,024 characters.
 - **Instructions**: the full guidance, in Markdown. Maximum 20,000
   characters.
 
@@ -78,9 +80,9 @@ are happy.
 Call `create_skill` or `update_skill`. The person sees an approval card and
 can edit the text before approving. When they decline, ask what to change.
 
-After saving, tell them the skill is ready and that it only takes effect for
-agents it is assigned to. To assign it, they open the agent, go to its
-skills, and select it. Offer to test it with them on a real example.
+After saving, tell them the skill is ready and that agents in the workspace
+can use it straight away, or in every workspace if they shared it. Offer to
+test it with them on a real example.
 
 ## Writing good instructions
 
@@ -128,7 +130,7 @@ Use this outline as a starting point and drop sections that don't apply:
 
 ## Updating a skill
 
-1. Call `read_skill` and read the current instructions in full.
+1. Call `load_skill` and read the current instructions in full.
 2. Make the smallest change that fixes the problem. Keep the rest of the
    text intact, because other agents may already rely on it.
 3. Send the complete revised instructions to `update_skill`. It replaces the

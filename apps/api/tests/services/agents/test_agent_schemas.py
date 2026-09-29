@@ -21,7 +21,6 @@ def test_agent_read_validates_metadata_from_orm_attribute() -> None:
         created_by=uuid4(),
         tool_names=["test_runtime_context"],
         tool_policies={"test_runtime_context": "approval"},
-        skill_ids=[],
         allowed_agent_ids=[],
         model_provider="openai",
         model="gpt-5.4-mini",

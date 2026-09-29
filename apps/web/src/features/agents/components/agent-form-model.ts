@@ -105,7 +105,6 @@ export type AgentFormState = {
   modelSelection: string
   modelSettings: Record<string, unknown>
   name: string
-  skillIds: string[]
   thinking: ThinkingSelection
   toolModes: Record<string, RuntimeToolMode>
 }
@@ -163,7 +162,6 @@ export function initialAgentFormState(
     modelSelection: modelSelectionFromAgent(agent),
     modelSettings: { ...(agent?.model_settings ?? {}) },
     name: agent?.name ?? "",
-    skillIds: agent?.skill_ids ?? [],
     thinking: thinkingSelectionFromSettings(agent?.model_settings ?? null),
     toolModes: initialToolModes(toolCatalog, agent),
   }
@@ -349,7 +347,6 @@ export function buildAgentPayload(
     model_provider: modelSelection.model_provider,
     model_settings: modelSettings,
     name,
-    skill_ids: state.skillIds,
     tool_names: toolPayload.tool_names,
     tool_policies: toolPayload.tool_policies,
   }
@@ -411,7 +408,6 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
     current.thinking !== initial.thinking ||
     current.identityColor !== initial.identityColor ||
     !stringArraysEqual(current.allowedAgentIds, initial.allowedAgentIds) ||
-    !stringArraysEqual(current.skillIds, initial.skillIds) ||
     !toolModesEqual(current.toolModes, initial.toolModes) ||
     JSON.stringify(current.modelSettings) !== JSON.stringify(initial.modelSettings)
   )
