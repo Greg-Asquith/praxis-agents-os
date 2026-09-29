@@ -49,6 +49,9 @@ The following contracts apply in this area:
   Multi-workspace fixtures must switch tenant context explicitly; use a
   maintenance session only when the behaviour under test is intentionally
   cross-workspace or system-owned.
+- An autouse fixture mounts every runtime tool eagerly, so scripted models
+  can call tools without searching for them first. Mark a test with
+  `@pytest.mark.deferred_tools` to keep deferred loading and tool search.
 - Live-model behaviour evaluations live outside pytest under `apps/api/evals`
   and run only through the explicit `make evals` target with `EVALS_MODEL`
   and matching provider credentials. The same command first runs live memory

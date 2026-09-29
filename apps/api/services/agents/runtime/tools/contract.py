@@ -236,7 +236,8 @@ class RuntimeToolDefinition:
     timeout: float | None = None
     max_retries: int | None = None
     args_validator: Callable[..., Any] | None = None
-    defer_loading: bool = False
+    defer_loading: bool = True
+    """Hide the schema until tool search finds it; core tools the model always needs opt out."""
     effect_scope_resolver: Callable[[dict[str, Any]], ToolEffectScope] | None = None
     output_model: type[BaseModel] | None = None
     """Declared output contract, enforced by the tool dispatch layer."""
@@ -291,7 +292,12 @@ class RuntimeToolDefinition:
             object.__setattr__(self, "_input_schema_cached", True)
         return self._serialized_input_schema
 
-    def to_pydantic_tool(self, *, policy: ToolPolicy | None = None) -> Tool[RuntimeDeps]:
+    def to_pydantic_tool(
+        self,
+        *,
+        policy: ToolPolicy | None = None,
+        defer_loading: bool | None = None,
+    ) -> Tool[RuntimeDeps]:
         """Build the Pydantic AI tool instance for one turn."""
         resolved_policy = policy or self.default_policy
         if resolved_policy not in VALID_TOOL_POLICIES:
@@ -323,7 +329,7 @@ class RuntimeToolDefinition:
             requires_approval=resolved_policy == TOOL_POLICY_APPROVAL,
             args_validator=self.args_validator,
             timeout=self.timeout,
-            defer_loading=self.defer_loading,
+            defer_loading=self.defer_loading if defer_loading is None else defer_loading,
         )
 
 
@@ -344,11 +350,9 @@ def validate_definition(definition: RuntimeToolDefinition) -> None:
     if definition.egress not in VALID_TOOL_EGRESS:
         raise RuntimeError("Runtime tool egress must be a known classification")
     if definition.code_eligible and (
-        definition.name in _CODE_MODE_MACHINERY_TOOL_NAMES
-        or definition.always_allowed_when_mounted
-        or definition.defer_loading
+        definition.name in _CODE_MODE_MACHINERY_TOOL_NAMES or definition.always_allowed_when_mounted
     ):
-        raise RuntimeError("Runtime machinery and deferred tools cannot be code eligible")
+        raise RuntimeError("Runtime machinery tools cannot be code eligible")
     if definition.max_result_chars is not None and definition.max_result_chars < 1:
         raise RuntimeError("Runtime tool max_result_chars must be greater than zero")
     if definition.max_public_result_chars is not None and definition.max_public_result_chars < 1:

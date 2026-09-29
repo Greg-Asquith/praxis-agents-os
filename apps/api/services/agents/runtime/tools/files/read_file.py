@@ -35,6 +35,7 @@ from utils.document_markdown import DocumentConversionError
 
 @runtime_tool(
     name="read_file",
+    defer_loading=False,
     provider="core",
     label="Read File",
     code_eligible=True,

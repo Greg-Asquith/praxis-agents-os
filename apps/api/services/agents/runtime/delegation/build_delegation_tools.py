@@ -22,6 +22,7 @@ from services.agents.runtime.tools.contract import (
 
 LIST_DELEGATE_AGENTS_DEFINITION = RuntimeToolDefinition(
     name=LIST_DELEGATE_AGENTS_TOOL_NAME,
+    defer_loading=False,
     function=list_delegate_agents,
     description=(
         "List the delegate agents this agent is allowed to call. "
@@ -44,6 +45,7 @@ LIST_DELEGATE_AGENTS_DEFINITION = RuntimeToolDefinition(
 
 DELEGATE_TO_AGENT_DEFINITION = RuntimeToolDefinition(
     name=DELEGATE_TO_AGENT_TOOL_NAME,
+    defer_loading=False,
     function=delegate_to_agent,
     description=(
         "Run a specialized task with one listed delegate agent. "

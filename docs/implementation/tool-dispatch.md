@@ -37,6 +37,27 @@ start with no tools. In the agent form, **Enable all tools** turns on
 `all_tools`, turning a tool off records an exclusion, and **Disable all
 tools** returns to an empty explicit selection.
 
+Mounted tools defer loading by default: the model sees only their names
+through Pydantic AI tool search, which is native on Anthropic and OpenAI
+Responses and a local `search_tools` tool elsewhere. It loads a tool's schema
+once it searches for it. Definitions that the model needs on most turns set
+`defer_loading=False`: files, memory, knowledge search and reads, skill search
+and loading, planning, delegation, `run_workflow`, and `report_completion`.
+Integration, native helper, artifact, chart, skill-authoring, and
+workspace-defined tools defer. Deferral changes only schema visibility;
+selection, policy, approval, and dispatch are unchanged. Code Mode's wrapped
+catalogue ignores deferral, so a wrapped tool is always callable from a
+workflow.
+
+When a conversation or schedule has no selection for a connected provider,
+the active context prompt block adds one line naming that provider. In a
+conversation, the line tells the agent to ask the user to select it in the
+context picker; in a schedule, to report that it wasn't selected. The runtime
+lists only providers with an active or degraded connection, at least one
+enabled resource, and at least one selected, workspace-allowed tool on the
+agent. Nothing mounts for those providers. Delegated runs use the root run's
+source.
+
 ## Results, references, and consent
 
 The following contracts apply in this area:

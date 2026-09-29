@@ -92,7 +92,7 @@ def runtime_tool(
     timeout: float | None = None,
     max_retries: int | None = None,
     args_validator: Callable[..., Any] | None = None,
-    defer_loading: bool = False,
+    defer_loading: bool = True,
     effect_scope_resolver: Callable[[dict[str, Any]], ToolEffectScope] | None = None,
     output_model: type[BaseModel] | None = None,
     max_result_chars: int | None = None,
@@ -243,7 +243,7 @@ def build_runtime_tools(
             agent_policies=policies,
             workspace_policies=workspace_policies or {},
         )
-        if code_mode_enabled and definition.code_eligible and not definition.defer_loading:
+        if code_mode_enabled and definition.code_eligible:
             try:
                 render_tool_stub(definition)
             except UnsupportedCodeModeSchemaError as exc:
@@ -286,6 +286,31 @@ def resolve_selected_tool_names(
         for definition in (*RUNTIME_TOOL_CATALOG.values(), *workspace_definitions)
         if definition.configurable and definition.name not in excluded
     )
+
+
+def list_selected_provider_keys(
+    agent: Agent,
+    *,
+    workspace: object | None,
+    disabled_tool_names: frozenset[str] = frozenset(),
+    workspace_definitions: Sequence[RuntimeToolDefinition] = (),
+) -> frozenset[str]:
+    """Returns the integration providers that the agent's selected, allowed tools bind to."""
+    provider_keys: set[str] = set()
+    for name in resolve_selected_tool_names(agent, workspace_definitions):
+        definition = resolve_runtime_tool_definition(name, workspace_definitions)
+        if (
+            definition is not None
+            and definition.integration_binding is not None
+            and permissions.is_tool_allowed(
+                definition,
+                workspace=workspace,
+                agent=agent,
+                disabled_tool_names=disabled_tool_names,
+            )
+        ):
+            provider_keys.update(definition.integration_binding.provider_keys)
+    return frozenset(provider_keys)
 
 
 def list_allowed_tool_definitions(

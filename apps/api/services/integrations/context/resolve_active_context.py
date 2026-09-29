@@ -4,6 +4,7 @@
 
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Literal
 from uuid import UUID
 
@@ -62,15 +63,21 @@ async def resolve_active_context(
         return EMPTY_ACTIVE_CONTEXT
 
     selections, source = await _load_selection(db, run=root_run, workspace_id=workspace.id)
-    if not selections:
-        return EMPTY_ACTIVE_CONTEXT
-
-    return await resolve_active_context_targets(
+    resolved = await resolve_active_context_targets(
         db,
         selections=selections,
         user=user,
         workspace=workspace,
         source=source,
+    )
+    if source is None:
+        return resolved
+    selected = {entry.provider_key for entry in (*resolved.entries, *resolved.unavailable)}
+    connected = await _load_selectable_provider_keys(db, user_id=user.id, workspace_id=workspace.id)
+    return replace(
+        resolved,
+        source=source,
+        unselected_provider_keys=tuple(sorted(connected - selected)),
     )
 
 
@@ -183,6 +190,37 @@ async def _load_selection(
             extra={"agent_run_id": str(run.id)},
         )
         return [], "schedule"
+
+
+async def _load_selectable_provider_keys(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    workspace_id: UUID,
+) -> set[str]:
+    return set(
+        await db.scalars(
+            select(IntegrationConnection.provider_key)
+            .distinct()
+            .join(
+                IntegrationResource, IntegrationResource.connection_id == IntegrationConnection.id
+            )
+            .where(
+                or_(
+                    IntegrationConnection.owner_workspace_id == workspace_id,
+                    IntegrationConnection.owner_user_id == user_id,
+                ),
+                IntegrationConnection.deleted.is_(False),
+                IntegrationConnection.status.in_(
+                    (CONNECTION_STATUS_ACTIVE, CONNECTION_STATUS_DEGRADED)
+                ),
+                IntegrationResource.enabled.is_(True),
+                IntegrationResource.deleted.is_(False),
+                IntegrationResource.availability != "removed",
+                IntegrationResource.removed_at.is_(None),
+            )
+        )
+    )
 
 
 async def _expand_selection(

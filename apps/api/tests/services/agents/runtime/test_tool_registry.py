@@ -21,6 +21,7 @@ from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
 )
 from models.agent import Agent
+from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.delegation.build_delegation_tools import (
     DELEGATION_TOOL_DEFINITIONS,
 )
@@ -33,6 +34,7 @@ from services.agents.runtime.tools.contract import (
     TOOL_EGRESS_EXTERNAL_WRITE,
     TOOL_POLICY_APPROVAL,
     TOOL_POLICY_AUTO,
+    IntegrationToolBinding,
     RuntimeToolDefinition,
     ToolEffectScope,
     validate_definition,
@@ -42,6 +44,7 @@ from services.agents.runtime.tools.registry import (
     build_runtime_tools,
     get_runtime_tool_definition,
     list_allowed_tool_definitions,
+    list_selected_provider_keys,
     runtime_tool,
 )
 from services.agents.utils import validate_tool_configuration
@@ -238,13 +241,6 @@ def test_runtime_tool_decorator_rejects_duplicate_names(cleanup_test_tools) -> N
             configurable=False,
             always_allowed_when_mounted=True,
             supports_approval=False,
-        ),
-        RuntimeToolDefinition(
-            name="bad_code_deferred",
-            function=_noop,
-            description="Deferred tools cannot be wrapped in v1.",
-            code_eligible=True,
-            defer_loading=True,
         ),
     ],
 )
@@ -625,7 +621,8 @@ def test_code_mode_replaces_every_eligible_non_deferred_tool_with_workflow_stubs
     assert workflow.max_retries == 1
 
 
-def test_code_mode_wraps_approval_policy_but_keeps_deferred_tools_direct(
+@pytest.mark.deferred_tools
+def test_tools_defer_by_default_and_code_mode_wraps_them_eagerly(
     cleanup_test_tools,
 ) -> None:
     @runtime_tool(
@@ -638,9 +635,7 @@ def test_code_mode_wraps_approval_policy_but_keeps_deferred_tools_direct(
 
     @runtime_tool(
         name="test_deferred_read",
-        description="Read after capability loading.",
-        code_eligible=False,
-        defer_loading=True,
+        description="Read after tool search.",
     )
     def deferred_read(query: str) -> str:
         return query
@@ -652,12 +647,15 @@ def test_code_mode_wraps_approval_policy_but_keeps_deferred_tools_direct(
             code_mode_enabled=True,
         )
     )
+    catalog = CodeModeCatalog.build([(RUNTIME_TOOL_CATALOG["test_approval_read"], "approval")])
 
     by_name = {tool.name: tool for tool in tools}
     assert "test_approval_read" not in by_name
     assert by_name["test_deferred_read"].defer_loading is True
+    assert by_name["run_workflow"].defer_loading is False
     assert "async def test_approval_read" in by_name["run_workflow"].description
     assert "async def test_deferred_read" not in by_name["run_workflow"].description
+    assert catalog.wrapped_toolset.tools["test_approval_read"].defer_loading is False
 
 
 def test_code_mode_applies_integration_context_filter_before_both_mount_paths(
@@ -837,6 +835,29 @@ def test_all_tools_agent_mounts_later_tools_minus_exclusions_and_filters(
 
     assert "test_all_added" in mounted
     assert {"test_all_excluded", "test_all_disabled", "test_all_bound"}.isdisjoint(mounted)
+
+
+def test_selected_provider_keys_skip_unselected_and_disabled_tools() -> None:
+    definitions = [
+        RuntimeToolDefinition(
+            name=f"bound_{provider_key}",
+            function=_noop,
+            description="Read.",
+            integration_binding=IntegrationToolBinding(
+                provider_keys=frozenset({provider_key}), resource_types=frozenset({"account"})
+            ),
+        )
+        for provider_key in ("gmail", "notion", "airtable")
+    ]
+
+    provider_keys = list_selected_provider_keys(
+        _agent(tool_names=["bound_gmail", "bound_notion"]),
+        workspace=object(),
+        disabled_tool_names=frozenset({"bound_notion"}),
+        workspace_definitions=definitions,
+    )
+
+    assert provider_keys == frozenset({"gmail"})
 
 
 def test_delegate_summary_counts_workspace_tools_for_all_tools_agents(

@@ -47,8 +47,8 @@ details.
 ### 1. The catalog replaces direct mounting
 
 `build_runtime_tools` (`services/agents/runtime/tools/registry.py`) stays the
-sole mounting authority. After agent selection, workspace disables, deferred
-loading, and integration-context filtering, tools that are `code_eligible` are
+sole mounting authority. After agent selection, workspace disables, and
+integration-context filtering, tools that are `code_eligible` are
 diverted into a per-run `CodeModeCatalog` instead of being mounted directly.
 Their JSON tool schemas leave the model request entirely; the catalog renders
 them as concise Python function stubs — typed async signatures, declared
@@ -297,7 +297,9 @@ always-mounted internals, `report_completion`, `run_workflow`, provider-native
 An eligible tool must return data that is useful to compose and that Monty can
 serialize, have a schema the stub generator can represent faithfully, and
 already be selected and allowed for the agent, workspace, and context.
-Support for deferred-loading and Model Context Protocol (MCP) tools is pending.
+Eligible tools defer loading like any other tool when mounted directly, but
+the catalogue always renders their stubs. Support for Model Context Protocol
+(MCP) tools is pending.
 Binary or multimodal producers, faithful-render surfaces such as Gmail message reading,
 conversational acts, memory, planning, skill loading, delegation, and
 completion reporting stay direct — they are conversation-shaped, not
@@ -401,8 +403,8 @@ process boundaries, batch approvals, hostile-output framing, role denial).
 
 Some extensions are deliberately excluded until their prerequisite design
 exists, rather than being half-supported: parallel nested dispatch (needs safe
-session isolation), stubs for deferred-loading and MCP-derived tools (the
-latter needs a threat-model delta for MCP output flowing through scripts),
+session isolation), stubs for MCP-derived tools (which need a threat-model
+delta for MCP output flowing through scripts),
 in-sandbox tool discovery, workspace-level controls, workflow-scoped tool
 grants, because consent can cover unreviewed future arguments, a deduplicating
 execution ledger that could replay past writes instead of the fail-closed

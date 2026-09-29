@@ -46,6 +46,7 @@ class WriteFileOutput(BaseModel):
 
 @runtime_tool(
     name="write_file",
+    defer_loading=False,
     provider="core",
     label="Save File",
     code_eligible=True,

@@ -56,6 +56,8 @@ class ResolvedActiveContext:
     groups: tuple[tuple[UUID, str], ...] = ()
     entries: tuple[ResolvedContextEntry, ...] = ()
     unavailable: tuple[UnavailableContextEntry, ...] = ()
+    unselected_provider_keys: tuple[str, ...] = ()
+    """Connected providers with no selection, so the agent can ask for one."""
 
     @property
     def is_empty(self) -> bool:

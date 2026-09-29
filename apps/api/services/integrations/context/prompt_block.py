@@ -11,12 +11,22 @@ ACTIVE_CONTEXT_LAW = (
     "Follow each integration tool's description for execution scope: some tools run once per "
     "compatible resource, while others perform one operation constrained to the listed resources."
 )
+UNSELECTED_CONVERSATION_LINE = (
+    "{provider} is connected. Ask the user to select it in the context picker before using it."
+)
+UNSELECTED_SCHEDULE_LINE = (
+    "{provider} is connected but not selected for this schedule. "
+    "Say so in your result instead of guessing."
+)
 
 
 def render_active_context_block(resolved: ResolvedActiveContext) -> str:
     """Render the non-negotiable context law before its bounded listing."""
+    unselected_lines = _unselected_provider_lines(resolved)
     if resolved.is_empty:
-        return ""
+        return (
+            "\n".join(["## Active Integrations", "", *unselected_lines]) if unselected_lines else ""
+        )
     lines = ["## Active Integrations", "", ACTIVE_CONTEXT_LAW]
     if resolved.groups:
         label = "Context group" if len(resolved.groups) == 1 else "Context groups"
@@ -25,8 +35,7 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
     if resolved.entries:
         lines.append("")
     for entry in resolved.entries:
-        provider = PROVIDER_MANIFESTS.get(entry.provider_key)
-        provider_label = provider.display_name if provider is not None else entry.provider_key
+        provider_label = _provider_label(entry.provider_key)
         markers = []
         if entry.connection_status == "degraded":
             markers.append("degraded")
@@ -45,4 +54,21 @@ def render_active_context_block(resolved: ResolvedActiveContext) -> str:
             f"- {entry.display_name} ({entry.provider_key}): {entry.reason}"
             for entry in resolved.unavailable
         )
+    if unselected_lines:
+        lines.extend(["", *unselected_lines])
     return "\n".join(lines)
+
+
+def _unselected_provider_lines(resolved: ResolvedActiveContext) -> list[str]:
+    template = (
+        UNSELECTED_SCHEDULE_LINE if resolved.source == "schedule" else UNSELECTED_CONVERSATION_LINE
+    )
+    return [
+        f"- {template.format(provider=_provider_label(provider_key))}"
+        for provider_key in resolved.unselected_provider_keys
+    ]
+
+
+def _provider_label(provider_key: str) -> str:
+    provider = PROVIDER_MANIFESTS.get(provider_key)
+    return provider.display_name if provider is not None else provider_key

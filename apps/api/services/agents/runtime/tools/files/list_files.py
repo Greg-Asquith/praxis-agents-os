@@ -41,6 +41,7 @@ class ListFilesOutput(BaseModel):
 
 @runtime_tool(
     name="list_files",
+    defer_loading=False,
     provider="core",
     label="List Files",
     code_eligible=True,

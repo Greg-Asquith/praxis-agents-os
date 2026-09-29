@@ -28,6 +28,7 @@ class TodoItemInput(BaseModel):
 
 @runtime_tool(
     name="write_todos",
+    defer_loading=False,
     provider="core",
     label="Update Plan",
     code_eligible=False,
@@ -88,6 +89,7 @@ async def write_todos(
 
 @runtime_tool(
     name="read_todos",
+    defer_loading=False,
     provider="core",
     label="Read Plan",
     code_eligible=False,

@@ -83,6 +83,7 @@ class ReadDocumentOutput(BaseModel):
 
 @runtime_tool(
     name="search_knowledge",
+    defer_loading=False,
     provider="kb",
     label="Search Knowledge",
     code_eligible=False,
@@ -195,6 +196,7 @@ async def search_knowledge(
 
 @runtime_tool(
     name="read_document",
+    defer_loading=False,
     provider="kb",
     label="Read Knowledge Document",
     code_eligible=False,

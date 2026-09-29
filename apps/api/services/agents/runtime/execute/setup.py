@@ -56,6 +56,7 @@ from services.agents.runtime.persistence import (
 )
 from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.tools import list_selected_provider_keys
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
 from services.agents.runtime.usage_limits import (
@@ -243,6 +244,18 @@ async def prepare_runtime(
     )
     workspace_definitions = await load_workspace_tool_definitions(db, workspace)
     tool_defaults = await get_workspace_tool_defaults(db, workspace)
+    selected_provider_keys = list_selected_provider_keys(
+        agent,
+        workspace=workspace,
+        disabled_tool_names=tool_defaults.disabled,
+        workspace_definitions=workspace_definitions,
+    )
+    active_context = replace(
+        active_context,
+        unselected_provider_keys=tuple(
+            key for key in active_context.unselected_provider_keys if key in selected_provider_keys
+        ),
+    )
     built_agent = await build_agent_for_run(
         db,
         run=run,

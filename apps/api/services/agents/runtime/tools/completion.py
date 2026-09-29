@@ -27,6 +27,7 @@ CompletionEvidence = Annotated[
 
 @runtime_tool(
     name=REPORT_COMPLETION_TOOL_NAME,
+    defer_loading=False,
     provider="core",
     label="Report Completion",
     code_eligible=False,

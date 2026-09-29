@@ -435,3 +435,55 @@ async def test_scheduled_and_delegated_runs_use_schedule_context(
 
     assert [entry.display_name for entry in revoked_context.entries] == ["First resource"]
     assert [entry.reason for entry in revoked_context.unavailable] == ["connection_revoked"]
+
+
+async def test_connected_providers_without_a_selection_are_reported_as_unselected(
+    db_session: AsyncSession,
+    context_data: dict[str, object],
+) -> None:
+    agent = await _agent(db_session, context_data)
+    run = await _run(db_session, context_data, agent)
+    for provider_key, resource_enabled in (("gmail", True), ("notion", False)):
+        credential = build_external_credential(
+            provider_key=provider_key,
+            principal_fingerprint=uuid4().hex.ljust(64, "0"),
+        )
+        db_session.add(credential)
+        await db_session.flush()
+        connection = build_integration_connection(
+            credential=credential,
+            user=context_data["user"],
+            workspace=context_data["workspace"],
+            provider_key=provider_key,
+            status="active",
+        )
+        db_session.add(connection)
+        await db_session.flush()
+        db_session.add(build_integration_resource(connection=connection, enabled=resource_enabled))
+    await db_session.flush()
+
+    unselected = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+    db_session.add(
+        build_active_context_selection(
+            workspace=context_data["workspace"],
+            conversation=context_data["conversation"],
+            resource=context_data["first"],
+        )
+    )
+    await db_session.flush()
+    selected = await resolve_active_context(
+        db_session,
+        run=run,
+        user=context_data["user"],
+        workspace=context_data["workspace"],
+    )
+
+    fixture_provider = context_data["connection"].provider_key
+    assert unselected.source == "conversation"
+    assert unselected.unselected_provider_keys == tuple(sorted({"gmail", fixture_provider}))
+    assert selected.unselected_provider_keys == ("gmail",)

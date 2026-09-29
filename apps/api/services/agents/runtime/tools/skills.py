@@ -162,6 +162,7 @@ def _search_rank(query: str | None):
 
 @runtime_tool(
     name=SEARCH_SKILLS_TOOL_NAME,
+    defer_loading=False,
     provider="core",
     label="Search Skills",
     code_eligible=False,
@@ -209,6 +210,7 @@ async def search_skills(
 
 @runtime_tool(
     name=LOAD_SKILL_TOOL_NAME,
+    defer_loading=False,
     provider="core",
     label="Load Skill",
     code_eligible=False,
@@ -253,6 +255,7 @@ async def load_skill(ctx: RunContext[RuntimeDeps], name: SkillName) -> dict[str,
 
 @runtime_tool(
     name=READ_SKILL_DOCUMENT_TOOL_NAME,
+    defer_loading=False,
     provider="core",
     label="Read Skill Document",
     code_eligible=False,

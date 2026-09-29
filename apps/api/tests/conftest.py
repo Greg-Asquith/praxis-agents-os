@@ -32,6 +32,7 @@ configure_test_environment()
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_POLICY_APPROVAL,
+    RuntimeToolDefinition,
     ToolFieldPresentation,
     ToolPresentation,
 )
@@ -89,6 +90,20 @@ _RLS_WORKSPACE_TABLES = frozenset(
         "workspace_tool_settings",
     }
 )
+
+
+@pytest.fixture(autouse=True)
+def _eager_runtime_tools(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
+    """Mounts every tool eagerly so scripted models can call it without a tool search."""
+    if request.node.get_closest_marker("deferred_tools") is not None:
+        return
+    build = RuntimeToolDefinition.to_pydantic_tool
+
+    def build_eager(definition, *, policy=None, defer_loading=None):
+        del defer_loading
+        return build(definition, policy=policy, defer_loading=False)
+
+    monkeypatch.setattr(RuntimeToolDefinition, "to_pydantic_tool", build_eager)
 
 
 @pytest.fixture(autouse=True)

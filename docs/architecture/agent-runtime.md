@@ -414,8 +414,9 @@ Use Pydantic AI as the runtime foundation, not merely as a provider wrapper:
   `MCP` when they fit. For every optional or specialist capability, explicitly
   consider `defer_loading=True` so long-tail instructions and schemas do not bloat
   normal turns.
-- Use tool-level `defer_loading=True` or tool search for large flat catalogs.
-  Keep common, high-signal tools eagerly available.
+- Runtime tools defer loading by default and the model finds them through
+  tool search. Set `defer_loading=False` only on common, high-signal tools that
+  the model needs on most turns.
 - Use Pydantic AI `TestModel` for deterministic runtime tests and `FunctionModel`
   for exact approval, retry, and failure cases. Use `capture_run_messages()` for
   targeted debugging. If Logfire is enabled, instrument Pydantic AI, but treat

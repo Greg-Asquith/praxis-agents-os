@@ -103,7 +103,8 @@ class CodeModeCatalog:
             tool_description=tool_description,
             wrapped_toolset=FunctionToolset(
                 tools=[
-                    definition.to_pydantic_tool(policy=policy) for definition, policy in ordered
+                    definition.to_pydantic_tool(policy=policy, defer_loading=False)
+                    for definition, policy in ordered
                 ],
                 sequential=True,
             ),

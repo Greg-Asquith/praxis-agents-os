@@ -76,6 +76,7 @@ def _service_retry(exc: Exception) -> ModelRetry:
 
 @runtime_tool(
     name="save_memory",
+    defer_loading=False,
     provider="core",
     label="Save Memory",
     code_eligible=False,
@@ -189,6 +190,7 @@ async def save_memory(
 
 @runtime_tool(
     name="search_memory",
+    defer_loading=False,
     provider="core",
     label="Search Memory",
     code_eligible=False,
@@ -269,6 +271,7 @@ async def search_memory(
 
 @runtime_tool(
     name="update_memory",
+    defer_loading=False,
     provider="core",
     label="Update Memory",
     code_eligible=False,
@@ -360,6 +363,7 @@ async def update_memory(
 
 @runtime_tool(
     name="forget_memory",
+    defer_loading=False,
     provider="core",
     label="Forget Memory",
     code_eligible=False,

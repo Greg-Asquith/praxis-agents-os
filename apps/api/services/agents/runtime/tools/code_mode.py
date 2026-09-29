@@ -42,6 +42,7 @@ async def _unbound_run_workflow(
 
 RUN_WORKFLOW_DEFINITION = RuntimeToolDefinition(
     name=RUN_WORKFLOW_TOOL_NAME,
+    defer_loading=False,
     function=_unbound_run_workflow,
     description="Run a short sandboxed workflow that composes a collection of your available tools.",
     provider="core",
