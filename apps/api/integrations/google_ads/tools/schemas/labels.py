@@ -10,6 +10,7 @@ from integrations.google_ads.references import (
     GoogleAdsAdGroupReference,
     GoogleAdsCampaignReference,
     GoogleAdsKeywordReference,
+    GoogleAdsLabelAssociationCounts,
     GoogleAdsLabelReference,
 )
 from integrations.google_ads.references.label import (
@@ -138,3 +139,26 @@ class GoogleAdsApplyLabelsOutput(IntegrationFanOutOutput):
 
 class GoogleAdsRemoveLabelsOutput(IntegrationFanOutOutput):
     results: list[GoogleAdsRemoveLabelsEntry]
+
+
+class GoogleAdsDeleteLabelOutcome(GoogleAdsStrictModel):
+    label_id: str
+    label_name: str
+    label_color: str | None = None
+    # Live associations read just before deletion; Google removes them with a deleted label.
+    association_counts: GoogleAdsLabelAssociationCounts
+    outcome: Literal["deleted", "failed", "unverified"]
+    error_code: str | None = None
+    message: str | None = None
+
+
+class GoogleAdsDeleteLabelsData(GoogleAdsStrictModel):
+    labels: list[GoogleAdsDeleteLabelOutcome]
+
+
+class GoogleAdsDeleteLabelsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsDeleteLabelsData | None = None
+
+
+class GoogleAdsDeleteLabelsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsDeleteLabelsEntry]

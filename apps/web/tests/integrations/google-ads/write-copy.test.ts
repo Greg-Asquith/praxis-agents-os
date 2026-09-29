@@ -70,6 +70,10 @@ const cases = [
     spec: { verb: "Remove", object: "labels", effect: "removed" },
   },
   {
+    name: "google_ads_delete_labels",
+    spec: { verb: "Delete", object: "labels", effect: "deleted", destructive: true },
+  },
+  {
     name: "google_ads_assign_campaign_budgets",
     spec: { verb: "Assign", object: "campaign budgets", effect: "assigned" },
   },

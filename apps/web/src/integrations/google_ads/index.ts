@@ -11,6 +11,7 @@ import { googleAdsDismissRecommendationsPresenter } from "@/integrations/google_
 import { googleAdsAssignCampaignBudgetsPresenter } from "@/integrations/google_ads/presenters/assign-campaign-budgets"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
 import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
+import { googleAdsDeleteLabelsPresenter } from "@/integrations/google_ads/presenters/delete-labels"
 import { googleAdsCreateCampaignBudgetPresenter } from "@/integrations/google_ads/presenters/create-campaign-budget"
 import { GoogleAdsLogo } from "@/integrations/google_ads/components/logo"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
@@ -33,6 +34,7 @@ export default {
     googleAdsNegativeKeywordListsPresenter,
     googleAdsCreateLabelsPresenter,
     googleAdsLabelAssociationsPresenter,
+    googleAdsDeleteLabelsPresenter,
     ...googleAdsNegativeKeywordsPresenters,
     googleAdsCampaignLinksPresenter,
     googleAdsCampaignStatusPresenter,

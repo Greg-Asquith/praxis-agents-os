@@ -7,6 +7,9 @@ from collections.abc import Mapping, Sequence
 from pydantic_ai import ModelRetry
 
 from integrations.google_ads.client import GoogleAdsClient
+from integrations.google_ads.operations.count_label_associations import (
+    count_label_associations,
+)
 from integrations.google_ads.operations.list_ad_groups import list_ad_groups
 from integrations.google_ads.operations.list_campaigns import list_campaigns
 from integrations.google_ads.operations.list_labels import list_labels
@@ -61,6 +64,26 @@ async def verify_labels(
     if set(references) != set(normalized_ids):
         raise ModelRetry(_UNAVAILABLE_MESSAGE)
     return references
+
+
+async def verify_labels_with_associations(
+    client: GoogleAdsClient,
+    *,
+    entry: ResolvedContextEntry,
+    label_ids: Sequence[str],
+) -> dict[str, GoogleAdsLabelReference]:
+    """Returns live references carrying freshly read association counts."""
+    references = await verify_labels(client, entry=entry, label_ids=label_ids)
+    counts = await count_label_associations(
+        client,
+        customer_id=entry.external_id,
+        login_customer_id=login_customer_id(entry),
+        label_ids=list(references),
+    )
+    return {
+        label_id: reference.model_copy(update={"association_counts": counts[label_id]})
+        for label_id, reference in references.items()
+    }
 
 
 async def verify_label_targets(

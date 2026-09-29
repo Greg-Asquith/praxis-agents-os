@@ -9,6 +9,7 @@ const OUTCOMES = {
   created: ["applied", "Created"],
   assigned: ["applied", "Assigned"],
   removed: ["applied", "Removed"],
+  deleted: ["applied", "Deleted"],
   linked: ["applied", "Linked"],
   unlinked: ["applied", "Unlinked"],
   applied: ["applied", "Applied"],

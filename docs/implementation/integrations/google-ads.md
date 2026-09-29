@@ -14,7 +14,8 @@ writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
 campaign status, device bid adjustments, campaign-budget creation,
 amount updates, assignment, and unused-budget removal. Label creation, apply,
-and remove default to approval and also support auto policy. Keyword and budget
+and remove default to approval and also support auto policy; label deletion
+is approval-only. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
 
@@ -105,11 +106,12 @@ and still carries every label row, which the presenter shows.
 Label lookups return only labels whose resource belongs to the selected
 customer, so manager-owned labels never become targets. Hydrated label
 references carry the name, description, colour, status, and live association
-counts for campaigns, ad groups, positive keywords, and ads. Each entity type
+counts for campaigns, ad groups, positive keywords, other ad group criteria
+such as negative keywords, and ads. Each entity type
 reads up to 10,001 association rows as a sentinel and reports at most 10,000;
 more than 10,000 marks the counts as lower bounds. `verify_labels` re-reads
 label IDs and fails when a label is missing or removed. The label resolver
-registers with the apply and remove tools.
+registers with the apply, remove, and delete tools.
 
 `google_ads_apply_labels` attaches 1 to 10 label references to 1 to 500
 targets, and `google_ads_remove_labels` detaches them. Each target is an
@@ -132,6 +134,16 @@ service's pairs as failed or unverified instead of raising. Remove never
 changes the label itself. The audit record groups intents by label, with one
 item per target.
 
+`google_ads_delete_labels` permanently deletes 1 to 50 label references, and
+Google Ads detaches each deleted label from every item. It is approval-only and
+doesn't support auto policy. The approval hydrates each label through the
+resolver and shows its live association counts by entity type. After approval,
+`verify_labels_with_associations` re-reads the labels and their counts and
+fails before any write when a label is missing or removed. The tool sends one
+partial-failure `labels:mutate` remove request per account. Each result row
+and audit intent records the re-read counts, which for a deleted label are the
+associations Google Ads removed with it.
+
 ## Frontend modules
 
 Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
@@ -147,7 +159,9 @@ authoritative. `GoogleAdsLabelChip` always shows the label name beside a decorat
 swatch. `labels.ts` also parses label and target arguments for apply and remove,
 rejecting unknown target kinds and repeated targets. Their approval shows the
 labels and the targets grouped by type, and the result shows one outcome row
-per label and target pair, ordered by type.
+per label and target pair, ordered by type. Label deletion uses a destructive
+approval card with each label's association counts as text; truncated counts
+read as "at least", and missing counts are stated rather than shown as zero.
 Scoped negative-keyword evidence belongs to `scoped-negative-keyword-results.ts`.
 It reconciles operation-specific exact rows, per-target counts, aggregate
 counts, and truncated samples while retaining historical count-only results.

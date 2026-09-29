@@ -23,6 +23,8 @@ class GoogleAdsLabelAssociationCounts(BaseModel):
     campaign: int = Field(ge=0)
     ad_group: int = Field(ge=0)
     keyword: int = Field(ge=0)
+    # Ad group criteria other than positive keywords, such as negative keywords.
+    other_criterion: int = Field(ge=0)
     ad: int = Field(ge=0)
     truncated: bool = False
 

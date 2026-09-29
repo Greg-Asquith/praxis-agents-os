@@ -20,6 +20,7 @@ from .device_bid_modifiers import (
 from .labels import (
     GoogleAdsApplyLabelsOutput,
     GoogleAdsCreateLabelsOutput,
+    GoogleAdsDeleteLabelsOutput,
     GoogleAdsLabelDraft,
     GoogleAdsLabelTarget,
     GoogleAdsRemoveLabelsOutput,
@@ -71,6 +72,7 @@ __all__ = [
     "GoogleAdsCreateNegativeKeywordListOutput",
     "GoogleAdsCreatePositiveKeywordsOutput",
     "GoogleAdsDailyBudgetAmount",
+    "GoogleAdsDeleteLabelsOutput",
     "GoogleAdsDeviceAdjustment",
     "GoogleAdsDeviceBidModifierOutput",
     "GoogleAdsDismissRecommendationsOutput",

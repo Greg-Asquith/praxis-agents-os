@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/lib/labels.ts
 
+import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
 import { isOneOf, isRecord } from "@/lib/guards"
 
@@ -156,4 +157,77 @@ function uniqueSelections<Item>(
     items.push(item)
   }
   return items
+}
+
+export type LabelAssociationCounts = {
+  ad: number
+  adGroup: number
+  campaign: number
+  keyword: number
+  otherCriterion: number
+  truncated: boolean
+}
+
+// [client key, server key, noun], in display order.
+const COUNT_FIELDS = [
+  ["campaign", "campaign", "campaign"],
+  ["adGroup", "ad_group", "ad group"],
+  ["keyword", "keyword", "keyword"],
+  ["otherCriterion", "other_criterion", "other targeting item"],
+  ["ad", "ad", "ad"],
+] as const
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0
+}
+
+export function parseLabelAssociationCounts(value: unknown): LabelAssociationCounts | null {
+  if (!isRecord(value) || typeof value["truncated"] !== "boolean") return null
+  const counts: LabelAssociationCounts = {
+    campaign: 0,
+    adGroup: 0,
+    keyword: 0,
+    otherCriterion: 0,
+    ad: 0,
+    truncated: value["truncated"],
+  }
+  for (const [key, serverKey] of COUNT_FIELDS) {
+    const item = value[serverKey]
+    if (!isCount(item)) return null
+    counts[key] = item
+  }
+  return counts
+}
+
+// Truncated counts are lower bounds, so they read as "at least".
+export function labelAssociationCountsText(counts: LabelAssociationCounts): string {
+  const parts = COUNT_FIELDS.filter(([key]) => counts[key] > 0).map(([key, , noun]) =>
+    approvalCountLine(counts[key], noun)
+  )
+  if (parts.length === 0)
+    return counts.truncated ? "Too many items to count" : "Not attached to any items"
+  return `${counts.truncated ? "At least " : ""}${parts.join(", ")}`
+}
+
+export type LabelDeletionSelection = {
+  color: string | null
+  counts: LabelAssociationCounts | null
+  labelId: string
+  name: string
+}
+
+export function parseLabelDeletionArgs(
+  value: unknown
+): { labels: LabelDeletionSelection[] } | null {
+  if (!isRecord(value) || !Array.isArray(value["labels"])) return null
+  const labels = uniqueSelections(
+    value["labels"],
+    (item) => {
+      const selection = parseLabelSelection(item)
+      if (selection === null || !isRecord(item)) return null
+      return { ...selection, counts: parseLabelAssociationCounts(item["association_counts"]) }
+    },
+    (item) => item.labelId
+  )
+  return labels?.length ? { labels } : null
 }

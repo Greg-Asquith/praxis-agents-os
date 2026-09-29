@@ -12,7 +12,7 @@ from .utils import stream_rows
 
 LABEL_ASSOCIATION_ROW_BOUND = 10_000
 
-# (count key, GAQL resource, JSON row key, extra predicate)
+# (count key, GAQL resource, JSON row key, extra selected fields)
 _ASSOCIATION_RESOURCES = (
     ("campaign", "campaign_label", "campaignLabel", ""),
     ("ad_group", "ad_group_label", "adGroupLabel", ""),
@@ -20,10 +20,11 @@ _ASSOCIATION_RESOURCES = (
         "keyword",
         "ad_group_criterion_label",
         "adGroupCriterionLabel",
-        " AND ad_group_criterion.type = 'KEYWORD' AND ad_group_criterion.negative = FALSE",
+        ", ad_group_criterion.type, ad_group_criterion.negative",
     ),
     ("ad", "ad_group_ad_label", "adGroupAdLabel", ""),
 )
+_COUNT_KEYS = ("campaign", "ad_group", "keyword", "other_criterion", "ad")
 
 
 async def count_label_associations(
@@ -47,14 +48,12 @@ async def count_label_associations(
     }
     id_by_resource = {resource: label_id for label_id, resource in resource_by_id.items()}
     label_list = ", ".join(f"'{resource}'" for resource in resource_by_id.values())
-    counts = {
-        label_id: dict.fromkeys(("campaign", "ad_group", "keyword", "ad"), 0) for label_id in ids
-    }
+    counts = {label_id: dict.fromkeys(_COUNT_KEYS, 0) for label_id in ids}
     truncated = False
-    for key, resource, row_key, predicate in _ASSOCIATION_RESOURCES:
+    for key, resource, row_key, extra_fields in _ASSOCIATION_RESOURCES:
         query = (
-            f"SELECT {resource}.label FROM {resource} "  # noqa: S608 -- fixed resources and digit-only ids
-            f"WHERE {resource}.label IN ({label_list}){predicate} "
+            f"SELECT {resource}.label{extra_fields} FROM {resource} "  # noqa: S608 -- fixed resources and digit-only ids
+            f"WHERE {resource}.label IN ({label_list}) "
             f"LIMIT {LABEL_ASSOCIATION_ROW_BOUND + 1}"
         )
         payload = await client.post(
@@ -76,8 +75,20 @@ async def count_label_associations(
                 else None
             )
             if label_id is not None:
-                counts[label_id][key] += 1
+                counts[label_id][_count_key(key, row)] += 1
     return {
         label_id: GoogleAdsLabelAssociationCounts(**label_counts, truncated=truncated)
         for label_id, label_counts in counts.items()
     }
+
+
+def _count_key(key: str, row: dict) -> str:
+    if key != "keyword":
+        return key
+    criterion = row.get("adGroupCriterion")
+    positive_keyword = (
+        isinstance(criterion, dict)
+        and criterion.get("type") == "KEYWORD"
+        and criterion.get("negative") is not True
+    )
+    return "keyword" if positive_keyword else "other_criterion"
