@@ -161,7 +161,7 @@ async def build_scenario_agent(
             code_mode_enabled=code_mode_enabled,
             allowed_agent_ids=[str(value) for value in allowed_agent_ids],
             model_provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
         )
         db.add(agent)
         await db.flush()
@@ -207,7 +207,7 @@ async def add_scenario_delegate(
             tool_names=list(tool_names),
             allowed_agent_ids=[],
             model_provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
         )
         db.add(child)
         await db.flush()

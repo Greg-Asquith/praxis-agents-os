@@ -55,7 +55,7 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
     _clear_model_provider_settings(monkeypatch)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-test"))
     monkeypatch.setattr(settings, "DEFAULT_MODEL_PROVIDER", PROVIDER_OPENAI)
-    monkeypatch.setattr(settings, "DEFAULT_MODEL", "gpt-5.4-mini")
+    monkeypatch.setattr(settings, "DEFAULT_MODEL", "gpt-6-luna")
 
     response = list_model_catalog()
 
@@ -63,7 +63,7 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
     assert {model.id for model in response.models} == {
         model.qualified_id for model in list_models() if model.provider == PROVIDER_OPENAI
     }
-    assert response.defaults.agent_model == "openai:gpt-5.4-mini"
+    assert response.defaults.agent_model == "openai:gpt-6-luna"
 
     providers = {provider.provider: provider for provider in response.providers}
     assert providers[PROVIDER_OPENAI].configured is True
@@ -71,9 +71,8 @@ def test_model_catalog_only_lists_models_for_configured_api_key_providers(monkey
     assert providers[PROVIDER_OPENAI].model_count == len(response.models)
     assert providers[PROVIDER_OPENAI].model_type_defaults == {
         "max": "openai:gpt-6-astra",
-        "powerful": "openai:gpt-6-sol",
+        "powerful": "openai:gpt-6.1-sol",
         "standard": "openai:gpt-6-luna",
-        "light": "openai:gpt-5.4-nano",
     }
     assert providers[PROVIDER_ANTHROPIC].configured is False
     assert providers[PROVIDER_ANTHROPIC].model_type_defaults == {}
@@ -89,7 +88,7 @@ def test_model_catalog_treats_blank_api_keys_as_unconfigured(monkeypatch):
     _clear_model_provider_settings(monkeypatch)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("   "))
     monkeypatch.setattr(settings, "DEFAULT_MODEL_PROVIDER", PROVIDER_OPENAI)
-    monkeypatch.setattr(settings, "DEFAULT_MODEL", "gpt-5.4-mini")
+    monkeypatch.setattr(settings, "DEFAULT_MODEL", "gpt-6-luna")
 
     response = list_model_catalog()
 
@@ -104,13 +103,13 @@ def test_model_catalog_excludes_deprecated_models_from_type_defaults(monkeypatch
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-test"))
     catalog_module = importlib.import_module("services.agents.models.list_model_catalog")
     models = list_models()
-    newest_standard = next(
+    newest_powerful = next(
         model
         for model in models
-        if model.provider == PROVIDER_OPENAI and model.model_type == "standard"
+        if model.provider == PROVIDER_OPENAI and model.model_type == "powerful"
     )
     catalog_with_deprecation = [
-        replace(model, deprecated=True) if model == newest_standard else model for model in models
+        replace(model, deprecated=True) if model == newest_powerful else model for model in models
     ]
     monkeypatch.setattr(
         catalog_module,
@@ -121,8 +120,8 @@ def test_model_catalog_excludes_deprecated_models_from_type_defaults(monkeypatch
     response = catalog_module.list_model_catalog()
     providers = {provider.provider: provider for provider in response.providers}
 
-    assert newest_standard.qualified_id not in {model.id for model in response.models}
-    assert providers[PROVIDER_OPENAI].model_type_defaults["standard"] == ("openai:gpt-5.6-luna")
+    assert newest_powerful.qualified_id not in {model.id for model in response.models}
+    assert providers[PROVIDER_OPENAI].model_type_defaults["powerful"] == "openai:gpt-6-sol"
 
 
 # Resolution
@@ -131,12 +130,12 @@ def test_model_catalog_excludes_deprecated_models_from_type_defaults(monkeypatch
 def test_resolve_agent_model_uses_agent_columns():
     agent = _agent(
         model_provider="anthropic",
-        model="claude-opus-4-8",
+        model="claude-fable-5",
         model_settings={"temperature": 0.2},
         max_steps=7,
     )
     resolved = resolve_agent_model(agent, workspace=None)
-    assert resolved.qualified_id == "anthropic:claude-opus-4-8"
+    assert resolved.qualified_id == "anthropic:claude-fable-5"
     assert resolved.settings["temperature"] == 0.2
     assert resolved.max_steps == 7
 
@@ -163,7 +162,7 @@ def test_azure_context_budget_uses_explicit_deployment_settings(monkeypatch):
     resolved = resolve_agent_model(
         _agent(
             model_provider="azure",
-            model="gpt-5.6-luna",
+            model="gpt-6-luna",
             azure_deployment="my-deployment",
         ),
         workspace=None,
@@ -177,13 +176,13 @@ def test_azure_context_budget_uses_explicit_deployment_settings(monkeypatch):
 
 def test_catalog_context_budget_uses_model_calibration():
     resolved = resolve_agent_model(
-        _agent(model_provider="openai", model="gpt-5.6-luna"), workspace=None
+        _agent(model_provider="openai", model="gpt-6-luna"), workspace=None
     )
 
     budget = resolve_model_context_budget(resolved)
 
-    assert budget.context_window == get_model("openai", "gpt-5.6-luna").context_window
-    assert budget.chars_per_token == get_model("openai", "gpt-5.6-luna").chars_per_token
+    assert budget.context_window == get_model("openai", "gpt-6-luna").context_window
+    assert budget.chars_per_token == get_model("openai", "gpt-6-luna").chars_per_token
 
 
 def _clear_model_provider_settings(monkeypatch):

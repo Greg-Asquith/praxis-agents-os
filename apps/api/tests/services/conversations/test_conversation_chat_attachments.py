@@ -176,7 +176,7 @@ async def _persist_workspace_agent(db: AsyncSession):
         workspace_id=workspace.id,
         created_by=actor.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
     membership = build_workspace_membership(workspace_id=workspace.id, user_id=actor.id)
     db.add_all([actor, workspace, agent, membership])

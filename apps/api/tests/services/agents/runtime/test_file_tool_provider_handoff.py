@@ -32,7 +32,7 @@ def _image_tool_return() -> ToolReturnPart:
 
 async def test_openai_maps_image_inside_tool_result() -> None:
     model = OpenAIResponsesModel(
-        "gpt-5.4-mini",
+        "gpt-6-luna",
         provider=OpenAIProvider(api_key="test"),
     )
 
@@ -50,7 +50,7 @@ async def test_openai_maps_image_inside_tool_result() -> None:
 
 async def test_anthropic_maps_image_inside_tool_result() -> None:
     model = AnthropicModel(
-        "claude-sonnet-4-6",
+        "claude-sonnet-5",
         provider=AnthropicProvider(api_key="test"),
     )
 

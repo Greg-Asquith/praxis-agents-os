@@ -163,7 +163,7 @@ def _agent(
     *,
     tool_names: list[str],
     model_provider: str = PROVIDER_OPENAI,
-    model: str = "gpt-5.4-mini",
+    model: str = "gpt-6-luna",
 ) -> Agent:
     return Agent(
         name="Native Tool Agent",
@@ -445,8 +445,8 @@ async def test_run_code_helper_is_metered_with_output_counts(
         inputs=(),
         model_spec=ResolvedModel(
             provider=PROVIDER_OPENAI,
-            model="gpt-5.6-luna",
-            transport_model="gpt-5.6-luna",
+            model="gpt-6-luna",
+            transport_model="gpt-6-luna",
             settings={},
             max_steps=3,
         ),
@@ -457,7 +457,7 @@ async def test_run_code_helper_is_metered_with_output_counts(
     assert events[0].requests == 1
     assert events[0].details == {
         "provider": "openai",
-        "model": "gpt-5.6-luna",
+        "model": "gpt-6-luna",
         "captured_output_count": 1,
         "skipped_output_count": 1,
     }
@@ -762,8 +762,8 @@ async def test_native_classifier_batches_calls_and_records_each_invocation(
         instructions="Classify relevance.",
         model_spec=ResolvedModel(
             provider=PROVIDER_OPENAI,
-            model="gpt-5.4-nano",
-            transport_model="gpt-5.4-nano",
+            model="gpt-6-luna",
+            transport_model="gpt-6-luna",
             settings={},
             max_steps=2,
         ),
@@ -1496,7 +1496,7 @@ async def _create_committed_native_context(
             workspace_id=workspace.id,
             created_by=user.id,
             model_provider=PROVIDER_OPENAI,
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
             tool_names=["web_search"],
         )
         db.add(agent)

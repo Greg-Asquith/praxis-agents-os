@@ -31,6 +31,7 @@ from services.agents.models.domain import (
     ResolvedModel,
 )
 from services.agents.models.utils import (
+    ADAPTIVE_ONLY_ANTHROPIC_MODELS,
     provider_api_key,
     provider_model_profile,
     provider_transport,
@@ -110,11 +111,11 @@ def _google_provider(model: str) -> GoogleProvider:
 
 def _model_settings_for(spec: ResolvedModel):
     model_settings = dict(spec.settings)
-    if spec.provider == PROVIDER_ANTHROPIC and spec.model == "claude-opus-5-5":
+    if spec.provider == PROVIDER_ANTHROPIC and spec.model in ADAPTIVE_ONLY_ANTHROPIC_MODELS:
         thinking = model_settings.get("anthropic_thinking")
         if isinstance(thinking, dict) and thinking.get("type") in {"disabled", "enabled"}:
             raise ModelConfigurationError(
-                "Claude Opus 5.5 requires adaptive thinking. Choose a thinking effort instead.",
+                "This Claude model requires adaptive thinking. Choose a thinking effort instead.",
                 details={"provider": spec.provider, "model": spec.model},
             )
     if spec.provider == PROVIDER_ANTHROPIC and settings.AGENT_PROMPT_CACHE_ENABLED:

@@ -72,7 +72,7 @@ def test_build_anthropic_model_respects_agent_cache_settings(monkeypatch, anthro
     model = build_model(
         _spec(
             "anthropic",
-            "claude-sonnet-4-6",
+            "claude-sonnet-5",
             settings={
                 "anthropic_cache": "1h",
                 "anthropic_cache_instructions": False,
@@ -93,7 +93,7 @@ def test_build_openai_model_ignores_ambient_base_url_env(monkeypatch):
     # A blank OPENAI_BASE_URL in the process env must not produce schemeless requests.
     monkeypatch.setenv("OPENAI_BASE_URL", "")
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-openai-test"))
-    model = build_model(_spec("openai", "gpt-5.4-mini"))
+    model = build_model(_spec("openai", "gpt-6-luna"))
     assert str(model.provider.client.base_url) == "https://api.openai.com/v1/"
 
 
@@ -101,7 +101,7 @@ def test_build_azure_model_requires_endpoint(monkeypatch):
     monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", SecretStr("az-test"))
     monkeypatch.setattr(settings, "AZURE_OPENAI_ENDPOINT", None)
     with pytest.raises(ModelConfigurationError):
-        build_model(_spec("azure", "gpt-5.4-mini", azure_deployment="my-deployment"))
+        build_model(_spec("azure", "gpt-6-luna", azure_deployment="my-deployment"))
 
 
 @pytest.mark.parametrize(
@@ -129,12 +129,12 @@ async def test_anthropic_vertex_uses_project_location_and_transport_id(
         monkeypatch.setattr(module, "retrying_http_client", lambda: http_client)
         try:
             model = build_model(
-                _spec("anthropic", "catalog-alias", transport_model="claude-sonnet-4-6")
+                _spec("anthropic", "catalog-alias", transport_model="claude-sonnet-5")
             )
             client = model.provider.client
             assert isinstance(model, AnthropicModel)
             assert isinstance(client, AsyncAnthropicVertex)
-            assert model.model_name == "claude-sonnet-4-6"
+            assert model.model_name == "claude-sonnet-5"
             assert client.project_id == (explicit_project or "deployment-project")
             assert client.region == location
             assert str(client.base_url) == f"https://{host}/v1/"
@@ -195,18 +195,18 @@ async def test_build_google_vertex_uses_project_location_and_request_policy(
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", vertex_project)
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", gcp_project_id)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "europe-west3")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "us")
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_ATTEMPTS", 7)
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 23.5)
 
     try:
-        model = build_model(_spec("google", "gemini-3.5-flash"))
+        model = build_model(_spec("google", "gemini-3.8-flash"))
 
         assert isinstance(model, GoogleModel)
         client = model.provider.client
         assert client.vertexai is True
         assert client._api_client.project == expected_project
-        assert client._api_client.location == "europe-west3"
+        assert client._api_client.location == "us"
         http_options = client._api_client._http_options
         assert http_options.timeout == DEFAULT_HTTP_TIMEOUT * 1000
         assert http_options.retry_options is not None

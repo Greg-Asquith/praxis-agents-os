@@ -155,7 +155,7 @@ async def _persist_runtime_context(db: AsyncSession) -> RuntimeContext:
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
     db.add_all([user, workspace, membership, agent])
     await db.flush()

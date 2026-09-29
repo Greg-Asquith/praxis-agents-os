@@ -101,7 +101,7 @@ def _required_value(
         ("integration_table_scope_rules", "column_type"): "string",
         ("kb_documents", "source_type"): "manual",
         ("ai_usage_events", "provider"): "openai",
-        ("ai_usage_events", "model"): "gpt-5.6-luna",
+        ("ai_usage_events", "model"): "gpt-6-luna",
         ("ai_usage_events", "purpose"): "agent_run",
     }
     if (table_name, name) in table_values:
@@ -377,7 +377,7 @@ async def test_ai_usage_ledger_is_runtime_append_only_and_workspace_cascade_safe
                     id=uuid4(),
                     workspace_id=workspace_id,
                     provider="openai",
-                    model="gpt-5.6-luna",
+                    model="gpt-6-luna",
                     purpose="agent_run",
                     requests=1,
                 )

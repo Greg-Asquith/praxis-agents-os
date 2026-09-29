@@ -100,7 +100,7 @@ async def _create(db: AsyncSession, ctx: RunContext, *, trigger: str = "interact
         workspace_id=ctx.workspace_id,
         user_id=ctx.user_id,
         trigger=trigger,
-        model_name="anthropic:claude-opus-4-8",
+        model_name="anthropic:claude-fable-5",
     )
 
 

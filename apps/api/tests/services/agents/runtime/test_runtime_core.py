@@ -353,7 +353,7 @@ async def runtime_context(db_session: AsyncSession) -> RuntimeContext:
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
     db_session.add(agent)
     await db_session.flush()
@@ -389,7 +389,7 @@ async def runtime_context(db_session: AsyncSession) -> RuntimeContext:
     ("provider", "model", "window", "override"),
     [
         ("openai", "gpt-6-luna", 1_050_000, None),
-        ("openai", "gpt-5.4-mini", 400_000, 12345),
+        ("openai", "gpt-6-sol", 1_050_000, 12345),
         ("azure", "example-deployment", 128_000, None),
     ],
 )
@@ -467,7 +467,7 @@ async def test_execute_run_persists_messages_usage_and_events(
     assert result.output == "success (no tool calls)"
     assert result.new_message_count == 2
     assert result.run.status == RUN_STATUS_COMPLETED
-    assert result.run.model_name == "openai:gpt-5.4-mini"
+    assert result.run.model_name == "openai:gpt-6-luna"
     assert result.run.requests == 1
     assert result.run.output_tokens is not None
 
@@ -531,9 +531,9 @@ async def test_execute_run_has_no_open_transaction_while_streaming(
     fake_runtime_agent = RuntimeAgent(
         agent=BlockingAgent(),
         resolved_model=SimpleNamespace(
-            qualified_id="openai:gpt-5.4-mini",
+            qualified_id="openai:gpt-6-luna",
             provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
         ),
         usage_limits=UsageLimits(),
         history_trimmer=SimpleNamespace(watermark_key=None),
@@ -708,7 +708,7 @@ async def _create_committed_runtime_context(
             workspace_id=workspace.id,
             created_by=user.id,
             model_provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
         )
         db.add(agent)
         await db.flush()

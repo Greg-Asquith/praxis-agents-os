@@ -243,7 +243,7 @@ fi
 grep -q 'GOOGLE_VERTEX_AI must be true or false' "$TEST_TMP/invalid-vertex-flag.out"
 
 sed -e 's/^GOOGLE_VERTEX_AI=false$/GOOGLE_VERTEX_AI=true/' \
-  -e 's/^GOOGLE_VERTEX_LOCATION=auto$/GOOGLE_VERTEX_LOCATION=europe-west2/' \
+  -e 's/^GOOGLE_VERTEX_LOCATION=auto$/GOOGLE_VERTEX_LOCATION=eu/' \
   "$GCP_DIR/.env.example" > "$TEST_TMP/vertex.env"
 "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/vertex-render" \
   "$TEST_TMP/vertex.env" abcdef0123456789
@@ -251,7 +251,7 @@ for manifest in \
   "$TEST_TMP/vertex-render/services/praxis-api.yaml" \
   "$TEST_TMP/vertex-render/jobs/praxis-worker.yaml"; do
   grep -A1 'name: GOOGLE_VERTEX_AI' "$manifest" | grep -q 'value: "true"'
-  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: europe-west2'
+  grep -A1 'name: GOOGLE_VERTEX_LOCATION' "$manifest" | grep -q 'value: eu'
 done
 
 sed -e '/^GOOGLE_VERTEX_AI=/d' -e '/^GOOGLE_VERTEX_LOCATION=/d' \

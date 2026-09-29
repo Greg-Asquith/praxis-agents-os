@@ -77,8 +77,8 @@ async def test_azure_filtered_stream_settles_safely_without_retry(
         model = factory.build_model(
             ResolvedModel(
                 provider="azure",
-                model="gpt-5.4-mini",
-                transport_model="gpt-5.4-mini",
+                model="gpt-6-luna",
+                transport_model="gpt-6-luna",
                 azure_deployment="test-deployment",
                 settings={},
                 max_steps=3,

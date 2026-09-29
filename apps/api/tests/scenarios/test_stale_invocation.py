@@ -51,7 +51,7 @@ async def test_old_invocation_cannot_settle_replacement(
             baseline=usage_values(RunUsage()),
             usage=usage,
             provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
             invocation_id=UUID(old_owner),
         )
         metering.capture_run(run)

@@ -236,7 +236,7 @@ async def test_agent_rejects_other_workspace_and_nonexistent_classifier_names(
                 "instructions": "Route support messages.",
                 "tool_names": [tool_name],
                 "model_provider": "openai",
-                "model": "gpt-5.4-mini",
+                "model": "gpt-6-luna",
             },
         )
         assert response.status_code == 400

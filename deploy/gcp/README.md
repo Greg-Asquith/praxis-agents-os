@@ -175,8 +175,6 @@ Google's model cards document the following availability (checked 2026-09-07):
 |---|---|---|
 | [3.8 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-8-flash) | `global`, `us`, `eu` | `eu` |
 | [3.7 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-7-flash) | `global`, `us`, `eu` | `eu` |
-| [3.6 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-6-flash) | `global`, `us`, `eu` | `eu` |
-| [3.5 Flash](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash) | `global`, `us`, `eu`, plus Canada, London, Frankfurt, Tokyo, Mumbai, and Singapore endpoints | `eu` |
 | [3.5 Flash-Lite](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-5-flash-lite) | `global`, `us`, `eu` | `eu` |
 | [3.1 Flash-Lite](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite) | `global`, `us`, `eu` | `eu` |
 | [3.1 Pro](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-pro) | `global` only | `global` |
@@ -184,8 +182,8 @@ Google's model cards document the following availability (checked 2026-09-07):
 The EU endpoint uses `aiplatform.eu.rep.googleapis.com`. Google's
 [multi-region endpoint documentation](https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations#multi-region_endpoints)
 describes EU machine-learning processing boundaries. The `global` endpoint
-provides no control over processing region. Gemini 3.5 Flash's in-country
-endpoints have consumption restrictions; `eu` supports Standard PayGo.
+provides no control over processing region. No catalogued Gemini chat model
+offers single-country endpoints; `eu` supports Standard PayGo.
 Gemini 3.1 Pro uses the documented Vertex ID `gemini-3.1-pro-preview` behind
 the application's `gemini-3.1-pro` alias. These defaults apply to Vertex AI;
 the direct Gemini Developer API does not use this location setting.

@@ -28,7 +28,7 @@ def _agent(provider, model, **kw):
 
 def test_openai_thinking_requests_reasoning_summary():
     resolved = resolve_agent_model(
-        _agent("openai", "gpt-5.4-mini", model_settings={"thinking": "high"}), workspace=None
+        _agent("openai", "gpt-6-luna", model_settings={"thinking": "high"}), workspace=None
     )
     assert resolved.settings["openai_reasoning_summary"] == "auto"
 
@@ -38,16 +38,16 @@ def test_openai_thinking_requests_reasoning_summary():
     [
         (
             lambda: resolution.resolve_agent_model(
-                _agent("anthropic", "claude-sonnet-4-6"), workspace=None
+                _agent("anthropic", "claude-sonnet-5"), workspace=None
             ),
             None,
         ),
         (
             lambda: resolution.require_helper_model(
                 provider="anthropic",
-                model="claude-sonnet-4-6",
+                model="claude-sonnet-5",
                 supported=("anthropic",),
-                defaults={"anthropic": "claude-sonnet-4-6"},
+                defaults={"anthropic": "claude-sonnet-5"},
                 tool_name="web_search",
             ),
             "",
@@ -63,12 +63,12 @@ def test_vertex_resolution_fails_closed_without_transport_model(
 ) -> None:
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
     monkeypatch.setattr(settings, "CONVERSATION_NAMING_PROVIDER", "anthropic")
-    monkeypatch.setattr(settings, "CONVERSATION_NAMING_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(settings, "CONVERSATION_NAMING_MODEL", "claude-sonnet-5")
     monkeypatch.setattr(settings, "AGENT_HISTORY_SUMMARY_MODEL_PROVIDER", "anthropic")
-    monkeypatch.setattr(settings, "AGENT_HISTORY_SUMMARY_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(settings, "AGENT_HISTORY_SUMMARY_MODEL", "claude-sonnet-5")
     info = ModelInfo(
         provider="anthropic",
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-5",
         display_name="Claude Sonnet 4.6",
         context_window=1_000_000,
         model_type="standard",
@@ -81,7 +81,7 @@ def test_vertex_resolution_fails_closed_without_transport_model(
 
     assert exc_info.value.details == {
         "provider": "anthropic",
-        "model": "claude-sonnet-4-6",
+        "model": "claude-sonnet-5",
         "setting": "vertex_model",
     }
 

@@ -376,7 +376,7 @@ def _agent(name: str, *, workspace_id: UUID, user_id: UUID) -> Agent:
         workspace_id=workspace_id,
         created_by=user_id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
 
 

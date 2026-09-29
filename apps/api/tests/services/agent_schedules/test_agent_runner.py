@@ -72,7 +72,7 @@ async def _create_due_schedule(
             workspace_id=workspace.id,
             created_by=user.id,
             model_provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
             tool_names=tool_names or [],
             tool_policies=tool_policies,
         )

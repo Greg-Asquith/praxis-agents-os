@@ -155,7 +155,7 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
     monkeypatch.setattr(settings, "OPENAI_BASE_URL", None)
     requests = []
     model_id = (
-        "gpt-5.6-luna"
+        "gpt-6-luna"
         if provider == "openai"
         else "claude-haiku-4-5"
         if action == "classification"

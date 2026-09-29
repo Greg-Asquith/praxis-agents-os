@@ -23,7 +23,7 @@ def test_agent_read_validates_metadata_from_orm_attribute() -> None:
         tool_policies={"test_runtime_context": "approval"},
         allowed_agent_ids=[],
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
         is_active=True,
         is_favorite=False,
         code_mode_enabled=False,

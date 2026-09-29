@@ -108,15 +108,15 @@ async def test_platform_queries_reconcile_across_workspaces_and_are_read_only(
         await configure_async_db_session(query_db)
         summary = await get_platform_usage_summary(query_db, **usage_range)
 
-        assert summary.totals.estimated_cost_usd == Decimal("6")
+        assert summary.totals.estimated_cost_usd == Decimal("4")
         assert summary.totals.requests == 12
         assert summary.pricing_coverage.priced_tokens == 2_000_000
         assert summary.pricing_coverage.unpriced_tokens == 2
         assert summary.pricing_coverage.priced_requests == 5
         assert summary.pricing_coverage.unpriced_requests == 7
         assert [point.estimated_cost_usd for point in summary.daily] == [
-            Decimal("3"),
-            Decimal("3"),
+            Decimal("2"),
+            Decimal("2"),
         ]
 
         query_db.add(build_workspace(slug=f"read-only-{uuid4().hex[:8]}"))
@@ -216,10 +216,10 @@ async def test_platform_owner_costs_are_separate_from_workspace_usage(
         owner_rows = {row.key: row for row in owners.rows}
         assert set(owner_rows) == {"platform", str(workspace.id)}
         assert owner_rows["platform"].label == "Platform"
-        assert owner_rows["platform"].estimated_cost_usd == Decimal("6")
+        assert owner_rows["platform"].estimated_cost_usd == Decimal("4")
         assert owner_rows["platform"].requests == 1
-        assert owner_rows[str(workspace.id)].estimated_cost_usd == Decimal("3")
-        assert summary.totals.estimated_cost_usd == Decimal("9")
+        assert owner_rows[str(workspace.id)].estimated_cost_usd == Decimal("2")
+        assert summary.totals.estimated_cost_usd == Decimal("6")
         assert summary.totals.requests == 2
 
         # Explicit workspace predicates apply even without RLS filtering.
@@ -232,7 +232,7 @@ async def test_platform_owner_costs_are_separate_from_workspace_usage(
                 local_summary = await get_usage_summary(
                     workspace_db, workspace_id=workspace.id, **usage_range
                 )
-                assert local_summary.totals.estimated_cost_usd == Decimal("3")
+                assert local_summary.totals.estimated_cost_usd == Decimal("2")
                 assert local_summary.totals.requests == 1
                 for dimension in UsageDimension:
                     breakdown = await get_usage_breakdown(
@@ -242,7 +242,7 @@ async def test_platform_owner_costs_are_separate_from_workspace_usage(
                         **usage_range,
                     )
                     assert sum(row.requests for row in breakdown.rows) == 1
-                    assert sum(row.estimated_cost_usd for row in breakdown.rows) == Decimal("3")
+                    assert sum(row.estimated_cost_usd for row in breakdown.rows) == Decimal("2")
     finally:
         async with get_maintenance_async_db_session_factory()() as cleanup_db:
             await cleanup_db.execute(

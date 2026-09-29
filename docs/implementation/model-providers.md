@@ -14,6 +14,38 @@ pickup. Direct providers share the retrying HTTP client
 embedding adapters use the same transport. Vertex partner authentication and
 endpoint-bound Mistral clients also use HTTPX2.
 
+### Claude Sonnet 5.5 and GPT-6.1 Sol
+
+The following specifications come from the providers' documentation, checked
+on 29 September 2026. Token prices use the same units as the table below:
+
+| Model and API ID | Context / maximum output | Input / cache read / cache write / output | Knowledge cutoff |
+| --- | --- | --- | --- |
+| [Claude Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview), `claude-sonnet-5-5` | 1,000,000 / 128,000 | $2 / $0.20 / $2.50 / $10 | June 2026 |
+| [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), `gpt-6.1-sol` | 1,050,000 / 128,000 | $2 / $0.10 / $2.50 / $10 | 30 April 2026 |
+
+Both accept text and images, return text, and support streaming, tools, and
+structured output. Sonnet 5.5 uses the same Vertex ID as its API ID.
+
+Sonnet 5.5 shares Opus 5.5's request restrictions: adaptive thinking only,
+no forced tool choice, and thinking blocks bound to the model and
+conversation. `ADAPTIVE_ONLY_ANTHROPIC_MODELS` in `utils.py` applies the
+Opus profile override and local thinking validation to both models, because
+the Pydantic AI 2.50 Sonnet 5.5 profile still allows forced tool choice.
+Catalogue defaults request summarised thinking, because Sonnet 5.5 returns
+text between tool calls as thinking blocks that are empty by default.
+
+GPT-6.1 Sol accepts `low`, `medium` (default), `high`, `xhigh`, and `max`
+reasoning efforts; it rejects `none` and `minimal`. Pydantic AI 2.50 has no
+6.1 profile, so `provider_model_profile` reuses GPT-6 Sol's profile with
+reasoning always on. The UI's disabled-thinking preference sends no effort,
+and `minimal` maps to `low`.
+
+The catalogue no longer lists GPT-5.4, GPT-5.5, GPT-5.6, Claude Opus 4.6 to
+4.8, or Claude Sonnet 4.6. Their price rows remain so past usage keeps its
+estimates. Agents saved with a removed model fail model resolution until an
+operator selects a listed model.
+
 ### GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5
 
 The catalogue exposes these models through the existing agent model selector.
@@ -65,8 +97,10 @@ SDK retries once with its documented stale-block recovery and emits a warning.
 Explicit forced tool choice fails locally. Provider computer-use tools remain
 outside Praxis's governed tool catalogue.
 
-The provider type defaults are Sol for OpenAI **Powerful**, Luna for OpenAI
-**Standard**, and Opus 5.5 for Anthropic **Powerful**. Existing saved agent model
+The provider type defaults are GPT-6.1 Sol for OpenAI **Powerful**, Luna for
+OpenAI **Standard**, Opus 5.5 for Anthropic **Powerful**, and Sonnet 5.5 for
+Anthropic **Standard**. OpenAI has no **Light** model. GPT-6.1 Sol is also the
+OpenAI `run_code` helper default. Existing saved agent model
 selections remain explicit. GPT-6 Luna is also the default for unpinned agents,
 conversation names, history summaries, Knowledge Base annotations, native
 classification, and the OpenAI web-search fallback. Environment overrides take

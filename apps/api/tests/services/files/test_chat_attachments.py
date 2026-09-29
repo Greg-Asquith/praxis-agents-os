@@ -312,7 +312,7 @@ async def _persist_workspace_agent(db: AsyncSession):
         workspace_id=workspace.id,
         created_by=actor.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
     db.add_all([actor, workspace, agent])
     await db.flush()

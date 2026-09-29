@@ -73,7 +73,7 @@ async def _create_agent(
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
         is_active=is_active,
     )
     db.add(agent)

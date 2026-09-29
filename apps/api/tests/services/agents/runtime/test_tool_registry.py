@@ -108,7 +108,7 @@ def _agent(
         tool_policies=tool_policies,
         code_mode_enabled=code_mode_enabled,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
 
 

@@ -72,6 +72,40 @@ async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, thinking, effort
     assert result.usage.input_tokens == 3
 
 
+async def test_gpt_6_1_sol_never_sends_unsupported_none_effort(monkeypatch):
+    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("test-key"))
+    requests = []
+
+    def respond(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "resp_release",
+                "object": "response",
+                "created_at": 1,
+                "model": "gpt-6.1-sol",
+                "status": "completed",
+                "output": [],
+                "usage": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
+        model = factory.build_model(
+            resolve_catalog_model("openai", "gpt-6.1-sol", settings_overrides={"thinking": False})
+        )
+        await model.request(
+            [ModelRequest(parts=[UserPromptPart("Summarise.")])], None, ModelRequestParameters()
+        )
+
+    [body] = requests
+    assert "effort" not in body["reasoning"]
+    assert body["reasoning"]["context"] == "all_turns"
+
+
 @pytest.fixture(params=[False, True], ids=["direct", "vertex"])
 def opus_transport(request, monkeypatch):
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)

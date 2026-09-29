@@ -114,7 +114,7 @@ async def test_anthropic_recovery_survives_normalisation_reload_and_trimming(
                 "id": f"msg_{len(requests)}",
                 "type": "message",
                 "role": "assistant",
-                "model": "claude-sonnet-4-6",
+                "model": "claude-sonnet-5",
                 "content": [{"type": "text", "text": "Source explained"}],
                 "stop_reason": "end_turn",
                 "usage": {"input_tokens": 5, "output_tokens": 2},
@@ -127,8 +127,8 @@ async def test_anthropic_recovery_survives_normalisation_reload_and_trimming(
         model = factory.build_model(
             ResolvedModel(
                 provider="anthropic",
-                model="claude-sonnet-4-6",
-                transport_model="claude-sonnet-4-6",
+                model="claude-sonnet-5",
+                transport_model="claude-sonnet-5",
                 settings={},
                 max_steps=3,
             )

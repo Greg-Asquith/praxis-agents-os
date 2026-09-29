@@ -37,10 +37,10 @@ def test_classifier_model_override_requires_catalog_valid_pair() -> None:
         )
 
     request = ClassifierCreateRequest.model_validate(
-        _payload(model_provider="openai", model="gpt-5.6-luna")
+        _payload(model_provider="openai", model="gpt-6-luna")
     )
     assert request.model_provider == "openai"
-    assert request.model == "gpt-5.6-luna"
+    assert request.model == "gpt-6-luna"
 
 
 def test_classifier_update_requires_both_model_fields_even_when_clearing() -> None:

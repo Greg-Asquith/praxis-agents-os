@@ -128,7 +128,7 @@ async def _persist_run_context(
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
     db.add(agent)
     await db.flush()

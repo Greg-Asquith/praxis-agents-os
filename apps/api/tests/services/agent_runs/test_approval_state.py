@@ -55,7 +55,7 @@ async def approval_context(db_session: AsyncSession) -> ApprovalStateContext:
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
         tool_names=["test_add_numbers"],
         tool_policies={"test_add_numbers": "approval"},
     )

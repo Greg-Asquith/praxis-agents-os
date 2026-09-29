@@ -100,7 +100,7 @@ async def test_parent_delegates_to_child_run_and_receives_result(
 
     assert result.output == "parent final"
     assert result.run.metadata_json[EFFECTIVE_USAGE_LIMITS_KEY]["limits"]["total_tokens_limit"] == (
-        token_override or 3_200_000
+        token_override or 8_400_000
     )
     async with committed_db_session_factory() as db:
         await set_session_tenant_context(db, workspace_id=context.workspace_id)
@@ -1176,7 +1176,7 @@ async def test_inherited_streaming_token_overrun_preserves_mixed_model_ledger(
             )
         )
         assert {(event.provider, event.model) for event in events} == {
-            ("openai", "gpt-5.4-mini"),
+            ("openai", "gpt-6-luna"),
             ("google", "gemini-3.8-flash"),
         }
         assert sum(event.requests for event in events) == usage.requests == 3

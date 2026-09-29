@@ -208,7 +208,7 @@ async def _scratch_context(db: AsyncSession) -> ScratchTestContext:
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
         tool_names=[],
     )
     db.add(agent)

@@ -90,7 +90,7 @@ class ModelInfo:
 
     @property
     def qualified_id(self) -> str:
-        """Provider-qualified id consumed by Pydantic AI, e.g. 'openai:gpt-5.4-mini'."""
+        """Provider-qualified id consumed by Pydantic AI, e.g. 'openai:gpt-6-luna'."""
         return f"{self.provider}:{self.model}"
 
 

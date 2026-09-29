@@ -37,10 +37,11 @@ The helper uses the shared Google model factory, including Vertex credentials
 and routing when `GOOGLE_VERTEX_AI=true`. The native `codeExecution` tool is
 included in that model request; there is no separate direct-API fallback.
 
-The registered GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5 models can use the
-existing eligible helper paths. Live capability, file-output, and sandbox
-network-isolation probes for these model versions remain pending. Earlier
-model probe results do not qualify these versions.
+The registered GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, Claude Opus 5.5, and
+Claude Sonnet 5.5 models can use the existing eligible helper paths. Live
+capability, file-output, and sandbox network-isolation probes for these model
+versions remain pending. Earlier model probe results do not qualify these
+versions.
 
 Provider-native `run_code` is a separate helper-model tool for heavy
 computation, create-from-text document generation, and declared append-only
@@ -145,7 +146,7 @@ OpenAI calls the Images API directly: `gpt-image-2.5-flare` for generation
 and `gpt-image-2.5-sunburst` for editing. The approved prompt reaches the API
 unchanged, including whitespace, without a helper model or added instructions.
 The optional `model` argument must match the action's image model; helper IDs
-such as `gpt-5.6-luna` are rejected with guidance to omit the override.
+such as `gpt-6-luna` are rejected with guidance to omit the override.
 Requests, file-tool results, and usage rows name the actual image model.
 
 OpenAI retains its three aspect ratios (`1:1`, `2:3`, and `3:2`), automatic

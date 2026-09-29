@@ -58,7 +58,7 @@ async def platform_runtime(db_session_factory, tmp_path, monkeypatch):
             created_by=user.id,
             instructions="Read files.",
             model_provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
         )
         conversation = build_conversation(user=user, workspace=workspace)
         db.add_all([user, workspace, other_workspace, agent, conversation])

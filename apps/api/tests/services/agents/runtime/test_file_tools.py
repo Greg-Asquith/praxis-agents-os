@@ -446,7 +446,7 @@ async def _runtime_file_context(db: AsyncSession) -> RuntimeFileTestContext:
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
         tool_names=[],
     )
     db.add(agent)

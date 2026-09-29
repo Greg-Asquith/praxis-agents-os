@@ -43,8 +43,8 @@ def _patch_model_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
         "services.agents.runtime.tools.classifiers.resolve_classifier_model",
         lambda **_kwargs: ResolvedModel(
             provider="openai",
-            model="gpt-5.6-luna",
-            transport_model="gpt-5.6-luna",
+            model="gpt-6-luna",
+            transport_model="gpt-6-luna",
             settings={},
             max_steps=2,
         ),

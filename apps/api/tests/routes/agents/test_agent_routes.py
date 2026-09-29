@@ -53,7 +53,7 @@ async def test_create_agent_route_persists_public_model_shape(
         workspace_id=workspace.id,
         created_by=user.id,
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
     db_session.add(delegate)
     await db_session.commit()
@@ -81,7 +81,7 @@ async def test_create_agent_route_persists_public_model_shape(
             "code_mode_enabled": True,
             "allowed_agent_ids": [str(delegate.id)],
             "model_provider": "OPENAI",
-            "model": "gpt-5.4-mini",
+            "model": "gpt-6-luna",
             "model_settings": {"temperature": 0.2, "thinking": "high"},
             "max_steps": 12,
             "is_favorite": True,
@@ -100,7 +100,7 @@ async def test_create_agent_route_persists_public_model_shape(
     assert body["code_mode_enabled"] is True
     assert body["allowed_agent_ids"] == [str(delegate.id)]
     assert body["model_provider"] == "openai"
-    assert body["model"] == "gpt-5.4-mini"
+    assert body["model"] == "gpt-6-luna"
     assert body["model_settings"] == {"temperature": 0.2, "thinking": "high"}
     assert body["metadata"] == {"accent": "green"}
 
@@ -137,7 +137,7 @@ async def test_update_and_delete_agent_routes_apply_workspace_write_access(
         tool_names=["web_search", "write_todos"],
         tool_policies={"web_search": "auto", "write_todos": "approval"},
         model_provider="openai",
-        model="gpt-5.4-mini",
+        model="gpt-6-luna",
     )
     db_session.add(agent)
     await db_session.commit()

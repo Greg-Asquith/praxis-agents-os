@@ -770,7 +770,7 @@ async def _create_committed_runtime_context(
             workspace_id=workspace.id,
             created_by=user.id,
             model_provider="openai",
-            model="gpt-5.4-mini",
+            model="gpt-6-luna",
             tool_names=tool_names,
             tool_policies=tool_policies,
         )

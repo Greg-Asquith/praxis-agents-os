@@ -490,7 +490,7 @@ async def test_run_code_bridge_evidence_stays_visible_beside_the_tool_call_rollu
     await bridge.audit_run_code_bridge(
         deps,
         provider="openai",
-        model="gpt-5.6-luna",
+        model="gpt-6-luna",
         tool_call_id=tool_call_id,
         uploads=uploads,
         deletion_facts=(

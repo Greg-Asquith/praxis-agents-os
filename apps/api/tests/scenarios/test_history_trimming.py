@@ -290,7 +290,7 @@ async def test_azure_history_uses_deployment_context_budget(
         agent = await db.get(Agent, context.agent_id)
         assert agent is not None
         agent.model_provider = "azure"
-        agent.model = "gpt-5.6-luna"
+        agent.model = "gpt-6-luna"
         agent.azure_deployment = "test-luna-deployment"
         await db.commit()
 
