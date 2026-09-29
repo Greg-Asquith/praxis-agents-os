@@ -14,7 +14,6 @@ from integrations.sharepoint.tools.update_file import DEFINITION as UPDATE_DEFIN
 from integrations.sharepoint.tools.write_file import DEFINITION as WRITE_DEFINITION
 from models.agent_run import AgentRun
 from models.audit_event import AuditEvent
-from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
@@ -56,7 +55,7 @@ def _configure(monkeypatch, db_session_factory, definition, active, *, nested):
     monkeypatch.setattr(
         "services.agents.runtime.loop.build_runtime_tools",
         lambda *_args, **_kwargs: [
-            build_run_workflow_tool(CodeModeCatalog.build(((definition, "approval"),)))
+            build_run_workflow_tool(((definition, "approval"),))
             if nested
             else definition.to_pydantic_tool(policy="approval")
         ],
@@ -85,9 +84,7 @@ async def test_resume_denies_before_real_entity_hydration(
     definition = _configure(
         monkeypatch, db_session_factory, DEFINITIONS[field], active, nested=nested
     )
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
     args = _arguments(field)
     code_args = ", ".join(f"{key}={value!r}" for key, value in args.items())
     call = (
@@ -165,9 +162,7 @@ async def test_cleared_destination_resume_preserves_reviewed_root_binding(
     definition = _configure(
         monkeypatch, db_session_factory, DEFINITIONS[field], active, nested=nested
     )
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
     args = _arguments(field)
     code_args = ", ".join(f"{key}={value!r}" for key, value in args.items())
     call = (

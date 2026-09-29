@@ -11,7 +11,6 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from sqlalchemy import select
 
-from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import ConversationMessage
 from models.user import User
@@ -144,11 +143,6 @@ async def test_sibling_workflows_with_identical_native_ids_resume_exact_owner_de
         )
         for _ in range(2)
     ]
-    async with committed_db_session_factory() as db:
-        for child in children:
-            saved = await db.get(Agent, child.id)
-            saved.code_mode_enabled = True
-        await db.commit()
     model = sibling_model([str(child.id) for child in children], effects.name)
     monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)
     first = await run_scenario(committed_db_session_factory, context, model=model)
@@ -277,10 +271,6 @@ async def test_delegated_workflow_staged_content_and_taint_use_child_owner(
         child = await add_scenario_delegate(
             committed_db_session_factory, context, tool_names=[tool.name, "write_file"]
         )
-        async with committed_db_session_factory() as db:
-            saved = await db.get(Agent, child.id)
-            saved.code_mode_enabled = True
-            await db.commit()
         model = sibling_model(
             [str(child.id)],
             "write_file",

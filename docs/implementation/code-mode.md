@@ -20,9 +20,7 @@ oversized artifact fails closed. A decision authorises only the matching
 nested call and validated effective arguments. Captured print
 output is persisted cumulatively across suspensions, and every resume uses
 only the remaining output budget. Keep script arguments, nested results,
-final values, and print output independently bounded. Generated
-stubs render faithful input signatures and declared `output_model` return
-shapes; tools without a declared output model remain explicitly `Any`.
+final values, and print output independently bounded.
 Completed-run nested traces retain each complete normalised nested result as
 application-only presentation evidence, with no additional UI sampling or
 truncation. Trace entries record a wall-clock start and, once settled, the
@@ -36,18 +34,17 @@ nested-value and provider product bounds remain authoritative. Keep the
 workflow's model-facing final-result bound materially tighter than the
 nested value bound so a faulty reduction cannot flood every later request.
 
-## Signature rendering
+## Workflow tool resolution
 
-`services/agents/runtime/code_mode/stubs.py` owns signature rendering and its
-strict schema adapter. Pydantic AI 2.50.0's public renderer is not adopted:
-recursive value types, input/output collisions, and required/default semantics
-lose information. See the architecture's
-[renderer decision](../architecture/code-mode.md#signature-renderer-ownership).
-Unsupported schemas remain directly mounted. Shared types retain one name,
-conflicting output types receive output-specific names, and Python keyword
-fields use functional `TypedDict` syntax without changing their wire names.
-The complete eligible catalogue must compile and pass the pinned Monty type
-checker when schemas or providers change.
+`build_runtime_tools` mounts every allowed tool directly and passes the
+mounted code-eligible tools, with their effective policies, to
+`build_run_workflow_tool`. That per-run toolset keeps every tool eager, so a
+workflow can call a deferred tool the model hasn't discovered. A workflow
+uses a tool's direct name and JSON-schema keyword arguments. Code-eligible
+tools with an `output_model` set `include_return_schema`, so the model sees
+the declared return shape. When you change the sandbox syntax or import
+allowlist, update the `run_workflow` guidance in `tools/code_mode.py` with
+the probes.
 
 ## Transcript presentation
 

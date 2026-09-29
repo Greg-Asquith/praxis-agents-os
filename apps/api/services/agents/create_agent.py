@@ -80,7 +80,6 @@ async def create_agent(
             all_tools=tool_selection.all_tools,
             excluded_tool_names=tool_selection.excluded_tool_names,
             tool_policies=tool_selection.tool_policies,
-            code_mode_enabled=payload.code_mode_enabled,
             allowed_agent_ids=allowed_agent_ids,
             model_provider=model_provider,
             model=payload.model,
@@ -130,7 +129,6 @@ async def create_agent(
             "tool_names": agent.tool_names,
             "all_tools": agent.all_tools,
             "excluded_tool_names": agent.excluded_tool_names,
-            "code_mode_enabled": agent.code_mode_enabled,
             "allowed_agent_count": len(agent.allowed_agent_ids or []),
         },
     )

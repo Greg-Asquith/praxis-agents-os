@@ -24,7 +24,6 @@ from models.files import File, FileFolder, FileReference, FileRevision
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agents.runtime.approval_state import load_suspended_run_state
-from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.entity_references.domain import FileReference as SourceReference
 from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
@@ -118,7 +117,7 @@ def _configure_runtime(
     monkeypatch.setattr(
         "services.agents.runtime.loop.build_runtime_tools",
         lambda *_args, **_kwargs: (
-            [build_run_workflow_tool(CodeModeCatalog.build(definitions))]
+            [build_run_workflow_tool(definitions)]
             if nested
             else [definition.to_pydantic_tool(policy=policy) for definition, policy in definitions]
         ),
@@ -175,7 +174,6 @@ async def test_sharepoint_document_loop(
         db_session_factory,
         tool_names=[copy.name, update.name],
         tool_policies={copy.name: "auto", update.name: "approval"},
-        code_mode_enabled=nested,
     )
     remote = SharePointDriveItemReference(drive_id="drive", item_id="file", kind="file").model_dump(
         mode="json"
@@ -352,9 +350,7 @@ async def test_file_source_approval_uses_real_core_authorisation(
         nested=nested,
         real_entities=True,
     )
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
     content = WORKBOOK.read_bytes()
     file, revision = await _source_file(context, content)
     args = {
@@ -454,9 +450,7 @@ async def test_foreign_file_source_cannot_produce_usable_approval(
         nested=nested,
         real_entities=True,
     )
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
     file, _ = await _source_file(context, WORKBOOK.read_bytes(), foreign=True)
     source = SourceReference(entity_id=file.id, label="Claimed workspace File")
     call = _call(

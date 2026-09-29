@@ -64,9 +64,7 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
         "services.integrations.microsoft_graph.client._resolve_host",
         AsyncMock(return_value=("8.8.8.8",)),
     )
-    setup = await build_scenario_agent(
-        db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
-    )
+    setup = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
     reference = {"entity_kind": "sharepoint_drive_item", "drive_id": "drive", "item_id": "file"}
     reference.update(name=None, kind="file")
     args = {"file": reference, **({"query": marker} if find else {})}

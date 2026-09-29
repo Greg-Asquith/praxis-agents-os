@@ -134,7 +134,6 @@ async def build_scenario_agent(
     trigger: Literal["interactive", "scheduled", "delegated"] = "interactive",
     metadata: dict[str, Any] | None = None,
     role: WorkspaceRole = WorkspaceRole.MEMBER,
-    code_mode_enabled: bool = False,
 ) -> ScenarioContext:
     """Persist the minimum real workspace graph needed by ``execute_run``."""
     async with session_factory() as db:
@@ -158,7 +157,6 @@ async def build_scenario_agent(
             created_by=user.id,
             tool_names=list(tool_names),
             tool_policies=dict(tool_policies) if tool_policies else None,
-            code_mode_enabled=code_mode_enabled,
             allowed_agent_ids=[str(value) for value in allowed_agent_ids],
             model_provider="openai",
             model="gpt-6-luna",

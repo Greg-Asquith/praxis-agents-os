@@ -28,7 +28,6 @@ def test_agent_read_validates_metadata_from_orm_attribute() -> None:
         model="gpt-6-luna",
         is_active=True,
         is_favorite=False,
-        code_mode_enabled=False,
         metadata_json={"accent": "green"},
         created_at=now,
         updated_at=now,
@@ -38,5 +37,4 @@ def test_agent_read_validates_metadata_from_orm_attribute() -> None:
     read_model = AgentRead.from_agent(agent)
 
     assert read_model.metadata_json == {"accent": "green"}
-    assert read_model.code_mode_enabled is False
     assert read_model.model_dump(by_alias=True)["metadata"] == {"accent": "green"}

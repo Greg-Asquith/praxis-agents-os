@@ -84,9 +84,7 @@ async def test_code_mode_deadline_cancels_background_report_without_partial_deli
             cancelled.set()
             raise
 
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[DEFINITION.name], code_mode_enabled=True
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[DEFINITION.name])
     code = (
         f"report = await meta_ads_run_insights(fields=['spend'], since={today!r}, until={today!r})\n"
         "report"

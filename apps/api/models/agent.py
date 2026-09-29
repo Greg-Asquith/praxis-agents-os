@@ -59,12 +59,6 @@ class Agent(BaseModel):
     )
     # Tool policies: {tool_name: 'auto' | 'approval'}
     tool_policies = Column(JSONB, nullable=True)
-    code_mode_enabled = Column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=text("false"),
-    )
 
     # Agent collaboration (IDs of agents this agent can call)
     allowed_agent_ids = Column(

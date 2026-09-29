@@ -5,7 +5,7 @@
 import inspect
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field as dataclass_field
+from dataclasses import dataclass, field as dataclass_field, replace
 from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args, get_origin, get_type_hints
 
 from pydantic import BaseModel
@@ -320,7 +320,7 @@ class RuntimeToolDefinition:
                 },
             )
 
-        return Tool(
+        tool = Tool(
             self.function,
             takes_ctx=self.takes_ctx,
             name=self.name,
@@ -330,7 +330,15 @@ class RuntimeToolDefinition:
             args_validator=self.args_validator,
             timeout=self.timeout,
             defer_loading=self.defer_loading if defer_loading is None else defer_loading,
+            include_return_schema=self.code_eligible and self.output_model is not None,
         )
+        if self.code_eligible and self.output_model is not None:
+            # Workflows use the declared result shape, not the handler's return annotation.
+            tool.function_schema = replace(
+                tool.function_schema,
+                return_schema=self.output_model.model_json_schema(mode="serialization"),
+            )
+        return tool
 
 
 def validate_definition(definition: RuntimeToolDefinition) -> None:

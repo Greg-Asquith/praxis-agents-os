@@ -6,7 +6,7 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
@@ -14,14 +14,12 @@ from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINI
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS as GMAIL_TOOL_DEFINITIONS
 from integrations.google_ads import PROVIDER as GOOGLE_ADS_PROVIDER
-from integrations.google_ads.settings import google_ads_settings
 from integrations.google_ads.tools import TOOL_DEFINITIONS as GOOGLE_ADS_TOOL_DEFINITIONS
 from integrations.google_ads.tools.utils import GOOGLE_ADS_BINDING
 from integrations.google_analytics.tools import (
     TOOL_DEFINITIONS as GOOGLE_ANALYTICS_TOOL_DEFINITIONS,
 )
 from models.agent import Agent
-from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.delegation.build_delegation_tools import (
     DELEGATION_TOOL_DEFINITIONS,
 )
@@ -81,6 +79,10 @@ def _bare_customer(customer_id: str) -> str:
     return customer_id
 
 
+class _CodeReadOutput(BaseModel):
+    customer_id: str
+
+
 class _UnsafeNestedScope(BaseModel):
     customer_id: str
 
@@ -101,7 +103,6 @@ def _agent(
     *,
     tool_names: list[str] | None = None,
     tool_policies: dict[str, str] | None = None,
-    code_mode_enabled: bool = False,
     all_tools: bool = False,
     excluded_tool_names: list[str] | None = None,
 ) -> Agent:
@@ -113,7 +114,6 @@ def _agent(
         created_by=uuid4(),
         tool_names=tool_names or [],
         tool_policies=tool_policies,
-        code_mode_enabled=code_mode_enabled,
         all_tools=all_tools,
         excluded_tool_names=excluded_tool_names or [],
         model_provider="openai",
@@ -534,11 +534,13 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         "write_todos",
         "test_runtime_context",
         "test_add_numbers",
+        "run_workflow",
     ]
     auto_mounted_approval = {"create_skill", "update_skill"}
     assert [tool.requires_approval for tool in default_tools] == [
-        *(tool.name in auto_mounted_approval for tool in default_tools[:-2]),
+        *(tool.name in auto_mounted_approval for tool in default_tools[:-3]),
         True,
+        False,
         False,
     ]
     assert [tool.timeout for tool in default_tools] == [
@@ -565,103 +567,31 @@ def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
         5,
         5,
         5,
+        None,
     ]
-    assert [tool.max_retries for tool in default_tools] == [*([None] * 22), 1]
+    assert [tool.max_retries for tool in default_tools] == [*([None] * 22), 1, 1]
     assert [tool.requires_approval for tool in approved_tools] == [
-        *(tool.name in auto_mounted_approval for tool in approved_tools[:-2]),
+        *(tool.name in auto_mounted_approval for tool in approved_tools[:-3]),
         True,
         True,
+        False,
     ]
 
 
-def test_code_mode_replaces_every_eligible_non_deferred_tool_with_workflow_stubs(
+@pytest.mark.deferred_tools
+def test_code_eligible_tools_stay_direct_beside_run_workflow(
     cleanup_test_tools,
+    google_ads_manifest,
 ) -> None:
     @runtime_tool(
         name="test_code_read",
         description="Read composable data.",
         code_eligible=True,
+        output_model=_CodeReadOutput,
     )
-    def code_read(query: str) -> str:
-        return query
+    def code_read(query: str) -> dict[str, str]:
+        return {"customer_id": query}
 
-    @runtime_tool(
-        name="test_code_write",
-        description="Write composable data.",
-        code_eligible=True,
-        effect=TOOL_EFFECT_WRITE,
-    )
-    def code_write(value: str) -> str:
-        return value
-
-    @runtime_tool(
-        name="test_direct_read",
-        description="Read conversational data.",
-        code_eligible=False,
-    )
-    def direct_read(query: str) -> str:
-        return query
-
-    agent = _agent(
-        tool_names=["test_code_read", "test_code_write", "test_direct_read"],
-        code_mode_enabled=True,
-    )
-
-    tools = build_runtime_tools(agent)
-    names = {tool.name for tool in tools}
-    workflow = next(tool for tool in tools if tool.name == "run_workflow")
-
-    assert "test_code_read" not in names
-    assert {"test_direct_read", "run_workflow"}.issubset(names)
-    assert "test_code_write" not in names
-    assert "async def test_code_read(*, query: str)" in workflow.description
-    assert "async def test_code_write" in workflow.description
-    assert "async def test_direct_read" not in workflow.description
-    assert workflow.requires_approval is False
-    assert workflow.max_retries == 1
-
-
-@pytest.mark.deferred_tools
-def test_tools_defer_by_default_and_code_mode_wraps_them_eagerly(
-    cleanup_test_tools,
-) -> None:
-    @runtime_tool(
-        name="test_approval_read",
-        description="Read only after approval.",
-        code_eligible=True,
-    )
-    def approval_read(query: str) -> str:
-        return query
-
-    @runtime_tool(
-        name="test_deferred_read",
-        description="Read after tool search.",
-    )
-    def deferred_read(query: str) -> str:
-        return query
-
-    tools = build_runtime_tools(
-        _agent(
-            tool_names=["test_approval_read", "test_deferred_read"],
-            tool_policies={"test_approval_read": TOOL_POLICY_APPROVAL},
-            code_mode_enabled=True,
-        )
-    )
-    catalog = CodeModeCatalog.build([(RUNTIME_TOOL_CATALOG["test_approval_read"], "approval")])
-
-    by_name = {tool.name: tool for tool in tools}
-    assert "test_approval_read" not in by_name
-    assert by_name["test_deferred_read"].defer_loading is True
-    assert by_name["run_workflow"].defer_loading is False
-    assert "async def test_approval_read" in by_name["run_workflow"].description
-    assert "async def test_deferred_read" not in by_name["run_workflow"].description
-    assert catalog.wrapped_toolset.tools["test_approval_read"].defer_loading is False
-
-
-def test_code_mode_applies_integration_context_filter_before_both_mount_paths(
-    cleanup_test_tools,
-    google_ads_manifest,
-) -> None:
     @runtime_tool(
         name="test_context_code_read",
         description="Read scoped composable data.",
@@ -671,87 +601,32 @@ def test_code_mode_applies_integration_context_filter_before_both_mount_paths(
     def context_code_read(query: str) -> str:
         return query
 
-    @runtime_tool(
-        name="test_context_direct_read",
-        description="Read scoped conversational data.",
-        code_eligible=False,
-        integration_binding=GOOGLE_ADS_BINDING,
-    )
-    def context_direct_read(query: str) -> str:
+    @runtime_tool(name="test_direct_read", description="Read conversational data.")
+    def direct_read(query: str) -> str:
         return query
 
     class _ActiveContext:
-        def __init__(self, compatible: bool) -> None:
-            self.compatible = compatible
-
         def compatible_entries(self, _binding) -> list[object]:
-            return [object()] if self.compatible else []
+            return []
 
     agent = _agent(
-        tool_names=["test_context_code_read", "test_context_direct_read"],
-        code_mode_enabled=True,
+        tool_names=["test_code_read", "test_context_code_read", "test_direct_read"],
+        tool_policies={"test_code_read": TOOL_POLICY_APPROVAL},
     )
-    without_context = build_runtime_tools(agent, active_context=_ActiveContext(False))
-    wrapped_tool_names: list[str] = []
-    with_context = build_runtime_tools(
-        agent,
-        active_context=_ActiveContext(True),
-        wrapped_tool_names=wrapped_tool_names,
-    )
-
-    absent_workflow = next(tool for tool in without_context if tool.name == "run_workflow")
-    present_workflow = next(tool for tool in with_context if tool.name == "run_workflow")
-    assert "test_context_code_read" not in absent_workflow.description
-    assert "test_context_direct_read" not in {tool.name for tool in without_context}
-    assert "test_context_code_read" in present_workflow.description
-    assert "test_context_code_read" in wrapped_tool_names
-    assert "test_context_direct_read" in {tool.name for tool in with_context}
-
-
-def test_google_ads_field_tools_follow_code_mode_and_safety_filters(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    field_tool_names = {
-        "google_ads_get_report_field",
-        "google_ads_list_report_fields",
+    by_name = {
+        tool.name: tool for tool in build_runtime_tools(agent, active_context=_ActiveContext())
     }
 
-    class _ActiveContext:
-        def compatible_entries(self, binding) -> list[object]:
-            return [object()] if "google_ads" in binding.provider_keys else []
-
-    context = _ActiveContext()
-    monkeypatch.setattr(
-        google_ads_settings,
-        "GOOGLE_ADS_DEVELOPER_TOKEN",
-        SecretStr("developer-token"),
-    )
-    wrapped_tool_names: list[str] = []
-    tools = build_runtime_tools(
-        _agent(tool_names=[], code_mode_enabled=True),
-        active_context=context,
-        wrapped_tool_names=wrapped_tool_names,
-    )
-    workflow = next(tool for tool in tools if tool.name == "run_workflow")
-
-    assert field_tool_names.issubset(wrapped_tool_names)
-    assert field_tool_names.isdisjoint(tool.name for tool in tools)
-    assert all(tool_name in workflow.description for tool_name in field_tool_names)
-
-    disabled = build_runtime_tools(
-        _agent(tool_names=[]),
-        active_context=context,
-        workspace=object(),
-        disabled_tool_names=frozenset(field_tool_names),
-    )
-    assert field_tool_names.isdisjoint(tool.name for tool in disabled)
-
-    monkeypatch.setattr(google_ads_settings, "GOOGLE_ADS_DEVELOPER_TOKEN", None)
-    unavailable = build_runtime_tools(
-        _agent(tool_names=[]),
-        active_context=context,
-    )
-    assert field_tool_names.isdisjoint(tool.name for tool in unavailable)
+    assert by_name["test_code_read"].defer_loading is True
+    assert by_name["test_code_read"].requires_approval is True
+    assert by_name["test_code_read"].tool_def.return_schema["properties"] == {
+        "customer_id": {"title": "Customer Id", "type": "string"}
+    }
+    assert "test_context_code_read" not in by_name
+    assert by_name["run_workflow"].defer_loading is False
+    assert "test_code_read" in by_name["run_workflow"].description
+    assert "test_context_code_read" not in by_name["run_workflow"].description
+    assert "test_direct_read" not in by_name["run_workflow"].description
 
 
 def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
@@ -788,6 +663,7 @@ def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
         "write_file",
         "write_todos",
         "test_runtime_context",
+        "run_workflow",
     ]
     assert "test_add_numbers" not in {definition.name for definition in catalog}
 

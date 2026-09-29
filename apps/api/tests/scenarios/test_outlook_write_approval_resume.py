@@ -11,7 +11,6 @@ from integrations.outlook_mail.references import OutlookMessageReference
 from integrations.outlook_mail.tools.create_draft import DEFINITION as DRAFT_DEFINITION
 from integrations.outlook_mail.tools.reply_to_message import DEFINITION
 from services.agents.runtime.approval_state import load_suspended_run_state
-from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
@@ -39,7 +38,7 @@ async def test_reply_resume_preserves_consent_and_durable_evidence(
     monkeypatch.setattr(
         "services.agents.runtime.loop.build_runtime_tools",
         lambda *_args, **_kwargs: [
-            build_run_workflow_tool(CodeModeCatalog.build(((definition, "approval"),)))
+            build_run_workflow_tool(((definition, "approval"),))
             if nested
             else definition.to_pydantic_tool(policy="approval")
         ],
@@ -81,9 +80,7 @@ async def test_reply_resume_preserves_consent_and_durable_evidence(
     if is_draft and draft_recipients != "omitted":
         original |= {"cc": draft_recipients, "bcc": draft_recipients}
     code_args = ", ".join(f"{key}={value!r}" for key, value in original.items())
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[definition.name], code_mode_enabled=nested
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
     model = scripted_model(
         turns=[
             ToolTurn(

@@ -9,8 +9,9 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_evals.evaluators import LLMJudge
 from pydantic_evals.evaluators.llm_as_a_judge import GradingOutput
 
-from evals.evaluators import EvalOutput, OutputFormat
+from evals.evaluators import EvalOutput, OutputFormat, workflow_argument_errors
 from evals.run import _load_dataset
+from services.agents.runtime.tools.contract import RuntimeToolDefinition
 
 
 def _passing_judge(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
@@ -26,7 +27,7 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats() -> Non
     dataset = _load_dataset(judge_model)
     cases = {case.name: case for case in dataset.cases}
 
-    assert len(cases) == 18
+    assert len(cases) == 22
     assert not any(isinstance(item, LLMJudge) for item in cases["list_files_selection"].evaluators)
     assert not any(isinstance(item, LLMJudge) for item in cases["json_format"].evaluators)
     judges = [item for item in cases["identity_name"].evaluators if isinstance(item, LLMJudge)]
@@ -82,3 +83,31 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats() -> Non
     )
     assert evaluator.evaluate(json_context)
     assert evaluator.evaluate(bullet_context)
+
+
+def test_workflow_argument_errors_flag_guessed_and_malformed_arguments() -> None:
+    def run_report(date_ranges: list[dict[str, str]], limit: int | None = None) -> str:
+        return ""
+
+    tool = RuntimeToolDefinition(
+        name="run_report",
+        function=run_report,
+        description="Run a report.",
+        code_eligible=True,
+    ).to_pydantic_tool()
+    tools = {"run_report": tool}
+
+    assert (
+        workflow_argument_errors(
+            "for start in starts:\n    await run_report(date_ranges=[{'start': start}])",
+            tools,
+            ["run_report"],
+        )
+        == ()
+    )
+    assert workflow_argument_errors(
+        "await run_report(start_date='2026-09-01')", tools, ["run_report"]
+    ) == ("run_report: unknown ['start_date'], missing ['date_ranges']",)
+    assert workflow_argument_errors(
+        "await run_report(date_ranges='yesterday')", tools, ["run_report"]
+    ) == ("run_report: invalid arguments: Input should be a valid list",)

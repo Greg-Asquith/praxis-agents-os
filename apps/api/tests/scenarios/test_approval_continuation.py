@@ -398,7 +398,6 @@ async def _park_for_corruption(factory, monkeypatch, effects, target):
     context = await build_scenario_agent(
         factory,
         tool_names=[] if target == "delegated" else [effects.name],
-        code_mode_enabled=target == "nested-decision",
         trigger="scheduled",
         metadata={"envelope": {"side_effect_policy": "require_approval"}},
     )
@@ -544,7 +543,7 @@ async def test_shutdown_of_delegated_continuation_settles_linked_schedule(
 ):
     from pydantic_ai.models.function import FunctionModel
 
-    from models.agent import Agent, AgentSchedule, AgentScheduleRun
+    from models.agent import AgentSchedule, AgentScheduleRun
     from services.agents.runtime.entity_references.domain import AgentReference
 
     factory = committed_db_session_factory
@@ -563,9 +562,6 @@ async def test_shutdown_of_delegated_continuation_settles_linked_schedule(
             metadata={"envelope": {"side_effect_policy": "require_approval"}},
         )
         specialist = await add_scenario_delegate(factory, context, tool_names=[effects.name])
-        async with factory() as db:
-            (await db.get(Agent, specialist.id)).code_mode_enabled = True
-            await db.commit()
         reference = AgentReference(entity_id=str(specialist.id), label=specialist.name)
         code = f"await {effects.name}(value='first')\nawait {effects.name}(value='second')\n'done'"
         model = scripted_model(

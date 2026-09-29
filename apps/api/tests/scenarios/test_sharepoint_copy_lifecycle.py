@@ -15,7 +15,6 @@ from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.tools.copy_to_files import DEFINITION
 from models.audit_event import AuditEvent
 from models.files import File, FileFolder, FileReference, FileUpload
-from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
@@ -125,16 +124,8 @@ async def test_copy_failure_owns_bytes_through_commit(copy_runtime, monkeypatch,
         definition = RUNTIME_TOOL_CATALOG[DEFINITION.name]
         monkeypatch.setattr(
             "services.agents.runtime.loop.build_runtime_tools",
-            lambda *_args, **_kwargs: [
-                build_run_workflow_tool(CodeModeCatalog.build(((definition, "auto"),)))
-            ],
+            lambda *_args, **_kwargs: [build_run_workflow_tool(((definition, "auto"),))],
         )
-        from models.agent import Agent
-
-        async with factory() as db:
-            agent = await db.get(Agent, context.agent_id)
-            agent.code_mode_enabled = True
-            await db.commit()
 
     async def link(db, **kwargs):
         await original_link(db, **kwargs)

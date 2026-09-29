@@ -394,18 +394,15 @@ async def authorize_entity_field(
     from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
 
     workspace_definitions = await load_workspace_tool_definitions(db, workspace)
-    wrapped_tool_names: list[str] = []
     mounted = build_runtime_tools(
         agent,
         include_delegation=bool(agent.allowed_agent_ids),
         active_context=active_context,
-        wrapped_tool_names=wrapped_tool_names,
         workspace=workspace,
         disabled_tool_names=tool_defaults.disabled,
         workspace_definitions=workspace_definitions,
     )
-    mounted_names = {tool.name for tool in mounted}.union(wrapped_tool_names)
-    if tool_name not in mounted_names:
+    if tool_name not in {tool.name for tool in mounted}:
         raise AppValidationError(
             "Tool is not available in this conversation",
             field="tool_name",

@@ -33,7 +33,6 @@ from services.agents.runtime.code_mode.state import (
     CODE_MODE_STATE_METADATA_KEY,
     CodeModeResumeRequiresRecoveryError,
 )
-from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.dispatch import digest_args
 from services.agents.runtime.run_manager import run_task_registry
 from services.agents.runtime.staged_tool_content import (
@@ -245,7 +244,7 @@ def code_mode_scenario_tools() -> dict[str, Any]:
             RUNTIME_TOOL_CATALOG.pop(name, None)
 
 
-async def test_multi_read_workflow_completes_with_nested_audits_and_replaced_schemas(
+async def test_multi_read_workflow_completes_beside_direct_tools_with_nested_audits(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:
@@ -254,7 +253,6 @@ async def test_multi_read_workflow_completes_with_nested_audits_and_replaced_sch
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=["scenario_code_read_first", "scenario_code_read_second"],
-        code_mode_enabled=True,
     )
 
     result = await run_scenario(
@@ -283,9 +281,11 @@ async def test_multi_read_workflow_completes_with_nested_audits_and_replaced_sch
     )
 
     first_request_tools = {tool.name for tool in seen_requests[0][1].function_tools}
-    assert RUN_WORKFLOW_TOOL_NAME in first_request_tools
-    assert "scenario_code_read_first" not in first_request_tools
-    assert "scenario_code_read_second" not in first_request_tools
+    assert {
+        RUN_WORKFLOW_TOOL_NAME,
+        "scenario_code_read_first",
+        "scenario_code_read_second",
+    }.issubset(first_request_tools)
     assert len(seen_requests) == 2
     nested_audits = [
         row
@@ -302,6 +302,50 @@ async def test_multi_read_workflow_completes_with_nested_audits_and_replaced_sch
     assert result.output == "The compared value is NORTH."
 
 
+async def test_workflow_cannot_call_a_tool_the_agent_has_not_mounted(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    code_mode_scenario_tools: dict[str, Any],
+) -> None:
+    del code_mode_scenario_tools
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["scenario_code_read_first"],
+    )
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn(
+                    (
+                        ToolCall(
+                            RUN_WORKFLOW_TOOL_NAME,
+                            {
+                                "code": (
+                                    "try:\n"
+                                    "    await scenario_code_read_second(value='north')\n"
+                                    "    outcome = 'called'\n"
+                                    "except NameError as exc:\n"
+                                    "    outcome = str(exc)\n"
+                                    "outcome"
+                                )
+                            },
+                            "workflow-call",
+                        ),
+                    )
+                ),
+                "That tool isn't available.",
+            ],
+        ),
+    )
+
+    [workflow] = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)
+    assert "scenario_code_read_second" in str(workflow["content"])
+    assert "called" not in str(workflow["content"])
+    assert not any(row.tool_name == "scenario_code_read_second" for row in result.audit_rows)
+
+
 async def test_gated_stub_suspends_without_partial_effect(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
@@ -313,7 +357,6 @@ async def test_gated_stub_suspends_without_partial_effect(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
 
     result = await run_scenario(
@@ -379,7 +422,6 @@ async def test_batch_override_executes_and_audits_only_the_edited_rows(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -453,7 +495,6 @@ async def test_maximum_batch_remains_one_approval_and_one_terminal_audit(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -504,7 +545,6 @@ async def test_concurrent_duplicate_nested_resume_request_starts_one_continuatio
     context = await build_scenario_agent(
         committed_db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     await run_scenario(
         committed_db_session_factory,
@@ -595,7 +635,6 @@ async def test_two_gated_writes_resume_sequentially_across_executor_restarts(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -655,7 +694,6 @@ async def test_approved_write_with_invalid_evidence_requires_recovery(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -702,7 +740,6 @@ async def test_snapshot_degradation_after_completed_write_fails_closed_to_recove
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -768,7 +805,6 @@ async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     seen_requests = []
     model = scripted_model(
@@ -827,7 +863,6 @@ async def test_restore_failure_after_first_approved_write_requires_recovery(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -891,7 +926,6 @@ async def test_nested_denial_resumes_workflow_and_audits_nested_call(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -944,7 +978,6 @@ async def test_nested_write_file_staging_round_trips_and_cleans_up(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=["write_file"],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -1029,7 +1062,7 @@ async def test_nested_write_file_staging_round_trips_and_cleans_up(
     assert content == b"nested body"
 
 
-async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_stub(
+async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_tool(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:
@@ -1037,7 +1070,6 @@ async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_stub(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=["scenario_code_hostile_read", "write_file"],
-        code_mode_enabled=True,
     )
 
     result = await run_scenario(
@@ -1064,8 +1096,6 @@ async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_stub(
         ),
     )
 
-    first_request_tools = {tool.name for tool in seen_requests[0][1].function_tools}
-    assert "write_file" not in first_request_tools
     workflow_tool = next(
         tool for tool in seen_requests[0][1].function_tools if tool.name == RUN_WORKFLOW_TOOL_NAME
     )
@@ -1086,7 +1116,6 @@ async def test_scheduled_workflow_requires_approval_under_review_envelope(
         db_session_factory,
         tool_names=[definition.name],
         tool_policies={definition.name: TOOL_POLICY_AUTO},
-        code_mode_enabled=True,
         trigger="scheduled",
         metadata={"envelope": {"side_effect_policy": "require_approval"}},
     )
@@ -1131,7 +1160,6 @@ async def test_scheduled_workflow_enforces_deny_envelope(
         db_session_factory,
         tool_names=[definition.name],
         tool_policies={definition.name: TOOL_POLICY_AUTO},
-        code_mode_enabled=True,
         trigger="scheduled",
         metadata={"envelope": {"side_effect_policy": "deny"}},
     )
@@ -1176,7 +1204,6 @@ async def test_tainted_scheduled_write_requires_review_even_with_allow_grant(
         db_session_factory,
         tool_names=["scenario_code_hostile_read", "scenario_code_forced_write"],
         tool_policies={"scenario_code_forced_write": TOOL_POLICY_AUTO},
-        code_mode_enabled=True,
         trigger="scheduled",
         metadata={"envelope": {"side_effect_policy": "allow"}},
     )
@@ -1228,7 +1255,6 @@ async def test_read_only_role_is_rechecked_inside_forced_write_stub(
         db_session_factory,
         tool_names=[definition.name],
         tool_policies={definition.name: TOOL_POLICY_AUTO},
-        code_mode_enabled=True,
         role=WorkspaceRole.READ_ONLY,
     )
 
@@ -1322,7 +1348,7 @@ def _force_only_nested_tool(
         filtered = [
             tool for tool in tools if tool.name not in {definition.name, RUN_WORKFLOW_TOOL_NAME}
         ]
-        catalog = CodeModeCatalog.build(((definition, policy),))  # type: ignore[arg-type]
+        catalog = ((definition, policy),)  # type: ignore[arg-type]
         return [*filtered, build_run_workflow_tool(catalog)]
 
     monkeypatch.setattr(loop, "build_runtime_tools", forced_build)
@@ -1462,7 +1488,6 @@ async def test_google_ads_pause_then_failed_create_keeps_separate_approvals_and_
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=["google_ads_update_keywords", "google_ads_create_keywords"],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -1507,7 +1532,6 @@ async def test_shared_projection_after_real_nested_suspension_and_resume(
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[

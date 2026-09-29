@@ -240,9 +240,7 @@ async def test_combined_report_limit_fails_nested_call_without_partial_results(
             200, json=[{"results": [{"campaign": {"name": marker + "x" * 1_800}}]}]
         )
 
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[DEFINITION.name], code_mode_enabled=True
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[DEFINITION.name])
     call = ToolCall(
         RUN_WORKFLOW_TOOL_NAME, {"code": f"await google_ads_run_report(query={query!r})"}
     )

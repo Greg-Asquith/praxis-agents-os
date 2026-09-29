@@ -134,9 +134,7 @@ async def test_insights_dispatch_preserves_complete_report(
             },
         )
 
-    context = await build_scenario_agent(
-        db_session_factory, tool_names=[DEFINITION.name], code_mode_enabled=nested
-    )
+    context = await build_scenario_agent(db_session_factory, tool_names=[DEFINITION.name])
     fields = [
         "spend",
         "impressions",

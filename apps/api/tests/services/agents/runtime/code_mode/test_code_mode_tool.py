@@ -1,4 +1,4 @@
-"""Tests for the catalog-bound `run_workflow` runtime tool."""
+"""Tests for the per-run `run_workflow` runtime tool."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -8,8 +8,8 @@ from pydantic_ai import ModelRetry, RunContext, ToolReturn
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
-from services.agents.runtime.code_mode.stubs import CodeModeCatalog
 from services.agents.runtime.tools import code_mode
+from services.agents.runtime.tools.contract import RuntimeToolDefinition
 
 
 def _ctx(*, trigger: str, tool_call_id: str | None = "workflow-call") -> RunContext:
@@ -22,34 +22,31 @@ def _ctx(*, trigger: str, tool_call_id: str | None = "workflow-call") -> RunCont
     )
 
 
-async def test_run_workflow_closes_over_catalog_and_stamps_run_metadata(
+async def test_run_workflow_exposes_deferred_tools_to_nested_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    catalog = CodeModeCatalog.build(())
+    definition = RuntimeToolDefinition(
+        name="deferred_read",
+        function=lambda query: query,
+        description="Read after tool search.",
+        code_eligible=True,
+    )
     expected = ToolReturn(return_value={"done": True})
     execute = AsyncMock(return_value=expected)
     monkeypatch.setattr(code_mode, "execute_code_mode_workflow", execute)
-    tool = code_mode.build_run_workflow_tool(catalog)
+    tool = code_mode.build_run_workflow_tool(((definition, "approval"),))
     ctx = _ctx(trigger="interactive")
 
     result = await tool.function(ctx, code="{'done': True}", reason="Compose reads")
 
     assert result is expected
-    assert ctx.deps.run.metadata_json == {
-        "kept": True,
-        "code_mode": {"wrapped_tool_names": []},
-    }
-    execute.assert_awaited_once_with(
-        ctx=ctx,
-        wrapped_toolset=catalog.wrapped_toolset,
-        outer_tool_call_id="workflow-call",
-        code="{'done': True}",
-        reason="Compose reads",
-    )
+    nested = execute.await_args.kwargs["wrapped_toolset"].tools["deferred_read"]
+    assert nested.defer_loading is False
+    assert nested.requires_approval is True
 
 
 async def test_run_workflow_requires_outer_call_identity() -> None:
-    tool = code_mode.build_run_workflow_tool(CodeModeCatalog.build(()))
+    tool = code_mode.build_run_workflow_tool(())
 
     with pytest.raises(ModelRetry, match="missing its runtime identity"):
         await tool.function(_ctx(trigger="interactive", tool_call_id=None), code="1")

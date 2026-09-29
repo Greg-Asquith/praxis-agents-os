@@ -185,7 +185,7 @@ default. _(enforced)_ The following rules define the defaults:
   record through the same dispatch choke point as a direct call. A nested
   approval carries the same staged-content, expiry, and audit treatment as a
   direct call's approval. Eligible gated and write tools may therefore be
-  exposed as workflow stubs; every decision remains scoped to one nested call
+  callable from workflows; every decision remains scoped to one nested call
   and its validated effective arguments. _(enforced)_
 - Batch consent is one list-shaped call whose complete bounded row set the
   operator reviews and may edit before approval. The edited set is what

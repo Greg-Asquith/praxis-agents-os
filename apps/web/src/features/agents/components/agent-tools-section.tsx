@@ -1,7 +1,7 @@
 // apps/web/src/features/agents/components/agent-tools-section.tsx
 
 import { useMemo, useState } from "react"
-import { InfoIcon, SearchIcon } from "lucide-react"
+import { SearchIcon } from "lucide-react"
 
 import { FormSection } from "@/components/forms/form-section"
 import {
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Popover, PopoverContent, PopoverHeader, PopoverTrigger } from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -26,7 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import type { AgentFormState } from "@/features/agents/components/agent-form-model"
 import {
   ALL_TOOL_PROVIDERS_VALUE,
@@ -43,14 +41,12 @@ import type { ToolCatalogEntry } from "@/features/tools/types"
 
 export function AgentToolsSection({
   onAllToolsChange,
-  onCodeModeEnabledChange,
   onToolModeChange,
   onToolModesChange,
   state,
   toolCatalog,
 }: {
   onAllToolsChange: (enabled: boolean) => void
-  onCodeModeEnabledChange: (enabled: boolean) => void
   onToolModeChange: (toolName: string, mode: RuntimeToolMode) => void
   onToolModesChange: (modes: Record<string, RuntimeToolMode>) => void
   state: AgentFormState
@@ -114,36 +110,6 @@ export function AgentToolsSection({
       title="Tools and approval policy"
     >
       <FieldGroup>
-        <Field orientation="horizontal">
-          <FieldContent>
-            <div className="flex items-center gap-1.5">
-              <FieldTitle>Let this agent combine tools in one workflow</FieldTitle>
-              <Popover>
-                <PopoverTrigger
-                  render={
-                    <Button
-                      aria-label="About combining tools"
-                      size="icon-xs"
-                      type="button"
-                      variant="ghost"
-                    />
-                  }
-                >
-                  <InfoIcon />
-                </PopoverTrigger>
-                <CodeModeInfoContent />
-              </Popover>
-            </div>
-            <FieldDescription>
-              The agent can work through several enabled tools as one clear workflow.
-            </FieldDescription>
-          </FieldContent>
-          <Switch
-            aria-label="Let this agent combine tools in one workflow"
-            checked={state.codeModeEnabled}
-            onCheckedChange={onCodeModeEnabledChange}
-          />
-        </Field>
         <Field orientation="horizontal">
           <FieldContent>
             <FieldTitle>{state.allTools ? "All tools enabled" : "Enable every tool"}</FieldTitle>
@@ -293,32 +259,5 @@ export function AgentToolsSection({
         </FieldSet>
       </FieldGroup>
     </FormSection>
-  )
-}
-
-function CodeModeInfoContent() {
-  return (
-    <PopoverContent align="start" className="w-[min(24rem,calc(100vw-2rem))]">
-      <CodeModeInfoBody />
-    </PopoverContent>
-  )
-}
-
-function CodeModeInfoBody() {
-  return (
-    <>
-      <PopoverHeader>
-        <h3 className="font-medium">Combine tools in one workflow</h3>
-        <p className="text-muted-foreground">
-          Lets the agent combine several tools in one workflow, working through data without
-          back-and-forth.
-        </p>
-      </PopoverHeader>
-      <p className="text-muted-foreground text-sm">
-        Use it for agents that run reports, reconcile, or act on many items at once — for example,
-        run an ads report, work out the weakest campaigns, and pause them. Leave it off for simple
-        chat or single-action agents.
-      </p>
-    </>
   )
 }

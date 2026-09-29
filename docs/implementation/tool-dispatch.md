@@ -45,9 +45,10 @@ once it searches for it. Definitions that the model needs on most turns set
 and loading, planning, delegation, `run_workflow`, and `report_completion`.
 Integration, native helper, artifact, chart, skill-authoring, and
 workspace-defined tools defer. Deferral changes only schema visibility;
-selection, policy, approval, and dispatch are unchanged. Code Mode's wrapped
-catalogue ignores deferral, so a wrapped tool is always callable from a
-workflow.
+selection, policy, approval, and dispatch are unchanged. Code-eligible tools
+also mount inside `run_workflow`, which every agent has beside its direct
+tools. That toolset ignores deferral, so a workflow can call any mounted
+code-eligible tool.
 
 When a conversation or schedule has no selection for a connected provider,
 the active context prompt block adds one line naming that provider. In a

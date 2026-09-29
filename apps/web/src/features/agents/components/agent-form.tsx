@@ -205,9 +205,6 @@ export function AgentForm(props: AgentFormProps) {
                   onAllToolsChange={(enabled) => {
                     setState((current) => setAllTools(current, toolCatalog.tools, enabled))
                   }}
-                  onCodeModeEnabledChange={(enabled) => {
-                    setField("codeModeEnabled", enabled)
-                  }}
                   onToolModeChange={setToolMode}
                   onToolModesChange={setToolModes}
                   state={state}

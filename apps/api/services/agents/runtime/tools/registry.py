@@ -151,7 +151,6 @@ def build_runtime_tools(
     include_delegation: bool = False,
     active_context: "ResolvedActiveContext | None" = None,
     skipped_tool_names: list[str] | None = None,
-    wrapped_tool_names: list[str] | None = None,
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
     workspace_policies: Mapping[str, ToolPolicy] | None = None,
@@ -160,17 +159,11 @@ def build_runtime_tools(
 ):
     """Resolve an agent row's configured tools into Pydantic AI tools."""
     # Importing the Code Mode package while this registry initializes reaches dispatch.
-    from services.agents.runtime.code_mode.stubs import (
-        CodeModeCatalog,
-        UnsupportedCodeModeSchemaError,
-        render_tool_stub,
-    )
     from services.agents.runtime.tools.code_mode import (
         RUN_WORKFLOW_TOOL_NAME,
         build_run_workflow_tool,
     )
 
-    code_mode_enabled = bool(agent.code_mode_enabled)
     definition_lookup = {
         **RUNTIME_TOOL_CATALOG,
         **{definition.name: definition for definition in workspace_definitions},
@@ -185,19 +178,12 @@ def build_runtime_tools(
             if definition.auto_mount
         ),
         *additional_tool_names,
-        *(
-            name
-            for name in resolve_selected_tool_names(agent, workspace_definitions)
-            if name != RUN_WORKFLOW_TOOL_NAME
-        ),
+        *resolve_selected_tool_names(agent, workspace_definitions),
     ]
-    if code_mode_enabled:
-        tool_names.append(RUN_WORKFLOW_TOOL_NAME)
     policies = _normalize_tool_policies(agent.tool_policies or {})
     tools = []
-    wrapped_entries: list[tuple[RuntimeToolDefinition, ToolPolicy]] = []
-    mounted_tool_names: set[str] = set()
-    mount_run_workflow = False
+    workflow_entries: list[tuple[RuntimeToolDefinition, ToolPolicy]] = []
+    mounted_tool_names: set[str] = {RUN_WORKFLOW_TOOL_NAME}
 
     for name in tool_names:
         if name in mounted_tool_names:
@@ -235,37 +221,17 @@ def build_runtime_tools(
                 agent.id,
             )
             continue
-        if name == RUN_WORKFLOW_TOOL_NAME:
-            mount_run_workflow = code_mode_enabled
-            continue
         effective_policy = permissions.resolve_tool_policy(
             definition,
             agent_policies=policies,
             workspace_policies=workspace_policies or {},
         )
-        if code_mode_enabled and definition.code_eligible:
-            try:
-                render_tool_stub(definition)
-            except UnsupportedCodeModeSchemaError as exc:
-                logger.warning(
-                    "Keeping code-eligible runtime tool %s directly mounted because its schema "
-                    "cannot be rendered: %s",
-                    definition.name,
-                    exc,
-                    extra={
-                        "agent_id": str(agent.id),
-                        "tool_name": definition.name,
-                    },
-                )
-            else:
-                wrapped_entries.append((definition, effective_policy))
-                if wrapped_tool_names is not None:
-                    wrapped_tool_names.append(definition.name)
-                continue
         tools.append(definition.to_pydantic_tool(policy=effective_policy))
+        if definition.code_eligible:
+            workflow_entries.append((definition, effective_policy))
 
-    if mount_run_workflow:
-        tools.append(build_run_workflow_tool(CodeModeCatalog.build(wrapped_entries)))
+    if workflow_entries:
+        tools.append(build_run_workflow_tool(workflow_entries))
 
     if include_delegation:
         tools.extend(build_delegation_tools())

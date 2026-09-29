@@ -10,7 +10,6 @@ export type Agent = {
   instructions: string
   workspace_id: string
   created_by: string
-  code_mode_enabled: boolean
   // For an all-tools agent, the resolved selection.
   tool_names: string[]
   all_tools: boolean
@@ -44,7 +43,6 @@ export type AgentCreateRequest = {
   slug?: string | null
   description?: string | null
   instructions: string
-  code_mode_enabled?: boolean
   tool_names?: string[]
   all_tools?: boolean
   excluded_tool_names?: string[]

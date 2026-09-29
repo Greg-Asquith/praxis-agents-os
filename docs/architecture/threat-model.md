@@ -418,8 +418,8 @@ the workflow lifetime even when code extracts, concatenates, filters, catches
 an exception, or reshapes the content. Final results and captured output are
 wrapped with `source_kind="code_mode_workflow"`. The bounded source list and
 overflow count remain operator-facing trace metadata. Durable approval state
-persists the same taint state across suspension before write stubs can enter
-the wrapped catalog.
+persists the same taint state across suspension before a workflow can call
+another write tool.
 
 ## 8. Shared conversation display
 

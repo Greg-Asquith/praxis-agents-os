@@ -78,7 +78,6 @@ async def test_create_agent_route_persists_public_model_shape(
                 "google_ads_get_report_field": "approval",
                 "google_ads_list_report_fields": "approval",
             },
-            "code_mode_enabled": True,
             "allowed_agent_ids": [str(delegate.id)],
             "model_provider": "OPENAI",
             "model": "gpt-6-luna",
@@ -97,7 +96,6 @@ async def test_create_agent_route_persists_public_model_shape(
     assert body["created_by"] == str(user.id)
     assert body["tool_names"] == ["web_search"]
     assert body["tool_policies"] == {"web_search": "auto"}
-    assert body["code_mode_enabled"] is True
     assert body["allowed_agent_ids"] == [str(delegate.id)]
     assert body["model_provider"] == "openai"
     assert body["model"] == "gpt-6-luna"
@@ -110,7 +108,6 @@ async def test_create_agent_route_persists_public_model_shape(
     )
     assert fetch_response.status_code == 200
     assert fetch_response.json()["metadata"] == {"accent": "green"}
-    assert fetch_response.json()["code_mode_enabled"] is True
 
     audit_event = await db_session.scalar(
         select(AuditEvent).where(
@@ -158,7 +155,6 @@ async def test_update_and_delete_agent_routes_apply_workspace_write_access(
                 "google_ads_get_report_field": "approval",
                 "google_ads_list_report_fields": "approval",
             },
-            "code_mode_enabled": True,
             "is_active": False,
             "metadata": {"stage": "prod"},
         },
@@ -169,7 +165,6 @@ async def test_update_and_delete_agent_routes_apply_workspace_write_access(
     assert update_body["name"] == "Production Agent"
     assert update_body["tool_names"] == ["web_search"]
     assert update_body["tool_policies"] == {"web_search": "auto"}
-    assert update_body["code_mode_enabled"] is True
     assert update_body["is_active"] is False
     assert update_body["metadata"] == {"stage": "prod"}
 

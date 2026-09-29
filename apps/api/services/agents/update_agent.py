@@ -146,7 +146,6 @@ async def update_agent(
 
     for field_name in (
         "model_settings",
-        "code_mode_enabled",
         "max_steps",
         "is_active",
         "is_favorite",

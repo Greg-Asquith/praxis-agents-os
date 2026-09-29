@@ -66,7 +66,6 @@ const agent: Agent = {
   instructions: "Send email.",
   workspace_id: "workspace-1",
   created_by: "user-1",
-  code_mode_enabled: false,
   tool_names: [],
   all_tools: false,
   excluded_tool_names: [],

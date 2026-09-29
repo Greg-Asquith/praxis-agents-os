@@ -296,7 +296,6 @@ async def test_top_level_workflow_approval_restores_interpreter_and_completes(
         committed_db_session_factory,
         tool_names=[effects.name],
         tool_policies={effects.name: "approval"},
-        code_mode_enabled=True,
     )
     model = scripted_model(
         turns=[
@@ -784,10 +783,6 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
     child = await add_scenario_delegate(
         committed_db_session_factory, context, tool_names=[effects.name]
     )
-    async with committed_db_session_factory() as db:
-        saved = await db.get(Agent, child.id)
-        saved.code_mode_enabled = True
-        await db.commit()
     model = _delegation_model(
         child_ids=[str(child.id)],
         write_tool=effects.name,

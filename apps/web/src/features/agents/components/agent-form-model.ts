@@ -97,7 +97,6 @@ export type AgentFormState = {
   allTools: boolean
   allowedAgentIds: string[]
   azureDeployment: string
-  codeModeEnabled: boolean
   description: string
   identityColor: string
   instructions: string
@@ -157,7 +156,6 @@ export function initialAgentFormState(
     allTools: agent?.all_tools ?? false,
     allowedAgentIds: agent?.allowed_agent_ids ?? [],
     azureDeployment: agent?.azure_deployment ?? "",
-    codeModeEnabled: agent?.code_mode_enabled ?? false,
     description: agent?.description ?? "",
     identityColor: identityColorFromMetadata(agent?.metadata ?? null),
     instructions: agent?.instructions ?? "",
@@ -343,7 +341,6 @@ export function buildAgentPayload(
   const basePayload = {
     allowed_agent_ids: state.allowedAgentIds,
     azure_deployment: modelSelection.azure_deployment,
-    code_mode_enabled: state.codeModeEnabled,
     description: optionalText(state.description),
     instructions,
     is_active: state.isActive === "true",
@@ -407,7 +404,6 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
     current.instructions !== initial.instructions ||
     current.modelSelection !== initial.modelSelection ||
     current.azureDeployment !== initial.azureDeployment ||
-    current.codeModeEnabled !== initial.codeModeEnabled ||
     current.allTools !== initial.allTools ||
     current.maxSteps !== initial.maxSteps ||
     current.isActive !== initial.isActive ||

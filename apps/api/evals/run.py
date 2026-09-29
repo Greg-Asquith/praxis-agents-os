@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
@@ -31,6 +32,7 @@ from evals.evaluators import (
     ForbiddenTools,
     OutputFormat,
     RequiredText,
+    WorkflowArguments,
 )
 from evals.memory_calibration import main as run_memory_calibration
 from models.agent import Agent
@@ -44,6 +46,7 @@ from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.history import HistoryCompaction
 from services.agents.runtime.loop import build_runtime_agent
 from services.agents.runtime.untrusted import UntrustedContent, serialize_untrusted_content
+from services.integrations.context.domain import ResolvedActiveContext, ResolvedContextEntry
 from services.runtime_catalogs import assemble_runtime_catalogs
 
 DATASET_PATH = Path(__file__).parent / "datasets" / "agent_behavior.yaml"
@@ -51,6 +54,7 @@ FIXTURE_ROOT = Path(__file__).parents[1] / "tests"
 type EvalInputs = dict[str, Any]
 type EvalMetadata = dict[str, Any]
 type BehaviorDataset = Dataset[EvalInputs, EvalOutput, EvalMetadata]
+_LOCAL_TOOL_SEARCH_NAME = "search_tools"
 
 
 def _configured_model() -> tuple[str, str]:
@@ -80,13 +84,10 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
         allowed_agent_ids=[],
     )
     summary = _history_summary_fixture(inputs)
-    runtime = (
-        build_runtime_agent(
-            agent_config,
-            history_compaction=HistoryCompaction(summary=summary),
-        )
-        if summary is not None
-        else build_runtime_agent(agent_config)
+    runtime = build_runtime_agent(
+        agent_config,
+        active_context=_active_context_fixture(inputs),
+        history_compaction=HistoryCompaction(summary=summary) if summary is not None else None,
     )
     text_chunks: list[str] = []
     called_tools: list[str] = []
@@ -100,6 +101,8 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
     ) as stream:
         async for event in stream:
             if isinstance(event, FunctionToolCallEvent):
+                if event.part.tool_name == _LOCAL_TOOL_SEARCH_NAME:
+                    continue
                 called_tools.append(event.part.tool_name)
                 tool_arguments.append(
                     event.part.args
@@ -116,6 +119,29 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
         called_tools=tuple(called_tools),
         tool_arguments=tuple(tool_arguments),
     )
+
+
+def _active_context_fixture(inputs: EvalInputs) -> ResolvedActiveContext | None:
+    raw_entries = inputs.get("active_context")
+    if not raw_entries:
+        return None
+    entries = []
+    for raw in raw_entries:
+        external_id = str(raw["external_id"])
+        entries.append(
+            ResolvedContextEntry(
+                integration_resource_id=uuid5(NAMESPACE_URL, f"resource:{external_id}"),
+                provider_key=raw["provider_key"],
+                resource_type=raw["resource_type"],
+                external_id=external_id,
+                display_name=raw["display_name"],
+                connection_id=uuid5(NAMESPACE_URL, f"connection:{raw['provider_key']}"),
+                connection_label=raw["display_name"],
+                connection_status="active",
+                write_allowed=bool(raw.get("write_allowed", False)),
+            )
+        )
+    return ResolvedActiveContext(source="conversation", entries=tuple(entries))
 
 
 def _channel_fixture_history(inputs: EvalInputs):
@@ -192,6 +218,7 @@ def _load_dataset(judge_model: Model) -> BehaviorDataset:
             ForbiddenTools,
             OutputFormat,
             RequiredText,
+            WorkflowArguments,
         ],
     )
     for case in dataset.cases:

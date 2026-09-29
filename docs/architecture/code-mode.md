@@ -1,9 +1,9 @@
 # Code Mode orchestration
 
-Status: **implemented end to end**. Agents with code mode enabled expose one
-orchestration tool, `run_workflow`, that runs a short model-authored Python
-script in a sandboxed interpreter. The script composes the agent's
-already-authorized tools. Every nested call still crosses the same
+Status: **implemented end to end**. Every agent with at least one mounted
+code-eligible tool also gets `run_workflow`, a peer tool that runs a short
+model-authored Python script in a sandboxed interpreter. The script composes
+the agent's already-authorized tools, which stay directly callable. Every nested call still crosses the same
 authorization, approval, and audit path as a direct call. The web app renders
 the workflow script, its nested calls, and mid-workflow approvals live and on
 replay. This note describes how it works, why it is shaped this way, and how
@@ -14,7 +14,7 @@ to build on it.
 Without code mode, a multi-step data task uses one model request per tool
 call. Every intermediate result travels through model context, which uses
 tokens and can introduce transcription errors. Code mode lets the agent write
-one short Python script against typed stubs of its available tools. A sandboxed
+one short Python script that calls its available tools by name. A sandboxed
 interpreter can fetch, filter, aggregate, and act while intermediate data stays
 local. This design reduces model requests and token use. It also returns
 computed values instead of transcribed values.
@@ -35,70 +35,62 @@ authority and execution boundaries.
 
 ## Enablement
 
-Code mode is a per-agent capability: `agents.code_mode_enabled`, one checkbox
-in the agent form above the tool list. `run_workflow` is never a catalog row
-and cannot be mounted directly. There is no workspace-global switch and no
-automatic activation. The checkbox popover contains the operator-facing
-explanation. It describes outcomes without exposing sandbox implementation
-details.
+Code mode is always on. There is no per-agent or workspace switch.
+`run_workflow` is never a catalog row, so it cannot be selected, disabled, or
+given a policy override. `build_runtime_tools`
+(`services/agents/runtime/tools/registry.py`) stays the sole mounting
+authority. It mounts `run_workflow` when at least one mounted tool is
+`code_eligible`, which in practice is every agent, because the file tools are
+eligible and always mounted.
 
 ## How a workflow executes
 
-### 1. The catalog replaces direct mounting
+### 1. Direct calls and workflows are peers
 
-`build_runtime_tools` (`services/agents/runtime/tools/registry.py`) stays the
-sole mounting authority. After agent selection, workspace disables, and
-integration-context filtering, tools that are `code_eligible` are
-diverted into a per-run `CodeModeCatalog` instead of being mounted directly.
-Their JSON tool schemas leave the model request entirely; the catalog renders
-them as concise Python function stubs — typed async signatures, declared
-`output_model` return shapes, and one-line descriptions — embedded in the
-`run_workflow` tool description (`code_mode/stubs.py`). A one-tool operation
-becomes a one-line script; that trade is accepted so a request never pays for
-both representations.
+After agent selection, workspace disables, and integration-context filtering,
+every allowed tool mounts directly. Code-eligible tools also go into the
+per-run toolset that `run_workflow` closes over
+(`tools/code_mode.py:build_run_workflow_tool`). A workflow calls a tool by its
+direct name with the same keyword arguments as its JSON schema, so the model
+learns one argument shape per tool.
 
-Integration stubs expose provider-native scoped references only. Their fixed
+The model chooses between the two paths. The `run_workflow` description
+carries short, absolute rules:
+
+- Call a tool directly for one call, or when you need to read a result before
+  deciding the next step.
+- Use `run_workflow` for three or more calls, loops over results, or filtering
+  and aggregating data you don't need to read.
+- Never wrap a single call in a workflow unless you are filtering or
+  aggregating its result.
+- Search for a deferred tool before using it, directly or in a workflow, so
+  you know its arguments.
+
+The description lists the callable tool names in two groups: loaded tools and
+deferred tools. A deferred tool's schema is visible only after tool search
+reveals it, but a workflow can call any mounted code-eligible tool,
+discovered or not. Calling a name outside the run's toolset raises a catchable
+`NameError` that names the tool.
+
+Code-eligible tools with a declared `output_model` send that model's JSON
+schema as their return schema (`include_return_schema`), so the model knows
+the shape a workflow receives. Anthropic and OpenAI receive it as text in the
+tool description. A tool without an output model returns an undeclared shape.
+
+Integration tools accept provider-native scoped references only. Their fixed
 results are operation-specific typed dictionaries, so a workflow can pass a
-created reference directly into a later tool without a discovery/report call
-or a Praxis UUID. The server resolves each provider scope against the active
-context at the nested dispatch boundary. Missing scopes fail closed.
+created reference directly into a later tool without a discovery or report
+call or a Praxis UUID. The server resolves each provider scope against the
+active context at the nested dispatch boundary. Missing scopes fail closed.
 
-A tool whose schema falls outside the supported stub subset stays directly
-mounted (with a logged warning) rather than receiving a lossy stub.
-
-### Signature renderer ownership
-
-Praxis retains `code_mode/stubs.py` as the schema renderer. The public
-Pydantic AI 2.50.0 `FunctionSignature` API does not preserve the complete
-catalogue contract. Its tagged implementation is documented in the
-[upstream signature source](https://github.com/pydantic/pydantic-ai/blob/v2.50.0/pydantic_ai_slim/pydantic_ai/function_signature.py).
-
-The comparison establishes these adoption blockers:
-
-- Recursive non-object definitions expand to `Any` at recursive branches.
-  This loses the named recursive value types used by report outputs.
-- Conflicting input and output definitions within one function receive the
-  same prefixed name. Rendering emits two different classes under that name
-  and can leave output references pointing to an undefined unprefixed name.
-- A required property with a schema default becomes optional. An optional
-  non-nullable property without a default gains `None` in its type.
-- Unsupported keywords are ignored instead of causing direct-tool fallback.
-  Keyword fields such as Outlook's `from` produce invalid class syntax.
-
-Upstream preserves the ordinary schema matrix, enum references, dictionaries,
-and discriminated unions, and adds parameter descriptions. Those benefits do
-not justify a second type renderer to repair the lost semantics. No public
-renderer is used in production. The strict Praxis adapter continues to own
-schema rejection, shared definitions, output conflict names, async keyword-only
-signatures, and deterministic catalogue assembly. Fields named with Python
-keywords use functional `TypedDict` syntax, preserving their exact wire names.
-
-The 62 eligible first-party definitions compile individually and together.
-The combined catalogue passes the pinned Monty 1.0.0 type checker. Tests also
-consume a keyword-named output and reject an invalid operation on its declared
-type. Upstream compiles 60 of those definitions individually; Outlook message
-read and search fail on `from`. Future schema or provider additions must rerun
-the complete catalogue matrix before renderer adoption is reconsidered.
+Workflows learn argument shapes from the same JSON schemas as direct calls,
+not from a second Python rendering. A model that writes a workflow before
+searching for a deferred tool can guess its arguments. Nested argument
+validation rejects the call with a catchable `RuntimeError` that names the
+tool and the invalid fields, so the model can redraft. The
+`workflow_arguments_*` and `workflow_selection_*` cases in
+`evals/datasets/agent_behavior.yaml` measure argument errors and the choice
+between direct calls and workflows on live models.
 
 ### 2. The script runs in a Monty sandbox
 
@@ -106,7 +98,7 @@ The bridge (`code_mode/bridge.py`) executes the script through a process-local
 pool of `pydantic-monty` subprocess workers (`code_mode/executor.py`). The
 interpreter receives **no ambient authority**: no OS handler, mount, network,
 credentials, database, workspace filesystem, or third-party imports. Its only
-external functions are the generated stubs for that run's eligible tools.
+external functions are that run's mounted eligible tools.
 Environment and filesystem access fail; network modules are not importable.
 Scripts can read the worker's UTC clock and draw random values. Sleeps return
 immediately, so a script cannot hold a pool worker idle. The import allowlist
@@ -121,7 +113,7 @@ tool. Eligibility never grants authority; dispatch still enforces every call.
 
 ### 3. Nested calls go through the framework, not around it
 
-For each awaited stub call, the bridge builds an inner Pydantic AI
+For each awaited tool call, the bridge builds an inner Pydantic AI
 `ToolManager` in the same shape as the framework's own per-step path,
 synthesizes a nested `ToolCallPart` (with its own call id and the outer
 `run_workflow` call as parent), and invokes `ToolManager.handle_call`. That
@@ -143,9 +135,9 @@ The complete trust chain is:
 
 ```text
 model
-  -> run_workflow (only directly visible orchestration tool)
+  -> run_workflow (peer of the direct tools)
     -> Monty worker (no ambient OS, files, network, DB, or credentials)
-      -> generated eligible-tool stub
+      -> eligible tool function name
         -> inner Pydantic AI ToolManager
           -> Hooks capability
             -> dispatch_tool_execution
@@ -295,14 +287,13 @@ always-mounted internals, `report_completion`, `run_workflow`, provider-native
 `run_code`, capability-loading tools).
 
 An eligible tool must return data that is useful to compose and that Monty can
-serialize, have a schema the stub generator can represent faithfully, and
-already be selected and allowed for the agent, workspace, and context.
-Eligible tools defer loading like any other tool when mounted directly, but
-the catalogue always renders their stubs. Support for Model Context Protocol
-(MCP) tools is pending.
+serialize, and already be selected and allowed for the agent, workspace, and
+context. Eligible tools defer loading like any other tool, and a workflow can
+still call them before the model discovers them. Support for Model Context
+Protocol (MCP) tools is pending.
 Binary or multimodal producers, faithful-render surfaces such as Gmail message reading,
 conversational acts, memory, planning, skill loading, delegation, and
-completion reporting stay direct — they are conversation-shaped, not
+completion reporting are direct-only: they are conversation-shaped, not
 data-shaped.
 
 Helper-native tools also stay direct unless they return text-only JSON-safe
@@ -342,20 +333,17 @@ container. Live progress streams over the existing SSE protocol
 event names before the server may emit them, so protocol changes deploy
 client-first.
 
-## Guidance has one source per audience
+## Model guidance
 
-Model-facing guidance is generated with the stub catalog from the same source
-as the signatures and output contracts (`code_mode/stubs.py`): workflows for
-multi-call loops, chained identifiers, and calculations; direct tools for
-single calls and conversation-shaped acts; `run_code` for files; the last
-expression is the result; intermediate results are variables to reduce, not
-payloads to return. It names the exceptions failed and denied nested calls
-raise, and renders the call, time, result, and output limits from the
-`AGENT_CODE_MODE_*` settings. Sandbox syntax and stdlib claims come from
-verified probes of the pinned interpreter
-(`tests/services/agents/runtime/code_mode/test_monty_probes.py`), not
-hand-maintained prose, so guidance cannot drift from what the sandbox actually
-supports. Operator-facing guidance lives only in the enablement popover.
+The `run_workflow` description (`tools/code_mode.py`) is the only
+model-facing guidance: the choice rules above, the last expression as the
+result, intermediate results as variables to reduce rather than payloads to
+return, the exceptions that failed and denied nested calls raise, `run_code`
+for files, and the call, time, result, and output limits rendered from the
+`AGENT_CODE_MODE_*` settings. Its sandbox syntax and import claims match the
+probes of the pinned interpreter
+(`tests/services/agents/runtime/code_mode/test_monty_probes.py`). Change both
+together. The operator sees no Code Mode setting.
 
 ## Module layout
 
@@ -363,31 +351,29 @@ supports. Operator-facing guidance lives only in the enablement popover.
 apps/api/
   core/settings/code_mode.py           # AGENT_CODE_MODE_* bounds + cross-validation
   services/agents/runtime/
-    tools/code_mode.py                 # run_workflow definition and per-run tool factory
+    tools/code_mode.py                 # run_workflow definition, guidance, and per-run factory
     code_mode/
-      stubs.py                         # CodeModeCatalog and Python stub rendering
       executor.py                      # Monty worker pool, execute/resume drivers
       bridge.py                        # nested dispatch, taint, trace, bounds, suspension
       metadata.py                      # nested-dispatch metadata keys shared with dispatch
       state.py                         # durable resume artifact build/load/clear
       approval.py                      # trusted nested-approval metadata contract
 apps/web/src/features/
-  agents/components/                   # code-mode enablement checkbox and popover
   conversations/components/            # workflow card, nested-call rows, approvals, replay
 ```
 
-Tests live in `tests/services/agents/runtime/code_mode/` (stub rendering,
+Tests live in `tests/services/agents/runtime/code_mode/` (the tool factory,
 bridge parity, taint matrix, executor, durable state, settings) and
 `tests/scenarios/test_code_mode.py` (end-to-end suspension/resume across
-process boundaries, batch approvals, hostile-output framing, role denial).
+process boundaries, batch approvals, hostile-output framing, role denial,
+unmounted tool names). `tests/scenarios/test_tool_search.py` covers a
+deferred tool that is discovered and then called directly and in a workflow.
 
 ## Building on it
 
 - **Making a tool code-eligible**: set `code_eligible=True` on its
-  `RuntimeToolDefinition`, keep its input schema inside the supported stub
-  subset (`stubs.py` raises `UnsupportedCodeModeSchemaError` otherwise, and
-  the registry falls back to direct mounting), and declare an `output_model`
-  so the stub advertises a typed return. If it writes and the provider has a
+  `RuntimeToolDefinition` and declare an `output_model` so the model sees its
+  return schema. If it writes and the provider has a
   batch operation, follow the batch-consent rule above: one list-shaped
   argument, an editable `records` presentation showing every row, and a
   declared maximum batch size.
@@ -403,8 +389,8 @@ process boundaries, batch approvals, hostile-output framing, role denial).
 
 Some extensions are deliberately excluded until their prerequisite design
 exists, rather than being half-supported: parallel nested dispatch (needs safe
-session isolation), stubs for MCP-derived tools (which need a threat-model
-delta for MCP output flowing through scripts),
+session isolation), workflow access to MCP-derived tools (which need a
+threat-model delta for MCP output flowing through scripts),
 in-sandbox tool discovery, workspace-level controls, workflow-scoped tool
 grants, because consent can cover unreviewed future arguments, a deduplicating
 execution ledger that could replay past writes instead of the fail-closed
