@@ -391,9 +391,9 @@ async def test_cumulative_sql_timeout_queues_history_in_fresh_settlement_session
         assert job.initiated_by_user_id == context.user_id
         before = list(
             await db.scalars(
-                select(ConversationMessage).where(
-                    ConversationMessage.conversation_id == context.conversation_id
-                )
+                select(ConversationMessage)
+                .where(ConversationMessage.conversation_id == context.conversation_id)
+                .order_by(ConversationMessage.sequence)
             )
         )
         assert [row.role for row in before] == ["user", "assistant"]
