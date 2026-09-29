@@ -90,6 +90,7 @@ _SKILL_TEXT_FIELDS = (
 
 def _skill_summary(skill: SkillRead) -> dict[str, object]:
     return {
+        "id": str(skill.id),
         "name": skill.name,
         "human_name": skill.human_name,
         "description": skill.description,
@@ -340,7 +341,7 @@ def _resolve_ready_document(skill: Skill, document: str) -> tuple[str, SkillDocu
         running_label="Creating Skill",
         completed_label="Created Skill {human_name}",
         failed_label="Couldn't Create Skill",
-        approval_title="Create skill?",
+        approval_title="Create a Skill",
         approval_prompt="Review this skill before it is saved.",
         approve_label="Create Skill",
         arg_fields=(

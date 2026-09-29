@@ -12,6 +12,7 @@ import { memoryToolPresenter } from "@/features/conversations/components/memory-
 import { runCodeToolPresenter } from "@/features/conversations/components/run-code-tool-presenter"
 import { skillActivationPresenter } from "@/features/conversations/components/skill-activation-presenter"
 import { skillDocumentReadPresenter } from "@/features/conversations/components/skill-document-read-presenter"
+import { skillToolPresenter } from "@/features/conversations/components/skill-tool-presenter"
 import { todoToolPresenters } from "@/features/conversations/components/todo-list-presenter"
 import { webFetchToolPresenter } from "@/features/conversations/components/web-fetch-tool-presenter"
 import { webSearchToolPresenter } from "@/features/conversations/components/web-search-tool-presenter"
@@ -37,6 +38,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   ...delegationToolPresenters,
   skillActivationPresenter,
   skillDocumentReadPresenter,
+  skillToolPresenter,
   ...todoToolPresenters,
   fileToolPresenter,
   kbToolPresenter,

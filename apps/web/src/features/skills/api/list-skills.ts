@@ -39,7 +39,7 @@ async function listSkills({
   })
 }
 
-export function skillsQueryOptions(params: ListSkillsParams = {}) {
+function skillsQueryOptions(params: ListSkillsParams = {}) {
   return queryOptions({
     queryKey: skillsQueryKeys.list(params),
     queryFn: () => listSkills(params),
