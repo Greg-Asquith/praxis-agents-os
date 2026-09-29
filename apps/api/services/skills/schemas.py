@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from models.skills import Skill
 from models.user import User
-from utils.content import ContentScope, can_manage_platform_content
+from services.skills.utils import can_manage_platform_skill
+from utils.content import ContentScope
 from utils.pagination import OffsetPage
 from utils.validation import normalize_optional_text
 
@@ -29,6 +30,7 @@ class SkillRead(BaseModel):
     can_manage_platform: bool = False
     workspace_id: UUID | None
     created_by: UUID
+    created_by_name: str | None = None
     documentation_refs: dict[str, Any] = Field(default_factory=dict)
     is_active: bool
     is_favorite: bool
@@ -44,9 +46,11 @@ class SkillRead(BaseModel):
     @classmethod
     def from_skill(cls, skill: Skill, *, actor: User | None = None) -> "SkillRead":
         response = cls.model_validate(skill)
-        response.can_manage_platform = can_manage_platform_content(
-            scope=skill.scope, deleted=skill.deleted, actor=actor
-        )
+        response.can_manage_platform = can_manage_platform_skill(skill, actor)
+        # Read only an already-loaded creator so serialisation never lazy-loads.
+        creator = skill.__dict__.get("creator")
+        if creator is not None:
+            response.created_by_name = creator.display_name or creator.email
         return response
 
 

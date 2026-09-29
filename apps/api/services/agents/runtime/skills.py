@@ -5,7 +5,10 @@
 import json
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import cache
+from pathlib import Path
 from typing import Any
 
 from pydantic_ai import ModelRetry, RunContext, Tool
@@ -28,6 +31,18 @@ logger = logging.getLogger(__name__)
 SKILL_CAPABILITY_PREFIX = "skill-"
 SKILL_DOCUMENTS_CAPABILITY_ID = "skills-documents"
 READ_SKILL_DOCUMENT_TOOL_NAME = "read_skill_document"
+INTERNAL_SKILL_CAPABILITY_PREFIX = "internal-"
+INTERNAL_SKILLS_DIR = Path(__file__).parent / "internal_skills"
+
+
+@dataclass(frozen=True)
+class InternalSkill:
+    """A skill that ships with the codebase and mounts on every agent."""
+
+    name: str
+    human_name: str
+    description: str
+    instructions: str
 
 
 def skill_capability_id(skill: Skill) -> str:
@@ -62,6 +77,25 @@ def build_skill_capabilities(
     return capabilities
 
 
+@cache
+def load_internal_skills() -> tuple[InternalSkill, ...]:
+    """Parse the bundled internal skill files once per process."""
+    return tuple(_parse_internal_skill(path) for path in sorted(INTERNAL_SKILLS_DIR.glob("*.md")))
+
+
+def build_internal_skill_capabilities() -> list[AgentCapability[RuntimeDeps]]:
+    """Return deferred capabilities for the internal skills every agent receives."""
+    return [
+        Capability(
+            id=f"{INTERNAL_SKILL_CAPABILITY_PREFIX}{skill.name}",
+            description=f"{skill.human_name}: {skill.description}",
+            instructions=skill.instructions,
+            defer_loading=True,
+        )
+        for skill in load_internal_skills()
+    ]
+
+
 def record_skill_activation(
     skills: Sequence[Skill],
     part: Any,
@@ -87,6 +121,23 @@ def record_skill_activation(
             },
         )
         return
+
+
+def _parse_internal_skill(path: Path) -> InternalSkill:
+    """Split a Markdown file with `key: value` frontmatter into an internal skill."""
+    _, frontmatter, body = path.read_text(encoding="utf-8").split("---\n", 2)
+    fields = {
+        key.strip(): value.strip()
+        for key, value in (line.split(":", 1) for line in frontmatter.splitlines() if line.strip())
+    }
+    if fields.get("name") != path.stem:
+        raise RuntimeError(f"Internal skill {path.name} must declare name: {path.stem}")
+    return InternalSkill(
+        name=fields["name"],
+        human_name=fields["human_name"],
+        description=fields["description"],
+        instructions=body.strip(),
+    )
 
 
 def _catalog_description(skill: Skill) -> str:

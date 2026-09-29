@@ -21,10 +21,16 @@ short description first and loads the full instructions only when the task
 requires them. A skill can also include supporting documents, such as a report
 template or style guide.
 
-Super admins can also publish a platform skill to every workspace. Platform
-skills contain instructions only, are marked **Platform** in the Skills list,
-and can be changed only by a super admin. Workspace members can assign them to
-agents but cannot edit or delete them.
+To create or improve a skill in conversation, ask any agent. The agent asks
+about the task, drafts the skill with you, and shows it for your approval
+before saving. To use the new skill, assign it to your agents.
+
+To share a skill with every workspace, select **Make available to every
+workspace** when you create it. Shared skills contain instructions only and
+are marked **Platform** in the Skills list with the name of the person who
+owns them. Everyone can assign them to agents, but only you and super admins
+can edit or delete a skill you shared. To change someone else's shared skill,
+ask its owner.
 
 Use a skill if you repeat the same instructions in several conversations. For
 example, create a skill when every customer onboarding email

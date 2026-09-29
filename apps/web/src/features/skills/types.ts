@@ -25,8 +25,10 @@ export type Skill = {
   description: string
   instructions: string
   scope: "workspace" | "platform"
+  can_manage_platform: boolean
   workspace_id: string | null
   created_by: string
+  created_by_name: string | null
   documentation_refs: Record<string, SkillDocumentManifestEntry>
   is_active: boolean
   is_favorite: boolean

@@ -18,8 +18,10 @@ from models.agent_run import AgentRun
 from models.skills import Skill
 from services.agents.runtime.load_context import load_agent_skills
 from services.agents.runtime.skills import (
+    INTERNAL_SKILLS_DIR,
     SKILL_DOCUMENTS_CAPABILITY_ID,
     build_skill_capabilities,
+    load_internal_skills,
     record_skill_activation,
     skill_capability_id,
 )
@@ -112,6 +114,19 @@ async def test_platform_skill_activation_does_not_mutate_global_usage_state() ->
     record_skill_activation([platform_skill], part, run=run)
 
     assert platform_skill.last_used_at is None
+
+
+async def test_every_bundled_internal_skill_parses_within_skill_limits() -> None:
+    skills = load_internal_skills()
+
+    assert [skill.name for skill in skills] == sorted(
+        path.stem for path in INTERNAL_SKILLS_DIR.glob("*.md")
+    )
+    for skill in skills:
+        assert skill.human_name
+        assert 0 < len(skill.description) <= 1024
+        assert 0 < len(skill.instructions) <= 20000
+        assert not skill.instructions.startswith("---")
 
 
 def _documented_skill() -> Skill:

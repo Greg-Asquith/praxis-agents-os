@@ -31,7 +31,10 @@ from services.agents.runtime.prompt import (
     build_system_prompt,
     runtime_prompt_blocks,
 )
-from services.agents.runtime.skills import build_skill_capabilities
+from services.agents.runtime.skills import (
+    build_internal_skill_capabilities,
+    build_skill_capabilities,
+)
 from services.agents.runtime.tools import build_runtime_tools
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.usage_limits import EffectiveUsageLimits, intersect_usage_limits
@@ -111,6 +114,7 @@ def build_runtime_agent(
                     history_compaction=history_compaction,
                     trimmer_out=trimmer_out,
                 ),
+                *build_internal_skill_capabilities(),
                 *build_skill_capabilities(skills),
             ],
         ),

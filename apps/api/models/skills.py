@@ -82,7 +82,7 @@ class Skill(BaseModel):
 
     # Relationships
     owner_workspace = relationship("Workspace", foreign_keys=[workspace_id])
-    creator = relationship("User", foreign_keys=[created_by])
+    creator = relationship("User", foreign_keys=[created_by], lazy="joined", innerjoin=True)
 
     __table_args__ = (
         CheckConstraint(

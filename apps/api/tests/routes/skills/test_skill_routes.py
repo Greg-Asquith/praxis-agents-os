@@ -184,7 +184,7 @@ async def test_get_skill_from_another_workspace_returns_not_found(
     assert response.json()["resource_type"] == "skill"
 
 
-async def test_platform_skills_are_global_assignable_and_super_admin_managed(
+async def test_platform_skills_are_global_assignable_and_managed_by_their_sharer(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -196,18 +196,6 @@ async def test_platform_skills_are_global_assignable_and_super_admin_managed(
         email=admin_email,
     )
     _member, member_workspace, member_headers = await _authenticated_workspace(db_session)
-
-    denied_create = await db_async_client.post(
-        "/api/v1/skills/",
-        headers=member_headers,
-        json={
-            "name": "platform-research",
-            "description": "Global research guidance.",
-            "instructions": "Use verified sources.",
-            "scope": "platform",
-        },
-    )
-    assert denied_create.status_code == 403
 
     create_response = await db_async_client.post(
         "/api/v1/skills/",
@@ -233,6 +221,9 @@ async def test_platform_skills_are_global_assignable_and_super_admin_managed(
     assert list_response.status_code == 200
     assert [row["id"] for row in list_response.json()["skills"]] == [platform_skill["id"]]
     assert list_response.json()["skills"][0]["can_manage_platform"] is False
+    assert list_response.json()["skills"][0]["created_by_name"] == (
+        admin.display_name or admin.email
+    )
     for headers, expected in [(admin_headers, True), (member_headers, False)]:
         detail = await db_async_client.get(
             f"/api/v1/skills/{platform_skill['id']}", headers=headers

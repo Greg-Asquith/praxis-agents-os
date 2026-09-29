@@ -25,7 +25,7 @@ Knowledge Base, and memories](../guides/skills-files-knowledge-memories.md).
 | Enters context via | Deferred capability catalog; instructions injected on `load_capability` | `available_files` prompt block + auto-mounted file tools + turn attachments                | `knowledge` instruction prompt block + auto-mounted search tools          | Budgeted core-memory prompt block + auto-mounted memory tools                                       |
 | Retrieval          | None                                                                    | None                                                                                       | Hybrid RRF: lexical + pgvector semantic + recency                         | Hybrid RRF with read-time confidence decay (shares `services/retrieval/`)                           |
 | Scope              | Workspace or platform rows, assigned per agent via `Agent.skill_ids`    | Workspace and published platform; conversation visibility via `file_references`                                   | Workspace and published platform, with per-user private tier                                | Per workspace/agent/user scope                                                                      |
-| Agent-writable     | No                                                                      | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
+| Agent-writable     | Yes (`create_skill` / `update_skill`; workspace skills, always approval) | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
 | Status             | Shipped end to end                                                      | Shipped end to end                                                                         | Shipped end to end                                                        | Shipped end to end                                                                                  |
 
 ## Skills
@@ -45,10 +45,26 @@ Reusable _procedural_ knowledge: how an agent should perform a class of task.
   which injects the full `instructions`. A conditional `read_skill_document`
   tool serves attached documents on demand, and refuses until the owning
   skill capability is loaded. Skills are _not_ a system-prompt block.
+- **Internal skills.** Markdown files with `name`, `human_name`, and
+  `description` frontmatter under `services/agents/runtime/internal_skills/`
+  ship with the code and mount on every agent as deferred capabilities with
+  the `internal-` id prefix. They have no rows, so workspaces can't edit or
+  delete them, and each release updates them. `skill-authoring` teaches agents
+  to interview the user, draft a skill, and save it.
+- **Agent authoring.** Auto-mounted `list_skills` and `read_skill` read
+  visible skills by name. Auto-mounted `create_skill` creates a workspace skill,
+  or a platform skill when the user ticks the required share option on the
+  approval card, and `update_skill` changes any skill the run's user may change, both through
+  the same services and permission checks as the UI, with that user as actor.
+  Both are approval-only, because a saved skill becomes instructions for every
+  agent it is assigned to. The tools never assign skills to agents or attach
+  documents.
 - **Management.** `/skills` routes, `services/skills/`, web UI at `/skills`.
-  Workspace editors manage workspace skills. Configured super admins create,
-  update, and delete platform skills through the same UI; other users see them
-  read-only. Assigned to agents in the agent editor.
+  Workspace editors manage workspace skills and can share a skill with every
+  workspace by creating it with platform scope. Only its creator, while still a
+  workspace editor, or a configured super admin can update or delete a
+  platform skill; other users see it read-only. Assigned to agents in the agent
+  editor.
 - **Lifecycle notes.** `load_capability` call/return pairs are preserved
   across history trimming so activated skills survive compaction.
   `last_used_at` is stamped on workspace-skill activation. Platform activation

@@ -100,7 +100,8 @@ export function SkillIdentitySection({
                 Make available to every workspace
               </FieldLabel>
               <FieldDescription>
-                Creates a text-only platform skill that only super admins can change.
+                Every workspace can use this text-only skill. Only you and super admins can change
+                it.
               </FieldDescription>
             </FieldContent>
           </Field>

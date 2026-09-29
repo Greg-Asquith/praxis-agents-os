@@ -38,7 +38,11 @@ import { formatDateTime, pluralize } from "@/lib/format"
 
 const columnHelper = createAppColumnHelper<Skill>()
 
-function skillColumns(canManagePlatformSkills: boolean) {
+function isReadOnlySharedSkill(skill: Skill) {
+  return skill.scope === "platform" && !skill.can_manage_platform
+}
+
+function skillColumns() {
   return columnHelper.columns([
     columnHelper.display({
       id: "name",
@@ -52,8 +56,10 @@ function skillColumns(canManagePlatformSkills: boolean) {
           >
             {skillDisplayName(row.original)}
           </Link>
-          {row.original.scope === "platform" && !canManagePlatformSkills ? (
-            <span className="text-muted-foreground text-xs">Managed by Admins</span>
+          {isReadOnlySharedSkill(row.original) && row.original.created_by_name ? (
+            <span className="text-muted-foreground text-xs">
+              Owned by {row.original.created_by_name}
+            </span>
           ) : null}
         </div>
       ),
@@ -95,12 +101,12 @@ function skillColumns(canManagePlatformSkills: boolean) {
           size="sm"
           variant="outline"
         >
-          {row.original.scope === "platform" && !canManagePlatformSkills ? (
+          {isReadOnlySharedSkill(row.original) ? (
             <EyeIcon data-icon="inline-start" />
           ) : (
             <PencilIcon data-icon="inline-start" />
           )}
-          {row.original.scope === "platform" && !canManagePlatformSkills ? "View" : "Edit"}
+          {isReadOnlySharedSkill(row.original) ? "View" : "Edit"}
         </Button>
       ),
       meta: { label: "Actions", labelClassName: "sr-only" },
@@ -109,21 +115,19 @@ function skillColumns(canManagePlatformSkills: boolean) {
 }
 
 export function SkillsTable({
-  canManagePlatformSkills,
   limit,
   offset,
   onPageChange,
   skills,
   total,
 }: {
-  canManagePlatformSkills: boolean
   limit: number
   offset: number
   onPageChange: (offset: number) => void
   skills: Skill[]
   total: number
 }) {
-  const columns = useMemo(() => skillColumns(canManagePlatformSkills), [canManagePlatformSkills])
+  const columns = useMemo(() => skillColumns(), [])
   const pagination = paginationStateFromServer({ limit, offset }, total)
   const table = useAppTable({
     columns,
@@ -158,11 +162,7 @@ export function SkillsTable({
     <div className="flex flex-col gap-3">
       <ResponsiveList>
         {skills.map((skill) => (
-          <SkillMobileRow
-            canManagePlatformSkills={canManagePlatformSkills}
-            key={skill.id}
-            skill={skill}
-          />
+          <SkillMobileRow key={skill.id} skill={skill} />
         ))}
       </ResponsiveList>
 
@@ -221,13 +221,7 @@ function SkillBodyCell() {
   )
 }
 
-function SkillMobileRow({
-  canManagePlatformSkills,
-  skill,
-}: {
-  canManagePlatformSkills: boolean
-  skill: Skill
-}) {
+function SkillMobileRow({ skill }: { skill: Skill }) {
   const documentCount = Object.keys(skill.documentation_refs).length
 
   return (
@@ -254,12 +248,12 @@ function SkillMobileRow({
           variant="outline"
           render={<Link to="/skills/$skillId" params={{ skillId: skill.id }} />}
         >
-          {skill.scope === "platform" && !canManagePlatformSkills ? (
+          {isReadOnlySharedSkill(skill) ? (
             <EyeIcon data-icon="inline-start" />
           ) : (
             <PencilIcon data-icon="inline-start" />
           )}
-          {skill.scope === "platform" && !canManagePlatformSkills ? "View" : "Edit"}
+          {isReadOnlySharedSkill(skill) ? "View" : "Edit"}
         </Button>
       </div>
     </ResponsiveListItem>

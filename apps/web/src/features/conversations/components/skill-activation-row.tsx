@@ -7,6 +7,7 @@ import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
+  internalSkillLabelFromCapabilityArgs,
   skillActivationDisplayName,
   skillIdFromCapabilityArgs,
 } from "@/features/conversations/skills/skill-activation"
@@ -18,16 +19,17 @@ type SkillActivationRowProps = {
 
 export function SkillActivationRow({ activity }: SkillActivationRowProps) {
   const skillId = skillIdFromCapabilityArgs(activity.args)
+  const internalLabel = internalSkillLabelFromCapabilityArgs(activity.args)
   const skillsQuery = useQuery({
     ...skillsQueryOptions({ includeInactive: true }),
     enabled: skillId !== null,
   })
-  if (!skillId) {
+  if (!skillId && !internalLabel) {
     return null
   }
 
   const skill = skillsQuery.data?.skills.find((item) => item.id === skillId)
-  const label = skillActivationDisplayName(skill, skillId)
+  const label = internalLabel ?? skillActivationDisplayName(skill, skillId ?? "")
   return (
     <ToolResultCard
       ariaLabel={`Activated skill: ${label}`}

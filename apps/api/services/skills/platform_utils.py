@@ -1,6 +1,6 @@
 # apps/api/services/skills/platform_utils.py
 
-"""Helpers for super-admin-managed platform skills."""
+"""Helpers for platform skills shared with every workspace."""
 
 from uuid import UUID
 
@@ -46,7 +46,7 @@ async def get_platform_skill(
 async def record_platform_skill_audit_event(
     db: AsyncSession,
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     action: AuditAction,
     skill: Skill,

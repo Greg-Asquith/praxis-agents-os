@@ -8,9 +8,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.dependencies import is_super_admin_email
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import ConflictError, NotFoundError
 from models.skills import Skill
+from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.workspaces.utils import EDITOR_ROLES
 from utils.content import ContentScope
@@ -83,6 +85,38 @@ def require_skill_write_access(membership: WorkspaceMembership) -> None:
                 "workspace_id": str(membership.workspace_id),
                 "user_id": str(membership.user_id),
             },
+        )
+
+
+def can_manage_platform_skill(skill: Skill, actor: User | None) -> bool:
+    """Return whether the actor created this platform skill or is a super admin."""
+    return (
+        skill.scope == ContentScope.PLATFORM
+        and not skill.deleted
+        and actor is not None
+        and (skill.created_by == actor.id or is_super_admin_email(actor.email))
+    )
+
+
+def require_platform_skill_create_access(actor: User, membership: WorkspaceMembership) -> None:
+    """Allow workspace editors and super admins to share a skill with every workspace."""
+    if not is_super_admin_email(actor.email):
+        require_skill_write_access(membership)
+
+
+def require_platform_skill_manage_access(
+    skill: Skill,
+    actor: User,
+    membership: WorkspaceMembership,
+) -> None:
+    """Allow a platform skill's creator, while still an editor, or a super admin to change it."""
+    if is_super_admin_email(actor.email):
+        return
+    require_skill_write_access(membership)
+    if skill.created_by != actor.id:
+        raise AuthorizationError(
+            "Only the person who shared this skill or a super admin can change it",
+            details={"skill_id": str(skill.id), "user_id": str(actor.id)},
         )
 
 

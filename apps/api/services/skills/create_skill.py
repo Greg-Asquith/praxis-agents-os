@@ -7,7 +7,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
-from core.dependencies import require_super_admin_user
 from core.exceptions.general import AppValidationError
 from models.skills import Skill
 from models.user import User
@@ -18,21 +17,25 @@ from services.skills.platform_utils import (
     record_platform_skill_audit_event,
 )
 from services.skills.schemas import SkillCreateRequest, SkillRead
-from services.skills.utils import classify_skill_integrity_error, require_skill_write_access
+from services.skills.utils import (
+    classify_skill_integrity_error,
+    require_platform_skill_create_access,
+    require_skill_write_access,
+)
 from utils.content import ContentScope
 
 
 async def create_skill(
     db: AsyncSession,
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     workspace: Workspace,
     membership: WorkspaceMembership,
     payload: SkillCreateRequest,
 ) -> SkillRead:
     if payload.scope == ContentScope.PLATFORM:
-        require_super_admin_user(actor)
+        require_platform_skill_create_access(actor, membership)
         if payload.is_favorite:
             raise AppValidationError(
                 "Platform skills cannot be marked as favorites",
@@ -83,7 +86,7 @@ async def create_skill(
 
 async def _create_platform_skill(
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     payload: SkillCreateRequest,
 ) -> SkillRead:

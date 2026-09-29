@@ -39,7 +39,9 @@ The following contracts apply in this area:
 - Skills have exactly two immutable scopes. Workspace skills retain a required
   `workspace_id` and normal tenant ownership. Platform skills have
   `workspace_id = NULL`, are readable and assignable in every workspace, and
-  are mutable only by configured super admins through a maintenance session;
+  are mutable through a maintenance session only after the skill services
+  authorise the actor (any workspace editor creates; the creator or a
+  configured super admin updates and deletes);
   tenant RLS policies must remain select-only for those rows. Platform skills
   are text-only: do not add workspace document storage, copying, forking, or
   ownership transitions to their lifecycle.

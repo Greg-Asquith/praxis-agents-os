@@ -104,6 +104,10 @@ per-agent `tool_policies`. The following rules define the policy:
   Praxis-internal state and the tools are auto-mounted. The conditional check
   remains inside the tool body so an agent policy cannot weaken it.
   _(enforced)_
+- Agent skill writes (`create_skill`, `update_skill`) always require approval.
+  They are internal writes, but a saved skill steers every agent it is
+  assigned to, so the tools support only the `approval` policy. Agents can
+  change only the skills their user can change in the UI. _(enforced)_
 - `run_code` is an internal-effect write because it can create durable Praxis
   Files and artifacts. It defaults to `approval` but supports `auto`, including
   unattended scheduled computations. Only OpenAI, Anthropic, and Google are

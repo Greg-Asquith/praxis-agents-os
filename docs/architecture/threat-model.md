@@ -73,9 +73,13 @@ no workspace remain maintenance-only.
 
 Platform skills are the narrow exception to workspace-only skill visibility.
 They have no workspace owner and tenant RLS permits them only in `SELECT`.
-Configured super admins perform platform-skill mutations through the
-maintenance role, with global audit events. Tenant sessions cannot create,
-update, or delete platform rows.
+Any workspace editor can create a platform skill. Only its creator, while
+still an editor, or a configured super admin can update or delete it. The
+skill services enforce this before writing through the maintenance role, with
+global audit events. Tenant sessions cannot create, update, or delete platform
+rows. A platform skill affects an agent only after someone in that workspace
+assigns it, but its creator can later change instructions that other
+workspaces already use. Global audit events record each change.
 
 ### Object-storage workspace-isolation backstop
 

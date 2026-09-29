@@ -5,22 +5,22 @@ import { isRecord } from "@/lib/guards"
 
 export const LOAD_CAPABILITY_TOOL_NAME = "load_capability"
 const SKILL_CAPABILITY_PREFIX = "skill-"
+const INTERNAL_SKILL_CAPABILITY_PREFIX = "internal-"
 
 type SkillActivationDisplay = Pick<Skill, "human_name" | "id" | "name">
 
 export function skillIdFromCapabilityArgs(args: unknown): string | null {
-  const normalized = normalizeCapabilityArgs(args)
-  if (!isRecord(normalized)) {
+  return capabilitySuffix(args, SKILL_CAPABILITY_PREFIX)
+}
+
+// Internal skills ship with the platform, so their label derives from the kebab-case name.
+export function internalSkillLabelFromCapabilityArgs(args: unknown): string | null {
+  const name = capabilitySuffix(args, INTERNAL_SKILL_CAPABILITY_PREFIX)
+  if (!name) {
     return null
   }
-
-  const capabilityId = normalized["id"]
-  if (typeof capabilityId !== "string" || !capabilityId.startsWith(SKILL_CAPABILITY_PREFIX)) {
-    return null
-  }
-
-  const skillId = capabilityId.slice(SKILL_CAPABILITY_PREFIX.length).trim()
-  return skillId.length > 0 ? skillId : null
+  const words = name.replaceAll("-", " ")
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 export function skillActivationDisplayName(
@@ -38,6 +38,21 @@ export function skillActivationDisplayName(
   }
 
   return shortenSkillId(fallbackId)
+}
+
+function capabilitySuffix(args: unknown, prefix: string): string | null {
+  const normalized = normalizeCapabilityArgs(args)
+  if (!isRecord(normalized)) {
+    return null
+  }
+
+  const capabilityId = normalized["id"]
+  if (typeof capabilityId !== "string" || !capabilityId.startsWith(prefix)) {
+    return null
+  }
+
+  const suffix = capabilityId.slice(prefix.length).trim()
+  return suffix.length > 0 ? suffix : null
 }
 
 function normalizeCapabilityArgs(args: unknown) {

@@ -1,13 +1,11 @@
 // apps/web/src/features/skills/routes/new-skill-route.tsx
 
 import { Link, useNavigate } from "@tanstack/react-router"
-import { useSuspenseQuery } from "@tanstack/react-query"
 import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react"
 import { useState } from "react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useCreateSkillMutation } from "@/features/skills/api/create-skill"
 import {
   useConfirmSkillDocumentUploadMutation,
@@ -18,11 +16,13 @@ import type { PendingSkillDocumentUpload } from "@/features/skills/components/pe
 import type { SkillCreateRequest } from "@/features/skills/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { canEditWorkspace } from "@/features/workspaces/permissions"
 import { contentTypeForFile } from "@/lib/file"
 
 export function NewSkillRoute() {
   const navigate = useNavigate()
-  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
+  const { workspace } = useActiveWorkspace()
   const createSkillMutation = useCreateSkillMutation()
   const createDocumentUploadMutation = useCreateSkillDocumentUploadMutation()
   const confirmDocumentUploadMutation = useConfirmSkillDocumentUploadMutation()
@@ -129,7 +129,7 @@ export function NewSkillRoute() {
         </Alert>
       ) : (
         <SkillForm
-          canSetPlatformScope={user.is_super_admin}
+          canSetPlatformScope={canEditWorkspace(workspace.current_user_role)}
           cancelLabel="Cancel"
           isSubmitting={isSubmitting}
           mode="create"

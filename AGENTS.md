@@ -42,6 +42,8 @@ Apply these rules throughout the task:
 - When behaviour, routes, settings, or setup changes, update the owning docs in
   the same change. Update AGENTS.md when guidelines or navigation change; keep
   provider inventories and implementation details in focused references.
+  When a change alters a flow that an internal skill describes, update the
+  file under `apps/api/services/agents/runtime/internal_skills/` too.
 - Describe public capabilities as implemented only when wired end to end.
   Mark incomplete capabilities as pending.
 - Keep secrets, generated caches, virtual environments, local databases, and

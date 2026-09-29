@@ -10,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import maintenance_async_db_session
-from core.dependencies import require_super_admin_user
 from core.exceptions.general import AppValidationError
 from models.skills import Skill
 from models.user import User
@@ -25,6 +24,7 @@ from services.skills.schemas import SkillRead, SkillUpdateRequest
 from services.skills.utils import (
     classify_skill_integrity_error,
     get_visible_skill,
+    require_platform_skill_manage_access,
     require_skill_write_access,
 )
 from utils.content import ContentScope
@@ -33,7 +33,7 @@ from utils.content import ContentScope
 async def update_skill(
     db: AsyncSession,
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     workspace: Workspace,
     membership: WorkspaceMembership,
@@ -42,7 +42,7 @@ async def update_skill(
 ) -> SkillRead:
     skill = await get_visible_skill(db, workspace=workspace, skill_id=skill_id)
     if skill.scope == ContentScope.PLATFORM:
-        require_super_admin_user(actor)
+        require_platform_skill_manage_access(skill, actor, membership)
         await db.commit()
         return await _update_platform_skill(
             request=request,
@@ -105,7 +105,7 @@ def _set_if_changed(skill: Skill, field_name: str, value: Any, changed_fields: l
 
 async def _update_platform_skill(
     *,
-    request: Request,
+    request: Request | None,
     actor: User,
     skill_id: UUID,
     payload: SkillUpdateRequest,

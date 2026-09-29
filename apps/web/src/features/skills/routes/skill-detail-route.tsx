@@ -1,7 +1,6 @@
 // apps/web/src/features/skills/routes/skill-detail-route.tsx
 
 import { useState } from "react"
-import { useSuspenseQuery } from "@tanstack/react-query"
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { Trash2Icon } from "lucide-react"
 
@@ -10,7 +9,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { FormSection } from "@/components/forms/form-section"
-import { currentUserQueryOptions } from "@/features/auth/api/get-current-user"
 import { useDeleteSkillMutation } from "@/features/skills/api/delete-skill"
 import { useSkillQuery } from "@/features/skills/api/get-skill"
 import { useUpdateSkillMutation } from "@/features/skills/api/update-skill"
@@ -24,9 +22,8 @@ export function SkillDetailRoute() {
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const skillId = requireSkillId(params.skillId)
-  const { data: user } = useSuspenseQuery(currentUserQueryOptions())
   const { data: skill } = useSkillQuery(skillId)
-  const canManage = skill.scope === "workspace" || user.is_super_admin
+  const canManage = skill.scope === "workspace" || skill.can_manage_platform
   const updateSkillMutation = useUpdateSkillMutation()
   const deleteSkillMutation = useDeleteSkillMutation()
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -120,9 +117,11 @@ export function SkillDetailRoute() {
         ) : (
           <>
             <Alert>
-              <AlertTitle>Managed by Admins</AlertTitle>
+              <AlertTitle>
+                {skill.created_by_name ? `Owned by ${skill.created_by_name}` : "Shared Skill"}
+              </AlertTitle>
               <AlertDescription>
-                This skill is available in every workspace. Only a platform admin can change it.
+                This skill is available in every workspace. To change it, ask its owner or a platform admin.
               </AlertDescription>
             </Alert>
             <FormSection
