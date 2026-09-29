@@ -24,6 +24,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from core.settings import settings
 from models.agent import Agent as AgentModel
+from models.workspace import Workspace
 from services.agents.models import build_model, resolve_agent_model
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
@@ -41,7 +42,7 @@ from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EGRESS_PROVIDER_QUERY,
-    TOOL_POLICY_APPROVAL,
+    TOOL_POLICY_AUTO,
     ToolFieldPresentation,
     ToolPresentation,
 )
@@ -128,7 +129,7 @@ class NativeWebSearchResult(BaseModel):
     ),
     supports_approval=True,
     supports_auto=True,
-    default_policy=TOOL_POLICY_APPROVAL,
+    default_policy=TOOL_POLICY_AUTO,
     egress=TOOL_EGRESS_PROVIDER_QUERY,
     takes_ctx=True,
     timeout=None,
@@ -200,6 +201,7 @@ async def web_search(
 
     model_spec = resolve_web_search_model(
         ctx.deps.agent,
+        workspace=ctx.deps.workspace,
         model_provider=model_provider,
         model=model,
     )
@@ -220,6 +222,7 @@ async def web_search(
 def resolve_web_search_model(
     agent: AgentModel,
     *,
+    workspace: Workspace | None,
     model_provider: str | None = None,
     model: str | None = None,
 ) -> ResolvedModel:
@@ -248,7 +251,7 @@ def resolve_web_search_model(
     if requested_model is not None:
         raise ModelRetry("web_search model requires model_provider.")
 
-    active_model = resolve_agent_model(agent)
+    active_model = resolve_agent_model(agent, workspace=workspace)
     configured_providers = configured_native_search_providers()
     if active_model.provider in configured_providers:
         return replace(active_model, max_steps=settings.NATIVE_WEB_SEARCH_MAX_STEPS)

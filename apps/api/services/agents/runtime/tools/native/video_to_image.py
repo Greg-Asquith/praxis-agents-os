@@ -27,7 +27,7 @@ from services.agents.runtime.tools import (
     TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_NONE,
-    TOOL_POLICY_APPROVAL,
+    TOOL_POLICY_AUTO,
     ToolFieldPresentation,
     ToolPresentation,
 )
@@ -85,7 +85,7 @@ def configured_video_to_image_provider() -> bool:
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
     supports_approval=True,
     supports_auto=True,
-    default_policy=TOOL_POLICY_APPROVAL,
+    default_policy=TOOL_POLICY_AUTO,
     egress=TOOL_EGRESS_NONE,
     takes_ctx=True,
     timeout=None,

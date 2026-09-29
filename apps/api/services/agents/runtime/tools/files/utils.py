@@ -140,5 +140,5 @@ def processing_guidance(file: File) -> str:
 
 def agent_model_supports_vision(deps: RuntimeDeps) -> bool:
     """Return whether the configured runtime model can receive image content."""
-    resolved = resolve_agent_model(deps.agent)
+    resolved = resolve_agent_model(deps.agent, workspace=deps.workspace)
     return get_model(resolved.provider, resolved.model).supports_vision

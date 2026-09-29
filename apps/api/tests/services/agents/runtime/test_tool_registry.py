@@ -462,6 +462,38 @@ def test_validate_tool_configuration_rejects_unsupported_tool_policy(
     }
 
 
+def test_tool_policy_prefers_agent_then_workspace_then_definition(
+    cleanup_test_tools,
+) -> None:
+    @runtime_tool(
+        name="test_approval_only",
+        description="Only runs with approval.",
+        default_policy=TOOL_POLICY_APPROVAL,
+        supports_auto=False,
+    )
+    def approval_only_tool() -> str:
+        return "approved"
+
+    agent = _agent(
+        tool_names=["test_runtime_context", "test_add_numbers", "test_approval_only"],
+        # A stale auto override on an approval-only tool must not loosen it.
+        tool_policies={"test_add_numbers": TOOL_POLICY_AUTO, "test_approval_only": "auto"},
+    )
+    tools = build_runtime_tools(
+        agent,
+        workspace_policies={
+            "test_runtime_context": TOOL_POLICY_APPROVAL,
+            "test_add_numbers": TOOL_POLICY_APPROVAL,
+            "test_approval_only": TOOL_POLICY_AUTO,
+        },
+    )
+    requires_approval = {tool.name: tool.requires_approval for tool in tools}
+
+    assert requires_approval["test_runtime_context"] is True
+    assert requires_approval["test_add_numbers"] is False
+    assert requires_approval["test_approval_only"] is True
+
+
 def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
     default_tools = build_runtime_tools(
         _agent(tool_names=["test_runtime_context", "test_add_numbers"])

@@ -18,6 +18,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.user import User
 from models.workspace import Workspace
+from models.workspace_tool_settings import WorkspaceToolSetting
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_STATUS_FAILED
 from services.agent_runs.utils import denial_message_for_model
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
@@ -86,6 +87,60 @@ async def test_approval_suspend_then_override_args_and_execute(
     persisted = json.dumps([message.parts for message in resumed.messages])
     assert '"ok": true' in persisted
     assert resumed.output == "The approved write completed."
+
+
+async def test_workspace_approval_policy_suspends_an_inheriting_agent_until_approved(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executed: list[str] = []
+
+    async def write(value: str) -> dict[str, bool]:
+        executed.append(value)
+        return {"ok": True}
+
+    definition = replace(RUNTIME_TOOL_CATALOG["scenario_external_write"], function=write)
+    assert definition.default_policy == "auto"
+    monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
+    # The agent has no override, so the stored workspace policy decides.
+    context = await build_scenario_agent(db_session_factory, tool_names=[definition.name])
+    async with db_session_factory() as db:
+        db.add(
+            WorkspaceToolSetting(
+                workspace_id=context.workspace_id, tool_name=definition.name, policy="approval"
+            )
+        )
+        await db.commit()
+    model = scripted_model(
+        turns=[
+            ToolTurn((ToolCall(definition.name, {"value": "sent"}, "workspace-policy-call"),)),
+            "The approved write completed.",
+        ]
+    )
+
+    suspended = await run_scenario(db_session_factory, context, model=model)
+
+    assert suspended.run.status == RUN_STATUS_AWAITING_APPROVAL
+    assert executed == []
+    [pending] = suspended.audit_rows
+    assert pending.workspace_id == context.workspace_id
+    assert pending.details["outcome"] == "approval_requested"
+    state = load_suspended_run_state(suspended.run)
+
+    resumed = await run_scenario(
+        db_session_factory,
+        context,
+        model=model,
+        prompt=None,
+        expected_status=RUN_STATUS_AWAITING_APPROVAL,
+        message_history=state.message_history,
+        deferred_tool_results=DeferredToolResults(
+            approvals={state.pending_tool_call_ids[0]: ToolApproved()}
+        ),
+    )
+
+    assert resumed.run.status == "completed"
+    assert executed == ["sent"]
 
 
 async def test_scalar_approval_validates_before_resumed_execution(db_session_factory, monkeypatch):

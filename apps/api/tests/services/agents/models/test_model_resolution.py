@@ -28,7 +28,7 @@ def _agent(provider, model, **kw):
 
 def test_openai_thinking_requests_reasoning_summary():
     resolved = resolve_agent_model(
-        _agent("openai", "gpt-5.4-mini", model_settings={"thinking": "high"})
+        _agent("openai", "gpt-5.4-mini", model_settings={"thinking": "high"}), workspace=None
     )
     assert resolved.settings["openai_reasoning_summary"] == "auto"
 
@@ -36,7 +36,12 @@ def test_openai_thinking_requests_reasoning_summary():
 @pytest.mark.parametrize(
     ("resolver", "missing_id"),
     [
-        (lambda: resolution.resolve_agent_model(_agent("anthropic", "claude-sonnet-4-6")), None),
+        (
+            lambda: resolution.resolve_agent_model(
+                _agent("anthropic", "claude-sonnet-4-6"), workspace=None
+            ),
+            None,
+        ),
         (
             lambda: resolution.require_helper_model(
                 provider="anthropic",
@@ -93,6 +98,6 @@ def test_partner_resolution_carries_catalog_transport_model(
 ) -> None:
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
-    resolved = resolution.resolve_agent_model(_agent("meta", alias))
+    resolved = resolution.resolve_agent_model(_agent("meta", alias), workspace=None)
     assert resolved.model == alias
     assert resolved.transport_model == transport_id

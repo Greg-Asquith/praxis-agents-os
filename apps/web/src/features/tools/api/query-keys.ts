@@ -8,4 +8,5 @@ export const toolsQueryKeys = {
   ...baseToolsQueryKeys,
   catalog: () => [...baseToolsQueryKeys.workspace(), "catalog"] as const,
   presentations: () => [...baseToolsQueryKeys.workspace(), "presentations"] as const,
+  settings: () => [...baseToolsQueryKeys.workspace(), "settings"] as const,
 }

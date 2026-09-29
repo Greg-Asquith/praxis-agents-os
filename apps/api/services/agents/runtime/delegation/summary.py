@@ -3,15 +3,16 @@
 """Build model-facing delegate agent summaries."""
 
 from models.agent import Agent
+from models.workspace import Workspace
 from services.agents.models import resolve_agent_model
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.delegation.schemas import DelegateAgentSummary
 from services.agents.runtime.entity_references.domain import AgentReference
 
 
-def summarize_delegate_agent(agent: Agent) -> DelegateAgentSummary:
+def summarize_delegate_agent(agent: Agent, *, workspace: Workspace) -> DelegateAgentSummary:
     try:
-        model = resolve_agent_model(agent).qualified_id
+        model = resolve_agent_model(agent, workspace=workspace).qualified_id
     except ModelConfigurationError:
         model = None
     return DelegateAgentSummary(

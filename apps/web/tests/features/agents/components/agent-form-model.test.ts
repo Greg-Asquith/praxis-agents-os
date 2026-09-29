@@ -26,6 +26,7 @@ const toolCatalog: ToolCatalogEntry[] = [
     default_policy: "auto",
     supported_policies: ["auto", "approval"],
     defer_loading: false,
+    workspace_policy: null,
   },
   {
     name: "send_email",
@@ -39,6 +40,7 @@ const toolCatalog: ToolCatalogEntry[] = [
     default_policy: "approval",
     supported_policies: ["approval"],
     defer_loading: false,
+    workspace_policy: null,
   },
 ]
 
@@ -207,6 +209,7 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
     modelSettings: { temperature: 0.1 },
     name: "  Launch planner  ",
     thinking: "low",
+    toolDefaultPolicies: { read_file: "auto", send_email: "auto" },
     toolModes: {
       read_file: "auto",
       send_email: "approval",
@@ -234,6 +237,7 @@ describe("initialAgentFormState", () => {
       modelSettings: {},
       name: "",
       thinking: "Default",
+      toolDefaultPolicies: { read_file: "auto", send_email: "approval" },
       toolModes: {
         read_file: "off",
         send_email: "off",
@@ -259,6 +263,7 @@ describe("initialAgentFormState", () => {
       modelSettings: { temperature: 0.2, thinking: "high" },
       name: "Planner",
       thinking: "high",
+      toolDefaultPolicies: { read_file: "auto", send_email: "approval", missing_tool: "auto" },
       toolModes: {
         read_file: "approval",
         missing_tool: "auto",
@@ -299,7 +304,7 @@ describe("validateAgentFormState", () => {
 })
 
 describe("buildAgentPayload", () => {
-  it("builds the full create payload for valid state", () => {
+  it("builds the full create payload, saving only policies that differ from the default", () => {
     expect(buildAgentPayload(validState(), "create")).toEqual({
       allowed_agent_ids: ["agent-2"],
       azure_deployment: null,
@@ -315,11 +320,25 @@ describe("buildAgentPayload", () => {
       model_settings: { temperature: 0.1, thinking: "low" },
       name: "Launch planner",
       tool_names: ["read_file", "send_email"],
-      tool_policies: {
-        read_file: "auto",
-        send_email: "approval",
-      },
+      tool_policies: { send_email: "approval" },
     })
+  })
+
+  it("keeps inherited and explicit policies for selected tools missing from the catalog", () => {
+    const withHiddenTools: Agent = {
+      ...agent,
+      tool_names: ["read_file", "inherited_hidden", "explicit_hidden"],
+      tool_policies: { read_file: "approval", explicit_hidden: "approval" },
+    }
+    const state = initialAgentFormState(withHiddenTools, toolCatalog)
+
+    // objectContaining compares each property exactly, unlike toMatchObject.
+    expect(buildAgentPayload({ ...state, name: "Renamed" }, "edit")).toEqual(
+      expect.objectContaining({
+        tool_names: ["read_file", "inherited_hidden", "explicit_hidden"],
+        tool_policies: { read_file: "approval", explicit_hidden: "approval" },
+      })
+    )
   })
 
   it("builds edit payloads without exposing or changing the system slug", () => {

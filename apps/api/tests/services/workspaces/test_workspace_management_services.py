@@ -8,11 +8,13 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError
+from core.settings import settings
 from models.audit_event import AuditEvent
 from models.jobs import Job
 from models.security import SecurityEvent
@@ -21,7 +23,7 @@ from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.security import SecurityEventType
 from services.storage.domain import PROVISION_WORKSPACE_BUCKET_KIND
-from services.workspaces import create_workspace, delete_workspace
+from services.workspaces import create_workspace, delete_workspace, update_workspace
 from services.workspaces.invitations import (
     accept_invitation_by_id,
     accept_invitation_by_token,
@@ -35,6 +37,7 @@ from services.workspaces.schemas import (
     WorkspaceInvitationCreateRequest,
     WorkspaceMembershipCreateRequest,
     WorkspaceMembershipUpdateRequest,
+    WorkspaceUpdateRequest,
 )
 from tests.factories import build_user, build_workspace, build_workspace_membership
 from tests.support.requests import build_test_request
@@ -135,6 +138,69 @@ async def test_delete_workspace_rejects_personal_workspaces(db_session: AsyncSes
 
     assert workspace.deleted is False
     assert membership.deleted is False
+
+
+async def test_update_workspace_default_model_rejects_unavailable_models_and_audits(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor = build_user(email=f"default-model-{uuid4().hex}@example.com")
+    workspace = build_workspace(slug=f"default-model-{uuid4().hex[:8]}")
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=actor.id,
+        role=WorkspaceRole.ADMIN,
+    )
+    db_session.add_all([actor, workspace, membership])
+    await db_session.flush()
+    request = build_test_request(path=f"/api/v1/workspaces/{workspace.id}", method="PATCH")
+
+    with pytest.raises(AppValidationError, match="Choose an available model"):
+        await update_workspace(
+            db_session,
+            request=request,
+            actor=actor,
+            workspace_id=workspace.id,
+            payload=WorkspaceUpdateRequest(default_model_provider="openai", default_model="nope"),
+        )
+
+    # A catalogue model whose provider this deployment cannot run is rejected too.
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
+    unavailable = WorkspaceUpdateRequest(
+        default_model_provider="anthropic", default_model="claude-sonnet-5"
+    )
+    with pytest.raises(AppValidationError, match="Choose an available model"):
+        await update_workspace(
+            db_session, request=request, actor=actor, workspace_id=workspace.id, payload=unavailable
+        )
+    audit_count = select(func.count()).where(AuditEvent.workspace_id == workspace.id)
+    assert await db_session.scalar(audit_count) == 0
+    assert workspace.default_model_provider is None
+
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
+    updated = await update_workspace(
+        db_session,
+        request=request,
+        actor=actor,
+        workspace_id=workspace.id,
+        payload=WorkspaceUpdateRequest(
+            default_model_provider="anthropic", default_model="claude-sonnet-5"
+        ),
+    )
+
+    assert (updated.default_model_provider, updated.default_model) == (
+        "anthropic",
+        "claude-sonnet-5",
+    )
+    event = await db_session.scalar(
+        select(AuditEvent).where(AuditEvent.resource_id == str(workspace.id))
+    )
+    assert event is not None
+    assert event.details["default_model"] == {
+        "previous": None,
+        "value": "anthropic/claude-sonnet-5",
+    }
 
 
 async def test_delete_workspace_soft_deletes_children_and_clears_user_defaults(

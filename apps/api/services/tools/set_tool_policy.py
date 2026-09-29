@@ -1,37 +1,39 @@
-# apps/api/services/tools/set_tool_enabled.py
+# apps/api/services/tools/set_tool_policy.py
 
-"""Set workspace availability for one runtime tool."""
+"""Set the workspace default approval policy for one runtime tool."""
 
 from fastapi import Request
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions.general import NotFoundError
+from core.exceptions.general import AppValidationError
 from models.user import User
 from models.workspace import Workspace
 from models.workspace_tool_settings import WorkspaceToolSetting
-from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.agents.runtime.tools.contract import ToolPolicy
 from services.audit_events import AuditAction, AuditResourceType, record_workspace_audit_event
-from services.tools.schemas import ToolAvailabilityRead
-from services.tools.utils import invalidate_tool_defaults_cache
+from services.tools.schemas import ToolPolicyRead
+from services.tools.utils import invalidate_tool_defaults_cache, require_configurable_tool
 
 
-async def set_tool_enabled(
+async def set_tool_policy(
     db: AsyncSession,
     *,
     workspace: Workspace,
     tool_name: str,
-    enabled: bool,
+    policy: ToolPolicy | None,
     actor: User,
     request: Request | None,
-) -> ToolAvailabilityRead:
-    """Upsert one workspace tool setting and record the operator change."""
-    if tool_name not in RUNTIME_TOOL_CATALOG:
-        raise NotFoundError(
-            "Runtime tool not found",
-            resource_type="tool",
-            resource_id=tool_name,
+) -> ToolPolicyRead:
+    """Upsert one workspace tool policy; null restores the tool's own default."""
+    definition = require_configurable_tool(tool_name)
+    allowed_policies = definition.allowed_policies()
+    if policy is not None and policy not in allowed_policies:
+        raise AppValidationError(
+            "This tool does not support that approval setting",
+            field="policy",
+            details={"tool_name": tool_name, "allowed_policies": sorted(allowed_policies)},
         )
 
     statement = (
@@ -39,13 +41,13 @@ async def set_tool_enabled(
         .values(
             workspace_id=workspace.id,
             tool_name=tool_name,
-            enabled=enabled,
+            policy=policy,
             updated_by=actor.id,
         )
         .on_conflict_do_update(
             constraint="uq_workspace_tool_settings_workspace_tool",
             set_={
-                "enabled": enabled,
+                "policy": policy,
                 "updated_by": actor.id,
                 "updated_at": func.now(),
             },
@@ -57,10 +59,14 @@ async def set_tool_enabled(
         db,
         request=request,
         workspace_id=workspace.id,
-        action=AuditAction.ENABLE if enabled else AuditAction.DISABLE,
+        action=AuditAction.UPDATE,
         resource_type=AuditResourceType.TOOL,
         resource_id=tool_name,
         actor=actor,
-        details={"tool_name": tool_name, "enabled": enabled},
+        details={"tool_name": tool_name, "policy": policy},
     )
-    return ToolAvailabilityRead(tool_name=tool_name, enabled=enabled)
+    return ToolPolicyRead(
+        tool_name=tool_name,
+        policy=policy,
+        effective_policy=policy or definition.default_policy,
+    )

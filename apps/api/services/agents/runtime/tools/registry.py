@@ -2,7 +2,7 @@
 """Python-owned catalog of built-in runtime tools."""
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -154,6 +154,7 @@ def build_runtime_tools(
     wrapped_tool_names: list[str] | None = None,
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
+    workspace_policies: Mapping[str, ToolPolicy] | None = None,
     additional_tool_names: Sequence[str] = (),
     workspace_definitions: Sequence[RuntimeToolDefinition] = (),
 ):
@@ -237,10 +238,10 @@ def build_runtime_tools(
         if name == RUN_WORKFLOW_TOOL_NAME:
             mount_run_workflow = code_mode_enabled
             continue
-        effective_policy = (
-            definition.default_policy
-            if definition.auto_mount
-            else policies.get(name, definition.default_policy)
+        effective_policy = permissions.resolve_tool_policy(
+            definition,
+            agent_policies=policies,
+            workspace_policies=workspace_policies or {},
         )
         if code_mode_enabled and definition.code_eligible and not definition.defer_loading:
             try:

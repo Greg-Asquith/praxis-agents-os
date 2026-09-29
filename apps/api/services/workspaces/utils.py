@@ -194,3 +194,25 @@ async def record_workspace_security_event(
     if db is None:
         raise RuntimeError("db is required for request-scoped security events")
     await safe_record_security_event(db, **event_kwargs)
+
+
+def validate_default_model(model_provider: str | None, model: str | None) -> None:
+    """Require an active, tool-capable model this deployment can run, or both values cleared."""
+    # Importing the agents package at module load closes a cycle through core.dependencies.
+    from services.agents.models.registry import find_model
+    from services.agents.models.utils import is_model_available
+
+    if model_provider is None and model is None:
+        return
+    if model_provider is None or model is None:
+        raise AppValidationError(
+            "Choose both a provider and a model, or clear both",
+            field="default_model",
+        )
+    info = find_model(model_provider, model)
+    if info is None or info.deprecated or not info.supports_tools or not is_model_available(info):
+        raise AppValidationError(
+            "Choose an available model",
+            field="default_model",
+            details={"model_provider": model_provider, "model": model},
+        )

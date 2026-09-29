@@ -1,29 +1,46 @@
 # apps/api/services/tools/utils.py
 
-"""Request-scoped cache helpers for tool availability services."""
+"""Helpers shared by workspace tool setting services."""
 
 from typing import Final
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_DISABLED_TOOLS_CACHE_KEY: Final = "workspace_disabled_tools"
+from core.exceptions.general import NotFoundError
+from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
+from services.tools.domain import WorkspaceToolDefaults
+
+_TOOL_DEFAULTS_CACHE_KEY: Final = "workspace_tool_defaults"
 
 
-def get_cached_disabled_tools(
+def get_cached_tool_defaults(
     db: AsyncSession,
     workspace_id: UUID,
-) -> frozenset[str] | None:
-    return db.info.setdefault(_DISABLED_TOOLS_CACHE_KEY, {}).get(workspace_id)
+) -> WorkspaceToolDefaults | None:
+    return db.info.setdefault(_TOOL_DEFAULTS_CACHE_KEY, {}).get(workspace_id)
 
 
-def cache_disabled_tools(
+def cache_tool_defaults(
     db: AsyncSession,
     workspace_id: UUID,
-    disabled_tool_names: frozenset[str],
+    defaults: WorkspaceToolDefaults,
 ) -> None:
-    db.info.setdefault(_DISABLED_TOOLS_CACHE_KEY, {})[workspace_id] = disabled_tool_names
+    db.info.setdefault(_TOOL_DEFAULTS_CACHE_KEY, {})[workspace_id] = defaults
 
 
-def invalidate_disabled_tools_cache(db: AsyncSession, workspace_id: UUID) -> None:
-    db.info.get(_DISABLED_TOOLS_CACHE_KEY, {}).pop(workspace_id, None)
+def invalidate_tool_defaults_cache(db: AsyncSession, workspace_id: UUID) -> None:
+    db.info.get(_TOOL_DEFAULTS_CACHE_KEY, {}).pop(workspace_id, None)
+
+
+def require_configurable_tool(tool_name: str) -> RuntimeToolDefinition:
+    """Return a configurable static catalog tool or raise not found."""
+    definition = RUNTIME_TOOL_CATALOG.get(tool_name)
+    if definition is None or not definition.configurable:
+        raise NotFoundError(
+            "Runtime tool not found",
+            resource_type="tool",
+            resource_id=tool_name,
+        )
+    return definition

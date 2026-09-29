@@ -2,7 +2,7 @@
 
 """List the model catalog entries usable with the current runtime settings."""
 
-from core.settings import settings
+from models.workspace import Workspace
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
     PROVIDER_AZURE,
@@ -12,16 +12,20 @@ from services.agents.models.domain import (
     PROVIDER_OPENAI,
     PROVIDER_XAI,
     ModelInfo,
-    has_vertex_model_id,
 )
 from services.agents.models.registry import list_models
+from services.agents.models.resolution import workspace_default_model
 from services.agents.models.schemas import (
     ModelCatalogDefaults,
     ModelCatalogEntry,
     ModelCatalogProvider,
     ModelCatalogResponse,
 )
-from services.agents.models.utils import is_provider_configured, provider_transport
+from services.agents.models.utils import (
+    is_model_available,
+    is_provider_configured,
+    provider_transport,
+)
 from services.agents.models.validate_partner_configuration import validate_partner_configuration
 
 _PROVIDER_DISPLAY_NAMES = {
@@ -45,21 +49,13 @@ _PROVIDER_ORDER = (
 )
 
 
-def list_model_catalog() -> ModelCatalogResponse:
-    """Return non-deprecated catalog models whose provider is configured."""
+def list_model_catalog(workspace: Workspace | None = None) -> ModelCatalogResponse:
+    """Return configured non-deprecated models and the workspace's default agent model."""
     validate_partner_configuration()
     configured_providers = {
         provider for provider in _PROVIDER_ORDER if is_provider_configured(provider)
     }
-    available_models = [
-        model
-        for model in list_models()
-        if model.provider in configured_providers
-        and (
-            provider_transport(model.provider) == "direct"
-            or has_vertex_model_id(model.vertex_model)
-        )
-    ]
+    available_models = [model for model in list_models() if is_model_available(model)]
     available_ids = {model.qualified_id for model in available_models}
 
     return ModelCatalogResponse(
@@ -77,8 +73,7 @@ def list_model_catalog() -> ModelCatalogResponse:
         models=[_catalog_entry(model) for model in available_models],
         defaults=ModelCatalogDefaults(
             agent_model=_default_if_available(
-                settings.DEFAULT_MODEL_PROVIDER,
-                settings.DEFAULT_MODEL,
+                *workspace_default_model(workspace),
                 available_ids,
             ),
         ),

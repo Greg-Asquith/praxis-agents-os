@@ -19,7 +19,24 @@ export type ToolCatalogEntry = {
   egress: ToolEgress
   default_policy: ToolCatalogPolicy
   supported_policies: ToolCatalogPolicy[]
+  workspace_policy: ToolCatalogPolicy | null
   defer_loading: boolean
+}
+
+export type ToolSetting = {
+  name: string
+  provider: string
+  label: string
+  description: string
+  effect: ToolEffect
+  default_policy: ToolCatalogPolicy
+  supported_policies: ToolCatalogPolicy[]
+  enabled: boolean
+  policy: ToolCatalogPolicy | null
+}
+
+export type ToolSettingsResponse = {
+  tools: ToolSetting[]
 }
 
 export type ToolCatalogResponse = {

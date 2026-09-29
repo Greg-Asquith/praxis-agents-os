@@ -12,7 +12,7 @@ import type {
   ToolPolicyValue,
 } from "@/features/agents/types"
 import type { ModelCatalogResponse, ModelType } from "@/features/models/types"
-import type { ToolCatalogEntry } from "@/features/tools/types"
+import type { ToolCatalogEntry, ToolCatalogPolicy } from "@/features/tools/types"
 import { agentIdentityColorIndex } from "@/lib/agent-identity"
 import type { FormValidationEntry } from "@/lib/forms"
 
@@ -22,6 +22,7 @@ export const IDENTITY_COLOR_AUTO = "Auto"
 const THINKING_DEFAULT = "Default"
 const AUTOMATIC_MODEL_TYPE_SELECTION = "automatic"
 const CUSTOM_MODEL_TYPE_SELECTION = "custom"
+const UNAVAILABLE_TOOL_POLICY: ToolCatalogPolicy = "auto"
 
 const MODEL_TYPE_OPTIONS = [
   {
@@ -106,6 +107,8 @@ export type AgentFormState = {
   modelSettings: Record<string, unknown>
   name: string
   thinking: ThinkingSelection
+  // Workspace policy, else the tool's own default; saved modes that match are not overrides.
+  toolDefaultPolicies: Record<string, ToolCatalogPolicy>
   toolModes: Record<string, RuntimeToolMode>
 }
 
@@ -163,6 +166,7 @@ export function initialAgentFormState(
     modelSettings: { ...(agent?.model_settings ?? {}) },
     name: agent?.name ?? "",
     thinking: thinkingSelectionFromSettings(agent?.model_settings ?? null),
+    toolDefaultPolicies: toolDefaultPolicies(toolCatalog, agent),
     toolModes: initialToolModes(toolCatalog, agent),
   }
 }
@@ -331,7 +335,7 @@ export function buildAgentPayload(
     return modelSelection
   }
 
-  const toolPayload = buildToolPayload(state.toolModes)
+  const toolPayload = buildToolPayload(state.toolModes, state.toolDefaultPolicies)
   const modelSettings = buildModelSettings(state)
   const basePayload = {
     allowed_agent_ids: state.allowedAgentIds,
@@ -426,7 +430,10 @@ function initialToolModes(
     if (Object.hasOwn(toolModes, toolName)) {
       continue
     }
-    const defaultPolicy = catalogByName.get(toolName)?.default_policy ?? "auto"
+    const tool = catalogByName.get(toolName)
+    const defaultPolicy = tool
+      ? (tool.workspace_policy ?? tool.default_policy)
+      : UNAVAILABLE_TOOL_POLICY
     toolModes[toolName] = policies[toolName] ?? defaultPolicy
   }
 
@@ -489,7 +496,27 @@ function isThinkingSelection(value: string): value is ThinkingSelection {
   return THINKING_OPTIONS.some((option) => option.value === value)
 }
 
-function buildToolPayload(toolModes: AgentFormState["toolModes"]) {
+function toolDefaultPolicies(
+  catalog: ToolCatalogEntry[],
+  agent: Agent | null
+): Record<string, ToolCatalogPolicy> {
+  const defaults: Record<string, ToolCatalogPolicy> = Object.fromEntries(
+    catalog.map((tool) => [tool.name, tool.workspace_policy ?? tool.default_policy])
+  )
+  // Hidden tools have no catalog default; treat their shown mode as the default so an
+  // inherited policy is not saved as an override.
+  for (const toolName of agent?.tool_names ?? []) {
+    if (!Object.hasOwn(defaults, toolName) && !agent?.tool_policies?.[toolName]) {
+      defaults[toolName] = UNAVAILABLE_TOOL_POLICY
+    }
+  }
+  return defaults
+}
+
+function buildToolPayload(
+  toolModes: AgentFormState["toolModes"],
+  defaultPolicies: AgentFormState["toolDefaultPolicies"]
+) {
   const toolNames: string[] = []
   const toolPolicies: Record<string, ToolPolicyValue> = {}
 
@@ -499,7 +526,9 @@ function buildToolPayload(toolModes: AgentFormState["toolModes"]) {
     }
 
     toolNames.push(toolName)
-    toolPolicies[toolName] = mode
+    if (defaultPolicies[toolName] !== mode) {
+      toolPolicies[toolName] = mode
+    }
   }
 
   return {

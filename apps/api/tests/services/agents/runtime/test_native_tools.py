@@ -1058,6 +1058,7 @@ async def test_edit_image_limits_openai_to_one_source_before_loading_media(
     @dataclass
     class FakeDeps:
         agent: Agent
+        workspace: None = None
 
     class FakeContext:
         deps = FakeDeps(agent=agent)
@@ -1089,6 +1090,7 @@ async def test_edit_image_applies_combined_input_byte_bound(
     @dataclass
     class FakeDeps:
         agent: Agent
+        workspace: None = None
 
     class FakeContext:
         deps = FakeDeps(agent=agent)
@@ -1146,6 +1148,7 @@ async def test_fetch_url_wraps_hostile_page_content_and_neutralizes_forged_marke
     @dataclass
     class FakeDeps:
         agent: Agent
+        workspace: None = None
 
     class FakeContext:
         deps = FakeDeps(agent=agent)
@@ -1197,6 +1200,7 @@ async def test_fetch_url_rejects_invalid_and_blocked_domains_before_provider_dis
     @dataclass
     class FakeDeps:
         agent: Agent
+        workspace: None = None
 
     class FakeContext:
         deps = FakeDeps(agent=agent)
@@ -1308,7 +1312,7 @@ def test_web_search_omitted_provider_falls_back_to_first_configured_provider(
         azure="azure-test",
     )
 
-    model_spec = web_search_tools.resolve_web_search_model(agent)
+    model_spec = web_search_tools.resolve_web_search_model(agent, workspace=None)
 
     assert model_spec.provider == PROVIDER_GOOGLE
     assert model_spec.model == web_search_tools.DEFAULT_NATIVE_SEARCH_MODELS[PROVIDER_GOOGLE]

@@ -14,6 +14,7 @@ from pydantic_ai import ModelRetry, RunContext
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
+from models.workspace import Workspace
 from services.agents.models.domain import PROVIDER_OPENAI, ResolvedModel
 from services.agents.models.resolution import resolve_agent_model
 from services.agents.runtime.context import RuntimeDeps
@@ -22,7 +23,7 @@ from services.agents.runtime.tools import (
     TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_NONE,
-    TOOL_POLICY_APPROVAL,
+    TOOL_POLICY_AUTO,
     ToolFieldPresentation,
     ToolPresentation,
 )
@@ -82,7 +83,7 @@ class EditImageOutput(BaseModel):
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
     supports_approval=True,
     supports_auto=True,
-    default_policy=TOOL_POLICY_APPROVAL,
+    default_policy=TOOL_POLICY_AUTO,
     egress=TOOL_EGRESS_NONE,
     takes_ctx=True,
     timeout=None,
@@ -178,6 +179,7 @@ async def edit_image(
 
     model_spec = resolve_image_editing_model(
         ctx.deps.agent,
+        workspace=ctx.deps.workspace,
         model_provider=model_provider,
         model=model,
     )
@@ -247,6 +249,7 @@ async def edit_image(
 def resolve_image_editing_model(
     agent,
     *,
+    workspace: Workspace | None,
     model_provider: str | None = None,
     model: str | None = None,
 ) -> ResolvedModel:
@@ -259,7 +262,7 @@ def resolve_image_editing_model(
         configured = configured_native_image_providers()
         if not configured:
             raise ModelRetry("No native edit_image providers are configured.")
-        active_provider = resolve_agent_model(agent).provider
+        active_provider = resolve_agent_model(agent, workspace=workspace).provider
         requested_provider = active_provider if active_provider in configured else configured[0]
     return resolve_image_generation_model(
         model_provider=requested_provider,

@@ -48,6 +48,9 @@ class Workspace(BaseModel):
     conversations_shared_by_default = Column(
         Boolean, default=False, nullable=False, server_default=text("false")
     )
+    # Model for agents that do not pin their own; null uses the settings default.
+    default_model_provider = Column(String(50), nullable=True)
+    default_model = Column(String(100), nullable=True)
     status = Column(String, default="active", nullable=False, server_default=text("'active'"))
 
     memberships = relationship(
@@ -81,7 +84,13 @@ class Workspace(BaseModel):
             if invitation.is_deleted:
                 invitation.restore(cascade=False)
 
-    __table_args__ = (Index("ix_workspaces_status_created", "status", "created_at"),)
+    __table_args__ = (
+        Index("ix_workspaces_status_created", "status", "created_at"),
+        CheckConstraint(
+            "(default_model_provider IS NULL) = (default_model IS NULL)",
+            name="ck_workspaces_default_model_pair",
+        ),
+    )
 
 
 class WorkspaceMembership(BaseModel):

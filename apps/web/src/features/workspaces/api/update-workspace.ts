@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
+import { modelsQueryKeys } from "@/features/models/api/list-model-catalog"
 import { apiRequest } from "@/lib/api/client"
 import { workspacesQueryKey } from "@/features/workspaces/api/list-workspaces"
 import type { Workspace, WorkspaceUpdateRequest } from "@/features/workspaces/types"
@@ -24,7 +25,10 @@ export function useUpdateWorkspaceMutation() {
   return useMutation({
     mutationFn: updateWorkspace,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: workspacesQueryKey })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: workspacesQueryKey }),
+        queryClient.invalidateQueries({ queryKey: modelsQueryKeys.all }),
+      ])
     },
   })
 }

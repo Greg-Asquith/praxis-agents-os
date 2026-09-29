@@ -152,7 +152,7 @@ async def test_platform_reference_is_private_to_requesting_workspace(db_session,
     assert await load_available_files(db_session, foreign_conversation) == []
     [visible] = await resolve_chat_attachments(
         db_session,
-        workspace_id=context.other_workspace.id,
+        workspace=context.other_workspace,
         agent=context.agent,
         file_ids=[context.file.id],
     )
@@ -172,7 +172,7 @@ async def test_platform_withdrawal_hides_attachments_search_and_tools(db_session
     with pytest.raises(NotFoundError):
         await resolve_chat_attachments(
             db_session,
-            workspace_id=context.workspace.id,
+            workspace=context.workspace,
             agent=context.agent,
             file_ids=[context.file.id],
             conversation_id=context.conversation.id,

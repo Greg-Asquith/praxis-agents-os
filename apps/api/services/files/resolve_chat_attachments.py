@@ -12,6 +12,7 @@ from core.exceptions.general import AppValidationError, NotFoundError
 from core.settings import settings
 from models.agent import Agent
 from models.files import File
+from models.workspace import Workspace
 from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
 from services.assets.utils import normalize_content_type
@@ -33,12 +34,13 @@ PDF_MEDIA_TYPE = "application/pdf"
 async def resolve_chat_attachments(
     db: AsyncSession,
     *,
-    workspace_id: UUID,
+    workspace: Workspace,
     agent: Agent,
     file_ids: Sequence[UUID],
     conversation_id: UUID | None = None,
 ) -> list[File]:
     """Load, order, and validate chat attachment files for one agent turn."""
+    workspace_id = workspace.id
     deduped_file_ids = _dedupe_file_ids(file_ids)
     if not deduped_file_ids:
         return []
@@ -87,7 +89,7 @@ async def resolve_chat_attachments(
                 db, workspace_id=workspace_id, file=file, revision_id=pin
             )
             file = file_for_revision(file, revision)
-        _validate_chat_attachment(file, agent=agent)
+        _validate_chat_attachment(file, agent=agent, workspace=workspace)
         ordered_files.append(file)
     return ordered_files
 
@@ -103,11 +105,11 @@ def _dedupe_file_ids(file_ids: Sequence[UUID]) -> list[UUID]:
     return deduped
 
 
-def _validate_chat_attachment(file: File, *, agent: Agent) -> None:
+def _validate_chat_attachment(file: File, *, agent: Agent, workspace: Workspace) -> None:
     entry = contract_for_content_type(file.content_type)
     media_type = normalize_content_type(file.content_type)
     if entry.category == FileCategory.IMAGE:
-        _validate_image_attachment(file, media_type=media_type, agent=agent)
+        _validate_image_attachment(file, media_type=media_type, agent=agent, workspace=workspace)
         return
     if entry.category in {FileCategory.INGESTIBLE_DOCUMENT, FileCategory.EDITABLE_TEXT}:
         _validate_document_attachment(file, media_type=media_type)
@@ -124,7 +126,9 @@ def _validate_chat_attachment(file: File, *, agent: Agent) -> None:
     )
 
 
-def _validate_image_attachment(file: File, *, media_type: str, agent: Agent) -> None:
+def _validate_image_attachment(
+    file: File, *, media_type: str, agent: Agent, workspace: Workspace
+) -> None:
     if media_type not in IMAGE_MEDIA_TYPES:
         raise AppValidationError(
             "Image type is not supported for chat attachments",
@@ -142,7 +146,7 @@ def _validate_image_attachment(file: File, *, media_type: str, agent: Agent) -> 
             },
         )
 
-    resolved_model = resolve_agent_model(agent)
+    resolved_model = resolve_agent_model(agent, workspace=workspace)
     model_info = get_model(resolved_model.provider, resolved_model.model)
     if not model_info.supports_vision:
         raise AppValidationError(

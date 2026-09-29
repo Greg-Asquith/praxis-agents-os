@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,3 +44,4 @@ class RuntimeDeps:
     delegation_depth: int = 0
     active_context: ResolvedActiveContext | None = None
     workspace_tool_definitions: tuple[RuntimeToolDefinition, ...] = ()
+    workspace_tool_policies: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))

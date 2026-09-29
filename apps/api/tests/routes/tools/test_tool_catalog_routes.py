@@ -57,7 +57,7 @@ async def test_tool_catalog_route_returns_configurable_entries_for_workspace_mem
     assert "google_ads_get_report_field" not in catalog_names
     assert "google_ads_list_report_fields" not in catalog_names
     web_search = next(tool for tool in body["tools"] if tool["name"] == "web_search")
-    assert web_search["default_policy"] == "approval"
+    assert web_search["default_policy"] == "auto"
     assert web_search["input_schema"]["required"] == ["query"]
     assert "timeout" not in web_search
 
@@ -144,20 +144,26 @@ async def test_tool_availability_route_allows_workspace_managers(
 
 
 @pytest.mark.parametrize("role", [WorkspaceRole.MEMBER])
-async def test_tool_availability_route_rejects_non_managers(
+async def test_tool_settings_routes_reject_non_managers(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
     role: WorkspaceRole,
 ) -> None:
     _user, _workspace, headers = await _authenticated_workspace(db_session, role=role)
 
-    response = await db_async_client.put(
+    availability = await db_async_client.put(
         "/api/v1/tools/web_search/availability",
         headers=headers,
         json={"enabled": False},
     )
+    policy = await db_async_client.put(
+        "/api/v1/tools/web_search/policy",
+        headers=headers,
+        json={"policy": "approval"},
+    )
 
-    assert response.status_code == 403
+    assert availability.status_code == 403
+    assert policy.status_code == 403
 
 
 async def test_tool_presentations_route_returns_every_first_party_runtime_tool(

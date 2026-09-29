@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -32,7 +32,7 @@ from services.agents.runtime.prompt import (
 )
 from services.agents.runtime.skills import build_internal_skill_capabilities
 from services.agents.runtime.tools import build_runtime_tools
-from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolPolicy
 from services.agents.runtime.usage_limits import EffectiveUsageLimits, intersect_usage_limits
 
 if TYPE_CHECKING:
@@ -65,12 +65,13 @@ def build_runtime_agent(
     skipped_tool_names: list[str] | None = None,
     workspace: object | None = None,
     disabled_tool_names: frozenset[str] = frozenset(),
+    workspace_policies: Mapping[str, ToolPolicy] | None = None,
     additional_tool_names: Sequence[str] = (),
     workspace_definitions: Sequence[RuntimeToolDefinition] = (),
     history_compaction: HistoryCompaction | None = None,
 ) -> RuntimeAgent:
     """Build a Pydantic AI agent for one Praxis agent configuration."""
-    resolved_model = resolve_agent_model(agent)
+    resolved_model = resolve_agent_model(agent, workspace=workspace)
     runtime_model = model or build_model(resolved_model)
     include_delegation = enable_delegation and (bool(delegate_agents) or force_delegation_tools)
     model_context = resolve_model_context_budget(resolved_model)
@@ -100,6 +101,7 @@ def build_runtime_agent(
                 skipped_tool_names=skipped_tool_names,
                 workspace=workspace,
                 disabled_tool_names=disabled_tool_names,
+                workspace_policies=workspace_policies,
                 additional_tool_names=additional_tool_names,
                 workspace_definitions=workspace_definitions,
             ),

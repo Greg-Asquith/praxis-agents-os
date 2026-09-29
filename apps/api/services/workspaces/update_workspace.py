@@ -19,6 +19,7 @@ from services.workspaces.schemas import WorkspaceRead, WorkspaceUpdateRequest
 from services.workspaces.utils import (
     MANAGER_ROLES,
     require_workspace_role,
+    validate_default_model,
 )
 from utils.slugify import slugify
 
@@ -58,6 +59,19 @@ async def update_workspace(
             }
             workspace.conversations_shared_by_default = payload.conversations_shared_by_default
             changed_fields.append("conversations_shared_by_default")
+
+    if payload.model_fields_set & {"default_model_provider", "default_model"}:
+        previous = (workspace.default_model_provider, workspace.default_model)
+        requested = (payload.default_model_provider, payload.default_model)
+        # Resubmitting the saved pair must not block unrelated edits after a provider change.
+        if requested != previous:
+            validate_default_model(*requested)
+            audit_details["default_model"] = {
+                "previous": "/".join(previous) if previous[0] else None,
+                "value": "/".join(requested) if requested[0] else None,
+            }
+            workspace.default_model_provider, workspace.default_model = requested
+            changed_fields.append("default_model")
 
     if "name" in payload.model_fields_set:
         if payload.name is None:

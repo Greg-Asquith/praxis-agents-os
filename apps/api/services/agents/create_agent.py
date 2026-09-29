@@ -50,6 +50,7 @@ async def create_agent(
         },
     )
     model_provider = validate_model_configuration(
+        workspace=workspace,
         model_provider=payload.model_provider,
         model=payload.model,
         azure_deployment=payload.azure_deployment,

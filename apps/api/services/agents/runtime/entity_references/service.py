@@ -39,7 +39,7 @@ from services.audit_events import (
 from services.conversations.utils import get_conversation_for_actor
 from services.integrations.context import resolve_active_context
 from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
-from services.tools import get_disabled_tools
+from services.tools import get_workspace_tool_defaults
 
 if TYPE_CHECKING:
     from services.agents.runtime.context import RuntimeDeps
@@ -390,7 +390,7 @@ async def authorize_entity_field(
         if run is not None
         else EMPTY_ACTIVE_CONTEXT
     )
-    disabled = await get_disabled_tools(db, workspace)
+    tool_defaults = await get_workspace_tool_defaults(db, workspace)
     from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
 
     workspace_definitions = await load_workspace_tool_definitions(db, workspace)
@@ -401,7 +401,7 @@ async def authorize_entity_field(
         active_context=active_context,
         wrapped_tool_names=wrapped_tool_names,
         workspace=workspace,
-        disabled_tool_names=disabled,
+        disabled_tool_names=tool_defaults.disabled,
         workspace_definitions=workspace_definitions,
     )
     mounted_names = {tool.name for tool in mounted}.union(wrapped_tool_names)

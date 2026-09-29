@@ -11,11 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, NotFoundError
-from core.settings import settings
 from models.agent import Agent
 from models.workspace import Workspace, WorkspaceMembership
 from services.agents.models.domain import ALL_PROVIDERS, PROVIDER_AZURE
 from services.agents.models.registry import find_model
+from services.agents.models.resolution import workspace_default_model
 from services.agents.runtime.tools.contract import VALID_TOOL_POLICIES
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.workspaces.utils import EDITOR_ROLES
@@ -221,15 +221,16 @@ def normalize_model_provider(model_provider: str | None) -> str | None:
 
 def validate_model_configuration(
     *,
+    workspace: Workspace,
     model_provider: str | None,
     model: str | None,
     azure_deployment: str | None,
 ) -> str | None:
+    # Fill missing fields from the same defaults that runtime resolution uses.
+    default_provider, default_model = workspace_default_model(workspace)
     normalized_model_provider = normalize_model_provider(model_provider)
-    provider = (
-        normalized_model_provider or normalize_model_provider(settings.DEFAULT_MODEL_PROVIDER) or ""
-    )
-    selected_model = (model or settings.DEFAULT_MODEL or "").strip()
+    provider = normalized_model_provider or normalize_model_provider(default_provider) or ""
+    selected_model = (model or default_model or "").strip()
 
     if provider not in ALL_PROVIDERS:
         raise AppValidationError(

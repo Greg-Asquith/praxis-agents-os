@@ -146,6 +146,7 @@ async def update_agent(
         else agent.azure_deployment
     )
     normalized_candidate_model_provider = validate_model_configuration(
+        workspace=workspace,
         model_provider=candidate_model_provider,
         model=candidate_model,
         azure_deployment=candidate_azure_deployment,

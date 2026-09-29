@@ -173,14 +173,16 @@ def require_helper_model(
     )
 
 
-def resolve_agent_model(agent) -> ResolvedModel:
-    """Resolve the model for an agent, falling back to settings defaults.
+def resolve_agent_model(agent, *, workspace) -> ResolvedModel:
+    """Resolve the model for an agent, falling back to workspace then settings defaults.
 
-    Precedence per field: the agent's own column, else the configured default.
-    The agent's ``model_settings`` override the catalog defaults shallowly.
+    Precedence per field: the agent's own column, else the workspace default
+    pair when set, else the settings default pair. The agent's
+    ``model_settings`` override the catalog defaults shallowly.
     """
-    provider = agent.model_provider or settings.DEFAULT_MODEL_PROVIDER
-    model = agent.model or settings.DEFAULT_MODEL
+    default_provider, default_model = workspace_default_model(workspace)
+    provider = agent.model_provider or default_provider
+    model = agent.model or default_model
 
     # Azure is deployment-based: the deployment name is customer-defined and not
     # part of the Python catalog, so membership is not validated for it.
@@ -203,6 +205,13 @@ def resolve_agent_model(agent) -> ResolvedModel:
         max_steps=max_steps,
         azure_deployment=agent.azure_deployment,
     )
+
+
+def workspace_default_model(workspace) -> tuple[str, str]:
+    """Return the workspace default provider and model, else the settings default."""
+    if workspace is not None and workspace.default_model_provider and workspace.default_model:
+        return workspace.default_model_provider, workspace.default_model
+    return settings.DEFAULT_MODEL_PROVIDER, settings.DEFAULT_MODEL
 
 
 def _apply_openai_reasoning_summary(provider: str, merged: dict[str, Any]) -> None:

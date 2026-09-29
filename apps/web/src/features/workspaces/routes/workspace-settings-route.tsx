@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/shell/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AuditSettingsPanel } from "@/features/audit/components/audit-settings-panel"
 import { ClassifiersSettingsPanel } from "@/features/classifiers/components/classifiers-settings-panel"
+import { ToolSettingsPanel } from "@/features/tools/components/tool-settings-panel"
 import { UsageSettingsPanel } from "@/features/usage/components/usage-dashboard-panel"
 import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
 import { InvitationsTable } from "@/features/workspaces/components/invitations-table"
@@ -20,7 +21,7 @@ export function WorkspaceSettingsRoute() {
     <div className="flex flex-col gap-6">
       <PageHeader
         actions={<WorkspaceRoleBadge role={workspace.current_user_role} />}
-        description="Manage workspace details, members, reusable classifiers, usage, and audit history."
+        description="Manage workspace details, members, tools, reusable classifiers, usage, and audit history."
         title="Workspace Settings"
       />
 
@@ -32,6 +33,7 @@ export function WorkspaceSettingsRoute() {
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           {canManageWorkspace ? <TabsTrigger value="invitations">Invitations</TabsTrigger> : null}
+          {canManageWorkspace ? <TabsTrigger value="tools">Tools</TabsTrigger> : null}
           {canManageWorkspace ? <TabsTrigger value="classifiers">Classifiers</TabsTrigger> : null}
           {canManageWorkspace ? <TabsTrigger value="usage">AI Usage</TabsTrigger> : null}
           {canManageWorkspace ? <TabsTrigger value="audit">Audit Log</TabsTrigger> : null}
@@ -45,6 +47,11 @@ export function WorkspaceSettingsRoute() {
         {canManageWorkspace ? (
           <TabsContent value="invitations">
             <InvitationsTable />
+          </TabsContent>
+        ) : null}
+        {canManageWorkspace ? (
+          <TabsContent value="tools">
+            <ToolSettingsPanel />
           </TabsContent>
         ) : null}
         {canManageWorkspace ? (

@@ -26,8 +26,8 @@ requests, `NATIVE_WEB_FETCH_MAX_CONTENT_TOKENS` is passed to the provider,
 and comma-separated `NATIVE_WEB_FETCH_BLOCKED_DOMAINS` is enforced before
 dispatch as well as passed natively. Google is unavailable while that
 denylist is configured because URL Context cannot enforce domain filtering.
-Keep the full URL editable and visible under the default approval policy;
-never enable the local fetch fallback.
+The tool defaults to `auto`. When a workspace or agent requires approval, keep
+the full URL editable and visible. Never enable the local fetch fallback.
 
 ## Code execution and document outputs
 
@@ -45,7 +45,7 @@ model probe results do not qualify these versions.
 Provider-native `run_code` is a separate helper-model tool for heavy
 computation, create-from-text document generation, and declared append-only
 edits of existing workspace documents. It is an internal
-write, defaults to approval, never nests with `run_workflow`, and is offered
+write, defaults to `auto`, never nests with `run_workflow`, and is offered
 only for configured OpenAI, direct Anthropic, or Google providers. Anthropic
 on Vertex is excluded because the file bridge requires the Files API.
 Anthropic and
@@ -133,7 +133,7 @@ Native image generation uses the governed `generate_image` helper-tool path
 for Google and OpenAI only. `NATIVE_IMAGE_GENERATION_MAX_STEPS` bounds the
 Google helper run. The tool generates exactly one image, preserves provider-returned
 PNG, WebP, or JPEG bytes in an audited workspace File, and defaults to
-approval. `edit_image` uses the current revision of a workspace image with
+`auto`. `edit_image` uses the current revision of a workspace image with
 OpenAI or Google and limits combined raw source bytes with
 `NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES` (64 MiB by default);
 `generate_image_from_video` uses Google only and rejects inline videos larger

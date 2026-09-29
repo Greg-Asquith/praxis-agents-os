@@ -88,6 +88,7 @@ from services.agents.runtime.tools.contract import (
     RuntimeToolDefinition,
     ToolEffectScope,
 )
+from services.agents.runtime.tools.permissions import resolve_tool_policy
 from services.agents.runtime.tools.registry import (
     RUNTIME_TOOL_CATALOG,
     resolve_runtime_tool_definition,
@@ -840,13 +841,17 @@ async def record_policy_approval_request_audit_events(
     deferred_tool_requests: DeferredToolRequests,
 ) -> None:
     """Audit policy-gated approvals that bypass tool-execution hooks."""
-    policies = deps.agent.tool_policies or {}
+    agent_policies = deps.agent.tool_policies or {}
     for approval in deferred_tool_requests.approvals:
         tool_name = approval.tool_name
         definition = RUNTIME_TOOL_CATALOG.get(tool_name)
         if definition is None:
             continue
-        policy = policies.get(tool_name, definition.default_policy)
+        policy = resolve_tool_policy(
+            definition,
+            agent_policies=agent_policies,
+            workspace_policies=deps.workspace_tool_policies,
+        )
         if policy != TOOL_POLICY_APPROVAL:
             continue
 

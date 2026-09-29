@@ -262,9 +262,15 @@ apps/api/
 ### Provider/model abstraction
 
 - **One catalog, Python-owned.** A hard-coded registry module (`models/registry.py`)
-  is the single source of truth — no database table and no per-workspace overrides.
+  is the single source of truth, with no database table.
   Model selection lives on the agent row (`model_provider`/`model`/`model_settings`),
-  so delegating to an agent automatically inherits its model. Non-agent utility
+  so delegating to an agent automatically inherits its model. An agent with no
+  model uses the workspace default model, which owners and admins set in
+  workspace settings, and otherwise the `DEFAULT_MODEL` setting. Each missing
+  agent field takes the matching field of that default, and agent validation
+  applies the same rule. A new workspace default must be a model this
+  deployment's configured providers can run. The catalog
+  response reports that effective default as `defaults.agent_model`. Non-agent utility
   cases still resolve through the same catalog/factory seam: conversation naming
   uses settings constants, while native helper tools can take provider/model as
   runtime tool arguments. The SPA reads model metadata from the API and never

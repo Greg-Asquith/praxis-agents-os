@@ -6,6 +6,7 @@ import type { ToolCatalogEntry } from "@/features/tools/types"
 const readTool: ToolCatalogEntry = {
   default_policy: "auto",
   defer_loading: false,
+  workspace_policy: null,
   description: "Run a report.",
   effect: "read",
   effect_scope: "external",

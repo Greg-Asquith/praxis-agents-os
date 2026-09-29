@@ -24,12 +24,18 @@ vi.mock("@/features/workspaces/components/use-active-workspace", () => ({
       updated_at: "2026-09-24",
       is_personal: false,
       conversations_shared_by_default: false,
+      default_model_provider: null,
+      default_model: null,
       current_user_role: "admin",
       icon_url: null,
     },
     workspaces: [],
     setWorkspaceBySlug: vi.fn(),
   }),
+}))
+vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: undefined }) }))
+vi.mock("@/features/models/api/list-model-catalog", () => ({
+  modelCatalogQueryOptions: () => ({}),
 }))
 vi.mock("@/features/workspaces/api/update-workspace", () => ({
   useUpdateWorkspaceMutation: () => ({ mutateAsync: state.update, isPending: false }),

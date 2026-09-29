@@ -77,7 +77,7 @@ async def create_conversation_stream(
     agent_slug = agent.slug
     files = await resolve_chat_attachments(
         db,
-        workspace_id=workspace.id,
+        workspace=workspace,
         agent=agent,
         file_ids=payload.attachments,
     )

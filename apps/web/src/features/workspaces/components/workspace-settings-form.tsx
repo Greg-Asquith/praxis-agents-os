@@ -1,6 +1,7 @@
 // apps/web/src/features/workspaces/components/workspace-settings-form.tsx
 
 import { useState, type SyntheticEvent } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Trash2Icon } from "lucide-react"
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -22,7 +23,16 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { modelCatalogQueryOptions } from "@/features/models/api/list-model-catalog"
 import { useDeleteWorkspaceMutation } from "@/features/workspaces/api/delete-workspace"
 import { useUpdateWorkspaceMutation } from "@/features/workspaces/api/update-workspace"
 import {
@@ -43,6 +53,7 @@ export function WorkspaceSettingsForm() {
   const createIconUploadMutation = useCreateWorkspaceIconUploadMutation()
   const confirmIconUploadMutation = useConfirmWorkspaceIconUploadMutation()
   const deleteIconMutation = useDeleteWorkspaceIconMutation()
+  const { data: modelCatalog } = useQuery(modelCatalogQueryOptions())
   const [iconSelection, setIconSelection] = useState<{
     file: File
     workspaceId: string
@@ -83,6 +94,7 @@ export function WorkspaceSettingsForm() {
         workspaceId: workspace.id,
         payload: {
           name: formString(formData, "name").trim(),
+          ...defaultModelPayload(formString(formData, "default_model")),
           ...(!workspace.is_personal && {
             conversations_shared_by_default: formData.has("conversations_shared_by_default"),
           }),
@@ -210,6 +222,44 @@ export function WorkspaceSettingsForm() {
                 )}
               </div>
             </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-default-model">Default Large Language Model</FieldLabel>
+              <Select
+                defaultValue={
+                  workspace.default_model_provider && workspace.default_model
+                    ? `${workspace.default_model_provider}:${workspace.default_model}`
+                    : PLATFORM_DEFAULT_MODEL
+                }
+                disabled={!canManage || !modelCatalog}
+                name="default_model"
+              >
+                <SelectTrigger className="w-full sm:w-80" id="settings-default-model">
+                  <SelectValue>
+                    {(value: string) =>
+                      value === PLATFORM_DEFAULT_MODEL
+                        ? "Platform default"
+                        : (modelCatalog?.models.find((model) => model.id === value)?.display_name ??
+                          value)
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value={PLATFORM_DEFAULT_MODEL}>Platform default</SelectItem>
+                    {modelCatalog?.models
+                      .filter((model) => model.supports_tools)
+                      .map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.display_name}
+                        </SelectItem>
+                      ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                Agents that don't choose their own model use this one.
+              </FieldDescription>
+            </Field>
             {!workspace.is_personal && (
               <Field orientation="horizontal" data-disabled={!canManage}>
                 <FieldContent>
@@ -267,4 +317,18 @@ export function WorkspaceSettingsForm() {
       />
     </Card>
   )
+}
+
+const PLATFORM_DEFAULT_MODEL = "platform-default"
+
+function defaultModelPayload(value: string) {
+  if (!value) return {}
+  if (value === PLATFORM_DEFAULT_MODEL) {
+    return { default_model_provider: null, default_model: null }
+  }
+  const separator = value.indexOf(":")
+  return {
+    default_model_provider: value.slice(0, separator),
+    default_model: value.slice(separator + 1),
+  }
 }

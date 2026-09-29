@@ -50,6 +50,8 @@ const target: Workspace = {
   icon_url: null,
   is_personal: false,
   conversations_shared_by_default: false,
+  default_model_provider: null,
+  default_model: null,
   status: "active",
   current_user_role: "read_only",
   created_at: "2026-09-09T12:00:00Z",

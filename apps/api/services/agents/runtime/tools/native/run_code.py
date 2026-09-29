@@ -30,6 +30,7 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 
 from core.settings import settings
 from models.agent import Agent as AgentModel
+from models.workspace import Workspace
 from services.agents.models import build_model, resolve_agent_model
 from services.agents.models.domain import (
     PROVIDER_ANTHROPIC,
@@ -51,7 +52,7 @@ from services.agents.runtime.tools import (
     TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
     TOOL_EGRESS_NONE,
-    TOOL_POLICY_APPROVAL,
+    TOOL_POLICY_AUTO,
     ToolFieldPresentation,
     ToolPresentation,
 )
@@ -151,7 +152,7 @@ _REGISTERED_PROVIDER_LIST = format_provider_list(_REGISTERED_PROVIDERS)
     code_eligible=False,
     supports_auto=True,
     supports_approval=True,
-    default_policy=TOOL_POLICY_APPROVAL,
+    default_policy=TOOL_POLICY_AUTO,
     takes_ctx=True,
     timeout=settings.NATIVE_RUN_CODE_TIMEOUT_SECONDS,
     output_model=RunCodeOutput,
@@ -256,6 +257,7 @@ async def run_code(
         raise ModelRetry("run_code requires a non-empty task.")
     model_spec = resolve_run_code_model(
         ctx.deps.agent,
+        workspace=ctx.deps.workspace,
         model_provider=model_provider,
         model=model,
     )
@@ -305,6 +307,7 @@ async def run_code(
 def resolve_run_code_model(
     agent: AgentModel,
     *,
+    workspace: Workspace | None,
     model_provider: str | None = None,
     model: str | None = None,
 ) -> ResolvedModel:
@@ -333,7 +336,7 @@ def resolve_run_code_model(
         )
     if requested_model is not None:
         raise ModelRetry("run_code model requires model_provider.")
-    active_model = resolve_agent_model(agent)
+    active_model = resolve_agent_model(agent, workspace=workspace)
     configured = configured_native_run_code_providers()
     if active_model.provider in configured:
         return replace(active_model, max_steps=settings.NATIVE_RUN_CODE_MAX_STEPS)

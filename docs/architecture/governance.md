@@ -88,7 +88,14 @@ _(enforced)_
 ## 2. Approval defaults by tool effect
 
 Mechanics are the registry `effect` metadata, the dispatch choke point, and
-per-agent `tool_policies`. The following rules define the policy:
+the policy resolution order. A tool's effective policy is the agent's
+`tool_policies` entry, else the workspace default in
+`workspace_tool_settings.policy`, else the definition's `default_policy`.
+Owners and admins set workspace defaults and availability on the **Tools** tab
+of workspace settings. A saved value the tool doesn't support falls through to
+the next layer, so a stale `auto` never loosens an approval-only tool. The
+agent form saves an agent policy only when it differs from the workspace
+default. _(enforced)_ The following rules define the defaults:
 
 - `effect="read"` tools default `auto`. [default — confirm at review]
 - `effect="write"` tools targeting **Praxis-internal state** (todos,
@@ -109,8 +116,8 @@ per-agent `tool_policies`. The following rules define the policy:
   follow it, so the tools support only the `approval` policy. Agents can
   change only the skills their user can change in the UI. _(enforced)_
 - `run_code` is an internal-effect write because it can create durable Praxis
-  Files and artifacts. It defaults to `approval` but supports `auto`, including
-  unattended scheduled computations. Only OpenAI, Anthropic, and Google are
+  Files and artifacts. It defaults to `auto` and supports `approval`; auto also
+  covers unattended scheduled computations. Only OpenAI, Anthropic, and Google are
   eligible, each after 2026-08-14 DNS and HTTPS canary probes showed no sandbox
   egress. Those probes used Pydantic AI 2.28.0 with Anthropic 0.113.0,
   google-genai 2.10.0, and OpenAI 2.50.0. OpenAI `gpt-5.6-luna`, Anthropic

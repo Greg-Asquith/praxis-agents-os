@@ -29,6 +29,7 @@ from services.agents.models.domain import (
     ModelConfigurationError,
     ModelInfo,
     ProviderTransport,
+    has_vertex_model_id,
 )
 
 _RETRYABLE_HTTP_STATUSES = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
@@ -174,6 +175,13 @@ def is_provider_configured(provider: str) -> bool:
             (settings.AZURE_OPENAI_ENDPOINT or "").strip()
         )
     return has_provider_api_key(provider)
+
+
+def is_model_available(info: ModelInfo) -> bool:
+    """Return whether this deployment can build the model on its active transport."""
+    return is_provider_configured(info.provider) and (
+        provider_transport(info.provider) == "direct" or has_vertex_model_id(info.vertex_model)
+    )
 
 
 def partner_location(info: ModelInfo) -> str:

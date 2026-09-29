@@ -135,22 +135,26 @@ def test_resolve_agent_model_uses_agent_columns():
         model_settings={"temperature": 0.2},
         max_steps=7,
     )
-    resolved = resolve_agent_model(agent)
+    resolved = resolve_agent_model(agent, workspace=None)
     assert resolved.qualified_id == "anthropic:claude-opus-4-8"
     assert resolved.settings["temperature"] == 0.2
     assert resolved.max_steps == 7
 
 
-def test_resolve_agent_model_falls_back_to_settings_defaults():
-    resolved = resolve_agent_model(_agent())
-    assert resolved.provider == settings.DEFAULT_MODEL_PROVIDER
-    assert resolved.model == settings.DEFAULT_MODEL
+def test_resolve_agent_model_prefers_workspace_default_over_settings_default():
+    workspace = SimpleNamespace(default_model_provider="anthropic", default_model="claude-sonnet-5")
+    resolved = resolve_agent_model(_agent(), workspace=workspace)
+    assert resolved.qualified_id == "anthropic:claude-sonnet-5"
     assert resolved.max_steps == DEFAULT_MAX_STEPS
+
+    fallback = resolve_agent_model(_agent(), workspace=None)
+    assert fallback.provider == settings.DEFAULT_MODEL_PROVIDER
+    assert fallback.model == settings.DEFAULT_MODEL
 
 
 def test_resolve_agent_model_rejects_unknown_model():
     with pytest.raises(ModelConfigurationError):
-        resolve_agent_model(_agent(model_provider="anthropic", model="claude-nope"))
+        resolve_agent_model(_agent(model_provider="anthropic", model="claude-nope"), workspace=None)
 
 
 def test_azure_context_budget_uses_explicit_deployment_settings(monkeypatch):
@@ -161,7 +165,8 @@ def test_azure_context_budget_uses_explicit_deployment_settings(monkeypatch):
             model_provider="azure",
             model="gpt-5.6-luna",
             azure_deployment="my-deployment",
-        )
+        ),
+        workspace=None,
     )
 
     budget = resolve_model_context_budget(resolved)
@@ -171,7 +176,9 @@ def test_azure_context_budget_uses_explicit_deployment_settings(monkeypatch):
 
 
 def test_catalog_context_budget_uses_model_calibration():
-    resolved = resolve_agent_model(_agent(model_provider="openai", model="gpt-5.6-luna"))
+    resolved = resolve_agent_model(
+        _agent(model_provider="openai", model="gpt-5.6-luna"), workspace=None
+    )
 
     budget = resolve_model_context_budget(resolved)
 

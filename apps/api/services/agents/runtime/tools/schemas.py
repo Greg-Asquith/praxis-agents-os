@@ -174,13 +174,19 @@ class ToolCatalogEntry(BaseModel):
     code_eligible: bool
     default_policy: str
     supported_policies: list[str]
+    workspace_policy: str | None = None
     defer_loading: bool
     provider_keys: list[str] | None
     resource_types: list[str] | None
     input_schema: dict[str, Any] | None
 
     @classmethod
-    def from_definition(cls, definition: RuntimeToolDefinition) -> "ToolCatalogEntry":
+    def from_definition(
+        cls,
+        definition: RuntimeToolDefinition,
+        *,
+        workspace_policy: str | None = None,
+    ) -> "ToolCatalogEntry":
         return cls(
             name=definition.name,
             version=definition.version,
@@ -194,6 +200,7 @@ class ToolCatalogEntry(BaseModel):
             code_eligible=definition.code_eligible,
             default_policy=definition.default_policy,
             supported_policies=sorted(definition.allowed_policies()),
+            workspace_policy=workspace_policy,
             defer_loading=definition.defer_loading,
             provider_keys=(
                 sorted(definition.integration_binding.provider_keys)

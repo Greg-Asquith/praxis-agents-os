@@ -70,7 +70,8 @@ from services.files import build_attachment_user_content, resolve_chat_attachmen
 from services.integrations.context import resolve_active_context
 from services.integrations.context.domain import EMPTY_ACTIVE_CONTEXT, ResolvedActiveContext
 from services.memories.core_block import load_core_memories, render_core_memory_block
-from services.tools import get_disabled_tools
+from services.tools import get_workspace_tool_defaults
+from services.tools.domain import WorkspaceToolDefaults
 
 from .types import BuiltRuntimeAgent, PreparedRuntime
 
@@ -241,6 +242,7 @@ async def prepare_runtime(
         else ()
     )
     workspace_definitions = await load_workspace_tool_definitions(db, workspace)
+    tool_defaults = await get_workspace_tool_defaults(db, workspace)
     built_agent = await build_agent_for_run(
         db,
         run=run,
@@ -258,6 +260,7 @@ async def prepare_runtime(
         available_files=available_files,
         active_context=active_context,
         workspace_definitions=workspace_definitions,
+        tool_defaults=tool_defaults,
         inherited_usage_limits=inherited_usage_limits,
     )
     deps = RuntimeDeps(
@@ -273,6 +276,7 @@ async def prepare_runtime(
         delegation_depth=run.delegation_depth or 0,
         active_context=active_context,
         workspace_tool_definitions=tuple(workspace_definitions),
+        workspace_tool_policies=tool_defaults.policies,
     )
     if deferred_tool_results is not None:
         await record_denied_approval_audit_events(
@@ -301,7 +305,7 @@ async def assemble_user_prompt(
 
     attachment_files = await resolve_chat_attachments(
         db,
-        workspace_id=workspace.id,
+        workspace=workspace,
         agent=agent,
         file_ids=attachment_file_ids,
         conversation_id=conversation_id,
@@ -335,6 +339,7 @@ async def build_agent_for_run(
     available_files: Sequence[AvailableFile],
     active_context: ResolvedActiveContext,
     workspace_definitions: Sequence[RuntimeToolDefinition],
+    tool_defaults: WorkspaceToolDefaults,
     inherited_usage_limits: EffectiveUsageLimits | None = None,
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
@@ -346,7 +351,6 @@ async def build_agent_for_run(
     # Pydantic AI still needs the original tool registered to resolve an approved deferred delegation; the tool body re-checks live policy.
     force_delegation_tools = has_delegated_deferred_results(deferred_tool_results)
     skipped_tool_names: list[str] = []
-    disabled_tool_names = await get_disabled_tools(db, workspace)
     history = (
         list(message_history)
         if message_history is not None
@@ -355,6 +359,7 @@ async def build_agent_for_run(
     history_compaction = await _prepare_history_compaction(
         db,
         agent=agent,
+        workspace=workspace,
         conversation=conversation,
         history=history,
         include_delegation=enable_delegation,
@@ -379,7 +384,8 @@ async def build_agent_for_run(
         active_context=active_context,
         skipped_tool_names=skipped_tool_names,
         workspace=workspace,
-        disabled_tool_names=disabled_tool_names,
+        disabled_tool_names=tool_defaults.disabled,
+        workspace_policies=tool_defaults.policies,
         additional_tool_names=completion_tool_names,
         workspace_definitions=workspace_definitions,
         history_compaction=history_compaction,
@@ -413,6 +419,7 @@ async def _prepare_history_compaction(
     db: AsyncSession,
     *,
     agent: Agent,
+    workspace: Workspace,
     conversation: Conversation,
     history: list[ModelMessage],
     include_delegation: bool,
@@ -427,7 +434,7 @@ async def _prepare_history_compaction(
     if max_turns is None:
         return HistoryCompaction()
 
-    resolved_model = resolve_agent_model(agent)
+    resolved_model = resolve_agent_model(agent, workspace=workspace)
     model_context = resolve_model_context_budget(resolved_model)
     system_prompt = _runtime_instructions(
         agent,

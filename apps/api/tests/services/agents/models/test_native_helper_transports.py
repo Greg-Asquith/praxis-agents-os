@@ -301,4 +301,4 @@ def test_anthropic_vertex_helper_override_fails_before_dispatch(monkeypatch, act
         web_fetch.resolve_web_fetch_model if action == "fetch" else run_code.resolve_run_code_model
     )
     with pytest.raises(ModelRetry, match="providers are configured"):
-        resolve(None, model_provider="anthropic")
+        resolve(None, workspace=None, model_provider="anthropic")

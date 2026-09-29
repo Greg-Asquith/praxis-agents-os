@@ -1,8 +1,10 @@
 # apps/api/services/agents/runtime/tools/permissions.py
 
-"""Workspace-aware runtime tool availability checks."""
+"""Workspace-aware runtime tool availability and policy checks."""
 
-from services.agents.runtime.tools.contract import RuntimeToolDefinition
+from collections.abc import Mapping
+
+from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolPolicy
 
 
 def is_tool_allowed(
@@ -18,3 +20,23 @@ def is_tool_allowed(
     if workspace is not None and definition.name in disabled_tool_names:
         return False
     return definition.availability_check is None or definition.availability_check()
+
+
+def resolve_tool_policy(
+    definition: RuntimeToolDefinition,
+    *,
+    agent_policies: Mapping[str, str],
+    workspace_policies: Mapping[str, str],
+) -> ToolPolicy:
+    """Resolve the agent override, then the workspace default, then the tool's default."""
+    if definition.auto_mount:
+        return definition.default_policy
+    allowed_policies = definition.allowed_policies()
+    for candidate in (
+        agent_policies.get(definition.name),
+        workspace_policies.get(definition.name),
+    ):
+        # An unsupported saved value never loosens the tool; fall through instead.
+        if candidate in allowed_policies:
+            return candidate
+    return definition.default_policy

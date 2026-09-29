@@ -67,7 +67,7 @@ async def test_resolve_chat_attachments_preserves_order_and_dedupes(
 
     resolved = await resolve_chat_attachments(
         db_session,
-        workspace_id=workspace.id,
+        workspace=workspace,
         agent=agent,
         file_ids=[pdf.id, image.id, pdf.id, html.id],
     )
@@ -109,7 +109,7 @@ async def test_resolve_chat_attachments_rejects_count_size_type_and_scope(
     with pytest.raises(AppValidationError, match="Too many chat attachments"):
         await resolve_chat_attachments(
             db_session,
-            workspace_id=workspace.id,
+            workspace=workspace,
             agent=agent,
             file_ids=[text.id, pdf.id],
         )
@@ -119,7 +119,7 @@ async def test_resolve_chat_attachments_rejects_count_size_type_and_scope(
     with pytest.raises(AppValidationError, match="Document attachment is too large"):
         await resolve_chat_attachments(
             db_session,
-            workspace_id=workspace.id,
+            workspace=workspace,
             agent=agent,
             file_ids=[pdf.id],
         )
@@ -128,7 +128,7 @@ async def test_resolve_chat_attachments_rejects_count_size_type_and_scope(
     monkeypatch.setattr(settings, "MAX_FILE_SIZE_DOCUMENT", 20)
     assert await resolve_chat_attachments(
         db_session,
-        workspace_id=workspace.id,
+        workspace=workspace,
         agent=agent,
         file_ids=[pptx.id],
     ) == [pptx]
@@ -138,7 +138,7 @@ async def test_resolve_chat_attachments_rejects_count_size_type_and_scope(
     with pytest.raises(AppValidationError, match="Document attachment is too large") as exc_info:
         await resolve_chat_attachments(
             db_session,
-            workspace_id=workspace.id,
+            workspace=workspace,
             agent=agent,
             file_ids=[pptx.id],
         )
@@ -163,7 +163,7 @@ async def test_resolve_chat_attachments_rejects_count_size_type_and_scope(
     with pytest.raises(NotFoundError):
         await resolve_chat_attachments(
             db_session,
-            workspace_id=workspace.id,
+            workspace=workspace,
             agent=agent,
             file_ids=[foreign_file.id],
         )
@@ -173,7 +173,7 @@ async def test_resolve_chat_attachments_rejects_count_size_type_and_scope(
     with pytest.raises(NotFoundError):
         await resolve_chat_attachments(
             db_session,
-            workspace_id=workspace.id,
+            workspace=workspace,
             agent=agent,
             file_ids=[text.id],
         )
@@ -211,7 +211,7 @@ async def test_resolve_chat_attachments_rejects_images_for_non_vision_models(
     with pytest.raises(AppValidationError, match="No Vision"):
         await resolve_chat_attachments(
             db_session,
-            workspace_id=workspace.id,
+            workspace=workspace,
             agent=agent,
             file_ids=[image.id],
         )
