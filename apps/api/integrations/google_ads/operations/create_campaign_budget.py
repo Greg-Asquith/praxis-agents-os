@@ -13,12 +13,9 @@ from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
     build_mutation_ledger,
+    reconcile_created_mutation_outcomes,
 )
 from .utils import grouped_partial_failure_errors
-
-_RESOURCE_PATTERN = re.compile(r"customers/(\d+)/campaignBudgets/(\d+)")
-_UNACCOUNTED_CODE = "UNACCOUNTED_OPERATION"
-_UNACCOUNTED_MESSAGE = "Google Ads did not account for the campaign budget creation"
 
 
 def campaign_budget_creation_failure_ledger(
@@ -92,24 +89,13 @@ async def create_campaign_budget(
         unattributed_error_fields=identity,
         default_message="Campaign budget creation failed",
     )
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        outcome = ("unverified", None, diagnostic["error_code"], diagnostic["message"])
-    elif not _valid_results(
-        results, customer_id=normalized_customer_id, has_indexed_error=0 in indexed_errors
-    ):
-        error = indexed_errors.get(0)
-        outcome = (
-            "failed" if error else "unverified",
-            None,
-            error["error_code"] if error else _UNACCOUNTED_CODE,
-            error["message"] if error else _UNACCOUNTED_MESSAGE,
-        )
-    elif (error := indexed_errors.get(0)) is not None:
-        outcome = ("failed", None, error["error_code"], error["message"])
-    else:
-        outcome = ("applied", results[0]["resourceName"], None, None)
+    [outcome] = reconcile_created_mutation_outcomes(
+        payload.get("results") if isinstance(payload, dict) else None,
+        resource_pattern=re.compile(rf"customers/{normalized_customer_id}/campaignBudgets/\d+"),
+        operation_count=1,
+        indexed_errors=indexed_errors,
+        unattributed_errors=unattributed_errors,
+    )
     return _ledger(identity, outcome=outcome)
 
 
@@ -144,15 +130,3 @@ def _ledger(identity: Mapping[str, object], *, outcome: Any) -> GoogleAdsMutatio
             errors_key="budget_errors",
         ),
     )
-
-
-def _valid_results(results: Any, *, customer_id: str, has_indexed_error: bool) -> bool:
-    if not isinstance(results, list) or len(results) != 1 or not isinstance(results[0], Mapping):
-        return False
-    resource_name = results[0].get("resourceName")
-    if has_indexed_error:
-        return resource_name is None
-    if not isinstance(resource_name, str):
-        return False
-    match = _RESOURCE_PATTERN.fullmatch(resource_name)
-    return match is not None and match.group(1) == customer_id

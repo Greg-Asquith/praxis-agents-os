@@ -2,7 +2,8 @@
 
 """Shared Google Ads campaign and ad-group negative-keyword mechanics."""
 
-from collections.abc import Mapping
+import re
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -15,8 +16,9 @@ from .mutation_outcomes import (
     CAMPAIGN_KEYWORD_MUTATION_SPEC,
     GoogleAdsKeywordMutationSpec,
     GoogleAdsMutationLedger,
-    MutationEffectOutcome,
+    GoogleAdsMutationOutcome,
     build_keyword_mutation_ledger,
+    reconcile_mutation_outcomes,
 )
 from .utils import grouped_partial_failure_errors, stream_rows
 
@@ -26,8 +28,6 @@ type EntityIdKey = Literal["campaign_id", "ad_group_id"]
 type ErrorsKey = Literal["campaign_errors", "ad_group_errors"]
 
 _MATCH_TYPES = {"EXACT", "PHRASE", "BROAD"}
-_UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
-_UNACCOUNTED_RESPONSE_CODE = "UNACCOUNTED_OPERATION"
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +156,14 @@ async def add_entity_negative_keywords(
         creates,
         spec=spec,
         default_message=f"{spec.entity_plural_label[:-1]} negative keyword creation failed",
+        valid_resource_name=lambda index, name: (
+            re.fullmatch(
+                rf"customers/{normalized_customer_id}/{spec.criterion_path}/"
+                rf"{creates[index][spec.entity_id_key]}~\d+",
+                name,
+            )
+            is not None
+        ),
     )
     return _ledger(spec, "add", requested, skipped_indices, submitted, outcomes)
 
@@ -236,6 +244,7 @@ async def remove_entity_negative_keywords(
         removal_rows,
         spec=spec,
         default_message=f"{spec.entity_plural_label[:-1]} negative keyword removal failed",
+        valid_resource_name=lambda index, name: name == removal_rows[index]["resource_name"],
     )
     concrete = [
         (
@@ -332,7 +341,8 @@ def _mutation_outcomes(
     *,
     spec: NegativeKeywordEntitySpec,
     default_message: str,
-) -> list[tuple[MutationEffectOutcome, str | None, str | None, str | None]]:
+    valid_resource_name: Callable[[int, str], bool],
+) -> list[GoogleAdsMutationOutcome]:
     indexed_errors, unattributed_errors = grouped_partial_failure_errors(
         payload,
         operations,
@@ -344,47 +354,13 @@ def _mutation_outcomes(
         },
         default_message=default_message,
     )
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        return [
-            ("unverified", None, diagnostic["error_code"], diagnostic["message"])
-            for _ in operations
-        ]
-    if not isinstance(results, list) or len(results) != len(operations):
-        return [
-            (
-                "failed" if index in indexed_errors else "unverified",
-                None,
-                (
-                    indexed_errors[index]["error_code"]
-                    if index in indexed_errors
-                    else _UNACCOUNTED_RESPONSE_CODE
-                ),
-                (
-                    indexed_errors[index]["message"]
-                    if index in indexed_errors
-                    else _UNACCOUNTED_RESPONSE_MESSAGE
-                ),
-            )
-            for index in range(len(operations))
-        ]
-
-    outcomes: list[tuple[MutationEffectOutcome, str | None, str | None, str | None]] = []
-    for index, (_operation, item) in enumerate(zip(operations, results, strict=True)):
-        error = indexed_errors.get(index)
-        resource_name = item.get("resourceName") if isinstance(item, Mapping) else None
-        if error is not None:
-            if resource_name is not None:
-                raise ValueError("Google Ads returned contradictory criterion mutation evidence")
-            outcomes.append(("failed", None, error["error_code"], error["message"]))
-        elif isinstance(resource_name, str) and resource_name:
-            outcomes.append(("applied", resource_name, None, None))
-        else:
-            outcomes.append(
-                ("unverified", None, _UNACCOUNTED_RESPONSE_CODE, _UNACCOUNTED_RESPONSE_MESSAGE)
-            )
-    return outcomes
+    return reconcile_mutation_outcomes(
+        payload.get("results") if isinstance(payload, dict) else None,
+        operation_count=len(operations),
+        indexed_errors=indexed_errors,
+        unattributed_errors=unattributed_errors,
+        valid_resource_name=valid_resource_name,
+    )
 
 
 def _ledger(

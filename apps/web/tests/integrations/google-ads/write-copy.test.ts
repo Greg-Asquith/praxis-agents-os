@@ -58,6 +58,10 @@ const cases = [
     },
   },
   {
+    name: "google_ads_create_labels",
+    spec: { verb: "Create", object: "labels", effect: "created" },
+  },
+  {
     name: "google_ads_assign_campaign_budgets",
     spec: { verb: "Assign", object: "campaign budgets", effect: "assigned" },
   },

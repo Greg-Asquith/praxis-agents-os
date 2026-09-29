@@ -282,6 +282,8 @@ def _validate_record_cell(
     *, field_key: str, row_index: int, column: "ToolFieldColumn", item: Any
 ) -> None:
     details = {"column": column.key, "row": row_index}
+    if item is None and not column.required:
+        return
     if not _record_cell_matches_format(column, item):
         raise AppValidationError(
             "A record cell does not match its declared format",

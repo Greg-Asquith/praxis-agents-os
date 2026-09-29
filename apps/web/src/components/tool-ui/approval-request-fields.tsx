@@ -32,7 +32,10 @@ import { HtmlFieldInput } from "@/components/tool-ui/html-field-input"
 import { KeyValueFieldInput } from "@/components/tool-ui/keyvalue-field-input"
 import { ListFieldInput } from "@/components/tool-ui/list-field-input"
 import { RecordsFieldInput } from "@/components/tool-ui/records-field-input"
-import { recordRowsValidity } from "@/components/tool-ui/records-field-values"
+import {
+  recordRowsValidity,
+  withoutNullRecordCells,
+} from "@/components/tool-ui/records-field-values"
 import { ScalarFieldInput } from "@/components/tool-ui/scalar-field-input"
 import {
   availableFieldOptions,
@@ -435,8 +438,9 @@ function editableValue(field: ApprovalField, value: unknown): EditedValue | null
       )
     )
   }
-  if (format === "records" && isEditedRecords(value, field)) {
-    return value.map((row) => ({ ...row }))
+  if (format === "records") {
+    const rows = withoutNullRecordCells(value)
+    return isEditedRecords(rows, field) ? rows.map((row) => ({ ...row })) : null
   }
   if (format === "entity" && isRecord(value)) {
     return value

@@ -60,30 +60,22 @@ def nonnegative_int(value: Any) -> int | None:
     return parsed if parsed is not None and parsed >= 0 else None
 
 
-def valid_exact_mutation_results(
-    results: Any,
+def resource_names_by_casefold_name(
+    rows: Sequence[Mapping[str, Any]],
     *,
-    expected_resource_names: Sequence[str],
-    indexed_errors: Mapping[int, object],
-) -> bool:
-    """Validate ordered mutate results against the exact submitted resources."""
-    if not isinstance(results, list) or len(results) != len(expected_resource_names):
-        return False
-    seen: set[str] = set()
-    for index, (item, expected_resource_name) in enumerate(
-        zip(results, expected_resource_names, strict=True)
-    ):
-        if not isinstance(item, Mapping):
-            return False
-        resource_name = item.get("resourceName")
-        if index in indexed_errors:
-            if resource_name is not None:
-                return False
-            continue
-        if resource_name != expected_resource_name or resource_name in seen:
-            return False
-        seen.add(resource_name)
-    return True
+    row_key: str,
+    owned_prefix: str,
+) -> dict[str, str]:
+    """Returns owned resource names keyed by their case-insensitive display name."""
+    return {
+        name.casefold(): resource_name
+        for row in rows
+        if isinstance((item := row.get(row_key)), Mapping)
+        and isinstance((name := item.get("name")), str)
+        and name
+        and isinstance((resource_name := item.get("resourceName")), str)
+        and resource_name.startswith(owned_prefix)
+    }
 
 
 def escape_gaql_like_literal(value: str, *, max_length: int = 200) -> str:

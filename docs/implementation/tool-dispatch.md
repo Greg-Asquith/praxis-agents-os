@@ -98,7 +98,8 @@ The following contracts apply in this area:
   Editable `records` fields also enforce their declared minimum row count and
   required columns before resume, even when the operator approves without edits.
   A secondary records field stays optional when omitted or null; a supplied
-  list must meet the same declared constraints. Declared `scalar_or_list`
+  list must meet the same declared constraints. A null cell in an optional
+  column counts as unset; required columns still reject null. Declared `scalar_or_list`
   record cells accept text, finite numbers, or lists of those values. They
   reject booleans and nested objects. Provider forms can use these cells for
   filter values that vary by operator.
@@ -289,6 +290,8 @@ The following contracts apply in this area:
   it or go back, correct the fields, and approve again.
 - Editable record approvals use the server-declared `min_rows` and column
   `required` constraints. An omitted secondary records field stays optional.
+  Null cells in optional columns pass validation, and the editor treats them
+  as omitted.
   Keep editor feedback, approval gating, and decision merge on the shared
   record-validity helper, and give repeated controls row-specific accessible
   names.

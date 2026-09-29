@@ -4,6 +4,11 @@ from .ad_group import GoogleAdsAdGroupReference
 from .campaign import GoogleAdsCampaignReference
 from .campaign_budget import GoogleAdsCampaignBudgetReference
 from .keyword import GoogleAdsKeywordReference, positive_keyword_reference_from_row
+from .label import (
+    GoogleAdsLabelAssociationCounts,
+    GoogleAdsLabelReference,
+    label_reference_from_row,
+)
 from .recommendation import GoogleAdsRecommendationReference
 from .shared_set import GoogleAdsSharedSetReference
 
@@ -12,7 +17,10 @@ __all__ = [
     "GoogleAdsCampaignBudgetReference",
     "GoogleAdsCampaignReference",
     "GoogleAdsKeywordReference",
+    "GoogleAdsLabelAssociationCounts",
+    "GoogleAdsLabelReference",
     "GoogleAdsRecommendationReference",
     "GoogleAdsSharedSetReference",
+    "label_reference_from_row",
     "positive_keyword_reference_from_row",
 ]

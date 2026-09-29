@@ -1,5 +1,7 @@
 """Exact Google Ads mutation-ledger invariants and projections."""
 
+import re
+
 import pytest
 
 from integrations.google_ads.operations.mutation_outcomes import (
@@ -7,6 +9,8 @@ from integrations.google_ads.operations.mutation_outcomes import (
     GoogleAdsMutationProjection,
     build_keyword_mutation_ledger,
     build_mutation_ledger,
+    reconcile_created_mutation_outcomes,
+    reconcile_exact_mutation_outcomes,
 )
 
 
@@ -139,3 +143,82 @@ def test_unverified_effect_fails_closed_after_provider_dispatch() -> None:
 
     with pytest.raises(ValueError, match="could not be verified exactly"):
         ledger.require_verified()
+
+
+def _reconcile(results, *, indexed=None, unattributed=()):
+    return reconcile_exact_mutation_outcomes(
+        results,
+        expected_resource_names=["customers/1/campaigns/10", "customers/1/campaigns/20"],
+        indexed_errors=indexed or {},
+        unattributed_errors=list(unattributed),
+    )
+
+
+_REJECTED = {"error_code": "REJECTED", "message": "Rejected"}
+
+
+def test_reconcile_keeps_attributed_failures_beside_unattributed_errors() -> None:
+    outcomes = _reconcile(
+        [{}, {"resourceName": "customers/1/campaigns/20"}],
+        indexed={0: _REJECTED},
+        unattributed=[{"error_code": "INTERNAL", "message": "Unplaced"}],
+    )
+
+    assert outcomes == [
+        ("failed", None, "REJECTED", "Rejected"),
+        ("unverified", None, "INTERNAL", "Unplaced"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "results",
+    [[{}], [{}, {}, {}], [{}, "malformed"], None],
+    ids=["short", "long", "malformed", "missing"],
+)
+def test_reconcile_leaves_every_unerrored_slot_unverified_when_results_cannot_align(
+    results,
+) -> None:
+    outcomes = _reconcile(results, indexed={0: _REJECTED})
+
+    assert [outcome[0] for outcome in outcomes] == ["failed", "unverified"]
+    assert outcomes[1][2] == "UNACCOUNTED_OPERATION"
+
+
+def test_reconcile_isolates_a_mismatched_resource_name_to_its_slot() -> None:
+    outcomes = _reconcile(
+        [{"resourceName": "customers/2/campaigns/10"}, {"resourceName": "customers/1/campaigns/20"}]
+    )
+
+    assert outcomes == [
+        ("unverified", None, "UNACCOUNTED_OPERATION", outcomes[0][3]),
+        ("applied", "customers/1/campaigns/20", None, None),
+    ]
+
+
+def test_reconcile_never_applies_a_resource_name_returned_twice() -> None:
+    outcomes = reconcile_created_mutation_outcomes(
+        [{"resourceName": "customers/1/labels/8"}] * 2,
+        resource_pattern=re.compile(r"customers/1/labels/\d+"),
+        operation_count=2,
+        indexed_errors={},
+        unattributed_errors=[],
+    )
+
+    assert [outcome[0] for outcome in outcomes] == ["unverified", "unverified"]
+
+
+@pytest.mark.parametrize(
+    ("sibling", "sibling_outcome"),
+    [({"resourceName": "customers/1/campaigns/20"}, "applied"), ("malformed", "unverified")],
+    ids=["valid-sibling", "malformed-sibling"],
+)
+def test_reconcile_records_contradictory_slot_evidence_as_unverified(
+    sibling, sibling_outcome: str
+) -> None:
+    outcomes = _reconcile(
+        [{"resourceName": "customers/1/campaigns/10"}, sibling],
+        indexed={0: _REJECTED},
+    )
+
+    assert outcomes[0][:3] == ("unverified", None, "CONTRADICTORY_OPERATION")
+    assert outcomes[1][0] == sibling_outcome

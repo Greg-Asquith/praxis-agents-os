@@ -88,6 +88,7 @@ function recordCellError(
   column: ToolFieldColumn | undefined,
   rowIndex: number
 ): string | false | null {
+  if (item === null && column && !column.required) return null
   if (!validRecordCell(item, column?.format ?? "text")) return false
   if (!column) return null
   if (requiredCellIsEmpty(item, column)) {
@@ -112,6 +113,16 @@ function requiredCellIsEmpty(item: unknown, column: ToolFieldColumn): boolean {
 function exceedsEntryLimit(item: unknown, column: ToolFieldColumn): boolean {
   if (column.max_entries === undefined || column.max_entries === null) return false
   return isRecord(item) && Object.keys(item).length > column.max_entries
+}
+
+// Null optional cells mean "not set", so the editor treats them as omitted.
+export function withoutNullRecordCells(value: unknown): unknown {
+  if (!Array.isArray(value)) return value
+  return value.map((row: unknown) =>
+    isRecord(row)
+      ? Object.fromEntries(Object.entries(row).filter(([, cell]) => cell !== null))
+      : row
+  )
 }
 
 export function removeRecordRow(value: EditedRecords, rowIndex: number): EditedRecords {

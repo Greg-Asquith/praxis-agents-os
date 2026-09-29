@@ -16,6 +16,7 @@ import {
   recordRowsValidity,
   removeRecordRow,
   updateRecordCell,
+  withoutNullRecordCells,
 } from "@/components/tool-ui/records-field-values"
 
 import { Select } from "@/components/ui/select"
@@ -107,6 +108,43 @@ describe("ApprovalRequestFields", () => {
 
     expect(html).toContain("Keyword is required in row 1.")
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+  })
+
+  it("approves null optional record cells and edits them as omitted", () => {
+    const field: ApprovalField = {
+      ...approvalField("labels", "Labels", "records"),
+      editable: true,
+      min_rows: 1,
+      columns: [
+        { key: "name", label: "Name", options: [], placeholder: "", required: true },
+        { key: "description", label: "Description", options: [], placeholder: "", required: false },
+      ],
+    }
+    const card = (name: string) =>
+      renderToStaticMarkup(
+        createElement(ToolApprovalDecisionCard, {
+          activityId: "records-null",
+          args: { labels: [{ name, description: null }] },
+          controls: {
+            decision: { decision: "pending", edits: {}, message: "" },
+            disabled: false,
+            error: null,
+            onDecisionChange: () => undefined,
+            onRetry: () => undefined,
+            pendingCount: 1,
+            submitting: false,
+          },
+          fields: [field],
+          label: "Create Labels",
+          toolName: "google_ads_create_labels",
+        })
+      )
+
+    expect(card("Summer")).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+    expect(card(" ")).toMatch(/<button[^>]*disabled=""[^>]*>Approve<\/button>/)
+    expect(withoutNullRecordCells([{ name: "Summer", description: null }])).toEqual([
+      { name: "Summer" },
+    ])
   })
 
   it("blocks approval but permits decline when display enrichment fails", () => {

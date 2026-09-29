@@ -1,7 +1,5 @@
 """Google Ads low-level mutation-operation contracts."""
 
-import pytest
-
 from integrations.google_ads.operations.add_negative_keywords import add_negative_keywords
 from integrations.google_ads.operations.create_negative_keyword_list import (
     create_negative_keyword_list,
@@ -182,75 +180,6 @@ async def test_update_device_bid_modifiers_uses_two_decimal_skip_comparison() ->
     assert client.last_json is None
 
 
-async def test_update_device_bid_modifiers_fails_closed_for_unattributed_errors() -> None:
-    client = _OperationClient(
-        {
-            "results": [
-                {"resourceName": "customers/333/campaignCriteria/10~30000"},
-                {"resourceName": "customers/333/campaignCriteria/10~30001"},
-            ],
-            "partialFailureError": {
-                "details": [
-                    {
-                        "errors": [
-                            {
-                                "message": "Unattributed device failure",
-                                "errorCode": {"criterionError": "UNKNOWN_DEVICE_FAILURE"},
-                            }
-                        ]
-                    }
-                ]
-            },
-        }
-    )
-
-    result = await update_device_bid_modifiers(
-        client,
-        customer_id="333",
-        login_customer_id="111",
-        adjustments=[("10", "DESKTOP", 1.0), ("10", "MOBILE", 0.7)],
-        existing_state={
-            "10": {
-                "bidding_strategy_type": "MANUAL_CPC",
-                "target_cpa_configured": False,
-                "devices": {},
-            }
-        },
-    )
-
-    assert {item["error_code"] for item in result["device_errors"]} == {"UNKNOWN_DEVICE_FAILURE"}
-    assert all(effect.outcome == "unverified" for effect in result.effects)
-
-
-@pytest.mark.parametrize(
-    "results",
-    [
-        [{"resourceName": "customers/333/campaigns/10"}],
-        [
-            {"resourceName": "customers/333/campaigns/10"},
-            {"resourceName": "customers/333/campaigns/20"},
-            {"resourceName": "customers/333/campaigns/30"},
-        ],
-        [{"resourceName": "customers/333/campaigns/10"}, "malformed"],
-    ],
-    ids=["short", "long", "malformed"],
-)
-async def test_campaign_status_fails_closed_for_invalid_result_evidence(
-    results: list[object],
-) -> None:
-    result = await update_campaign_status(
-        _OperationClient({"results": results}),
-        customer_id="333",
-        login_customer_id="111",
-        campaign_ids=["10", "20"],
-        status="PAUSED",
-    )
-
-    assert result["resource_names"] == []
-    assert [error["campaign_id"] for error in result["campaign_errors"]] == ["10", "20"]
-    assert {error["error_code"] for error in result["campaign_errors"]} == {"UNACCOUNTED_OPERATION"}
-
-
 async def test_link_negative_keyword_list_skips_existing_and_maps_failures() -> None:
     client = _CampaignSharedSetClient(
         search_payload={
@@ -372,57 +301,6 @@ async def test_link_negative_keyword_list_does_not_treat_removed_link_as_existin
     }
 
 
-@pytest.mark.parametrize(
-    ("results", "expected_resource_names"),
-    [
-        (
-            [
-                {"resourceName": "customers/333/sharedSets/10"},
-                {"resourceName": "customers/333/sharedSets/20"},
-            ],
-            ["customers/333/sharedSets/10", "customers/333/sharedSets/20"],
-        ),
-        ([{"resourceName": "customers/333/sharedSets/10"}], []),
-        (
-            [
-                {"resourceName": "customers/333/sharedSets/10"},
-                {"resourceName": "customers/333/sharedSets/20"},
-                {"resourceName": "customers/333/sharedSets/30"},
-            ],
-            [],
-        ),
-    ],
-    ids=["exact", "short", "long"],
-)
-async def test_create_negative_keyword_list_accounts_for_every_result_slot(
-    results: list[object],
-    expected_resource_names: list[str],
-) -> None:
-    client = _NegativeKeywordListClient(
-        search_payload={"results": []},
-        mutate_payload={"results": results},
-    )
-
-    result = await create_negative_keyword_list(
-        client,
-        customer_id="333",
-        login_customer_id="111",
-        names=["First List", "Second List"],
-    )
-
-    assert result["resource_names"] == expected_resource_names
-    if expected_resource_names:
-        assert result["created_names"] == ["First List", "Second List"]
-        assert result["list_errors"] == []
-    else:
-        assert result["created_names"] == []
-        assert [error["name"] for error in result["list_errors"]] == [
-            "First List",
-            "Second List",
-        ]
-        assert {error["error_code"] for error in result["list_errors"]} == {"UNACCOUNTED_OPERATION"}
-
-
 async def test_add_negative_keywords_skips_pairs_and_maps_partial_failures() -> None:
     client = _NegativeKeywordClient(
         search_payload={
@@ -436,7 +314,7 @@ async def test_add_negative_keywords_skips_pairs_and_maps_partial_failures() -> 
             ]
         },
         mutate_payload={
-            "results": [{"resourceName": "customers/333/sharedCriteria/10~20"}, {}],
+            "results": [{"resourceName": "customers/3333333333/sharedCriteria/50~20"}, {}],
             "partialFailureError": {
                 "details": [
                     {
@@ -495,7 +373,7 @@ async def test_add_negative_keywords_skips_pairs_and_maps_partial_failures() -> 
             {
                 "text": "Created phrase",
                 "match_type": "PHRASE",
-                "resource_name": "customers/333/sharedCriteria/10~20",
+                "resource_name": "customers/3333333333/sharedCriteria/50~20",
             }
         ],
         "skipped_existing": [{"text": "existing term", "match_type": "EXACT"}],
@@ -509,82 +387,6 @@ async def test_add_negative_keywords_skips_pairs_and_maps_partial_failures() -> 
             }
         ],
     }
-
-
-@pytest.mark.parametrize(
-    "location",
-    [
-        {},
-        {"fieldPathElements": [{"fieldName": "operations"}]},
-    ],
-)
-async def test_add_negative_keywords_fails_closed_for_unattributed_partial_failures(
-    location: dict[str, object],
-) -> None:
-    client = _NegativeKeywordClient(
-        search_payload={"results": []},
-        mutate_payload={
-            "results": [{"resourceName": "customers/333/sharedCriteria/50~1"}],
-            "partialFailureError": {
-                "details": [
-                    {
-                        "errors": [
-                            {
-                                "message": "The account rejected part of the request",
-                                "errorCode": {"requestError": "INVALID_INPUT"},
-                                "location": location,
-                            }
-                        ]
-                    }
-                ]
-            },
-        },
-    )
-
-    result = await add_negative_keywords(
-        client,
-        customer_id="333",
-        login_customer_id="111",
-        shared_set_id="50",
-        keywords=[{"text": "Created phrase", "match_type": "PHRASE"}],
-    )
-
-    assert result["added"] == []
-    assert result["keyword_errors"] == [
-        {
-            "scope": "keyword",
-            "text": "Created phrase",
-            "match_type": "PHRASE",
-            "message": "The account rejected part of the request",
-            "error_code": "INVALID_INPUT",
-        }
-    ]
-
-
-async def test_add_negative_keywords_fails_closed_for_unaccounted_results() -> None:
-    client = _NegativeKeywordClient(
-        search_payload={"results": []},
-        mutate_payload={"results": []},
-    )
-
-    result = await add_negative_keywords(
-        client,
-        customer_id="333",
-        login_customer_id="111",
-        shared_set_id="50",
-        keywords=[{"text": "Unaccounted", "match_type": "EXACT"}],
-    )
-
-    assert result["added"] == []
-    assert result["keyword_errors"] == [
-        {
-            "scope": "keyword",
-            "text": "Unaccounted",
-            "match_type": "EXACT",
-            "message": "Google Ads did not account for this submitted operation",
-            "error_code": "UNACCOUNTED_OPERATION",
-        }
-    ]
 
 
 async def test_remove_negative_keywords_resolves_precise_and_any_rows() -> None:
@@ -680,3 +482,24 @@ async def test_remove_negative_keywords_never_mutates_not_found_rows() -> None:
         "not_found": [{"text": "absent", "match_type": "ANY"}],
         "keyword_errors": [],
     }
+
+
+async def test_create_negative_keyword_list_skips_existing_names_with_their_reference() -> None:
+    client = _NegativeKeywordListClient(
+        search_payload={
+            "results": [
+                {"sharedSet": {"resourceName": "customers/333/sharedSets/7", "name": "Brand"}}
+            ]
+        },
+        mutate_payload={"results": [{"resourceName": "customers/333/sharedSets/8"}]},
+    )
+
+    ledger = await create_negative_keyword_list(
+        client, customer_id="333", login_customer_id="111", names=["brand", "Competitors"]
+    )
+
+    assert client.calls[-1]["json"]["operations"] == [
+        {"create": {"name": "Competitors", "type": "NEGATIVE_KEYWORDS"}}
+    ]
+    assert ledger.skipped_external_ref(ledger.parents[0]) == "customers/333/sharedSets/7"
+    assert ledger.external_refs == ("customers/333/sharedSets/8",)

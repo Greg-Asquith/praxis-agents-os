@@ -12,10 +12,23 @@ and [frontend module](../../../apps/web/src/integrations/google_ads/index.ts).
 Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
-campaign status, device bid adjustments, and campaign-budget creation,
-amount updates, assignment, and unused-budget removal. Keyword and budget
+campaign status, device bid adjustments, campaign-budget creation,
+amount updates, assignment, and unused-budget removal. Label creation defaults
+to approval and also supports auto policy. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
+
+Every partial-failure mutate response is reconciled per operation by
+`reconcile_mutation_outcomes`. Each operation supplies the resource name it
+can produce: an exact name when it is known before submission, or a
+customer-scoped pattern for creates. An error attributed to an operation marks
+it failed. A unique resource name that passes the check marks it applied. Every
+other operation is unverified, including when results cannot be aligned with
+the submitted operations, when Google reports an error it does not attribute,
+and when one operation has both an error and a result. A malformed result row
+prevents applied outcomes for its siblings but never hides that contradiction.
+Unverified outcomes are
+recorded, never raised, so the audit record keeps every operation's evidence.
 
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
@@ -73,6 +86,32 @@ case, and use Google Ads' UTF-8 byte limits. Budget
 removal fails before mutation when any selected budget has a live campaign
 reference.
 
+### Labels
+
+`google_ads_create_labels` creates 1 to 50 text labels in each selected
+account. It defaults to approval, and operators can switch it to auto. It
+pins the v24 bounds: names of 1 to 80 characters, descriptions of up to 200
+characters, and `#RGB` or `#RRGGBB` background colours. Names must be unique
+within a request, ignoring case. The operation reads the account's enabled
+labels first and reports a name that already exists, ignoring case, as
+`already_exists` without a write. An existing label's row shows the name,
+description, and colour Google Ads holds, while the audit intent keeps the
+requested values. Created labels return reusable `google_ads_label`
+references carrying the created name, description, colour, and status.
+Results that Google Ads doesn't account for are `unverified`, not failed.
+When any label is unverified, the account result is `unverified_mutation`
+and still carries every label row, which the presenter shows.
+
+Label lookups return only labels whose resource belongs to the selected
+customer, so manager-owned labels never become targets. Hydrated label
+references carry the name, description, colour, status, and live association
+counts for campaigns, ad groups, positive keywords, and ads. Each entity type
+reads up to 10,001 association rows as a sentinel and reports at most 10,000;
+more than 10,000 marks the counts as lower bounds. `verify_labels` re-reads
+label IDs and fails when a label is missing or removed. The verifier and label
+resolver are pending: they register and run with the first tool that declares
+a label argument.
+
 ## Frontend modules
 
 Google Ads non-visual presenter helpers live in `google_ads/lib`. Entity
@@ -81,6 +120,11 @@ types and parsers belong to their domain modules: `campaign-budgets.ts`,
 and `recommendations.ts`. Account-currency metadata belongs to `accounts.ts`.
 Import directly from those modules. Shared scalar and URL-field validation
 lives in `field-values.ts`; callers own normalisation, defaults, and clears.
+Label draft parsing, approval validation, and the label-reference guard
+belong to `labels.ts`. Draft validation counts code points and approximates
+the server's case folding without the browser locale; the server remains
+authoritative. `GoogleAdsLabelChip` always shows the label name beside a decorative colour
+swatch.
 Scoped negative-keyword evidence belongs to `scoped-negative-keyword-results.ts`.
 It reconciles operation-specific exact rows, per-target counts, aggregate
 counts, and truncated samples while retaining historical count-only results.

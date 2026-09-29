@@ -17,6 +17,7 @@ from .device_bid_modifiers import (
     GoogleAdsDeviceAdjustment,
     GoogleAdsDeviceBidModifierOutput,
 )
+from .labels import GoogleAdsCreateLabelsOutput, GoogleAdsLabelDraft
 from .negative_keywords import (
     GoogleAdsAddNegativeKeywordsOutput,
     GoogleAdsRemoveNegativeKeywordsOutput,
@@ -59,6 +60,7 @@ __all__ = [
     "GoogleAdsCampaignStatusOutput",
     "GoogleAdsCpcBid",
     "GoogleAdsCreateCampaignBudgetOutput",
+    "GoogleAdsCreateLabelsOutput",
     "GoogleAdsCreateNegativeKeywordListOutput",
     "GoogleAdsCreatePositiveKeywordsOutput",
     "GoogleAdsDailyBudgetAmount",
@@ -67,6 +69,7 @@ __all__ = [
     "GoogleAdsDismissRecommendationsOutput",
     "GoogleAdsGetReportFieldOutput",
     "GoogleAdsJsonValue",
+    "GoogleAdsLabelDraft",
     "GoogleAdsListReportFieldsOutput",
     "GoogleAdsPositiveKeywordEntry",
     "GoogleAdsPositiveKeywordPatch",

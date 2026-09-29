@@ -12,11 +12,9 @@ from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
     build_mutation_ledger,
+    reconcile_exact_mutation_outcomes,
 )
 from .utils import grouped_partial_failure_errors, stream_rows
-
-_UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
-_UNACCOUNTED_RESPONSE_CODE = "UNACCOUNTED_OPERATION"
 
 
 async def link_negative_keyword_list(
@@ -98,60 +96,15 @@ async def link_negative_keyword_list(
         unattributed_error_fields={"campaign_id": ""},
         default_message="Negative keyword list campaign update failed",
     )
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        return _ledger(
-            normalized_campaign_ids,
-            action=action,
-            skipped_key=skipped_key,
-            skipped_indices=skipped_indices,
-            submitted=submitted,
-            outcomes=[
-                ("unverified", None, diagnostic["error_code"], diagnostic["message"])
-                for _ in mutation_ids
-            ],
-        )
-    if not isinstance(results, list) or len(results) != len(mutation_ids):
-        return _ledger(
-            normalized_campaign_ids,
-            action=action,
-            skipped_key=skipped_key,
-            skipped_indices=skipped_indices,
-            submitted=submitted,
-            outcomes=[
-                (
-                    "failed" if index in indexed_errors else "unverified",
-                    None,
-                    (
-                        indexed_errors[index]["error_code"]
-                        if index in indexed_errors
-                        else _UNACCOUNTED_RESPONSE_CODE
-                    ),
-                    (
-                        indexed_errors[index]["message"]
-                        if index in indexed_errors
-                        else _UNACCOUNTED_RESPONSE_MESSAGE
-                    ),
-                )
-                for index in range(len(mutation_ids))
-            ],
-        )
-
-    outcomes = []
-    for index, (_campaign_id, item) in enumerate(zip(mutation_ids, results, strict=True)):
-        error = indexed_errors.get(index)
-        resource_name = item.get("resourceName") if isinstance(item, Mapping) else None
-        if error is not None:
-            if resource_name is not None:
-                raise ValueError("Google Ads returned contradictory campaign link evidence")
-            outcomes.append(("failed", None, error["error_code"], error["message"]))
-        elif isinstance(resource_name, str) and resource_name:
-            outcomes.append(("applied", resource_name, None, None))
-        else:
-            outcomes.append(
-                ("unverified", None, _UNACCOUNTED_RESPONSE_CODE, _UNACCOUNTED_RESPONSE_MESSAGE)
-            )
+    outcomes = reconcile_exact_mutation_outcomes(
+        payload.get("results") if isinstance(payload, dict) else None,
+        expected_resource_names=[
+            f"customers/{normalized_customer_id}/campaignSharedSets/{campaign_id}~{shared_set_id}"
+            for campaign_id in mutation_ids
+        ],
+        indexed_errors=indexed_errors,
+        unattributed_errors=unattributed_errors,
+    )
     return _ledger(
         normalized_campaign_ids,
         action=action,

@@ -18,6 +18,7 @@ from .mutation_outcomes import (
     GoogleAdsMutationProjection,
     build_mutation_ledger,
     freeze_fields,
+    reconcile_mutation_outcomes,
 )
 from .url_custom_parameters import validate_url_custom_parameter_items
 from .utils import grouped_partial_failure_errors
@@ -29,8 +30,6 @@ _RESOURCE_PATTERN = re.compile(
     r"customers/(?P<customer>\d{1,32})/adGroupCriteria/"
     r"(?P<ad_group>\d{1,32})~\d{1,32}"
 )
-_UNACCOUNTED_CODE = "UNACCOUNTED_OPERATION"
-_UNACCOUNTED_MESSAGE = "Google Ads did not account for this submitted operation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,12 +131,16 @@ async def create_positive_keywords(
         unattributed_error_fields={"ad_group_id": "", "text": "", "match_type": ""},
         default_message="Positive keyword creation failed",
     )
-    outcomes = _creation_outcomes(
+    outcomes = reconcile_mutation_outcomes(
         payload.get("results") if isinstance(payload, Mapping) else None,
-        submitted_values,
-        customer_id=normalized_customer_id,
+        operation_count=len(submitted_values),
         indexed_errors=indexed_errors,
         unattributed_errors=unattributed_errors,
+        valid_resource_name=lambda index, name: _created_in_ad_group(
+            name,
+            customer_id=normalized_customer_id,
+            ad_group_id=submitted_values[index]["ad_group_id"],
+        ),
     )
     return _ledger(
         parent_fields,
@@ -244,51 +247,13 @@ def _existing_pairs(
     return existing
 
 
-def _creation_outcomes(
-    results: Any,
-    submitted: Sequence[Mapping[str, str]],
-    *,
-    customer_id: str,
-    indexed_errors: Mapping[int, Mapping[str, str]],
-    unattributed_errors: Sequence[Mapping[str, str]],
-) -> list[tuple[str, str | None, str | None, str | None]]:
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        return [
-            ("unverified", None, diagnostic["error_code"], diagnostic["message"]) for _ in submitted
-        ]
-    if not isinstance(results, list) or len(results) != len(submitted):
-        return [
-            (
-                "failed" if index in indexed_errors else "unverified",
-                None,
-                indexed_errors.get(index, {}).get("error_code", _UNACCOUNTED_CODE),
-                indexed_errors.get(index, {}).get("message", _UNACCOUNTED_MESSAGE),
-            )
-            for index in range(len(submitted))
-        ]
-    outcomes: list[tuple[str, str | None, str | None, str | None]] = []
-    seen: set[str] = set()
-    for index, (item, fields) in enumerate(zip(results, submitted, strict=True)):
-        error = indexed_errors.get(index)
-        resource_name = item.get("resourceName") if isinstance(item, Mapping) else None
-        if error is not None:
-            if resource_name is not None:
-                raise ValueError("Google Ads returned contradictory keyword creation evidence")
-            outcomes.append(("failed", None, error["error_code"], error["message"]))
-            continue
-        match = _RESOURCE_PATTERN.fullmatch(str(resource_name))
-        if (
-            match is None
-            or match.group("customer") != customer_id
-            or match.group("ad_group") != fields["ad_group_id"]
-            or str(resource_name) in seen
-        ):
-            outcomes.append(("unverified", None, _UNACCOUNTED_CODE, _UNACCOUNTED_MESSAGE))
-            continue
-        seen.add(str(resource_name))
-        outcomes.append(("applied", str(resource_name), None, None))
-    return outcomes
+def _created_in_ad_group(resource_name: str, *, customer_id: str, ad_group_id: str) -> bool:
+    match = _RESOURCE_PATTERN.fullmatch(resource_name)
+    return (
+        match is not None
+        and match.group("customer") == customer_id
+        and match.group("ad_group") == ad_group_id
+    )
 
 
 def _validate_creates(creates: Sequence[GoogleAdsPositiveKeywordCreate]) -> None:

@@ -172,7 +172,7 @@ async def test_records_override_preserves_the_exact_edited_rows(monkeypatch) -> 
     )
     original = [{"text": "old", "match_type": "EXACT"}]
     override = [
-        {"text": "new", "match_type": "PHRASE"},
+        {"text": "new", "match_type": "PHRASE", "tags": None},
         {"text": "numeric marker", "match_type": "EXACT"},
     ]
 
@@ -245,6 +245,7 @@ async def test_records_override_rejects_invalid_rows(monkeypatch, rows, error: s
         ([], "at least 1 row"),
         ([{"match_type": "EXACT"}], "required columns"),
         ([{"text": "   ", "match_type": "EXACT"}], "must not be blank"),
+        ([{"text": None, "match_type": "EXACT"}], "declared format"),
     ],
 )
 async def test_records_override_enforces_declared_completeness(

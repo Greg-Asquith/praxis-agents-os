@@ -118,9 +118,9 @@ async def test_scoped_negative_keyword_operation_parity_matrix(
         },
         mutate_payload={
             "results": [
-                {"resourceName": f"customers/333/{criterion_path}/20~2"},
+                {"resourceName": f"customers/3333333333/{criterion_path}/20~2"},
                 {},
-                {"resourceName": f"customers/333/{criterion_path}/10~3"},
+                {"resourceName": f"customers/3333333333/{criterion_path}/10~3"},
             ],
             "partialFailureError": {
                 "details": [

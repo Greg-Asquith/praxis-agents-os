@@ -2,11 +2,11 @@
 
 """Exact provider-local accounting for Google Ads mutation outcomes."""
 
-from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+import re
+from collections import Counter
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any, Literal
-
-from .utils import valid_exact_mutation_results
 
 type MutationEffectOutcome = Literal["applied", "failed", "unverified"]
 type MutationParentDecision = Literal["submit", "skipped"]
@@ -20,6 +20,70 @@ type GoogleAdsMutationOutcome = tuple[
 
 _UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
 _UNACCOUNTED_RESPONSE_CODE = "UNACCOUNTED_OPERATION"
+_CONTRADICTORY_RESPONSE_MESSAGE = (
+    "Google Ads reported both an error and a result for this operation"
+)
+_CONTRADICTORY_RESPONSE_CODE = "CONTRADICTORY_OPERATION"
+
+
+def reconcile_mutation_outcomes(
+    results: Any,
+    *,
+    operation_count: int,
+    indexed_errors: Mapping[int, Mapping[str, str]],
+    unattributed_errors: Sequence[Mapping[str, str]],
+    valid_resource_name: Callable[[int, str], bool],
+) -> list[GoogleAdsMutationOutcome]:
+    """Reconciles one ordered partial-failure mutate response into per-slot outcomes.
+
+    Only an error Google attributes to a slot marks it failed, and only a unique
+    resource name that passes `valid_resource_name` marks it applied. A result list
+    that cannot be aligned with the submitted operations, an unattributed error, or
+    contradictory slot evidence leaves the affected slots unverified.
+
+    Args:
+        results: The `results` array from the mutate response.
+        operation_count: The number of submitted operations.
+        indexed_errors: Diagnostics attributed to each operation index.
+        unattributed_errors: Diagnostics Google did not attribute to an operation.
+        valid_resource_name: Checks whether a slot's returned resource name is the
+            one that operation can produce.
+
+    Returns:
+        One outcome per submitted operation, in submission order.
+    """
+    aligned = isinstance(results, list) and len(results) == operation_count
+    rows = results if aligned else []
+    resource_names = [row.get("resourceName") if isinstance(row, Mapping) else None for row in rows]
+    # A malformed sibling blocks applied claims but keeps contradiction evidence.
+    well_formed = aligned and all(isinstance(row, Mapping) for row in rows)
+    name_counts = Counter(name for name in resource_names if isinstance(name, str))
+    fallback = (
+        (unattributed_errors[0]["error_code"], unattributed_errors[0]["message"])
+        if unattributed_errors
+        else (_UNACCOUNTED_RESPONSE_CODE, _UNACCOUNTED_RESPONSE_MESSAGE)
+    )
+    outcomes: list[GoogleAdsMutationOutcome] = []
+    for index in range(operation_count):
+        error = indexed_errors.get(index)
+        resource_name = resource_names[index] if aligned else None
+        if error is not None and resource_name is not None:
+            outcomes.append(
+                ("unverified", None, _CONTRADICTORY_RESPONSE_CODE, _CONTRADICTORY_RESPONSE_MESSAGE)
+            )
+        elif error is not None:
+            outcomes.append(("failed", None, error["error_code"], error["message"]))
+        elif (
+            well_formed
+            and not unattributed_errors
+            and isinstance(resource_name, str)
+            and name_counts[resource_name] == 1
+            and valid_resource_name(index, resource_name)
+        ):
+            outcomes.append(("applied", resource_name, None, None))
+        else:
+            outcomes.append(("unverified", None, *fallback))
+    return outcomes
 
 
 def reconcile_exact_mutation_outcomes(
@@ -29,40 +93,32 @@ def reconcile_exact_mutation_outcomes(
     indexed_errors: Mapping[int, Mapping[str, str]],
     unattributed_errors: Sequence[Mapping[str, str]],
 ) -> list[GoogleAdsMutationOutcome]:
-    """Reconcile one ordered mutate response without treating ambiguity as failure."""
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        return [
-            (
-                "unverified",
-                None,
-                diagnostic["error_code"],
-                diagnostic["message"],
-            )
-            for _ in expected_resource_names
-        ]
-    if not valid_exact_mutation_results(
+    """Reconciles a mutate response whose resource names are known before submission."""
+    return reconcile_mutation_outcomes(
         results,
-        expected_resource_names=expected_resource_names,
+        operation_count=len(expected_resource_names),
         indexed_errors=indexed_errors,
-    ):
-        return [
-            (
-                "failed" if index in indexed_errors else "unverified",
-                None,
-                indexed_errors.get(index, {}).get("error_code", _UNACCOUNTED_RESPONSE_CODE),
-                indexed_errors.get(index, {}).get("message", _UNACCOUNTED_RESPONSE_MESSAGE),
-            )
-            for index in range(len(expected_resource_names))
-        ]
-    return [
-        (
-            ("failed", None, error["error_code"], error["message"])
-            if (error := indexed_errors.get(index)) is not None
-            else ("applied", item["resourceName"], None, None)
-        )
-        for index, item in enumerate(results)
-    ]
+        unattributed_errors=unattributed_errors,
+        valid_resource_name=lambda index, name: name == expected_resource_names[index],
+    )
+
+
+def reconcile_created_mutation_outcomes(
+    results: Any,
+    *,
+    resource_pattern: re.Pattern[str],
+    operation_count: int,
+    indexed_errors: Mapping[int, Mapping[str, str]],
+    unattributed_errors: Sequence[Mapping[str, str]],
+) -> list[GoogleAdsMutationOutcome]:
+    """Reconciles create results whose new resource names must match a pattern."""
+    return reconcile_mutation_outcomes(
+        results,
+        operation_count=operation_count,
+        indexed_errors=indexed_errors,
+        unattributed_errors=unattributed_errors,
+        valid_resource_name=lambda _index, name: resource_pattern.fullmatch(name) is not None,
+    )
 
 
 def freeze_fields(fields: Mapping[str, object]) -> FrozenFields:
@@ -402,6 +458,19 @@ def build_mutation_ledger(
         parents=tuple(parents),
         projection=projection,
     )
+
+
+def with_existing_name_refs(
+    ledger: GoogleAdsMutationLedger,
+    existing_by_name: Mapping[str, str],
+) -> GoogleAdsMutationLedger:
+    """Attaches the existing resource name to each parent skipped for a name match."""
+    refs = []
+    for parent in ledger.parents:
+        if parent.decision == "skipped":
+            name = thaw_fields(parent.identity)["name"]
+            refs.append((parent.identity, existing_by_name[name.casefold()]))
+    return replace(ledger, skipped_external_refs=tuple(refs))
 
 
 def build_keyword_mutation_ledger(

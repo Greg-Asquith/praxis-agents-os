@@ -12,17 +12,14 @@ from .mutation_outcomes import (
     GoogleAdsMutationLedger,
     GoogleAdsMutationProjection,
     build_mutation_ledger,
+    reconcile_exact_mutation_outcomes,
 )
 from .utils import (
     grouped_partial_failure_errors,
     recommendation_customer_id,
-    valid_exact_mutation_results,
 )
 
 type GoogleAdsRecommendationDismissOperation = tuple[str, str, bool]
-
-_UNACCOUNTED_RESPONSE_MESSAGE = "Google Ads did not account for this submitted operation"
-_UNACCOUNTED_RESPONSE_CODE = "UNACCOUNTED_OPERATION"
 
 
 def recommendation_dismiss_failure_ledger(
@@ -85,55 +82,12 @@ async def dismiss_recommendations(
         },
         default_message="Recommendation dismissal failed",
     )
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if unattributed_errors:
-        diagnostic = unattributed_errors[0]
-        outcomes = [
-            (
-                (
-                    "failed",
-                    None,
-                    indexed_errors[index]["error_code"],
-                    indexed_errors[index]["message"],
-                )
-                if index in indexed_errors
-                else (
-                    "unverified",
-                    None,
-                    diagnostic["error_code"],
-                    diagnostic["message"],
-                )
-            )
-            for index in range(len(submitted))
-        ]
-    elif not valid_exact_mutation_results(
-        results,
+    outcomes = reconcile_exact_mutation_outcomes(
+        payload.get("results") if isinstance(payload, dict) else None,
         expected_resource_names=expected_resource_names,
         indexed_errors=indexed_errors,
-    ):
-        outcomes = [
-            (
-                "failed" if index in indexed_errors else "unverified",
-                None,
-                indexed_errors.get(index, {}).get("error_code", _UNACCOUNTED_RESPONSE_CODE),
-                indexed_errors.get(index, {}).get("message", _UNACCOUNTED_RESPONSE_MESSAGE),
-            )
-            for index in range(len(submitted))
-        ]
-    else:
-        outcomes = [
-            (
-                (
-                    "failed",
-                    None,
-                    indexed_errors[index]["error_code"],
-                    indexed_errors[index]["message"],
-                )
-                if index in indexed_errors
-                else ("applied", item["resourceName"], None, None)
-            )
-            for index, item in enumerate(results)
-        ]
+        unattributed_errors=unattributed_errors,
+    )
     return _ledger(
         parent_fields,
         skipped_indices=skipped_indices,

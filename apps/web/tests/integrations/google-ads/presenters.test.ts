@@ -14,6 +14,7 @@ import type { ToolUi, ToolUiField } from "@/features/tools/types"
 import type { ToolActivity } from "@/integrations/contract"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
+import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsCampaignNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/negative-keywords/campaign"
@@ -106,6 +107,18 @@ describe("Google Ads tool presenters", () => {
       key: "outcomes",
       row: { name: "Brand exclusions", outcome: "created" },
       label: "Brand exclusions",
+    },
+    {
+      presenter: googleAdsCreateLabelsPresenter,
+      name: "google_ads_create_labels",
+      key: "labels",
+      row: {
+        name: "Black Friday",
+        background_color: "#E8710A",
+        outcome: "created",
+        reference: { entity_kind: "google_ads_label", customer_id: "111", label_id: "8" },
+      },
+      label: "Black Friday",
     },
   ])("renders and guards the $column result table", ({ presenter, name, key, row, label }) => {
     const resultHtml = (rows: unknown[]) =>
@@ -405,6 +418,45 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("The system couldn&#x27;t verify whether Google Ads updated")
     expect(html).not.toContain("request outcome unknown")
     expect(html).not.toContain("Evidence-only campaign")
+  })
+
+  it("keeps every label row visible when one label is unverified", () => {
+    const html = render(
+      googleAdsCreateLabelsPresenter.render(
+        props({
+          id: "labels-unverified",
+          kind: "result",
+          name: "google_ads_create_labels",
+          status: "completed",
+          args: {},
+          result: {
+            results: [
+              {
+                ...entry({
+                  labels: [
+                    {
+                      name: "Q4",
+                      outcome: "created",
+                      reference: {
+                        entity_kind: "google_ads_label",
+                        customer_id: "111",
+                        label_id: "8",
+                      },
+                    },
+                    { name: "Q1", outcome: "unverified", error_code: "UNACCOUNTED_OPERATION" },
+                  ],
+                }),
+                status: "error",
+                error_code: "unverified_mutation",
+              },
+            ],
+          },
+        })
+      )
+    )
+
+    expect(html).toContain("Q4")
+    expect(html).toContain("Q1")
   })
 
   it("rejects the superseded campaign-link result shape without reconstructing saved arguments", () => {
