@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_ads/lib/labels.ts
 
 import { googleAdsId } from "@/integrations/google_ads/lib/field-values"
-import { isRecord } from "@/lib/guards"
+import { isOneOf, isRecord } from "@/lib/guards"
 
 const LABEL_NAME_MAX_LENGTH = 80
 const LABEL_DESCRIPTION_MAX_LENGTH = 200
@@ -80,4 +80,80 @@ export function isLabelReference(value: unknown): boolean {
     googleAdsId(value["customer_id"]) !== null &&
     googleAdsId(value["label_id"]) !== null
   )
+}
+
+export type LabelTargetKind = "campaign" | "ad_group" | "keyword"
+
+export const LABEL_TARGET_KINDS = ["campaign", "ad_group", "keyword"] as const
+
+export const LABEL_TARGET_KIND_LABELS: Record<LabelTargetKind, string> = {
+  campaign: "Campaign",
+  ad_group: "Ad group",
+  keyword: "Keyword",
+}
+
+type GoogleAdsLabelSelection = { color: string | null; labelId: string; name: string }
+
+type GoogleAdsLabelTargetSelection = { id: string; kind: LabelTargetKind; name: string }
+
+export type LabelAssociationArgs = {
+  labels: GoogleAdsLabelSelection[]
+  targets: GoogleAdsLabelTargetSelection[]
+}
+
+const TARGET_KIND_SET = new Set(LABEL_TARGET_KINDS)
+
+function parseLabelSelection(value: unknown): GoogleAdsLabelSelection | null {
+  if (!isLabelReference(value) || !isRecord(value)) return null
+  const labelId = String(value["label_id"])
+  const name = typeof value["label"] === "string" ? value["label"].trim() : ""
+  return { labelId, name: name || labelId, color: labelColor(value["background_color"]) }
+}
+
+function parseTargetSelection(value: unknown): GoogleAdsLabelTargetSelection | null {
+  if (!isRecord(value) || !isOneOf(TARGET_KIND_SET, value["kind"])) return null
+  const kind = value["kind"]
+  const reference = value[kind]
+  if (!isRecord(reference)) return null
+  const id = targetId(kind, reference)
+  if (id === null) return null
+  const name = typeof reference["label"] === "string" ? reference["label"].trim() : ""
+  return { kind, id, name: name || id }
+}
+
+// Keyword IDs pair the ad group and criterion, matching the server's association identity.
+function targetId(kind: LabelTargetKind, reference: Record<string, unknown>): string | null {
+  if (kind === "campaign") return googleAdsId(reference["campaign_id"])
+  if (kind === "ad_group") return googleAdsId(reference["ad_group_id"])
+  const adGroupId = googleAdsId(reference["ad_group_id"])
+  const criterionId = googleAdsId(reference["criterion_id"])
+  return adGroupId && criterionId ? `${adGroupId}~${criterionId}` : null
+}
+
+export function parseLabelAssociationArgs(value: unknown): LabelAssociationArgs | null {
+  if (!isRecord(value) || !Array.isArray(value["labels"]) || !Array.isArray(value["targets"]))
+    return null
+  const labels = uniqueSelections(value["labels"], parseLabelSelection, (item) => item.labelId)
+  const targets = uniqueSelections(
+    value["targets"],
+    parseTargetSelection,
+    (item) => `${item.kind}:${item.id}`
+  )
+  return labels?.length && targets?.length ? { labels, targets } : null
+}
+
+function uniqueSelections<Item>(
+  values: unknown[],
+  parse: (value: unknown) => Item | null,
+  identity: (item: Item) => string
+): Item[] | null {
+  const items: Item[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const item = parse(value)
+    if (item === null || seen.has(identity(item))) return null
+    seen.add(identity(item))
+    items.push(item)
+  }
+  return items
 }

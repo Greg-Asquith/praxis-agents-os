@@ -17,6 +17,8 @@ const OUTCOMES = {
   already_set: ["skipped", "Already set"],
   already_exists: ["skipped", "Already existed"],
   already_linked: ["skipped", "Already linked"],
+  already_applied: ["skipped", "Already applied"],
+  not_applied: ["skipped", "Not applied"],
   not_linked: ["skipped", "Not linked"],
   already_dismissed: ["skipped", "Already dismissed"],
   skipped_existing: ["skipped", "Already existed"],

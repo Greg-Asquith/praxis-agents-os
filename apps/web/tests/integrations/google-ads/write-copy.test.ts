@@ -62,6 +62,14 @@ const cases = [
     spec: { verb: "Create", object: "labels", effect: "created" },
   },
   {
+    name: "google_ads_apply_labels",
+    spec: { verb: "Apply", object: "labels", effect: "applied" },
+  },
+  {
+    name: "google_ads_remove_labels",
+    spec: { verb: "Remove", object: "labels", effect: "removed" },
+  },
+  {
     name: "google_ads_assign_campaign_budgets",
     spec: { verb: "Assign", object: "campaign budgets", effect: "assigned" },
   },

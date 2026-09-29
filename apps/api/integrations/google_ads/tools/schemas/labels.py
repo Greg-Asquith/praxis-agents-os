@@ -2,11 +2,16 @@
 
 """Argument and result contracts for Google Ads label actions."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 
-from integrations.google_ads.references import GoogleAdsLabelReference
+from integrations.google_ads.references import (
+    GoogleAdsAdGroupReference,
+    GoogleAdsCampaignReference,
+    GoogleAdsKeywordReference,
+    GoogleAdsLabelReference,
+)
 from integrations.google_ads.references.label import (
     GOOGLE_ADS_LABEL_COLOR_PATTERN,
     GOOGLE_ADS_LABEL_DESCRIPTION_MAX_LENGTH,
@@ -68,3 +73,68 @@ class GoogleAdsCreateLabelsEntry(IntegrationFanOutEntry):
 
 class GoogleAdsCreateLabelsOutput(IntegrationFanOutOutput):
     results: list[GoogleAdsCreateLabelsEntry]
+
+
+class GoogleAdsCampaignLabelTarget(GoogleAdsStrictModel):
+    kind: Literal["campaign"]
+    campaign: GoogleAdsCampaignReference
+
+
+class GoogleAdsAdGroupLabelTarget(GoogleAdsStrictModel):
+    kind: Literal["ad_group"]
+    ad_group: GoogleAdsAdGroupReference
+
+
+class GoogleAdsKeywordLabelTarget(GoogleAdsStrictModel):
+    kind: Literal["keyword"]
+    keyword: GoogleAdsKeywordReference
+
+
+# A plain alias, since the reference-type walker doesn't unwrap `type` statements.
+GoogleAdsLabelTarget = Annotated[
+    GoogleAdsCampaignLabelTarget | GoogleAdsAdGroupLabelTarget | GoogleAdsKeywordLabelTarget,
+    Field(discriminator="kind"),
+]
+
+
+class GoogleAdsLabelAssociationOutcome(GoogleAdsStrictModel):
+    label_id: str
+    label_name: str
+    label_color: str | None = None
+    target_kind: Literal["campaign", "ad_group", "keyword"]
+    target_id: str
+    target_name: str
+    error_code: str | None = None
+    message: str | None = None
+
+
+class GoogleAdsApplyLabelOutcome(GoogleAdsLabelAssociationOutcome):
+    outcome: Literal["applied", "already_applied", "failed", "unverified"]
+
+
+class GoogleAdsRemoveLabelOutcome(GoogleAdsLabelAssociationOutcome):
+    outcome: Literal["removed", "not_applied", "failed", "unverified"]
+
+
+class GoogleAdsApplyLabelsData(GoogleAdsStrictModel):
+    associations: list[GoogleAdsApplyLabelOutcome]
+
+
+class GoogleAdsRemoveLabelsData(GoogleAdsStrictModel):
+    associations: list[GoogleAdsRemoveLabelOutcome]
+
+
+class GoogleAdsApplyLabelsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsApplyLabelsData | None = None
+
+
+class GoogleAdsRemoveLabelsEntry(IntegrationFanOutEntry):
+    data: GoogleAdsRemoveLabelsData | None = None
+
+
+class GoogleAdsApplyLabelsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsApplyLabelsEntry]
+
+
+class GoogleAdsRemoveLabelsOutput(IntegrationFanOutOutput):
+    results: list[GoogleAdsRemoveLabelsEntry]

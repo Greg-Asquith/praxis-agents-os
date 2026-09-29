@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   isLabelReference,
   labelDraftsValidationError,
+  parseLabelAssociationArgs,
   parseLabelDrafts,
 } from "@/integrations/google_ads/lib/labels"
 
@@ -34,5 +35,18 @@ describe("Google Ads label drafts", () => {
     expect(
       isLabelReference({ entity_kind: "google_ads_campaign", customer_id: "111", label_id: "8" })
     ).toBe(false)
+  })
+
+  it("parses label targets by kind and rejects unknown kinds or repeated targets", () => {
+    const label = { entity_kind: "google_ads_label", customer_id: "111", label_id: "8" }
+    const keyword = { kind: "keyword", keyword: { ad_group_id: "2", criterion_id: "3" } }
+
+    expect(parseLabelAssociationArgs({ labels: [label], targets: [keyword] })?.targets).toEqual([
+      { kind: "keyword", id: "2~3", name: "2~3" },
+    ])
+    expect(
+      parseLabelAssociationArgs({ labels: [label], targets: [{ kind: "ad", ad: {} }] })
+    ).toBeNull()
+    expect(parseLabelAssociationArgs({ labels: [label], targets: [keyword, keyword] })).toBeNull()
   })
 })

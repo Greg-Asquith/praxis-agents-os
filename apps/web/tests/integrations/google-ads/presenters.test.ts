@@ -15,6 +15,7 @@ import type { ToolActivity } from "@/integrations/contract"
 import { googleAdsCampaignLinksPresenter } from "@/integrations/google_ads/presenters/campaign-links"
 import { googleAdsCampaignStatusPresenter } from "@/integrations/google_ads/presenters/campaign-status"
 import { googleAdsCreateLabelsPresenter } from "@/integrations/google_ads/presenters/create-labels"
+import { googleAdsLabelAssociationsPresenter } from "@/integrations/google_ads/presenters/label-associations"
 import { googleAdsDeviceBidModifiersPresenter } from "@/integrations/google_ads/presenters/device-bid-modifiers"
 import { googleAdsNegativeKeywordListsPresenter } from "@/integrations/google_ads/presenters/negative-keyword-lists"
 import { googleAdsCampaignNegativeKeywordsPresenter } from "@/integrations/google_ads/presenters/negative-keywords/campaign"
@@ -119,6 +120,20 @@ describe("Google Ads tool presenters", () => {
         reference: { entity_kind: "google_ads_label", customer_id: "111", label_id: "8" },
       },
       label: "Black Friday",
+    },
+    {
+      presenter: googleAdsLabelAssociationsPresenter,
+      name: "google_ads_apply_labels",
+      key: "associations",
+      row: {
+        label_id: "8",
+        label_name: "Black Friday",
+        target_kind: "campaign",
+        target_id: "10",
+        target_name: "Summer Sale",
+        outcome: "applied",
+      },
+      label: "Summer Sale",
     },
   ])("renders and guards the $column result table", ({ presenter, name, key, row, label }) => {
     const resultHtml = (rows: unknown[]) =>
@@ -418,6 +433,38 @@ describe("Google Ads tool presenters", () => {
     expect(html).toContain("The system couldn&#x27;t verify whether Google Ads updated")
     expect(html).not.toContain("request outcome unknown")
     expect(html).not.toContain("Evidence-only campaign")
+  })
+
+  it("groups label approval targets by type without dumping raw arguments", () => {
+    const html = render(
+      googleAdsLabelAssociationsPresenter.render(
+        props(
+          {
+            id: "remove-labels-approval",
+            kind: "approval",
+            name: "google_ads_remove_labels",
+            status: "awaiting_approval",
+            args: {
+              labels: [{ entity_kind: "google_ads_label", customer_id: "111", label_id: "8" }],
+              targets: [
+                { kind: "campaign", campaign: campaignReference("10", "Summer Sale") },
+                {
+                  kind: "keyword",
+                  keyword: { ad_group_id: "20", criterion_id: "30", label: "red shoes" },
+                },
+              ],
+            },
+          },
+          approvalControls(),
+          toolUi([])
+        )
+      )
+    )
+
+    expect(html).toContain("Summer Sale")
+    expect(html).toContain("red shoes")
+    expect(html).not.toContain("&quot;kind&quot;")
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Approve &amp; Remove<\/button>/)
   })
 
   it("keeps every label row visible when one label is unverified", () => {

@@ -8,19 +8,38 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry
 
+from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
 from integrations.google_ads.entity_resolvers.label import resolve_google_ads_labels
 from integrations.google_ads.operations.count_label_associations import (
     LABEL_ASSOCIATION_ROW_BOUND,
     count_label_associations,
 )
 from integrations.google_ads.operations.list_labels import list_labels
+from integrations.google_ads.operations.mutate_label_associations import (
+    GoogleAdsLabelAssociation,
+    mutate_label_associations,
+)
 from integrations.google_ads.references import (
+    GoogleAdsAdGroupReference,
+    GoogleAdsCampaignReference,
+    GoogleAdsKeywordReference,
     GoogleAdsLabelAssociationCounts,
     GoogleAdsLabelReference,
 )
+from integrations.google_ads.tools.apply_labels import google_ads_apply_labels
 from integrations.google_ads.tools.create_labels import google_ads_create_labels
-from integrations.google_ads.tools.schemas import GoogleAdsCreateLabelsOutput, GoogleAdsLabelDraft
-from integrations.google_ads.tools.verifiers import verify_labels
+from integrations.google_ads.tools.remove_labels import google_ads_remove_labels
+from integrations.google_ads.tools.schemas import (
+    GoogleAdsApplyLabelsOutput,
+    GoogleAdsCreateLabelsOutput,
+    GoogleAdsLabelDraft,
+)
+from integrations.google_ads.tools.schemas.labels import (
+    GoogleAdsAdGroupLabelTarget,
+    GoogleAdsCampaignLabelTarget,
+    GoogleAdsKeywordLabelTarget,
+)
+from integrations.google_ads.tools.verifiers import verify_label_targets, verify_labels
 from services.audit_events import AuditStatus
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.google_ads.support import _writable_google_ads_entry
@@ -350,3 +369,249 @@ async def test_label_resolver_hydrates_live_details_with_association_counts(monk
         "ad": 1,
         "truncated": False,
     }
+
+
+class _AssociationClient:
+    """Answers association reads with `existing` and mutates with per-service payloads."""
+
+    def __init__(self, *, existing=(), mutate_payloads=None):
+        self.existing = existing
+        self.mutate_payloads = mutate_payloads or {}
+        self.calls: list[dict] = []
+
+    async def post(self, path: str, **kwargs):
+        self.calls.append({"path": path, **kwargs})
+        if path.endswith("googleAds:searchStream"):
+            query = kwargs["json"]["query"]
+            return {
+                "results": [
+                    {row_key: {"resourceName": name}}
+                    for row_key, name in self.existing
+                    if f"'{name}'" in query
+                ]
+            }
+        service = path.rsplit("/", 1)[-1].removesuffix(":mutate")
+        payload = self.mutate_payloads[service]
+        if isinstance(payload, Exception):
+            raise payload
+        return payload
+
+
+def _mutations(client) -> list[dict]:
+    return [call for call in client.calls if call["path"].endswith(":mutate")]
+
+
+def _label(label_id: str = "7", *, customer_id: str = "111") -> GoogleAdsLabelReference:
+    return GoogleAdsLabelReference(customer_id=customer_id, label_id=label_id, label="Q4")
+
+
+def _targets(customer_id: str = "111") -> list:
+    return [
+        GoogleAdsCampaignLabelTarget(
+            kind="campaign",
+            campaign=GoogleAdsCampaignReference(
+                customer_id=customer_id, campaign_id="1", label="Brand"
+            ),
+        ),
+        GoogleAdsAdGroupLabelTarget(
+            kind="ad_group",
+            ad_group=GoogleAdsAdGroupReference(
+                customer_id=customer_id, campaign_id="1", ad_group_id="2", label="Shoes"
+            ),
+        ),
+        GoogleAdsKeywordLabelTarget(
+            kind="keyword",
+            keyword=GoogleAdsKeywordReference(
+                customer_id=customer_id,
+                campaign_id="1",
+                ad_group_id="2",
+                criterion_id="3",
+                text="red shoes",
+                match_type="EXACT",
+                status="ENABLED",
+                label="red shoes",
+            ),
+        ),
+    ]
+
+
+async def test_apply_labels_builds_associations_per_service_and_skips_existing() -> None:
+    client = _AssociationClient(
+        existing=[("campaignLabel", "customers/111/campaignLabels/1~7")],
+        mutate_payloads={
+            "adGroupLabels": {"results": [{"resourceName": "customers/111/adGroupLabels/2~7"}]},
+            "adGroupCriterionLabels": {
+                "results": [{}],
+                "partialFailureError": _partial_failure(0, "INVALID_LABEL"),
+            },
+        },
+    )
+
+    ledger = await mutate_label_associations(
+        client,
+        customer_id="111",
+        login_customer_id="999",
+        action="apply",
+        associations=[
+            GoogleAdsLabelAssociation("7", "campaign", "1"),
+            GoogleAdsLabelAssociation("7", "ad_group", "2"),
+            GoogleAdsLabelAssociation("7", "keyword", "2~3"),
+        ],
+    )
+
+    assert [(call["path"], call["json"]["operations"]) for call in _mutations(client)] == [
+        (
+            "customers/111/adGroupLabels:mutate",
+            [
+                {
+                    "create": {
+                        "adGroup": "customers/111/adGroups/2",
+                        "label": "customers/111/labels/7",
+                    }
+                }
+            ],
+        ),
+        (
+            "customers/111/adGroupCriterionLabels:mutate",
+            [
+                {
+                    "create": {
+                        "adGroupCriterion": "customers/111/adGroupCriteria/2~3",
+                        "label": "customers/111/labels/7",
+                    }
+                }
+            ],
+        ),
+    ]
+    assert ledger.result()["already_applied"] == [
+        {"label_id": "7", "target_kind": "campaign", "target_id": "1"}
+    ]
+    assert ledger.result()["applied"][0]["resource_name"] == "customers/111/adGroupLabels/2~7"
+    assert ledger.result()["association_errors"][0]["error_code"] == "INVALID_LABEL"
+
+
+async def test_remove_labels_skips_absent_pairs_and_records_a_later_service_failure() -> None:
+    client = _AssociationClient(
+        existing=[
+            ("campaignLabel", "customers/111/campaignLabels/1~7"),
+            ("adGroupLabel", "customers/111/adGroupLabels/2~7"),
+        ],
+        mutate_payloads={
+            "campaignLabels": {"results": [{"resourceName": "customers/111/campaignLabels/1~7"}]},
+            "adGroupLabels": IntegrationError(
+                "Timed out", failure_disposition=IntegrationFailureDisposition.AMBIGUOUS
+            ),
+        },
+    )
+
+    ledger = await mutate_label_associations(
+        client,
+        customer_id="111",
+        login_customer_id="999",
+        action="remove",
+        associations=[
+            GoogleAdsLabelAssociation("7", "campaign", "1"),
+            GoogleAdsLabelAssociation("7", "ad_group", "2"),
+            GoogleAdsLabelAssociation("7", "keyword", "2~3"),
+        ],
+    )
+
+    assert _mutations(client)[0]["json"]["operations"] == [
+        {"remove": "customers/111/campaignLabels/1~7"}
+    ]
+    assert not any("labels:mutate" in call["path"] for call in client.calls)
+    assert [effect.outcome for effect in ledger.effects] == ["applied", "unverified"]
+    assert ledger.result()["not_applied"] == [
+        {"label_id": "7", "target_kind": "keyword", "target_id": "2~3"}
+    ]
+
+
+async def test_label_changes_reject_cross_account_pairs_and_oversized_products(
+    monkeypatch,
+) -> None:
+    client = _AssociationClient()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.utils.label_associations.google_ads_client",
+        AsyncMock(return_value=client),
+    )
+    ctx = _create_ctx(_writable_google_ads_entry())
+
+    with pytest.raises(ModelRetry, match="same account"):
+        await google_ads_apply_labels(ctx, [_label(customer_id="222")], _targets())
+    campaigns = [
+        GoogleAdsCampaignLabelTarget(
+            kind="campaign",
+            campaign=GoogleAdsCampaignReference(
+                customer_id="111", campaign_id=str(index), label=f"C{index}"
+            ),
+        )
+        for index in range(1, 252)
+    ]
+    with pytest.raises(ModelRetry, match="at most 500"):
+        await google_ads_remove_labels(ctx, [_label("7"), _label("8")], campaigns)
+
+    assert client.calls == []
+
+
+async def test_apply_labels_tool_reports_each_pair_and_audits_by_label(monkeypatch) -> None:
+    entry = _writable_google_ads_entry()
+    client = _AssociationClient(
+        existing=[("adGroupLabel", "customers/111/adGroupLabels/2~7")],
+        mutate_payloads={
+            "campaignLabels": {"results": [{"resourceName": "customers/111/campaignLabels/1~7"}]},
+            "adGroupCriterionLabels": {
+                "results": [{"resourceName": "customers/111/adGroupCriterionLabels/2~3~7"}]
+            },
+        },
+    )
+    audits: list = []
+
+    async def capture_audit(_ctx, _entry, **kwargs):
+        await kwargs["prepare_pending_operation"]()
+        outcome = await kwargs["execute"]()
+        audits.append(outcome)
+        return outcome.value
+
+    module = "integrations.google_ads.tools.utils.label_associations"
+    monkeypatch.setattr(f"{module}.google_ads_client", AsyncMock(return_value=client))
+    monkeypatch.setattr(f"{module}.run_audited_integration_operation", capture_audit)
+    live_label = _label().model_copy(update={"label": "Q4 live", "background_color": "#abc"})
+    monkeypatch.setattr(f"{module}.verify_labels", AsyncMock(return_value={"7": live_label}))
+    verify_targets = AsyncMock()
+    monkeypatch.setattr(f"{module}.verify_label_targets", verify_targets)
+
+    result = await google_ads_apply_labels(_create_ctx(entry), [_label()], _targets())
+
+    rows = GoogleAdsApplyLabelsOutput.model_validate(result).results[0].data.associations
+    assert [(row.target_kind, row.target_id, row.outcome) for row in rows] == [
+        ("campaign", "1", "applied"),
+        ("ad_group", "2", "already_applied"),
+        ("keyword", "2~3", "applied"),
+    ]
+    assert (rows[0].label_name, rows[0].label_color) == ("Q4 live", "#abc")
+    assert [ref.ad_group_id for ref in verify_targets.await_args.kwargs["ad_groups"]] == ["2"]
+    detail = audits[0].operation_detail
+    assert audits[0].status == AuditStatus.SUCCESS
+    assert (detail.intent_groups[0].external_id, detail.intent_groups[0].fields) == (
+        "7",
+        {"label_id": "7"},
+    )
+    assert [outcome.status for outcome in detail.outcome_groups[0].outcomes] == [
+        "applied",
+        "skipped",
+        "applied",
+    ]
+
+
+async def test_verify_label_targets_rejects_removed_ad_groups(monkeypatch) -> None:
+    entry = _writable_google_ads_entry()
+    monkeypatch.setattr(
+        "integrations.google_ads.tools.verifiers.label.list_ad_groups",
+        AsyncMock(return_value=[{"adGroup": {"id": "2", "status": "REMOVED"}}]),
+    )
+    ad_group = _targets()[1].ad_group
+
+    with pytest.raises(ModelRetry, match="unavailable"):
+        await verify_label_targets(
+            AsyncMock(), entry=entry, campaigns=[], ad_groups=[ad_group], keywords=[]
+        )

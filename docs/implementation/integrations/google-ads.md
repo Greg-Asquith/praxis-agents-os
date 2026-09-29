@@ -13,8 +13,8 @@ Google Ads contributes report and field discovery plus approval-only
 writes for recommendations, negative keywords, positive-keyword creation and
 mutable-field updates, and permanent removal,
 campaign status, device bid adjustments, campaign-budget creation,
-amount updates, assignment, and unused-budget removal. Label creation defaults
-to approval and also supports auto policy. Keyword and budget
+amount updates, assignment, and unused-budget removal. Label creation, apply,
+and remove default to approval and also support auto policy. Keyword and budget
 writes re-read provider state after approval and retain exact outcome evidence
 through the shared mutation ledger.
 
@@ -108,9 +108,29 @@ references carry the name, description, colour, status, and live association
 counts for campaigns, ad groups, positive keywords, and ads. Each entity type
 reads up to 10,001 association rows as a sentinel and reports at most 10,000;
 more than 10,000 marks the counts as lower bounds. `verify_labels` re-reads
-label IDs and fails when a label is missing or removed. The verifier and label
-resolver are pending: they register and run with the first tool that declares
-a label argument.
+label IDs and fails when a label is missing or removed. The label resolver
+registers with the apply and remove tools.
+
+`google_ads_apply_labels` attaches 1 to 10 label references to 1 to 500
+targets, and `google_ads_remove_labels` detaches them. Each target is an
+explicit union tagged by `kind`: `campaign`, `ad_group`, or `keyword`, carrying
+the matching scoped reference. Keywords are positive keywords only. The `ad`
+kind is pending until ad references exist. The tools never accept raw resource
+names; the operation rebuilds each `campaignLabels`, `adGroupLabels`, or
+`adGroupCriterionLabels` resource name from the IDs.
+
+Labels apply only within their own account. Each account must have both labels
+and targets, so a label from one account never pairs with a target from
+another. Each call covers at most 500 label and target pairs across accounts.
+After approval, the tool re-reads the labels and targets and fails before any
+write when one is missing, removed, or changed. The operation reads the
+existing associations first: apply reports an existing pair as
+`already_applied`, and remove reports an absent pair as `not_applied`, without
+a write. It then sends one partial-failure mutate per entity service. When a
+later service request fails after an earlier one applied, the tool records that
+service's pairs as failed or unverified instead of raising. Remove never
+changes the label itself. The audit record groups intents by label, with one
+item per target.
 
 ## Frontend modules
 
@@ -124,7 +144,10 @@ Label draft parsing, approval validation, and the label-reference guard
 belong to `labels.ts`. Draft validation counts code points and approximates
 the server's case folding without the browser locale; the server remains
 authoritative. `GoogleAdsLabelChip` always shows the label name beside a decorative colour
-swatch.
+swatch. `labels.ts` also parses label and target arguments for apply and remove,
+rejecting unknown target kinds and repeated targets. Their approval shows the
+labels and the targets grouped by type, and the result shows one outcome row
+per label and target pair, ordered by type.
 Scoped negative-keyword evidence belongs to `scoped-negative-keyword-results.ts`.
 It reconciles operation-specific exact rows, per-target counts, aggregate
 counts, and truncated samples while retaining historical count-only results.
