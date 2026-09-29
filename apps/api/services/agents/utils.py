@@ -3,6 +3,7 @@
 """Helpers specific to agent configuration services."""
 
 from collections.abc import Collection, Iterable, Mapping
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import select
@@ -96,12 +97,85 @@ def validate_tool_configuration(
     return normalized_policies
 
 
+@dataclass(frozen=True)
+class ToolSelection:
+    all_tools: bool
+    tool_names: list[str]
+    excluded_tool_names: list[str]
+    tool_policies: dict[str, str] | None
+
+
+def normalize_tool_selection(
+    *,
+    all_tools: bool,
+    tool_names: list[str],
+    excluded_tool_names: list[str],
+    tool_policies: dict[str, str] | None,
+    workspace_tool_names: Collection[str] = (),
+    stale_tool_names: Collection[str] = (),
+    extra_allowed_policies: Mapping[str, Collection[str]] | None = None,
+    drop_unselected_policies: bool = False,
+) -> ToolSelection:
+    """Validate an explicit or all-tools selection and the policies on it."""
+    if all_tools and tool_names:
+        raise AppValidationError(
+            "tool_names cannot be set while all_tools is on",
+            field="tool_names",
+        )
+    if not all_tools and excluded_tool_names:
+        raise AppValidationError(
+            "excluded_tool_names can only be set while all_tools is on",
+            field="excluded_tool_names",
+        )
+
+    accepted_names = set(workspace_tool_names).union(stale_tool_names)
+    if all_tools:
+        excluded, _policies = normalize_tool_configuration(
+            tool_names=excluded_tool_names,
+            tool_policies=None,
+            extra_tool_names=accepted_names,
+            names_field="excluded_tool_names",
+        )
+        excluded_set = set(excluded)
+        selected = [
+            name
+            for name in _configurable_tool_names(workspace_tool_names)
+            if name not in excluded_set
+        ]
+    else:
+        excluded = []
+        selected, _policies = normalize_tool_configuration(
+            tool_names=tool_names,
+            tool_policies=None,
+            extra_tool_names=accepted_names,
+        )
+
+    if tool_policies is not None and drop_unselected_policies:
+        selected_set = set(selected)
+        tool_policies = {
+            name: policy for name, policy in tool_policies.items() if name in selected_set
+        }
+    _selected, policies = normalize_tool_configuration(
+        tool_names=selected,
+        tool_policies=tool_policies,
+        extra_tool_names=accepted_names,
+        extra_allowed_policies=extra_allowed_policies,
+    )
+    return ToolSelection(
+        all_tools=all_tools,
+        tool_names=[] if all_tools else selected,
+        excluded_tool_names=excluded,
+        tool_policies=policies,
+    )
+
+
 def normalize_tool_configuration(
     *,
     tool_names: list[str],
     tool_policies: dict[str, str] | None,
     extra_tool_names: Collection[str] = (),
     extra_allowed_policies: Mapping[str, Collection[str]] | None = None,
+    names_field: str = "tool_names",
 ) -> tuple[list[str], dict[str, str] | None]:
     extra_name_set = set(extra_tool_names)
     available_names = set(RUNTIME_TOOL_CATALOG).union(extra_name_set)
@@ -109,7 +183,7 @@ def normalize_tool_configuration(
     if unknown_tools:
         raise AppValidationError(
             "Agent references unknown runtime tools",
-            field="tool_names",
+            field=names_field,
             details={
                 "unknown_tools": unknown_tools,
                 "available_tools": _configurable_tool_names(extra_name_set),

@@ -93,6 +93,8 @@ export const THINKING_OPTIONS = [
 type ThinkingSelection = (typeof THINKING_OPTIONS)[number]["value"]
 
 export type AgentFormState = {
+  // Every tool, including later ones; tools set to off become exclusions.
+  allTools: boolean
   allowedAgentIds: string[]
   azureDeployment: string
   codeModeEnabled: boolean
@@ -152,6 +154,7 @@ export function initialAgentFormState(
   toolCatalog: ToolCatalogEntry[]
 ): AgentFormState {
   return {
+    allTools: agent?.all_tools ?? false,
     allowedAgentIds: agent?.allowed_agent_ids ?? [],
     azureDeployment: agent?.azure_deployment ?? "",
     codeModeEnabled: agent?.code_mode_enabled ?? false,
@@ -335,7 +338,7 @@ export function buildAgentPayload(
     return modelSelection
   }
 
-  const toolPayload = buildToolPayload(state.toolModes, state.toolDefaultPolicies)
+  const toolPayload = buildToolPayload(state)
   const modelSettings = buildModelSettings(state)
   const basePayload = {
     allowed_agent_ids: state.allowedAgentIds,
@@ -351,8 +354,7 @@ export function buildAgentPayload(
     model_provider: modelSelection.model_provider,
     model_settings: modelSettings,
     name,
-    tool_names: toolPayload.tool_names,
-    tool_policies: toolPayload.tool_policies,
+    ...toolPayload,
   }
 
   return basePayload
@@ -406,6 +408,7 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
     current.modelSelection !== initial.modelSelection ||
     current.azureDeployment !== initial.azureDeployment ||
     current.codeModeEnabled !== initial.codeModeEnabled ||
+    current.allTools !== initial.allTools ||
     current.maxSteps !== initial.maxSteps ||
     current.isActive !== initial.isActive ||
     current.isFavorite !== initial.isFavorite ||
@@ -417,19 +420,52 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
   )
 }
 
+export function setAllTools(
+  state: AgentFormState,
+  catalog: ToolCatalogEntry[],
+  enabled: boolean
+): AgentFormState {
+  const toolModes: Record<string, RuntimeToolMode> = enabled
+    ? hiddenSelectedModes(state, catalog)
+    : {}
+  for (const tool of catalog) {
+    toolModes[tool.name] = enabled ? enabledToolMode(state, tool) : "off"
+  }
+  return { ...state, allTools: enabled, toolModes }
+}
+
+// Keep selected tools missing from the catalog so their saved overrides survive enabling all tools.
+function hiddenSelectedModes(
+  state: AgentFormState,
+  catalog: ToolCatalogEntry[]
+): Record<string, RuntimeToolMode> {
+  const catalogNames = new Set(catalog.map((tool) => tool.name))
+  return Object.fromEntries(
+    Object.entries(state.toolModes).filter(
+      ([toolName, mode]) => mode !== "off" && !catalogNames.has(toolName)
+    )
+  )
+}
+
+// Keep a tool's current mode so policy overrides survive enabling all tools.
+function enabledToolMode(state: AgentFormState, tool: ToolCatalogEntry): RuntimeToolMode {
+  const current = state.toolModes[tool.name] ?? "off"
+  return current === "off" ? (state.toolDefaultPolicies[tool.name] ?? tool.default_policy) : current
+}
+
 function initialToolModes(
   catalog: ToolCatalogEntry[],
   agent: Agent | null
 ): Record<string, RuntimeToolMode> {
-  const toolNames = agent?.tool_names ?? []
+  if (agent?.all_tools) {
+    return initialAllToolModes(catalog, agent)
+  }
+
   const policies = agent?.tool_policies ?? {}
   const catalogByName = new Map(catalog.map((tool) => [tool.name, tool]))
   const toolModes: Record<string, RuntimeToolMode> = {}
 
-  for (const toolName of toolNames) {
-    if (Object.hasOwn(toolModes, toolName)) {
-      continue
-    }
+  for (const toolName of agent?.tool_names ?? []) {
     const tool = catalogByName.get(toolName)
     const defaultPolicy = tool
       ? (tool.workspace_policy ?? tool.default_policy)
@@ -440,6 +476,32 @@ function initialToolModes(
   for (const tool of catalog) {
     if (!Object.hasOwn(toolModes, tool.name)) {
       toolModes[tool.name] = "off"
+    }
+  }
+
+  return toolModes
+}
+
+// Derive from exclusions, not the resolved tool_names snapshot, so newer catalog tools stay on.
+function initialAllToolModes(
+  catalog: ToolCatalogEntry[],
+  agent: Agent
+): Record<string, RuntimeToolMode> {
+  const policies = agent.tool_policies ?? {}
+  const toolModes: Record<string, RuntimeToolMode> = {}
+
+  for (const toolName of agent.excluded_tool_names) {
+    toolModes[toolName] = "off"
+  }
+  for (const tool of catalog) {
+    if (!Object.hasOwn(toolModes, tool.name)) {
+      toolModes[tool.name] = policies[tool.name] ?? tool.workspace_policy ?? tool.default_policy
+    }
+  }
+  // Hidden tools keep only a saved override.
+  for (const [toolName, policy] of Object.entries(policies)) {
+    if (!Object.hasOwn(toolModes, toolName)) {
+      toolModes[toolName] = policy
     }
   }
 
@@ -513,26 +575,27 @@ function toolDefaultPolicies(
   return defaults
 }
 
-function buildToolPayload(
-  toolModes: AgentFormState["toolModes"],
-  defaultPolicies: AgentFormState["toolDefaultPolicies"]
-) {
-  const toolNames: string[] = []
+function buildToolPayload(state: AgentFormState) {
+  const selectedNames: string[] = []
+  const excludedNames: string[] = []
   const toolPolicies: Record<string, ToolPolicyValue> = {}
 
-  for (const [toolName, mode] of Object.entries(toolModes)) {
+  for (const [toolName, mode] of Object.entries(state.toolModes)) {
     if (mode === "off") {
+      excludedNames.push(toolName)
       continue
     }
 
-    toolNames.push(toolName)
-    if (defaultPolicies[toolName] !== mode) {
+    selectedNames.push(toolName)
+    if (state.toolDefaultPolicies[toolName] !== mode) {
       toolPolicies[toolName] = mode
     }
   }
 
   return {
-    tool_names: toolNames,
+    all_tools: state.allTools,
+    excluded_tool_names: state.allTools ? excludedNames : [],
+    tool_names: state.allTools ? [] : selectedNames,
     tool_policies: Object.keys(toolPolicies).length > 0 ? toolPolicies : null,
   }
 }

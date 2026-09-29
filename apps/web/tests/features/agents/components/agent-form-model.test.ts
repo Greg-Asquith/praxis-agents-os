@@ -5,6 +5,7 @@ import {
   buildModelOptions,
   initialAgentFormState,
   modelSelectionForType,
+  setAllTools,
   simpleSelectionFromModel,
   validateAgentFormState,
   type AgentFormState,
@@ -54,6 +55,8 @@ const agent: Agent = {
   created_by: "user-1",
   code_mode_enabled: true,
   tool_names: ["read_file", "missing_tool"],
+  all_tools: false,
+  excluded_tool_names: [],
   tool_policies: { read_file: "approval" },
   allowed_agent_ids: ["agent-2"],
   model_provider: "openai",
@@ -197,6 +200,7 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
   return {
     allowedAgentIds: ["agent-2"],
     azureDeployment: "",
+    allTools: false,
     codeModeEnabled: false,
     description: "  Helps plan launches.  ",
     identityColor: "Auto",
@@ -223,6 +227,7 @@ describe("initialAgentFormState", () => {
     const state = initialAgentFormState(null, toolCatalog)
 
     expect(state).toEqual({
+      allTools: false,
       allowedAgentIds: [],
       azureDeployment: "",
       codeModeEnabled: false,
@@ -249,6 +254,7 @@ describe("initialAgentFormState", () => {
     const state = initialAgentFormState(agent, toolCatalog)
 
     expect(state).toEqual({
+      allTools: false,
       allowedAgentIds: ["agent-2"],
       azureDeployment: "",
       codeModeEnabled: true,
@@ -306,10 +312,12 @@ describe("validateAgentFormState", () => {
 describe("buildAgentPayload", () => {
   it("builds the full create payload, saving only policies that differ from the default", () => {
     expect(buildAgentPayload(validState(), "create")).toEqual({
+      all_tools: false,
       allowed_agent_ids: ["agent-2"],
       azure_deployment: null,
       code_mode_enabled: false,
       description: "Helps plan launches.",
+      excluded_tool_names: [],
       instructions: "Use the playbook.",
       is_active: true,
       is_favorite: false,
@@ -337,6 +345,58 @@ describe("buildAgentPayload", () => {
       expect.objectContaining({
         tool_names: ["read_file", "inherited_hidden", "explicit_hidden"],
         tool_policies: { read_file: "approval", explicit_hidden: "approval" },
+      })
+    )
+  })
+
+  it("records a tool turned off after enabling all tools as an exclusion", () => {
+    const enabled = setAllTools(validState({ toolModes: {} }), toolCatalog, true)
+    const state = { ...enabled, toolModes: { ...enabled.toolModes, send_email: "off" as const } }
+
+    expect(buildAgentPayload(state, "create")).toEqual(
+      expect.objectContaining({
+        all_tools: true,
+        excluded_tool_names: ["send_email"],
+        tool_names: [],
+        tool_policies: null,
+      })
+    )
+  })
+
+  it("keeps a hidden approval override and clears exclusions when enabling all tools", () => {
+    const narrow: Agent = {
+      ...agent,
+      tool_names: ["read_file", "web_search"],
+      tool_policies: { web_search: "approval" },
+    }
+    const state = initialAgentFormState(narrow, toolCatalog)
+
+    expect(buildAgentPayload(setAllTools(state, toolCatalog, true), "edit")).toEqual(
+      expect.objectContaining({
+        all_tools: true,
+        excluded_tool_names: [],
+        tool_names: [],
+        tool_policies: { web_search: "approval" },
+      })
+    )
+  })
+
+  it("does not exclude catalog tools missing from an older all-tools snapshot", () => {
+    const allTools: Agent = {
+      ...agent,
+      all_tools: true,
+      tool_names: ["read_file", "missing_tool"],
+      excluded_tool_names: ["retired_tool"],
+      tool_policies: null,
+    }
+    const state = initialAgentFormState(allTools, toolCatalog)
+
+    expect(buildAgentPayload({ ...state, name: "Renamed" }, "edit")).toEqual(
+      expect.objectContaining({
+        all_tools: true,
+        excluded_tool_names: ["retired_tool"],
+        tool_names: [],
+        tool_policies: null,
       })
     )
   })

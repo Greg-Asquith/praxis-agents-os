@@ -187,7 +187,7 @@ def build_runtime_tools(
         *additional_tool_names,
         *(
             name
-            for name in _normalize_tool_names(agent.tool_names or [])
+            for name in resolve_selected_tool_names(agent, workspace_definitions)
             if name != RUN_WORKFLOW_TOOL_NAME
         ),
     ]
@@ -273,6 +273,21 @@ def build_runtime_tools(
     return tools
 
 
+def resolve_selected_tool_names(
+    agent: Agent,
+    workspace_definitions: Sequence[RuntimeToolDefinition] = (),
+) -> list[str]:
+    """Return the tools an agent selects, before workspace and context filters."""
+    if not agent.all_tools:
+        return _normalize_tool_names(agent.tool_names or [])
+    excluded = set(_normalize_tool_names(agent.excluded_tool_names or []))
+    return sorted(
+        definition.name
+        for definition in (*RUNTIME_TOOL_CATALOG.values(), *workspace_definitions)
+        if definition.configurable and definition.name not in excluded
+    )
+
+
 def list_allowed_tool_definitions(
     *,
     workspace: object | None,
@@ -314,7 +329,7 @@ def list_tool_presentations(
 def _normalize_tool_names(raw: Any) -> list[str]:
     if not isinstance(raw, list):
         raise ModelConfigurationError(
-            "Agent tool_names must be a list",
+            "Agent tool names must be a list",
             details={"tool_names_type": type(raw).__name__},
         )
     normalized = []

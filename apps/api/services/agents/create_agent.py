@@ -17,7 +17,7 @@ from services.agents.runtime.tools.workspace_tools import (
 from services.agents.schemas import AgentCreateRequest, AgentRead
 from services.agents.utils import (
     is_agent_slug_integrity_error,
-    normalize_tool_configuration,
+    normalize_tool_selection,
     require_agent_write_access,
     validate_agent_references,
     validate_model_configuration,
@@ -41,10 +41,12 @@ async def create_agent(
     workspace_definitions = await load_workspace_tool_definitions(db, workspace)
     extra_tool_names = workspace_tool_names(workspace_definitions)
 
-    tool_names, tool_policies = normalize_tool_configuration(
+    tool_selection = normalize_tool_selection(
+        all_tools=payload.all_tools,
         tool_names=payload.tool_names,
+        excluded_tool_names=payload.excluded_tool_names,
         tool_policies=payload.tool_policies,
-        extra_tool_names=extra_tool_names,
+        workspace_tool_names=extra_tool_names,
         extra_allowed_policies={
             definition.name: definition.allowed_policies() for definition in workspace_definitions
         },
@@ -74,8 +76,10 @@ async def create_agent(
             instructions=payload.instructions,
             workspace_id=workspace.id,
             created_by=actor.id,
-            tool_names=tool_names,
-            tool_policies=tool_policies,
+            tool_names=tool_selection.tool_names,
+            all_tools=tool_selection.all_tools,
+            excluded_tool_names=tool_selection.excluded_tool_names,
+            tool_policies=tool_selection.tool_policies,
             code_mode_enabled=payload.code_mode_enabled,
             allowed_agent_ids=allowed_agent_ids,
             model_provider=model_provider,
@@ -124,6 +128,8 @@ async def create_agent(
             "model_provider": agent.model_provider,
             "model": agent.model,
             "tool_names": agent.tool_names,
+            "all_tools": agent.all_tools,
+            "excluded_tool_names": agent.excluded_tool_names,
             "code_mode_enabled": agent.code_mode_enabled,
             "allowed_agent_count": len(agent.allowed_agent_ids or []),
         },

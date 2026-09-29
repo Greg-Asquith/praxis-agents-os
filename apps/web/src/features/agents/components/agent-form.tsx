@@ -11,6 +11,7 @@ import {
   buildModelOptions,
   initialAgentFormState,
   isAgentFormDirty,
+  setAllTools,
   simpleSelectionFromModel,
   validateAgentFormState,
   type AgentFormState,
@@ -201,6 +202,9 @@ export function AgentForm(props: AgentFormProps) {
               ) : null}
               {activeStepId === "tools" ? (
                 <AgentToolsSection
+                  onAllToolsChange={(enabled) => {
+                    setState((current) => setAllTools(current, toolCatalog.tools, enabled))
+                  }}
                   onCodeModeEnabledChange={(enabled) => {
                     setField("codeModeEnabled", enabled)
                   }}

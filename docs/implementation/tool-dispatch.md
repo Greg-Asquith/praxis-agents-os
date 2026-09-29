@@ -20,6 +20,23 @@ provider-native and file-tool package initialisers are namespace-only;
 assembly imports their concrete contribution modules so route and utility
 imports cannot populate a partial catalogue.
 
+## Tool selection and mounting
+
+An agent selects tools in one of two modes. With `all_tools` off, it selects
+the names in `tool_names`. With `all_tools` on, it selects every configurable
+tool, including workspace-defined tools and tools registered in later
+releases, minus `excluded_tool_names`. The agent API accepts `tool_names` only
+without `all_tools` and `excluded_tool_names` only with it. For an all-tools
+agent, `AgentRead.tool_names` reports the resolved selection.
+`registry.resolve_selected_tool_names` owns the rule.
+
+`build_runtime_tools` mounts `auto_mount` tools plus the selection, then drops
+any tool that the workspace has disabled, whose `availability_check` fails,
+or whose integration binding has no compatible active context. New agents
+start with no tools. In the agent form, **Enable all tools** turns on
+`all_tools`, turning a tool off records an exclusion, and **Disable all
+tools** returns to an empty explicit selection.
+
 ## Results, references, and consent
 
 The following contracts apply in this area:

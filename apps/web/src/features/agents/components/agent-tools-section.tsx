@@ -42,12 +42,14 @@ import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { ToolCatalogEntry } from "@/features/tools/types"
 
 export function AgentToolsSection({
+  onAllToolsChange,
   onCodeModeEnabledChange,
   onToolModeChange,
   onToolModesChange,
   state,
   toolCatalog,
 }: {
+  onAllToolsChange: (enabled: boolean) => void
   onCodeModeEnabledChange: (enabled: boolean) => void
   onToolModeChange: (toolName: string, mode: RuntimeToolMode) => void
   onToolModesChange: (modes: Record<string, RuntimeToolMode>) => void
@@ -141,6 +143,25 @@ export function AgentToolsSection({
             checked={state.codeModeEnabled}
             onCheckedChange={onCodeModeEnabledChange}
           />
+        </Field>
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldTitle>{state.allTools ? "All tools enabled" : "Enable every tool"}</FieldTitle>
+            <FieldDescription>
+              {state.allTools
+                ? "This agent gets every tool the workspace allows, including tools added later. Turn a tool off to leave it out."
+                : "Give this agent every tool the workspace allows, including tools added later."}
+            </FieldDescription>
+          </FieldContent>
+          <Button
+            onClick={() => {
+              onAllToolsChange(!state.allTools)
+            }}
+            type="button"
+            variant="outline"
+          >
+            {state.allTools ? "Disable all tools" : "Enable all tools"}
+          </Button>
         </Field>
         <FieldSet>
           <FieldLegend>Choose tools</FieldLegend>

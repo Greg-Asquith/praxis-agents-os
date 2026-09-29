@@ -68,6 +68,8 @@ const agent: Agent = {
   created_by: "user-1",
   code_mode_enabled: false,
   tool_names: [],
+  all_tools: false,
+  excluded_tool_names: [],
   tool_policies: null,
   allowed_agent_ids: [],
   model_provider: null,

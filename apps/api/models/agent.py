@@ -50,8 +50,13 @@ class Agent(BaseModel):
     )
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
 
-    # Direct tool access (hardcoded tool names)
+    # Direct tool access (hardcoded tool names), used when all_tools is off
     tool_names = Column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    # Every configurable tool, including later ones, minus excluded_tool_names
+    all_tools = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    excluded_tool_names = Column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     # Tool policies: {tool_name: 'auto' | 'approval'}
     tool_policies = Column(JSONB, nullable=True)
     code_mode_enabled = Column(

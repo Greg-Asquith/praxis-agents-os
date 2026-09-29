@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from models.agent import Agent
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
@@ -26,7 +26,10 @@ class AgentRead(BaseModel):
     instructions: str
     workspace_id: UUID
     created_by: UUID
+    # For an all-tools agent, the resolved selection rather than the stored list.
     tool_names: list[str]
+    all_tools: bool
+    excluded_tool_names: list[str]
     tool_policies: dict[str, str] | None = None
     code_mode_enabled: bool
     allowed_agent_ids: list[UUID]
@@ -54,8 +57,15 @@ class AgentRead(BaseModel):
         extra_tool_names: frozenset[str] = frozenset(),
     ) -> "AgentRead":
         schema = cls.model_validate(agent)
+        schema.excluded_tool_names = _configurable_tool_names(
+            schema.excluded_tool_names,
+            extra_tool_names=extra_tool_names,
+        )
+        excluded = set(schema.excluded_tool_names)
         schema.tool_names = _configurable_tool_names(
-            schema.tool_names,
+            sorted(set(RUNTIME_TOOL_CATALOG).union(extra_tool_names) - excluded)
+            if schema.all_tools
+            else schema.tool_names,
             extra_tool_names=extra_tool_names,
         )
         if schema.tool_policies is not None:
@@ -77,6 +87,8 @@ class AgentCreateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     instructions: str = Field(min_length=1, max_length=20000)
     tool_names: list[str] = Field(default_factory=list, max_length=100)
+    all_tools: bool = False
+    excluded_tool_names: list[str] = Field(default_factory=list, max_length=500)
     tool_policies: dict[str, ToolPolicyValue] | None = None
     code_mode_enabled: bool = False
     allowed_agent_ids: list[UUID] = Field(default_factory=list, max_length=100)
@@ -110,10 +122,10 @@ class AgentCreateRequest(BaseModel):
     def normalize_optional_text(cls, value: str | None) -> str | None:
         return normalize_optional_text(value)
 
-    @field_validator("tool_names")
+    @field_validator("tool_names", "excluded_tool_names")
     @classmethod
-    def normalize_tool_names(cls, value: list[str]) -> list[str]:
-        return _normalize_text_list(value, field_name="tool_names")
+    def normalize_tool_names(cls, value: list[str], info: ValidationInfo) -> list[str]:
+        return _normalize_text_list(value, field_name=info.field_name or "tool_names")
 
     @field_validator("tool_policies")
     @classmethod
@@ -135,6 +147,8 @@ class AgentUpdateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     instructions: str | None = Field(default=None, max_length=20000)
     tool_names: list[str] | None = Field(default=None, max_length=100)
+    all_tools: bool | None = None
+    excluded_tool_names: list[str] | None = Field(default=None, max_length=500)
     tool_policies: dict[str, ToolPolicyValue] | None = None
     code_mode_enabled: bool = False
     allowed_agent_ids: list[UUID] | None = Field(default=None, max_length=100)
@@ -170,12 +184,14 @@ class AgentUpdateRequest(BaseModel):
     def normalize_optional_text(cls, value: str | None) -> str | None:
         return normalize_optional_text(value)
 
-    @field_validator("tool_names")
+    @field_validator("tool_names", "excluded_tool_names")
     @classmethod
-    def normalize_tool_names(cls, value: list[str] | None) -> list[str] | None:
+    def normalize_tool_names(
+        cls, value: list[str] | None, info: ValidationInfo
+    ) -> list[str] | None:
         if value is None:
             return None
-        return _normalize_text_list(value, field_name="tool_names")
+        return _normalize_text_list(value, field_name=info.field_name or "tool_names")
 
     @field_validator("tool_policies")
     @classmethod

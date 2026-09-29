@@ -15,6 +15,7 @@ from services.agents.models.resolution import resolve_agent_model
 from services.agents.utils import (
     AGENT_SLUG_UNIQUE_INDEX,
     is_agent_slug_integrity_error,
+    normalize_tool_selection,
     validate_model_configuration,
 )
 
@@ -79,3 +80,25 @@ def test_validate_model_configuration_fills_missing_fields_from_workspace_defaul
     )
     resolved = resolve_agent_model(agent, workspace=workspace)
     assert (resolved.provider, resolved.model) == ("anthropic", "claude-opus-5-5")
+
+
+def test_tool_selection_rejects_explicit_tools_while_all_tools_is_on() -> None:
+    with pytest.raises(AppValidationError) as exc_info:
+        normalize_tool_selection(
+            all_tools=True,
+            tool_names=["web_search"],
+            excluded_tool_names=[],
+            tool_policies=None,
+        )
+
+    assert exc_info.value.field == "tool_names"
+
+
+def test_all_tools_selection_rejects_a_policy_on_an_excluded_tool() -> None:
+    with pytest.raises(AppValidationError, match="must reference enabled tools"):
+        normalize_tool_selection(
+            all_tools=True,
+            tool_names=[],
+            excluded_tool_names=["web_search"],
+            tool_policies={"web_search": "approval"},
+        )

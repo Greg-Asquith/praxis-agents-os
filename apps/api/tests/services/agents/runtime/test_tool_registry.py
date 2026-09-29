@@ -24,6 +24,7 @@ from models.agent import Agent
 from services.agents.runtime.delegation.build_delegation_tools import (
     DELEGATION_TOOL_DEFINITIONS,
 )
+from services.agents.runtime.delegation.summary import summarize_delegate_agent
 from services.agents.runtime.delegation.tool_names import DELEGATE_TO_AGENT_TOOL_NAME
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
@@ -45,6 +46,7 @@ from services.agents.runtime.tools.registry import (
 )
 from services.agents.utils import validate_tool_configuration
 from services.integrations.manifest import PROVIDER_MANIFESTS
+from tests.factories import build_workspace
 
 
 @pytest.fixture
@@ -97,6 +99,8 @@ def _agent(
     tool_names: list[str] | None = None,
     tool_policies: dict[str, str] | None = None,
     code_mode_enabled: bool = False,
+    all_tools: bool = False,
+    excluded_tool_names: list[str] | None = None,
 ) -> Agent:
     return Agent(
         name="Tool Test Agent",
@@ -107,6 +111,8 @@ def _agent(
         tool_names=tool_names or [],
         tool_policies=tool_policies,
         code_mode_enabled=code_mode_enabled,
+        all_tools=all_tools,
+        excluded_tool_names=excluded_tool_names or [],
         model_provider="openai",
         model="gpt-6-luna",
     )
@@ -805,3 +811,50 @@ def test_workspace_disabled_tools_are_skipped_in_runtime_and_catalog() -> None:
 
     assert "test_add_numbers" not in {tool.name for tool in tools}
     assert "test_add_numbers" not in {definition.name for definition in catalog}
+
+
+def test_all_tools_agent_mounts_later_tools_minus_exclusions_and_filters(
+    cleanup_test_tools,
+    google_ads_manifest,
+) -> None:
+    agent = _agent(all_tools=True, excluded_tool_names=["test_all_excluded"])
+    for name in ("test_all_added", "test_all_excluded", "test_all_disabled"):
+        runtime_tool(name=name, description="Read data.")(_noop)
+    runtime_tool(
+        name="test_all_bound",
+        description="Read scoped data.",
+        integration_binding=GOOGLE_ADS_BINDING,
+    )(_noop)
+
+    mounted = {
+        tool.name
+        for tool in build_runtime_tools(
+            agent,
+            workspace=object(),
+            disabled_tool_names=frozenset({"test_all_disabled"}),
+        )
+    }
+
+    assert "test_all_added" in mounted
+    assert {"test_all_excluded", "test_all_disabled", "test_all_bound"}.isdisjoint(mounted)
+
+
+def test_delegate_summary_counts_workspace_tools_for_all_tools_agents(
+    cleanup_test_tools,
+) -> None:
+    runtime_tool(name="test_all_counted", description="Read data.")(_noop)
+    workspace_definitions = [
+        replace(RUNTIME_TOOL_CATALOG["test_all_counted"], name=name)
+        for name in ("classifier_kept", "classifier_excluded")
+    ]
+    agent = _agent(all_tools=True, excluded_tool_names=["classifier_excluded"])
+    agent.id = uuid4()
+
+    summary = summarize_delegate_agent(
+        agent,
+        workspace=build_workspace(),
+        workspace_definitions=workspace_definitions,
+    )
+    without_workspace_tools = summarize_delegate_agent(agent, workspace=build_workspace())
+
+    assert summary.tool_count == without_workspace_tools.tool_count + 1

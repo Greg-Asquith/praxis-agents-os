@@ -19,4 +19,11 @@ async def list_delegate_agents(ctx: RunContext[RuntimeDeps]) -> list[DelegateAge
         caller=ctx.deps.agent,
         workspace=ctx.deps.workspace,
     )
-    return [summarize_delegate_agent(agent, workspace=ctx.deps.workspace) for agent in delegates]
+    return [
+        summarize_delegate_agent(
+            agent,
+            workspace=ctx.deps.workspace,
+            workspace_definitions=ctx.deps.workspace_tool_definitions,
+        )
+        for agent in delegates
+    ]

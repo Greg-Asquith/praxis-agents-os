@@ -20,9 +20,10 @@ from services.agents.runtime.tools.workspace_tools import (
 )
 from services.agents.schemas import AgentRead, AgentUpdateRequest
 from services.agents.utils import (
+    ToolSelection,
     get_agent_for_workspace,
     is_agent_slug_integrity_error,
-    normalize_tool_configuration,
+    normalize_tool_selection,
     require_agent_write_access,
     validate_agent_references,
     validate_model_configuration,
@@ -82,38 +83,21 @@ async def update_agent(
             agent.slug = normalized_slug
             changed_fields.append("slug")
 
-    candidate_tool_names = list(agent.tool_names or [])
-    if "tool_names" in payload.model_fields_set:
-        if payload.tool_names is None:
-            raise AppValidationError("tool_names cannot be null", field="tool_names")
-        candidate_tool_names = payload.tool_names
-
-    candidate_tool_policies = dict(agent.tool_policies or {}) if agent.tool_policies else None
-    if "tool_policies" in payload.model_fields_set:
-        candidate_tool_policies = payload.tool_policies
-    elif "tool_names" in payload.model_fields_set and candidate_tool_policies:
-        candidate_tool_policies = {
-            name: policy
-            for name, policy in candidate_tool_policies.items()
-            if name in set(candidate_tool_names)
-        }
-    stale_workspace_names = {
-        name for name in agent.tool_names or [] if name.startswith(RESERVED_WORKSPACE_TOOL_PREFIXES)
-    }
-    candidate_tool_names, candidate_tool_policies = normalize_tool_configuration(
-        tool_names=candidate_tool_names,
-        tool_policies=candidate_tool_policies,
-        extra_tool_names=available_workspace_names.union(stale_workspace_names),
+    tool_selection = _candidate_tool_selection(
+        agent,
+        payload,
+        available_workspace_names=available_workspace_names,
         extra_allowed_policies={
             definition.name: definition.allowed_policies() for definition in workspace_definitions
         },
     )
-    if candidate_tool_names != list(agent.tool_names or []):
-        agent.tool_names = candidate_tool_names
-        changed_fields.append("tool_names")
-    if candidate_tool_policies != agent.tool_policies:
-        agent.tool_policies = candidate_tool_policies
-        changed_fields.append("tool_policies")
+    for field_name, value in (
+        ("all_tools", tool_selection.all_tools),
+        ("tool_names", tool_selection.tool_names),
+        ("excluded_tool_names", tool_selection.excluded_tool_names),
+        ("tool_policies", tool_selection.tool_policies),
+    ):
+        _set_if_changed(agent, field_name, value, changed_fields)
 
     candidate_allowed_agent_ids = [UUID(value) for value in (agent.allowed_agent_ids or [])]
     if "allowed_agent_ids" in payload.model_fields_set:
@@ -199,6 +183,56 @@ async def update_agent(
         await db.refresh(agent)
 
     return AgentRead.from_agent(agent, extra_tool_names=available_workspace_names)
+
+
+def _candidate_tool_selection(
+    agent: Agent,
+    payload: AgentUpdateRequest,
+    *,
+    available_workspace_names: frozenset[str],
+    extra_allowed_policies: dict[str, frozenset[str]],
+) -> ToolSelection:
+    fields_set = payload.model_fields_set
+    for field_name in ("all_tools", "tool_names", "excluded_tool_names"):
+        if field_name in fields_set and getattr(payload, field_name) is None:
+            raise AppValidationError(f"{field_name} cannot be null", field=field_name)
+
+    all_tools = payload.all_tools if "all_tools" in fields_set else bool(agent.all_tools)
+    # Switching mode discards the stored lists unless the payload supplies them.
+    keep_stored = all_tools == bool(agent.all_tools)
+    tool_names = _supplied_or_stored_names(agent, payload, "tool_names", keep_stored)
+    excluded_tool_names = _supplied_or_stored_names(
+        agent, payload, "excluded_tool_names", keep_stored
+    )
+    policies_supplied = "tool_policies" in fields_set
+    stale_tool_names = {
+        name
+        for name in (*(agent.tool_names or []), *(agent.excluded_tool_names or []))
+        if name.startswith(RESERVED_WORKSPACE_TOOL_PREFIXES)
+    }
+    return normalize_tool_selection(
+        all_tools=bool(all_tools),
+        tool_names=tool_names,
+        excluded_tool_names=excluded_tool_names,
+        tool_policies=(
+            payload.tool_policies if policies_supplied else dict(agent.tool_policies or {}) or None
+        ),
+        workspace_tool_names=available_workspace_names,
+        stale_tool_names=stale_tool_names,
+        extra_allowed_policies=extra_allowed_policies,
+        drop_unselected_policies=not policies_supplied,
+    )
+
+
+def _supplied_or_stored_names(
+    agent: Agent,
+    payload: AgentUpdateRequest,
+    field_name: str,
+    keep_stored: bool,
+) -> list[str]:
+    if field_name in payload.model_fields_set:
+        return list(getattr(payload, field_name) or [])
+    return list(getattr(agent, field_name) or []) if keep_stored else []
 
 
 def _set_if_changed(agent: Agent, field_name: str, value, changed_fields: list[str]) -> None:

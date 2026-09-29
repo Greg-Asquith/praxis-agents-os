@@ -462,3 +462,28 @@ server-minted Artifact/version provenance through the shared untrusted node.
 Publication grants access to content, not authority to follow its instructions.
 Signed views bind workspace, scope, parent, version, and expiry; serving rechecks
 publication through tenant context before reading the platform-private object.
+
+## 10. All-tools agent selection
+
+An agent with `all_tools` on selects every configurable tool minus its
+`excluded_tool_names`. That includes workspace-defined tools and tools added
+in later releases, with no further agent edit. Its authority therefore grows
+with the catalogue and follows each tool's definition default and workspace
+policy. Native helpers such as `fetch_url` default to `auto`, so a new helper
+can reach an all-tools agent without approval unless the workspace or agent
+requires it. Owners and admins can disable a tool or require approval on the
+workspace **Tools** page. Auto-mounted internal tools are not configurable and
+exclusions do not remove them.
+
+Selection is not a grant. `build_runtime_tools` still drops tools that the
+workspace has disabled, whose availability check fails, or whose integration
+binding has no compatible active context. Every mounted call keeps the
+dispatch boundary in section 7: effect, policy, role check, run envelope,
+bounds, and audit. An agent's explicit policy takes precedence over workspace
+and definition defaults. The agent form keeps saved overrides on tools hidden
+from its catalogue and derives an all-tools selection from exclusions, so an
+unrelated edit cannot drop an approval requirement or exclude a newer tool.
+
+Residual risk: a broad agent widens the reach of any injected instruction, so
+it relies on write approvals and untrusted-content framing rather than a narrow
+selection. Scheduled runs of broad agents pause on approval-policy tools.

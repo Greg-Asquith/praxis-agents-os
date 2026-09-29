@@ -20,6 +20,8 @@ def test_agent_read_validates_metadata_from_orm_attribute() -> None:
         workspace_id=uuid4(),
         created_by=uuid4(),
         tool_names=["test_runtime_context"],
+        all_tools=False,
+        excluded_tool_names=[],
         tool_policies={"test_runtime_context": "approval"},
         allowed_agent_ids=[],
         model_provider="openai",

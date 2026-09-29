@@ -190,6 +190,45 @@ async def test_update_and_delete_agent_routes_apply_workspace_write_access(
     assert fetch_deleted_response.status_code == 404
 
 
+async def test_all_tools_agent_reports_resolved_tools_and_switches_back_to_explicit(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    _user, _workspace, headers = await _authenticated_workspace(db_session)
+
+    create_response = await db_async_client.post(
+        "/api/v1/agents/",
+        headers=headers,
+        json={
+            "name": "Broad Agent",
+            "instructions": "Help.",
+            "all_tools": True,
+            "excluded_tool_names": ["fetch_url"],
+            "tool_policies": {"web_search": "approval"},
+        },
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["all_tools"] is True
+    assert created["excluded_tool_names"] == ["fetch_url"]
+    assert "web_search" in created["tool_names"]
+    assert "fetch_url" not in created["tool_names"]
+
+    update_response = await db_async_client.patch(
+        f"/api/v1/agents/{created['id']}",
+        headers=headers,
+        json={"all_tools": False, "tool_names": ["web_search"]},
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["all_tools"] is False
+    assert updated["excluded_tool_names"] == []
+    assert updated["tool_names"] == ["web_search"]
+    assert updated["tool_policies"] == {"web_search": "approval"}
+
+
 async def test_read_only_members_cannot_create_agents(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
