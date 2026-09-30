@@ -62,35 +62,47 @@ export function AgentDetailRoute() {
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-heading text-2xl font-semibold tracking-normal">{agent.name}</h1>
+              {agent.is_builtin ? <Badge variant="secondary">Built-in</Badge> : null}
               {agent.is_favorite ? <Badge variant="secondary">Favorite</Badge> : null}
               {!agent.is_active ? <Badge variant="outline">Inactive</Badge> : null}
             </div>
             <p className="text-muted-foreground max-w-3xl text-sm">
               {agent.description ?? "No description has been set for this agent."}
             </p>
+            {agent.is_builtin ? (
+              <p className="text-muted-foreground max-w-3xl text-sm">
+                This agent comes with your workspace and is named after it. Owners and admins can
+                change its model, which actions need approval, its workspace instructions, and
+                whether it's active.
+              </p>
+            ) : null}
           </div>
         </div>
-        <Button
-          disabled={deleteAgentMutation.isPending}
-          onClick={() => {
-            setDeleteDialogOpen(true)
-          }}
-          variant="destructive"
-        >
-          <Trash2Icon data-icon="inline-start" />
-          {deleteAgentMutation.isPending ? "Deleting" : "Delete Agent"}
-        </Button>
-        <ConfirmDialog
-          confirmIcon={<Trash2Icon data-icon="inline-start" />}
-          confirmLabel="Delete Agent"
-          confirmPendingLabel="Deleting"
-          description={`This removes ${agent.name} from the workspace. Existing conversations remain in their history.`}
-          isPending={deleteAgentMutation.isPending}
-          onConfirm={handleDeleteAgent}
-          onOpenChange={setDeleteDialogOpen}
-          open={deleteDialogOpen}
-          title="Delete Agent?"
-        />
+        {agent.is_builtin ? null : (
+          <>
+            <Button
+              disabled={deleteAgentMutation.isPending}
+              onClick={() => {
+                setDeleteDialogOpen(true)
+              }}
+              variant="destructive"
+            >
+              <Trash2Icon data-icon="inline-start" />
+              {deleteAgentMutation.isPending ? "Deleting" : "Delete Agent"}
+            </Button>
+            <ConfirmDialog
+              confirmIcon={<Trash2Icon data-icon="inline-start" />}
+              confirmLabel="Delete Agent"
+              confirmPendingLabel="Deleting"
+              description={`This removes ${agent.name} from the workspace. Existing conversations remain in their history.`}
+              isPending={deleteAgentMutation.isPending}
+              onConfirm={handleDeleteAgent}
+              onOpenChange={setDeleteDialogOpen}
+              open={deleteDialogOpen}
+              title="Delete Agent?"
+            />
+          </>
+        )}
       </div>
 
       {deleteError && (

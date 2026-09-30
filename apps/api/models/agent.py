@@ -18,12 +18,19 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    case,
+    func,
+    literal,
+    select,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import column_property, relationship
 
 from models.base import BaseModel
+from models.user import User
+from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
 
 
 class Agent(BaseModel):
@@ -36,8 +43,8 @@ class Agent(BaseModel):
 
     __tablename__ = "agents"
 
-    # Identity
-    name = Column(String, nullable=False, index=True)
+    # Identity; null for the built-in agent, whose `name` is derived at read time
+    custom_name = Column("name", String, nullable=True, index=True)
     slug = Column(
         String(100), nullable=False, index=True
     )  # Unique per user/workspace scope, not globally
@@ -76,6 +83,9 @@ class Agent(BaseModel):
     )  # Azure OpenAI deployment name (special case)
     max_steps = Column(Integer, nullable=True, default=20, server_default=text("20"))
 
+    # The workspace's code-owned agent; its name, base instructions, and tools are platform-managed
+    is_builtin = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+
     # Status & tracking
     is_active = Column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_favorite = Column(Boolean, nullable=False, default=False, server_default=text("false"))
@@ -90,6 +100,7 @@ class Agent(BaseModel):
     __table_args__ = (
         Index("ix_agents_workspace_created", "workspace_id", "created_at"),
         Index("ix_agents_name_workspace", "name", "workspace_id"),
+        CheckConstraint("(name IS NULL) = is_builtin", name="ck_agents_builtin_name"),
         # Slug uniqueness scoped per workspace
         Index(
             "ix_agents_slug_workspace",
@@ -97,10 +108,66 @@ class Agent(BaseModel):
             "workspace_id",
             unique=True,
         ),
+        Index(
+            "uq_agents_builtin_workspace",
+            "workspace_id",
+            unique=True,
+            postgresql_where=text("is_builtin AND NOT deleted"),
+        ),
     )
 
+    @hybrid_property
+    def name(self) -> str | None:
+        return self._builtin_name if self.is_builtin else self.custom_name
+
+    @name.inplace.setter
+    def _name_setter(self, value: str | None) -> None:
+        self.custom_name = value
+
+    @name.inplace.expression
+    @classmethod
+    def _name_expression(cls):
+        return case((cls.is_builtin, _builtin_agent_name()), else_=cls.custom_name)
+
     def __repr__(self) -> str:
-        return f"<Agent id={self.id} name={self.name} active={self.is_active}>"
+        return f"<Agent id={self.id} slug={self.slug} active={self.is_active}>"
+
+
+def _builtin_agent_name():
+    # "Acme Agent" in a team workspace; the owner's first name in a personal one.
+    agents = Agent.__table__.c
+    workspaces = Workspace.__table__.c
+    users = User.__table__.c
+    memberships = WorkspaceMembership.__table__.c
+    owner_first_name = (
+        select(func.nullif(func.split_part(func.btrim(users.display_name), " ", 1), ""))
+        .select_from(
+            User.__table__.join(WorkspaceMembership.__table__, memberships.user_id == users.id)
+        )
+        .where(
+            memberships.workspace_id == agents.workspace_id,
+            memberships.role == WorkspaceRole.OWNER.value,
+            memberships.deleted.is_(False),
+        )
+        .order_by(memberships.created_at)
+        .limit(1)
+        .scalar_subquery()
+    )
+    is_personal = select(workspaces.is_personal).where(workspaces.id == agents.workspace_id)
+    workspace_name = select(workspaces.name).where(workspaces.id == agents.workspace_id)
+    return case(
+        (
+            is_personal.scalar_subquery(),
+            func.coalesce(owner_first_name + literal("'s Agent"), literal("My Agent")),
+        ),
+        else_=workspace_name.scalar_subquery() + literal(" Agent"),
+    )
+
+
+# Derived on every read so workspace renames and owner name changes apply everywhere at once.
+Agent._builtin_name = column_property(
+    case((Agent.__table__.c.is_builtin, _builtin_agent_name()), else_=None)
+)
 
 
 class AgentSchedule(BaseModel):

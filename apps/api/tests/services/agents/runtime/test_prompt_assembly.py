@@ -2,10 +2,13 @@
 
 """Tests for runtime system prompt assembly."""
 
+from models.agent import Agent
+from services.agents.builtin.identity import BUILTIN_AGENT_INSTRUCTIONS
 from services.agents.runtime import prompt as prompt_module
 from services.agents.runtime.prompt import (
     PromptBlock,
     build_system_prompt,
+    runtime_prompt_blocks,
 )
 
 
@@ -34,3 +37,18 @@ def test_build_system_prompt_truncates_budgeted_blocks(monkeypatch) -> None:
 
     assert prompt == "abc\n[truncated]"
     assert "Runtime prompt block exceeded its soft budget" in logs
+
+
+def test_builtin_identity_keeps_long_workspace_instructions_after_base() -> None:
+    def prompt(agent: Agent) -> str:
+        return build_system_prompt(runtime_prompt_blocks(agent, include_delegation=False))
+
+    extra = "Reply in French. " * 1_176
+    builtin_prompt = prompt(Agent(is_builtin=True, instructions=extra))
+
+    assert builtin_prompt.startswith(BUILTIN_AGENT_INSTRUCTIONS)
+    assert f"## Workspace instructions\n\n{extra.strip()}\n\n" in builtin_prompt
+    assert "[truncated]" not in builtin_prompt
+    assert prompt(Agent(is_builtin=False, instructions="Reply in French.")).startswith(
+        "Reply in French.\n\n"
+    )

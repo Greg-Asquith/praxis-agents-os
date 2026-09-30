@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError
 from models.agent import Agent
 from models.user import User
@@ -30,7 +31,22 @@ from services.agents.utils import (
 )
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
+from services.workspaces.utils import MANAGER_ROLES
 from utils.slugify import slugify
+
+# Owners and admins manage these on the built-in agent; everything else is platform-owned.
+BUILTIN_MANAGER_FIELDS = frozenset(
+    {
+        "instructions",
+        "tool_policies",
+        "model_provider",
+        "model",
+        "azure_deployment",
+        "model_settings",
+        "is_active",
+    }
+)
+BUILTIN_EDITOR_FIELDS = frozenset({"is_favorite"})
 
 
 async def update_agent(
@@ -45,6 +61,8 @@ async def update_agent(
 ) -> AgentRead:
     require_agent_write_access(membership)
     agent = await get_agent_for_workspace(db, workspace=workspace, agent_id=agent_id)
+    if agent.is_builtin:
+        _require_builtin_update_allowed(agent, payload, membership)
     workspace_definitions = await load_workspace_tool_definitions(db, workspace)
     available_workspace_names = workspace_tool_names(workspace_definitions)
 
@@ -61,6 +79,8 @@ async def update_agent(
     if "instructions" in payload.model_fields_set:
         if payload.instructions is None:
             raise AppValidationError("instructions cannot be null", field="instructions")
+        if not payload.instructions and not agent.is_builtin:
+            raise AppValidationError("instructions must not be blank", field="instructions")
         _set_if_changed(agent, "instructions", payload.instructions, changed_fields)
 
     if "slug" in payload.model_fields_set:
@@ -182,6 +202,43 @@ async def update_agent(
         await db.refresh(agent)
 
     return AgentRead.from_agent(agent, extra_tool_names=available_workspace_names)
+
+
+def _require_builtin_update_allowed(
+    agent: Agent,
+    payload: AgentUpdateRequest,
+    membership: WorkspaceMembership,
+) -> None:
+    for field_name in sorted(payload.model_fields_set):
+        if not _differs_from_stored(agent, payload, field_name):
+            continue
+        if field_name in BUILTIN_EDITOR_FIELDS:
+            continue
+        if field_name not in BUILTIN_MANAGER_FIELDS:
+            label = field_name.removesuffix("_json").replace("_", " ")
+            raise AppValidationError(
+                f"The built-in agent's {label} is managed by the platform",
+                field=field_name,
+            )
+        if membership.role not in MANAGER_ROLES:
+            raise AuthorizationError(
+                "Only workspace owners and admins can change the built-in agent",
+                details={
+                    "allowed_roles": sorted(MANAGER_ROLES),
+                    "membership_role": membership.role,
+                    "field": field_name,
+                },
+            )
+
+
+def _differs_from_stored(agent: Agent, payload: AgentUpdateRequest, field_name: str) -> bool:
+    value = getattr(payload, field_name)
+    stored = getattr(agent, field_name)
+    if field_name == "allowed_agent_ids":
+        return [str(item) for item in value or []] != list(stored or [])
+    if field_name in {"tool_names", "excluded_tool_names"}:
+        return list(value or []) != list(stored or [])
+    return value != stored
 
 
 def _candidate_tool_selection(

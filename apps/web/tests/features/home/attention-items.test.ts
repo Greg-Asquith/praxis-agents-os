@@ -64,6 +64,8 @@ const agent: Agent = {
   slug: "email-agent",
   description: null,
   instructions: "Send email.",
+  base_instructions: null,
+  is_builtin: false,
   workspace_id: "workspace-1",
   created_by: "user-1",
   tool_names: [],

@@ -101,6 +101,8 @@ export type AgentFormState = {
   identityColor: string
   instructions: string
   isActive: "true" | "false"
+  // The built-in agent saves only workspace instructions, model, policies, and availability.
+  isBuiltin: boolean
   isFavorite: "true" | "false"
   maxSteps: string
   metadataJson: Record<string, unknown>
@@ -160,6 +162,7 @@ export function initialAgentFormState(
     identityColor: identityColorFromMetadata(agent?.metadata ?? null),
     instructions: agent?.instructions ?? "",
     isActive: agent?.is_active === false ? "false" : "true",
+    isBuiltin: agent?.is_builtin ?? false,
     isFavorite: agent?.is_favorite ? "true" : "false",
     maxSteps: String(agent?.max_steps ?? 20),
     metadataJson: { ...(agent?.metadata ?? {}) },
@@ -338,6 +341,18 @@ export function buildAgentPayload(
 
   const toolPayload = buildToolPayload(state)
   const modelSettings = buildModelSettings(state)
+  if (state.isBuiltin) {
+    return {
+      azure_deployment: modelSelection.azure_deployment,
+      instructions,
+      is_active: state.isActive === "true",
+      is_favorite: state.isFavorite === "true",
+      model: modelSelection.model,
+      model_provider: modelSelection.model_provider,
+      model_settings: modelSettings,
+      tool_policies: toolPayload.tool_policies,
+    }
+  }
   const basePayload = {
     allowed_agent_ids: state.allowedAgentIds,
     azure_deployment: modelSelection.azure_deployment,
@@ -360,7 +375,7 @@ export function buildAgentPayload(
 export function validateAgentFormState(state: AgentFormState): AgentFormValidationEntry[] {
   const entries: AgentFormValidationEntry[] = []
 
-  if (!state.name.trim()) {
+  if (!state.isBuiltin && !state.name.trim()) {
     entries.push({
       fieldId: "agent-name",
       label: "Name",
@@ -368,7 +383,7 @@ export function validateAgentFormState(state: AgentFormState): AgentFormValidati
     })
   }
 
-  if (!state.instructions.trim()) {
+  if (!state.isBuiltin && !state.instructions.trim()) {
     entries.push({
       fieldId: "agent-instructions",
       label: "Instructions",

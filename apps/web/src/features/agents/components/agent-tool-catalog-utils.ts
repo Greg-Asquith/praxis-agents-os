@@ -81,9 +81,13 @@ export function stripProviderPrefix(label: string, providerLabel: string) {
   return stripped || label
 }
 
-export function unavailableModeOptions(mode: RuntimeToolMode | undefined): RuntimeToolMode[] {
+// A locked selection cannot exclude tools, so Off would only drop the saved approval override.
+export function unavailableModeOptions(
+  mode: RuntimeToolMode | undefined,
+  allowOff: boolean
+): RuntimeToolMode[] {
   if (mode === "approval" || mode === "auto") {
-    return ["off", mode]
+    return allowOff ? ["off", mode] : [mode]
   }
   return ["off"]
 }

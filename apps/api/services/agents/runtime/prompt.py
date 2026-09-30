@@ -12,6 +12,7 @@ from core.settings import settings
 from models.agent import Agent
 from models.user import User
 from models.workspace import Workspace
+from services.agents.builtin.utils import render_builtin_instructions
 from services.agents.runtime.delegation.tool_names import (
     DELEGATE_TO_AGENT_TOOL_NAME,
     LIST_DELEGATE_AGENTS_TOOL_NAME,
@@ -133,10 +134,12 @@ def runtime_prompt_blocks(
 ) -> list[PromptBlock]:
     """Return the canonical ordered prompt blocks for one runtime agent."""
     return [
+        # No budget: the API bounds instructions, and clipping would drop accepted text.
         PromptBlock(
             "identity",
-            agent.instructions,
-            budget=settings.AGENT_PROMPT_IDENTITY_BUDGET,
+            render_builtin_instructions(agent.instructions)
+            if agent.is_builtin
+            else agent.instructions,
         ),
         PromptBlock(
             "conversation_context",

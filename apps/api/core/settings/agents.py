@@ -250,11 +250,6 @@ class AgentRunSettingsMixin:
         default="gpt-6-luna",
         description="Model for the out-of-band conversation history summarizer.",
     )
-    AGENT_PROMPT_IDENTITY_BUDGET: int = Field(
-        default=12_000,
-        gt=0,
-        description="Soft character budget for agent identity instructions.",
-    )
     AGENT_PROMPT_ACTIVE_CONTEXT_BUDGET: int = Field(
         default=2000,
         gt=0,

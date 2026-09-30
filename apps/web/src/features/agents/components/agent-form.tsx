@@ -5,6 +5,7 @@ import { useId, useMemo, useRef, useState, type SyntheticEvent } from "react"
 import { FormAlerts } from "@/components/forms/form-alerts"
 import { FormWizard, type FormWizardNavigation } from "@/components/forms/form-wizard"
 import { AgentAvailabilitySection } from "@/features/agents/components/agent-availability-section"
+import { AgentBuiltinInstructionsSection } from "@/features/agents/components/agent-builtin-instructions-section"
 import { AgentDelegationSection } from "@/features/agents/components/agent-delegation-section"
 import {
   buildAgentPayload,
@@ -20,6 +21,8 @@ import {
 import {
   AGENT_CREATE_STEPS,
   AGENT_EDIT_STEPS,
+  BUILTIN_AGENT_MANAGER_STEPS,
+  BUILTIN_AGENT_MEMBER_STEPS,
   agentValidationEntriesForStep,
   stepForAgentField,
   type AgentWizardStepId,
@@ -31,6 +34,8 @@ import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { Agent, AgentCreateRequest, AgentUpdateRequest } from "@/features/agents/types"
 import type { ModelCatalogResponse } from "@/features/models/types"
 import { useToolCatalogQuery } from "@/features/tools/api/list-tool-catalog"
+import { useActiveWorkspace } from "@/features/workspaces/components/use-active-workspace"
+import { canManageWorkspace } from "@/features/workspaces/permissions"
 import { getErrorMessage } from "@/lib/api/errors"
 import { buildFieldErrors } from "@/lib/forms"
 
@@ -58,6 +63,15 @@ export function AgentForm(props: AgentFormProps) {
   const wizardNavigationRef = useRef<FormWizardNavigation<AgentWizardStepId>>(null)
   const agent = props.mode === "edit" ? props.agent : null
   const { data: toolCatalog } = useToolCatalogQuery()
+  const { workspace } = useActiveWorkspace()
+  const canManageBuiltin = canManageWorkspace(workspace.current_user_role)
+  const steps = agent?.is_builtin
+    ? canManageBuiltin
+      ? BUILTIN_AGENT_MANAGER_STEPS
+      : BUILTIN_AGENT_MEMBER_STEPS
+    : props.mode === "create"
+      ? AGENT_CREATE_STEPS
+      : AGENT_EDIT_STEPS
   const initialState = useMemo(
     () => initialAgentFormState(agent, toolCatalog.tools),
     [agent, toolCatalog.tools]
@@ -125,7 +139,12 @@ export function AgentForm(props: AgentFormProps) {
           setFormError(payload)
           return
         }
-        await props.onSubmit(payload)
+        // Members can only favorite the built-in agent.
+        await props.onSubmit(
+          state.isBuiltin && !canManageBuiltin
+            ? { is_favorite: state.isFavorite === "true" }
+            : payload
+        )
       }
     } catch (submitError) {
       setFormError(getErrorMessage(submitError))
@@ -157,7 +176,7 @@ export function AgentForm(props: AgentFormProps) {
         isSubmitting={props.isSubmitting}
         navigationRef={wizardNavigationRef}
         pendingLabel={props.mode === "create" ? "Creating" : "Saving"}
-        steps={props.mode === "create" ? AGENT_CREATE_STEPS : AGENT_EDIT_STEPS}
+        steps={steps}
         submitLabel={props.mode === "create" ? "Create Agent" : "Save Changes"}
         validateStep={validateStep}
       >
@@ -175,7 +194,14 @@ export function AgentForm(props: AgentFormProps) {
                 errorTitle="Agent not saved"
                 validationEntries={validationEntries}
               />
-              {activeStepId === "profile" ? (
+              {activeStepId === "profile" && agent?.is_builtin ? (
+                <AgentBuiltinInstructionsSection
+                  baseInstructions={agent.base_instructions ?? ""}
+                  setField={setField}
+                  state={state}
+                />
+              ) : null}
+              {activeStepId === "profile" && !agent?.is_builtin ? (
                 <AgentProfileSection
                   fieldErrors={{
                     instructions: fieldErrors["agent-instructions"],
@@ -202,6 +228,7 @@ export function AgentForm(props: AgentFormProps) {
               ) : null}
               {activeStepId === "tools" ? (
                 <AgentToolsSection
+                  locked={state.isBuiltin}
                   onAllToolsChange={(enabled) => {
                     setState((current) => setAllTools(current, toolCatalog.tools, enabled))
                   }}
@@ -231,6 +258,7 @@ export function AgentForm(props: AgentFormProps) {
                   onFavoriteChange={(isFavorite) => {
                     setField("isFavorite", isFavorite)
                   }}
+                  showStatus={!state.isBuiltin || canManageBuiltin}
                 />
               ) : null}
             </div>

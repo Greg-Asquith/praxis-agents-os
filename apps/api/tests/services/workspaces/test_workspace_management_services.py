@@ -4,10 +4,12 @@
 
 import asyncio
 import importlib
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from pydantic import SecretStr
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,12 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.auth import AuthorizationError
 from core.exceptions.general import AppValidationError, ConflictError
 from core.settings import settings
+from models.agent import Agent
 from models.audit_event import AuditEvent
 from models.jobs import Job
 from models.security import SecurityEvent
 from models.user import User, UserAuth
 from models.workspace import Workspace, WorkspaceInvitation, WorkspaceMembership, WorkspaceRole
 from services.audit_events import AuditAction, AuditResourceType
+from services.auth.schemas import CurrentUserUpdateRequest
+from services.auth.update_current_user import update_current_user
 from services.security import SecurityEventType
 from services.storage.domain import PROVISION_WORKSPACE_BUCKET_KIND
 from services.workspaces import create_workspace, delete_workspace, update_workspace
@@ -112,6 +117,74 @@ async def test_personal_workspace_creation_enqueues_bucket_provisioning(
     assert job is not None
     assert job.subject_type == "workspace"
     assert job.subject_id == workspace.id
+
+
+@pytest_asyncio.fixture
+async def runtime_db(db_session: AsyncSession) -> AsyncIterator[AsyncSession]:
+    # Production session class, so the test cannot supply missing tenant context.
+    async with AsyncSession(
+        bind=db_session.bind, expire_on_commit=False, join_transaction_mode="create_savepoint"
+    ) as session:
+        yield session
+
+
+async def _builtin_agent(db: AsyncSession, workspace_id) -> Agent | None:
+    return await db.scalar(
+        select(Agent).where(Agent.workspace_id == workspace_id, Agent.is_builtin.is_(True))
+    )
+
+
+async def test_team_workspace_builtin_agent_is_provisioned_and_follows_renames(
+    runtime_db: AsyncSession,
+) -> None:
+    actor = build_user(email=f"builtin-team-{uuid4().hex}@example.com")
+    runtime_db.add(actor)
+    await runtime_db.flush()
+    request = build_test_request(path="/api/v1/workspaces/")
+
+    created = await create_workspace(
+        runtime_db, request=request, actor=actor, payload=WorkspaceCreateRequest(name="Acme")
+    )
+
+    agent = await _builtin_agent(runtime_db, created.id)
+    assert agent is not None
+    assert (agent.name, agent.slug, agent.all_tools) == ("Acme Agent", "workspace-agent", True)
+
+    await update_workspace(
+        runtime_db,
+        request=request,
+        actor=actor,
+        workspace_id=created.id,
+        payload=WorkspaceUpdateRequest(name="Globex"),
+    )
+
+    await runtime_db.refresh(agent)
+    assert agent.name == "Globex Agent"
+
+
+async def test_personal_builtin_agent_name_follows_owner_first_name(
+    runtime_db: AsyncSession,
+) -> None:
+    user = build_user(email=f"builtin-personal-{uuid4().hex}@example.com")
+    user.display_name = "Dana Lee"
+    runtime_db.add(user)
+    await runtime_db.flush()
+
+    workspace = await provision_personal_workspace(runtime_db, user)
+
+    agent = await _builtin_agent(runtime_db, workspace.id)
+    assert agent is not None
+    assert agent.name == "Dana's Agent"
+
+    await update_current_user(
+        runtime_db,
+        request=build_test_request(path="/api/v1/auth/me", method="PATCH"),
+        user=user,
+        payload=CurrentUserUpdateRequest(display_name="Kai"),
+    )
+
+    await runtime_db.refresh(agent)
+    assert agent.name == "Kai's Agent"
 
 
 async def test_delete_workspace_rejects_personal_workspaces(db_session: AsyncSession) -> None:

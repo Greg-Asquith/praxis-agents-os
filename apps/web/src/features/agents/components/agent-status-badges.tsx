@@ -6,6 +6,7 @@ import type { Agent } from "@/features/agents/types"
 export function AgentStatusBadges({ agent }: { agent: Agent }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      {agent.is_builtin && <Badge variant="secondary">Built-in</Badge>}
       <Badge variant={agent.is_active ? "success" : "outline"}>
         {agent.is_active ? "Active" : "Inactive"}
       </Badge>

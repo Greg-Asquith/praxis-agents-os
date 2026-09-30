@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from models.agent import Agent
+from services.agents.builtin.identity import BUILTIN_AGENT_INSTRUCTIONS
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.agents.runtime.tools.workspace_tools import RESERVED_WORKSPACE_TOOL_PREFIXES
 from utils.pagination import OffsetPage
@@ -23,7 +24,11 @@ class AgentRead(BaseModel):
     name: str
     slug: str
     description: str | None = None
+    # For the built-in agent, the workspace instructions that follow base_instructions.
     instructions: str
+    # The built-in agent's code-owned instructions; null for other agents.
+    base_instructions: str | None = None
+    is_builtin: bool
     workspace_id: UUID
     created_by: UUID
     # For an all-tools agent, the resolved selection rather than the stored list.
@@ -56,6 +61,8 @@ class AgentRead(BaseModel):
         extra_tool_names: frozenset[str] = frozenset(),
     ) -> "AgentRead":
         schema = cls.model_validate(agent)
+        if schema.is_builtin:
+            schema.base_instructions = BUILTIN_AGENT_INSTRUCTIONS
         schema.excluded_tool_names = _configurable_tool_names(
             schema.excluded_tool_names,
             extra_tool_names=extra_tool_names,
@@ -160,7 +167,7 @@ class AgentUpdateRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    @field_validator("name", "instructions")
+    @field_validator("name")
     @classmethod
     def normalize_required_when_present(cls, value: str | None) -> str | None:
         if value is None:
@@ -169,6 +176,12 @@ class AgentUpdateRequest(BaseModel):
         if not normalized:
             raise ValueError("must not be blank")
         return normalized
+
+    @field_validator("instructions")
+    @classmethod
+    def normalize_instructions(cls, value: str | None) -> str | None:
+        # Blank is valid only for the built-in agent; the service enforces that.
+        return value.strip() if value is not None else None
 
     @field_validator(
         "slug",

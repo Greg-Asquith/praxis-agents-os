@@ -5,6 +5,7 @@
 from pydantic_ai import Tool
 
 from services.agents.runtime.context import RuntimeDeps
+from services.agents.runtime.delegation.constants import DELEGATE_LIST_LIMIT
 from services.agents.runtime.delegation.delegate_to_agent import delegate_to_agent
 from services.agents.runtime.delegation.list_delegate_agents import list_delegate_agents
 from services.agents.runtime.delegation.tool_names import (
@@ -25,8 +26,10 @@ LIST_DELEGATE_AGENTS_DEFINITION = RuntimeToolDefinition(
     defer_loading=False,
     function=list_delegate_agents,
     description=(
-        "List the delegate agents this agent is allowed to call. "
-        f"Call this before {DELEGATE_TO_AGENT_TOOL_NAME} and use the exact returned id."
+        "List the delegate agents this agent is allowed to call, up to "
+        f"{DELEGATE_LIST_LIMIT} at a time. Pass search to find an agent by name or "
+        f"description. Call this before {DELEGATE_TO_AGENT_TOOL_NAME} and use the exact "
+        "returned id."
     ),
     label="Find Delegate Agents",
     code_eligible=False,

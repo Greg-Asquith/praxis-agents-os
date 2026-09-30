@@ -6,6 +6,7 @@ from fastapi import Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from core.exceptions.general import ConflictError
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership, WorkspaceRole
@@ -66,6 +67,12 @@ async def create_workspace(
     )
     db.add(membership)
     await db.flush()
+    # The request carries no workspace context yet, and agent inserts need it.
+    await set_session_tenant_context(db, workspace_id=workspace.id)
+    # The agents package imports workspace and auth services at module load.
+    from services.agents.builtin import create_builtin_agent
+
+    await create_builtin_agent(db, workspace=workspace, owner=actor)
 
     await record_workspace_audit_event(
         db,

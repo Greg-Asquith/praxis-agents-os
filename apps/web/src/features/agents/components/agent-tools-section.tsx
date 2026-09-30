@@ -40,12 +40,15 @@ import type { RuntimeToolMode } from "@/features/agents/runtime-tools"
 import type { ToolCatalogEntry } from "@/features/tools/types"
 
 export function AgentToolsSection({
+  locked = false,
   onAllToolsChange,
   onToolModeChange,
   onToolModesChange,
   state,
   toolCatalog,
 }: {
+  // The built-in agent keeps every tool; only auto or approval can change.
+  locked?: boolean
   onAllToolsChange: (enabled: boolean) => void
   onToolModeChange: (toolName: string, mode: RuntimeToolMode) => void
   onToolModesChange: (modes: Record<string, RuntimeToolMode>) => void
@@ -105,30 +108,36 @@ export function AgentToolsSection({
   const hasActiveFilter = normalizedSearch.length > 0 || providerFilter !== ALL_TOOL_PROVIDERS_VALUE
   return (
     <FormSection
-      description="Tools let an agent read information or take actions in connected systems. Approval means a person confirms each use before it runs. You can change this later."
+      description={
+        locked
+          ? "This agent can use every tool your workspace allows. Choose which ones need a person to confirm each use. To remove a tool, turn it off in the workspace settings."
+          : "Tools let an agent read information or take actions in connected systems. Approval means a person confirms each use before it runs. You can change this later."
+      }
       eyebrow="Tools"
       title="Tools and approval policy"
     >
       <FieldGroup>
-        <Field orientation="horizontal">
-          <FieldContent>
-            <FieldTitle>{state.allTools ? "All tools enabled" : "Enable every tool"}</FieldTitle>
-            <FieldDescription>
-              {state.allTools
-                ? "This agent gets every tool the workspace allows, including tools added later. Turn a tool off to leave it out."
-                : "Give this agent every tool the workspace allows, including tools added later."}
-            </FieldDescription>
-          </FieldContent>
-          <Button
-            onClick={() => {
-              onAllToolsChange(!state.allTools)
-            }}
-            type="button"
-            variant="outline"
-          >
-            {state.allTools ? "Disable all tools" : "Enable all tools"}
-          </Button>
-        </Field>
+        {locked ? null : (
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldTitle>{state.allTools ? "All tools enabled" : "Enable every tool"}</FieldTitle>
+              <FieldDescription>
+                {state.allTools
+                  ? "This agent gets every tool the workspace allows, including tools added later. Turn a tool off to leave it out."
+                  : "Give this agent every tool the workspace allows, including tools added later."}
+              </FieldDescription>
+            </FieldContent>
+            <Button
+              onClick={() => {
+                onAllToolsChange(!state.allTools)
+              }}
+              type="button"
+              variant="outline"
+            >
+              {state.allTools ? "Disable all tools" : "Enable all tools"}
+            </Button>
+          </Field>
+        )}
         <FieldSet>
           <FieldLegend>Choose tools</FieldLegend>
           <p className="text-muted-foreground text-sm">
@@ -204,6 +213,7 @@ export function AgentToolsSection({
             {toolGroups.map((group) => (
               <AgentToolProviderGroup
                 key={group.provider}
+                allowOff={!locked}
                 group={group}
                 forceOpen={normalizedSearch.length > 0}
                 openOverride={providerOpenOverrides[group.provider]}
@@ -235,9 +245,13 @@ export function AgentToolsSection({
                     <AgentToolPolicyRow
                       key={toolName}
                       label={toolName}
-                      description="No longer available - set to Off to remove."
+                      description={
+                        locked
+                          ? "Not available right now. Its approval setting is kept."
+                          : "No longer available - set to Off to remove."
+                      }
                       mode={state.toolModes[toolName] ?? "auto"}
-                      modeOptions={unavailableModeOptions(state.toolModes[toolName])}
+                      modeOptions={unavailableModeOptions(state.toolModes[toolName], !locked)}
                       muted
                       onModeChange={(mode) => {
                         onToolModeChange(toolName, mode)

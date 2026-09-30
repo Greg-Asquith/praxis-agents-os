@@ -4,6 +4,10 @@ export function canEditWorkspace(role: WorkspaceRole | null) {
   return role === "owner" || role === "admin" || role === "member"
 }
 
+export function canManageWorkspace(role: WorkspaceRole | null) {
+  return role === "owner" || role === "admin"
+}
+
 export function canRemoveWorkspaceMembers(workspace: Workspace, isSuperAdmin: boolean) {
   return (
     !workspace.is_personal &&

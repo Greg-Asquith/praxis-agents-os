@@ -120,28 +120,25 @@ async def _search_agents(ctx, search, _dependent_args, page_size, cursor):
         ctx.db,
         caller=ctx.agent,
         workspace=ctx.workspace,
+        search=search,
+        offset=offset,
+        limit=page_size + 1,
     )
-    pattern = search.strip().casefold()
-    filtered = [
-        agent
-        for agent in agents
-        if not pattern
-        or pattern in agent.name.casefold()
-        or pattern in (agent.description or "").casefold()
-    ]
-    selected = filtered[offset : offset + page_size + 1]
-    return _page([_agent_choice(agent) for agent in selected], offset=offset, page_size=page_size)
+    return _page([_agent_choice(agent) for agent in agents], offset=offset, page_size=page_size)
 
 
 async def _resolve_agents(ctx, values, _dependent_args):
     wanted = _ids(values, kind="agent")
     if not wanted:
         return ()
-    visible = await list_visible_delegate_agents(ctx.db, caller=ctx.agent, workspace=ctx.workspace)
-    by_id = {agent.id: agent for agent in visible}
-    return tuple(
-        _agent_choice(by_id[reference_id]) for reference_id in wanted if reference_id in by_id
+    visible = await list_visible_delegate_agents(
+        ctx.db,
+        caller=ctx.agent,
+        workspace=ctx.workspace,
+        agent_ids=wanted,
+        limit=len(wanted),
     )
+    return tuple(_agent_choice(agent) for agent in visible)
 
 
 def _agent_choice(agent: Agent) -> EntityChoice:

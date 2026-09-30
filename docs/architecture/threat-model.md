@@ -487,3 +487,11 @@ unrelated edit cannot drop an approval requirement or exclude a newer tool.
 Residual risk: a broad agent widens the reach of any injected instruction, so
 it relies on write approvals and untrusted-content framing rather than a narrow
 selection. Scheduled runs of broad agents pause on approval-policy tools.
+
+The built-in agent is an all-tools agent with no exclusions that may also
+delegate to every other active agent in the workspace. Its selection, name,
+slug, description, and delegation are locked at the service layer; only
+owners and admins can change its model, availability, tool policies, and
+workspace instructions, and nobody can delete it. Delegation adds no authority:
+each delegate runs with its own tools and policies under the parent's run
+envelope. Workspace settings are the control for removing a tool from it.

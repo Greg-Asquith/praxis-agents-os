@@ -24,6 +24,7 @@ import { titleCaseToken } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export function AgentToolProviderGroup({
+  allowOff = true,
   forceOpen,
   group,
   onModeChange,
@@ -33,6 +34,7 @@ export function AgentToolProviderGroup({
   searchActive = false,
   toolModes,
 }: {
+  allowOff?: boolean
   forceOpen: boolean
   group: ToolGroup
   onModeChange: (toolName: string, mode: RuntimeToolMode) => void
@@ -101,13 +103,15 @@ export function AgentToolProviderGroup({
           <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuGroup>
               <DropdownMenuLabel>{scopeLabel}</DropdownMenuLabel>
-              <BulkModeItem
-                description="The agent can't use them."
-                label="Off"
-                onSelect={() => {
-                  onModesChange(planBulkToolModes(group.tools, "off").modes)
-                }}
-              />
+              {allowOff ? (
+                <BulkModeItem
+                  description="The agent can't use them."
+                  label="Off"
+                  onSelect={() => {
+                    onModesChange(planBulkToolModes(group.tools, "off").modes)
+                  }}
+                />
+              ) : null}
               {autoPlan.autoCount > 0 ? (
                 <BulkModeItem
                   description={
@@ -142,7 +146,7 @@ export function AgentToolProviderGroup({
               description={tool.description}
               effect={tool.effect}
               mode={toolModes[tool.name] ?? "off"}
-              modeOptions={toolModeOptions(tool)}
+              modeOptions={toolModeOptions(tool).filter((mode) => allowOff || mode !== "off")}
               onModeChange={(mode) => {
                 onModeChange(tool.name, mode)
               }}

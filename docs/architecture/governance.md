@@ -50,6 +50,8 @@ Legend: ✓ allowed, — denied. All non-_(enforced)_ cells are
 | Remove other workspace members _(enforced; super-admin exception below)_                        | —         | —      | ✓     | ✓     |
 | View security events _(enforced: super-admin only — `security_events` has no workspace column)_ | —         | —      | —     | —     |
 | Configure agent tool policies _(enforced: EDITOR via agents)_                                   | —         | ✓      | ✓     | ✓     |
+| Change the built-in agent's model, availability, tool policies, and workspace instructions _(enforced: MANAGER)_ | — | — | ✓ | ✓ |
+| Favorite the built-in agent _(enforced: EDITOR)_                                                | —         | ✓      | ✓     | ✓     |
 
 Super admins can remove other members of a team workspace they belong to,
 regardless of their workspace role. Personal workspaces and the last active

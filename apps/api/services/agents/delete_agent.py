@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions.general import AppValidationError
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agents.utils import get_agent_for_workspace, require_agent_write_access
@@ -25,6 +26,11 @@ async def delete_agent(
 ) -> None:
     require_agent_write_access(membership)
     agent = await get_agent_for_workspace(db, workspace=workspace, agent_id=agent_id)
+    if agent.is_builtin:
+        raise AppValidationError(
+            "The built-in agent can't be deleted. You can turn it off instead.",
+            field="agent_id",
+        )
 
     agent.soft_delete(deleted_by=actor.id, cascade=False)
     await db.flush()

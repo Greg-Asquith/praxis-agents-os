@@ -26,8 +26,9 @@ formats, or identifiers.
 - `update_skill`: change an existing workspace skill. The person reviews the
   change before it is saved.
 
-Skills marked as platform skills are shared with every workspace. Only the
-person who shared one, or a super admin, can change it. To adapt someone
+Skills marked as platform skills are shared with every workspace on the
+platform, including other organisations' workspaces, and can't have reference
+documents. Only the person who shared one, or a super admin, can change it. To adapt someone
 else's, create a workspace skill instead.
 
 ## Workflow
@@ -47,8 +48,9 @@ Before you write anything, find out:
 - Any required format, template, tone, or house style.
 - Common mistakes, edge cases, and what to do when information is missing.
 - One or two real examples of good output, if they have them.
-- Whether people in other workspaces need it too. If they do, share it with
-  every workspace when you save it.
+- Whether it must be shared beyond this workspace. Keep it in the workspace
+  unless they explicitly ask for every workspace on the platform, and confirm
+  it contains nothing private before sharing it that way.
 
 Ask a few focused questions at a time. When the conversation already contains
 the answers, such as a task you have just done together, draft from that and

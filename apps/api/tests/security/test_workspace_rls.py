@@ -166,6 +166,8 @@ def _seed_values(
         values["integration_resource_id"] = uuid4()
     if table.name == "kb_chunks":
         values.update(char_start=0, char_end=1)
+    if table.name == "agents":
+        values["name"] = f"rls-{marker}-name"
     if table.name == "classifiers":
         values["labels"] = [
             {"label": "one", "description": None},

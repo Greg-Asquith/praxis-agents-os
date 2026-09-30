@@ -98,7 +98,11 @@ arbitrary `agent_id` for each message.
 
 Specialist agents are reached through Pydantic AI multi-agent delegation, not by
 turning the chat into a multi-speaker selector. The primary agent receives
-delegation tools for its `allowed_agent_ids`. A delegate agent can run internally
+delegation tools for its `allowed_agent_ids`. The built-in agent has no
+allowlist and may delegate to every other active agent in its workspace.
+`list_delegate_agents` returns at most 100 agents per call and takes a search
+term, so later agents stay reachable; approval pickers search and resolve
+through the same visibility predicate. A delegate agent can run internally
 and return a result to the primary agent, which remains responsible for the
 user-visible response.
 

@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
+import { agentsQueryKeys } from "@/features/agents/api/list-agents"
 import { modelsQueryKeys } from "@/features/models/api/list-model-catalog"
 import { apiRequest } from "@/lib/api/client"
 import { workspacesQueryKey } from "@/features/workspaces/api/list-workspaces"
@@ -28,6 +29,8 @@ export function useUpdateWorkspaceMutation() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: workspacesQueryKey }),
         queryClient.invalidateQueries({ queryKey: modelsQueryKeys.all }),
+        // The built-in agent's name derives from the workspace name.
+        queryClient.invalidateQueries({ queryKey: agentsQueryKeys.all }),
       ])
     },
   })

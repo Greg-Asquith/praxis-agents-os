@@ -16,11 +16,13 @@ export function AgentAvailabilitySection({
   isFavorite,
   onActiveChange,
   onFavoriteChange,
+  showStatus = true,
 }: {
   isActive: "true" | "false"
   isFavorite: "true" | "false"
   onActiveChange: (isActive: "true" | "false") => void
   onFavoriteChange: (isFavorite: "true" | "false") => void
+  showStatus?: boolean
 }) {
   return (
     <FormSection
@@ -29,29 +31,31 @@ export function AgentAvailabilitySection({
       title="Availability"
     >
       <FieldGroup className="grid gap-5 sm:grid-cols-2">
-        <Field>
-          <FieldLabel htmlFor="agent-active">Status</FieldLabel>
-          <Select
-            onValueChange={(value) => {
-              onActiveChange(value === "false" ? "false" : "true")
-            }}
-            value={isActive}
-          >
-            <SelectTrigger className="w-full" id="agent-active">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                <SelectItem value="true">Active</SelectItem>
-                <SelectItem value="false">Inactive</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <FieldDescription>
-            Inactive agents cannot start new runs or receive delegated work. Existing history is
-            kept.
-          </FieldDescription>
-        </Field>
+        {showStatus ? (
+          <Field>
+            <FieldLabel htmlFor="agent-active">Status</FieldLabel>
+            <Select
+              onValueChange={(value) => {
+                onActiveChange(value === "false" ? "false" : "true")
+              }}
+              value={isActive}
+            >
+              <SelectTrigger className="w-full" id="agent-active">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  <SelectItem value="true">Active</SelectItem>
+                  <SelectItem value="false">Inactive</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              Inactive agents cannot start new runs or receive delegated work. Existing history is
+              kept.
+            </FieldDescription>
+          </Field>
+        ) : null}
 
         <Field>
           <FieldLabel htmlFor="agent-favorite">Favorite</FieldLabel>

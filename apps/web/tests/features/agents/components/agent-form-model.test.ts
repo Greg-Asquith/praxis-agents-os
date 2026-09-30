@@ -10,6 +10,7 @@ import {
   validateAgentFormState,
   type AgentFormState,
 } from "@/features/agents/components/agent-form-model"
+import { unavailableModeOptions } from "@/features/agents/components/agent-tool-catalog-utils"
 import type { Agent } from "@/features/agents/types"
 import type { ModelCatalogResponse, ModelType } from "@/features/models/types"
 import type { ToolCatalogEntry } from "@/features/tools/types"
@@ -51,6 +52,8 @@ const agent: Agent = {
   slug: "planner",
   description: "Plans work",
   instructions: "Plan the work carefully.",
+  base_instructions: null,
+  is_builtin: false,
   workspace_id: "workspace-1",
   created_by: "user-1",
   tool_names: ["read_file", "missing_tool"],
@@ -204,6 +207,7 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
     identityColor: "Auto",
     instructions: "  Use the playbook.  ",
     isActive: "true",
+    isBuiltin: false,
     isFavorite: "false",
     maxSteps: "25",
     metadataJson: {},
@@ -232,6 +236,7 @@ describe("initialAgentFormState", () => {
       identityColor: "Auto",
       instructions: "",
       isActive: "true",
+      isBuiltin: false,
       isFavorite: "false",
       maxSteps: "20",
       metadataJson: {},
@@ -258,6 +263,7 @@ describe("initialAgentFormState", () => {
       identityColor: "Auto",
       instructions: "Plan the work carefully.",
       isActive: "false",
+      isBuiltin: false,
       isFavorite: "true",
       maxSteps: "12",
       metadataJson: {},
@@ -393,6 +399,40 @@ describe("buildAgentPayload", () => {
         tool_names: [],
         tool_policies: null,
       })
+    )
+  })
+
+  it("sends only the built-in agent's editable settings, allowing empty instructions", () => {
+    const payload = buildAgentPayload(
+      validState({ instructions: "  ", isBuiltin: true, name: "" }),
+      "edit"
+    )
+
+    expect(payload).toEqual({
+      azure_deployment: null,
+      instructions: "",
+      is_active: true,
+      is_favorite: false,
+      model: "gpt-5.4-mini",
+      model_provider: "openai",
+      model_settings: { temperature: 0.1, thinking: "low" },
+      tool_policies: { send_email: "approval" },
+    })
+  })
+
+  it("keeps a built-in agent's approval override for an unavailable tool", () => {
+    const builtin: Agent = {
+      ...agent,
+      all_tools: true,
+      is_builtin: true,
+      tool_names: ["read_file"],
+      tool_policies: { fetch_url: "approval" },
+    }
+    const state = initialAgentFormState(builtin, toolCatalog)
+
+    expect(unavailableModeOptions(state.toolModes["fetch_url"], false)).toEqual(["approval"])
+    expect(buildAgentPayload(state, "edit")).toEqual(
+      expect.objectContaining({ tool_policies: { fetch_url: "approval" } })
     )
   })
 

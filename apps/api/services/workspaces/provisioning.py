@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.database import set_session_tenant_context
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
@@ -93,6 +94,13 @@ async def provision_personal_workspace(db: AsyncSession, user: User) -> Workspac
         role="owner",
     )
     db.add(membership)
+    await db.flush()
+    # Signup and sign-in carry no workspace context yet, and agent inserts need it.
+    await set_session_tenant_context(db, workspace_id=workspace.id)
+    # The agents package imports workspace and auth services at module load.
+    from services.agents.builtin import create_builtin_agent
+
+    await create_builtin_agent(db, workspace=workspace, owner=user)
 
     # Set as user's default workspace only if they don't already have one
     if user.default_workspace_id is None:

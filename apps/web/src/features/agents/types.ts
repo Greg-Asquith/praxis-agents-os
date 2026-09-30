@@ -7,7 +7,11 @@ export type Agent = {
   name: string
   slug: string
   description: string | null
+  // For the built-in agent, the workspace instructions that follow base_instructions.
   instructions: string
+  // The built-in agent's platform-owned instructions; null for other agents.
+  base_instructions: string | null
+  is_builtin: boolean
   workspace_id: string
   created_by: string
   // For an all-tools agent, the resolved selection.

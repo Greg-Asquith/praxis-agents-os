@@ -11,6 +11,7 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import dispatch_tool_execution
 from services.agents.runtime.execution_control import check_execution_permission
 from services.agents.runtime.history import HistoryCompaction, HistoryTrimmer, history_trimmer
+from services.agents.runtime.tool_search import build_tool_search_capability
 from services.agents.runtime.untrusted import render_untrusted_frames
 
 
@@ -59,4 +60,5 @@ def build_runtime_capabilities(
     return [
         hooks,
         ProcessHistory(trimmer, id="praxis-history-trimmer"),
+        build_tool_search_capability(),
     ]

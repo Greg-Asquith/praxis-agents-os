@@ -28,6 +28,28 @@ Knowledge Base, and memories](../guides/skills-files-knowledge-memories.md).
 | Agent-writable     | Yes (`create_skill` / `update_skill`; workspace skills, always approval) | Yes (`write_file`; auto by default, approval configurable)                                 | No (read tools only)                                                      | Yes (`save_memory` / `update_memory` / `forget_memory`; core-memory writes always require approval) |
 | Status             | Shipped end to end                                                      | Shipped end to end                                                                         | Shipped end to end                                                        | Shipped end to end                                                                                  |
 
+## Built-in agent identity
+
+Every workspace has one built-in agent (`agents.is_builtin`). Its `identity`
+prompt block renders the code-owned base instructions from
+`services/agents/builtin/identity.py`, followed by the row's `instructions`
+under a "Workspace instructions" heading when owners or admins have set any.
+The block has no prompt budget: the API caps instructions at 20,000
+characters, and the base never reduces that allowance.
+`AgentRead.base_instructions` exposes the base text read-only, so the form
+shows what actually runs. Release changes to the base apply with no data
+migration.
+
+The name is derived from the workspace ("Acme Agent") or, in a personal
+workspace, the owner's first name ("Alex's Agent", else "My Agent"). The row
+stores no name. `Agent.name` is a hybrid property: in SQL it computes the
+built-in name on every read, and on an instance it returns the loaded derived
+name or the stored `custom_name`. Lists, joins, audit labels, and runtime
+prompts therefore follow renames with no sync step. A check constraint keeps
+the stored name null for the built-in agent only. Workspace creation
+and personal-workspace provisioning create the agent; migration `core_0063`
+created it for workspaces that existed before.
+
 ## Skills
 
 Reusable _procedural_ knowledge: how an agent should perform a class of task.
@@ -54,7 +76,8 @@ Reusable _procedural_ knowledge: how an agent should perform a class of task.
   ship with the code and mount on every agent as deferred capabilities with
   the `internal-` id prefix. They have no rows, so workspaces can't edit or
   delete them, and each release updates them. `skill-authoring` teaches agents
-  to interview the user, draft a skill, and save it.
+  to interview the user, draft a skill, and save it. `platform-knowledge` is a
+  user-point-of-view guide to the product's screens, roles, and flows.
 - **Agent authoring.** Agents find and read skills with `search_skills` and
   `load_skill`. Auto-mounted `create_skill` creates a workspace skill,
   or a platform skill when the user ticks the required share option on the

@@ -239,26 +239,28 @@ export function AgentModelSection({
               </FieldDescription>
             </Field>
 
-            <Field data-invalid={fieldErrors.maxSteps ? true : undefined}>
-              <FieldLabel htmlFor="agent-max-steps">Max steps</FieldLabel>
-              <Input
-                aria-invalid={fieldErrors.maxSteps ? true : undefined}
-                className="scroll-mt-20"
-                id="agent-max-steps"
-                inputMode="numeric"
-                max={100}
-                min={1}
-                onChange={(event) => {
-                  setField("maxSteps", event.currentTarget.value)
-                }}
-                type="number"
-                value={state.maxSteps}
-              />
-              <FieldDescription>
-                The most actions one run may take before it stops.
-              </FieldDescription>
-              <FieldError>{fieldErrors.maxSteps}</FieldError>
-            </Field>
+            {state.isBuiltin ? null : (
+              <Field data-invalid={fieldErrors.maxSteps ? true : undefined}>
+                <FieldLabel htmlFor="agent-max-steps">Max steps</FieldLabel>
+                <Input
+                  aria-invalid={fieldErrors.maxSteps ? true : undefined}
+                  className="scroll-mt-20"
+                  id="agent-max-steps"
+                  inputMode="numeric"
+                  max={100}
+                  min={1}
+                  onChange={(event) => {
+                    setField("maxSteps", event.currentTarget.value)
+                  }}
+                  type="number"
+                  value={state.maxSteps}
+                />
+                <FieldDescription>
+                  The most actions one run may take before it stops.
+                </FieldDescription>
+                <FieldError>{fieldErrors.maxSteps}</FieldError>
+              </Field>
+            )}
           </div>
         </details>
       </FieldGroup>

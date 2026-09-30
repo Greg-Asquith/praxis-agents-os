@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
+import { agentsQueryKeys } from "@/features/agents/api/list-agents"
 import { apiRequest } from "@/lib/api/client"
 import { currentUserQueryKey } from "@/features/auth/api/get-current-user"
 import type { AuthUser, UpdateCurrentUserRequest } from "@/features/auth/types"
@@ -19,8 +20,10 @@ export function useUpdateCurrentUserMutation() {
   return useMutation({
     mutationFn: updateCurrentUser,
     scope: { id: "auth-update-current-user" },
-    onSuccess: (user) => {
+    onSuccess: async (user) => {
       queryClient.setQueryData(currentUserQueryKey, user)
+      // A personal workspace's built-in agent is named after its owner.
+      await queryClient.invalidateQueries({ queryKey: agentsQueryKeys.all })
     },
   })
 }

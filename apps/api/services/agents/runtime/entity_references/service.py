@@ -396,7 +396,7 @@ async def authorize_entity_field(
     workspace_definitions = await load_workspace_tool_definitions(db, workspace)
     mounted = build_runtime_tools(
         agent,
-        include_delegation=bool(agent.allowed_agent_ids),
+        include_delegation=agent.is_builtin or bool(agent.allowed_agent_ids),
         active_context=active_context,
         workspace=workspace,
         disabled_tool_names=tool_defaults.disabled,

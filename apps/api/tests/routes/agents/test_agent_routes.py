@@ -2,6 +2,7 @@
 
 """HTTP-boundary tests for workspace agent configuration routes."""
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -242,3 +243,92 @@ async def test_read_only_members_cannot_create_agents(
     assert response.status_code == 403
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.json()["detail"] == "Requires workspace write access"
+
+
+async def _builtin_agent(db: AsyncSession, *, user: User, workspace: Workspace) -> Agent:
+    agent = Agent(
+        slug="workspace-agent",
+        instructions="",
+        workspace_id=workspace.id,
+        created_by=user.id,
+        is_builtin=True,
+        all_tools=True,
+    )
+    db.add(agent)
+    await db.commit()
+    return agent
+
+
+async def test_builtin_agent_allows_manager_settings_and_rejects_locked_changes(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session, role=WorkspaceRole.ADMIN)
+    agent = await _builtin_agent(db_session, user=user, workspace=workspace)
+
+    locked = await db_async_client.patch(
+        f"/api/v1/agents/{agent.id}", headers=headers, json={"name": "Renamed"}
+    )
+    assert locked.status_code == 400
+    assert locked.json()["field"] == "name"
+
+    updated = await db_async_client.patch(
+        f"/api/v1/agents/{agent.id}",
+        headers=headers,
+        json={
+            "instructions": "Reply in French.",
+            "tool_policies": {"web_search": "approval"},
+            "is_active": False,
+        },
+    )
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["instructions"] == "Reply in French."
+    assert body["base_instructions"]
+    assert body["tool_policies"] == {"web_search": "approval"}
+
+    cleared = await db_async_client.patch(
+        f"/api/v1/agents/{agent.id}", headers=headers, json={"instructions": ""}
+    )
+    assert cleared.status_code == 200
+
+    deleted = await db_async_client.delete(f"/api/v1/agents/{agent.id}", headers=headers)
+    assert deleted.status_code == 400
+    await db_session.refresh(agent)
+    assert agent.deleted is False
+
+
+async def test_members_can_only_favorite_the_builtin_agent(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+) -> None:
+    user, workspace, headers = await _authenticated_workspace(db_session, role=WorkspaceRole.MEMBER)
+    agent = await _builtin_agent(db_session, user=user, workspace=workspace)
+    db_session.add(
+        Agent(
+            name="Favourite",
+            slug="favourite",
+            instructions="Help.",
+            workspace_id=workspace.id,
+            created_by=user.id,
+            is_favorite=True,
+            last_used_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    # The first listed agent is the composer default.
+    listed = await db_async_client.get("/api/v1/agents/", headers=headers)
+    assert listed.json()["agents"][0]["id"] == str(agent.id)
+
+    denied = await db_async_client.patch(
+        f"/api/v1/agents/{agent.id}", headers=headers, json={"instructions": "Be brief."}
+    )
+    favorited = await db_async_client.patch(
+        f"/api/v1/agents/{agent.id}", headers=headers, json={"is_favorite": True}
+    )
+
+    assert denied.status_code == 403
+    assert favorited.status_code == 200
+    await db_session.refresh(agent)
+    assert (agent.instructions, agent.is_favorite) == ("", True)

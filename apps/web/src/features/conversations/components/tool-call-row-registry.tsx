@@ -14,6 +14,7 @@ import { skillActivationPresenter } from "@/features/conversations/components/sk
 import { skillDocumentReadPresenter } from "@/features/conversations/components/skill-document-read-presenter"
 import { skillToolPresenter } from "@/features/conversations/components/skill-tool-presenter"
 import { todoToolPresenters } from "@/features/conversations/components/todo-list-presenter"
+import { toolSearchPresenter } from "@/features/conversations/components/tool-search-presenter"
 import { webFetchToolPresenter } from "@/features/conversations/components/web-fetch-tool-presenter"
 import { webSearchToolPresenter } from "@/features/conversations/components/web-search-tool-presenter"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
@@ -39,6 +40,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   skillActivationPresenter,
   skillDocumentReadPresenter,
   skillToolPresenter,
+  toolSearchPresenter,
   ...todoToolPresenters,
   fileToolPresenter,
   kbToolPresenter,

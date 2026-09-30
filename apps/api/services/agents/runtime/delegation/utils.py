@@ -4,7 +4,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import NotFoundError
@@ -32,6 +32,20 @@ async def load_caller_agent(
             resource_id=str(caller.id),
         )
     return fresh_caller
+
+
+def visible_delegate_filters(caller: Agent, *, workspace: Workspace) -> list[ColumnElement[bool]]:
+    """Return the SQL predicate for agents the freshly loaded caller may delegate to."""
+    filters: list[ColumnElement[bool]] = [
+        Agent.workspace_id == workspace.id,
+        Agent.deleted == False,  # noqa: E712
+        Agent.is_active.is_(True),
+        Agent.id != caller.id,
+    ]
+    # The built-in agent may delegate to any other active agent in the workspace.
+    if not caller.is_builtin:
+        filters.append(Agent.id.in_(normalized_allowed_agent_ids(caller.allowed_agent_ids or [])))
+    return filters
 
 
 def normalized_allowed_agent_ids(raw: object) -> list[UUID]:

@@ -27,6 +27,24 @@ export const AGENT_EDIT_STEPS = [
   ...FormWizardStep<AgentWizardStepId>[],
 ]
 
+// Owners and admins manage the built-in agent; everyone else can only favorite it.
+export const BUILTIN_AGENT_MANAGER_STEPS = [
+  { id: "profile", optional: true, title: "Workspace instructions" },
+  { id: "model", title: "How should it think?" },
+  { id: "tools", title: "Which actions need approval?" },
+  { id: "availability", title: "Availability" },
+] as const satisfies readonly [
+  FormWizardStep<AgentWizardStepId>,
+  ...FormWizardStep<AgentWizardStepId>[],
+]
+
+export const BUILTIN_AGENT_MEMBER_STEPS = [
+  { id: "availability", title: "Availability" },
+] as const satisfies readonly [
+  FormWizardStep<AgentWizardStepId>,
+  ...FormWizardStep<AgentWizardStepId>[],
+]
+
 const AGENT_STEP_FIELDS: Record<AgentWizardStepId, ReadonlySet<string>> = {
   availability: new Set(),
   collaboration: new Set(),

@@ -34,6 +34,7 @@ def _entry(name: str = "Account", **overrides) -> ResolvedContextEntry:
 def test_active_context_block_precedes_files_and_preserves_law_when_truncated() -> None:
     class AgentValue:
         instructions = "Identity"
+        is_builtin = False
 
     content = render_active_context_block(
         ResolvedActiveContext(entries=tuple(_entry(f"Account {index}") for index in range(100)))

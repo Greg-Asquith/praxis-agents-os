@@ -42,7 +42,9 @@ from services.agents.runtime.delegation import (
     get_visible_delegate_agent,
     list_visible_delegate_agents,
 )
+from services.agents.runtime.delegation.constants import DELEGATE_LIST_LIMIT
 from services.agents.runtime.entity_references.domain import AgentReference
+from services.agents.runtime.entity_references.registry import get_entity_resolver
 from services.agents.runtime.envelope import RunEnvelope
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink
@@ -136,6 +138,54 @@ async def test_visible_delegate_agents_are_active_same_workspace_allowlist_membe
             workspace=workspace,
             target_agent_id=inactive.id,
         )
+
+
+async def test_builtin_agent_can_find_and_delegate_to_agents_past_the_list_bound(
+    db_session: AsyncSession,
+) -> None:
+    user = build_user(email=f"builtin-delegates-{uuid4().hex}@example.com")
+    workspace = build_workspace(slug=f"builtin-delegates-{uuid4().hex[:8]}")
+    db_session.add_all([user, workspace])
+    await db_session.flush()
+    await set_session_tenant_context(db_session, workspace_id=workspace.id, user_id=user.id)
+    builtin = _agent("Workspace Agent", workspace_id=workspace.id, user_id=user.id)
+    builtin.is_builtin = True
+    builtin.name = None
+    specialists = [
+        _agent(f"Specialist {index:03}", workspace_id=workspace.id, user_id=user.id)
+        for index in range(DELEGATE_LIST_LIMIT + 1)
+    ]
+    last = specialists[-1]
+    inactive = _agent("Inactive", workspace_id=workspace.id, user_id=user.id)
+    inactive.is_active = False
+    db_session.add_all([builtin, *specialists, inactive])
+    await db_session.flush()
+
+    delegates = await list_visible_delegate_agents(db_session, caller=builtin, workspace=workspace)
+    assert [agent.id for agent in delegates] == [agent.id for agent in specialists[:-1]]
+    found = await list_visible_delegate_agents(
+        db_session, caller=builtin, workspace=workspace, search=last.name
+    )
+    assert [agent.id for agent in found] == [last.id]
+    assert (
+        await get_visible_delegate_agent(
+            db_session, caller=builtin, workspace=workspace, target_agent_id=last.id
+        )
+    ).id == last.id
+    with pytest.raises(NotFoundError):
+        await get_visible_delegate_agent(
+            db_session, caller=builtin, workspace=workspace, target_agent_id=builtin.id
+        )
+
+    # Approval pickers page and resolve exact IDs through the same predicate.
+    resolver = get_entity_resolver("agent")
+    assert resolver is not None
+    ctx = SimpleNamespace(db=db_session, agent=builtin, workspace=workspace)
+    page = await resolver.search(ctx, "", {}, 50, "100")
+    assert [choice.value["entity_id"] for choice in page.choices] == [str(last.id)]
+    assert page.next_cursor is None
+    resolved = await resolver.resolve(ctx, [str(last.id), str(inactive.id)], {})
+    assert [choice.value["entity_id"] for choice in resolved] == [str(last.id)]
 
 
 async def test_delegate_to_agent_enforces_envelope_depth_cap() -> None:

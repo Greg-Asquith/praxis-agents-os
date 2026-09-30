@@ -33,6 +33,8 @@ async def list_agents(
     agents, total = await paginate(
         db,
         select(Agent).where(*filters),
+        # Pinning the built-in agent first also makes it the composer default.
+        Agent.is_builtin.desc(),
         Agent.is_favorite.desc(),
         Agent.last_used_at.desc().nullslast(),
         Agent.created_at.desc(),
