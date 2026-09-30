@@ -18,6 +18,7 @@ import sys
 from typing import Any, BinaryIO
 
 from services.documents.precheck import PackageLimits, PackageRejectedError
+from services.documents.reading import DocumentRequestError
 
 FRAME_PREFIX = struct.Struct(">IQ")
 _MEMORY_EXIT_CODE = 70
@@ -83,6 +84,8 @@ def _handle(
         result, data = handler(header["format"], header["args"], payload, limits)
     except PackageRejectedError as exc:
         return {"ok": False, "error": "rejected", "message": str(exc)}, b""
+    except DocumentRequestError as exc:
+        return {"ok": False, "error": "request", "message": str(exc)}, b""
     except MemoryError:
         # Heap state is unreliable after a failed allocation, so the worker exits.
         os._exit(_MEMORY_EXIT_CODE)

@@ -12,6 +12,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Agents read PowerPoint, Excel, and Word files with dedicated tools that
+  return slides, cells, formulas, paragraphs, tables, charts, comments, and
+  embedded images, in pages. `read_table` returns rows from workbook sheets,
+  CSV files, and saved tool results, so Code Mode scripts can total every row
+  of a large report. Office, CSV, and JSON files are parsed in the bounded
+  document worker.
 - Meta Ads workspace connections with System User access tokens, bounded ad
   account discovery, permission-based writability, optional app-secret proof,
   and setup guidance.

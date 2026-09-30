@@ -120,6 +120,13 @@ def _assemble_runtime_catalogs() -> None:
         planning,
         skills,
     )
+    from services.agents.runtime.tools.documents import (
+        read_presentation,
+        read_table,
+        read_word_document,
+        read_workbook,
+        view_document_image,
+    )
     from services.agents.runtime.tools.files import list_files, read_file, write_file
     from services.agents.runtime.tools.native import (
         classifier,
@@ -144,9 +151,14 @@ def _assemble_runtime_catalogs() -> None:
         memory,
         planning,
         read_file,
+        read_presentation,
+        read_table,
+        read_word_document,
+        read_workbook,
         run_code,
         skills,
         video_to_image,
+        view_document_image,
         web_fetch,
         web_search,
         write_file,

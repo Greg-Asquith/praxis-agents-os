@@ -3,6 +3,7 @@
 """Open and save helpers per Office format. Run only inside the document worker."""
 
 import io
+import zipfile
 from typing import Any
 
 from services.documents.precheck import PackageLimits, PackageRejectedError, precheck_package
@@ -36,6 +37,23 @@ def open_package(data: bytes, document_format: str, limits: PackageLimits) -> An
 
         return Document(stream)
     raise PackageRejectedError("The file format isn't supported.")
+
+
+def open_workbook_view(data: bytes, *, data_only: bool) -> Any:
+    """Opens a workbook for streaming reads, with formulas or with cached values.
+
+    Call only with bytes that `open_archive` has prechecked. Read-only worksheets
+    parse rows on demand, so memory follows the rows read, not the file size.
+    """
+    from openpyxl import load_workbook
+
+    return load_workbook(io.BytesIO(data), read_only=True, data_only=data_only, keep_links=False)
+
+
+def open_archive(data: bytes, limits: PackageLimits) -> zipfile.ZipFile:
+    """Prechecks a package and opens it as an archive for part-level reads."""
+    precheck_package(data, limits)
+    return zipfile.ZipFile(io.BytesIO(data))
 
 
 def save_package(document: Any, limits: PackageLimits) -> bytes:

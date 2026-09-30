@@ -27,10 +27,16 @@ _DEFAULT_HANDLERS = "services.documents.handlers"
 _WORKER_ENV = {"LC_ALL": "C.UTF-8", "OPENPYXL_DEFUSEDXML": "True"}
 _MAX_RESULT_HEADER_BYTES = 16 * 1024 * 1024
 _MAX_REJECTION_MESSAGE_CHARS = 300
+# Plain-text formats that only the table read accepts.
+TABLE_FORMATS = frozenset({"csv", "tsv", "json"})
 
 
 class DocumentRejectedError(AppValidationError):
     """The Office file was refused or couldn't be opened."""
+
+
+class DocumentRequestError(AppValidationError):
+    """The request names a sheet, range, or part the file doesn't have."""
 
 
 class DocumentWorkerError(AppValidationError):
@@ -126,8 +132,8 @@ class DocumentWorkerPool:
         args: dict[str, Any] | None = None,
     ) -> DocumentWorkerResult:
         """Runs one operation in a worker and returns its JSON result and output bytes."""
-        if document_format not in OFFICE_FORMATS:
-            raise DocumentRejectedError("Only .pptx, .xlsx, and .docx files are supported.")
+        if document_format not in OFFICE_FORMATS | TABLE_FORMATS:
+            raise DocumentRejectedError("Only .pptx, .xlsx, .docx, and table files are supported.")
         if len(data) > self._max_source_bytes:
             raise DocumentRejectedError("The file is larger than document tools allow.")
         header = {"operation": operation, "format": document_format, "args": args or {}}
@@ -217,9 +223,11 @@ def _result(response: dict[str, Any], payload: bytes, document_format: str) -> D
     if response.get("ok") is True:
         return DocumentWorkerResult(response["result"], payload or None)
     error = response.get("error")
+    message = str(response.get("message", ""))[:_MAX_REJECTION_MESSAGE_CHARS]
     if error == "rejected":
-        message = str(response.get("message", ""))[:_MAX_REJECTION_MESSAGE_CHARS]
         raise DocumentRejectedError(message or "The file was refused.")
+    if error == "request":
+        raise DocumentRequestError(message or "The request doesn't match the file.")
     if error == "unreadable":
         raise DocumentRejectedError(f"The file couldn't be opened as a .{document_format} file.")
     raise DocumentWorkerError("The document worker couldn't run the requested operation.")

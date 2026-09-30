@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from services.agents.runtime.entity_references.domain import FileReference
+from services.documents.tables import list_name, result_list_paths
 
 
 class PreviewListCount(BaseModel):
@@ -54,7 +55,7 @@ def preview_structured_result(
     file_name: str,
 ) -> dict[str, Any]:
     """Returns the largest uniform row prefix that fits, preserving account coverage."""
-    paths = _preview_paths(result, list_path)
+    paths = result_list_paths(result, list_path)
     if not paths:
         raise ValueError("The result has no previewable lists. Narrow the query.")
     low, high = 1, preview_rows
@@ -70,9 +71,7 @@ def preview_structured_result(
                 _at_path(data, path[:-1])[path[-1]] = preview
             else:
                 data = preview
-            counts[".".join(map(str, path)) or "$"] = PreviewListCount(
-                total=len(original), shown=len(preview)
-            )
+            counts[list_name(path)] = PreviewListCount(total=len(original), shown=len(preview))
         envelope = StructuredResultPreview(
             data=data,
             lists=counts,
@@ -96,38 +95,3 @@ def _at_path(value: Any, path: tuple[str | int, ...]) -> Any:
     for key in path:
         value = value[key]
     return value
-
-
-def _preview_paths(result: Any, list_path: str | None) -> list[tuple[str | int, ...]]:
-    paths: list[tuple[str | int, ...]] = []
-    selected = tuple(list_path.split(".")) if list_path is not None else None
-
-    def visit(value: Any, path: tuple[str | int, ...], pattern: tuple[str, ...] | None) -> None:
-        if pattern:
-            key, *rest = pattern
-            if key == "*" and isinstance(value, list):
-                for index, item in enumerate(value):
-                    visit(item, (*path, index), tuple(rest))
-            elif isinstance(value, dict) and key in value:
-                visit(value[key], (*path, key), tuple(rest))
-            return
-        if isinstance(value, list):
-            # Account envelopes retain errors and identity even when their row lists shrink.
-            fan_out = (
-                pattern is None
-                and value
-                and all(
-                    isinstance(item, dict) and "status" in item and "data" in item for item in value
-                )
-            )
-            if fan_out:
-                for index, item in enumerate(value):
-                    visit(item, (*path, index), None)
-            else:
-                paths.append(path)
-        elif isinstance(value, dict) and pattern is None:
-            for key, item in value.items():
-                visit(item, (*path, key), None)
-
-    visit(result, (), selected)
-    return paths
