@@ -30,6 +30,7 @@ Use these references before changing the corresponding behaviour:
 | Worker admission, leases, and shutdown | [Workers](implementation/workers.md) | Runtime |
 | Usage recording and cost estimates | [AI usage](implementation/ai-usage.md) | Governance |
 | Storage, uploads, and file references | [Storage and files](implementation/storage-and-files.md) | [Agent context](architecture/agent-context.md) |
+| Office document worker and tools | [Document tools](implementation/document-tools.md) | [Threat model](architecture/threat-model.md) |
 | Knowledge Base imports and source refresh | [Knowledge sources](implementation/knowledge-sources.md) | Agent context |
 
 ## Operator guides and other design notes

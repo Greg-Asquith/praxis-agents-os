@@ -16,6 +16,7 @@ from core.logging import setup_logging
 from core.settings import settings
 from services.agents.models import close_vertex_clients
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
+from services.documents.worker import close_document_worker_pool
 from services.runtime_catalogs import assemble_runtime_catalogs
 from services.security import ensure_application_encryption_keys_loaded
 from workers import agent_runner, job_runner
@@ -43,9 +44,12 @@ async def main() -> int:
             await close_code_mode_executor()
         finally:
             try:
-                await close_vertex_clients()
+                await close_document_worker_pool()
             finally:
-                await close_db_connections()
+                try:
+                    await close_vertex_clients()
+                finally:
+                    await close_db_connections()
 
 
 async def _run_forever_mode(shutdown_event: asyncio.Event) -> int:

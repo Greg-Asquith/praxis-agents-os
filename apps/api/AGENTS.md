@@ -69,6 +69,7 @@ architecture decisions. Paths in this table are relative to this file:
 | Worker admission, leases, or shutdown | [Workers](../../docs/implementation/workers.md) |
 | Usage ledger, pricing, or usage routes | [AI usage](../../docs/implementation/ai-usage.md) |
 | Storage, uploads, file revisions, or attachments | [Storage and files](../../docs/implementation/storage-and-files.md) |
+| Office document worker, pre-check, or document tools | [Document tools](../../docs/implementation/document-tools.md) |
 | Knowledge Base import or source refresh | [Knowledge sources](../../docs/implementation/knowledge-sources.md) |
 
 ## Verification

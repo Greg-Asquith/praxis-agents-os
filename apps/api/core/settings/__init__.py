@@ -22,6 +22,7 @@ from core.settings.azure import AzureSettingsMixin
 from core.settings.base import SettingsBase
 from core.settings.code_mode import CodeModeSettingsMixin
 from core.settings.database import DatabaseSettingsMixin
+from core.settings.documents import DocumentToolsSettingsMixin
 from core.settings.email import EmailSettingsMixin
 from core.settings.embeddings import EmbeddingsSettingsMixin
 from core.settings.files import FilesSettingsMixin
@@ -59,6 +60,7 @@ class Settings(
     AwsSettingsMixin,
     AzureSettingsMixin,
     DatabaseSettingsMixin,
+    DocumentToolsSettingsMixin,
     EmailSettingsMixin,
     EmbeddingsSettingsMixin,
     FilesSettingsMixin,
