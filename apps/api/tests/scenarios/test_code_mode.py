@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import BaseModel, Field
-from pydantic_ai import DeferredToolResults, ToolApproved
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -27,7 +26,6 @@ from services.agent_runs.resume_run_stream import (
 )
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agents.runtime.approval_state import load_suspended_run_state
-from services.agents.runtime.code_mode.approval import build_code_mode_decision_metadata
 from services.agents.runtime.code_mode.executor import MontyExecutor, close_code_mode_executor
 from services.agents.runtime.code_mode.state import (
     CODE_MODE_STATE_METADATA_KEY,
@@ -64,6 +62,7 @@ from tests.support.scenario import (
     ToolCall,
     ToolTurn,
     build_scenario_agent,
+    resume_code_mode_scenario,
     run_scenario,
     scripted_model,
 )
@@ -520,7 +519,7 @@ async def test_maximum_batch_remains_one_approval_and_one_terminal_audit(
         )
     assert len(approval_state.approvals) == 1
     assert approval_state.approvals[0].args == {"keywords": rows}
-    completed = await _resume_code_mode_scenario(
+    completed = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=suspended,
@@ -659,7 +658,7 @@ async def test_two_gated_writes_resume_sequentially_across_executor_restarts(
     assert code_mode_scenario_tools["effects"] == []
     await close_code_mode_executor()
 
-    second = await _resume_code_mode_scenario(
+    second = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=first,
@@ -670,7 +669,7 @@ async def test_two_gated_writes_resume_sequentially_across_executor_restarts(
     assert code_mode_scenario_tools["effects"] == ["first"]
     await close_code_mode_executor()
 
-    completed = await _resume_code_mode_scenario(
+    completed = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=second,
@@ -708,7 +707,7 @@ async def test_approved_write_with_invalid_evidence_requires_recovery(
     suspended = await run_scenario(db_session_factory, context, model=model)
 
     with pytest.raises(CodeModeResumeRequiresRecoveryError):
-        await _resume_code_mode_scenario(
+        await resume_code_mode_scenario(
             db_session_factory,
             context,
             suspended=suspended,
@@ -757,7 +756,7 @@ async def test_snapshot_degradation_after_completed_write_fails_closed_to_recove
         ]
     )
     first = await run_scenario(db_session_factory, context, model=model)
-    second = await _resume_code_mode_scenario(
+    second = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=first,
@@ -776,7 +775,7 @@ async def test_snapshot_degradation_after_completed_write_fails_closed_to_recove
         await db.commit()
 
     with pytest.raises(CodeModeResumeRequiresRecoveryError):
-        await _resume_code_mode_scenario(
+        await resume_code_mode_scenario(
             db_session_factory,
             context,
             suspended=second,
@@ -838,7 +837,7 @@ async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result
                 run_id=context.run_id,
             )
 
-    completed = await _resume_code_mode_scenario(
+    completed = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=suspended,
@@ -893,7 +892,7 @@ async def test_restore_failure_after_first_approved_write_requires_recovery(
     monkeypatch.setattr(MontyExecutor, "resume", crash_after_settlement)
 
     with pytest.raises(CodeModeResumeRequiresRecoveryError):
-        await _resume_code_mode_scenario(
+        await resume_code_mode_scenario(
             db_session_factory,
             context,
             suspended=suspended,
@@ -947,7 +946,7 @@ async def test_nested_denial_resumes_workflow_and_audits_nested_call(
         ]
     )
     suspended = await run_scenario(db_session_factory, context, model=model)
-    resumed = await _resume_code_mode_scenario(
+    resumed = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=suspended,
@@ -1030,7 +1029,7 @@ async def test_nested_write_file_staging_round_trips_and_cleans_up(
     assert reloaded.approvals[0].args["content_bytes"] == len("nested body")
     assert reloaded.approvals[0].args["content_sha256"]
 
-    resumed = await _resume_code_mode_scenario(
+    resumed = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=suspended,
@@ -1138,7 +1137,7 @@ async def test_scheduled_workflow_requires_approval_under_review_envelope(
 
     assert result.run.status == "awaiting_approval"
     assert code_mode_scenario_tools["effects"] == []
-    result = await _resume_code_mode_scenario(
+    result = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=result,
@@ -1292,42 +1291,6 @@ def _definition(values: dict[str, Any], name: str) -> RuntimeToolDefinition:
     return next(definition for definition in values["definitions"] if definition.name == name)
 
 
-async def _resume_code_mode_scenario(
-    session_factory: async_sessionmaker[AsyncSession],
-    context,
-    *,
-    suspended,
-    model,
-    decision: str = "approved",
-    message: str | None = None,
-):
-    state = load_suspended_run_state(suspended.run)
-    [outer_call_id] = state.pending_tool_call_ids
-    approval_metadata = state.deferred_tool_requests.metadata[outer_call_id]
-    nested_args = approval_metadata["nested_args"]
-    args_sha256, _args_bytes = digest_args(nested_args)
-    return await run_scenario(
-        session_factory,
-        context,
-        model=model,
-        prompt=None,
-        expected_status="awaiting_approval",
-        message_history=state.message_history,
-        deferred_tool_results=DeferredToolResults(
-            approvals={outer_call_id: ToolApproved()},
-            metadata={
-                outer_call_id: build_code_mode_decision_metadata(
-                    approval_metadata=approval_metadata,
-                    decision=decision,
-                    effective_args=nested_args,
-                    args_sha256=args_sha256,
-                    message=message,
-                )
-            },
-        ),
-    )
-
-
 async def test_google_ads_pause_then_failed_create_keeps_separate_approvals_and_evidence(
     db_session_factory,
     monkeypatch,
@@ -1472,13 +1435,13 @@ async def test_google_ads_pause_then_failed_create_keeps_separate_approvals_and_
     first = await run_scenario(db_session_factory, context, model=model)
     assert first.run.status == "awaiting_approval"
     assert writes == []
-    second = await _resume_code_mode_scenario(
+    second = await resume_code_mode_scenario(
         db_session_factory, context, suspended=first, model=model
     )
     assert second.run.status == "awaiting_approval"
     assert writes == ["pause"]
     assert set(statuses.values()) == {"PAUSED"}
-    completed = await _resume_code_mode_scenario(
+    completed = await resume_code_mode_scenario(
         db_session_factory, context, suspended=second, model=model
     )
     assert completed.run.status == "completed"
@@ -1534,7 +1497,7 @@ async def test_shared_projection_after_real_nested_suspension_and_resume(
     assert "REVIEWED_VALUE" not in "".join(suspended_display)
     assert "code_mode_trace" not in "".join(suspended_display)
 
-    settled = await _resume_code_mode_scenario(
+    settled = await resume_code_mode_scenario(
         db_session_factory,
         context,
         suspended=suspended,

@@ -1,4 +1,4 @@
-"""A workflow totals every row of a saved report through read_table, with no provider sandbox."""
+"""Workflows total saved reports and update workbooks through document tools, with no provider sandbox."""
 
 import json
 from collections.abc import AsyncIterator, Iterator
@@ -14,10 +14,12 @@ from services.documents.worker import close_document_worker_pool
 from services.files.create_conversation_file_references import create_conversation_file_references
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.revision_actor import FileRevisionActor
+from tests.support.office_documents import sales_workbook
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
     build_scenario_agent,
+    resume_code_mode_scenario,
     run_scenario,
     scripted_model,
 )
@@ -40,6 +42,32 @@ while True:
         break
     offset = page["next_offset"]
 {{"total": total, "count": count, "total_rows": page["total_rows"]}}
+"""
+
+_WORKBOOK_SCRIPT = """
+reference = {reference!r}
+page = await read_table(file_id=reference, sheet="Sales", range="A1:B31")
+total = 0
+for row in page["rows"]:
+    total += row["Amount"]
+saved = await edit_workbook(
+    file_id=reference,
+    base_revision_id=page["revision_id"],
+    operations=[
+        {{"op": "set_cells", "sheet": "Sales", "anchor": "D2", "values": [[total], ["=SUM(B2:B31)"]]}}
+    ],
+)
+cells = {{}}
+for block in saved["readback"]["blocks"]:
+    for cell in block["cells"]:
+        cells[cell["ref"]] = cell
+if cells["D2"]["value"] != total:
+    raise ValueError("The written total didn't read back")
+{{
+    "total": total,
+    "formula_calculated": cells["D3"]["calculated"],
+    "revision_number": saved["revision_number"],
+}}
 """
 
 
@@ -122,3 +150,54 @@ async def test_workflow_pages_a_saved_report_and_totals_every_row(
     }
     pages = [row for row in result.audit_rows if row.tool_name == "read_table"]
     assert len(pages) > 1
+
+
+async def test_workflow_writes_a_workbook_total_and_checks_the_read_back(
+    db_session_factory, report_storage, document_workers
+):
+    context = await build_scenario_agent(db_session_factory)
+    async with db_session_factory() as db:
+        await set_session_tenant_context(
+            db, workspace_id=context.workspace_id, user_id=context.user_id
+        )
+        saved = await create_file_with_revision(
+            db,
+            workspace=await db.get(Workspace, context.workspace_id),
+            name="sales.xlsx",
+            content=sales_workbook(rows=30),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            extension=".xlsx",
+            actor=FileRevisionActor(user_id=context.user_id),
+        )
+        await db.commit()
+    reference = {"entity_id": str(saved.file.id), "label": saved.file.name}
+
+    model = scripted_model(
+        turns=[
+            ToolTurn(
+                (
+                    ToolCall(
+                        RUN_WORKFLOW_TOOL_NAME,
+                        {"code": _WORKBOOK_SCRIPT.format(reference=reference)},
+                        "total",
+                    ),
+                )
+            ),
+            "The total is written.",
+        ]
+    )
+
+    # The script read file text, so the write waits for approval rather than running unattended.
+    suspended = await run_scenario(db_session_factory, context, model=model)
+    assert suspended.run.status == "awaiting_approval"
+    result = await resume_code_mode_scenario(
+        db_session_factory, context, suspended=suspended, model=model
+    )
+
+    assert result.run.status == "completed"
+    [workflow] = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)
+    assert json.loads(workflow["content"]["content"]) == {
+        "total": sum(range(1, 31)),
+        "formula_calculated": False,
+        "revision_number": 2,
+    }

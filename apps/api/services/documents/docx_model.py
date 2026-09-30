@@ -52,7 +52,7 @@ def read_document(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     elements = [element for element in body.iterchildren() if _local(element.tag) in _BODY_BLOCKS]
     result: dict[str, Any] = {
         "block_count": len(elements),
-        "has_tracked_changes": _has_revisions(document),
+        "has_tracked_changes": has_revisions(document),
     }
     if start is None:
         result.update(_document_parts(document, page))
@@ -68,7 +68,7 @@ def read_document(document: Any, args: dict[str, Any]) -> dict[str, Any]:
         if len(blocks) >= limit:
             result["next_start"] = position
             break
-        item = _block(document, element, tag, index, page)
+        item = read_block(document, element, tag, index, page)
         too_large = (
             f"Block {position} is larger than one read page. Pass start {position + 1} to skip it."
         )
@@ -80,7 +80,7 @@ def read_document(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _has_revisions(document: Any) -> bool:
+def has_revisions(document: Any) -> bool:
     """Checks the body, headers, footers, and notes for any tracked-change element."""
     for part in document.part.package.iter_parts():
         element = getattr(part, "_element", None)
@@ -105,13 +105,7 @@ def _document_parts(document: Any, page: ReadPage) -> dict[str, Any]:
             continue
         parts[key].append(item)
     for comment in document.comments:
-        item = compact(
-            {
-                "comment_id": comment.comment_id,
-                "author": name(comment.author),
-                "text": page.text(comment.text),
-            }
-        )
+        item = read_comment(comment, page)
         if not page.fits(item):
             parts["comments_truncated"] = True
             break
@@ -133,20 +127,31 @@ def _stories(document: Any, page: ReadPage) -> Any:
                 story = getattr(section, attribute)
                 if story.is_linked_to_previous:
                     continue
-                text = _story_text(story)
-                images = _images(story._element, story.part)
-                if text or images:
-                    yield (
-                        key,
-                        compact(
-                            {
-                                "section": number,
-                                "variant": variant,
-                                "text": page.text(text),
-                                "images": images,
-                            }
-                        ),
-                    )
+                item = read_story(story, number, variant, page)
+                if "text" in item or "images" in item:
+                    yield key, item
+
+
+def read_story(story: Any, section: int, variant: str, page: ReadPage) -> dict[str, Any]:
+    """Returns a section's header or footer text and images as reads show them."""
+    return {
+        "section": section,
+        "variant": variant,
+        **compact(
+            {"text": page.text(_story_text(story)), "images": _images(story._element, story.part)}
+        ),
+    }
+
+
+def read_comment(comment: Any, page: ReadPage) -> dict[str, Any]:
+    """Returns a comment's id, author, and text as reads show them."""
+    return compact(
+        {
+            "comment_id": comment.comment_id,
+            "author": name(comment.author),
+            "text": page.text(comment.text),
+        }
+    )
 
 
 def _story_text(story: Any) -> str:
@@ -167,7 +172,8 @@ def _external_relationships(document: Any) -> Any:
             yield relationship.reltype, relationship.target_ref
 
 
-def _block(document: Any, element: Any, tag: str, index: int, page: ReadPage) -> dict[str, Any]:
+def read_block(document: Any, element: Any, tag: str, index: int, page: ReadPage) -> dict[str, Any]:
+    """Returns one body paragraph, table, or content control as reads show it."""
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
@@ -256,7 +262,11 @@ def _character_style(run: Any) -> str | None:
 def _images(element: Any, part: Any) -> list[str]:
     """Returns part names of images embedded in an element, resolved through its part."""
     refs = []
-    for rel_id in element.xpath(".//a:blip/@r:embed"):
+    from docx.oxml.ns import nsmap
+    from lxml import etree
+
+    # Content controls are plain lxml elements, so the namespaces are passed explicitly.
+    for rel_id in etree.XPath(".//a:blip/@r:embed", namespaces=nsmap)(element):
         related = part.related_parts.get(rel_id)
         if related is not None and str(related.partname).lstrip("/") not in refs:
             refs.append(str(related.partname).lstrip("/"))

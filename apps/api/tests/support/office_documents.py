@@ -244,3 +244,43 @@ PNG_PIXEL = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
     "0000000b49444154789c6360000200000500017a5eab3f0000000049454e44ae426082"
 )
+
+
+def charted_workbook() -> bytes:
+    """Builds a workbook whose Data sheet holds a native chart."""
+    from openpyxl import Workbook
+    from openpyxl.chart import BarChart, Reference
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data"
+    for row in (["Month", "Sales"], ["Jan", 1], ["Feb", 2]):
+        sheet.append(row)
+    chart = BarChart()
+    chart.add_data(Reference(sheet, min_col=2, min_row=1, max_row=3), titles_from_data=True)
+    sheet.add_chart(chart, "D2")
+    workbook.create_sheet("Notes")
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+def picture_presentation() -> bytes:
+    """Builds a two-slide deck: a picture slide and a chart slide."""
+    from pptx import Presentation
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE
+    from pptx.util import Inches
+
+    presentation = Presentation()
+    picture = presentation.slides.add_slide(presentation.slide_layouts[6])
+    picture.shapes.add_picture(io.BytesIO(PNG_PIXEL), Inches(1), Inches(1))
+    chart_data = CategoryChartData()
+    chart_data.categories = ["Q1"]
+    chart_data.add_series("Sales", (1,))
+    presentation.slides.add_slide(presentation.slide_layouts[6]).shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1), Inches(1), Inches(4), Inches(3), chart_data
+    )
+    output = io.BytesIO()
+    presentation.save(output)
+    return output.getvalue()

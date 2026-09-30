@@ -8,12 +8,21 @@ from contextlib import closing
 from itertools import islice
 from typing import Any
 
+from services.documents.docx_edit import edit_document
 from services.documents.docx_model import read_document
-from services.documents.packages import open_archive, open_package, open_workbook_view
+from services.documents.editing import split_attachments
+from services.documents.packages import (
+    open_archive,
+    open_package,
+    open_workbook_view,
+    save_package,
+)
+from services.documents.pptx_edit import edit_presentation
 from services.documents.pptx_model import read_presentation
 from services.documents.precheck import PackageLimits
 from services.documents.reading import DocumentRequestError, name
 from services.documents.tables import read_delimited_table, read_saved_list
+from services.documents.xlsx_edit import edit_workbook
 from services.documents.xlsx_model import read_sheet_table, read_workbook
 
 type HandlerResult = tuple[dict[str, Any], bytes | None]
@@ -101,6 +110,24 @@ def extract_image(
         return {"media_type": media_type}, archive.read(info)
 
 
+def edit(
+    document_format: str, args: dict[str, Any], data: bytes, limits: PackageLimits
+) -> HandlerResult:
+    """Applies edit operations and returns the result with the saved file.
+
+    Image Files for the operations arrive packed after the document bytes.
+    """
+    source, images = split_attachments(data, args)
+    if document_format == "xlsx":
+        return edit_workbook(source, args, limits)
+    document = open_package(source, document_format, limits)
+    if document_format == "pptx":
+        result = edit_presentation(document, args, images)
+    else:
+        result = edit_document(document, args, images)
+    return result, save_package(document, limits)
+
+
 def _describe_presentation(presentation: Any) -> tuple[int, Iterator[str]]:
     texts = (
         shape.text_frame.text
@@ -136,4 +163,5 @@ HANDLERS: dict[str, Handler] = {
     "read": read,
     "read_table": read_table,
     "extract_image": extract_image,
+    "edit": edit,
 }

@@ -37,10 +37,13 @@ class ReadPage:
         self.used = 0
         self._repeated = 0
 
-    def fits(self, item: Any) -> bool:
-        """Counts an item if it fits. Use for metadata that only the first page carries."""
+    def fits(self, item: Any, *, within: int | None = None) -> bool:
+        """Counts an item if it fits. Use for metadata that only the first page carries.
+
+        `within` caps the page's total use at a lower limit for this item.
+        """
         size = _size(item)
-        if self.used + size > self.max_chars:
+        if self.used + size > min(self.max_chars, within or self.max_chars):
             return False
         self.used += size
         return True
@@ -163,4 +166,5 @@ def external_links(relationships: Iterable[tuple[str, str]], page: ReadPage) -> 
 
 
 def _size(item: Any) -> int:
-    return len(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+    # One more for the comma that separates the item from the next.
+    return len(json.dumps(item, ensure_ascii=False, separators=(",", ":"))) + 1

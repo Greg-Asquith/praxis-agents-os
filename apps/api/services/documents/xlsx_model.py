@@ -237,6 +237,14 @@ def _sheet_name(workbook: Any, requested: str | None) -> str:
 def _bounds(sheet: Any, cell_range: str | None) -> tuple[int, int, int | None, int | None]:
     if not cell_range:
         return sheet.min_column or 1, sheet.min_row or 1, sheet.max_column, sheet.max_row
+    min_col, min_row, max_col, max_row = parse_range(cell_range)
+    return min_col or 1, min_row or 1, max_col, max_row
+
+
+def parse_range(
+    cell_range: str,
+) -> tuple[int | None, int | None, int | None, int | None]:
+    """Returns (min_col, min_row, max_col, max_row) of an A1 range; whole rows or columns omit a pair."""
     from openpyxl.utils.cell import range_boundaries
 
     try:
@@ -247,8 +255,7 @@ def _bounds(sheet: Any, cell_range: str | None) -> tuple[int, int, int | None, i
         raise DocumentRequestError(
             f"{name(cell_range)!r} isn't a cell range. Use A1 notation, such as A1:D20."
         )
-    min_col, min_row, max_col, max_row = bounds
-    return min_col or 1, min_row or 1, max_col, max_row
+    return bounds
 
 
 def _valid_bounds(
@@ -466,6 +473,17 @@ def _tables(
                 }
             )
     return tables
+
+
+def sheets_with_drawings(workbook: Any, archive: zipfile.ZipFile) -> list[str]:
+    """Returns the names of worksheets with a drawing part: charts, images, or shapes."""
+    names = []
+    for sheet in workbook.worksheets:
+        part = getattr(sheet, "_worksheet_path", None)
+        relationships = _relationships(archive, part) if part else {}
+        if any(kind.endswith(_DRAWING_REL) for kind, _ in relationships.values()):
+            names.append(name(sheet.title))
+    return names
 
 
 def _drawing_contents(

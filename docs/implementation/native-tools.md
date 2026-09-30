@@ -79,7 +79,9 @@ independent workspace copy, and generated Files retain workspace ownership.
 
 Keep registry/orchestration in `native/run_code.py`, File input transport
 and provider-file lifecycle in `native/run_code_file_bridge.py`, and bounded
-capture plus durable output persistence in `native/run_code_outputs.py`.
+capture in `native/run_code_outputs.py`. The input gate and durable output
+persistence live in `services/documents/inputs.py` and
+`services/documents/outputs.py`, which the document tools share.
 Anthropic/OpenAI inputs upload once per invocation under deterministic,
 collision-free sandbox aliases (duplicate or normalised-colliding names get a
 ` (n)` suffix; the edit instruction names the exact alias) and delete

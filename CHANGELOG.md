@@ -18,6 +18,14 @@ minor release. Patch releases contain backward-compatible fixes only.
   CSV files, and saved tool results, so Code Mode scripts can total every row
   of a large report. Office, CSV, and JSON files are parsed in the bounded
   document worker.
+- Agents edit and create PowerPoint, Excel, and Word files with
+  `edit_presentation`, `edit_workbook`, `edit_word_document`,
+  `create_presentation`, `create_workbook`, and `create_word_document`. Edits
+  save a new File revision only when every operation succeeds and the File
+  hasn't changed since it was read, and they read back what they changed.
+  New files start from a workspace template or a neutral default. Workbooks
+  with charts, images, custom XML, or other content an edit would remove, or
+  with more than 1,500,000 cells, can't be edited yet.
 - Meta Ads workspace connections with System User access tokens, bounded ad
   account discovery, permission-based writability, optional app-secret proof,
   and setup guidance.

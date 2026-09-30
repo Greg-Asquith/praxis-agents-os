@@ -5,9 +5,10 @@ Document tools read, edit, and create `.pptx`, `.xlsx`, and `.docx` Files with
 attacker-controlled input, so every library call runs in a bounded worker
 process, never in the API or worker process itself.
 
-Status: the hardened worker runtime and the read tools are implemented. The
-edit and create tools are pending (plan 247 slice A3), and so are the web
-presenters for document tools (slice C1).
+Status: the hardened worker runtime, the read tools, and the edit and create
+tools are implemented. Web presenters for document tools are pending (plan
+247 slice C1), so their rows use the generic tool rendering. The bundled
+default templates are pending review by a layout designer.
 
 ## Read tools
 
@@ -103,8 +104,8 @@ without a provider sandbox.
 ### Known limits
 
 - Word list levels come only from numbering set on the paragraph itself.
-  Numbering a paragraph inherits from its style isn't resolved yet. Plan 247
-  slice A3 revisits this for edits.
+  Numbering a paragraph inherits from its style isn't resolved. Edits set list
+  formatting through list styles, such as `List Bullet`.
 - Word theme colours come back as `theme:<name>` without tint or shade.
 - Groups nested more than five deep report `children_omitted` instead of
   their shapes.
@@ -122,6 +123,196 @@ WebP parts under the format's media folder, up to 20 MiB.
 Hyperlinks, linked images, and other external relationships are listed with
 their kind and target, framed as File text, up to 50 per read. The worker
 never fetches them.
+
+## Edit and create tools
+
+The edit and create tools are registered beside the read tools. They're
+auto-mounted, deferred, `internal` writes with `auto` policy and no egress, and
+Code Mode scripts can call them. The tools are as follows:
+
+| Tool | Does |
+| --- | --- |
+| `edit_presentation(file_id, base_revision_id, operations)` | Applies deck operations and appends a File revision |
+| `edit_workbook(file_id, base_revision_id, operations)` | Applies workbook operations and appends a File revision |
+| `edit_word_document(file_id, base_revision_id, operations)` | Applies Word operations and appends a File revision |
+| `create_presentation(name, operations, template_file_id?, keep_template_content?, folder?)` | Builds a deck from a template File or the default, then applies operations |
+| `create_workbook(name, operations, template_file_id?, folder?)` | Builds a workbook from a template File or the default, then applies operations |
+| `create_word_document(name, operations, template_file_id?, keep_template_content?, folder?)` | Builds a document from a template File or the default, then applies operations |
+
+Operations are Pydantic discriminated unions in
+`services/documents/operations/`, one module per format, capped at
+`DOCUMENT_TOOLS_MAX_OPERATIONS`. The worker applies them in
+`services/documents/{pptx,xlsx,docx}_edit.py`.
+
+### Edit contract
+
+Each edit follows these rules:
+
+- `base_revision_id` must be the File's current revision. The tool checks it
+  before loading the file, and `append_file_revision` checks it again against
+  the File row it locks and reloads when it saves. A stale base, including a
+  revision another session saved while the worker ran, fails with the current
+  revision id and saves nothing.
+- Operations run in order against the file in memory, so each one sees the
+  document as the earlier ones left it. The first operation that doesn't fit
+  fails the call with its index, such as `operations[3] (set_cells)`, and
+  nothing is saved. Unexpected library errors report only their type, because
+  library messages can quote file content.
+- Error messages and change summaries never quote file text. File-supplied
+  names that operations target, such as sheet, table, layout, and style names,
+  appear capped at 100 characters, as reads show them. A Word paragraph whose
+  text doesn't start with `expect_text` is refused without showing what it
+  does say.
+- The result has `warnings`, `changes` (one entry per operation, with ids such
+  as a new `slide_id`), `readback`, and the new `revision_id` and
+  `revision_number`. The read-back uses the read tools' shapes: touched slides
+  for decks; touched body blocks, content controls, headers, footers, and new
+  comments for Word; and every written cell for workbooks, with `value: null`
+  for a cleared cell. Its text is framed as File text from the base revision.
+- The whole result fits one read page (`DOCUMENT_TOOLS_READ_MAX_CHARS`).
+  Warnings come first, then changes, which together take at most half the
+  page, then the read-back. What doesn't fit is counted in `warnings_omitted`
+  or `changes_omitted`, or flagged as `slides_truncated`, `blocks_truncated`,
+  `headers_truncated`, and so on; read the new revision for the rest. The
+  edit is saved either way.
+- Platform Files are read-only; edit a workspace copy.
+- Each saved edit records one File `update` audit event with the tool, base
+  and new revision ids, operation count, and source and output byte counts.
+  Creates record a File `create` event with the template File and revision
+  when one was used. Both name the agent and the person who asked.
+- The worker re-applies the pre-check to its own output before returning it.
+
+Image Files for `add_image` and `replace_image` must be PNG or JPEG Files the
+conversation can see, up to 20 MiB each. Published platform Files count, as
+they do for other File inputs; only the File being edited must be a workspace
+File. The host loads them through
+the same gate as other File inputs (`services/documents/inputs.py`) and sends
+them to the worker packed after the document bytes, so one call stays inside
+`DOCUMENT_TOOLS_MAX_SOURCE_BYTES`.
+
+A Code Mode script that has read document text is tainted, so its edit and
+create calls wait for approval, as any tainted write does. See
+[untrusted data in Code Mode](../architecture/code-mode.md#untrusted-data-whole-interpreter-taint).
+
+### Operations
+
+Decks target slides by `slide_id` and shapes by `shape_id`. `set_text`,
+`add_slide` placeholders, and table cells keep the first existing paragraph's
+and run's formatting for new text, without its link, unless a run sets its
+own. `replace_text` keeps run formatting; a match that spans runs takes the
+first run's formatting. `set_text` warns when a shape's text grows by half
+and at least 40 characters. `duplicate_slide` shares images and external
+links with the copy and refuses slides with charts, media, or embedded
+objects. The copy keeps the slide's transition, animation timing, colour
+map, hidden state, and notes with their formatting. `set_table` refuses a row
+count change that would cut through a vertically merged cell or copy a last
+row that is part of one. `replace_image` removes any crop and warns when the new image's shape
+differs from its frame. Charts are native category charts; `set_chart_data`
+refuses scatter and bubble charts.
+
+Workbooks target sheets by name and cells in A1 notation. A string starting
+with `=` is a formula. After all operations, every formula the call wrote,
+every name it defined, and every conditional format rule and chart it added is
+tokenised with openpyxl's tokenizer and checked as it stands at the end, from
+the sheet it lives on. A reference to a missing sheet, defined name, or table,
+or to `#REF!`, fails the call. A sheet-local name counts only on its own sheet
+or with that sheet as prefix, such as `Sales!Target`. Names inside `LET` and
+`LAMBDA` formulas aren't checked.
+
+The tokenizer isn't a full Excel grammar check. It accepts some malformed
+formulas, such as `=SUM(A1`, and refuses spill references such as `=A1#`,
+which fail the call. It doesn't evaluate formulas.
+
+`rename_sheet` rewrites references to the sheet in every formula cell,
+defined name, conditional format, data validation, and chart the call added.
+`delete_sheet` fails when any of those still refers to the sheet; names local
+to the deleted sheet go with it. `merge_cells` fails when a cell other than the
+top-left one has a value, comment, or link, because merging would clear it.
+`append_rows` writes after the last row with a value and extends a table that
+ends on that row. It refuses a table that ends with a totals row, because the
+new rows would land below the totals. A write to a table's header row fails
+unless every header stays distinct text; a saved table's headers can't change,
+because Excel names its columns and structured references after them. A
+case-only `rename_sheet`, such as `Sales` to `sales`, keeps the exact name.
+Dropdowns from `add_data_validation` reject typed values outside the list.
+Frozen-pane cells and chart anchors must lie inside the sheet. Saved
+workbooks set full recalculation on open, adding calculation properties when
+the file has none.
+
+Word operations target body paragraphs by index plus `expect_text`, and body
+tables by index, numbered as `read_word_document` numbers them. Operations
+that would remove images, fields, links, comment anchors, or section breaks
+fail instead: `set_paragraph` and table cell writes refuse such content, and
+`replace_text` changes only plain runs, including runs inside links; runs
+with nonbreaking or soft hyphens are left as they are. `set_table_cells`
+writes a merged cell at its first position and refuses text for the positions
+it covers. Rows it adds copy the last row's row, cell, paragraph, and run
+formatting but none of its content, bookmarks, or comments, and a vertical
+merge in that row ends there. Text rewrites put new runs where the old ones
+were, so a bookmark around the whole paragraph keeps covering it; one around
+only part of it fails the operation, as does a bookmark in a cell paragraph
+that a cell write would remove. `delete_paragraphs` fails when a bookmark or
+comment range reaches outside the deleted paragraphs, and removes comments
+whose whole range it deletes. Images fit the page width of the section they
+land in. `set_header` and `set_footer` replace text paragraphs and keep
+paragraphs with images or fields, such as page numbers, and warn that they
+did. A section that showed an earlier section's header or footer gets its own
+copy of it first, so its images and fields stay and the earlier section is
+unchanged. Even-page
+headers need the document's even-page setting. Comments use the agent's name
+as the author. When the body would end with a table, an empty paragraph
+follows it.
+
+### Templates
+
+`create_presentation` and `create_word_document` start from
+`template_file_id` when given. Without `keep_template_content`, the deck's
+slides are removed so only its layouts remain, and the document's body and
+comments are removed so its styles, sections, headers, and footers remain.
+Each section break stays as an empty paragraph, which counts in paragraph
+indexes. Content added without an index goes into the last section.
+`create_workbook` keeps a template's sheets and cells.
+
+Without a template, the tools use the bundled defaults in
+`services/documents/templates/`:
+
+- `default.pptx` is python-pptx's neutral default deck widened to 16:9, with
+  title, title and content, section header, two content, comparison, title
+  only, blank, and caption layouts.
+- `default.docx` is python-docx's default document, with heading, list, and
+  table styles.
+- `default.xlsx` is a blank workbook with one sheet, `Sheet1`.
+
+### Workbook edit limits
+
+An edit needs a full openpyxl load, so the worker checks a workbook before
+loading it:
+
+- It counts cell elements by streaming each sheet part through an
+  entity-refusing XML parser, so the count holds in any encoding the part
+  declares, and refuses a workbook with more than
+  `DOCUMENT_TOOLS_EDIT_MAX_CELLS` cells. Counting stops once the total passes
+  the limit; at the limit it takes about 2 seconds. The default of
+  1,500,000 stays under the 1.8 million numeric cells measured to load and save
+  within the 1 GiB worker limit. The memory limit stays in force for workbooks
+  whose strings or styles cost more.
+- It refuses workbooks with parts openpyxl drops when it saves, by checking
+  every part against the ones it keeps: sheets, styles, shared strings,
+  themes, tables, legacy comments, pivot tables, external links, and document
+  properties. Calculation chains, printer settings, and thumbnails can go.
+  Anything else refuses the edit, including charts, drawings (images and
+  shapes), chart sheets, threaded comments, slicers, timelines, data models,
+  queries and connections, form controls, embedded objects, pictures in cells,
+  dynamic array metadata, and custom XML data such as SharePoint properties.
+  The message names the features and the sheets with drawings.
+- It refuses workbooks whose load warns that an extension will be removed,
+  such as extended data validation, conditional formatting, or sparklines.
+
+`add_chart` in a workbook therefore works only in the last edit. openpyxl
+doesn't compute formulas and doesn't keep the values Excel saved, so after any
+edit every formula reads back with `calculated: false` until the workbook is
+opened in Excel. The result warns about this whenever the workbook has
+formulas.
 
 ## Worker processes
 
@@ -200,6 +391,7 @@ No library resolves entities or loads external resources:
 | `DOCUMENT_TOOLS_MAX_ZIP_ENTRIES` | 5000 |
 | `DOCUMENT_TOOLS_MAX_COMPRESSION_RATIO` | 100 |
 | `DOCUMENT_TOOLS_MAX_OPERATIONS` | 500 |
+| `DOCUMENT_TOOLS_EDIT_MAX_CELLS` | 1500000 |
 | `DOCUMENT_TOOLS_READ_MAX_CHARS` | 60000 |
 | `DOCUMENT_TOOLS_TIMEOUT_SECONDS` | 60 |
 | `DOCUMENT_TOOLS_WORKER_MEMORY_BYTES` | 1 GiB |

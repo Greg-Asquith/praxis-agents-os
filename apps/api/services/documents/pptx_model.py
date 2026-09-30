@@ -45,7 +45,7 @@ def read_presentation(presentation: Any, args: dict[str, Any]) -> dict[str, Any]
         if not 1 <= number <= len(slides):
             missing.append(number)
             continue
-        item = _slide(slides[number - 1], number, page)
+        item = read_slide(slides[number - 1], number, page)
         too_large = f"Slide {number} is larger than one read page. Read the other slides by number."
         if not page.add(item, first=not result["slides"], too_large=too_large):
             result["next_slide"] = number
@@ -94,7 +94,8 @@ def _external_relationships(presentation: Any) -> Any:
             yield relationship.reltype, relationship.target_ref
 
 
-def _slide(slide: Any, number: int, page: ReadPage) -> dict[str, Any]:
+def read_slide(slide: Any, number: int, page: ReadPage) -> dict[str, Any]:
+    """Returns one slide's layout, shapes, and notes as reads show them."""
     notes = ""
     if slide.has_notes_slide and slide.notes_slide.notes_text_frame is not None:
         notes = slide.notes_slide.notes_text_frame.text

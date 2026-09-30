@@ -33,6 +33,11 @@ class DocumentToolsSettingsMixin:
         ge=1,
         description="Most edit operations accepted in one document tool call.",
     )
+    DOCUMENT_TOOLS_EDIT_MAX_CELLS: int = Field(
+        default=1_500_000,
+        ge=1,
+        description="Most stored cells in a workbook that edits load; larger workbooks are refused.",
+    )
     DOCUMENT_TOOLS_READ_MAX_CHARS: int = Field(
         default=60_000,
         ge=1,

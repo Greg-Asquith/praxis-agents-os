@@ -77,6 +77,7 @@ from services.agents.runtime.untrusted import (
     render_untrusted_frames,
     serialize_untrusted_content,
 )
+from services.documents import inputs as document_inputs
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.revision_actor import FileRevisionActor
 from tests.factories import build_user, build_workspace
@@ -287,7 +288,7 @@ def test_run_code_rewrites_sandbox_links_to_durable_workspace_entities() -> None
     file_id = uuid4()
     artifact_id = uuid4()
     outputs = [
-        run_code_tools.RunCodeStoredOutput(
+        run_code_tools.StoredOutput(
             kind="file",
             name="quarterly deck.pptx",
             size_bytes=123,
@@ -298,7 +299,7 @@ def test_run_code_rewrites_sandbox_links_to_durable_workspace_entities() -> None
                 "label": "quarterly deck.pptx",
             },
         ),
-        run_code_tools.RunCodeStoredOutput(
+        run_code_tools.StoredOutput(
             kind="artifact",
             name="summary",
             size_bytes=12,
@@ -423,7 +424,7 @@ async def test_run_code_helper_is_metered_with_output_counts(
         assert excluded_hashes == set()
         assert excluded_provider_file_ids == set()
         return [
-            run_code_tools.CapturedSandboxFile(
+            run_code_tools.CapturedOutput(
                 name="summary.csv",
                 content=b"total\n42\n",
                 media_type="text/csv",
@@ -667,12 +668,12 @@ async def test_run_code_input_gates_reject_out_of_scope_and_oversized_files(
             return self.payload
 
     storage = FakeStorage()
-    monkeypatch.setattr(run_code_bridge_tools, "get_storage_provider", lambda: storage)
+    monkeypatch.setattr(document_inputs, "get_storage_provider", lambda: storage)
     [binary_text_input] = await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
     assert binary_text_input.content == b"\xff\xfe"
 
     storage.payload = b"x" * 65
-    with pytest.raises(ModelRetry, match="exceed the configured total limit"):
+    with pytest.raises(ModelRetry, match="larger than run_code allows"):
         await run_code_tools.load_run_code_inputs(ctx(), [text_reference])
 
     text.file.deleted = True

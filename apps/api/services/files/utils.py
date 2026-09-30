@@ -124,7 +124,8 @@ async def get_file_for_workspace(
     if not include_deleted:
         stmt = stmt.where(File.deleted.is_(False))
     if for_update:
-        stmt = stmt.with_for_update()
+        # A File already in the session would otherwise keep its pre-lock revision state.
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     file = await db.scalar(stmt)
     if file is None:
         visible = await db.scalar(

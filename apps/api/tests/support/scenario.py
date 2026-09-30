@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic_ai import DeferredToolResults
+from pydantic_ai import DeferredToolResults, ToolApproved
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
@@ -31,6 +31,9 @@ from models.conversation import ConversationMessage
 from models.workspace import WorkspaceRole
 from services.agent_runs import create_agent_run
 from services.agent_runs.domain import RUN_STATUS_PENDING
+from services.agents.runtime.approval_state import load_suspended_run_state
+from services.agents.runtime.code_mode.approval import build_code_mode_decision_metadata
+from services.agents.runtime.dispatch import digest_args
 from services.agents.runtime.execute.types import ExecuteRunResult
 from services.agents.runtime.execute_run import execute_run
 from services.agents.runtime.sinks import CollectingSink, SinkEvent
@@ -344,3 +347,40 @@ def _walk_json(value: Any):
     elif isinstance(value, list):
         for child in value:
             yield from _walk_json(child)
+
+
+async def resume_code_mode_scenario(
+    session_factory: async_sessionmaker[AsyncSession],
+    context,
+    *,
+    suspended,
+    model,
+    decision: str = "approved",
+    message: str | None = None,
+):
+    """Resumes a run suspended on one nested Code Mode approval with the given decision."""
+    state = load_suspended_run_state(suspended.run)
+    [outer_call_id] = state.pending_tool_call_ids
+    approval_metadata = state.deferred_tool_requests.metadata[outer_call_id]
+    nested_args = approval_metadata["nested_args"]
+    args_sha256, _args_bytes = digest_args(nested_args)
+    return await run_scenario(
+        session_factory,
+        context,
+        model=model,
+        prompt=None,
+        expected_status="awaiting_approval",
+        message_history=state.message_history,
+        deferred_tool_results=DeferredToolResults(
+            approvals={outer_call_id: ToolApproved()},
+            metadata={
+                outer_call_id: build_code_mode_decision_metadata(
+                    approval_metadata=approval_metadata,
+                    decision=decision,
+                    effective_args=nested_args,
+                    args_sha256=args_sha256,
+                    message=message,
+                )
+            },
+        ),
+    )

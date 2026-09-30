@@ -68,10 +68,7 @@ from services.agents.runtime.tools.native.run_code_file_bridge import (
     upload_run_code_inputs,
 )
 from services.agents.runtime.tools.native.run_code_outputs import (
-    CapturedSandboxFile,
-    RunCodeStoredOutput,
     capture_sandbox_files,
-    persist_sandbox_outputs,
     rewrite_sandbox_links,
     truncate_run_code_output,
 )
@@ -79,6 +76,7 @@ from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
 from services.ai_usage.domain import PURPOSE_CODE_EXECUTION, AIUsageEventData
 from services.ai_usage.run_metered_helper import run_metered_helper
+from services.documents.outputs import CapturedOutput, StoredOutput, persist_sandbox_outputs
 from utils.validation import normalize_optional_text
 
 logger = logging.getLogger(__name__)
@@ -110,7 +108,7 @@ replaced with durable Praxis file links after the outputs are saved.
 
 class RunCodeOutput(BaseModel):
     result: str | UntrustedNode
-    outputs: list[RunCodeStoredOutput]
+    outputs: list[StoredOutput]
     skipped_outputs: list[str]
     model_provider: NativeRunCodeProvider
     model: str
@@ -363,7 +361,7 @@ async def run_native_code_execution(
     model_spec: ResolvedModel,
     edit_target: RunCodeEditTarget | None = None,
     tool_call_id: str | None = None,
-) -> tuple[str, list[CapturedSandboxFile], list[str]]:
+) -> tuple[str, list[CapturedOutput], list[str]]:
     if model_spec.provider == PROVIDER_OPENAI:
         model_spec = replace(
             model_spec,

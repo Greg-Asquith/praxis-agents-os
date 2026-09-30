@@ -219,7 +219,7 @@ async def test_run_code_retains_csv_report_larger_than_one_mib(
         return (
             "Created [report](sandbox:/mnt/data/search-terms.csv).",
             [
-                run_code_tools.CapturedSandboxFile(
+                run_code_tools.CapturedOutput(
                     name="search-terms.csv", content=content, media_type="text/csv"
                 )
             ],
@@ -283,7 +283,7 @@ async def test_run_code_declared_edit_appends_agent_revision(
         return (
             "Updated [budget](sandbox:/mnt/data/budget-with-totals.csv).",
             [
-                run_code_tools.CapturedSandboxFile(
+                run_code_tools.CapturedOutput(
                     name="budget-with-totals.csv",
                     content=b"month,amount\nAugust,42\nTotal,42\n",
                     media_type="text/csv",
@@ -362,7 +362,7 @@ async def test_run_code_conflict_preserves_the_first_concurrent_revision(
         return (
             "Updated the workbook.",
             [
-                run_code_tools.CapturedSandboxFile(
+                run_code_tools.CapturedOutput(
                     name="budget-with-totals.csv",
                     content=b"month,amount\nAugust,42\nTotal,42\n",
                     media_type="text/csv",
@@ -501,7 +501,7 @@ async def test_run_code_platform_input_produces_workspace_file(
         return (
             "Created [totals](sandbox:/mnt/data/totals.txt).",
             [
-                run_code_tools.CapturedSandboxFile(
+                run_code_tools.CapturedOutput(
                     name="totals.txt",
                     content=b"total\n42\n",
                     media_type="text/plain",

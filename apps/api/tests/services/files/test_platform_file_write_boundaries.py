@@ -213,11 +213,7 @@ async def test_platform_file_approved_runtime_write_returns_workspace_copy_error
 async def test_platform_file_code_output_cannot_append_platform_revision(db_session, write_context):
     from pydantic_ai import ToolFailed
 
-    from services.agents.runtime.tools.native.run_code_file_bridge import RunCodeEditTarget
-    from services.agents.runtime.tools.native.run_code_outputs import (
-        CapturedSandboxFile,
-        persist_sandbox_outputs,
-    )
+    from services.documents.outputs import CapturedOutput, EditTarget, persist_sandbox_outputs
 
     actor, workspace, _, file, _ = write_context
     await set_session_tenant_context(db_session, workspace_id=workspace.id, user_id=actor.id)
@@ -226,16 +222,13 @@ async def test_platform_file_code_output_cannot_append_platform_revision(db_sess
         await persist_sandbox_outputs(
             deps,
             task="Edit policy",
-            captured=[
-                CapturedSandboxFile(name=file.name, content=b"changed", media_type="text/plain")
-            ],
+            captured=[CapturedOutput(name=file.name, content=b"changed", media_type="text/plain")],
             input_file_ids=[file.id],
             input_revision_ids=[file.current_revision_id],
-            edit_target=RunCodeEditTarget(
+            edit_target=EditTarget(
                 file_id=file.id,
                 revision_id=file.current_revision_id,
                 name=file.name,
-                sandbox_name=file.name,
                 media_type="text/plain",
             ),
         )

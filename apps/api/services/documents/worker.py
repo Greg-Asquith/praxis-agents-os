@@ -13,6 +13,7 @@ import asyncio
 import json
 import math
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -130,16 +131,23 @@ class DocumentWorkerPool:
         document_format: str,
         data: bytes,
         args: dict[str, Any] | None = None,
+        attachments: Sequence[bytes] = (),
     ) -> DocumentWorkerResult:
-        """Runs one operation in a worker and returns its JSON result and output bytes."""
+        """Runs one operation in a worker and returns its JSON result and output bytes.
+
+        Attachments, such as images an edit adds, travel after the file bytes.
+        """
         if document_format not in OFFICE_FORMATS | TABLE_FORMATS:
             raise DocumentRejectedError("Only .pptx, .xlsx, .docx, and table files are supported.")
-        if len(data) > self._max_source_bytes:
+        if len(data) + sum(len(item) for item in attachments) > self._max_source_bytes:
             raise DocumentRejectedError("The file is larger than document tools allow.")
-        header = {"operation": operation, "format": document_format, "args": args or {}}
+        request_args = dict(args or {})
+        if attachments:
+            request_args["attachment_sizes"] = [len(item) for item in attachments]
+        header = {"operation": operation, "format": document_format, "args": request_args}
         await self._admit()
         try:
-            response, payload = await self._call(header, data)
+            response, payload = await self._call(header, b"".join([data, *attachments]))
         finally:
             self._slots.release()
         return _result(response, payload, document_format)

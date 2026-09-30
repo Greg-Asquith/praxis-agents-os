@@ -3,54 +3,38 @@
 """Workspace-file transport and prompt preparation for native ``run_code``."""
 
 import logging
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePath
-from uuid import UUID
 
 from pydantic_ai import ModelRetry, RunContext, UploadedFile
 
 from core.settings import settings
-from models.files import File, FileRevision
 from services.agents.models.domain import PROVIDER_ANTHROPIC, PROVIDER_GOOGLE, PROVIDER_OPENAI
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
-from services.agents.runtime.tools.files.utils import current_file_revision
 from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
 from services.audit_events import AuditAction, AuditActorType, AuditResourceType, AuditStatus
 from services.audit_events.operations import safe_record_operation_audit_event
-from services.files.contract import FileCategory, contract_for_content_type
-from services.files.utils import file_revision_ref
-from services.storage.factory import get_storage_provider
+from services.documents.inputs import InputFile, load_input_files
+from services.documents.outputs import EditTarget, safe_sandbox_name
+from services.files.contract import FileCategory
 from utils.content import ContentScope
 from utils.document_markdown import DocumentConversionError, convert_document_to_markdown
 
 logger = logging.getLogger(__name__)
 
-_SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._ -]+")
 _BRIDGE_PROVIDERS = frozenset({PROVIDER_ANTHROPIC, PROVIDER_OPENAI})
 
 
 @dataclass(frozen=True)
-class RunCodeInput:
-    file_id: UUID
-    revision_id: UUID
-    name: str
-    sandbox_name: str
-    content: bytes
-    media_type: str
-    category: FileCategory
-    scope: str = ContentScope.WORKSPACE
+class RunCodeInput(InputFile):
+    sandbox_name: str = ""
 
 
 @dataclass(frozen=True)
-class RunCodeEditTarget:
-    file_id: UUID
-    revision_id: UUID
-    name: str
+class RunCodeEditTarget(EditTarget):
     sandbox_name: str
-    media_type: str
 
 
 @dataclass(frozen=True)
@@ -58,13 +42,6 @@ class RunCodeBridgeUpload:
     input: RunCodeInput
     provider_file_id: str
     uploaded_file: UploadedFile
-
-
-def safe_sandbox_name(value: object) -> str:
-    """Normalize a provider-visible filename without retaining directory components."""
-    raw = PurePath(str(value or "sandbox-output.bin")).name
-    cleaned = _SAFE_FILENAME.sub("_", raw).strip(" .")
-    return (cleaned or "sandbox-output.bin")[:255]
 
 
 def sandbox_names_for(names: Sequence[object]) -> list[str]:
@@ -91,61 +68,23 @@ async def load_run_code_inputs(
     references: Sequence[FileReference],
 ) -> tuple[RunCodeInput, ...]:
     """Loads bounded source bytes from visible revisions, retaining conversation pins."""
-    ids = list(dict.fromkeys(reference.entity_id for reference in references))
-    if not ids:
-        return ()
-    total = 0
-    revisions: list[tuple[File, FileRevision, FileCategory]] = []
-    for file_id in ids:
-        file, revision = await current_file_revision(ctx, file_id)
-        entry = contract_for_content_type(revision.content_type)
-        if entry.category not in {
+    loaded = await load_input_files(
+        ctx,
+        references,
+        tool_name="run_code",
+        categories={
             FileCategory.EDITABLE_TEXT,
             FileCategory.INGESTIBLE_DOCUMENT,
             FileCategory.IMAGE,
-        }:
-            raise ModelRetry(
-                "This file type cannot be used by run_code. Choose a text, document, or image file."
-            )
-        if revision.size_bytes > settings.NATIVE_RUN_CODE_MAX_UPLOAD_BYTES:
-            raise ModelRetry(
-                f"{file.name} is too large for run_code. Choose a file no larger than "
-                f"{settings.NATIVE_RUN_CODE_MAX_UPLOAD_BYTES:,} bytes."
-            )
-        total += revision.size_bytes
-        if total > settings.NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES:
-            raise ModelRetry(
-                "The selected run_code inputs are too large together. Choose files totaling "
-                f"at most {settings.NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES:,} bytes."
-            )
-        revisions.append((file, revision, entry.category))
-
-    storage = get_storage_provider()
-    loaded: list[RunCodeInput] = []
-    actual_total = 0
-    sandbox_names = sandbox_names_for([file.name for file, _, _ in revisions])
-    for (file, revision, category), sandbox_name in zip(revisions, sandbox_names, strict=True):
-        data = await storage.get_object(file_revision_ref(revision))
-        if len(data) > settings.NATIVE_RUN_CODE_MAX_UPLOAD_BYTES:
-            raise ModelRetry(f"{file.name} exceeds the configured run_code source-byte limit.")
-        actual_total += len(data)
-        if actual_total > settings.NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES:
-            raise ModelRetry(
-                "The selected run_code source bytes exceed the configured total limit."
-            )
-        loaded.append(
-            RunCodeInput(
-                file_id=file.id,
-                revision_id=revision.id,
-                name=file.name,
-                sandbox_name=sandbox_name,
-                content=data,
-                media_type=revision.content_type,
-                category=category,
-                scope=file.scope,
-            )
-        )
-    return tuple(loaded)
+        },
+        max_file_bytes=settings.NATIVE_RUN_CODE_MAX_UPLOAD_BYTES,
+        max_total_bytes=settings.NATIVE_RUN_CODE_MAX_TOTAL_UPLOAD_BYTES,
+    )
+    names = sandbox_names_for([item.name for item in loaded])
+    return tuple(
+        RunCodeInput(**vars(item), sandbox_name=name)
+        for item, name in zip(loaded, names, strict=True)
+    )
 
 
 def resolve_run_code_edit_target(
