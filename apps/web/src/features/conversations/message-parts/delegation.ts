@@ -8,13 +8,14 @@ import { isRecord, optionalString } from "@/lib/guards"
 
 const DELEGATION_TASK_PREVIEW_LIMIT = 500
 const DELEGATE_TO_AGENT_TOOL_NAME = "delegate_to_agent"
+export const RUN_SUBAGENT_TOOL_NAME = "run_subagent"
 
 export function delegationDetailsForToolActivity(
   name: string,
   args: unknown,
   result?: unknown
 ): DelegationToolActivity | undefined {
-  if (name !== DELEGATE_TO_AGENT_TOOL_NAME) {
+  if (name !== DELEGATE_TO_AGENT_TOOL_NAME && name !== RUN_SUBAGENT_TOOL_NAME) {
     return undefined
   }
 
@@ -24,11 +25,18 @@ export function delegationDetailsForToolActivity(
   const pendingApprovals = resultRecord?.["pending_approvals"]
   const pendingApprovalCount = Array.isArray(pendingApprovals) ? pendingApprovals.length : 0
   const task = optionalString(argRecord?.["task"])
-  const target = agentReference(argRecord?.["agent_id"])
+  // A sub-agent has no agent of its own; its result carries the parent's id.
+  const target =
+    name === RUN_SUBAGENT_TOOL_NAME
+      ? { id: null, name: optionalString(argRecord?.["role"]) }
+      : agentReference(argRecord?.["agent_id"])
 
   return {
     status: delegationStatus(resultRecord?.["status"]) ?? "running",
-    agentId: optionalString(resultRecord?.["agent_id"]) ?? target.id,
+    agentId:
+      name === RUN_SUBAGENT_TOOL_NAME
+        ? null
+        : (optionalString(resultRecord?.["agent_id"]) ?? target.id),
     agentName: optionalString(resultRecord?.["agent_name"]) ?? target.name,
     taskPreview: task === null ? null : truncateText(task, DELEGATION_TASK_PREVIEW_LIMIT),
     output: optionalString(resultRecord?.["output"]),
@@ -50,7 +58,9 @@ export function delegationDetailsForPendingApproval(
 
   return {
     status: "awaiting_approval",
-    agentId: delegation.child_agent_id,
+    // A sub-agent's child run carries the parent's id, not an agent of its own.
+    agentId:
+      delegation.parent_tool_name === RUN_SUBAGENT_TOOL_NAME ? null : delegation.child_agent_id,
     agentName: delegation.child_agent_name,
     taskPreview: task === null ? null : truncateText(task, DELEGATION_TASK_PREVIEW_LIMIT),
     output: null,

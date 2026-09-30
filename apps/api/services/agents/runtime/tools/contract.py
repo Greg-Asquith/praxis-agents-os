@@ -70,6 +70,7 @@ _CODE_MODE_MACHINERY_TOOL_NAMES = frozenset(
         "report_completion",
         "run_code",
         "run_script",
+        "run_subagent",
         "run_workflow",
     }
 )

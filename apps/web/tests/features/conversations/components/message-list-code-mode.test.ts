@@ -241,6 +241,7 @@ it("preserves owner identity and specialist labels in live workflow approval lea
   const owner = "child-run"
   const delegation = {
     parent_tool_call_id: "delegate",
+    parent_tool_name: "delegate_to_agent",
     child_run_id: owner,
     child_agent_id: "specialist",
     child_agent_name: "Researcher",

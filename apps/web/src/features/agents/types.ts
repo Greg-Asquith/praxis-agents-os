@@ -20,6 +20,7 @@ export type Agent = {
   excluded_tool_names: string[]
   tool_policies: Record<string, ToolPolicyValue> | null
   allowed_agent_ids: string[]
+  subagents_enabled: boolean
   model_provider: string | null
   model: string | null
   model_settings: Record<string, unknown> | null
@@ -52,6 +53,7 @@ export type AgentCreateRequest = {
   excluded_tool_names?: string[]
   tool_policies?: Record<string, ToolPolicyValue> | null
   allowed_agent_ids?: string[]
+  subagents_enabled?: boolean
   model_provider?: string | null
   model?: string | null
   model_settings?: Record<string, unknown> | null

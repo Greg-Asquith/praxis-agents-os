@@ -2,7 +2,11 @@
 
 import { describe, expect, it } from "vitest"
 
-import { delegationDetailsForToolActivity } from "@/features/conversations/message-parts/delegation"
+import {
+  delegationDetailsForPendingApproval,
+  delegationDetailsForToolActivity,
+  mergeDelegationDetails,
+} from "@/features/conversations/message-parts/delegation"
 
 const AGENT_ID = "33333333-3333-4333-8333-333333333333"
 
@@ -44,6 +48,35 @@ describe("delegationDetailsForToolActivity", () => {
     expect(fromString?.agentName).toBeNull()
     expect(withResult?.status).toBe("completed")
     expect(withResult?.agentName).toBe("Gmail Agent")
+  })
+
+  it("names a sub-agent by its role and never by the parent's agent id", () => {
+    const details = delegationDetailsForToolActivity(
+      "run_subagent",
+      { role: "Search term researcher", instructions: "Research.", task: "Find terms" },
+      { status: "completed", agent_id: AGENT_ID, agent_name: "Search term researcher" }
+    )
+
+    expect(details?.agentId).toBeNull()
+    expect(details?.agentName).toBe("Search term researcher")
+    expect(details?.taskPreview).toBe("Find terms")
+
+    const pending = mergeDelegationDetails(
+      details,
+      delegationDetailsForPendingApproval({
+        parent_tool_call_id: "spawn-1",
+        parent_tool_name: "run_subagent",
+        child_agent_id: AGENT_ID,
+        child_agent_name: "Search term researcher",
+        child_conversation_id: "child-conversation",
+        child_run_id: "child-run",
+        pending_approval_count: 1,
+      })
+    )
+
+    expect(pending?.status).toBe("awaiting_approval")
+    expect(pending?.agentId).toBeNull()
+    expect(pending?.conversationId).toBe("child-conversation")
   })
 
   it("ignores references of another kind and other tools", () => {

@@ -2,46 +2,25 @@
 
 """Run a delegated child agent call."""
 
-import logging
 from typing import Annotated
-from uuid import UUID
 
 from pydantic import Field
-from pydantic_ai import ApprovalRequired, DeferredToolRequests, RunContext
+from pydantic_ai import RunContext
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.database import (
-    configure_async_db_session,
-    get_async_db_session_factory,
-    set_session_tenant_context,
-)
-from models.conversation import CONVERSATION_SOURCE_DELEGATED, Conversation
-from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL, RUN_TRIGGER_DELEGATED
+from models.agent_run import AgentRun
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.delegation.approvals import (
-    raise_delegate_approval_required,
-)
-from services.agents.runtime.delegation.constants import (
-    DELEGATE_TASK_MAX_LENGTH,
-    DELEGATE_TASK_PREVIEW_MAX_LENGTH,
-)
+from services.agents.runtime.delegation.child_run import ChildRunTarget, run_child_agent
+from services.agents.runtime.delegation.constants import DELEGATE_TASK_MAX_LENGTH
 from services.agents.runtime.delegation.get_visible_delegate_agent import (
     get_visible_delegate_agent,
 )
-from services.agents.runtime.delegation.results import completed_or_failed_result
 from services.agents.runtime.delegation.resume_approved_delegate_run import (
     resume_approved_delegate_run,
 )
 from services.agents.runtime.delegation.schemas import DelegateRunResult
-from services.agents.runtime.delegation.utils import (
-    safe_error,
-    truncate,
-)
+from services.agents.runtime.delegation.utils import delegation_precheck_failure
 from services.agents.runtime.entity_references.domain import AgentReference, internal_entity_id
-from services.agents.runtime.heartbeat import agent_run_owner_instance_id
-from services.agents.runtime.sinks import NullSink
-from services.agents.runtime.usage_limits import BudgetLimitExceeded, EffectiveUsageLimits
-
-logger = logging.getLogger(__name__)
 
 
 async def delegate_to_agent(
@@ -52,154 +31,54 @@ async def delegate_to_agent(
     """Run a delegated child agent call and return a bounded structured result."""
     normalized_task = task.strip()
     resolved_agent_id = internal_entity_id(agent_id)
-    if not normalized_task:
+    failure = delegation_precheck_failure(ctx, task=normalized_task, subject="Delegate task")
+    if failure is not None:
         return DelegateRunResult(
             status="failed",
             agent_id=resolved_agent_id,
             agent_name="Unknown agent",
-            error="Delegate task must not be blank.",
-        )
-
-    if ctx.deps.envelope.max_delegation_depth <= ctx.deps.delegation_depth:
-        if ctx.tool_call_approved:
-            from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
-
-            raise AgentRunResumeRequiresRecoveryError()
-        return DelegateRunResult(
-            status="failed",
-            agent_id=resolved_agent_id,
-            agent_name="Unknown agent",
-            error="Delegation depth limit reached.",
+            error=failure,
         )
 
     if ctx.tool_call_approved:
         return await resume_approved_delegate_run(
             ctx,
             agent_id=resolved_agent_id,
+            authorize_child=lambda session, child_run: _authorize_child(ctx, session, child_run),
         )
 
-    session_factory = get_async_db_session_factory()
-    session = session_factory()
-    child_run_id: UUID | None = None
-    child_conversation_id: UUID | None = None
-    target_name = "Unknown agent"
-    owner_id = agent_run_owner_instance_id()
-
-    try:
-        await configure_async_db_session(session)
-        await set_session_tenant_context(
-            session,
-            workspace_id=ctx.deps.workspace.id,
-            user_id=ctx.deps.user.id,
-        )
+    async def resolve_target(session: AsyncSession) -> ChildRunTarget:
         target = await get_visible_delegate_agent(
             session,
             caller=ctx.deps.agent,
             workspace=ctx.deps.workspace,
             target_agent_id=resolved_agent_id,
         )
-        target_name = target.name
-        child_conversation = Conversation(
-            user_id=ctx.deps.user.id,
-            workspace_id=ctx.deps.workspace.id,
-            created_by=ctx.deps.user.id,
-            title=f"Delegated to {target.name}",
-            source=CONVERSATION_SOURCE_DELEGATED,
-            active_agent_id=target.id,
-            agent_slug=target.slug,
-            metadata_json={
-                "parent_conversation_id": str(ctx.deps.conversation.id),
-                "parent_run_id": str(ctx.deps.run.id),
-                "caller_agent_id": str(ctx.deps.agent.id),
-                "target_agent_id": str(target.id),
-                "task_preview": truncate(
-                    normalized_task,
-                    DELEGATE_TASK_PREVIEW_MAX_LENGTH,
-                )[0],
-            },
-        )
-        session.add(child_conversation)
-        await session.flush()
-
-        from services.agent_runs.create import create_agent_run
-
-        child_run = await create_agent_run(
-            session,
-            conversation_id=child_conversation.id,
+        return ChildRunTarget(
             agent_id=target.id,
-            workspace_id=ctx.deps.workspace.id,
-            user_id=ctx.deps.user.id,
-            trigger=RUN_TRIGGER_DELEGATED,
-            parent_run_id=ctx.deps.run.id,
-            parent_owner_instance_id=ctx.deps.execution_control.owner_instance_id
-            if ctx.deps.execution_control
-            else ctx.deps.run.owner_instance_id,
-            delegation_depth=ctx.deps.delegation_depth + 1,
-            metadata={
-                "parent_conversation_id": str(ctx.deps.conversation.id),
-                "parent_run_id": str(ctx.deps.run.id),
-                "caller_agent_id": str(ctx.deps.agent.id),
-                "target_agent_id": str(target.id),
-                "audit_context": (ctx.deps.run.metadata_json or {}).get("audit_context"),
-                "envelope": {
-                    "side_effect_policy": ctx.deps.envelope.side_effect_policy,
-                },
-            },
-        )
-        await session.commit()
-        child_run_id = child_run.id
-        child_conversation_id = child_conversation.id
-
-        from services.agents.runtime.execute_run import execute_run
-
-        child_result = await execute_run(
-            session,
-            conversation_id=child_conversation.id,
-            run_id=child_run.id,
-            user_prompt=normalized_task,
-            sink=NullSink(run_id=child_run.id, conversation_id=child_conversation.id),
-            owner_instance_id=owner_id,
-            usage=ctx.usage,
-            inherited_usage_limits=EffectiveUsageLimits.from_sdk(ctx.usage_limits),
-            parent_metering=ctx.deps.metering,
-            root_execution=ctx.deps.execution_control,
+            agent_name=target.name,
+            agent_slug=target.slug,
+            conversation_title=f"Delegated to {target.name}",
+            conversation_metadata={"target_agent_id": str(target.id)},
+            run_metadata={"target_agent_id": str(target.id)},
         )
 
-        if child_result.run.status == RUN_STATUS_AWAITING_APPROVAL and isinstance(
-            child_result.output, DeferredToolRequests
-        ):
-            raise_delegate_approval_required(
-                agent=target,
-                run_id=child_result.run.id,
-                conversation_id=child_conversation.id,
-                deferred_tool_requests=child_result.output,
-            )
-        return completed_or_failed_result(
-            agent_name=target_name,
-            run=child_result.run,
-            conversation_id=child_result.run.conversation_id,
-            output=child_result.output,
-        )
-    except (ApprovalRequired, BudgetLimitExceeded):
-        raise
-    except Exception as exc:
-        await session.rollback()
-        logger.warning(
-            "Delegated agent run failed",
-            exc_info=True,
-            extra={
-                "agent_id": str(resolved_agent_id),
-                "child_run_id": str(child_run_id) if child_run_id else None,
-                "parent_run_id": str(ctx.deps.run.id),
-            },
-        )
-        return DelegateRunResult(
-            status="failed",
-            agent_id=resolved_agent_id,
-            agent_name=target_name,
-            run_id=child_run_id,
-            conversation_id=child_conversation_id,
-            error=safe_error(exc),
-        )
-    finally:
-        await session.close()
+    return await run_child_agent(
+        ctx,
+        task=normalized_task,
+        fallback_agent_id=resolved_agent_id,
+        fallback_agent_name="Unknown agent",
+        resolve_target=resolve_target,
+    )
+
+
+async def _authorize_child(
+    ctx: RunContext[RuntimeDeps], session: AsyncSession, child_run: AgentRun
+) -> str:
+    target = await get_visible_delegate_agent(
+        session,
+        caller=ctx.deps.agent,
+        workspace=ctx.deps.workspace,
+        target_agent_id=child_run.agent_id,
+    )
+    return target.name

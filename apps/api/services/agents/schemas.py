@@ -37,6 +37,7 @@ class AgentRead(BaseModel):
     excluded_tool_names: list[str]
     tool_policies: dict[str, str] | None = None
     allowed_agent_ids: list[UUID]
+    subagents_enabled: bool
     model_provider: str | None = None
     model: str | None = None
     model_settings: dict[str, Any] | None = None
@@ -97,6 +98,7 @@ class AgentCreateRequest(BaseModel):
     excluded_tool_names: list[str] = Field(default_factory=list, max_length=500)
     tool_policies: dict[str, ToolPolicyValue] | None = None
     allowed_agent_ids: list[UUID] = Field(default_factory=list, max_length=100)
+    subagents_enabled: bool = False
     model_provider: str | None = Field(default=None, max_length=50)
     model: str | None = Field(default=None, max_length=100)
     model_settings: dict[str, Any] | None = None
@@ -156,6 +158,7 @@ class AgentUpdateRequest(BaseModel):
     excluded_tool_names: list[str] | None = Field(default=None, max_length=500)
     tool_policies: dict[str, ToolPolicyValue] | None = None
     allowed_agent_ids: list[UUID] | None = Field(default=None, max_length=100)
+    subagents_enabled: bool | None = None
     model_provider: str | None = Field(default=None, max_length=50)
     model: str | None = Field(default=None, max_length=100)
     model_settings: dict[str, Any] | None = None

@@ -56,6 +56,7 @@ def build_runtime_agent(
     delegate_agents: Sequence[Agent] = (),
     enable_delegation: bool = True,
     force_delegation_tools: bool = False,
+    include_subagents: bool = False,
     conversation_context_block: str = "",
     core_memory_block: str = "",
     completion_contract_block: str = "",
@@ -97,6 +98,7 @@ def build_runtime_agent(
             tools=build_runtime_tools(
                 agent,
                 include_delegation=include_delegation,
+                include_subagents=include_subagents,
                 active_context=active_context,
                 skipped_tool_names=skipped_tool_names,
                 workspace=workspace,

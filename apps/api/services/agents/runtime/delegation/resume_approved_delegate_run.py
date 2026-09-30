@@ -3,11 +3,13 @@
 """Resume a delegated child run after approval."""
 
 import logging
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from pydantic import TypeAdapter
 from pydantic_ai import ApprovalRequired, DeferredToolRequests, DeferredToolResults, RunContext
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import (
     configure_async_db_session,
@@ -33,9 +35,6 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.approvals import (
     raise_delegate_approval_required,
 )
-from services.agents.runtime.delegation.get_visible_delegate_agent import (
-    get_visible_delegate_agent,
-)
 from services.agents.runtime.delegation.results import (
     completed_or_failed_result,
     fail_child_run_delegate_not_allowed,
@@ -55,7 +54,13 @@ async def resume_approved_delegate_run(
     ctx: RunContext[RuntimeDeps],
     *,
     agent_id: UUID,
+    authorize_child: Callable[[AsyncSession, AgentRun], Awaitable[str]],
 ) -> DelegateRunResult:
+    """Resume the approved child run once `authorize_child` confirms the caller may still run it.
+
+    `authorize_child` returns the child's display name, or raises NotFoundError
+    to fail the child run closed.
+    """
     from services.agent_runs.claim_child_approval import claim_child_approval
 
     metadata = ctx.tool_call_metadata
@@ -118,12 +123,7 @@ async def resume_approved_delegate_run(
             )
 
         try:
-            target = await get_visible_delegate_agent(
-                session,
-                caller=ctx.deps.agent,
-                workspace=ctx.deps.workspace,
-                target_agent_id=child_run.agent_id,
-            )
+            target_name = await authorize_child(session, child_run)
         except NotFoundError:
             await fail_child_run_delegate_not_allowed(
                 session,
@@ -135,7 +135,6 @@ async def resume_approved_delegate_run(
 
             raise AgentRunResumeRequiresRecoveryError() from None
 
-        target_name = target.name
         suspended_state = load_suspended_run_state(child_run)
         await claim_child_approval(
             session,
@@ -170,7 +169,8 @@ async def resume_approved_delegate_run(
             child_result.output, DeferredToolRequests
         ):
             raise_delegate_approval_required(
-                agent=target,
+                agent_id=child_run.agent_id,
+                agent_name=target_name,
                 run_id=child_result.run.id,
                 conversation_id=child_conversation.id,
                 deferred_tool_requests=child_result.output,

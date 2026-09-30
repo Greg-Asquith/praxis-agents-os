@@ -246,6 +246,10 @@ export function AgentForm(props: AgentFormProps) {
                   onAllowedAgentIdsChange={(allowedAgentIds) => {
                     setField("allowedAgentIds", allowedAgentIds)
                   }}
+                  onSubagentsEnabledChange={(enabled) => {
+                    setField("subagentsEnabled", enabled)
+                  }}
+                  subagentsEnabled={state.subagentsEnabled}
                 />
               ) : null}
               {activeStepId === "availability" && props.mode === "edit" ? (

@@ -71,6 +71,8 @@ class Agent(BaseModel):
     allowed_agent_ids = Column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+    # Lets the agent hand work to throwaway sub-agents it defines at run time
+    subagents_enabled = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     # Agent configuration
     model_provider = Column(String(50), nullable=True)  # Override default provider

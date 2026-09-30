@@ -38,6 +38,7 @@ async def create_builtin_agent(db: AsyncSession, *, workspace: Workspace, owner:
         created_by=owner.id,
         is_builtin=True,
         all_tools=True,
+        subagents_enabled=True,
         metadata_json={"identity_color": BUILTIN_AGENT_IDENTITY_COLOR},
     )
     db.add(agent)

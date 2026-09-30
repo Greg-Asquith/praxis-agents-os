@@ -850,6 +850,10 @@
               "title": "Parent Tool Call Id",
               "type": "string"
             },
+            "parent_tool_name": {
+              "title": "Parent Tool Name",
+              "type": "string"
+            },
             "pending_approval_count": {
               "minimum": 0,
               "title": "Pending Approval Count",
@@ -858,6 +862,7 @@
           },
           "required": [
             "parent_tool_call_id",
+            "parent_tool_name",
             "child_agent_id",
             "child_agent_name",
             "child_conversation_id",

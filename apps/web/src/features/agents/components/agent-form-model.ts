@@ -109,6 +109,7 @@ export type AgentFormState = {
   modelSelection: string
   modelSettings: Record<string, unknown>
   name: string
+  subagentsEnabled: boolean
   thinking: ThinkingSelection
   // Workspace policy, else the tool's own default; saved modes that match are not overrides.
   toolDefaultPolicies: Record<string, ToolCatalogPolicy>
@@ -169,6 +170,7 @@ export function initialAgentFormState(
     modelSelection: modelSelectionFromAgent(agent),
     modelSettings: { ...(agent?.model_settings ?? {}) },
     name: agent?.name ?? "",
+    subagentsEnabled: agent?.subagents_enabled ?? false,
     thinking: thinkingSelectionFromSettings(agent?.model_settings ?? null),
     toolDefaultPolicies: toolDefaultPolicies(toolCatalog, agent),
     toolModes: initialToolModes(toolCatalog, agent),
@@ -366,6 +368,7 @@ export function buildAgentPayload(
     model_provider: modelSelection.model_provider,
     model_settings: modelSettings,
     name,
+    subagents_enabled: state.subagentsEnabled,
     ...toolPayload,
   }
 
@@ -420,6 +423,7 @@ export function isAgentFormDirty(current: AgentFormState, initial: AgentFormStat
     current.modelSelection !== initial.modelSelection ||
     current.azureDeployment !== initial.azureDeployment ||
     current.allTools !== initial.allTools ||
+    current.subagentsEnabled !== initial.subagentsEnabled ||
     current.maxSteps !== initial.maxSteps ||
     current.isActive !== initial.isActive ||
     current.isFavorite !== initial.isFavorite ||

@@ -73,6 +73,7 @@ const agent: Agent = {
   excluded_tool_names: [],
   tool_policies: null,
   allowed_agent_ids: [],
+  subagents_enabled: false,
   model_provider: null,
   model: null,
   model_settings: null,

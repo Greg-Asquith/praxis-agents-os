@@ -20,6 +20,7 @@ from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.settle_run_family import lock_run_family
+from services.agents.runtime.subagents.build_subagent import runtime_agent_for_run
 from services.files.utils import file_for_revision, get_visible_file_revision
 from services.files.visibility import visible_file_filter
 from services.skills.utils import visible_skill_filter
@@ -49,7 +50,7 @@ async def load_run_context(
     populate_existing: bool = False,
     lock_run: bool = False,
 ) -> tuple[AgentRun, Conversation, Agent]:
-    """Load a run with its conversation and runtime agent."""
+    """Load a run with its conversation and the agent it executes as, sub-agents included."""
     run_stmt = select(AgentRun).where(
         AgentRun.id == run_id,
         AgentRun.deleted == False,  # noqa: E712
@@ -105,7 +106,8 @@ async def load_run_context(
             resource_id=str(run.agent_id),
         )
 
-    return run, conversation, agent
+    workspace = await db.get(Workspace, run.workspace_id)
+    return run, conversation, runtime_agent_for_run(run, agent, workspace=workspace)
 
 
 async def load_agent_skills(db: AsyncSession, agent: Agent) -> list[Skill]:

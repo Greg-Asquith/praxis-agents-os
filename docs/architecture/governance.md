@@ -205,9 +205,10 @@ default. _(enforced)_ The following rules define the defaults:
   `require_approval`, and schedules may explicitly opt into `allow` when
   they are expected to perform external writes. Unapproved external writes
   under `require_approval` pause through the normal approval flow, while
-  internal writes continue automatically. Delegated runs inherit the
-  parent's side-effect grant and delegation cap at child-run creation.
-  _(enforced)_
+  internal writes continue automatically. Delegated and sub-agent runs
+  inherit the parent's side-effect grant and delegation cap at child-run
+  creation. Sub-agents also inherit the parent's tool selection and
+  policies, with delegation and memory writes removed. _(enforced)_
 
 ### Root-owned approval continuations
 

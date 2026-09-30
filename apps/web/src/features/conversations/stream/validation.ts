@@ -406,6 +406,11 @@ function parseDelegation(eventName: StreamEventName, value: unknown): PendingDel
       `${field}.parent_tool_call_id`,
       delegation["parent_tool_call_id"]
     ),
+    parent_tool_name: requiredNonEmptyString(
+      eventName,
+      `${field}.parent_tool_name`,
+      delegation["parent_tool_name"]
+    ),
     child_agent_id: requiredNonEmptyString(
       eventName,
       `${field}.child_agent_id`,

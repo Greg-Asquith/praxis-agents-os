@@ -156,6 +156,7 @@ export type TaintSource = {
 
 export type PendingDelegatedApproval = {
   parent_tool_call_id: string
+  parent_tool_name: string
   child_agent_id: string
   child_agent_name: string
   child_conversation_id: string

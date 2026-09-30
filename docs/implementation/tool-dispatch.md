@@ -56,7 +56,8 @@ row that lists the discovered tools by label
 (`apps/web/src/features/conversations/components/tool-search-row.tsx`).
 Definitions that the model needs on most turns set
 `defer_loading=False`: files, memory, knowledge search and reads, skill search
-and loading, planning, delegation, `run_workflow`, and `report_completion`.
+and loading, planning, delegation, `run_subagent`, `run_workflow`, and
+`report_completion`.
 Integration, native helper, artifact, chart, skill-authoring, and
 workspace-defined tools defer. Deferral changes only schema visibility;
 selection, policy, approval, and dispatch are unchanged. Code-eligible tools

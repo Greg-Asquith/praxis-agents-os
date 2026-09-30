@@ -4,12 +4,14 @@
 
 from uuid import UUID
 
+from pydantic_ai import RunContext
 from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import NotFoundError
 from models.agent import Agent
 from models.workspace import Workspace
+from services.agents.runtime.context import RuntimeDeps
 
 
 async def load_caller_agent(
@@ -79,3 +81,19 @@ def safe_error(exc: Exception) -> str:
     if len(message) > 500:
         return f"{message[:500]}..."
     return message
+
+
+def delegation_precheck_failure(
+    ctx: RunContext[RuntimeDeps], *, task: str, subject: str
+) -> str | None:
+    """Return why a child run cannot start, or None when it can."""
+    if not task:
+        return f"{subject} must not be blank."
+    if ctx.deps.envelope.max_delegation_depth > ctx.deps.delegation_depth:
+        return None
+    # An approved resume past the depth limit cannot return a plain failure.
+    if ctx.tool_call_approved:
+        from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
+
+        raise AgentRunResumeRequiresRecoveryError()
+    return "Delegation depth limit reached."

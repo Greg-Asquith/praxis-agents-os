@@ -25,6 +25,7 @@ def test_agent_read_validates_metadata_from_orm_attribute() -> None:
         excluded_tool_names=[],
         tool_policies={"test_runtime_context": "approval"},
         allowed_agent_ids=[],
+        subagents_enabled=False,
         model_provider="openai",
         model="gpt-6-luna",
         is_active=True,

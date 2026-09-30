@@ -39,6 +39,7 @@ from services.agents.runtime.staged_tool_content import (
     tool_args_for_display,
     tool_replay_args_for_editing,
 )
+from services.agents.runtime.subagents.constants import RUN_SUBAGENT_TOOL_NAME
 
 
 @dataclass(frozen=True)
@@ -129,7 +130,7 @@ def _calls(state: SuspendedRunState) -> list[tuple[ToolCallPart, Mapping[str, An
     for call in calls:
         metadata = state.deferred_tool_requests.metadata.get(call.tool_call_id) or {}
         if (
-            call.tool_name == DELEGATE_TO_AGENT_TOOL_NAME
+            call.tool_name in (DELEGATE_TO_AGENT_TOOL_NAME, RUN_SUBAGENT_TOOL_NAME)
             and metadata.get("kind") != DELEGATED_APPROVAL_KIND
         ):
             raise invalid_approval_state("Saved delegated approval metadata is missing or invalid")
@@ -227,6 +228,7 @@ def _delegated_node(
     leaves = tuple(_leaf(child, suspended, leaf, meta) for leaf, meta in child_calls)
     delegation = PendingDelegatedApprovalRead(
         parent_tool_call_id=call.tool_call_id,
+        parent_tool_name=call.tool_name,
         child_agent_id=child.agent_id,
         child_agent_name=metadata.get("child_agent_name") or "Delegate agent",
         child_conversation_id=child.conversation_id,

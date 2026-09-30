@@ -293,6 +293,7 @@ def stream_protocol_samples() -> list[dict[str, Any]]:
             parent_tool_call_id="workflow-call",
             delegation=PendingDelegatedApprovalRead(
                 parent_tool_call_id="workflow-call",
+                parent_tool_name="delegate_to_agent",
                 child_agent_id=sample_uuid,
                 child_agent_name="Research agent",
                 child_conversation_id=sample_uuid,

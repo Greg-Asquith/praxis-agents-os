@@ -69,7 +69,7 @@ export function buildLiveToolActivities(
         agentRunId,
         kind: "approval",
         status: "awaiting_approval",
-        name: "delegate_to_agent",
+        name: delegation.parent_tool_name,
         delegate: delegationDetailsForPendingApproval(delegation),
       })
       activityIndexesById.set(

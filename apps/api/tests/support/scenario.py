@@ -131,6 +131,7 @@ async def build_scenario_agent(
     tool_names: Sequence[str] = (),
     tool_policies: Mapping[str, str] | None = None,
     allowed_agent_ids: Sequence[UUID] = (),
+    subagents_enabled: bool = False,
     trigger: Literal["interactive", "scheduled", "delegated"] = "interactive",
     metadata: dict[str, Any] | None = None,
     role: WorkspaceRole = WorkspaceRole.MEMBER,
@@ -158,6 +159,7 @@ async def build_scenario_agent(
             tool_names=list(tool_names),
             tool_policies=dict(tool_policies) if tool_policies else None,
             allowed_agent_ids=[str(value) for value in allowed_agent_ids],
+            subagents_enabled=subagents_enabled,
             model_provider="openai",
             model="gpt-6-luna",
         )

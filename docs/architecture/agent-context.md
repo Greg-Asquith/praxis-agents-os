@@ -50,6 +50,15 @@ the stored name null for the built-in agent only. Workspace creation
 and personal-workspace provisioning create the agent; migration `core_0063`
 created it for workspaces that existed before.
 
+## Sub-agent identity
+
+A sub-agent's `identity` block is the instructions its parent wrote in the
+`run_subagent` call, and a `subagent` block tells it that nobody can answer
+questions and that its final message is all the parent receives. It keeps the
+parent's core memory block and memory search, and drops the memory-saving
+guidance because it has no memory-write tools. See
+[agent runtime](agent-runtime.md#sub-agents).
+
 ## Skills
 
 Reusable _procedural_ knowledge: how an agent should perform a class of task.

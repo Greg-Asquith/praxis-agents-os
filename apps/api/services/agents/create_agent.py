@@ -81,6 +81,7 @@ async def create_agent(
             excluded_tool_names=tool_selection.excluded_tool_names,
             tool_policies=tool_selection.tool_policies,
             allowed_agent_ids=allowed_agent_ids,
+            subagents_enabled=payload.subagents_enabled,
             model_provider=model_provider,
             model=payload.model,
             model_settings=payload.model_settings,
@@ -130,6 +131,7 @@ async def create_agent(
             "all_tools": agent.all_tools,
             "excluded_tool_names": agent.excluded_tool_names,
             "allowed_agent_count": len(agent.allowed_agent_ids or []),
+            "subagents_enabled": agent.subagents_enabled,
         },
     )
     await db.refresh(agent)

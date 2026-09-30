@@ -689,9 +689,7 @@ async def test_unavailable_resumed_delegate_preserves_terminal_winner(
     from services.agent_runs.reap_abandoned import reap_abandoned_runs
     from services.agents.runtime.delegation.constants import DELEGATE_NOT_ALLOWED_ERROR_MESSAGE
 
-    resume = importlib.import_module(
-        "services.agents.runtime.delegation.resume_approved_delegate_run"
-    )
+    delegate = importlib.import_module("services.agents.runtime.delegation.delegate_to_agent")
     context = await build_scenario_agent(
         committed_db_session_factory,
         trigger="scheduled",
@@ -729,7 +727,7 @@ async def test_unavailable_resumed_delegate_preserves_terminal_winner(
             "Delegate unavailable", resource_type="agent", resource_id=str(child.id)
         )
 
-    monkeypatch.setattr(resume, "get_visible_delegate_agent", unavailable)
+    monkeypatch.setattr(delegate, "get_visible_delegate_agent", unavailable)
     with pytest.raises(AgentRunResumeRequiresRecoveryError):
         await resume_scenario(
             committed_db_session_factory,

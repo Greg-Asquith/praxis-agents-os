@@ -61,6 +61,7 @@ const agent: Agent = {
   excluded_tool_names: [],
   tool_policies: { read_file: "approval" },
   allowed_agent_ids: ["agent-2"],
+  subagents_enabled: false,
   model_provider: "openai",
   model: "gpt-5.4-mini",
   model_settings: { temperature: 0.2, thinking: "high" },
@@ -214,6 +215,7 @@ function validState(overrides: Partial<AgentFormState> = {}): AgentFormState {
     modelSelection: "openai:gpt-5.4-mini",
     modelSettings: { temperature: 0.1 },
     name: "  Launch planner  ",
+    subagentsEnabled: false,
     thinking: "low",
     toolDefaultPolicies: { read_file: "auto", send_email: "auto" },
     toolModes: {
@@ -243,6 +245,7 @@ describe("initialAgentFormState", () => {
       modelSelection: "Default",
       modelSettings: {},
       name: "",
+      subagentsEnabled: false,
       thinking: "Default",
       toolDefaultPolicies: { read_file: "auto", send_email: "approval" },
       toolModes: {
@@ -270,6 +273,7 @@ describe("initialAgentFormState", () => {
       modelSelection: "openai:gpt-5.4-mini",
       modelSettings: { temperature: 0.2, thinking: "high" },
       name: "Planner",
+      subagentsEnabled: false,
       thinking: "high",
       toolDefaultPolicies: { read_file: "auto", send_email: "approval", missing_tool: "auto" },
       toolModes: {
@@ -328,6 +332,7 @@ describe("buildAgentPayload", () => {
       model_provider: "openai",
       model_settings: { temperature: 0.1, thinking: "low" },
       name: "Launch planner",
+      subagents_enabled: false,
       tool_names: ["read_file", "send_email"],
       tool_policies: { send_email: "approval" },
     })

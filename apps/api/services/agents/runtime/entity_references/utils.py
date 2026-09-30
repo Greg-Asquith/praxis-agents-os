@@ -10,6 +10,7 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.workspace import Workspace
+from services.agents.runtime.subagents.build_subagent import runtime_agent_for_run
 
 
 async def resolve_conversation_agent(
@@ -54,4 +55,4 @@ async def resolve_conversation_agent(
             resource_type="agent",
             resource_id=str(agent_id),
         )
-    return run, agent
+    return run, (agent if run is None else runtime_agent_for_run(run, agent, workspace=workspace))

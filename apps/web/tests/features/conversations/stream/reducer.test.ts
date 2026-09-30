@@ -126,6 +126,7 @@ describe("agentStreamReducer", () => {
   it("records approval-required tool state and run status", () => {
     const delegation = {
       parent_tool_call_id: "parent-tool-1",
+      parent_tool_name: "delegate_to_agent",
       child_agent_id: "agent-2",
       child_agent_name: "Researcher",
       child_conversation_id: "conversation-2",

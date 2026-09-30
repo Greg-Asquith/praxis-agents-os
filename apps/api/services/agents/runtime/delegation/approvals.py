@@ -8,7 +8,6 @@ from uuid import UUID
 from pydantic_ai import ApprovalRequired, DeferredToolRequests
 from pydantic_core import to_jsonable_python
 
-from models.agent import Agent
 from services.agents.delegation_approval import (
     DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY,
     DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
@@ -26,7 +25,8 @@ from services.agents.runtime.staged_tool_content import (
 
 def raise_delegate_approval_required(
     *,
-    agent: Agent,
+    agent_id: UUID,
+    agent_name: str,
     run_id: UUID,
     conversation_id: UUID,
     deferred_tool_requests: DeferredToolRequests,
@@ -34,8 +34,8 @@ def raise_delegate_approval_required(
     raise ApprovalRequired(
         metadata={
             DELEGATED_APPROVAL_KIND_KEY: DELEGATED_APPROVAL_KIND,
-            DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY: str(agent.id),
-            DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY: agent.name,
+            DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY: str(agent_id),
+            DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY: agent_name,
             DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY: str(conversation_id),
             DELEGATED_APPROVAL_CHILD_RUN_ID_KEY: str(run_id),
             DELEGATED_APPROVAL_PENDING_APPROVALS_KEY: pending_approval_descriptors(

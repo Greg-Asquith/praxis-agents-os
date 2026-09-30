@@ -28,6 +28,7 @@ import { ActivityStatusBadge } from "@/features/conversations/components/tool-ac
 import { supportIdentifier } from "@/features/conversations/format"
 import { delegateAgentSummaries } from "@/features/conversations/delegation-agent-list"
 import type { DelegationToolActivity, ToolActivity } from "@/features/conversations/message-parts"
+import { RUN_SUBAGENT_TOOL_NAME } from "@/features/conversations/message-parts/delegation"
 import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 import { pluralize } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -110,7 +111,8 @@ export function DelegationToolRow({
     return null
   }
 
-  const targetLabel = delegate.agentName ?? "Delegate to Agent"
+  const isSubagent = activity.name === RUN_SUBAGENT_TOOL_NAME
+  const targetLabel = delegate.agentName ?? (isSubagent ? "Helper" : "Delegate to Agent")
   const presentation = presentationFor(activity.name)
   const toolLabel = presentation?.label ?? activity.name
   if (approvalDecision) {
@@ -146,8 +148,9 @@ export function DelegationToolRow({
     delegate.status === "unknown"
   const status = denied ? "denied" : failed ? "failed" : delegate.status
   const inProgress = status === "running" || status === "awaiting_approval"
-  const heading =
-    activity.name === DELEGATE_TO_AGENT_TOOL_NAME
+  const heading = isSubagent
+    ? `Helper: ${targetLabel}`
+    : activity.name === DELEGATE_TO_AGENT_TOOL_NAME
       ? `Conversation with ${targetLabel}`
       : `${targetLabel}: ${toolLabel}`
 

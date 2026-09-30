@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic_ai import DeferredToolResults
 from pydantic_ai.messages import (
     ModelMessage,
+    ToolCallPart,
     UserContent,
 )
 from pydantic_ai.models import Model
@@ -56,6 +57,7 @@ from services.agents.runtime.persistence import (
 )
 from services.agents.runtime.prompt import render_conversation_context_block
 from services.agents.runtime.sinks import EventSink
+from services.agents.runtime.subagents.constants import RUN_SUBAGENT_TOOL_NAME
 from services.agents.runtime.tools import list_selected_provider_keys
 from services.agents.runtime.tools.contract import RuntimeToolDefinition
 from services.agents.runtime.tools.workspace_tools import load_workspace_tool_definitions
@@ -369,6 +371,11 @@ async def build_agent_for_run(
         if message_history is not None
         else await load_message_history(db, conversation_id=conversation.id)
     )
+    # A resumed sub-agent approval needs the tool registered; its body re-checks the setting.
+    include_subagents = enable_delegation and (
+        bool(agent.subagents_enabled)
+        or RUN_SUBAGENT_TOOL_NAME in resumed_tool_names(history, deferred_tool_results)
+    )
     history_compaction = await _prepare_history_compaction(
         db,
         agent=agent,
@@ -389,6 +396,7 @@ async def build_agent_for_run(
         delegate_agents=delegate_agents,
         enable_delegation=enable_delegation,
         force_delegation_tools=force_delegation_tools,
+        include_subagents=include_subagents,
         conversation_context_block=conversation_context_block,
         core_memory_block=core_memory_block,
         completion_contract_block=completion_contract_block,
@@ -517,4 +525,19 @@ def has_delegated_deferred_results(
         isinstance(metadata, dict)
         and metadata.get(DELEGATED_APPROVAL_KIND_KEY) == DELEGATED_APPROVAL_KIND
         for metadata in deferred_tool_results.metadata.values()
+    )
+
+
+def resumed_tool_names(
+    history: Sequence[ModelMessage],
+    deferred_tool_results: DeferredToolResults | None,
+) -> frozenset[str]:
+    """Return the names of the tool calls a resume is deciding."""
+    if deferred_tool_results is None:
+        return frozenset()
+    return frozenset(
+        part.tool_name
+        for message in history
+        for part in message.parts
+        if isinstance(part, ToolCallPart) and part.tool_call_id in deferred_tool_results.approvals
     )

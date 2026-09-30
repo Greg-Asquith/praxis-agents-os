@@ -180,9 +180,7 @@ def resolve_agent_model(agent, *, workspace) -> ResolvedModel:
     pair when set, else the settings default pair. The agent's
     ``model_settings`` override the catalog defaults shallowly.
     """
-    default_provider, default_model = workspace_default_model(workspace)
-    provider = agent.model_provider or default_provider
-    model = agent.model or default_model
+    provider, model = effective_model_pair(agent, workspace=workspace)
 
     # Azure is deployment-based: the deployment name is customer-defined and not
     # part of the Python catalog, so membership is not validated for it.
@@ -205,6 +203,12 @@ def resolve_agent_model(agent, *, workspace) -> ResolvedModel:
         max_steps=max_steps,
         azure_deployment=agent.azure_deployment,
     )
+
+
+def effective_model_pair(agent, *, workspace) -> tuple[str, str]:
+    """Return the agent's provider and model with each unset column taken from the default."""
+    default_provider, default_model = workspace_default_model(workspace)
+    return agent.model_provider or default_provider, agent.model or default_model
 
 
 def workspace_default_model(workspace) -> tuple[str, str]:

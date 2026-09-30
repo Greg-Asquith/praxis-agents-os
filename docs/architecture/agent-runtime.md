@@ -114,6 +114,37 @@ Delegated child conversations use `source="agent_call"` and are excluded from th
 default conversation list; callers can still fetch them directly by id from run
 metadata or a delegation tool-result link.
 
+### Sub-agents
+
+An agent with `subagents_enabled` (on for the built-in agent, off by default
+for custom agents) gets the eager `run_subagent(role, instructions, task,
+model_tier)` tool. It hands one token-heavy task to a throwaway sub-agent and
+returns only its bounded result, so large reads and broad searches stay out of
+the parent's context. `delegate_to_agent` and `run_subagent` share
+`delegation/child_run.py`: a hidden delegated child conversation and run, a
+`NullSink`, shared usage and limits, the parent's side-effect envelope, depth
+checks, and approval bubbling. Child approvals show the role, and the tool row
+links to the child transcript.
+
+No agent row is created. The child run's `agent_id` is the parent, and
+`metadata_json["subagent"]` stores the role, instructions, and resolved model.
+`load_run_context` rebuilds a transient, unsaved `Agent` from the live parent
+row and that spec on every execution, so an approval resume uses the same
+sub-agent and model, and anything the parent has lost since spawning is lost
+too. Resume also re-checks that the parent still has sub-agents enabled and
+that the saved model ranks no higher than the parent's current effective
+model; otherwise the child fails closed and the parent recovers. The parent's
+live model settings apply only when the sub-agent's model equals the parent's
+effective model, including one inherited from the workspace default.
+
+A sub-agent has the parent's tool selection and policies, never more. The
+runtime removes delegation, `run_subagent`, and memory writes; it keeps the
+parent's core memory block and memory search. A `model_tier` picks the newest
+active model of that tier from the parent's provider; without one, it uses the
+workspace default model. A result above the parent's tier, or no match, uses
+the parent's model, and Azure parents always keep their deployment.
+Sub-agents run one at a time under the sequential tool mode.
+
 ### Run identity
 
 The generic `agent_runs` table (`models/agent_run.py`) is the universal run
@@ -514,7 +545,7 @@ CORS/cookie/CSRF for convenience:
 
 The production runtime includes scheduled and interactive runs, approval
 pause/resume, cooperative cancellation, bounded tool results, single-level
-delegation, provider retry and usage limits, history trimming and summaries,
+delegation and sub-agents, provider retry and usage limits, history trimming and summaries,
 skills, files, knowledge retrieval, memory, audited tool dispatch, and opt-in
 OpenTelemetry/Logfire instrumentation. The web app exposes the corresponding
 conversation, approval, agent, schedule, tool-catalog, and audit surfaces.

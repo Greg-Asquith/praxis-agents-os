@@ -384,6 +384,7 @@ it("renders multiple child workflows with independently owned reviewable leaves 
       derived_from_untrusted: true,
       delegation: {
         parent_tool_call_id: `delegate-${owner}`,
+        parent_tool_name: "delegate_to_agent",
         child_run_id: owner,
         child_agent_id: `agent-${owner}`,
         child_agent_name: owner,

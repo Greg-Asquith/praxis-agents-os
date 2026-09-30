@@ -35,6 +35,7 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
     class AgentValue:
         instructions = "Identity"
         is_builtin = False
+        metadata_json = None
 
     content = render_active_context_block(
         ResolvedActiveContext(entries=tuple(_entry(f"Account {index}") for index in range(100)))
@@ -47,6 +48,7 @@ def test_active_context_block_precedes_files_and_preserves_law_when_truncated() 
 
     assert [block.key for block in blocks] == [
         "identity",
+        "subagent",
         "conversation_context",
         "memory",
         "active_context",

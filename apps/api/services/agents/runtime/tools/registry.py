@@ -13,6 +13,9 @@ from services.agents.runtime.delegation.build_delegation_tools import (
     DELEGATION_TOOL_DEFINITIONS,
     build_delegation_tools,
 )
+from services.agents.runtime.subagents.build_subagent import is_subagent
+from services.agents.runtime.subagents.constants import SUBAGENT_BLOCKED_TOOL_NAMES
+from services.agents.runtime.subagents.definition import RUN_SUBAGENT_DEFINITION
 from services.agents.runtime.tools import permissions
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -35,6 +38,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 RUNTIME_TOOL_CATALOG: dict[str, RuntimeToolDefinition] = {}
+# Mounted by runtime policy rather than agent tool selection.
+RUNTIME_OWNED_TOOL_DEFINITIONS = (*DELEGATION_TOOL_DEFINITIONS, RUN_SUBAGENT_DEFINITION)
 
 
 def register_tool_definition(definition: RuntimeToolDefinition) -> None:
@@ -57,7 +62,7 @@ def get_runtime_tool_definition(name: str) -> RuntimeToolDefinition | None:
         return definition
 
     return next(
-        (definition for definition in DELEGATION_TOOL_DEFINITIONS if definition.name == name),
+        (definition for definition in RUNTIME_OWNED_TOOL_DEFINITIONS if definition.name == name),
         None,
     )
 
@@ -149,6 +154,7 @@ def build_runtime_tools(
     agent: Agent,
     *,
     include_delegation: bool = False,
+    include_subagents: bool = False,
     active_context: "ResolvedActiveContext | None" = None,
     skipped_tool_names: list[str] | None = None,
     workspace: object | None = None,
@@ -184,9 +190,10 @@ def build_runtime_tools(
     tools = []
     workflow_entries: list[tuple[RuntimeToolDefinition, ToolPolicy]] = []
     mounted_tool_names: set[str] = {RUN_WORKFLOW_TOOL_NAME}
+    blocked_tool_names = SUBAGENT_BLOCKED_TOOL_NAMES if is_subagent(agent) else frozenset()
 
     for name in tool_names:
-        if name in mounted_tool_names:
+        if name in mounted_tool_names or name in blocked_tool_names:
             continue
         mounted_tool_names.add(name)
         definition = definition_lookup.get(name)
@@ -235,6 +242,8 @@ def build_runtime_tools(
 
     if include_delegation:
         tools.extend(build_delegation_tools())
+    if include_subagents:
+        tools.append(RUN_SUBAGENT_DEFINITION.to_pydantic_tool())
 
     return tools
 
@@ -310,7 +319,7 @@ def list_tool_presentations(
     return sorted(
         (
             *RUNTIME_TOOL_CATALOG.values(),
-            *DELEGATION_TOOL_DEFINITIONS,
+            *RUNTIME_OWNED_TOOL_DEFINITIONS,
             *workspace_definitions,
         ),
         key=lambda definition: definition.name,

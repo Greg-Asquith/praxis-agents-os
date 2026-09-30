@@ -495,3 +495,21 @@ owners and admins can change its model, availability, tool policies, and
 workspace instructions, and nobody can delete it. Delegation adds no authority:
 each delegate runs with its own tools and policies under the parent's run
 envelope. Workspace settings are the control for removing a tool from it.
+
+## 11. Sub-agents
+
+`run_subagent` lets an agent write a sub-agent's instructions and task at run
+time, so injected content in the parent's context can shape what the
+sub-agent is told. The sub-agent therefore gets no authority of its own. It is
+rebuilt on every execution from the live parent row, with the parent's tool
+selection and policies, the parent's run envelope, and the root run's active
+context. Delegation, `run_subagent`, and memory writes are removed, so it
+cannot recurse, reach other agents, or plant durable memories. Every nested
+call keeps its own policy, approval, taint, and audit, and child approvals
+bubble to the parent's approval surface under the sub-agent's role. Resuming
+an approval re-checks that the parent still has sub-agents enabled and that
+the saved model still ranks no higher than the parent's effective model, and
+fails the child run closed otherwise.
+
+Residual risk: a sub-agent reads the parent's memories, and its result returns
+to the parent as a tool result. Its model never ranks above the parent's.

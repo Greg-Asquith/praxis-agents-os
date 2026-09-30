@@ -57,6 +57,7 @@ class AgentRunReviewApprovalRequest(BaseModel):
 
 class PendingDelegatedApprovalRead(BaseModel):
     parent_tool_call_id: str
+    parent_tool_name: str
     child_agent_id: UUID
     child_agent_name: str
     child_conversation_id: UUID

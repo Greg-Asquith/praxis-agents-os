@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import {
   NO_AGENT_SELECTION,
   type AgentFormState,
@@ -27,11 +28,15 @@ export function AgentDelegationSection({
   allowedAgentIds,
   currentAgentId,
   onAllowedAgentIdsChange,
+  onSubagentsEnabledChange,
+  subagentsEnabled,
 }: {
   agents: Agent[]
   allowedAgentIds: string[]
   currentAgentId: string | null
   onAllowedAgentIdsChange: (allowedAgentIds: AgentFormState["allowedAgentIds"]) => void
+  onSubagentsEnabledChange: (enabled: boolean) => void
+  subagentsEnabled: boolean
 }) {
   const [delegateSelection, setDelegateSelection] = useState(NO_AGENT_SELECTION)
   const allowedAgentIdSet = useMemo(() => new Set(allowedAgentIds), [allowedAgentIds])
@@ -76,97 +81,119 @@ export function AgentDelegationSection({
   }
 
   return (
-    <FormSection
-      description="Let this agent hand work to other agents during a run."
-      eyebrow="Optional"
-      title="Can delegate to"
-    >
-      <FieldGroup>
-        <Field>
-          <FieldLabel htmlFor="agent-delegate">Can delegate to</FieldLabel>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Select
-              disabled={availableDelegateAgents.length === 0}
-              onValueChange={(value) => {
-                setDelegateSelection(value ?? NO_AGENT_SELECTION)
-              }}
-              value={effectiveDelegateSelection}
-            >
-              <SelectTrigger id="agent-delegate" className="w-full">
-                <SelectValue placeholder="Select an active agent" />
-              </SelectTrigger>
-              <SelectContent align="start">
-                <SelectGroup>
-                  <SelectItem value={NO_AGENT_SELECTION} disabled>
-                    Select an active agent
-                  </SelectItem>
-                  {availableDelegateAgents.map((candidate) => (
-                    <SelectItem
-                      key={candidate.id}
-                      label={agentSelectLabel(candidate)}
-                      value={candidate.id}
-                    >
-                      <AgentSelectItem agent={candidate} />
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <Button
-              disabled={availableDelegateAgents.length === 0}
-              onClick={addDelegate}
-              type="button"
-              variant="outline"
-            >
-              <PlusIcon data-icon="inline-start" />
-              Allow
-            </Button>
+    <>
+      <FormSection
+        description="Let this agent hand large tasks to temporary helpers it sets up on the spot."
+        eyebrow="Optional"
+        title="Helpers"
+      >
+        <Field orientation="horizontal">
+          <div className="flex flex-1 flex-col gap-0.5">
+            <FieldLabel htmlFor="agent-subagents">Use helpers for big tasks</FieldLabel>
+            <FieldDescription>
+              Helpers use the same tools and approvals as this agent, work on one task at a time,
+              and send back only the result. Good for long research or reading many files.
+            </FieldDescription>
           </div>
-          <FieldDescription>
-            Only active agents can be added. An agent cannot delegate to itself.
-          </FieldDescription>
+          <Switch
+            checked={subagentsEnabled}
+            id="agent-subagents"
+            onCheckedChange={onSubagentsEnabledChange}
+          />
         </Field>
+      </FormSection>
+      <FormSection
+        description="Let this agent hand work to other agents during a run."
+        eyebrow="Optional"
+        title="Can delegate to"
+      >
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="agent-delegate">Can delegate to</FieldLabel>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Select
+                disabled={availableDelegateAgents.length === 0}
+                onValueChange={(value) => {
+                  setDelegateSelection(value ?? NO_AGENT_SELECTION)
+                }}
+                value={effectiveDelegateSelection}
+              >
+                <SelectTrigger id="agent-delegate" className="w-full">
+                  <SelectValue placeholder="Select an active agent" />
+                </SelectTrigger>
+                <SelectContent align="start">
+                  <SelectGroup>
+                    <SelectItem value={NO_AGENT_SELECTION} disabled>
+                      Select an active agent
+                    </SelectItem>
+                    {availableDelegateAgents.map((candidate) => (
+                      <SelectItem
+                        key={candidate.id}
+                        label={agentSelectLabel(candidate)}
+                        value={candidate.id}
+                      >
+                        <AgentSelectItem agent={candidate} />
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Button
+                disabled={availableDelegateAgents.length === 0}
+                onClick={addDelegate}
+                type="button"
+                variant="outline"
+              >
+                <PlusIcon data-icon="inline-start" />
+                Allow
+              </Button>
+            </div>
+            <FieldDescription>
+              Only active agents can be added. An agent cannot delegate to itself.
+            </FieldDescription>
+          </Field>
 
-        <div className="flex flex-col gap-2">
-          {selectedDelegateAgents.length === 0 ? (
-            <p className="bg-muted/30 text-muted-foreground rounded-lg p-3 text-sm">
-              This agent cannot delegate yet.
-            </p>
-          ) : (
-            selectedDelegateAgents.map(({ agent: selectedAgent, id }) => {
-              const label = selectedAgent?.name ?? "Unavailable agent"
-              const description =
-                selectedAgent?.description ??
-                (selectedAgent
-                  ? "Available for delegated work."
-                  : "This agent is no longer available in the current list.")
+          <div className="flex flex-col gap-2">
+            {selectedDelegateAgents.length === 0 ? (
+              <p className="bg-muted/30 text-muted-foreground rounded-lg p-3 text-sm">
+                This agent cannot delegate yet.
+              </p>
+            ) : (
+              selectedDelegateAgents.map(({ agent: selectedAgent, id }) => {
+                const label = selectedAgent?.name ?? "Unavailable agent"
+                const description =
+                  selectedAgent?.description ??
+                  (selectedAgent
+                    ? "Available for delegated work."
+                    : "This agent is no longer available in the current list.")
 
-              return (
-                <div
-                  className="flex min-w-0 items-center justify-between gap-3 rounded-md border p-3"
-                  key={id}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{label}</p>
-                    <p className="text-muted-foreground truncate text-xs">{description}</p>
-                  </div>
-                  <Button
-                    aria-label={`Remove ${label}`}
-                    onClick={() => {
-                      removeDelegate(id)
-                    }}
-                    size="icon-sm"
-                    type="button"
-                    variant="outline"
+                return (
+                  <div
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-md border p-3"
+                    key={id}
                   >
-                    <XIcon />
-                  </Button>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </FieldGroup>
-    </FormSection>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{label}</p>
+                      <p className="text-muted-foreground truncate text-xs">{description}</p>
+                    </div>
+                    <Button
+                      aria-label={`Remove ${label}`}
+                      onClick={() => {
+                        removeDelegate(id)
+                      }}
+                      size="icon-sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <XIcon />
+                    </Button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </FieldGroup>
+      </FormSection>
+    </>
   )
 }

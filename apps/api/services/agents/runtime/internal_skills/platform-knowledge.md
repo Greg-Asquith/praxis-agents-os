@@ -65,18 +65,17 @@ Every member of a workspace has one of four roles:
   files, the Knowledge Base, memory, and artifacts. Agents don't make
   changes on behalf of a read-only member.
 
-There is no screen for changing a member's role. To change one, remove the
-member and invite them again with the new role.
+To change a member's role, remove them and invite them again with the new
+role.
 
 ## The built-in agent
 
-Every workspace has one built-in agent, named after the workspace. In a team
-workspace called Acme, it is "Acme Agent". In a personal workspace, it uses
-the owner's first name, such as "Alex's Agent", or "My Agent" when no name is
-set. When the workspace is renamed, the agent's name follows.
+Every workspace has one built-in agent, named after the workspace, such as
+"Acme Agent". In a personal workspace, it uses the owner's first name, such
+as "Alex's Agent", else "My Agent". Renaming the workspace renames it.
 
 The built-in agent can use every tool the workspace allows, including tools
-added later, and can hand work to any other active agent in the workspace.
+added later, uses helpers, and can hand work to any active agent.
 
 It has a **Built-in** badge, appears first in **Agents**, and is selected by
 default in a new conversation while it is active.
@@ -105,8 +104,8 @@ To create a custom agent:
    **Advanced** holds a **Specific model**, **Thinking**, and **Max steps**.
 4. In **What can it use?**, choose its tools. A custom agent starts with no
    tools.
-5. Optional: In **Who can it work with?**, use **Can delegate to** to let it
-   hand work to other agents.
+5. Optional: In **Who can it work with?**, turn on **Use helpers for big
+   tasks** or use **Can delegate to** to let it hand work to other agents.
 6. Click **Create Agent**.
 
 In **What can it use?**, each tool has three settings:
@@ -130,7 +129,9 @@ To edit an agent later, open it from **Agents**. The edit form adds an
 can't start new runs or take on delegated work. **Favorite** is shared by
 everyone in the workspace.
 
-An agent that receives delegated work can't hand it on to another agent.
+A helper is a temporary sub-agent with the agent's tools and approvals,
+minus memory changes. It returns only its result. Delegated work can't be
+handed on.
 
 ## Conversations
 

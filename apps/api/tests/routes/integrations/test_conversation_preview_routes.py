@@ -23,9 +23,10 @@ from tests.routes.integrations.conftest import create_identity
 
 
 @pytest.fixture(autouse=True)
-def outlook_preview_provider(monkeypatch):
-    monkeypatch.setitem(PROVIDER_PLUGINS, "outlook_mail", PROVIDER)
-    monkeypatch.setitem(PROVIDER_MANIFESTS, "outlook_mail", PROVIDER.manifest)
+def outlook_preview_provider(integration_route_settings):
+    # The package fixture restores both registries; monkeypatch would undo after it and drop Outlook.
+    PROVIDER_PLUGINS["outlook_mail"] = PROVIDER
+    PROVIDER_MANIFESTS["outlook_mail"] = PROVIDER.manifest
 
 
 async def preview_context(db, identity, *, count=1, provider="outlook_mail", owner=None):

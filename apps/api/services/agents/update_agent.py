@@ -164,7 +164,11 @@ async def update_agent(
         if field_name in payload.model_fields_set:
             _set_if_changed(agent, field_name, value, changed_fields)
 
+    if "subagents_enabled" in payload.model_fields_set and payload.subagents_enabled is None:
+        raise AppValidationError("subagents_enabled cannot be null", field="subagents_enabled")
+
     for field_name in (
+        "subagents_enabled",
         "model_settings",
         "max_steps",
         "is_active",
