@@ -130,7 +130,7 @@ DEFINITION = RuntimeToolDefinition(
         "Copy original bytes from a selected SharePoint or OneDrive library into a new workspace "
         "File. Supports the Files document, text, image, and video types within their size limits. "
         "Optionally save into a named folder, creating it if needed. Returns a File reference "
-        "for editing through run_code and the source version for sharepoint_update_file. "
+        "for editing with the document tools and the source version for sharepoint_update_file. "
         "The original bytes stay out of model context."
     ),
     provider="sharepoint",

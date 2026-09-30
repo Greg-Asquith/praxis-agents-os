@@ -87,7 +87,7 @@ async def _build_revision_content(*, file: File, revision: FileRevision) -> Bina
     except (TimeoutError, DocumentConversionError) as exc:
         raise AppValidationError(
             "The attached document couldn't be read. Try again, or ask the agent to open it "
-            "with run_code.",
+            "with its document tools.",
             field="attachments",
             details={"file_id": str(file.id), "content_type": media_type},
         ) from exc

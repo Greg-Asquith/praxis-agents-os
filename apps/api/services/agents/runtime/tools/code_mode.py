@@ -54,8 +54,10 @@ Write the workflow like this:
 - A failed call raises `RuntimeError` and a denied call raises `PermissionError`; catch them to
   report partial failures. A call that needs approval pauses the workflow until someone decides,
   then resumes where it stopped. Calls run one at a time, even under `asyncio.gather`.
-- The sandbox cannot read or create files. Use `run_code`, when available, for spreadsheets,
-  documents, charts, or heavy computation over file contents.
+- The sandbox has no file access; call tools for files. `read_table` pages rows from sheets, CSV
+  files, and saved results; `read_workbook`, `read_presentation`, and `read_word_document` read
+  Office files; the `edit_*` and `create_*` document tools change and create them. Total rows here,
+  and check each edit's `readback` against what you wrote.
 - The sandbox supports classes, dataclasses, async code, and f-strings. Allowed imports are
   asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,
   math, os, pathlib, random, re, sys, time, typing, and unicodedata. There is no network,

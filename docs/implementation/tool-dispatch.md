@@ -228,7 +228,8 @@ leave that reservation available to the existing upload sweeper; uncertain
 commit outcomes do not trigger speculative object deletion.
 
 `read_file` accepts the envelope's typed reference and byte offsets.
-Configured native `run_code` helpers accept it through `file_ids`, subject
+`read_table` accepts it with a `lists` entry name and pages the saved rows as
+records. Configured native `run_code` helpers accept it through `file_ids`, subject
 to their normal policies and upload limits. OpenAI and Anthropic mount
 input files; Google uses bounded inline text. Code Mode nested calls keep
 their complete computational inputs within the sandbox's existing limits.
@@ -274,13 +275,13 @@ tools select `results.*.data.rows`, preserving headers, aggregates, sampling
 metadata, account identities, and errors. BigQuery selects its root `rows`
 list. Analytics and Ads field discovery use automatic list discovery to preview
 their field and compatibility lists.
-Their shared descriptions direct complete-data calculations to an available,
-permitted `run_code` helper and explain its provider input limits.
+Their shared descriptions direct complete-data calculations to `read_table`
+inside `run_workflow`, which pages every saved row.
 The model-facing envelope instructs the agent to read saved rows through the
 File reference and use list totals as saved-item counts.
 The envelope and report descriptions prohibit repeated or split source queries
 solely to bypass that preview. Further inspection uses `read_file`; calculations
-use `run_code` with the retained reference. These instructions describe the
+page the retained reference through `read_table` in `run_workflow`. These instructions describe the
 agent's data access, independently of the browser's complete-result control.
 If an analysis helper cannot handle the saved data, the agent explains that
 limitation instead of refetching it. Source pagination depends on provider

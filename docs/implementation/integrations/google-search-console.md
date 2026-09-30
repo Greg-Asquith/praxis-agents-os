@@ -38,7 +38,8 @@ Console HTTP client uses the credential value to authenticate site discovery.
 Search Analytics declares its public budget from the configured
 structured-result limit and previews only site row lists on overflow.
 Its description distinguishes provider pagination from retained-result
-inspection and directs calculations over saved rows to `run_code`.
+inspection and directs calculations over saved rows to `read_table` inside
+`run_workflow`.
 See the [retained-result contract](../tool-dispatch.md#retained-results-and-artifacts).
 
 Search Analytics fetches successive provider pages internally, using at most

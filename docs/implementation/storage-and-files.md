@@ -595,5 +595,5 @@ before verifying SHA-256. Changing a source through the approval File picker
 requires **Review selected File** before approval. The server retains that
 revision and rejects later source changes; it never selects a newer revision
 during execution. Platform Files require a workspace copy first. The existing
-`run_code` File bridge supplies the editing step; failed SharePoint saves keep
+document tools supply the editing step; failed SharePoint saves keep
 the edited local revision. See the [document edit procedure](integrations/microsoft-graph.md#workspace-file-sources-and-copies).

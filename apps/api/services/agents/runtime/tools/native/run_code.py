@@ -140,7 +140,9 @@ _REGISTERED_PROVIDER_LIST = format_provider_list(_REGISTERED_PROVIDERS)
         "and other files in an isolated provider sandbox. Anthropic and OpenAI can inspect and "
         "edit selected workspace documents directly; Google receives bounded text or derived "
         "Markdown for read-only computation. New files are grouped in this conversation's folder "
-        "unless you name another folder. Write an incredibly detailed brief with all required information "
+        "unless you name another folder. For .pptx, .xlsx, and .docx files, CSV files, and saved "
+        "results, use the document tools and read_table instead. "
+        "Write an incredibly detailed brief with all required information "
         "and context, the agent completing the task has no access to previous messages in the conversation."
         "Available providers: " + _REGISTERED_PROVIDER_CSV + "."
     ),

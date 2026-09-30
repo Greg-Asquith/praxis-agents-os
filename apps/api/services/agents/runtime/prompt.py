@@ -254,8 +254,8 @@ def _render_available_files(files: Sequence[AvailableFile]) -> str:
         "These workspace files are attached to this conversation. "
         "Use read_file in content mode with the id to inspect one; request url mode only when "
         "the user needs a download. Use list_files to see everything available. Documents "
-        "attached in a turn arrive as text; pass the file id to run_code when you need the "
-        "original file."
+        "attached in a turn arrive as text; to edit a .pptx, .xlsx, or .docx file or read its "
+        "structure, pass the file id to read_presentation, read_workbook, or read_word_document."
     )
     lines = [
         "## Available Files",

@@ -337,8 +337,8 @@ client-first.
 The `run_workflow` description (`tools/code_mode.py`) is the only
 model-facing guidance: the choice rules above, the last expression as the
 result, intermediate results as variables to reduce rather than payloads to
-return, the exceptions that failed and denied nested calls raise, `run_code`
-for files, and the call, time, result, and output limits rendered from the
+return, the exceptions that failed and denied nested calls raise, the
+document tools and `read_table` for files, and the call, time, result, and output limits rendered from the
 `AGENT_CODE_MODE_*` settings. Its sandbox syntax and import claims match the
 probes of the pinned interpreter
 (`tests/services/agents/runtime/code_mode/test_monty_probes.py`). Change both

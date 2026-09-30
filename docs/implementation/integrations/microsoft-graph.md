@@ -317,7 +317,7 @@ default tool row. References, provenance metadata, and download annotations
 are excluded from the view.
 
 The backend tools support copying original Office files into Files, editing
-them through `run_code`, and saving an approved replacement to SharePoint.
+them with the document tools, and saving an approved replacement to SharePoint.
 Source approval cards and copy results use the shared presenters. Manual Office format
 preservation and live tenant behaviour remain unverified.
 
@@ -517,8 +517,9 @@ expose a committed copy to cleanup. Invocation completion follows that commit.
 To edit and save an Office document:
 
 1. Call `sharepoint_copy_to_files` with the selected document reference.
-2. Edit the returned File through `run_code`. The file bridge appends a
-   revision to that File; the SharePoint document remains unchanged.
+2. Edit the returned File with `edit_presentation`, `edit_workbook`, or
+   `edit_word_document`. Each edit appends a revision to that File; the
+   SharePoint document remains unchanged.
 3. Call `sharepoint_update_file` with the original SharePoint reference,
    the copied `version` as `expected_version`, and the edited File as `source`.
 4. Review and approve the replacement. Check the returned outcome and citation.

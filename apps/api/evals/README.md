@@ -40,5 +40,16 @@ context (`active_context` in the case inputs) and check the choice between
 direct calls and `run_workflow`. The `WorkflowArguments` evaluator parses the
 workflow code and checks each tool call against the tool's argument
 validator: unknown or missing keyword arguments, and literal values that fail
-validation. The runner skips local `search_tools` calls so tool discovery
-doesn't end the case.
+validation.
+
+The `document_*` cases place a real document read or saved-report preview in
+history and check the next call. `AcceptedToolCall` passes when the first call
+is an accepted document tool, directly or inside `run_workflow`, with
+arguments that pass the tool's validator and contain the case's
+`required_argument_text`.
+
+The evals have no workspace session, so discovery and planning calls run
+without dispatch and don't end a case: `search_tools` and `load_capability`
+run normally, `search_skills` finds no workspace skills, `read_todos` finds no
+plan, and `write_todos` returns the plan without saving it. The runner stops before any other tool
+runs.

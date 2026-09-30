@@ -328,9 +328,9 @@ spreadsheets, presentations, images, and videos. To add files, click
 Documents and videos can be up to 100 MB and images up to 10 MB. Use **New
 Folder** and **Move to Folder** to organise them.
 
-Agents can read and change any workspace file, editing text directly. With **Run Code**, they create and edit spreadsheets,
-presentations, Word documents, PDFs, and charts; an edit saves a new version
-of the same file (Google models can read these files but not edit them).
+Agents can read and change any workspace file, editing text directly. They
+edit and create Excel, PowerPoint, and Word files with any model, keeping
+their template and fonts; an edit saves a new version of the same file.
 **Edit Image** saves the edited picture as a new image and keeps the
 original. Files agents create go in a conversation folder. These
 tools follow the settings on the **Tools** tab.

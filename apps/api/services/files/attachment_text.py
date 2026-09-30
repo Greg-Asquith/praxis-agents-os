@@ -56,7 +56,8 @@ def attachment_text_payload(
         f"Attached file: {file.name}\n"
         f"File id: {file.id}\n"
         f"Original format: {format_label} ({content_type}), {revision.size_bytes:,} bytes\n"
-        "This is a text conversion. To work with the original file (for example to edit "
-        "it or read charts and images), pass the file id to run_code."
+        "This is a text conversion. To edit the original .pptx, .xlsx, or .docx file, or read "
+        "its charts and images, pass the file id to read_presentation, read_workbook, or "
+        "read_word_document."
     )
     return f"{header}\n\n{markdown}".encode()

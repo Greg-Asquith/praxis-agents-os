@@ -72,6 +72,37 @@ class OutputFormat(Evaluator[dict, EvalOutput, dict]):
 
 
 @dataclass
+class AcceptedToolCall(Evaluator[dict, EvalOutput, dict]):
+    """Checks that the first call uses an accepted tool, directly or in a workflow, with valid arguments."""
+
+    def evaluate(self, ctx: EvaluatorContext[dict, EvalOutput, dict]) -> EvaluationReason:
+        metadata = ctx.metadata or {}
+        accepted = metadata.get("accepted_tools")
+        if not accepted:
+            return EvaluationReason(value=True)
+        if not ctx.output.called_tools:
+            return EvaluationReason(value=False, reason="no tool was called")
+        name, arguments = ctx.output.called_tools[0], ctx.output.tool_arguments[0]
+        if name == "run_workflow":
+            code = str(json.loads(arguments).get("code", ""))
+            called, errors = workflow_calls(code, code_eligible_tools())
+            if called.isdisjoint(accepted):
+                errors = (*errors, f"the workflow calls none of {sorted(accepted)}")
+        elif name in accepted:
+            errors = _direct_argument_errors(name, arguments)
+        else:
+            errors = (f"first call was {name}",)
+        missing = [
+            text
+            for text in metadata.get("required_argument_text", [])
+            if str(text).lower() not in arguments.lower()
+        ]
+        if missing:
+            errors = (*errors, f"arguments lack {missing}")
+        return EvaluationReason(value=not errors, reason="; ".join(errors) or None)
+
+
+@dataclass
 class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
     """Checks that a workflow calls the expected tools with valid keyword arguments."""
 
@@ -83,13 +114,17 @@ class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
             return EvaluationReason(value=False, reason="run_workflow was not called")
         arguments = ctx.output.tool_arguments[ctx.output.called_tools.index("run_workflow")]
         code = str(json.loads(arguments).get("code", ""))
-        tools = {
-            definition.name: definition.to_pydantic_tool()
-            for definition in RUNTIME_TOOL_CATALOG.values()
-            if definition.code_eligible
-        }
-        errors = workflow_argument_errors(code, tools, expected)
+        errors = workflow_argument_errors(code, code_eligible_tools(), expected)
         return EvaluationReason(value=not errors, reason="; ".join(errors) or None)
+
+
+def code_eligible_tools() -> dict[str, Tool]:
+    """Return the catalogue's code-eligible tools by name."""
+    return {
+        definition.name: definition.to_pydantic_tool()
+        for definition in RUNTIME_TOOL_CATALOG.values()
+        if definition.code_eligible
+    }
 
 
 def workflow_argument_errors(
@@ -98,10 +133,16 @@ def workflow_argument_errors(
     expected_tools: list[str],
 ) -> tuple[str, ...]:
     """Check each tool call in workflow code against the tool's argument validator."""
+    called, errors = workflow_calls(code, tools)
+    return (*errors, *(f"{name}: not called" for name in expected_tools if name not in called))
+
+
+def workflow_calls(code: str, tools: Mapping[str, Tool]) -> tuple[set[str], tuple[str, ...]]:
+    """Return the tools workflow code calls and the argument errors in those calls."""
     try:
         tree = ast.parse(code)
     except SyntaxError as exc:
-        return (f"syntax error: {exc.msg}",)
+        return set(), (f"syntax error: {exc.msg}",)
     errors: list[str] = []
     called: set[str] = set()
     for node in ast.walk(tree):
@@ -114,8 +155,18 @@ def workflow_argument_errors(
         error = _call_argument_error(node, tool)
         if error is not None:
             errors.append(f"{tool.name}: {error}")
-    errors.extend(f"{name}: not called" for name in expected_tools if name not in called)
-    return tuple(errors)
+    return called, tuple(errors)
+
+
+def _direct_argument_errors(name: str, arguments: str) -> tuple[str, ...]:
+    try:
+        RUNTIME_TOOL_CATALOG[name].to_pydantic_tool().function_schema.validator.validate_json(
+            arguments
+        )
+    except ValidationError as exc:
+        error = exc.errors(include_url=False)[0]
+        return (f"{name}: {'.'.join(map(str, error['loc']))}: {error['msg']}",)
+    return ()
 
 
 def _call_argument_error(node: ast.Call, tool: Tool) -> str | None:

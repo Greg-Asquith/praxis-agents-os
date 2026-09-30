@@ -314,6 +314,30 @@ edit every formula reads back with `calculated: false` until the workbook is
 opened in Excel. The result warns about this whenever the workbook has
 formulas.
 
+## Agent guidance
+
+Guidance lives in two places. Each tool description carries the short rules
+and the known limits that apply to that tool: read before editing, pass the
+read's `revision_id`, keep the file's formatting, write formulas for derived
+values, and compare the read-back with what was meant. The internal skill
+`runtime/internal_skills/office-documents.md` holds the longer working rules:
+which tool to use, editing someone's file rather than recreating it, checking
+every reported number in a `run_workflow` script, the approval each tainted
+write needs, and reporting the change in outcome language.
+
+Saved-result previews, report tool descriptions, attachment text, and
+`read_file` failures point at `read_table` and the Office read tools. The
+`run_workflow` description names the document tools as the way a script works
+with files.
+
+The `document_*` cases in `evals/datasets/agent_behavior.yaml` check the first
+call a model makes after a read: creating a deck from a template, adding
+formula totals to a workbook, editing a Word paragraph and commenting on it,
+and totalling a saved report with `read_table` in `run_workflow`. Their
+fixtures in `tests/fixtures/document_evals/` are real read and preview
+results. The `AcceptedToolCall` evaluator validates the call's arguments
+against the tool's schema, directly or inside a workflow.
+
 ## Worker processes
 
 `services/documents/worker.py` owns a process-local pool. The API process

@@ -22,10 +22,13 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model
+from pydantic_core import to_jsonable_python
 from pydantic_evals import Dataset
 from pydantic_evals.evaluators import LLMJudge
 
+import services.agents.runtime.capabilities as runtime_capabilities
 from evals.evaluators import (
+    AcceptedToolCall,
     EvalOutput,
     ExpectedTools,
     ForbiddenArgumentText,
@@ -54,7 +57,11 @@ FIXTURE_ROOT = Path(__file__).parents[1] / "tests"
 type EvalInputs = dict[str, Any]
 type EvalMetadata = dict[str, Any]
 type BehaviorDataset = Dataset[EvalInputs, EvalOutput, EvalMetadata]
-_LOCAL_TOOL_SEARCH_NAME = "search_tools"
+# Discovery and planning don't end a case. Evals have no workspace, so skill search finds
+# nothing and plans aren't saved.
+_LOCAL_TOOL_NAMES = frozenset(
+    {"search_tools", "load_capability", "search_skills", "read_todos", "write_todos"}
+)
 
 
 def _configured_model() -> tuple[str, str]:
@@ -101,7 +108,7 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
     ) as stream:
         async for event in stream:
             if isinstance(event, FunctionToolCallEvent):
-                if event.part.tool_name == _LOCAL_TOOL_SEARCH_NAME:
+                if event.part.tool_name in _LOCAL_TOOL_NAMES:
                     continue
                 called_tools.append(event.part.tool_name)
                 tool_arguments.append(
@@ -119,6 +126,19 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
         called_tools=tuple(called_tools),
         tool_arguments=tuple(tool_arguments),
     )
+
+
+async def _run_local_tool(_ctx, *, call, tool_def, args, handler):
+    """Runs discovery and planning tools without dispatch, which needs a workspace session."""
+    if call.tool_name not in _LOCAL_TOOL_NAMES:
+        raise RuntimeError(f"Evals stop before {call.tool_name} runs")
+    if call.tool_name == "search_skills":
+        return {"skills": [], "total": 0}
+    if call.tool_name == "read_todos":
+        return {"items": []}
+    if call.tool_name == "write_todos":
+        return {"items": to_jsonable_python(args["items"])}
+    return await handler(args)
 
 
 def _active_context_fixture(inputs: EvalInputs) -> ResolvedActiveContext | None:
@@ -213,6 +233,7 @@ def _load_dataset(judge_model: Model) -> BehaviorDataset:
     dataset = Dataset[EvalInputs, EvalOutput, EvalMetadata].from_file(
         DATASET_PATH,
         custom_evaluator_types=[
+            AcceptedToolCall,
             ExpectedTools,
             ForbiddenArgumentText,
             ForbiddenTools,
@@ -255,6 +276,7 @@ def _response_judges(judge_model: Model) -> list[LLMJudge]:
 
 async def main() -> None:
     try:
+        runtime_capabilities.dispatch_tool_execution = _run_local_tool
         assemble_runtime_catalogs()
         provider, model = _configured_model()
         await run_memory_calibration()

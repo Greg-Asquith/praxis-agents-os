@@ -119,8 +119,8 @@ async def read_file(
             else:
                 message = "The document couldn't be read."
             raise ModelRetry(
-                f"{message} You can still pass this file id to run_code to work with the "
-                "original bytes."
+                f"{message} For a .pptx, .xlsx, or .docx file, pass this file id to "
+                "read_presentation, read_workbook, or read_word_document instead."
             ) from exc
         return slice_text(
             markdown,

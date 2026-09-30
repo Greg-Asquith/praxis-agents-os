@@ -36,13 +36,15 @@ from services.documents.operations.word import WordOperation
         "Change a .docx File and save it as a new revision. Read the document first and pass "
         "its revision_id as base_revision_id; if the File changed since, nothing is saved and "
         "you read it again. Operations run in order, and nothing is saved unless all succeed. "
-        "Target a paragraph by its index from the read plus expect_text, the start of its "
-        "current text; the operation fails if they don't match. Indexes shift as earlier "
-        "operations in the same call insert or delete paragraphs. Use the document's own "
-        "styles from the read. Edits that would remove images, fields, links, or comments "
-        "fail instead; use replace_text for text inside them. Edits aren't tracked changes. "
+        "Paragraph operations, including add_comment, target a paragraph by its index from the "
+        "read plus expect_text, the start of its current text; the operation fails if they "
+        "don't match. replace_text changes every match in the body and tables and takes "
+        "neither, so make find specific. Indexes shift as earlier operations in the same call "
+        "insert or delete paragraphs. Use the document's own styles from the read. Edits that "
+        "would remove images, fields, links, or comments fail instead; use replace_text for "
+        "text inside them. Edits aren't tracked changes. "
         "The result lists each change, reads back every block it touched, and gives the new "
-        "revision_id for the next edit."
+        "revision_id for the next edit. Compare the read-back with what you meant to write."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,

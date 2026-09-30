@@ -33,13 +33,14 @@ recorded, never raised, so the audit record keeps every operation's evidence.
 
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
-directs full-report calculations to the retained File through `run_code`.
+directs full-report calculations to the retained File through `read_table`
+inside `run_workflow`.
 Reports consume all `searchStream` batches without adding a GAQL `LIMIT` or
 discarding rows. An explicit query `LIMIT` remains unchanged; the tool description
 reserves it for requested limited or top-N reports. Large successful results
 retain every row in
 the saved File, with only the model and transcript preview shortened. The agent
-uses `read_file` or `run_code` to inspect that File instead of repeating the query.
+uses `read_file` or `read_table` to inspect that File instead of repeating the query.
 All selected accounts share the smaller of the agent-file and JSON-file byte
 limits. Each response stream uses the remaining allowance, and account metadata
 counts towards the complete result. Overflow stops further accounts and fails

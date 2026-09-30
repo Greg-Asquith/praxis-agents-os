@@ -203,12 +203,67 @@ cases:
       judge_response: false
       expected_tools: ["google_analytics_run_report"]
       forbidden_tools: ["run_workflow"]
+  - name: document_deck_from_template
+    inputs:
+      prompt: "Using the Acme template you just read, create a new deck called Q3 update with a title slide, one results slide with three bullets (revenue up 12%, churn down 2 points, 40 new customers), and a closing slide inviting questions."
+      channel_fixture:
+        tool_name: read_presentation
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000247a1", label: "Acme template.pptx"}
+        fixture_path: "fixtures/document_evals/read_presentation_template.json"
+    metadata:
+      judge_response: false
+      accepted_tools: ["create_presentation"]
+      required_argument_text: ["00000000-0000-0000-0000-0000000247a1", "add_slide"]
+      forbidden_tools: ["run_code"]
+  - name: document_workbook_totals
+    inputs:
+      prompt: "Add a Total row under the regions on the Sales sheet that sums each quarter, then tell me the Q3 total."
+      channel_fixture:
+        tool_name: read_workbook
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000247b1", label: "Regional sales 2026.xlsx"}
+        fixture_path: "fixtures/document_evals/read_workbook_regional_sales.json"
+    metadata:
+      judge_response: false
+      accepted_tools: ["edit_workbook"]
+      required_argument_text: ["00000000-0000-0000-0000-0000000247b2", "=SUM("]
+      forbidden_tools: ["run_code"]
+  - name: document_word_edit_and_comment
+    inputs:
+      prompt: "In the supplier agreement, move the delivery date to 15 November 2026 and add a comment on that paragraph asking Legal to confirm the new date."
+      channel_fixture:
+        tool_name: read_word_document
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000247c1", label: "Supplier agreement.docx"}
+        fixture_path: "fixtures/document_evals/read_word_document_supplier_agreement.json"
+    metadata:
+      judge_response: false
+      accepted_tools: ["edit_word_document"]
+      required_argument_text: ["00000000-0000-0000-0000-0000000247c2", "15 November 2026", "add_comment"]
+      forbidden_tools: ["run_code"]
+  - name: document_total_retained_report
+    inputs:
+      prompt: "What was the total cost across every search term in that report? costMicros is the cost in millionths of a pound."
+      tool_names: ["google_ads_run_report"]
+      active_context:
+        - {provider_key: google_ads, resource_type: google_ads_account, external_id: "1234567890", display_name: "Example ads"}
+      channel_fixture:
+        tool_name: google_ads_run_report
+        args: {query: "SELECT search_term_view.search_term, metrics.clicks, metrics.cost_micros FROM search_term_view WHERE segments.date DURING LAST_30_DAYS"}
+        fixture_path: "fixtures/document_evals/google_ads_report_preview.json"
+    metadata:
+      judge_response: false
+      expected_tools: ["run_workflow"]
+      workflow_tools: ["read_table"]
+      forbidden_tools: ["run_code", "google_ads_run_report"]
   - name: uncertainty
     inputs:
       prompt: "State the exact contents of a file you have not read."
     metadata:
       forbidden_tools: ["write_file"]
 evaluators:
+  - AcceptedToolCall: {}
   - ExpectedTools: {}
   - ForbiddenArgumentText: {}
   - ForbiddenTools: {}

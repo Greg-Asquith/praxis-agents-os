@@ -26,6 +26,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   New files start from a workspace template or a neutral default. Workbooks
   with charts, images, custom XML, or other content an edit would remove, or
   with more than 1,500,000 cells, can't be edited yet.
+- An Office Documents skill teaches every agent to edit a person's file
+  rather than recreate it, write formulas for derived values, check every
+  figure it reports, and describe what changed. Saved reports, attachments,
+  and SharePoint copies now point agents at the document tools and
+  `read_table` instead of Run Code.
 - Meta Ads workspace connections with System User access tokens, bounded ad
   account discovery, permission-based writability, optional app-secret proof,
   and setup guidance.
