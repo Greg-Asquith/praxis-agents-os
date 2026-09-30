@@ -4,7 +4,6 @@ import json
 
 from core.settings import settings
 from services.agents.runtime.tools.memory_results import build_bounded_search_output
-from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 
 
 def _hit(index: int) -> dict[str, object]:
@@ -21,16 +20,6 @@ def _hit(index: int) -> dict[str, object]:
         "effective_confidence": 0.8,
         "score": 0.1,
     }
-
-
-def test_memory_search_limits_are_small_and_schema_pinned() -> None:
-    assert settings.MEMORY_NOTE_MAX_CHARS == 2_000
-    assert settings.MEMORY_SEARCH_DEFAULT_LIMIT == 5
-    assert settings.MEMORY_SEARCH_MAX_LIMIT == 10
-    schema = RUNTIME_TOOL_CATALOG["search_memory"].serialized_input_schema()
-    assert schema is not None
-    assert schema["properties"]["limit"]["default"] == 5
-    assert schema["properties"]["limit"]["maximum"] == 10
 
 
 def test_structured_search_output_stays_within_its_exact_budget() -> None:

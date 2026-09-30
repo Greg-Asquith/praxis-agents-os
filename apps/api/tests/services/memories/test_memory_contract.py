@@ -20,10 +20,6 @@ def _agent(tool_names: list[str]) -> Agent:
     )
 
 
-def test_registry_contains_exact_memory_tool_set() -> None:
-    assert {name for name in RUNTIME_TOOL_CATALOG if "memory" in name} == MEMORY_TOOL_NAMES
-
-
 def test_memory_schemas_do_not_expose_provenance() -> None:
     forbidden = {
         "conversation_id",

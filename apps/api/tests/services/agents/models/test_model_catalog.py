@@ -5,7 +5,6 @@
 Pure unit tests: no database, no network, no provider construction.
 """
 
-import importlib
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -17,6 +16,7 @@ from services.agents.models import (
     get_model,
     list_model_catalog,
     list_models,
+    registry as model_registry,
     resolve_agent_model,
     resolve_model_context_budget,
 )
@@ -101,23 +101,18 @@ def test_model_catalog_treats_blank_api_keys_as_unconfigured(monkeypatch):
 def test_model_catalog_excludes_deprecated_models_from_type_defaults(monkeypatch):
     _clear_model_provider_settings(monkeypatch)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-test"))
-    catalog_module = importlib.import_module("services.agents.models.list_model_catalog")
     models = list_models()
     newest_powerful = next(
         model
         for model in models
         if model.provider == PROVIDER_OPENAI and model.model_type == "powerful"
     )
-    catalog_with_deprecation = [
+    catalog_with_deprecation = tuple(
         replace(model, deprecated=True) if model == newest_powerful else model for model in models
-    ]
-    monkeypatch.setattr(
-        catalog_module,
-        "list_models",
-        lambda: [model for model in catalog_with_deprecation if not model.deprecated],
     )
+    monkeypatch.setattr(model_registry, "_CATALOG", catalog_with_deprecation)
 
-    response = catalog_module.list_model_catalog()
+    response = list_model_catalog()
     providers = {provider.provider: provider for provider in response.providers}
 
     assert newest_powerful.qualified_id not in {model.id for model in response.models}

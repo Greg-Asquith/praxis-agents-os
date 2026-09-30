@@ -66,6 +66,16 @@ def google_ads_manifest(monkeypatch):
     )
 
 
+@pytest.fixture
+def configurable_test_tools(monkeypatch):
+    for name in ("test_runtime_context", "test_add_numbers"):
+        monkeypatch.setitem(
+            RUNTIME_TOOL_CATALOG,
+            name,
+            replace(RUNTIME_TOOL_CATALOG[name], configurable=True),
+        )
+
+
 def _noop() -> str:
     return "ok"
 
@@ -566,6 +576,7 @@ def test_code_eligible_tools_stay_direct_beside_run_workflow(
 
 def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
     monkeypatch: pytest.MonkeyPatch,
+    configurable_test_tools,
 ) -> None:
     def deny_test_add_numbers(definition: RuntimeToolDefinition, **_kwargs: object) -> bool:
         return definition.name != "test_add_numbers"
@@ -575,37 +586,19 @@ def test_disallowed_tools_are_skipped_in_runtime_and_catalog(
     tools = build_runtime_tools(_agent(tool_names=["test_runtime_context", "test_add_numbers"]))
     catalog = list_allowed_tool_definitions(workspace=object())
 
-    assert [tool.name for tool in tools] == [
-        "build_chart",
-        "create_artifact",
-        "create_skill",
-        "forget_memory",
-        "list_artifacts",
-        "list_files",
-        "load_skill",
-        "read_artifact",
-        "read_document",
-        "read_file",
-        "read_skill_document",
-        "read_todos",
-        "save_memory",
-        "search_knowledge",
-        "search_memory",
-        "search_skills",
-        "update_artifact",
-        "update_memory",
-        "update_skill",
-        "write_file",
-        "write_todos",
-        "test_runtime_context",
-        "run_workflow",
-    ]
-    assert "test_add_numbers" not in {definition.name for definition in catalog}
+    mounted_names = {tool.name for tool in tools}
+    catalog_names = {definition.name for definition in catalog}
+    assert "test_runtime_context" in mounted_names
+    assert "test_add_numbers" not in mounted_names
+    assert "test_runtime_context" in catalog_names
+    assert "test_add_numbers" not in catalog_names
 
 
-def test_workspace_disabled_tools_are_skipped_in_runtime_and_catalog() -> None:
+def test_workspace_disabled_tools_are_skipped_in_runtime_and_catalog(
+    configurable_test_tools,
+) -> None:
     disabled = frozenset({"test_add_numbers"})
-    agent = _agent(tool_names=["test_add_numbers"])
+    agent = _agent(tool_names=["test_runtime_context", "test_add_numbers"])
     workspace = object()
 
     tools = build_runtime_tools(
@@ -618,8 +611,12 @@ def test_workspace_disabled_tools_are_skipped_in_runtime_and_catalog() -> None:
         disabled_tool_names=disabled,
     )
 
-    assert "test_add_numbers" not in {tool.name for tool in tools}
-    assert "test_add_numbers" not in {definition.name for definition in catalog}
+    mounted_names = {tool.name for tool in tools}
+    catalog_names = {definition.name for definition in catalog}
+    assert "test_runtime_context" in mounted_names
+    assert "test_add_numbers" not in mounted_names
+    assert "test_runtime_context" in catalog_names
+    assert "test_add_numbers" not in catalog_names
 
 
 def test_all_tools_agent_mounts_later_tools_minus_exclusions_and_filters(

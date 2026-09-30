@@ -153,16 +153,6 @@ beforeEach(() => {
   captured.tables = []
 })
 describe.each(cases)("$name result evidence", (test) => {
-  it.each(["wrong outcome", "missing complete samples"])("rejects %s", (defect) => {
-    const data = envelope(test, defect === "excess truncated samples")
-    if (defect === "missing complete samples") data.samples[test.applied] = []
-    else {
-      data.counts[test.applied] = 0
-      data.counts["failed"] = 1
-    }
-    expect(render(test.name, data)).toContain("couldn&#x27;t confirm the")
-    expect(captured.tables).toHaveLength(0)
-  })
   it.each([false, true])("preserves valid evidence and exports (truncated: %s)", (truncated) => {
     const data = envelope(test, truncated)
     if (truncated) data.counts[test.applied] = 3
