@@ -130,18 +130,18 @@ handing an agent a specific document to work on.
      images as native multimodal parts), and `write_file` (durable files;
      auto by default, approval configurable). File listing can be scoped by
      folder name and new writes can resolve or create an explicitly named
-     folder. Provider-native `run_code` groups retained File outputs in one
-     lazily created folder per conversation unless the agent names a folder;
-     artifact-only runs do not create one. Generated Files retain a
-     conversation reference so they appear in `available_files`. Artifact
+     folder. Office document create tools save new Files in one lazily
+     created folder per conversation unless the agent names a folder.
+     Generated Files retain a conversation reference so they appear in
+     `available_files`. Artifact
      drafting and versioning use `create_artifact`/`update_artifact`.
   3. Turn attachments: images and PDF files enter the user prompt as
      provider-native bytes. Every other accepted document enters as bounded
      `text/plain`, using stored Markdown when present and AnyDoc conversion of
      the current revision on demand otherwise. A provenance header names the
      file, its file ID, and its original format. The conversation file
-     reference keeps the original available through `read_file` and
-     provider-native `run_code`
+     reference keeps the original available through `read_file` and the
+     Office document tools
      (`services/files/resolve_chat_attachments.py` and
      `services/files/build_attachment_user_content.py`).
 - **Management.** `/files` routes, `services/files/`, web UI at `/files` with

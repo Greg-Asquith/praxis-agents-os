@@ -103,13 +103,10 @@ The core platform is wired end to end (API, worker, and UI):
 - Code Mode: agents can run sandboxed multi-tool scripts whose nested tool
   calls go through the same approval, audit, and provenance rules, pausing
   durably for mid-workflow approvals and resuming across restarts.
-- Provider-native code execution: agents can run heavy computation,
-  generate new spreadsheets, documents and presentations, and make
-  append-only edits to existing workspace documents (as new revisions) in an
-  isolated provider sandbox, with outputs saved as workspace files or
-  artifacts under the same approval and audit rules. Anthropic and OpenAI
-  sandboxes receive the real file bytes through a provider file bridge;
-  Google's sandbox receives bounded text or Markdown read-only.
+- Office documents: agents read, edit, and create PowerPoint, Excel, and
+  Word files, and read rows from CSV files and saved results, with any
+  configured model. Files are parsed in a bounded worker process on Praxis
+  servers; edits save a new revision under the same approval and audit rules.
 - Operations: agent schedules with a leased background worker, a generic jobs
   worker, audit and security event viewers, rotatable application encryption
   with an old-key removal proof, and an LLM model catalog.

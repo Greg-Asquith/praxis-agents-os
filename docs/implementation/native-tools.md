@@ -1,7 +1,7 @@
 # Provider-native helper tools
 
-Read this before changing native URL fetching, code execution, document
-outputs, classification, or image generation. Backend paths are relative to
+Read this before changing native web search, URL fetching, classification, or
+image generation. Backend paths are relative to
 `apps/api/services/agents/runtime/tools/`. See the
 [governance and isolation policy](../architecture/governance.md) for provider
 isolation evidence and the re-probe policy.
@@ -29,77 +29,18 @@ denylist is configured because URL Context cannot enforce domain filtering.
 The tool defaults to `auto`. When a workspace or agent requires approval, keep
 the full URL editable and visible. Never enable the local fetch fallback.
 
-## Code execution and document outputs
+## Code and Office files
 
-Selecting Google without a model override uses `gemini-3.8-flash` for
-`run_code`. Omitting both provider and model retains the eligible agent model.
-The helper uses the shared Google model factory, including Vertex credentials
-and routing when `GOOGLE_VERTEX_AI=true`. The native `codeExecution` tool is
-included in that model request; there is no separate direct-API fallback.
+No helper provider runs code. Agents run code with `run_workflow` (Code Mode,
+see [Code Mode](code-mode.md)) and work with Office files, CSV, and saved
+results through the [document tools](document-tools.md). Provider-native
+`run_code` has been removed; its dated isolation record stays in
+[governance](../architecture/governance.md).
 
 The registered GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, Claude Opus 5.5, and
 Claude Sonnet 5.5 models can use the existing eligible helper paths. Live
-capability, file-output, and sandbox network-isolation probes for these model
-versions remain pending. Earlier model probe results do not qualify these
-versions.
-
-Provider-native `run_code` is a separate helper-model tool for heavy
-computation, create-from-text document generation, and declared append-only
-edits of existing workspace documents. It is an internal
-write, defaults to `auto`, never nests with `run_workflow`, and is offered
-only for configured OpenAI, direct Anthropic, or Google providers. Anthropic
-on Vertex is excluded because the file bridge requires the Files API.
-Anthropic and
-OpenAI receive bounded authorised-revision bytes through the provider file
-bridge; Google receives bounded framed text or AnyDoc-derived Markdown.
-Generated text artifacts and governed Files persist directly. Retained File
-outputs land in one lazily created folder per conversation unless the tool
-names a folder explicitly; artifact-only runs create no folder. New Files
-receive a conversation reference, while declared edits retain the source
-file's existing folder and references. The dated provider-isolation
-probe record and re-probe policy live in `docs/architecture/governance.md`,
-not in the runtime module.
-
-Generated CSV, HTML, Markdown, and Mermaid outputs use the Artifact storage
-path. `ARTIFACT_MAX_CONTENT_BYTES` limits each output to 10 MiB (10,485,760
-UTF-8 bytes) by default. It also applies to Artifact creation and edits outside
-Run Code. Explicit environment overrides retain their configured limit.
-
-Inner sandbox executions are audited even when the helper run fails
-(calls without a return part audit as incomplete failures), provider
-downloads stream into a buffer bounded by `NATIVE_RUN_CODE_MAX_OUTPUT_FILES`
-and `NATIVE_RUN_CODE_MAX_OUTPUT_BYTES`, provider-named outputs win hash
-dedup over synthetic inline names, and `NATIVE_RUN_CODE_TIMEOUT_SECONDS`
-bounds the whole invocation.
-
-Published platform Files are valid read inputs. Conversation references pin the
-published revision; otherwise reads select the published pointer. Withdrawal
-blocks subsequent input resolution. Editing a platform input requires an
-independent workspace copy, and generated Files retain workspace ownership.
-
-Keep registry/orchestration in `native/run_code.py`, File input transport
-and provider-file lifecycle in `native/run_code_file_bridge.py`, and bounded
-capture in `native/run_code_outputs.py`. The input gate and durable output
-persistence live in `services/documents/inputs.py` and
-`services/documents/outputs.py`, which the document tools share.
-Anthropic/OpenAI inputs upload once per invocation under deterministic,
-collision-free sandbox aliases (duplicate or normalised-colliding names get a
-` (n)` suffix; the edit instruction names the exact alias) and delete
-best-effort in `finally`; provider ids and deletion outcomes persist only in
-one file-scoped audit event per upload, deliberately outside the tool-call
-roll-up so a failed deletion is never masked by the terminal tool event.
-Exclude mounted inputs
-from OpenAI container outputs by provider id before budgeting and by source
-hash as a defensive fallback. Declared edits append an agent-attributed
-revision only when capture yields exactly one output compatible with the
-source file format; the scripting model chooses its descriptive filename.
-Multiple compatible outputs fail closed as ambiguous. Retain the resolved
-input revision as the optimistic-concurrency boundary. Google stays on the
-bounded framed text/AnyDoc-Markdown read-only path. Contain helper `ModelAPIError`
-and direct Anthropic/OpenAI SDK `APIError` failures (the file bridge calls the
-SDKs outside Pydantic AI's wrapper) as safe tool failures after native-call
-auditing, provider-file cleanup, and usage recording so a provider outage
-cannot fail the parent agent run.
+capability probes for these model versions remain pending. Earlier model probe
+results do not qualify these versions.
 
 ## Classification and workspace tools
 
@@ -202,18 +143,13 @@ unavailable token counters. The helper does not replay them to recover usage.
 
 Offline adapter tests cover every native family by transport, including Google
 Vertex credentials, regions, media, grounding, and response parsing. Anthropic
-Vertex retains search and classification, while fetch and code execution remain
-excluded. Vertex partner models remain outside native helper provider sets.
-Live qualification on the upgraded SDKs and renewed code-execution capability,
-file-output, DNS, and HTTPS isolation probes remain pending. Mocked adapter
-responses do not establish project access or sandbox isolation.
+Vertex retains search and classification, while fetch remains excluded. Vertex partner models remain outside native helper provider sets.
+Live qualification on the upgraded SDKs remains pending. Mocked adapter
+responses do not establish project access.
 
-## Code output and file navigation
+## File navigation
 
-Provider-native `run_code` remains distinct from Code Mode: its settled row
-presents the bounded computation result and retained generated Files or
-artifacts, links the shared output folder when one exists, and keeps pending
-approvals on the shared declarative approval surface. The Files page keeps
+The Files page keeps
 folder scope in the `folder` search parameter; folder-scoped paging, sorting,
 file detail deep links, uploads, and single/bulk moves must preserve that
 scope. Table selection is local to the current folder and page and clears

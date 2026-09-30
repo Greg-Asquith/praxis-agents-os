@@ -26,12 +26,10 @@ policy, approval policy, output validation, bounding, usage accounting, and
 audit path as a direct call. Code mode never aggregates or weakens per-call
 decisions (see `governance.md` and `threat-model.md` §7).
 
-Code mode is distinct from provider-native computation. `run_workflow`
-combines Praxis tools in a local sandbox. The separate `run_code` capability
-performs computation and document generation in a provider sandbox. Neither
-sandbox may invoke the other. A workflow combines Praxis tools. A script runs
-one provider-sandbox computation. Both use Python, but they have different
-authority and execution boundaries.
+Code mode is the only way an agent runs code. There is no provider sandbox.
+A script has no file access; it reads and writes Office files, CSV, and saved
+results by calling the document tools, which parse bytes in a bounded worker
+process on the host.
 
 ## Enablement
 
@@ -282,8 +280,8 @@ tests.
 Every `RuntimeToolDefinition` declares `code_eligible: bool` explicitly —
 eligibility is never inferred from effect, provider, schema, or policy.
 Import-time validation forbids `True` on runtime machinery (delegation,
-always-mounted internals, `report_completion`, `run_workflow`, provider-native
-`run_code`, capability-loading tools).
+always-mounted internals, `report_completion`, `run_workflow`,
+capability-loading tools).
 
 An eligible tool must return data that is useful to compose and that Monty can
 serialize, and already be selected and allowed for the agent, workspace, and

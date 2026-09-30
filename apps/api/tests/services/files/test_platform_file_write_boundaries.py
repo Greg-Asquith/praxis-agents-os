@@ -208,30 +208,3 @@ async def test_platform_file_approved_runtime_write_returns_workspace_copy_error
     await db_session.commit()
     async with maintenance_async_db_session() as db:
         assert (await db.get(File, file.id)).revision_count == 1
-
-
-async def test_platform_file_code_output_cannot_append_platform_revision(db_session, write_context):
-    from pydantic_ai import ToolFailed
-
-    from services.documents.outputs import CapturedOutput, EditTarget, persist_sandbox_outputs
-
-    actor, workspace, _, file, _ = write_context
-    await set_session_tenant_context(db_session, workspace_id=workspace.id, user_id=actor.id)
-    deps = SimpleNamespace(db=db_session, workspace=workspace, agent=SimpleNamespace(id=uuid4()))
-    with pytest.raises(ToolFailed, match="workspace copy"):
-        await persist_sandbox_outputs(
-            deps,
-            task="Edit policy",
-            captured=[CapturedOutput(name=file.name, content=b"changed", media_type="text/plain")],
-            input_file_ids=[file.id],
-            input_revision_ids=[file.current_revision_id],
-            edit_target=EditTarget(
-                file_id=file.id,
-                revision_id=file.current_revision_id,
-                name=file.name,
-                media_type="text/plain",
-            ),
-        )
-    await db_session.commit()
-    async with maintenance_async_db_session() as db:
-        assert (await db.get(File, file.id)).revision_count == 1

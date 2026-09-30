@@ -117,61 +117,18 @@ default. _(enforced)_ The following rules define the defaults:
   They are internal writes, but any agent that can see a saved skill may
   follow it, so the tools support only the `approval` policy. Agents can
   change only the skills their user can change in the UI. _(enforced)_
-- `run_code` is an internal-effect write because it can create durable Praxis
-  Files and artifacts. It defaults to `auto` and supports `approval`; auto also
-  covers unattended scheduled computations. Only OpenAI, Anthropic, and Google are
-  eligible, each after 2026-08-14 DNS and HTTPS canary probes showed no sandbox
-  egress. Those probes used Pydantic AI 2.28.0 with Anthropic 0.113.0,
-  google-genai 2.10.0, and OpenAI 2.50.0. OpenAI `gpt-5.6-luna`, Anthropic
-  `claude-sonnet-5` (code execution 20260120), and Google
-  `gemini-3.7-flash` accepted native code execution and exposed native
-  call/return parts. Generated office documents and images were recovered
-  through OpenAI container files, Anthropic beta files, and Google inline file
-  bytes. Re-run the capability, file-output, DNS, and HTTPS probes after a
-  relevant Pydantic AI, provider SDK, or provider API change. This dated probe
-  evidence is an operator-maintained verification record, not runtime package
-  metadata or an application availability gate. _(enforced except manual
-  re-probe discipline)_
-  The Google helper default is `gemini-3.8-flash`. The dated 3.7 probe does
-  not qualify 3.8; renewed capability, file-output, DNS, and HTTPS probes
-  remain pending.
-  A 2026-08-17 Plan 157 bridge probe on those same pinned versions confirmed
-  that Anthropic and OpenAI accepted an unchanged XLSX upload, mounted the real
-  workbook at `/files/input/OPAQUE_ID/input.xlsx` and
-  `/mnt/data/OPAQUE_ID-input.xlsx` respectively, and edited it with sandbox
-  `openpyxl`. OpenAI accepted `purpose="user_data"` with a one-hour
-  `expires_after` backstop. Both bridge-active sandboxes again failed DNS and
-  HTTPS access, and both uploaded inputs were deleted successfully and returned
-  404 on a subsequent metadata read; repeating either delete also returned the
-  provider's typed 404 `NotFoundError`, which pins the non-fatal deletion-failure
-  surface. The published provider ceilings are 500 MB per Anthropic file and
-  512 MB per OpenAI file; Praxis remains materially tighter at 50 MB per input
-  and 100 MB per invocation. Uploaded inputs are fresh for every invocation,
-  named in approval evidence, deleted in `finally`, and identified durably only
-  in one file-scoped workspace audit event per upload (kept outside the
-  tool-call roll-up so deletion outcomes stay visible). OpenAI additionally supplies a one-hour expiry
-  backstop, while Anthropic inputs persist until the deletion attempt and then
-  follow Anthropic's retention policy. The first pass exposed SDK response-shape
-  drift in 059's downloader: OpenAI requires awaiting `aiter_bytes()` before
-  iterating its result, while Anthropic exposes `iter_bytes()` directly. After
-  correcting and regression-testing both shapes, edited XLSX outputs from both
-  providers downloaded within the byte budget and passed package/formula
-  validation. The final smoke also confirmed that OpenAI lists the mounted input
-  beside generated container files; capture excludes known provider input ids
-  before output budgeting and source-byte hashes as a defensive fallback, so an
-  unchanged input is never duplicated as a generated Praxis File. A Google Files
-  API control probe supplied the same XLSX both as
-  prompt content and through `CodeExecutionTool.files`; Gemini rejected it with
-  `400 INVALID_ARGUMENT` because XLSX is not a supported code-execution MIME
-  type. A second probe uploaded bounded AnyDoc-derived Markdown successfully,
-  but that prompt attachment was not mounted in Gemini's code filesystem.
-  Google therefore retains the framed inline-text path: ingestible binary
-  documents may degrade to bounded, explicitly derived Markdown for read-only
-  computation, but binary revision editing remains unavailable. Scripted runtime
-  scenarios separately confirm agent-attributed revision append and
-  optimistic-conflict preservation through the production persistence seam;
-  the revision and file-bridge operation audit events are verified at the
-  service and route layers.
+- Office document edit and create tools (`edit_presentation`,
+  `edit_workbook`, `edit_word_document`, and the matching `create_*` tools)
+  are internal writes that default to `auto`. They parse Files in a bounded
+  worker process on Praxis servers, so no workspace File bytes reach a
+  provider sandbox. An edit appends a File revision only when its base
+  revision is still current. A Code Mode script that has read File text is
+  tainted, so its edit and create calls wait for approval even under `auto`.
+  _(enforced)_
+- Historical note, 2026-09-30: provider-native `run_code`, which ran code in
+  Anthropic, OpenAI, and Google sandboxes, has been removed. Its eligibility
+  rested on dated DNS and HTTPS canary probes (2026-08-14 and 2026-08-17) that
+  showed no sandbox egress; those records no longer gate any runtime path.
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. _(enforced for integration

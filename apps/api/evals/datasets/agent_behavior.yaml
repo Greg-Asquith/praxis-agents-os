@@ -215,7 +215,6 @@ cases:
       judge_response: false
       accepted_tools: ["create_presentation"]
       required_argument_text: ["00000000-0000-0000-0000-0000000247a1", "add_slide"]
-      forbidden_tools: ["run_code"]
   - name: document_workbook_totals
     inputs:
       prompt: "Add a Total row under the regions on the Sales sheet that sums each quarter, then tell me the Q3 total."
@@ -228,7 +227,6 @@ cases:
       judge_response: false
       accepted_tools: ["edit_workbook"]
       required_argument_text: ["00000000-0000-0000-0000-0000000247b2", "=SUM("]
-      forbidden_tools: ["run_code"]
   - name: document_word_edit_and_comment
     inputs:
       prompt: "In the supplier agreement, move the delivery date to 15 November 2026 and add a comment on that paragraph asking Legal to confirm the new date."
@@ -241,7 +239,6 @@ cases:
       judge_response: false
       accepted_tools: ["edit_word_document"]
       required_argument_text: ["00000000-0000-0000-0000-0000000247c2", "15 November 2026", "add_comment"]
-      forbidden_tools: ["run_code"]
   - name: document_total_retained_report
     inputs:
       prompt: "What was the total cost across every search term in that report? costMicros is the cost in millionths of a pound."
@@ -256,7 +253,7 @@ cases:
       judge_response: false
       expected_tools: ["run_workflow"]
       workflow_tools: ["read_table"]
-      forbidden_tools: ["run_code", "google_ads_run_report"]
+      forbidden_tools: ["google_ads_run_report"]
   - name: uncertainty
     inputs:
       prompt: "State the exact contents of a file you have not read."

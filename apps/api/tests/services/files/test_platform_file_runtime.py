@@ -17,9 +17,6 @@ from services.agents.runtime.entity_references.internal import _resolve_files, _
 from services.agents.runtime.load_context import load_available_files
 from services.agents.runtime.tools.files.list_files import list_files
 from services.agents.runtime.tools.files.read_file import read_file
-from services.agents.runtime.tools.native.run_code_file_bridge import (
-    load_run_code_inputs,
-)
 from services.files import (
     create_conversation_file_references,
     resolve_chat_attachments,
@@ -182,8 +179,6 @@ async def test_platform_withdrawal_hides_attachments_search_and_tools(db_session
     assert (await list_files(ctx)).total == 0
     with pytest.raises(ModelRetry, match="not found"):
         await read_file(ctx, ref)
-    with pytest.raises(ModelRetry, match="not found"):
-        await load_run_code_inputs(ctx, [ref])
     entity_ctx = SimpleNamespace(db=db_session, workspace=context.workspace)
     assert not (await _search_files(entity_ctx, "template", {}, 25, None)).choices
     assert await _resolve_files(entity_ctx, [ref], {}) == ()

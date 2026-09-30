@@ -86,8 +86,7 @@ processing counts, and automatic conversation-file prompt listings exclude
 these snapshots. Explicitly created documents and deliverables remain visible.
 
 A conversation reference pins the initial revision. Authorised reads by
-reference, downloads, and native `run_code` input loading reuse the existing
-File paths. Retained text reads use the shared untrusted-content framing
+reference, downloads, and document tool reads reuse the existing File paths. Retained text reads use the shared untrusted-content framing
 with server-derived File and revision provenance. Hidden storage is a
 discovery distinction, not a privacy scope:
 workspace access and row-level security still govern each lookup. The File
@@ -302,7 +301,7 @@ signed capabilities retain their bounded lifetime.
 
 Conversation attachments pin the platform revision when the reference is
 created. Reattaching the same File preserves its pin. Attachment conversion,
-prompt metadata, `read_file`, and `run_code` inputs honour that pin after a
+prompt metadata, `read_file`, and the document tools honour that pin after a
 later publication. Workspace attachments retain their existing current-revision
 behaviour. References and target identifiers belong to the consuming workspace;
 another workspace cannot discover them. File tools and entity search use the

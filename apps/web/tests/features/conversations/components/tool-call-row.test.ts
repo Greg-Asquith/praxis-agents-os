@@ -90,7 +90,7 @@ describe("ToolCallRow lifecycle", () => {
       {
         id: "script-failure",
         kind: "result",
-        name: "run_code",
+        name: "unregistered_tool",
         status: "failed",
         result: '<script>alert("error")</script>',
       },

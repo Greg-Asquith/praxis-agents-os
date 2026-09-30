@@ -142,4 +142,4 @@ def test_accepted_tool_call_validates_direct_and_workflow_document_edits() -> No
         "edit_workbook",
         {**edit, "operations": [{**edit["operations"][0], "anchor": "row 8"}]},
     )
-    assert not verdict("run_code", {"task": "Add =SUM( totals"})
+    assert not verdict("write_file", {"content": "Add =SUM( totals"})

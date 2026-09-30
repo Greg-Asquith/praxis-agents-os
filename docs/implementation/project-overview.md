@@ -69,9 +69,9 @@ artifacts (dedicated immutable revisions, approval-gated agent
 tools, agent list/read/update across conversations, workspace management UI,
 append-only edit/restore flows, and
 version-pinned anonymous share links with CSP-locked serving), the tool
-catalogue, provider-native isolated code execution for computation, new document
-generation, and append-only editing of existing workspace documents, and the
-audit/security event viewers.
+catalogue, Office document tools that read, edit, and create PowerPoint, Excel,
+and Word files in a bounded worker process, and the audit/security event
+viewers.
 
 Notifications have a backend service; routes and UI are pending.
 Knowledge Base chunks and agent memories use `HALFVEC` embeddings with HNSW

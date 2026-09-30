@@ -229,9 +229,7 @@ commit outcomes do not trigger speculative object deletion.
 
 `read_file` accepts the envelope's typed reference and byte offsets.
 `read_table` accepts it with a `lists` entry name and pages the saved rows as
-records. Configured native `run_code` helpers accept it through `file_ids`, subject
-to their normal policies and upload limits. OpenAI and Anthropic mount
-input files; Google uses bounded inline text. Code Mode nested calls keep
+records. Code Mode nested calls keep
 their complete computational inputs within the sandbox's existing limits.
 Only its bounded final answer enters model context.
 

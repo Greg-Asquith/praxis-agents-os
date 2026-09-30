@@ -20,13 +20,9 @@ from core.settings import settings
 from models.conversation import Conversation
 from models.files import File, FileFolder, FileRevision, FileUpload
 from models.workspace import Workspace
-from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.entity_references.registry import get_entity_resolver
 from services.agents.runtime.load_context import load_available_files
-from services.agents.runtime.tools.native.run_code_file_bridge import (
-    build_run_code_prompt,
-    load_run_code_inputs,
-)
+from services.agents.runtime.tools.documents.utils import load_file
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from services.files.append_file_revision import append_file_revision
 from services.files.get_files_processing_summary import get_files_processing_summary
@@ -133,13 +129,8 @@ async def test_retained_rows_are_hidden_readable_and_stable(db_session_factory, 
         resolver_ctx = SimpleNamespace(db=db, workspace=workspace)
         assert (await resolver.search(resolver_ctx, "", {}, 25, None)).choices == ()
         assert len(await resolver.resolve(resolver_ctx, [preview["file_reference"]], {})) == 1
-        [input_file] = await load_run_code_inputs(
-            ctx, [FileReference.model_validate(preview["file_reference"])]
-        )
-        assert json.loads(input_file.content) == RESULT
-        prompt = await build_run_code_prompt("Sum every value.", [input_file], provider="openai")
-        assert input_file.sandbox_name in prompt
-        assert ROWS[-1]["text"] not in prompt
+        _, _, loaded = await load_file(ctx, file.id)
+        assert json.loads(loaded) == RESULT
         await append_file_revision(
             db,
             workspace=workspace,
@@ -148,11 +139,9 @@ async def test_retained_rows_are_hidden_readable_and_stable(db_session_factory, 
             actor=FileRevisionActor(user_id=context.user_id),
         )
         await db.commit()
-        [pinned_input] = await load_run_code_inputs(
-            ctx, [FileReference.model_validate(preview["file_reference"])]
-        )
-        assert pinned_input.revision_id == revision.id
-        assert pinned_input.content == stored
+        _, pinned_revision, pinned = await load_file(ctx, file.id)
+        assert pinned_revision.id == revision.id
+        assert pinned == stored
 
     followup_seen = []
     followup = await run_scenario(

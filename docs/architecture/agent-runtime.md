@@ -355,7 +355,7 @@ apps/api/
   IDs without date suffixes. Claude clients share the retrying HTTP client and
   close with Google clients during API, worker, and eval shutdown. Prompt-cache
   defaults remain enabled; Pydantic AI applies per-block caching on Vertex.
-  Native web fetch and code execution exclude Anthropic on this transport.
+  Native web fetch excludes Anthropic on this transport.
   Web search and classification remain available. Usage attribution retains
   the Anthropic provider and catalog model. Enable each model in Model Garden
   before use and select a location supported by that model.

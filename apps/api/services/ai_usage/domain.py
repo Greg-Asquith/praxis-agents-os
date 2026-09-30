@@ -17,6 +17,7 @@ PURPOSE_CLASSIFICATION = "classification"
 PURPOSE_WEB_SEARCH = "web_search"
 PURPOSE_WEB_FETCH = "web_fetch"
 PURPOSE_IMAGE_GENERATION = "image_generation"
+# Provider run_code, now removed; kept so earlier ledger rows stay valid.
 PURPOSE_CODE_EXECUTION = "code_execution"
 PURPOSE_EMBEDDING_KB_INGEST = "embedding_kb_ingest"
 PURPOSE_EMBEDDING_KB_SEARCH = "embedding_kb_search"

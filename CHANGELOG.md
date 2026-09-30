@@ -30,7 +30,7 @@ minor release. Patch releases contain backward-compatible fixes only.
   rather than recreate it, write formulas for derived values, check every
   figure it reports, and describe what changed. Saved reports, attachments,
   and SharePoint copies now point agents at the document tools and
-  `read_table` instead of Run Code.
+  `read_table`.
 - Conversation rows for the document tools show what was read, what each edit
   changed and its new version, warnings to check, and a plain summary of the
   changes in approvals, including inside Code Mode workflows.
@@ -55,7 +55,15 @@ minor release. Patch releases contain backward-compatible fixes only.
   Scripts paused for approval before the upgrade cannot resume: read-only
   scripts return a failure the agent can redraft, and scripts with completed
   changes need operator recovery. Agent guidance for Code Mode now covers when
-  to use a workflow, when to use `run_code` instead, and the configured limits.
+  to use a workflow and the configured limits.
+
+### Removed
+
+- Run Code, which sent workspace files to an Anthropic, OpenAI, or Google
+  sandbox, is gone, with its `NATIVE_RUN_CODE_*` settings. Agents work with
+  Office files, CSV, and saved results through the document tools, and do
+  maths in Code Mode. No workspace file bytes leave the deployment for code
+  execution. Earlier Run Code usage stays in the usage ledger.
 
 ### Security
 

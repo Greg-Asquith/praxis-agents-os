@@ -80,6 +80,14 @@ def report_storage(monkeypatch, tmp_path) -> Iterator[None]:
     reset_storage_provider_cache()
 
 
+@pytest.fixture
+def no_helper_providers(monkeypatch) -> None:
+    for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY", "AZURE_OPENAI_API_KEY"):
+        monkeypatch.setattr(settings, name, None)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
+
+
 @pytest_asyncio.fixture
 async def document_workers() -> AsyncIterator[None]:
     yield
@@ -87,7 +95,7 @@ async def document_workers() -> AsyncIterator[None]:
 
 
 async def test_workflow_pages_a_saved_report_and_totals_every_row(
-    db_session_factory, report_storage, document_workers
+    db_session_factory, report_storage, document_workers, no_helper_providers
 ):
     context = await build_scenario_agent(db_session_factory)
     report = {

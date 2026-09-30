@@ -8,7 +8,7 @@ from pydantic import SecretStr
 from pydantic_ai import Agent, models
 from pydantic_ai.capabilities import NativeTool
 from pydantic_ai.messages import NativeToolReturnPart
-from pydantic_ai.native_tools import CodeExecutionTool, WebFetchTool, WebSearchTool
+from pydantic_ai.native_tools import WebFetchTool, WebSearchTool
 
 from core.settings import settings
 from services.agents.models import factory
@@ -19,7 +19,7 @@ from tests.support.google_native import mock_google_native
 
 
 @pytest.mark.parametrize("vertex", [False, True], ids=["direct", "vertex"])
-@pytest.mark.parametrize("action", ["search", "fetch", "code", "classification"])
+@pytest.mark.parametrize("action", ["search", "fetch", "classification"])
 async def test_google_native_helper_wire_and_response(monkeypatch, vertex, action):
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", vertex)
@@ -28,7 +28,6 @@ async def test_google_native_helper_wire_and_response(monkeypatch, vertex, actio
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None if vertex else SecretStr("test-key"))
     model_id = {
         "classification": "gemini-3.5-flash-lite",
-        "code": "gemini-3.8-flash",
         "search": "gemini-3.8-flash",
     }.get(action, "gemini-3.7-flash")
     parts = [{"text": "Result"}]
@@ -51,12 +50,6 @@ async def test_google_native_helper_wire_and_response(monkeypatch, vertex, actio
                 }
             ]
         }
-    elif action == "code":
-        capabilities = [NativeTool(CodeExecutionTool())]
-        parts[:0] = [
-            {"executableCode": {"language": "PYTHON", "code": "print(2 + 2)"}},
-            {"codeExecutionResult": {"outcome": "OUTCOME_OK", "output": "4\n"}},
-        ]
     else:
         output_type = _classification_output_model(["yes", "no"])
         parts[:] = [
@@ -114,7 +107,7 @@ async def test_google_native_helper_wire_and_response(monkeypatch, vertex, actio
         assert declaration["name"] == "final_result"
         assert result.output.results[0].label == "yes"
     else:
-        key = {"search": "googleSearch", "fetch": "urlContext", "code": "codeExecution"}[action]
+        key = {"search": "googleSearch", "fetch": "urlContext"}[action]
         assert body["tools"] == [{key: {}}]
         assert result.output == "Result"
         returns = [
@@ -126,8 +119,6 @@ async def test_google_native_helper_wire_and_response(monkeypatch, vertex, actio
         assert len(returns) == 1
         if action == "search":
             assert _web_search_sources(result.all_messages())[0].url == "https://example.com"
-        elif action == "code":
-            assert returns[0].content["output"] == "4\n"
         else:
             assert returns[0].tool_name == "web_fetch"
     assert result.usage.input_tokens == 10
@@ -139,7 +130,6 @@ async def test_google_native_helper_wire_and_response(monkeypatch, vertex, actio
     [
         ("anthropic", False, "search"),
         ("anthropic", False, "fetch"),
-        ("anthropic", False, "code"),
         ("anthropic", True, "classification"),
         ("openai", False, "search"),
         ("openai", False, "classification"),
@@ -170,7 +160,6 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
                 {
                     "search": WebSearchTool,
                     "fetch": WebFetchTool,
-                    "code": CodeExecutionTool,
                 }[action]()
             )
         ]
@@ -270,26 +259,19 @@ async def test_anthropic_and_openai_helper_requests(monkeypatch, provider, verte
         assert result.output.results[0].label == "yes"
     else:
         tool_type = body["tools"][0]["type"]
-        expected = {
-            "search": "web_search",
-            "fetch": "web_fetch",
-            "code": "code_execution" if provider == "anthropic" else "code_interpreter",
-        }[action]
+        expected = {"search": "web_search", "fetch": "web_fetch"}[action]
         assert tool_type.startswith(expected)
         if vertex:
             assert tool_type == "web_search_20250305"
-        if provider == "openai" and action == "code":
-            assert body["tools"][0]["container"] == {"type": "auto"}
         assert result.output == "Result"
     assert result.usage.input_tokens == 10
     assert result.usage.output_tokens == 5
 
 
-@pytest.mark.parametrize("action", ["fetch", "code"])
-def test_anthropic_vertex_helper_override_fails_before_dispatch(monkeypatch, action):
+def test_anthropic_vertex_helper_override_fails_before_dispatch(monkeypatch):
     from pydantic_ai import ModelRetry
 
-    from services.agents.runtime.tools.native import run_code, web_fetch
+    from services.agents.runtime.tools.native import web_fetch
 
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "helper-probe")
@@ -297,8 +279,5 @@ def test_anthropic_vertex_helper_override_fails_before_dispatch(monkeypatch, act
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
-    resolve = (
-        web_fetch.resolve_web_fetch_model if action == "fetch" else run_code.resolve_run_code_model
-    )
     with pytest.raises(ModelRetry, match="providers are configured"):
-        resolve(None, workspace=None, model_provider="anthropic")
+        web_fetch.resolve_web_fetch_model(None, workspace=None, model_provider="anthropic")

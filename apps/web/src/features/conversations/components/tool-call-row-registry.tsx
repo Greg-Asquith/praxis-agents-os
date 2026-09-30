@@ -10,7 +10,6 @@ import { delegationToolPresenters } from "@/features/conversations/components/de
 import { fileToolPresenter } from "@/features/conversations/components/file-tool-presenter"
 import { kbToolPresenter } from "@/features/conversations/components/kb-tool-presenter"
 import { memoryToolPresenter } from "@/features/conversations/components/memory-tool-presenter"
-import { runCodeToolPresenter } from "@/features/conversations/components/run-code-tool-presenter"
 import { skillActivationPresenter } from "@/features/conversations/components/skill-activation-presenter"
 import { skillDocumentReadPresenter } from "@/features/conversations/components/skill-document-read-presenter"
 import { skillToolPresenter } from "@/features/conversations/components/skill-tool-presenter"
@@ -29,7 +28,6 @@ import { integrationToolRowPresenters } from "@/integrations/registry"
 // runtime_tool definition.
 
 const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
-  runCodeToolPresenter,
   codeModeWorkflowPresenter,
   completionReportPresenter,
   artifactToolPresenter,
