@@ -31,6 +31,9 @@ minor release. Patch releases contain backward-compatible fixes only.
   figure it reports, and describe what changed. Saved reports, attachments,
   and SharePoint copies now point agents at the document tools and
   `read_table` instead of Run Code.
+- Conversation rows for the document tools show what was read, what each edit
+  changed and its new version, warnings to check, and a plain summary of the
+  changes in approvals, including inside Code Mode workflows.
 - Meta Ads workspace connections with System User access tokens, bounded ad
   account discovery, permission-based writability, optional app-secret proof,
   and setup guidance.

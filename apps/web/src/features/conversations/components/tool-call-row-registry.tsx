@@ -5,6 +5,7 @@ import { chartToolPresenter } from "@/features/conversations/components/chart-to
 import { classifierToolPresenter } from "@/features/conversations/components/classifier-tool-presenter"
 import { codeModeWorkflowPresenter } from "@/features/conversations/components/code-mode-presenter"
 import { completionReportPresenter } from "@/features/conversations/components/completion-report-presenter"
+import { documentToolPresenter } from "@/features/conversations/components/document-tool-presenter"
 import { delegationToolPresenters } from "@/features/conversations/components/delegation-tool-presenter"
 import { fileToolPresenter } from "@/features/conversations/components/file-tool-presenter"
 import { kbToolPresenter } from "@/features/conversations/components/kb-tool-presenter"
@@ -43,6 +44,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   toolSearchPresenter,
   ...todoToolPresenters,
   fileToolPresenter,
+  documentToolPresenter,
   kbToolPresenter,
   memoryToolPresenter,
 ]

@@ -5,10 +5,9 @@ Document tools read, edit, and create `.pptx`, `.xlsx`, and `.docx` Files with
 attacker-controlled input, so every library call runs in a bounded worker
 process, never in the API or worker process itself.
 
-Status: the hardened worker runtime, the read tools, and the edit and create
-tools are implemented. Web presenters for document tools are pending (plan
-247 slice C1), so their rows use the generic tool rendering. The bundled
-default templates are pending review by a layout designer.
+Status: the hardened worker runtime, the read tools, the edit and create
+tools, and their conversation rows are implemented. The bundled default
+templates are pending review by a layout designer.
 
 ## Read tools
 
@@ -337,6 +336,33 @@ and totalling a saved report with `read_table` in `run_workflow`. Their
 fixtures in `tests/fixtures/document_evals/` are real read and preview
 results. The `AcceptedToolCall` evaluator validates the call's arguments
 against the tool's schema, directly or inside a workflow.
+
+## Conversation rows
+
+Every document tool renders one row family,
+`apps/web/src/features/conversations/components/document-tool-row.tsx`, with
+parsers in `native-tools/document-tools.ts`. Completed calls render as result
+cards with the File, a Details popover, and an outcome badge, as the other
+file tools do, including inside Code Mode workflows. A result shape the
+parsers don't recognise, such as a bounded preview of an oversized read,
+falls back to the generic row.
+
+- Reads show the File, the part read (such as "Slides 1–5 of 12" or
+  "Sales, A1:F200"), whether more remains, and slide titles, sheet names, or
+  headings. `read_table` adds a five-row preview.
+- `view_document_image` shows the File and the image reference. The stream
+  drops image bytes, so the row has no thumbnail of the embedded image.
+- Edit and create approvals show the declared fields and one phrase per
+  operation kind with counts, such as "Write 12 cells in Sales", never the
+  raw operations.
+- Completed edits link "Saved as version N" to the File's history and list
+  the first five changes. Creates show the new File, its folder, and the
+  template named in the call. A result with warnings opens its card and
+  shows them first, and read-back values sit in collapsed details.
+- A stale base shows that the File changed after the agent read it and
+  nothing was saved; other refusals show the tool's message.
+
+File text, names, and read-back values render as plain text only.
 
 ## Worker processes
 
