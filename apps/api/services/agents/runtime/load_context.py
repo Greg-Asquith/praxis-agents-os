@@ -16,14 +16,12 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from models.conversation import Conversation
 from models.files import File, FileFolder, FileReference
-from models.skills import Skill
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agent_runs.settle_run_family import lock_run_family
 from services.agents.runtime.subagents.build_subagent import runtime_agent_for_run
 from services.files.utils import file_for_revision, get_visible_file_revision
 from services.files.visibility import visible_file_filter
-from services.skills.utils import visible_skill_filter
 from utils.content import ContentScope
 
 logger = logging.getLogger(__name__)
@@ -108,49 +106,6 @@ async def load_run_context(
 
     workspace = await db.get(Workspace, run.workspace_id)
     return run, conversation, runtime_agent_for_run(run, agent, workspace=workspace)
-
-
-async def load_agent_skills(db: AsyncSession, agent: Agent) -> list[Skill]:
-    """Load active, non-deleted skills assigned to an agent, preserving order."""
-    if not agent.skill_ids:
-        return []
-
-    skill_ids: list[UUID] = []
-    for raw_value in agent.skill_ids:
-        try:
-            skill_ids.append(UUID(str(raw_value)))
-        except ValueError:
-            logger.warning(
-                "Skipping malformed agent skill id",
-                extra={"agent_id": str(agent.id), "skill_id": str(raw_value)},
-            )
-
-    if not skill_ids:
-        return []
-
-    unique_skill_ids = list(dict.fromkeys(skill_ids))
-    rows = (
-        await db.scalars(
-            select(Skill).where(
-                Skill.id.in_(unique_skill_ids),
-                visible_skill_filter(agent.workspace_id),
-                Skill.deleted == False,  # noqa: E712
-                Skill.is_active.is_(True),
-            )
-        )
-    ).all()
-    rows_by_id = {skill.id: skill for skill in rows}
-    missing_ids = [skill_id for skill_id in unique_skill_ids if skill_id not in rows_by_id]
-    if missing_ids:
-        logger.warning(
-            "Agent skill ids did not resolve to active skills",
-            extra={
-                "agent_id": str(agent.id),
-                "missing_skill_ids": [str(skill_id) for skill_id in missing_ids],
-            },
-        )
-
-    return [rows_by_id[skill_id] for skill_id in unique_skill_ids if skill_id in rows_by_id]
 
 
 async def load_available_files(

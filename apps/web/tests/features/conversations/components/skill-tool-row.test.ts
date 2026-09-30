@@ -45,10 +45,7 @@ describe("SkillToolRow", () => {
     })
 
     expect(html).toContain('href="/skills/skill-1"')
-    expect(html).toContain(">shared-report<")
     expect(html).not.toContain('href="/skills/undefined"')
-    expect(html).toContain("Owned by Alex")
-    expect(html).not.toContain("Owned by Sam")
   })
 })
 

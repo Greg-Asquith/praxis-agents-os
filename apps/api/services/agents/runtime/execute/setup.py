@@ -358,8 +358,9 @@ async def build_agent_for_run(
     inherited_usage_limits: EffectiveUsageLimits | None = None,
 ) -> BuiltRuntimeAgent:
     enable_delegation = run.trigger != RUN_TRIGGER_DELEGATED
+    # Only presence matters here; the tools list delegates themselves.
     delegate_agents = (
-        await list_visible_delegate_agents(db, caller=agent, workspace=workspace)
+        await list_visible_delegate_agents(db, caller=agent, workspace=workspace, limit=1)
         if enable_delegation
         else []
     )

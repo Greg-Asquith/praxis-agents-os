@@ -13,10 +13,6 @@ an ordinary tool return. A document can be read only after a successful
 `load_skill` for that skill appears in the conversation's history. Internal
 skills remain deferred capabilities loaded with `load_capability`.
 
-Conversations from before migration `core_0059` may contain `load_capability`
-records for removed `skill-UUID` capabilities. They replay as ordinary history
-and are not converted.
-
 ## Context pressure and history retention
 
 Runtime setup estimates loaded history and assembled instructions against the

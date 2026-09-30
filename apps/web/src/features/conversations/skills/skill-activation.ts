@@ -1,13 +1,10 @@
 // apps/web/src/features/conversations/skills/skill-activation.ts
 
-import type { Skill } from "@/features/skills/types"
 import { isRecord } from "@/lib/guards"
 
 export const LOAD_CAPABILITY_TOOL_NAME = "load_capability"
 export const LOAD_SKILL_TOOL_NAME = "load_skill"
 const INTERNAL_SKILL_CAPABILITY_PREFIX = "internal-"
-
-type SkillActivationDisplay = Pick<Skill, "human_name" | "name">
 
 export function loadedSkillNameFromArgs(args: unknown): string | null {
   const value = recordArg(args, "name")?.trim()
@@ -24,21 +21,10 @@ export function internalSkillLabelFromCapabilityArgs(args: unknown): string | nu
     return null
   }
   const name = capabilityId.slice(INTERNAL_SKILL_CAPABILITY_PREFIX.length).trim()
-  return name ? sentenceFromIdentifier(name) : null
+  return name ? skillActivationDisplayName(name) : null
 }
 
-export function skillActivationDisplayName(
-  skill: SkillActivationDisplay | null | undefined,
-  fallbackName: string
-) {
-  const humanName = skill?.human_name?.trim()
-  if (humanName) {
-    return humanName
-  }
-  return sentenceFromIdentifier(fallbackName)
-}
-
-function sentenceFromIdentifier(name: string) {
+export function skillActivationDisplayName(name: string) {
   const words = name.replaceAll("-", " ")
   return words.charAt(0).toUpperCase() + words.slice(1)
 }

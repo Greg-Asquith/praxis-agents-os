@@ -121,13 +121,13 @@ async def test_tool_catalog_route_exposes_generate_image_for_supported_provider(
         assert "generate_image_from_video" not in tools
 
 
-@pytest.mark.parametrize("role", [WorkspaceRole.ADMIN])
 async def test_tool_availability_route_allows_workspace_managers(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
-    role: WorkspaceRole,
 ) -> None:
-    _user, _workspace, headers = await _authenticated_workspace(db_session, role=role)
+    _user, _workspace, headers = await _authenticated_workspace(
+        db_session, role=WorkspaceRole.ADMIN
+    )
 
     response = await db_async_client.put(
         "/api/v1/tools/web_search/availability",
@@ -143,13 +143,13 @@ async def test_tool_availability_route_allows_workspace_managers(
     assert "web_search" not in {entry["name"] for entry in catalog_response.json()["tools"]}
 
 
-@pytest.mark.parametrize("role", [WorkspaceRole.MEMBER])
 async def test_tool_settings_routes_reject_non_managers(
     db_session: AsyncSession,
     db_async_client: AsyncClient,
-    role: WorkspaceRole,
 ) -> None:
-    _user, _workspace, headers = await _authenticated_workspace(db_session, role=role)
+    _user, _workspace, headers = await _authenticated_workspace(
+        db_session, role=WorkspaceRole.MEMBER
+    )
 
     availability = await db_async_client.put(
         "/api/v1/tools/web_search/availability",
@@ -162,8 +162,11 @@ async def test_tool_settings_routes_reject_non_managers(
         json={"policy": "approval"},
     )
 
+    settings_list = await db_async_client.get("/api/v1/tools/settings", headers=headers)
+
     assert availability.status_code == 403
     assert policy.status_code == 403
+    assert settings_list.status_code == 403
 
 
 async def test_tool_presentations_route_returns_every_first_party_runtime_tool(

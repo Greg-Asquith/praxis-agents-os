@@ -49,7 +49,7 @@ class SkillRead(BaseModel):
         # Read only an already-loaded creator so serialisation never lazy-loads.
         creator = skill.__dict__.get("creator")
         if creator is not None:
-            response.created_by_name = creator.display_name or creator.email
+            response.created_by_name = creator.display_name
         return response
 
 

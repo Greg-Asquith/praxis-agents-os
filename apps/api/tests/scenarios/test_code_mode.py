@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import BaseModel, Field
-from pydantic_ai import DeferredToolResults, Tool, ToolApproved
+from pydantic_ai import DeferredToolResults, ToolApproved
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -41,7 +41,6 @@ from services.agents.runtime.staged_tool_content import (
 )
 from services.agents.runtime.tools.code_mode import (
     RUN_WORKFLOW_TOOL_NAME,
-    build_run_workflow_tool,
 )
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -346,13 +345,11 @@ async def test_workflow_cannot_call_a_tool_the_agent_has_not_mounted(
     assert not any(row.tool_name == "scenario_code_read_second" for row in result.audit_rows)
 
 
-async def test_gated_stub_suspends_without_partial_effect(
+async def test_gated_nested_call_suspends_without_partial_effect(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    _force_only_nested_tool(monkeypatch, definition, policy=TOOL_POLICY_APPROVAL)
     seen_requests = []
     context = await build_scenario_agent(
         db_session_factory,
@@ -1244,13 +1241,11 @@ async def test_tainted_scheduled_write_requires_review_even_with_allow_grant(
     assert pending_audit.details["taint_sources"][0]["source_ref"] == "hostile_tool_result.json"
 
 
-async def test_read_only_role_is_rechecked_inside_forced_write_stub(
+async def test_read_only_role_is_rechecked_inside_nested_write(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     definition = _definition(code_mode_scenario_tools, "scenario_code_forced_write")
-    _force_only_nested_tool(monkeypatch, definition, policy=TOOL_POLICY_AUTO)
     context = await build_scenario_agent(
         db_session_factory,
         tool_names=[definition.name],
@@ -1331,27 +1326,6 @@ async def _resume_code_mode_scenario(
             },
         ),
     )
-
-
-def _force_only_nested_tool(
-    monkeypatch: pytest.MonkeyPatch,
-    definition: RuntimeToolDefinition,
-    *,
-    policy: str,
-) -> None:
-    from services.agents.runtime import loop
-
-    original = loop.build_runtime_tools
-
-    def forced_build(*args: Any, **kwargs: Any) -> list[Tool[Any]]:
-        tools = original(*args, **kwargs)
-        filtered = [
-            tool for tool in tools if tool.name not in {definition.name, RUN_WORKFLOW_TOOL_NAME}
-        ]
-        catalog = ((definition, policy),)  # type: ignore[arg-type]
-        return [*filtered, build_run_workflow_tool(catalog)]
-
-    monkeypatch.setattr(loop, "build_runtime_tools", forced_build)
 
 
 async def test_google_ads_pause_then_failed_create_keeps_separate_approvals_and_evidence(

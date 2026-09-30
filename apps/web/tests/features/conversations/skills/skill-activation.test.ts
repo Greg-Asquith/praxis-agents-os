@@ -15,9 +15,6 @@ describe("skill activation labels", () => {
 
     const name = loadedSkillNameFromArgs('{"name":"weekly-report"}')
     expect(name).toBe("weekly-report")
-    expect(skillActivationDisplayName(undefined, name ?? "")).toBe("Weekly report")
-    expect(
-      skillActivationDisplayName({ human_name: "Weekly Report", name: "weekly-report" }, "x")
-    ).toBe("Weekly Report")
+    expect(skillActivationDisplayName(name ?? "")).toBe("Weekly report")
   })
 })

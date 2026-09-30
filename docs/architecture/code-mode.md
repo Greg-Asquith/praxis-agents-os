@@ -61,8 +61,7 @@ carries short, absolute rules:
   deciding the next step.
 - Use `run_workflow` for three or more calls, loops over results, or filtering
   and aggregating data you don't need to read.
-- Never wrap a single call in a workflow unless you are filtering or
-  aggregating its result.
+- Never wrap a single call in a workflow.
 - Search for a deferred tool before using it, directly or in a workflow, so
   you know its arguments.
 

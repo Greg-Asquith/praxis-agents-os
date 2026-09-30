@@ -5,7 +5,6 @@ import { Link } from "@tanstack/react-router"
 import { FileTextIcon, SparklesIcon } from "lucide-react"
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
-import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -39,14 +38,10 @@ const VISIBLE_SKILL_LIMIT = 5
 
 export function SkillToolRow({ activity, defaultOpen }: SkillToolRowProps) {
   const isSearch = activity.name === SEARCH_SKILLS_TOOL_NAME
-  if (activity.status === "running" || activity.status === "awaiting_approval") {
+  if (activity.status === "running") {
     return <SkillPendingRow activity={activity} />
   }
-  if (
-    activity.status === "failed" ||
-    activity.status === "denied" ||
-    activity.status === "unknown"
-  ) {
+  if (activity.status !== "completed") {
     return <SkillFailureRow activity={activity} />
   }
   if (isSearch) {
@@ -219,7 +214,7 @@ function SkillPendingRow({ activity }: Pick<SkillToolRowProps, "activity">) {
   return (
     <FanOutSkeleton
       heading={<SkillHeading>{state.heading}</SkillHeading>}
-      label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
+      label={state.runningLabel}
       {...(state.summary ? { summary: state.summary } : {})}
     />
   )
@@ -233,23 +228,16 @@ function SkillFailureRow({ activity }: Pick<SkillToolRowProps, "activity">) {
       : "The skill lookup did not finish. No result was confirmed."
   return (
     <ToolResultCard
-      ariaLabel={`${state.heading} ${activity.status === "denied" ? "declined" : "failed"}`}
+      ariaLabel={`${state.heading} failed`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
       heading={<SkillHeading>{state.heading}</SkillHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
-      {activity.status === "denied" ? (
-        <DeclinedResult
-          description="This skill lookup was declined. Nothing was read."
-          reason={activity.decisionReason}
-        />
-      ) : (
-        <Alert variant="destructive">
-          <AlertTitle>What Went Wrong</AlertTitle>
-          <AlertDescription className="whitespace-pre-wrap">{failureMessage}</AlertDescription>
-        </Alert>
-      )}
+      <Alert variant="destructive">
+        <AlertTitle>What Went Wrong</AlertTitle>
+        <AlertDescription className="whitespace-pre-wrap">{failureMessage}</AlertDescription>
+      </Alert>
     </ToolResultCard>
   )
 }
@@ -261,16 +249,14 @@ function skillPendingState(activity: ToolActivity) {
       heading: "Search Skills",
       runningLabel: query ? `Searching skills for ${query}…` : "Listing skills…",
       summary: query,
-      waitingLabel: "Waiting to search skills…",
     }
   }
   const name = loadedSkillNameFromArgs(activity.args)
-  const label = name ? skillActivationDisplayName(null, name) : null
+  const label = name ? skillActivationDisplayName(name) : null
   return {
     heading: label ? `Activate Skill: ${label}` : "Activate Skill",
     runningLabel: "Loading skill instructions…",
     summary: label,
-    waitingLabel: "Waiting to load skill…",
   }
 }
 

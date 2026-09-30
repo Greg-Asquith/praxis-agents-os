@@ -2,6 +2,8 @@
 
 """Build the transient, unsaved agent a sub-agent run executes as."""
 
+from sqlalchemy import inspect
+
 from models.agent import Agent
 from models.agent_run import AgentRun
 from models.workspace import Workspace
@@ -61,4 +63,8 @@ def runtime_agent_for_run(run: AgentRun, agent: Agent, *, workspace: Workspace |
 
 def is_subagent(agent: Agent) -> bool:
     """Return whether this agent is a transient sub-agent."""
+    # Saved rows never count, so a user-written metadata key cannot mark one.
+    state = inspect(agent, raiseerr=False)
+    if state is not None and not state.transient:
+        return False
     return subagent_spec_from_metadata(agent.metadata_json) is not None

@@ -24,7 +24,7 @@ RUN_SUBAGENT_DEFINITION = RuntimeToolDefinition(
         "intermediate data you do not need. Do not use it for a single tool call or for "
         "work that needs the user. Sub-agents run one at a time."
     ),
-    label="Run Sub Agent",
+    label="Use a Helper",
     code_eligible=False,
     # Spawning has no external effect; each nested call keeps its own policy and approval.
     effect=TOOL_EFFECT_READ,
@@ -34,9 +34,9 @@ RUN_SUBAGENT_DEFINITION = RuntimeToolDefinition(
     configurable=False,
     presentation=ToolPresentation(
         icon="bot",
-        running_label="Running a Sub Agent",
-        completed_label="Sub Agent Completed Task",
-        failed_label="Sub Agent Couldn't Complete Task",
+        running_label="Running a Helper",
+        completed_label="Helper Completed Task",
+        failed_label="Helper Couldn't Complete Task",
         arg_fields=(
             ToolFieldPresentation(key="role", label="Role"),
             ToolFieldPresentation(key="task", label="Task", format="multiline"),

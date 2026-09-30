@@ -9,7 +9,6 @@ import pytest
 from pydantic import BaseModel
 
 from core.exceptions.general import AppValidationError
-from core.settings import settings
 from integrations.airtable.tools import TOOL_DEFINITIONS as AIRTABLE_TOOL_DEFINITIONS
 from integrations.bigquery.tools import TOOL_DEFINITIONS as BIGQUERY_TOOL_DEFINITIONS
 from integrations.gmail.tools import TOOL_DEFINITIONS as GMAIL_TOOL_DEFINITIONS
@@ -496,86 +495,22 @@ def test_tool_policy_prefers_agent_then_workspace_then_definition(
     assert requires_approval["test_approval_only"] is True
 
 
-def test_build_runtime_tools_preserves_core_tool_behavior() -> None:
-    default_tools = build_runtime_tools(
-        _agent(tool_names=["test_runtime_context", "test_add_numbers"])
-    )
-    approved_tools = build_runtime_tools(
-        _agent(
-            tool_names=["test_runtime_context", "test_add_numbers"],
-            tool_policies={
-                "test_runtime_context": TOOL_POLICY_APPROVAL,
-                "test_add_numbers": TOOL_POLICY_APPROVAL,
-            },
-        )
-    )
+def test_build_runtime_tools_mounts_auto_tools_beside_the_selection() -> None:
+    tools = build_runtime_tools(_agent(tool_names=["test_runtime_context", "test_add_numbers"]))
 
-    assert [tool.name for tool in default_tools] == [
-        "build_chart",
-        "create_artifact",
-        "create_skill",
-        "forget_memory",
-        "list_artifacts",
-        "list_files",
-        "load_skill",
-        "read_artifact",
-        "read_document",
-        "read_file",
-        "read_skill_document",
-        "read_todos",
-        "save_memory",
-        "search_knowledge",
-        "search_memory",
-        "search_skills",
-        "update_artifact",
-        "update_memory",
-        "update_skill",
-        "write_file",
-        "write_todos",
-        "test_runtime_context",
-        "test_add_numbers",
-        "run_workflow",
-    ]
-    auto_mounted_approval = {"create_skill", "update_skill"}
-    assert [tool.requires_approval for tool in default_tools] == [
-        *(tool.name in auto_mounted_approval for tool in default_tools[:-3]),
-        True,
-        False,
-        False,
-    ]
-    assert [tool.timeout for tool in default_tools] == [
-        5,
-        30,
-        15,
-        15,
-        15,
-        10.0,
-        15,
-        30,
-        15,
-        settings.CHAT_ATTACHMENT_CONVERSION_TIMEOUT_SECONDS + 5.0,
-        30,
-        5,
-        15,
-        30,
-        15,
-        15,
-        30,
-        15,
-        15,
-        30.0,
-        5,
-        5,
-        5,
-        None,
-    ]
-    assert [tool.max_retries for tool in default_tools] == [*([None] * 22), 1, 1]
-    assert [tool.requires_approval for tool in approved_tools] == [
-        *(tool.name in auto_mounted_approval for tool in approved_tools[:-3]),
-        True,
-        True,
-        False,
-    ]
+    names = [tool.name for tool in tools]
+    auto_mounted = {
+        name
+        for name, definition in RUNTIME_TOOL_CATALOG.items()
+        if definition.auto_mount and definition.integration_binding is None
+    }
+    assert auto_mounted <= set(names)
+    assert names[-3:] == ["test_runtime_context", "test_add_numbers", "run_workflow"]
+    # Mounted tools keep their definition's approval, timeout, and retry settings.
+    for tool in tools:
+        definition = RUNTIME_TOOL_CATALOG[tool.name]
+        assert tool.requires_approval == (definition.default_policy == TOOL_POLICY_APPROVAL)
+        assert (tool.timeout, tool.max_retries) == (definition.timeout, definition.max_retries)
 
 
 @pytest.mark.deferred_tools

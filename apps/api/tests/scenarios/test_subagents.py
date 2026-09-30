@@ -15,13 +15,19 @@ from models.agent import Agent
 from models.agent_run import AgentRun
 from services.agent_runs.continuation_state import AgentRunResumeRequiresRecoveryError
 from services.agent_runs.domain import RUN_STATUS_AWAITING_APPROVAL
+from services.agents.runtime.delegation.tool_names import DELEGATE_TO_AGENT_TOOL_NAME
 from services.agents.runtime.subagents.constants import (
     RUN_SUBAGENT_TOOL_NAME,
     SUBAGENT_BLOCKED_TOOL_NAMES,
 )
 from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import ScenarioEffects, resume_scenario, scenario_effects
-from tests.support.scenario import build_scenario_agent, run_scenario, scripted_model
+from tests.support.scenario import (
+    add_scenario_delegate,
+    build_scenario_agent,
+    run_scenario,
+    scripted_model,
+)
 
 ROLE = "Search term researcher"
 
@@ -45,6 +51,7 @@ async def test_subagent_approval_suspends_and_resumes_same_spec(
         tool_policies={effects.name: "approval"},
         subagents_enabled=True,
     )
+    await add_scenario_delegate(committed_db_session_factory, context)
     parent_tools: list[set[str]] = []
     child_tools: list[set[str]] = []
     child_prompts: list[str] = []
@@ -74,6 +81,8 @@ async def test_subagent_approval_suspends_and_resumes_same_spec(
     assert blocked <= parent_tools[0]
     assert effects.name in child_tools[0]
     assert child_tools[0] <= parent_tools[0] - blocked
+    assert DELEGATE_TO_AGENT_TOOL_NAME in parent_tools[0]
+    assert DELEGATE_TO_AGENT_TOOL_NAME not in child_tools[0]
     assert "Research search terms" in child_prompts[0]
     assert "You are a sub-agent" in child_prompts[0]
     # Only the child builds its model here; a powerful tier above the standard parent falls back.

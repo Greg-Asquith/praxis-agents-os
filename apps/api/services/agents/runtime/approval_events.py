@@ -20,13 +20,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_core import to_jsonable_python
 
-from services.agent_runs.schemas import AgentRunApprovalStateResponse, PendingDelegatedApprovalRead
-from services.agents.delegation_approval import (
-    DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY,
-    DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY,
-    DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY,
-    DELEGATED_APPROVAL_CHILD_RUN_ID_KEY,
-)
+from services.agent_runs.schemas import AgentRunApprovalStateResponse
 from services.agents.runtime.code_mode.approval import code_mode_nested_call
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.events import (
@@ -161,34 +155,6 @@ async def add_approval_display_args(
         calls=list(deferred_tool_requests.calls),
         approvals=list(deferred_tool_requests.approvals),
         metadata=metadata,
-    )
-
-
-def _delegated_approval_projection(
-    metadata: dict[str, Any],
-    *,
-    parent_tool_call_id: str,
-    pending_approval_count: int,
-) -> PendingDelegatedApprovalRead | None:
-    child_agent_id = metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_ID_KEY)
-    child_agent_name = metadata.get(DELEGATED_APPROVAL_CHILD_AGENT_NAME_KEY)
-    child_conversation_id = metadata.get(DELEGATED_APPROVAL_CHILD_CONVERSATION_ID_KEY)
-    child_run_id = metadata.get(DELEGATED_APPROVAL_CHILD_RUN_ID_KEY)
-    if not (
-        isinstance(child_agent_id, str)
-        and isinstance(child_agent_name, str)
-        and isinstance(child_conversation_id, str)
-        and isinstance(child_run_id, str)
-    ):
-        return None
-
-    return PendingDelegatedApprovalRead(
-        parent_tool_call_id=parent_tool_call_id,
-        child_agent_id=child_agent_id,
-        child_agent_name=child_agent_name,
-        child_conversation_id=child_conversation_id,
-        child_run_id=child_run_id,
-        pending_approval_count=pending_approval_count,
     )
 
 

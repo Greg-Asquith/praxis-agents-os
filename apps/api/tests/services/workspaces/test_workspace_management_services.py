@@ -213,6 +213,32 @@ async def test_delete_workspace_rejects_personal_workspaces(db_session: AsyncSes
     assert membership.deleted is False
 
 
+async def test_member_cannot_change_the_workspace_default_model(db_session: AsyncSession) -> None:
+    actor = build_user(email=f"default-model-member-{uuid4().hex}@example.com")
+    workspace = build_workspace(slug=f"default-model-member-{uuid4().hex[:8]}")
+    membership = build_workspace_membership(
+        workspace_id=workspace.id,
+        user_id=actor.id,
+        role=WorkspaceRole.MEMBER,
+    )
+    db_session.add_all([actor, workspace, membership])
+    await db_session.flush()
+
+    with pytest.raises(AuthorizationError):
+        await update_workspace(
+            db_session,
+            request=build_test_request(path=f"/api/v1/workspaces/{workspace.id}", method="PATCH"),
+            actor=actor,
+            workspace_id=workspace.id,
+            payload=WorkspaceUpdateRequest(
+                default_model_provider="openai", default_model="gpt-6-luna"
+            ),
+        )
+
+    assert workspace.default_model_provider is None
+    assert workspace.default_model is None
+
+
 async def test_update_workspace_default_model_rejects_unavailable_models_and_audits(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,

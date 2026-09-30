@@ -23,8 +23,8 @@ formats, or identifiers.
 - `create_skill`: save a new skill for this workspace, or for every
   workspace when the person asks. The person reviews it and can edit it
   before it is saved.
-- `update_skill`: change an existing workspace skill. The person reviews the
-  change before it is saved.
+- `update_skill`: change an existing skill. The person reviews the change
+  before it is saved.
 
 Skills marked as platform skills are shared with every workspace on the
 platform, including other organisations' workspaces, and can't have reference

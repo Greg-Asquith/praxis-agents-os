@@ -117,45 +117,17 @@ def normalize_tool_selection(
     drop_unselected_policies: bool = False,
 ) -> ToolSelection:
     """Validate an explicit or all-tools selection and the policies on it."""
-    if all_tools and tool_names:
-        raise AppValidationError(
-            "tool_names cannot be set while all_tools is on",
-            field="tool_names",
-        )
-    if not all_tools and excluded_tool_names:
-        raise AppValidationError(
-            "excluded_tool_names can only be set while all_tools is on",
-            field="excluded_tool_names",
-        )
-
     accepted_names = set(workspace_tool_names).union(stale_tool_names)
-    if all_tools:
-        excluded, _policies = normalize_tool_configuration(
-            tool_names=excluded_tool_names,
-            tool_policies=None,
-            extra_tool_names=accepted_names,
-            names_field="excluded_tool_names",
-        )
-        excluded_set = set(excluded)
-        selected = [
-            name
-            for name in _configurable_tool_names(workspace_tool_names)
-            if name not in excluded_set
-        ]
-    else:
-        excluded = []
-        selected, _policies = normalize_tool_configuration(
-            tool_names=tool_names,
-            tool_policies=None,
-            extra_tool_names=accepted_names,
-        )
-
+    excluded, selected = _resolve_selected_names(
+        all_tools=all_tools,
+        tool_names=tool_names,
+        excluded_tool_names=excluded_tool_names,
+        workspace_tool_names=workspace_tool_names,
+        accepted_names=accepted_names,
+    )
     if tool_policies is not None and drop_unselected_policies:
-        selected_set = set(selected)
-        tool_policies = {
-            name: policy for name, policy in tool_policies.items() if name in selected_set
-        }
-    _selected, policies = normalize_tool_configuration(
+        tool_policies = {name: policy for name, policy in tool_policies.items() if name in selected}
+    _, policies = normalize_tool_configuration(
         tool_names=selected,
         tool_policies=tool_policies,
         extra_tool_names=accepted_names,
@@ -167,6 +139,43 @@ def normalize_tool_selection(
         excluded_tool_names=excluded,
         tool_policies=policies,
     )
+
+
+def _resolve_selected_names(
+    *,
+    all_tools: bool,
+    tool_names: list[str],
+    excluded_tool_names: list[str],
+    workspace_tool_names: Collection[str],
+    accepted_names: set[str],
+) -> tuple[list[str], list[str]]:
+    """Return the validated exclusions and the tool names they select."""
+    if all_tools and tool_names:
+        raise AppValidationError(
+            "tool_names cannot be set while all_tools is on",
+            field="tool_names",
+        )
+    if not all_tools:
+        if excluded_tool_names:
+            raise AppValidationError(
+                "excluded_tool_names can only be set while all_tools is on",
+                field="excluded_tool_names",
+            )
+        selected, _ = normalize_tool_configuration(
+            tool_names=tool_names, tool_policies=None, extra_tool_names=accepted_names
+        )
+        return [], selected
+
+    excluded, _ = normalize_tool_configuration(
+        tool_names=excluded_tool_names,
+        tool_policies=None,
+        extra_tool_names=accepted_names,
+        names_field="excluded_tool_names",
+    )
+    selected = [
+        name for name in _configurable_tool_names(workspace_tool_names) if name not in excluded
+    ]
+    return excluded, selected
 
 
 def normalize_tool_configuration(
