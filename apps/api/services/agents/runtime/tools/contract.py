@@ -71,7 +71,6 @@ _CODE_MODE_MACHINERY_TOOL_NAMES = frozenset(
         "run_code",
         "run_script",
         "run_subagent",
-        "run_workflow",
     }
 )
 _INTEGRATION_PARAMETER_DENYLIST = frozenset(

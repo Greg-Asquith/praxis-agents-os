@@ -59,7 +59,7 @@ export function AgentToolsSection({
   const [providerFilter, setProviderFilter] = useState(ALL_TOOL_PROVIDERS_VALUE)
   const [providerOpenOverrides, setProviderOpenOverrides] = useState<Record<string, boolean>>({})
   const configurableToolCatalog = useMemo(
-    () => toolCatalog.filter((tool) => tool.name !== "run_workflow"),
+    () => toolCatalog.filter((tool) => tool.name !== "run_code"),
     [toolCatalog]
   )
   const normalizedSearch = search.trim().toLowerCase()
@@ -80,7 +80,7 @@ export function AgentToolsSection({
     () =>
       Object.keys(state.toolModes).filter(
         (toolName) =>
-          toolName !== "run_workflow" &&
+          toolName !== "run_code" &&
           !catalogToolNames.has(toolName) &&
           state.toolModes[toolName] !== "off"
       ),

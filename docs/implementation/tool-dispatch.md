@@ -56,13 +56,13 @@ row that lists the discovered tools by label
 (`apps/web/src/features/conversations/components/tool-search-row.tsx`).
 Definitions that the model needs on most turns set
 `defer_loading=False`: files, memory, knowledge search and reads, skill search
-and loading, planning, delegation, `run_subagent`, `run_workflow`, and
+and loading, planning, delegation, `run_subagent`, `run_code`, and
 `report_completion`.
 Integration, native helper, artifact, chart, skill-authoring, and
 workspace-defined tools defer. Deferral changes only schema visibility;
 selection, policy, approval, and dispatch are unchanged. Code-eligible tools
-also mount inside `run_workflow`, which every agent has beside its direct
-tools. That toolset ignores deferral, so a workflow can call any mounted
+also mount inside `run_code`, which every agent has beside its direct
+tools. That toolset ignores deferral, so a script can call any mounted
 code-eligible tool.
 
 When a conversation or schedule has no selection for a connected provider,
@@ -274,12 +274,12 @@ metadata, account identities, and errors. BigQuery selects its root `rows`
 list. Analytics and Ads field discovery use automatic list discovery to preview
 their field and compatibility lists.
 Their shared descriptions direct complete-data calculations to `read_table`
-inside `run_workflow`, which pages every saved row.
+inside `run_code`, which pages every saved row.
 The model-facing envelope instructs the agent to read saved rows through the
 File reference and use list totals as saved-item counts.
 The envelope and report descriptions prohibit repeated or split source queries
 solely to bypass that preview. Further inspection uses `read_file`; calculations
-page the retained reference through `read_table` in `run_workflow`. These instructions describe the
+page the retained reference through `read_table` in `run_code`. These instructions describe the
 agent's data access, independently of the browser's complete-result control.
 If an analysis helper cannot handle the saved data, the agent explains that
 limitation instead of refetching it. Source pagination depends on provider
@@ -414,9 +414,9 @@ The pending approvals list names the actual direct or nested actions,
 including actions prepared by specialists.
 
 Approval decisions compile against each leaf's owning context. The direct
-path validates canonical effective arguments. The nested workflow path binds
+path validates canonical effective arguments. The nested Code Mode path binds
 the nested call and effective-argument digest to Code Mode decision metadata;
-approving the outer workflow only carries that one nested decision. Delegation
+approving the outer `run_code` call only carries that one nested decision. Delegation
 carries the child's compiled `DeferredToolResults` in the existing parent-call
 metadata. It grants no permission for later nested writes.
 
@@ -434,9 +434,9 @@ marked `awaiting_approval`. It mounts no approval controls or message composer.
 Completed shared call and return parts carry the performed display arguments
 in `args`, resolved by run and call identity across message pages. Approval
 metadata, original proposals, and override history remain private. Nested
-workflow children with `pending` or `awaiting_approval` status are excluded.
+Code Mode children with `pending` or `awaiting_approval` status are excluded.
 Suspended Code Mode traces live in private run metadata; the normal runtime
-persists the completed trace only after the workflow settles.
+persists the completed trace only after the script settles.
 
 ## Internal File imports from providers
 

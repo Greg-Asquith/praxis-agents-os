@@ -83,7 +83,7 @@ class AcceptedToolCall(Evaluator[dict, EvalOutput, dict]):
         if not ctx.output.called_tools:
             return EvaluationReason(value=False, reason="no tool was called")
         name, arguments = ctx.output.called_tools[0], ctx.output.tool_arguments[0]
-        if name == "run_workflow":
+        if name == "run_code":
             code = str(json.loads(arguments).get("code", ""))
             called, errors = workflow_calls(code, code_eligible_tools())
             if called.isdisjoint(accepted):
@@ -110,9 +110,9 @@ class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
         expected = (ctx.metadata or {}).get("workflow_tools")
         if not expected:
             return EvaluationReason(value=True)
-        if "run_workflow" not in ctx.output.called_tools:
-            return EvaluationReason(value=False, reason="run_workflow was not called")
-        arguments = ctx.output.tool_arguments[ctx.output.called_tools.index("run_workflow")]
+        if "run_code" not in ctx.output.called_tools:
+            return EvaluationReason(value=False, reason="run_code was not called")
+        arguments = ctx.output.tool_arguments[ctx.output.called_tools.index("run_code")]
         code = str(json.loads(arguments).get("code", ""))
         errors = workflow_argument_errors(code, code_eligible_tools(), expected)
         return EvaluationReason(value=not errors, reason="; ".join(errors) or None)

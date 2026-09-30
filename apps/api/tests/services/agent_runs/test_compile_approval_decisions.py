@@ -39,9 +39,7 @@ def saved_run(parent=None, *, workflow=False):
     )
     nested = ToolCallPart("update", {"value": 1}, "same")
     call = (
-        ToolCallPart("run_workflow", {"code": "await update(value=1)"}, "outer")
-        if workflow
-        else nested
+        ToolCallPart("run_code", {"code": "await update(value=1)"}, "outer") if workflow else nested
     )
     metadata = (
         {

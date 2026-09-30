@@ -81,7 +81,7 @@ def workflow(run):
     )
     suspend(
         run,
-        [ToolCallPart("run_workflow", {"code": "await update(value=2)"}, "workflow")],
+        [ToolCallPart("run_code", {"code": "await update(value=2)"}, "workflow")],
         {"workflow": metadata},
     )
     run.metadata_json = build_code_mode_state_metadata(
@@ -243,7 +243,7 @@ def test_staged_content_and_entity_display_preserve_executable_proposal():
     assert before.approval_revision != after.approval_revision
 
 
-@pytest.mark.parametrize("name", ["delegate_to_agent", "run_workflow"])
+@pytest.mark.parametrize("name", ["delegate_to_agent", "run_code"])
 @pytest.mark.parametrize("metadata", [None, {"kind": "invalid"}])
 def test_missing_specialised_metadata_fails_closed(name, metadata):
     root = saved_run(

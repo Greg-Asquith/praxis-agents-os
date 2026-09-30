@@ -166,8 +166,8 @@ def build_runtime_tools(
     """Resolve an agent row's configured tools into Pydantic AI tools."""
     # Importing the Code Mode package while this registry initializes reaches dispatch.
     from services.agents.runtime.tools.code_mode import (
-        RUN_WORKFLOW_TOOL_NAME,
-        build_run_workflow_tool,
+        RUN_CODE_TOOL_NAME,
+        build_run_code_tool,
     )
 
     definition_lookup = {
@@ -189,7 +189,7 @@ def build_runtime_tools(
     policies = _normalize_tool_policies(agent.tool_policies or {})
     tools = []
     workflow_entries: list[tuple[RuntimeToolDefinition, ToolPolicy]] = []
-    mounted_tool_names: set[str] = {RUN_WORKFLOW_TOOL_NAME}
+    mounted_tool_names: set[str] = {RUN_CODE_TOOL_NAME}
     blocked_tool_names = SUBAGENT_BLOCKED_TOOL_NAMES if is_subagent(agent) else frozenset()
 
     for name in tool_names:
@@ -238,7 +238,7 @@ def build_runtime_tools(
             workflow_entries.append((definition, effective_policy))
 
     if workflow_entries:
-        tools.append(build_run_workflow_tool(workflow_entries))
+        tools.append(build_run_code_tool(workflow_entries))
 
     if include_delegation:
         tools.extend(build_delegation_tools())

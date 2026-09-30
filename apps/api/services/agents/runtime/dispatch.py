@@ -158,7 +158,7 @@ async def retain_structured_result(
 ) -> tuple[Any, ResultSize] | None:
     """Retains oversized direct read results before they enter model history."""
     if (
-        tool_name == "run_workflow"
+        tool_name == "run_code"
         or parent_tool_call_id is not None
         or (definition is not None and definition.effect == TOOL_EFFECT_WRITE)
     ):

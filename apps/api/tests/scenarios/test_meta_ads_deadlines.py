@@ -15,7 +15,7 @@ from integrations.meta_ads.client import META_GRAPH_API_VERSION, MetaAdsClient
 from integrations.meta_ads.settings import meta_ads_settings
 from integrations.meta_ads.tools.run_insights import DEFINITION
 from services.agents.runtime.code_mode.executor import MontyExecutor
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
 from tests.integrations.meta_ads.support import context_entry, static_token
@@ -102,7 +102,7 @@ async def test_code_mode_deadline_cancels_background_report_without_partial_deli
                 context,
                 model=scripted_model(
                     turns=[
-                        ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}),)),
+                        ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": code}),)),
                         "The workflow timed out.",
                     ],
                     seen_requests=seen,
@@ -122,7 +122,7 @@ async def test_code_mode_deadline_cancels_background_report_without_partial_deli
         ("POST", "act_222/insights"),
         ("GET", "902"),
     ]
-    assert result.tool_returns(RUN_WORKFLOW_TOOL_NAME) == []
+    assert result.tool_returns(RUN_CODE_TOOL_NAME) == []
     assert result.tool_returns(DEFINITION.name) == []
     retries = [
         part
@@ -131,8 +131,8 @@ async def test_code_mode_deadline_cancels_background_report_without_partial_deli
         if isinstance(part, RetryPromptPart)
     ]
     assert len(retries) == 1
-    assert retries[0].tool_name == RUN_WORKFLOW_TOOL_NAME
-    assert "The sandboxed workflow failed" in str(retries[0].content)
+    assert retries[0].tool_name == RUN_CODE_TOOL_NAME
+    assert "The script failed" in str(retries[0].content)
     operations = [row for row in result.audit_rows if row.resource_type == "integration_resource"]
     assert len(operations) == 2
     by_account = {row.details["external_id"]: row for row in operations}

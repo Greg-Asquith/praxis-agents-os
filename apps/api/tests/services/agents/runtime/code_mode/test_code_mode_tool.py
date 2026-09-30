@@ -1,4 +1,4 @@
-"""Tests for the per-run `run_workflow` runtime tool."""
+"""Tests for the per-run `run_code` runtime tool."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -18,11 +18,11 @@ def _ctx(*, trigger: str, tool_call_id: str | None = "workflow-call") -> RunCont
         model=TestModel(),
         usage=RunUsage(),
         tool_call_id=tool_call_id,
-        tool_name="run_workflow",
+        tool_name="run_code",
     )
 
 
-async def test_run_workflow_exposes_deferred_tools_to_nested_calls(
+async def test_run_code_exposes_deferred_tools_to_nested_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     definition = RuntimeToolDefinition(
@@ -34,7 +34,7 @@ async def test_run_workflow_exposes_deferred_tools_to_nested_calls(
     expected = ToolReturn(return_value={"done": True})
     execute = AsyncMock(return_value=expected)
     monkeypatch.setattr(code_mode, "execute_code_mode_workflow", execute)
-    tool = code_mode.build_run_workflow_tool(((definition, "approval"),))
+    tool = code_mode.build_run_code_tool(((definition, "approval"),))
     ctx = _ctx(trigger="interactive")
 
     result = await tool.function(ctx, code="{'done': True}", reason="Compose reads")
@@ -45,8 +45,8 @@ async def test_run_workflow_exposes_deferred_tools_to_nested_calls(
     assert nested.requires_approval is True
 
 
-async def test_run_workflow_requires_outer_call_identity() -> None:
-    tool = code_mode.build_run_workflow_tool(())
+async def test_run_code_requires_outer_call_identity() -> None:
+    tool = code_mode.build_run_code_tool(())
 
     with pytest.raises(ModelRetry, match="missing its runtime identity"):
         await tool.function(_ctx(trigger="interactive", tool_call_id=None), code="1")

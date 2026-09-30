@@ -134,7 +134,7 @@ def _calls(state: SuspendedRunState) -> list[tuple[ToolCallPart, Mapping[str, An
             and metadata.get("kind") != DELEGATED_APPROVAL_KIND
         ):
             raise invalid_approval_state("Saved delegated approval metadata is missing or invalid")
-        if call.tool_name == "run_workflow" and metadata.get("kind") != "code_mode":
+        if call.tool_name == "run_code" and metadata.get("kind") != "code_mode":
             raise invalid_approval_state("Saved workflow approval metadata is missing or invalid")
         if "child_run_id" in metadata and metadata.get("kind") != DELEGATED_APPROVAL_KIND:
             raise invalid_approval_state("Saved delegated approval metadata is invalid")

@@ -128,7 +128,7 @@ function suspendedMessages(): ConversationMessage[] {
           args: { code: "await write_setting(value='change')" },
           part_kind: "tool-call",
           tool_call_id: "workflow-1",
-          tool_name: "run_workflow",
+          tool_name: "run_code",
         },
       ]),
       metadata: { agent_run_id: "run-1" },
@@ -155,7 +155,7 @@ function liveToolCalls(): ToolCallState[] {
         code: "report = await check_report(account='one')\nreport",
         reason: "Check the account",
       },
-      name: "run_workflow",
+      name: "run_code",
       result: { result: "done" },
       status: "completed",
       timelineSequence: 0,
@@ -184,7 +184,7 @@ function replayMessages(): ConversationMessage[] {
         },
         part_kind: "tool-call",
         tool_call_id: "workflow-1",
-        tool_name: "run_workflow",
+        tool_name: "run_code",
       },
     ]),
     message("tool", 2, [
@@ -210,7 +210,7 @@ function replayMessages(): ConversationMessage[] {
         outcome: "success",
         part_kind: "tool-return",
         tool_call_id: "workflow-1",
-        tool_name: "run_workflow",
+        tool_name: "run_code",
       },
     ]),
   ]
@@ -304,7 +304,7 @@ it("retains completed and uncertain saved effects with their owning run after re
         {
           part_kind: "tool-return",
           tool_call_id: "workflow",
-          tool_name: "run_workflow",
+          tool_name: "run_code",
           outcome: "failed",
           content: {},
           metadata: {

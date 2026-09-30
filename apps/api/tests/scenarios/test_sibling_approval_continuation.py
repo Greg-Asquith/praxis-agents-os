@@ -58,10 +58,10 @@ def sibling_model(
             if part.part_kind == "tool-return"
         }
         if "list_delegate_agents" not in {tool.name for tool in info.function_tools}:
-            if "run_workflow" not in returns:
+            if "run_code" not in returns:
                 yield {
                     0: DeltaToolCall(
-                        name="run_workflow",
+                        name="run_code",
                         json_args=json.dumps(
                             {
                                 "code": workflow_code

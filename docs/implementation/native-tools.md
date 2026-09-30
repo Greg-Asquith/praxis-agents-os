@@ -31,11 +31,11 @@ the full URL editable and visible. Never enable the local fetch fallback.
 
 ## Code and Office files
 
-No helper provider runs code. Agents run code with `run_workflow` (Code Mode,
+No helper provider runs code. Agents run code with `run_code` (Code Mode,
 see [Code Mode](code-mode.md)) and work with Office files, CSV, and saved
-results through the [document tools](document-tools.md). Provider-native
-`run_code` has been removed; its dated isolation record stays in
-[governance](../architecture/governance.md).
+results through the [document tools](document-tools.md). The earlier
+provider-sandbox tool that shared this name has been removed; its dated
+isolation record stays in [governance](../architecture/governance.md).
 
 The registered GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, Claude Opus 5.5, and
 Claude Sonnet 5.5 models can use the existing eligible helper paths. Live

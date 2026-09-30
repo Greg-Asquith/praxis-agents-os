@@ -70,7 +70,7 @@ async def test_file_read_dispatch_retains_content_citation_and_audit(
     args = {"file": reference, **({"query": marker} if find else {})}
     call = (
         ToolCall(
-            "run_workflow",
+            "run_code",
             {"code": f"await {definition.name}(**{args!r})"},
             "file-workflow",
         )

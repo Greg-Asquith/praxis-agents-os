@@ -9,7 +9,7 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from tests.support.scenario import (
     ToolCall,
@@ -36,7 +36,7 @@ async def test_model_discovers_a_deferred_tool_then_calls_it_directly_and_in_a_w
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {
                             "code": (
                                 "first = await test_add_numbers(a=12, b=1)\n"
@@ -60,7 +60,7 @@ async def test_model_discovers_a_deferred_tool_then_calls_it_directly_and_in_a_w
     assert "search_memory" not in first.revealed_tool_names
     [added] = result.tool_returns("test_add_numbers")
     assert added["content"] == 12
-    [workflow] = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)
+    [workflow] = result.tool_returns(RUN_CODE_TOOL_NAME)
     assert workflow["content"] == 15
     assert sorted(
         row.details.get("parent_tool_call_id") is not None

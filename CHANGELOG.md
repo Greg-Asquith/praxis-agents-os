@@ -33,7 +33,7 @@ minor release. Patch releases contain backward-compatible fixes only.
   `read_table`.
 - Conversation rows for the document tools show what was read, what each edit
   changed and its new version, warnings to check, and a plain summary of the
-  changes in approvals, including inside Code Mode workflows.
+  changes in approvals, including inside Code Mode scripts.
 - Meta Ads workspace connections with System User access tokens, bounded ad
   account discovery, permission-based writability, optional app-secret proof,
   and setup guidance.
@@ -55,7 +55,10 @@ minor release. Patch releases contain backward-compatible fixes only.
   Scripts paused for approval before the upgrade cannot resume: read-only
   scripts return a failure the agent can redraft, and scripts with completed
   changes need operator recovery. Agent guidance for Code Mode now covers when
-  to use a workflow and the configured limits.
+  to use a script and the configured limits.
+- The Code Mode tool is now `run_code`, the agent's only code tool; it was
+  `run_workflow`. There is no alias, so approvals paused on `run_workflow`
+  can't resume. The conversation card is titled "Script".
 
 ### Removed
 

@@ -225,7 +225,7 @@ class CodeModeBridge:
         """Validate the outbound value and preserve sticky taint on result and output."""
         result = _normalize_boundary_value(
             execution.result,
-            tool_name="run_workflow",
+            tool_name="run_code",
             max_bytes=self._result_max_bytes,
         )
         output: Any = execution.output
@@ -362,7 +362,7 @@ class CodeModeBridge:
                     metadata=build_code_mode_approval_metadata(
                         outer_tool_call_id=self._outer_tool_call_id,
                         nested_call=call,
-                        reason="This workflow needs approval to continue.",
+                        reason="This script needs approval to continue.",
                         derived_from_untrusted=self._taint.tainted,
                         taint_sources=list(self._taint.sources),
                     )
@@ -798,14 +798,14 @@ async def execute_code_mode_workflow(
                     return_value={
                         "status": "failed",
                         "error": (
-                            "Another workflow is already paused for approval in this run. "
+                            "Another script is already paused for approval in this run. "
                             "Retry after that decision, or call the tool directly."
                         ),
                     }
                 )
             raw_approval_metadata = execution.approval.metadata
             if not isinstance(raw_approval_metadata, dict):
-                raise CodeModeBoundaryError("run_workflow", "nested approval metadata is invalid")
+                raise CodeModeBoundaryError("run_code", "nested approval metadata is invalid")
             approval_metadata = {
                 **raw_approval_metadata,
                 "executed_effects": [effect.__dict__ for effect in bridge.executed_effects],
@@ -846,7 +846,7 @@ async def execute_code_mode_workflow(
                 return ToolReturn(
                     return_value={
                         "status": "failed",
-                        "error": "The workflow result was too large to pause on. Call the tool directly.",
+                        "error": "The script state was too large to pause on. Call the tool directly.",
                     }
                 )
             raise ApprovalRequired(metadata=approval_metadata)
@@ -1065,8 +1065,8 @@ def _redraft_result(reason: str) -> ToolReturn:
         return_value={
             "status": "failed",
             "error": (
-                "The workflow could not be restored safely. The approval decision was kept; "
-                "redraft the workflow before trying again."
+                "The script could not be restored safely. The approval decision was kept; "
+                "redraft the script before trying again."
             ),
             "degradation_reason": reason,
         }

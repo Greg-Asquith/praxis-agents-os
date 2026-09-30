@@ -95,7 +95,7 @@ function project(approval: PendingToolApproval, nested: boolean) {
             {
               part_kind: "tool-call",
               tool_call_id: nested ? "workflow" : approval.tool_call_id,
-              tool_name: nested ? "run_workflow" : approval.name,
+              tool_name: nested ? "run_code" : approval.name,
               args: nested
                 ? { code: "await outlook_mail_send_draft(message=message)" }
                 : { message },

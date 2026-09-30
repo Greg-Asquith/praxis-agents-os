@@ -60,7 +60,7 @@ async def recovery_family(committed_db_session_factory):
             conversation = await db.get(Conversation, run.conversation_id)
             direct = ToolCallPart("write_file", {"content": "private"}, "denied-direct")
             nested = ToolCallPart("write_file", {"content": "private"}, "denied-workflow")
-            outer = ToolCallPart("run_workflow", {"code": "private"}, "outer")
+            outer = ToolCallPart("run_code", {"code": "private"}, "outer")
             approved = ToolCallPart("write_file", {"content": "private"}, "approved")
             metadata = {
                 "outer": build_code_mode_approval_metadata(

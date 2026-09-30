@@ -71,7 +71,7 @@ def test_workflow_preserves_completed_result_and_hides_pending_approval():
         message(
             [
                 result(
-                    "run_workflow",
+                    "run_code",
                     "Done",
                     metadata={
                         "code_mode_trace": {"calls": [completed, pending], "snapshot": SECRET},

@@ -15,7 +15,7 @@ from integrations.sharepoint.references import SharePointDriveItemReference
 from integrations.sharepoint.tools.copy_to_files import DEFINITION
 from models.audit_event import AuditEvent
 from models.files import File, FileFolder, FileReference, FileUpload
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME, build_run_code_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.integrations.context.domain import ResolvedActiveContext
 from services.jobs.handlers.sweep_deleted_files import _purge_expired_uploads
@@ -77,7 +77,7 @@ async def _run_copy(factory, context, *, nested=False):
     }
     call = (
         ToolCall(
-            RUN_WORKFLOW_TOOL_NAME,
+            RUN_CODE_TOOL_NAME,
             {"code": f"try:\n    await {DEFINITION.name}(**{args!r})\nexcept Exception:\n    pass"},
             "workflow",
         )
@@ -124,7 +124,7 @@ async def test_copy_failure_owns_bytes_through_commit(copy_runtime, monkeypatch,
         definition = RUNTIME_TOOL_CATALOG[DEFINITION.name]
         monkeypatch.setattr(
             "services.agents.runtime.loop.build_runtime_tools",
-            lambda *_args, **_kwargs: [build_run_workflow_tool(((definition, "auto"),))],
+            lambda *_args, **_kwargs: [build_run_code_tool(((definition, "auto"),))],
         )
 
     async def link(db, **kwargs):

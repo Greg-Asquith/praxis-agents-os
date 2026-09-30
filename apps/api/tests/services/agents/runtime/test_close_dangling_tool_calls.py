@@ -21,9 +21,7 @@ def test_closes_trailing_dangling_call() -> None:
     messages = [
         ModelRequest(parts=[UserPromptPart("do it")]),
         ModelResponse(
-            parts=[
-                ToolCallPart(tool_name="run_workflow", args={"code": "x"}, tool_call_id="call-1")
-            ]
+            parts=[ToolCallPart(tool_name="run_code", args={"code": "x"}, tool_call_id="call-1")]
         ),
     ]
 

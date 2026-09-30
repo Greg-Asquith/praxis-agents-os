@@ -32,7 +32,7 @@ class StructuredResultPreview(BaseModel):
         "Read the full saved result through file_reference when you need rows beyond this preview. "
         "Call read_file with file_id=file_reference and offset to inspect saved rows. "
         "For filtering or calculations, page through read_table with file_id=file_reference and "
-        "list_name set to a lists entry inside run_workflow, and compute there. "
+        "list_name set to a lists entry inside run_code, and compute there. "
         "Calculate whole-report totals from the saved result, never from preview rows. "
         "Use each lists entry's total as its saved item count. Check provider metadata in data before "
         "requesting another source page. Do not repeat or split the source query to recover "

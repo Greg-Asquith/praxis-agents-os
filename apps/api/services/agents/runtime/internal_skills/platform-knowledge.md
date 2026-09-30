@@ -193,7 +193,7 @@ carefully.
 
 A conversation shows each step an agent takes, such as **Find Tools** or
 **Search Skills**. For a job with many steps, such as updating dozens of rows, an
-agent can combine several actions into one workflow step. A workflow runs up
+agent can combine several actions into one script. A script runs up
 to 25 actions, and each action still follows its own approval setting.
 
 ## Integrations

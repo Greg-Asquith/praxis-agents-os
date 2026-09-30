@@ -17,7 +17,7 @@ from integrations.google_ads.client import GoogleAdsClient
 from integrations.google_ads.tools.run_report import DEFINITION
 from models.files import File, FileRevision
 from services.agents.runtime.structured_results import result_json
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.files.utils import file_revision_ref
 from services.integrations.context.domain import ResolvedActiveContext
@@ -175,9 +175,7 @@ async def test_combined_report_limit_fails_nested_call_without_partial_results(
         )
 
     context = await build_scenario_agent(db_session_factory, tool_names=[DEFINITION.name])
-    call = ToolCall(
-        RUN_WORKFLOW_TOOL_NAME, {"code": f"await google_ads_run_report(query={query!r})"}
-    )
+    call = ToolCall(RUN_CODE_TOOL_NAME, {"code": f"await google_ads_run_report(query={query!r})"})
     seen = []
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         client = GoogleAdsClient(

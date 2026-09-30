@@ -9,7 +9,7 @@ import pytest_asyncio
 from core.database import set_session_tenant_context
 from core.settings import settings
 from models.workspace import Workspace
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME
 from services.documents.worker import close_document_worker_pool
 from services.files.create_conversation_file_references import create_conversation_file_references
 from services.files.create_file_with_revision import create_file_with_revision
@@ -140,14 +140,14 @@ async def test_workflow_pages_a_saved_report_and_totals_every_row(
         context,
         model=scripted_model(
             turns=[
-                ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": script}, "total"),)),
+                ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": script}, "total"),)),
                 "Every row is counted.",
             ]
         ),
     )
 
     assert result.run.status == "completed"
-    [workflow] = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)
+    [workflow] = result.tool_returns(RUN_CODE_TOOL_NAME)
     # Row text is untrusted, so the whole workflow value comes back framed.
     content = workflow["content"]
     assert content["node"] == "praxis_untrusted"
@@ -185,7 +185,7 @@ async def test_workflow_writes_a_workbook_total_and_checks_the_read_back(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {"code": _WORKBOOK_SCRIPT.format(reference=reference)},
                         "total",
                     ),
@@ -203,7 +203,7 @@ async def test_workflow_writes_a_workbook_total_and_checks_the_read_back(
     )
 
     assert result.run.status == "completed"
-    [workflow] = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)
+    [workflow] = result.tool_returns(RUN_CODE_TOOL_NAME)
     assert json.loads(workflow["content"]["content"]) == {
         "total": sum(range(1, 31)),
         "formula_calculated": False,

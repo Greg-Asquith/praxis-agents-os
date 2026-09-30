@@ -141,7 +141,7 @@ export function buildLiveToolActivities(
   }
 
   for (const toolCall of toolCalls) {
-    if (toolCall.parentToolCallId || toolCall.name !== "run_workflow") {
+    if (toolCall.parentToolCallId || toolCall.name !== "run_code") {
       continue
     }
     const parentIndex = activityIndexesById.get(

@@ -42,7 +42,7 @@ _TABLE_EXTENSIONS = {".csv": "csv", ".tsv": "tsv", ".json": "json"}
         "comes back as untrusted-content nodes. A workbook formula Excel never calculated "
         "comes back as None and its cell is listed in uncalculated_cells; don't treat it as "
         "zero. When next_offset is present, call again with offset set to it. Inside "
-        "run_workflow, page through every row and compute totals there, never from a preview."
+        "run_code, page through every row and compute totals there, never from a preview."
     ),
     effect=TOOL_EFFECT_READ,
     takes_ctx=True,

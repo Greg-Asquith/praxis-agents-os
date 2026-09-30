@@ -65,7 +65,7 @@ async def test_saved_tool_results_keep_the_normal_transcript_contract(db_session
                         metadata={"provider": SECRET},
                     ),
                     ToolReturnPart(
-                        "run_workflow",
+                        "run_code",
                         {"result": "Workflow complete"},
                         "workflow-call",
                         metadata={

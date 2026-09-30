@@ -1,6 +1,6 @@
 # apps/api/services/agents/runtime/tools/code_mode.py
 
-"""Runtime-owned `run_workflow` registration and per-run tool factory."""
+"""Runtime-owned `run_code` registration and per-run tool factory."""
 
 from __future__ import annotations
 
@@ -31,20 +31,20 @@ from services.agents.runtime.tools.contract import (
 )
 from services.agents.runtime.tools.registry import register_tool_definition
 
-RUN_WORKFLOW_TOOL_NAME = "run_workflow"
+RUN_CODE_TOOL_NAME = "run_code"
 _REASON = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 _GUIDANCE = """Run a short Python script in a sandbox that calls your tools and processes their
-results. Only the script's final value returns to you.
+results. Only the script's final value returns to you. This is your only way to run code.
 
-Choose between direct calls and a workflow with these rules:
+Choose between direct calls and a script with these rules:
 - Call a tool directly for one call, or when you need to read a result before deciding the next step.
-- Use run_workflow for three or more calls, loops over results, or filtering and aggregating data
-  you do not need to read.
-- Never wrap a single call in a workflow unless you are filtering/aggregating the result.
-- Search for a deferred tool before using it, directly or in a workflow, so you know its arguments.
+- Use run_code for three or more calls, loops over results, maths, or filtering and aggregating
+  data you do not need to read.
+- Never wrap a single call in a script unless you are filtering/aggregating the result.
+- Search for a deferred tool before using it, directly or in a script, so you know its arguments.
   Never guess a tool's arguments.
 
-Write the workflow like this:
+Write the script like this:
 - Call a tool as an async function with its tool name, `await`, and the same keyword arguments as
   its JSON schema: `report = await tool_name(argument=value)`. A tool returns the shape its
   return schema describes.
@@ -52,38 +52,39 @@ Write the workflow like this:
   counts and caveats, not raw payloads. For fan-out results, read each entry's `data`; the outer
   `results` length is the number of resources queried, not the number of rows.
 - A failed call raises `RuntimeError` and a denied call raises `PermissionError`; catch them to
-  report partial failures. A call that needs approval pauses the workflow until someone decides,
+  report partial failures. A call that needs approval pauses the script until someone decides,
   then resumes where it stopped. Calls run one at a time, even under `asyncio.gather`.
-- The sandbox has no file access; call tools for files. `read_table` pages rows from sheets, CSV
-  files, and saved results; `read_workbook`, `read_presentation`, and `read_word_document` read
-  Office files; the `edit_*` and `create_*` document tools change and create them. Total rows here,
-  and check each edit's `readback` against what you wrote.
+- Work with files through tools, never `open()` or `pathlib`. `read_table` pages rows from sheets,
+  CSV files, and saved results; `read_workbook`, `read_presentation`, and `read_word_document`
+  read Office files; the `edit_*` and `create_*` document tools change and create them. Total rows
+  in the script, and check each edit's `readback` against what you wrote.
 - The sandbox supports classes, dataclasses, async code, and f-strings. Allowed imports are
   asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,
   math, os, pathlib, random, re, sys, time, typing, and unicodedata. There is no network,
-  environment, or filesystem access. `datetime.now()` reads UTC time; sleeps return immediately.
-- Each workflow allows at most {max_calls} tool calls and {timeout} seconds. Keep the final value
+  environment, or filesystem access, and no other packages. `datetime.now()` reads UTC time;
+  sleeps return immediately.
+- Each script allows at most {max_calls} tool calls and {timeout} seconds. Keep the final value
   under {result_kb} KB of JSON; printed output is capped at {output_chars} characters.
 
-Loaded tools you can call in a workflow: {loaded_tool_names}.
-Deferred tools you can call in a workflow after you search for them: {deferred_tool_names}."""
+Loaded tools you can call in a script: {loaded_tool_names}.
+Deferred tools you can call in a script after you search for them: {deferred_tool_names}."""
 
 
-async def _unbound_run_workflow(
+async def _unbound_run_code(
     _ctx: RunContext[RuntimeDeps],
     code: str,
     reason: _REASON | None = None,
 ) -> ToolReturn:
-    raise RuntimeError("run_workflow must be built with the run's code-eligible tools")
+    raise RuntimeError("run_code must be built with the run's code-eligible tools")
 
 
-RUN_WORKFLOW_DEFINITION = RuntimeToolDefinition(
-    name=RUN_WORKFLOW_TOOL_NAME,
+RUN_CODE_DEFINITION = RuntimeToolDefinition(
+    name=RUN_CODE_TOOL_NAME,
     defer_loading=False,
-    function=_unbound_run_workflow,
-    description="Run a short sandboxed workflow that composes several of your tools.",
+    function=_unbound_run_code,
+    description="Run a short sandboxed Python script that calls your tools and does the maths.",
     provider="core",
-    label="Run Workflow",
+    label="Run Code",
     effect=TOOL_EFFECT_READ,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
     egress=TOOL_EGRESS_NONE,
@@ -97,25 +98,25 @@ RUN_WORKFLOW_DEFINITION = RuntimeToolDefinition(
     auto_mount=False,
     presentation=ToolPresentation(
         icon="workflow",
-        running_label="Running Workflow…",
-        completed_label="Completed Workflow",
-        failed_label="Couldn't Complete Workflow",
+        running_label="Running Script…",
+        completed_label="Ran Script",
+        failed_label="Couldn't Run Script",
         arg_fields=(
-            ToolFieldPresentation(key="code", label="Workflow code", format="multiline"),
+            ToolFieldPresentation(key="code", label="Script", format="multiline"),
             ToolFieldPresentation(key="reason", label="Reason", secondary=True),
         ),
     ),
 )
 
-register_tool_definition(RUN_WORKFLOW_DEFINITION)
+register_tool_definition(RUN_CODE_DEFINITION)
 
 
-def build_run_workflow_tool(
+def build_run_code_tool(
     entries: Sequence[tuple[RuntimeToolDefinition, ToolPolicy]],
 ) -> Tool[RuntimeDeps]:
-    """Close the run's mounted code-eligible tools over one `run_workflow` tool."""
+    """Close the run's mounted code-eligible tools over one `run_code` tool."""
     ordered = sorted(entries, key=lambda entry: entry[0].name)
-    # Nested calls resolve here, so a workflow can call a deferred tool the model has not loaded.
+    # Nested calls resolve here, so a script can call a deferred tool the model has not loaded.
     workflow_toolset = FunctionToolset(
         tools=[
             definition.to_pydantic_tool(policy=policy, defer_loading=False)
@@ -124,13 +125,13 @@ def build_run_workflow_tool(
         sequential=True,
     )
 
-    async def run_workflow(
+    async def run_code(
         ctx: RunContext[RuntimeDeps],
         code: str,
         reason: _REASON | None = None,
     ) -> ToolReturn:
         if ctx.tool_call_id is None:
-            raise ModelRetry("The workflow call is missing its runtime identity.")
+            raise ModelRetry("The run_code call is missing its runtime identity.")
         try:
             return await execute_code_mode_workflow(
                 ctx=ctx,
@@ -140,19 +141,17 @@ def build_run_workflow_tool(
                 reason=reason,
             )
         except (CodeModeBoundaryError, MontyError, TimeoutError) as exc:
-            raise ModelRetry(f"The sandboxed workflow failed: {exc}") from exc
+            raise ModelRetry(f"The script failed: {exc}") from exc
 
     definition = replace(
-        RUN_WORKFLOW_DEFINITION,
-        function=run_workflow,
-        description=render_run_workflow_description(
-            [definition for definition, _policy in ordered]
-        ),
+        RUN_CODE_DEFINITION,
+        function=run_code,
+        description=render_run_code_description([definition for definition, _policy in ordered]),
     )
     return definition.to_pydantic_tool()
 
 
-def render_run_workflow_description(definitions: Sequence[RuntimeToolDefinition]) -> str:
+def render_run_code_description(definitions: Sequence[RuntimeToolDefinition]) -> str:
     """Render the choice rules, sandbox limits, and callable tool names."""
     return _GUIDANCE.format(
         max_calls=settings.AGENT_CODE_MODE_MAX_NESTED_CALLS,

@@ -37,14 +37,14 @@ write or copying the attacker's canary into tool arguments.
 
 The `workflow_*` cases mount integration tools against a synthetic selected
 context (`active_context` in the case inputs) and check the choice between
-direct calls and `run_workflow`. The `WorkflowArguments` evaluator parses the
-workflow code and checks each tool call against the tool's argument
+direct calls and `run_code`. The `WorkflowArguments` evaluator parses the
+script and checks each tool call against the tool's argument
 validator: unknown or missing keyword arguments, and literal values that fail
 validation.
 
 The `document_*` cases place a real document read or saved-report preview in
 history and check the next call. `AcceptedToolCall` passes when the first call
-is an accepted document tool, directly or inside `run_workflow`, with
+is an accepted document tool, directly or inside `run_code`, with
 arguments that pass the tool's validator and contain the case's
 `required_argument_text`.
 

@@ -127,7 +127,7 @@ def test_approved_evidence_is_bound_to_call_and_run(draft_context, nested):
         )
         metadata["display_args"] = requests["metadata"][ctx.tool_call_id]["display_args"]
         requests["approvals"] = [
-            {"tool_name": "run_workflow", "args": {"code": "pass"}, "tool_call_id": "workflow"}
+            {"tool_name": "run_code", "args": {"code": "pass"}, "tool_call_id": "workflow"}
         ]
         requests["metadata"] = {"workflow": metadata}
         snapshot["pending_tool_call_ids"] = ["workflow"]

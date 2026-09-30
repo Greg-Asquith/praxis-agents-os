@@ -79,15 +79,15 @@ export function CodeModeRow({
       ? formatWorkflowModelResult(activity.result)
       : null
   if (activity.status === "running") {
-    return (
-      <FanOutSkeleton heading={<CodeModeHeading />} label="Running workflow…" summary={reason} />
-    )
+    return <FanOutSkeleton heading={<CodeModeHeading />} label="Running script…" summary={reason} />
   }
 
   const hiddenCount = Math.max(0, childCount - visibleChildren.length)
   return (
     <ToolResultCard
-      ariaLabel={pendingChild ? "Workflow review needed" : workflowAriaLabel(activity, childCount)}
+      ariaLabel={
+        pendingChild ? "Script needs your review" : workflowAriaLabel(activity, childCount)
+      }
       defaultOpen={defaultOpen || Boolean(pendingChild)}
       details={[
         ...(activity.delegate?.agentName
@@ -102,7 +102,7 @@ export function CodeModeRow({
       <div className="flex min-w-0 flex-col gap-3" ref={contentRef}>
         {script.reason ? <p className="text-muted-foreground text-sm">{script.reason}</p> : null}
         {visibleChildren.length > 0 ? (
-          <ol aria-label="Workflow tool calls" className="flex min-w-0 flex-col gap-2">
+          <ol aria-label="Script tool calls" className="flex min-w-0 flex-col gap-2">
             {visibleChildren.map((child) => (
               <li
                 className="[contain-intrinsic-size:auto_3rem] [content-visibility:auto]"
@@ -169,7 +169,7 @@ function CodeModeHeading() {
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
       <Workflow className="text-muted-foreground size-4 shrink-0" />
-      <span>Workflow</span>
+      <span>Script</span>
     </span>
   )
 }
@@ -195,12 +195,12 @@ function workflowStatusSummary(activity: ToolActivity, childCount: number, pendi
   }
   if (activity.status === "running" || activity.status === "awaiting_approval") {
     return childCount === 0
-      ? "Preparing workflow"
+      ? "Preparing script"
       : `Using ${String(childCount)} ${pluralize(childCount, "tool call")}…`
   }
   if (activity.status === "failed") {
     return childCount === 0
-      ? "The workflow could not finish"
+      ? "The script could not finish"
       : `Stopped after ${String(childCount)} ${pluralize(childCount, "tool call")}`
   }
   return `Completed with ${String(childCount)} ${pluralize(childCount, "tool call")}`
@@ -208,6 +208,6 @@ function workflowStatusSummary(activity: ToolActivity, childCount: number, pendi
 
 function workflowAriaLabel(activity: ToolActivity, childCount: number) {
   return activity.status === "failed"
-    ? `Workflow stopped after ${String(childCount)} ${pluralize(childCount, "tool call")}`
-    : `Workflow with ${String(childCount)} ${pluralize(childCount, "tool call")}`
+    ? `Script stopped after ${String(childCount)} ${pluralize(childCount, "tool call")}`
+    : `Script with ${String(childCount)} ${pluralize(childCount, "tool call")}`
 }

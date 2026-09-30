@@ -308,7 +308,7 @@ describe("agentStreamReducer", () => {
         data: {
           ...eventWithSeq(1),
           tool_call_id: "workflow-1",
-          name: "run_workflow",
+          name: "run_code",
           args: { code: "await read_file(file_id='file-1')" },
         },
       },
@@ -366,7 +366,7 @@ describe("agentStreamReducer", () => {
         data: {
           ...eventWithSeq(2),
           tool_call_id: "workflow-1",
-          name: "run_workflow",
+          name: "run_code",
           args: { code: "'done'" },
         },
       },

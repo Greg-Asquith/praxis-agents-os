@@ -55,7 +55,7 @@ REPORT_RESULT_GUIDANCE = (
     "metadata, then read file_reference for the full saved rows needed by your task. "
     "Call read_file with file_id=file_reference and offset to inspect saved rows. "
     "For filtering, aggregation, or whole-report calculations, page through read_table with "
-    "file_id=file_reference and list_name set to a lists entry inside run_workflow, and "
+    "file_id=file_reference and list_name set to a lists entry inside run_code, and "
     "compute there. Never calculate whole-report totals from "
     "preview rows. Do not repeat or split queries to recover rows already saved. "
     "Use each lists entry's total as its saved list length; do not fetch more source data "

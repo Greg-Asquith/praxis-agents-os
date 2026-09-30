@@ -20,7 +20,7 @@ from integrations.meta_ads.settings import meta_ads_settings
 from integrations.meta_ads.tools.run_insights import DEFINITION
 from models.files import File, FileRevision
 from services.agents.runtime.structured_results import result_json
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.files.utils import file_revision_ref
 from services.integrations.context.domain import ResolvedActiveContext
@@ -169,7 +169,7 @@ async def test_insights_dispatch_preserves_complete_report(
         "'error_codes': [entry['error_code'] for entry in report['results']]}"
     )
     call = (
-        ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code})
+        ToolCall(RUN_CODE_TOOL_NAME, {"code": code})
         if nested
         else ToolCall(DEFINITION.name, arguments)
     )
@@ -211,16 +211,16 @@ async def test_insights_dispatch_preserves_complete_report(
     )
     assert "test-meta-token" not in str([row.details for row in result.audit_rows])
     assert "test-meta-token" not in str(
-        result.tool_returns(RUN_WORKFLOW_TOOL_NAME if nested else DEFINITION.name)
+        result.tool_returns(RUN_CODE_TOOL_NAME if nested else DEFINITION.name)
     )
     if nested:
-        assert result.tool_returns(RUN_WORKFLOW_TOOL_NAME), [
+        assert result.tool_returns(RUN_CODE_TOOL_NAME), [
             part.content
             for message in seen[-1][0]
             for part in message.parts
             if isinstance(part, RetryPromptPart)
         ]
-        assert result.tool_returns(RUN_WORKFLOW_TOOL_NAME)[0]["content"] == {
+        assert result.tool_returns(RUN_CODE_TOOL_NAME)[0]["content"] == {
             "rows": 1_500,
             "impressions": 1_124_250,
             "currency": "EUR",

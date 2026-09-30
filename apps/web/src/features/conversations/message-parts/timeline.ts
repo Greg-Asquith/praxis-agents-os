@@ -208,7 +208,7 @@ export function projectConversationTimeline({
         agentRunId: workflow.owner_run_id,
         rootRunId: transcriptRun?.id ?? null,
         kind: "approval",
-        name: "run_workflow",
+        name: "run_code",
         status: "awaiting_approval",
         ...(delegation ? { delegate: delegationDetailsForPendingApproval(delegation) } : {}),
         script: {

@@ -79,7 +79,7 @@ function workflow(children: ToolActivity[], overrides: Partial<ToolActivity> = {
   return {
     id: "workflow-1",
     kind: "call",
-    name: "run_workflow",
+    name: "run_code",
     status: "completed",
     result: "done",
     script: {

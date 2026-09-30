@@ -362,7 +362,7 @@ describe("parseConversationMessages", () => {
         {
           part_kind: "tool-call",
           tool_call_id: "workflow-1",
-          tool_name: "run_workflow",
+          tool_name: "run_code",
           args: {
             code: "report = await google_ads_run_report(query='campaigns')\nreport",
             reason: "Find weak campaigns",
@@ -373,7 +373,7 @@ describe("parseConversationMessages", () => {
         {
           part_kind: "tool-return",
           tool_call_id: "workflow-1",
-          tool_name: "run_workflow",
+          tool_name: "run_code",
           outcome: "success",
           content: { result: "done" },
           metadata: {
@@ -427,7 +427,7 @@ describe("parseConversationMessages", () => {
 
     expect(parsed[0]?.toolActivities[0]).toMatchObject({
       id: "workflow-1",
-      name: "run_workflow",
+      name: "run_code",
       status: "completed",
       script: {
         code: "report = await google_ads_run_report(query='campaigns')\nreport",
@@ -481,7 +481,7 @@ describe("parseConversationMessages", () => {
           {
             part_kind: "tool-call",
             tool_call_id: "workflow-1",
-            tool_name: "run_workflow",
+            tool_name: "run_code",
             args: { code: "r = await tool()", reason: "Adding keywords" },
           },
         ],
@@ -490,13 +490,13 @@ describe("parseConversationMessages", () => {
     ]
 
     expect(parseConversationMessages(dangling, null)[0]?.toolActivities[0]).toMatchObject({
-      name: "run_workflow",
+      name: "run_code",
       status: "unknown",
     })
     expect(
       parseConversationMessages(dangling, run("run-1", "failed"))[0]?.toolActivities[0]
     ).toMatchObject({
-      name: "run_workflow",
+      name: "run_code",
       status: "stopped",
       args: { code: "r = await tool()", reason: "Adding keywords" },
     })
@@ -513,7 +513,7 @@ describe("parseConversationMessages", () => {
             {
               part_kind: "tool-call",
               tool_call_id: "workflow-1",
-              tool_name: "run_workflow",
+              tool_name: "run_code",
               args: { code: "'stored separately'" },
             },
           ],
@@ -615,7 +615,7 @@ describe("parseConversationMessages", () => {
               args: { code: "await send_email(subject='Update')" },
               part_kind: "tool-call",
               tool_call_id: "workflow-1",
-              tool_name: "run_workflow",
+              tool_name: "run_code",
             },
           ],
           { agent_run_id: "run-1" }
@@ -666,7 +666,7 @@ describe("parseConversationMessages", () => {
               args: { code: "await send_email(subject='Update')" },
               part_kind: "tool-call",
               tool_call_id: "workflow-1",
-              tool_name: "run_workflow",
+              tool_name: "run_code",
             },
           ],
           { agent_run_id: "run-1" }

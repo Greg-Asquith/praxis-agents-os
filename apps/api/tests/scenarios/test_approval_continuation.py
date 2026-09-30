@@ -24,7 +24,7 @@ from services.agent_runs.resume_run_stream import resume_agent_run_stream
 from services.agent_runs.schemas import AgentRunResumeDecision, AgentRunResumeRequest
 from services.agents.runtime.code_mode.executor import close_code_mode_executor
 from services.agents.runtime.run_manager import run_task_registry
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG, runtime_tool
 from tests.support.approvals import ScenarioDecision
 from tests.support.delegation import resume_scenario, scenario_effects
@@ -419,7 +419,7 @@ async def _park_for_corruption(factory, monkeypatch, effects, target):
         ]
     elif target == "nested-decision":
         code = f"await {effects.name}(value='first')\nawait {effects.name}(value='second')\n'done'"
-        turns = [ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, "workflow"),))]
+        turns = [ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": code}, "workflow"),))]
     else:
         turns = [ToolTurn((write,))]
     model = scripted_model(turns=turns)
@@ -575,7 +575,7 @@ async def test_shutdown_of_delegated_continuation_settles_linked_schedule(
                         ),
                     )
                 ),
-                ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, "workflow"),)),
+                ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": code}, "workflow"),)),
             ]
         )
         monkeypatch.setattr("services.agents.runtime.loop.build_model", lambda _resolved: model)

@@ -3,12 +3,12 @@
 import { CodeModeRow } from "@/features/conversations/components/code-mode-row"
 import type { ToolRowPresenter } from "@/integrations/contract"
 
-const RUN_WORKFLOW_TOOL_NAME = "run_workflow"
+const RUN_CODE_TOOL_NAME = "run_code"
 
 export const codeModeWorkflowPresenter: ToolRowPresenter = {
   handlesApprovals: true,
   key: "code-mode-workflow",
-  matches: (activity) => activity.name === RUN_WORKFLOW_TOOL_NAME && Boolean(activity.script),
+  matches: (activity) => activity.name === RUN_CODE_TOOL_NAME && Boolean(activity.script),
   render: ({ activity, defaultOpen, live }) => (
     <CodeModeRow activity={activity} defaultOpen={defaultOpen} live={live} />
   ),

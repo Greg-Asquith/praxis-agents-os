@@ -24,9 +24,7 @@ async def test_adds_display_args_without_changing_replay_args(monkeypatch, neste
         args={"amount": "12.50"},
     )
     outer = (
-        ToolCallPart(tool_name="run_workflow", tool_call_id="outer-call", args={})
-        if nested
-        else call
+        ToolCallPart(tool_name="run_code", tool_call_id="outer-call", args={}) if nested else call
     )
     metadata = (
         {

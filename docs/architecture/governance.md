@@ -138,13 +138,13 @@ default. _(enforced)_ The following rules define the defaults:
   `EDITOR_ROLES` before every `effect="write"` invocation; read-only members
   may continue conversations and use `effect="read"` tools. _(enforced)_
 - Code mode never aggregates or weakens tool decisions. The outer
-  `run_workflow` tool has no side effect; every nested call independently
+  `run_code` tool has no side effect; every nested call independently
   retains its declared effect and egress, active membership and role check,
   run-envelope verdict, approval policy, output contract, bounds, and audit
   record through the same dispatch choke point as a direct call. A nested
   approval carries the same staged-content, expiry, and audit treatment as a
   direct call's approval. Eligible gated and write tools may therefore be
-  callable from workflows; every decision remains scoped to one nested call
+  callable from `run_code` scripts; every decision remains scoped to one nested call
   and its validated effective arguments. _(enforced)_
 - Batch consent is one list-shaped call whose complete bounded row set the
   operator reviews and may edit before approval. The edited set is what

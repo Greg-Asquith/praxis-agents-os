@@ -25,7 +25,7 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.entity_references.domain import FileReference as SourceReference
-from services.agents.runtime.tools.code_mode import RUN_WORKFLOW_TOOL_NAME, build_run_workflow_tool
+from services.agents.runtime.tools.code_mode import RUN_CODE_TOOL_NAME, build_run_code_tool
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.files.append_file_revision import append_file_revision
 from services.files.revision_actor import FileRevisionActor
@@ -78,7 +78,7 @@ def _edited_workbook():
 def _call(definition, args, *, nested, call_id):
     if nested:
         return ToolCall(
-            RUN_WORKFLOW_TOOL_NAME,
+            RUN_CODE_TOOL_NAME,
             {"code": f"await {definition.name}(**{args!r})"},
             call_id,
         )
@@ -117,7 +117,7 @@ def _configure_runtime(
     monkeypatch.setattr(
         "services.agents.runtime.loop.build_runtime_tools",
         lambda *_args, **_kwargs: (
-            [build_run_workflow_tool(definitions)]
+            [build_run_code_tool(definitions)]
             if nested
             else [definition.to_pydantic_tool(policy=policy) for definition, policy in definitions]
         ),

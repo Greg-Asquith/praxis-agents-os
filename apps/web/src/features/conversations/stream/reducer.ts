@@ -349,7 +349,7 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
           ...nextState.toolCalls,
           [streamToolKey(streamEvent.data)]: {
             args: existing?.args,
-            name: existing?.name ?? "run_workflow",
+            name: existing?.name ?? "run_code",
             result: existing?.result ?? null,
             status: workflowStatus,
             timelineSequence,

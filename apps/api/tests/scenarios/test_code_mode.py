@@ -38,7 +38,7 @@ from services.agents.runtime.staged_tool_content import (
     resolve_staged_write_content,
 )
 from services.agents.runtime.tools.code_mode import (
-    RUN_WORKFLOW_TOOL_NAME,
+    RUN_CODE_TOOL_NAME,
 )
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -261,7 +261,7 @@ async def test_multi_read_workflow_completes_beside_direct_tools_with_nested_aud
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {
                                 "code": (
                                     "first = await scenario_code_read_first(value='north')\n"
@@ -280,7 +280,7 @@ async def test_multi_read_workflow_completes_beside_direct_tools_with_nested_aud
 
     first_request_tools = {tool.name for tool in seen_requests[0][1].function_tools}
     assert {
-        RUN_WORKFLOW_TOOL_NAME,
+        RUN_CODE_TOOL_NAME,
         "scenario_code_read_first",
         "scenario_code_read_second",
     }.issubset(first_request_tools)
@@ -318,7 +318,7 @@ async def test_workflow_cannot_call_a_tool_the_agent_has_not_mounted(
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {
                                 "code": (
                                     "try:\n"
@@ -338,7 +338,7 @@ async def test_workflow_cannot_call_a_tool_the_agent_has_not_mounted(
         ),
     )
 
-    [workflow] = result.tool_returns(RUN_WORKFLOW_TOOL_NAME)
+    [workflow] = result.tool_returns(RUN_CODE_TOOL_NAME)
     assert "scenario_code_read_second" in str(workflow["content"])
     assert "called" not in str(workflow["content"])
     assert not any(row.tool_name == "scenario_code_read_second" for row in result.audit_rows)
@@ -363,7 +363,7 @@ async def test_gated_nested_call_suspends_without_partial_effect(
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {
                                 "code": (
                                     "try:\n"
@@ -424,7 +424,7 @@ async def test_batch_override_executes_and_audits_only_the_edited_rows(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {"code": f"await scenario_code_batch_write(keywords={proposed!r})"},
                         "workflow-call",
                     ),
@@ -497,7 +497,7 @@ async def test_maximum_batch_remains_one_approval_and_one_terminal_audit(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {"code": f"await scenario_code_batch_write(keywords={rows!r})"},
                         "workflow-call",
                     ),
@@ -550,7 +550,7 @@ async def test_concurrent_duplicate_nested_resume_request_starts_one_continuatio
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {"code": "await scenario_code_forced_write(value='once')"},
                             "workflow-call",
                         ),
@@ -637,7 +637,7 @@ async def test_two_gated_writes_resume_sequentially_across_executor_restarts(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {
                             "code": (
                                 "await scenario_code_forced_write(value='first')\n"
@@ -696,7 +696,7 @@ async def test_approved_write_with_invalid_evidence_requires_recovery(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {"code": f"await {tool_name}(value='completed')"},
                         "workflow-call",
                     ),
@@ -742,7 +742,7 @@ async def test_snapshot_degradation_after_completed_write_fails_closed_to_recove
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {
                             "code": (
                                 "await scenario_code_forced_write(value='completed')\n"
@@ -808,13 +808,13 @@ async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {"code": "await scenario_code_forced_write(value='pending')"},
                         "workflow-call",
                     ),
                 )
             ),
-            "I will redraft the workflow before trying again.",
+            "I will redraft the script before trying again.",
         ],
         seen_requests=seen_requests,
     )
@@ -846,7 +846,7 @@ async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result
 
     assert completed.run.status == "completed"
     assert code_mode_scenario_tools["effects"] == []
-    assert "redraft the workflow" in str(seen_requests[1][0])
+    assert "redraft the script" in str(seen_requests[1][0])
     assert "code_mode_state" not in (completed.run.metadata_json or {})
 
 
@@ -865,7 +865,7 @@ async def test_restore_failure_after_first_approved_write_requires_recovery(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {"code": "await scenario_code_forced_write(value='just-approved')"},
                         "workflow-call",
                     ),
@@ -928,7 +928,7 @@ async def test_nested_denial_resumes_workflow_and_audits_nested_call(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {
                             "code": (
                                 "try:\n"
@@ -980,7 +980,7 @@ async def test_nested_write_file_staging_round_trips_and_cleans_up(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {
                             "code": (
                                 "try:\n"
@@ -1076,7 +1076,7 @@ async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_tool(
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {
                                 "code": (
                                     "item = await scenario_code_hostile_read()\nitem['content']"
@@ -1093,7 +1093,7 @@ async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_tool(
     )
 
     workflow_tool = next(
-        tool for tool in seen_requests[0][1].function_tools if tool.name == RUN_WORKFLOW_TOOL_NAME
+        tool for tool in seen_requests[0][1].function_tools if tool.name == RUN_CODE_TOOL_NAME
     )
     assert "write_file" in workflow_tool.description
     assert code_mode_scenario_tools["effects"] == []
@@ -1119,7 +1119,7 @@ async def test_scheduled_workflow_requires_approval_under_review_envelope(
         ToolTurn(
             (
                 ToolCall(
-                    RUN_WORKFLOW_TOOL_NAME,
+                    RUN_CODE_TOOL_NAME,
                     {"code": "await scenario_code_forced_write(value='scheduled')"},
                     "workflow-call",
                 ),
@@ -1167,7 +1167,7 @@ async def test_scheduled_workflow_enforces_deny_envelope(
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {
                                 "code": (
                                     "try:\n"
@@ -1211,7 +1211,7 @@ async def test_tainted_scheduled_write_requires_review_even_with_allow_grant(
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {
                                 "code": (
                                     "item = await scenario_code_hostile_read()\n"
@@ -1260,7 +1260,7 @@ async def test_read_only_role_is_rechecked_inside_nested_write(
                 ToolTurn(
                     (
                         ToolCall(
-                            RUN_WORKFLOW_TOOL_NAME,
+                            RUN_CODE_TOOL_NAME,
                             {
                                 "code": (
                                     "try:\n"
@@ -1428,7 +1428,7 @@ async def test_google_ads_pause_then_failed_create_keeps_separate_approvals_and_
     )
     model = scripted_model(
         turns=[
-            ToolTurn((ToolCall(RUN_WORKFLOW_TOOL_NAME, {"code": code}, "keyword-workflow"),)),
+            ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": code}, "keyword-workflow"),)),
             "Workflow finished.",
         ]
     )
@@ -1475,7 +1475,7 @@ async def test_shared_projection_after_real_nested_suspension_and_resume(
             ToolTurn(
                 (
                     ToolCall(
-                        RUN_WORKFLOW_TOOL_NAME,
+                        RUN_CODE_TOOL_NAME,
                         {
                             "code": "try:\n    await scenario_code_forced_write(value='REVIEWED_VALUE')\nexcept PermissionError:\n    pass"
                         },
@@ -1490,7 +1490,7 @@ async def test_shared_projection_after_real_nested_suspension_and_resume(
     assert suspended.run.status == "awaiting_approval"
     trace = suspended.run.metadata_json[CODE_MODE_STATE_METADATA_KEY]["nested_trace"]
     assert trace[-1]["status"] == "pending"
-    assert suspended.tool_returns(RUN_WORKFLOW_TOOL_NAME) == []
+    assert suspended.tool_returns(RUN_CODE_TOOL_NAME) == []
     suspended_display = [
         project_shared_message(row).model_dump_json() for row in suspended.messages
     ]

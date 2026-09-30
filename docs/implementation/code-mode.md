@@ -1,6 +1,6 @@
 # Code Mode implementation contracts
 
-Read this before changing sandbox state, nested approvals, or workflow
+Read this before changing sandbox state, nested approvals, or script
 replay. The [Code Mode architecture](../architecture/code-mode.md) explains
 the design and trust boundaries. Backend paths are relative to `apps/api/`.
 
@@ -31,35 +31,44 @@ and explicit truncation markers. When a nested tool supplies a governed
 `public_result`, that richer value is the presentation evidence while only
 `return_value` enters the sandbox. That evidence must never enter model context. The governed
 nested-value and provider product bounds remain authoritative. Keep the
-workflow's model-facing final-result bound materially tighter than the
+script's model-facing final-result bound materially tighter than the
 nested value bound so a faulty reduction cannot flood every later request.
 
-## Workflow tool resolution
+## Script tool resolution
 
 `build_runtime_tools` mounts every allowed tool directly and passes the
 mounted code-eligible tools, with their effective policies, to
-`build_run_workflow_tool`. That per-run toolset keeps every tool eager, so a
-workflow can call a deferred tool the model hasn't discovered. A workflow
+`build_run_code_tool`. That per-run toolset keeps every tool eager, so a
+script can call a deferred tool the model hasn't discovered. A script
 uses a tool's direct name and JSON-schema keyword arguments. Code-eligible
 tools with an `output_model` set `include_return_schema`, so the model sees
 the declared return shape. When you change the sandbox syntax or import
-allowlist, update the `run_workflow` guidance in `tools/code_mode.py` with
+allowlist, update the `run_code` guidance in `tools/code_mode.py` with
 the probes.
+
+`run_code` is the only code tool; no provider sandbox runs code. The model
+sees the name `run_code`, while modules, settings (`AGENT_CODE_MODE_*`), run
+metadata (`code_mode_state`, `code_mode_trace`), and the `workflow.state`
+stream event keep their Code Mode names. Scripts have no file access: they
+read and change files through `read_table` and the document tools, which run
+in the document worker (see [document tools](document-tools.md)). When a tool
+that works with files is added or renamed, update the file bullet in the
+`run_code` guidance.
 
 ## Transcript presentation
 
-Code-mode workflows render as one collapsed outer row whose children recurse
+Code Mode scripts render as one collapsed outer row whose children recurse
 through the standard `ToolCallRow`; keep live state normalised by parent id,
 rebuild replay only from the persisted nested trace, and auto-expand any
 nested approval so operator consent is never hidden. Label the children as
-tool calls, not workflow steps: interpreter-side filtering, aggregation, and
+tool calls, not script steps: interpreter-side filtering, aggregation, and
 branching are meaningful work but are not separate trace children. Prefer a trace's
 structured presentation result over its excerpt so provider presenters work
 after reload. The presentation result is complete relative to the governed
 nested tool return: pagination may control the visible page, but must not
 discard rows, and copy/export actions use the complete retained result. A
 truncated legacy excerpt gets explanatory fallback copy, not malformed JSON.
-Settled workflow rows also expose the complete outer tool result under an
+Settled Code Mode rows also expose the complete outer tool result under an
 explicitly labelled model-output disclosure so operators can distinguish
 what the model received from the richer nested results retained for them.
 When nested results contain exact mutation counts, summarise the settled
@@ -67,25 +76,25 @@ container in outcome language and keep applied, skipped, failed, and declined
 outcomes distinct. Derive this only from retained structured results; do not
 infer effects from proposed arguments or a model-authored reason.
 
-## Pending workflow projection
+## Pending script projection
 
-Approval reloads expose a `workflows` list for root and delegated workflows.
-Each workflow retains its owning run and delegation reference. Its pending
+Approval reloads expose a `workflows` list for root and delegated scripts.
+Each entry retains its owning run and delegation reference. Its pending
 leaf carries the nested action's identity, editable arguments, and untrusted
 data warning. Root stream approval events use these same leaves after
-suspension commits, so child workflow arguments and warnings match reload.
+suspension commits, so child script arguments and warnings match reload.
 
-Approval reads reject malformed or unavailable workflow state instead of
+Approval reads reject malformed or unavailable script state instead of
 presenting an unverifiable action. A root resume against that state stops with
 bounded recovery evidence, preserving completed effects for inspection.
 
-Delegated workflow decisions compile against the child's saved interpreter
+Delegated script decisions compile against the child's saved interpreter
 state. The parent carries the child's deferred results, including the nested
 call identity and effective-argument digest. A later suspension creates a fresh
 batch and requires another decision. Completed nested effects remain in the
 saved trace, so continuing a second approval round does not rerun them.
 
-If a delegated workflow cannot resume safely, family recovery preserves its
+If a delegated script cannot resume safely, family recovery preserves its
 completed and uncertain effect references before executable state is cleared.
 The main conversation shows that evidence and links to the specialist
 transcripts. Recovery does not authorise automatic redrafting or effect replay.

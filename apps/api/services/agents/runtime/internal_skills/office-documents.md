@@ -28,7 +28,7 @@ plainly what changed.
 text conversion that is fine for a quick summary but loses structure and
 can't be edited back.
 
-Use `run_workflow` when the work needs loops, several calls, or maths:
+Use `run_code` when the work needs loops, several calls, or maths:
 reading every page of a table, totalling rows, or writing and then checking
 many values. Scripts call these tools with the same arguments. Call a tool
 directly when one call is enough.

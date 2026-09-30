@@ -16,7 +16,7 @@ import { approvalIdentity } from "../../../support/approvals"
 const createdAt = "2026-08-21T10:00:00.000Z"
 const normalizedWorkflow = {
   id: "workflow-1",
-  name: "run_workflow",
+  name: "run_code",
   result: { result: "done" },
   script: {
     children: [
@@ -127,7 +127,7 @@ const scenarios: TimelineScenario[] = [
           {
             ...liveToolCall("workflow-1", "awaiting_approval"),
             args: { code: "await test_tool(value='input')" },
-            name: "run_workflow",
+            name: "run_code",
           },
           {
             ...liveToolCall("workflow-1:1", "awaiting_approval"),
@@ -279,7 +279,7 @@ function liveWorkflowToolCalls(): ToolCallState[] {
   return [
     {
       args: { code: "report = await check_report(account='one')\nreport" },
-      name: "run_workflow",
+      name: "run_code",
       result: { result: "done" },
       status: "completed",
       timelineSequence: 0,
@@ -305,7 +305,7 @@ function replayWorkflowMessages(): ConversationMessage[] {
         args: { code: "report = await check_report(account='one')\nreport" },
         part_kind: "tool-call",
         tool_call_id: "workflow-1",
-        tool_name: "run_workflow",
+        tool_name: "run_code",
       },
     ]),
     message("workflow-result", "tool", 2, [
@@ -327,7 +327,7 @@ function replayWorkflowMessages(): ConversationMessage[] {
         outcome: "success",
         part_kind: "tool-return",
         tool_call_id: "workflow-1",
-        tool_name: "run_workflow",
+        tool_name: "run_code",
       },
     ]),
   ]

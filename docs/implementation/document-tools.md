@@ -321,21 +321,21 @@ read's `revision_id`, keep the file's formatting, write formulas for derived
 values, and compare the read-back with what was meant. The internal skill
 `runtime/internal_skills/office-documents.md` holds the longer working rules:
 which tool to use, editing someone's file rather than recreating it, checking
-every reported number in a `run_workflow` script, the approval each tainted
+every reported number in a `run_code` script, the approval each tainted
 write needs, and reporting the change in outcome language.
 
 Saved-result previews, report tool descriptions, attachment text, and
 `read_file` failures point at `read_table` and the Office read tools. The
-`run_workflow` description names the document tools as the way a script works
+`run_code` description names the document tools as the way a script works
 with files.
 
 The `document_*` cases in `evals/datasets/agent_behavior.yaml` check the first
 call a model makes after a read: creating a deck from a template, adding
 formula totals to a workbook, editing a Word paragraph and commenting on it,
-and totalling a saved report with `read_table` in `run_workflow`. Their
+and totalling a saved report with `read_table` in `run_code`. Their
 fixtures in `tests/fixtures/document_evals/` are real read and preview
 results. The `AcceptedToolCall` evaluator validates the call's arguments
-against the tool's schema, directly or inside a workflow.
+against the tool's schema, directly or inside `run_code`.
 
 ## Conversation rows
 
@@ -343,7 +343,7 @@ Every document tool renders one row family,
 `apps/web/src/features/conversations/components/document-tool-row.tsx`, with
 parsers in `native-tools/document-tools.ts`. Completed calls render as result
 cards with the File, a Details popover, and an outcome badge, as the other
-file tools do, including inside Code Mode workflows. A result shape the
+file tools do, including inside `run_code` scripts. A result shape the
 parsers don't recognise, such as a bounded preview of an oversized read,
 falls back to the generic row.
 

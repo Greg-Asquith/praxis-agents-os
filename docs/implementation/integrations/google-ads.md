@@ -34,7 +34,7 @@ recorded, never raised, so the audit record keeps every operation's evidence.
 Reports declare the configured structured-result budget for transcript output
 and preview only account row lists on overflow. Shared retrieval guidance
 directs full-report calculations to the retained File through `read_table`
-inside `run_workflow`.
+inside `run_code`.
 Reports consume all `searchStream` batches without adding a GAQL `LIMIT` or
 discarding rows. An explicit query `LIMIT` remains unchanged; the tool description
 reserves it for requested limited or top-N reports. Large successful results

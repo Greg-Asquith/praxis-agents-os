@@ -350,7 +350,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "read_word_document": "none",
         "read_workbook": "none",
         "report_completion": "none",
-        "run_workflow": "none",
+        "run_code": "none",
         "save_memory": "none",
         "search_knowledge": "none",
         "search_memory": "none",
@@ -535,7 +535,7 @@ def test_build_runtime_tools_mounts_auto_tools_beside_the_selection() -> None:
         if definition.auto_mount and definition.integration_binding is None
     }
     assert auto_mounted <= set(names)
-    assert names[-3:] == ["test_runtime_context", "test_add_numbers", "run_workflow"]
+    assert names[-3:] == ["test_runtime_context", "test_add_numbers", "run_code"]
     # Mounted tools keep their definition's approval, timeout, and retry settings.
     for tool in tools:
         definition = RUNTIME_TOOL_CATALOG[tool.name]
@@ -544,7 +544,7 @@ def test_build_runtime_tools_mounts_auto_tools_beside_the_selection() -> None:
 
 
 @pytest.mark.deferred_tools
-def test_code_eligible_tools_stay_direct_beside_run_workflow(
+def test_code_eligible_tools_stay_direct_beside_run_code(
     cleanup_test_tools,
     google_ads_manifest,
 ) -> None:
@@ -588,10 +588,10 @@ def test_code_eligible_tools_stay_direct_beside_run_workflow(
         "customer_id": {"title": "Customer Id", "type": "string"}
     }
     assert "test_context_code_read" not in by_name
-    assert by_name["run_workflow"].defer_loading is False
-    assert "test_code_read" in by_name["run_workflow"].description
-    assert "test_context_code_read" not in by_name["run_workflow"].description
-    assert "test_direct_read" not in by_name["run_workflow"].description
+    assert by_name["run_code"].defer_loading is False
+    assert "test_code_read" in by_name["run_code"].description
+    assert "test_context_code_read" not in by_name["run_code"].description
+    assert "test_direct_read" not in by_name["run_code"].description
 
 
 def test_disallowed_tools_are_skipped_in_runtime_and_catalog(

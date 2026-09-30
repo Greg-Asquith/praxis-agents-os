@@ -1,11 +1,11 @@
 # Code Mode orchestration
 
 Status: **implemented end to end**. Every agent with at least one mounted
-code-eligible tool also gets `run_workflow`, a peer tool that runs a short
+code-eligible tool also gets `run_code`, a peer tool that runs a short
 model-authored Python script in a sandboxed interpreter. The script composes
 the agent's already-authorized tools, which stay directly callable. Every nested call still crosses the same
 authorization, approval, and audit path as a direct call. The web app renders
-the workflow script, its nested calls, and mid-workflow approvals live and on
+the script, its nested calls, and any approval it waits on, live and on
 replay. This note describes how it works, why it is shaped this way, and how
 to build on it.
 
@@ -26,68 +26,73 @@ policy, approval policy, output validation, bounding, usage accounting, and
 audit path as a direct call. Code mode never aggregates or weakens per-call
 decisions (see `governance.md` and `threat-model.md` §7).
 
-Code mode is the only way an agent runs code. There is no provider sandbox.
-A script has no file access; it reads and writes Office files, CSV, and saved
-results by calling the document tools, which parse bytes in a bounded worker
-process on the host.
+`run_code` is the only way an agent runs code. There is no provider sandbox,
+and no workspace file bytes leave the deployment to run code. A script has no
+file access. It works with files by calling tools: `read_table` pages rows
+from sheets, CSV files, and saved results; `read_workbook`,
+`read_presentation`, and `read_word_document` read Office files; and the
+`edit_*` and `create_*` document tools save a new revision or a new File.
+Those tools parse bytes in a bounded worker process on the host
+(`implementation/document-tools.md`). The script does the loops and maths
+over the values they return and checks each edit's `readback`.
 
 ## Enablement
 
 Code mode is always on. There is no per-agent or workspace switch.
-`run_workflow` is never a catalog row, so it cannot be selected, disabled, or
+`run_code` is never a catalog row, so it cannot be selected, disabled, or
 given a policy override. `build_runtime_tools`
 (`services/agents/runtime/tools/registry.py`) stays the sole mounting
-authority. It mounts `run_workflow` when at least one mounted tool is
+authority. It mounts `run_code` when at least one mounted tool is
 `code_eligible`, which in practice is every agent, because the file tools are
 eligible and always mounted.
 
-## How a workflow executes
+## How a script executes
 
-### 1. Direct calls and workflows are peers
+### 1. Direct calls and scripts are peers
 
 After agent selection, workspace disables, and integration-context filtering,
 every allowed tool mounts directly. Code-eligible tools also go into the
-per-run toolset that `run_workflow` closes over
-(`tools/code_mode.py:build_run_workflow_tool`). A workflow calls a tool by its
+per-run toolset that `run_code` closes over
+(`tools/code_mode.py:build_run_code_tool`). A script calls a tool by its
 direct name with the same keyword arguments as its JSON schema, so the model
 learns one argument shape per tool.
 
-The model chooses between the two paths. The `run_workflow` description
+The model chooses between the two paths. The `run_code` description
 carries short, absolute rules:
 
 - Call a tool directly for one call, or when you need to read a result before
   deciding the next step.
-- Use `run_workflow` for three or more calls, loops over results, or filtering
-  and aggregating data you don't need to read.
-- Never wrap a single call in a workflow.
-- Search for a deferred tool before using it, directly or in a workflow, so
+- Use `run_code` for three or more calls, loops over results, maths, or
+  filtering and aggregating data you don't need to read.
+- Never wrap a single call in a script.
+- Search for a deferred tool before using it, directly or in a script, so
   you know its arguments.
 
 The description lists the callable tool names in two groups: loaded tools and
 deferred tools. A deferred tool's schema is visible only after tool search
-reveals it, but a workflow can call any mounted code-eligible tool,
+reveals it, but a script can call any mounted code-eligible tool,
 discovered or not. Calling a name outside the run's toolset raises a catchable
 `NameError` that names the tool.
 
 Code-eligible tools with a declared `output_model` send that model's JSON
 schema as their return schema (`include_return_schema`), so the model knows
-the shape a workflow receives. Anthropic and OpenAI receive it as text in the
+the shape a script receives. Anthropic and OpenAI receive it as text in the
 tool description. A tool without an output model returns an undeclared shape.
 
 Integration tools accept provider-native scoped references only. Their fixed
-results are operation-specific typed dictionaries, so a workflow can pass a
+results are operation-specific typed dictionaries, so a script can pass a
 created reference directly into a later tool without a discovery or report
 call or a Praxis UUID. The server resolves each provider scope against the
 active context at the nested dispatch boundary. Missing scopes fail closed.
 
-Workflows learn argument shapes from the same JSON schemas as direct calls,
-not from a second Python rendering. A model that writes a workflow before
+Scripts learn argument shapes from the same JSON schemas as direct calls,
+not from a second Python rendering. A model that writes a script before
 searching for a deferred tool can guess its arguments. Nested argument
 validation rejects the call with a catchable `RuntimeError` that names the
 tool and the invalid fields, so the model can redraft. The
 `workflow_arguments_*` and `workflow_selection_*` cases in
 `evals/datasets/agent_behavior.yaml` measure argument errors and the choice
-between direct calls and workflows on live models.
+between direct calls and scripts on live models.
 
 ### 2. The script runs in a Monty sandbox
 
@@ -113,7 +118,7 @@ tool. Eligibility never grants authority; dispatch still enforces every call.
 For each awaited tool call, the bridge builds an inner Pydantic AI
 `ToolManager` in the same shape as the framework's own per-step path,
 synthesizes a nested `ToolCallPart` (with its own call id and the outer
-`run_workflow` call as parent), and invokes `ToolManager.handle_call`. That
+`run_code` call as parent), and invokes `ToolManager.handle_call`. That
 covers argument validation and coercion, defaults, custom validators, context
 construction, timeouts, and approval resolution, and execution still reaches
 the runtime `Hooks` capability and `dispatch_tool_execution` — which remains
@@ -124,7 +129,7 @@ The bridge must never reproduce the tool-layer pipeline. Direct and nested
 execution are required to be identical for effective arguments, validation,
 context, timeouts, authorization, envelope decisions, hook reachability, and
 handler execution. Only the outer presentation differs deliberately: nested
-failures surface as catchable in-workflow exceptions (a `ToolDenied` becomes a
+failures surface as catchable in-script exceptions (a `ToolDenied` becomes a
 denial the script can handle), nested calls do not consume the agent's retry
 budget, and approvals suspend the outer tool (below).
 
@@ -132,7 +137,7 @@ The complete trust chain is:
 
 ```text
 model
-  -> run_workflow (peer of the direct tools)
+  -> run_code (peer of the direct tools)
     -> Monty worker (no ambient OS, files, network, DB, or credentials)
       -> eligible tool function name
         -> inner Pydantic AI ToolManager
@@ -165,7 +170,7 @@ configured in `core/settings/code_mode.py` (`AGENT_CODE_MODE_*`):
 | Nested calls per script                                  | `AGENT_CODE_MODE_MAX_NESTED_CALLS` (25)                                                                                                                                             |
 | Captured print output                                    | `AGENT_CODE_MODE_OUTPUT_MAX_CHARS` (8,000)                                                                                                                                          |
 | Each value crossing the boundary                         | `AGENT_CODE_MODE_VALUE_MAX_BYTES` (1 MiB)                                                                                                                                           |
-| Model-facing final result                                | `AGENT_CODE_MODE_RESULT_MAX_BYTES` (32 KiB) — intentionally much tighter than the boundary-value limit, so a workflow returns compact, decision-ready data rather than raw payloads |
+| Model-facing final result                                | `AGENT_CODE_MODE_RESULT_MAX_BYTES` (32 KiB) — intentionally much tighter than the boundary-value limit, so a script returns compact, decision-ready data rather than raw payloads |
 | Suspended interpreter snapshot / durable resume artifact | `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` / `AGENT_CODE_MODE_STATE_MAX_BYTES`, cross-validated so a valid configuration can always fit                                                   |
 
 Cumulative budgets survive approval suspension and resume. The bridge itself
@@ -183,7 +188,7 @@ items.
 
 ### Suspension and resume
 
-When a nested call requires approval, the outer `run_workflow` tool suspends
+When a nested call requires approval, the outer `run_code` tool suspends
 through the existing deferred-tool machinery (`agent-runtime.md`). The bridge
 captures the **pre-call** interpreter snapshot and persists a bounded resume
 artifact in run metadata (`code_mode_state`, built and validated by
@@ -213,14 +218,14 @@ than loaded.
 If the artifact cannot be restored (missing, corrupt, version-mismatched, or
 over budget), recovery branches on what already ran:
 
-- **Read-only prefix**: settle `run_workflow` with a structured model-visible
+- **Read-only prefix**: settle `run_code` with a structured model-visible
   failure so the model can redraft. Approvals, audits, and evidence stay
   intact.
 - **Any completed effectful nested call**: fail closed to explicit operator
   recovery, listing the completed actions. Automatic redrafting is forbidden
   because a fresh script could repeat a side effect.
 
-A run holds at most one suspended workflow. A second workflow that attempts to
+A run holds at most one suspended script. A second script that attempts to
 suspend fails closed with a structured failure instead of overwriting the
 first snapshot. If a suspension artifact exceeds its aggregate bound,
 the runtime drops the earliest application-only presentation values first and
@@ -237,7 +242,7 @@ approval card uses the nested tool's server-declared presentation. It supports
 the existing validated argument-override path. Denial resumes the script and
 raises a catchable `PermissionError` whose framed message states that the action
 did not run and includes the operator's reason when provided. It does not
-silently abandon the workflow.
+silently abandon the script.
 
 Because generic approval helpers can only see the outer message-history call,
 the bridge/resume path owns nested pending and denied audit rows and denied
@@ -266,7 +271,7 @@ the final value returns to the model.
 The bridge applies conservative whole-interpreter taint rather than data-flow
 tracking: if any nested result contains an `UntrustedNode`, the interpreter is
 marked tainted (with a bounded, deduplicated source list), and taint stays
-sticky through caught exceptions and suspension. A tainted workflow's final
+sticky through caught exceptions and suspension. A tainted script's final
 value and captured print output are wrapped in one server-minted
 `UntrustedNode` with `source_kind="code_mode_workflow"`; the per-source detail
 travels in trace/audit metadata. A tainted interpreter can never use an
@@ -280,12 +285,12 @@ tests.
 Every `RuntimeToolDefinition` declares `code_eligible: bool` explicitly —
 eligibility is never inferred from effect, provider, schema, or policy.
 Import-time validation forbids `True` on runtime machinery (delegation,
-always-mounted internals, `report_completion`, `run_workflow`,
+always-mounted internals, `report_completion`, `run_code`,
 capability-loading tools).
 
 An eligible tool must return data that is useful to compose and that Monty can
 serialize, and already be selected and allowed for the agent, workspace, and
-context. Eligible tools defer loading like any other tool, and a workflow can
+context. Eligible tools defer loading like any other tool, and a script can
 still call them before the model discovers them. Support for Model Context
 Protocol (MCP) tools is pending.
 Binary or multimodal producers, faithful-render surfaces such as Gmail message reading,
@@ -306,7 +311,7 @@ author only the index and closed-set label, never arbitrary result text.
 
 Bridge-internal calls are not Pydantic AI message parts, and live SSE events
 are observation channels, not replay sources. The durable representation is
-trace metadata attached to the outer `run_workflow` result
+trace metadata attached to the outer `run_code` result
 (`code_mode_trace`). Each entry carries stable order, the nested and parent
 call ids, tool name, an effective-arguments digest (never unrestricted
 arguments), a presentation-resolvable summary, status (succeeded, failed,
@@ -317,11 +322,11 @@ The completed run trace also retains the complete normalized nested result as
 that the sandbox received, including every distributed resource and row, without it
 entering model context. Tools with a richer governed `public_result` contract
 use that complete user-only value for replay and live SSE while only
-`return_value` enters the sandbox. The settled workflow card separately
+`return_value` enters the sandbox. The settled Code Mode card separately
 renders the outer result as "Output sent to model": the bounded final
 expression, not a copy of the richer presentation values.
 
-The web renders workflow rows exclusively from this metadata
+The web renders Code Mode rows exclusively from this metadata
 (`apps/web/src/features/conversations/components/`), and live and reloaded
 turns must be identical for success, failure, suspension, resumption, expiry,
 and legacy turns. Pending approvals are never hidden behind a collapsed
@@ -332,7 +337,7 @@ client-first.
 
 ## Model guidance
 
-The `run_workflow` description (`tools/code_mode.py`) is the only
+The `run_code` description (`tools/code_mode.py`) is the only
 model-facing guidance: the choice rules above, the last expression as the
 result, intermediate results as variables to reduce rather than payloads to
 return, the exceptions that failed and denied nested calls raise, the
@@ -348,7 +353,7 @@ together. The operator sees no Code Mode setting.
 apps/api/
   core/settings/code_mode.py           # AGENT_CODE_MODE_* bounds + cross-validation
   services/agents/runtime/
-    tools/code_mode.py                 # run_workflow definition, guidance, and per-run factory
+    tools/code_mode.py                 # run_code definition, guidance, and per-run factory
     code_mode/
       executor.py                      # Monty worker pool, execute/resume drivers
       bridge.py                        # nested dispatch, taint, trace, bounds, suspension
@@ -356,7 +361,7 @@ apps/api/
       state.py                         # durable resume artifact build/load/clear
       approval.py                      # trusted nested-approval metadata contract
 apps/web/src/features/
-  conversations/components/            # workflow card, nested-call rows, approvals, replay
+  conversations/components/            # Code Mode card, nested-call rows, approvals, replay
 ```
 
 Tests live in `tests/services/agents/runtime/code_mode/` (the tool factory,
@@ -364,7 +369,7 @@ bridge parity, taint matrix, executor, durable state, settings) and
 `tests/scenarios/test_code_mode.py` (end-to-end suspension/resume across
 process boundaries, batch approvals, hostile-output framing, role denial,
 unmounted tool names). `tests/scenarios/test_tool_search.py` covers a
-deferred tool that is discovered and then called directly and in a workflow.
+deferred tool that is discovered and then called directly and in a script.
 
 ## Building on it
 
@@ -386,7 +391,7 @@ deferred tool that is discovered and then called directly and in a workflow.
 
 Some extensions are deliberately excluded until their prerequisite design
 exists, rather than being half-supported: parallel nested dispatch (needs safe
-session isolation), workflow access to MCP-derived tools (which need a
+session isolation), script access to MCP-derived tools (which need a
 threat-model delta for MCP output flowing through scripts),
 in-sandbox tool discovery, workspace-level controls, workflow-scoped tool
 grants, because consent can cover unreviewed future arguments, a deduplicating

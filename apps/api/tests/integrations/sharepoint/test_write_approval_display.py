@@ -47,9 +47,7 @@ async def test_library_display_is_retained_without_becoming_replay_arguments(
     )
     args = ARGS[definition.name]
     call = ToolCallPart(definition.name, args, "write")
-    outer = (
-        ToolCallPart("run_workflow", {"code": "retained workflow"}, "workflow") if nested else call
-    )
+    outer = ToolCallPart("run_code", {"code": "retained workflow"}, "workflow") if nested else call
     metadata = (
         {
             outer.tool_call_id: build_code_mode_approval_metadata(

@@ -49,7 +49,7 @@ async def test_settled_nested_trace_round_trips_through_conversation_reload(
     message = ModelRequest(
         parts=[
             ToolReturnPart(
-                tool_name="run_workflow",
+                tool_name="run_code",
                 tool_call_id="workflow-call",
                 content=tool_return.return_value,
                 metadata=tool_return.metadata,

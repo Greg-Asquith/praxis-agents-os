@@ -67,10 +67,10 @@ export function runInterruptionOutcome(run: AgentRun | null): RunInterruptionOut
   const evidence = completedActions(run.completion_json)
   return {
     kind: "code_mode_recovery",
-    title: "Workflow Needs Review",
+    title: "Script needs review",
     message:
       run.error_message ??
-      "This workflow couldn't resume safely after completing an action. Review what completed, then send a new instruction to continue.",
+      "This script couldn't resume safely after completing an action. Review what completed, then send a new instruction to continue.",
     completedActions: evidence.actions,
     actionsTruncated: evidence.truncated,
   }

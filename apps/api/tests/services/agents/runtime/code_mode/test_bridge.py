@@ -659,7 +659,7 @@ async def test_script_result_value_boundary_is_enforced() -> None:
         outer_tool_call_id="outer-call",
         value_max_bytes=5,
     )
-    with pytest.raises(CodeModeBoundaryError, match=r"run_workflow.*exceeds the 5-byte"):
+    with pytest.raises(CodeModeBoundaryError, match=r"run_code.*exceeds the 5-byte"):
         bridge.finalize(ScriptExecution(result="too long", output="", output_truncated=False))
 
 
@@ -795,7 +795,7 @@ async def test_taint_survives_script_transformations(
     request = ModelRequest(
         parts=[
             ToolReturnPart(
-                tool_name="run_workflow",
+                tool_name="run_code",
                 tool_call_id="outer-call",
                 content=result.return_value,
             )

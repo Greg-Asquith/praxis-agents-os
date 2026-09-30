@@ -302,7 +302,7 @@ async def test_top_level_workflow_approval_restores_interpreter_and_completes(
             ToolTurn(
                 (
                     ToolCall(
-                        "run_workflow",
+                        "run_code",
                         {
                             "code": f"value = 'retained'\nawait {effects.name}(value=value)\nvalue + ' result'",
                         },
@@ -348,7 +348,7 @@ async def test_top_level_workflow_approval_restores_interpreter_and_completes(
     assert [event.data["status"] for event in resumed.events if event.event == "done"] == [
         "completed"
     ]
-    [returned] = resumed.tool_returns("run_workflow")
+    [returned] = resumed.tool_returns("run_code")
     assert "retained result" in str(returned["content"])
     assert "code_mode_state" not in (resumed.run.metadata_json or {})
     async with committed_db_session_factory() as db:
@@ -382,10 +382,10 @@ def _delegation_model(
         if "list_delegate_agents" not in names:
             if seen_child_requests is not None:
                 seen_child_requests.append(str(messages))
-            if workflow_code is not None and not _has_return(messages, "run_workflow"):
+            if workflow_code is not None and not _has_return(messages, "run_code"):
                 yield {
                     0: DeltaToolCall(
-                        name="run_workflow",
+                        name="run_code",
                         json_args=json.dumps({"code": workflow_code}),
                         tool_call_id="child-workflow",
                     )
@@ -860,7 +860,7 @@ async def test_delegated_workflow_resumes_twice_without_repeating_effects(
             )
         )
         assert any(
-            part.get("tool_name") == "run_workflow" and part.get("part_kind") == "tool-return"
+            part.get("tool_name") == "run_code" and part.get("part_kind") == "tool-return"
             for message in messages
             for part in message.parts["parts"]
         )

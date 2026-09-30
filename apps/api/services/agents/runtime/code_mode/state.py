@@ -82,7 +82,7 @@ class CodeModeResumeRequiresRecoveryError(Exception):
     executed_effects: tuple[CodeModeExecutedEffect, ...]
 
     def __str__(self) -> str:
-        return "The workflow could not resume safely after completed actions."
+        return "The script could not resume safely after completed actions."
 
     @property
     def completion_json(self) -> dict[str, Any]:

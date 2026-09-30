@@ -136,7 +136,7 @@ def test_accepted_tool_call_validates_direct_and_workflow_document_edits() -> No
         return AcceptedToolCall().evaluate(context).value
 
     assert verdict("edit_workbook", edit)
-    assert verdict("run_workflow", {"code": f"await edit_workbook(**{edit!r})"})
+    assert verdict("run_code", {"code": f"await edit_workbook(**{edit!r})"})
     # A cell anchor that isn't A1 notation fails the operation union, not just the name check.
     assert not verdict(
         "edit_workbook",
