@@ -125,10 +125,6 @@ default. _(enforced)_ The following rules define the defaults:
   revision is still current. A Code Mode script that has read File text is
   tainted, so its edit and create calls wait for approval even under `auto`.
   _(enforced)_
-- Historical note, 2026-09-30: provider-native `run_code`, which ran code in
-  Anthropic, OpenAI, and Google sandboxes, has been removed. Its eligibility
-  rested on dated DNS and HTTPS canary probes (2026-08-14 and 2026-08-17) that
-  showed no sandbox egress; those records no longer gate any runtime path.
 - `effect="write"` tools with **external side effects** (integration
   writes such as Google Drive or SharePoint mutations, artifact publication,
   and external KB writes) default `approval`. _(enforced for integration

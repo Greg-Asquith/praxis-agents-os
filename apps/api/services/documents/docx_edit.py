@@ -14,7 +14,14 @@ from copy import deepcopy
 from typing import Any
 
 from services.documents.docx_model import has_revisions, read_block, read_comment, read_story
-from services.documents.editing import EditLog, OperationError, replace_in_runs, run_operations
+from services.documents.editing import (
+    EditLog,
+    OperationError,
+    format_font,
+    relink,
+    replace_in_runs,
+    run_operations,
+)
 
 _WORD = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 _SIMPLE_RUN_PARTS = frozenset(
@@ -53,9 +60,7 @@ _BOOKMARK_ENDS = frozenset((f"{_WORD}bookmarkStart", f"{_WORD}bookmarkEnd"))
 _UNCOPIED_ROW_PARTS = frozenset(
     f"{_WORD}{tag}" for tag in ("tblHeader", "ins", "del", "trPrChange")
 )
-_R_NAMESPACE = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 _COMMENTS_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
-_IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 
 
 def edit_document(document: Any, args: dict[str, Any], images: list[bytes]) -> dict[str, Any]:
@@ -256,6 +261,8 @@ class _DocumentEditor:
         width = Pt(operation["width"]) if operation.get("width") is not None else None
         try:
             picture = paragraph.add_run().add_picture(io.BytesIO(self.images[index]), width=width)
+        except MemoryError:
+            raise
         except Exception:
             raise OperationError("The image File isn't a readable PNG or JPEG image.") from None
         section = self._section_of(paragraph._p)
@@ -559,28 +566,10 @@ def _write_runs(paragraph: Any, runs: list[Any], *, base: Any) -> None:
 
 
 def _format_run(run: Any, spec: dict[str, Any]) -> None:
-    from docx.shared import Pt
-
-    for key in ("bold", "italic", "underline"):
-        if spec.get(key) is not None:
-            setattr(run, key, spec[key])
-    if spec.get("size") is not None:
-        run.font.size = Pt(spec["size"])
-    if spec.get("color"):
-        _set_color(run.font.color, spec["color"])
-
-
-def _set_color(color_format: Any, value: str) -> None:
     from docx.enum.dml import MSO_THEME_COLOR
-    from docx.shared import RGBColor
+    from docx.shared import Pt, RGBColor
 
-    if value.startswith("#"):
-        color_format.rgb = RGBColor.from_string(value[1:].upper())
-        return
-    try:
-        color_format.theme_color = MSO_THEME_COLOR[value.split(":", 1)[1].upper()]
-    except KeyError:
-        raise OperationError(f"{value!r} isn't a theme colour.") from None
+    format_font(run.font, spec, points=Pt, rgb=RGBColor, themes=MSO_THEME_COLOR)
 
 
 def _base_run_properties(paragraph: Any) -> Any:
@@ -629,26 +618,12 @@ def _copy_story(source: Any, target: Any) -> None:
     copied = [deepcopy(child) for child in source._element]
     for child in copied:
         container.append(child)
-    mapping: dict[str, str] = {}
-    for element in copied:
-        for node in element.iter():
-            for key, value in node.attrib.items():
-                if not key.startswith(_R_NAMESPACE):
-                    continue
-                if value not in mapping:
-                    mapping[value] = _relate_copy(source.part, target.part, value)
-                node.set(key, mapping[value])
-
-
-def _relate_copy(source: Any, target: Any, rel_id: str) -> str:
-    relationship = source.rels.get(rel_id)
-    if relationship is not None and relationship.is_external:
-        return target.relate_to(relationship.target_ref, relationship.reltype, is_external=True)
-    if relationship is not None and relationship.reltype == _IMAGE_REL:
-        return target.relate_to(relationship.target_part, relationship.reltype)
-    raise OperationError(
-        "The header or footer this section shows from an earlier section has an embedded "
-        "object that can't be copied. Set it in the earlier section instead."
+    relink(
+        copied,
+        source.part,
+        target.part,
+        refusal="The header or footer this section shows from an earlier section has an "
+        "embedded object that can't be copied. Set it in the earlier section instead.",
     )
 
 

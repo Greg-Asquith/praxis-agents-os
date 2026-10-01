@@ -396,6 +396,11 @@ If the ID belongs to an artifact instead, the link opens that artifact's
 management page after the Files API reports that no file exists.
 Other internal and external Markdown links retain their normal behaviour.
 
+The Files page keeps folder scope in the `folder` search parameter;
+folder-scoped paging, sorting, file detail deep links, uploads, and single and
+bulk moves preserve that scope. Table selection is local to the current folder
+and page and clears after a successful move.
+
 ## Files in shared chats
 
 Workspace chat sharing publishes saved display content without granting file,
@@ -495,6 +500,9 @@ version pointer and count only published versions. Detail history is bounded
 to 100 visible versions. Never-published versions and restoration-source IDs
 stay outside tenant responses. Historical published versions remain readable
 while the parent remains published. Withdrawal and deletion block fresh reads.
+
+`ARTIFACT_MAX_CONTENT_BYTES` limits each Artifact's content to 10 MiB
+(10,485,760 UTF-8 bytes) by default, for creation, edits, and platform copies.
 
 ## Artifacts web UI
 

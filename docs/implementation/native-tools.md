@@ -2,9 +2,7 @@
 
 Read this before changing native web search, URL fetching, classification, or
 image generation. Backend paths are relative to
-`apps/api/services/agents/runtime/tools/`. See the
-[governance and isolation policy](../architecture/governance.md) for provider
-isolation evidence and the re-probe policy.
+`apps/api/services/agents/runtime/tools/`.
 
 ## Web search
 
@@ -33,9 +31,7 @@ the full URL editable and visible. Never enable the local fetch fallback.
 
 No helper provider runs code. Agents run code with `run_code` (Code Mode,
 see [Code Mode](code-mode.md)) and work with Office files, CSV, and saved
-results through the [document tools](document-tools.md). The earlier
-provider-sandbox tool that shared this name has been removed; its dated
-isolation record stays in [governance](../architecture/governance.md).
+results through the [document tools](document-tools.md).
 
 The registered GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, Claude Opus 5.5, and
 Claude Sonnet 5.5 models can use the existing eligible helper paths. Live
@@ -146,14 +142,6 @@ Vertex credentials, regions, media, grounding, and response parsing. Anthropic
 Vertex retains search and classification, while fetch remains excluded. Vertex partner models remain outside native helper provider sets.
 Live qualification on the upgraded SDKs remains pending. Mocked adapter
 responses do not establish project access.
-
-## File navigation
-
-The Files page keeps
-folder scope in the `folder` search parameter; folder-scoped paging, sorting,
-file detail deep links, uploads, and single/bulk moves must preserve that
-scope. Table selection is local to the current folder and page and clears
-after a successful move.
 
 ## Classifier presentation and management
 

@@ -6,15 +6,14 @@ description: Use when someone asks how the platform works, how to do something i
 
 # Platform guide
 
-This platform is a workspace where people create, manage, and work with AI
-agents. Use this guide to explain the product and walk someone through it.
+People create, manage, and work with AI agents in a workspace. Use this guide
+to explain the product and its procedures.
 
 ## How to use this guide
 
 Follow these rules when you answer:
 
-- Answer in outcome language. Say what the person gets, not how the system
-  works inside.
+- Describe outcomes: what the person gets, not internal workings.
 - For a procedure, give numbered steps with one action per step. Name the
   screen first, then the action: "In **Workspace Settings**, click
   **Tools**."
@@ -192,9 +191,10 @@ carefully.
 ### What agents show while they work
 
 A conversation shows each step an agent takes, such as **Find Tools** or
-**Search Skills**. For a job with many steps, such as updating dozens of rows, an
-agent can combine several actions into one script. A script runs up
-to 25 actions, and each action still follows its own approval setting.
+**Search Skills**. For a job with many steps, an agent can combine several
+actions into one script. A script runs up to 25 actions, each following its own
+approval setting. After a script reads a file, email, or web page, every change
+it makes needs your approval.
 
 ## Integrations
 

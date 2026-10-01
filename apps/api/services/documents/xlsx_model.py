@@ -22,6 +22,7 @@ from services.documents.reading import (
     ReadPage,
     compact,
     external_links,
+    local_name,
     name,
 )
 
@@ -29,8 +30,8 @@ _CHUNK_BYTES = 64 * 1024
 _TAG_OVERLAP_BYTES = 256
 _MAX_OUTLINE_BYTES = 4 * 1024 * 1024
 _MAX_LISTED = 200
-_MAX_ROWS = 1_048_576
-_MAX_COLUMNS = 16_384
+MAX_ROWS = 1_048_576
+MAX_COLUMNS = 16_384
 _DATA_START = re.compile(rb"<(?:[A-Za-z_][\w.\-]*:)?sheetData\b")
 _DATA_END = re.compile(rb"</(?:[A-Za-z_][\w.\-]*:)?sheetData\s*>")
 _R_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
@@ -51,7 +52,7 @@ def read_workbook(
     page = ReadPage(args)
     sheet_name = _sheet_name(formulas, args.get("sheet"))
     formula_sheet, value_sheet = formulas[sheet_name], values[sheet_name]
-    min_col, min_row, max_col, max_row = _bounds(formula_sheet, args.get("range"))
+    min_col, min_row, max_col, max_row = _bounds(formula_sheet, value_sheet, args.get("range"))
     result: dict[str, Any] = {"sheet": sheet_name}
     if args.get("cursor") is None:
         result.update(_workbook_metadata(formulas, formula_sheet, archive, page))
@@ -91,7 +92,9 @@ def read_sheet_table(formulas: Any, values: Any, args: dict[str, Any]) -> dict[s
     """
     page = ReadPage(args)
     sheet_name = _sheet_name(values, args.get("sheet"))
-    min_col, min_row, max_col, max_row = _bounds(formulas[sheet_name], args.get("range"))
+    min_col, min_row, max_col, max_row = _bounds(
+        formulas[sheet_name], values[sheet_name], args.get("range")
+    )
     offset = int(args.get("offset") or 0)
     limit = min(int(args.get("limit") or DEFAULT_TABLE_ROWS), MAX_TABLE_ROWS)
     columns: list[str] | None = None
@@ -123,7 +126,7 @@ def read_sheet_table(formulas: Any, values: Any, args: dict[str, Any]) -> dict[s
             continue
         extra = _trim_trailing_empty(value for value, _ in row_values[len(columns) :])
         if extra:
-            columns = column_names([*columns, *([None] * len(extra))])
+            columns = extend_columns(columns, len(extra), page)
         row = {
             column: page.value(value)
             for column, (value, _) in zip(columns, row_values, strict=False)
@@ -199,16 +202,28 @@ def _workbook_metadata(
     return metadata
 
 
-def column_names(values: Any) -> list[str]:
-    """Returns unique, capped column names for a header row."""
-    names: list[str] = []
-    for index, value in enumerate(values, start=1):
+def column_names(values: Any, existing: list[str] | None = None) -> list[str]:
+    """Returns unique, capped column names for a header row, continuing after `existing`."""
+    names = list(existing or [])
+    taken = set(names)
+    for index, value in enumerate(values, start=len(names) + 1):
         base = name(value).strip() or f"column_{index}"
         candidate, suffix = base, 2
-        while candidate in names:
+        while candidate in taken:
             candidate, suffix = f"{base}_{suffix}", suffix + 1
         names.append(candidate)
+        taken.add(candidate)
     return names
+
+
+def extend_columns(columns: list[str], count: int, page: ReadPage) -> list[str]:
+    """Returns the columns with `count` unnamed ones added, charging their names to the page."""
+    extended = column_names([None] * count, columns)
+    page.reserve(
+        extended[len(columns) :],
+        too_large="A row has more columns than one read page can hold.",
+    )
+    return extended
 
 
 def _trim_trailing_empty(values: Any) -> tuple[Any, ...]:
@@ -234,9 +249,14 @@ def _sheet_name(workbook: Any, requested: str | None) -> str:
     return workbook.worksheets[0].title
 
 
-def _bounds(sheet: Any, cell_range: str | None) -> tuple[int, int, int | None, int | None]:
+def _bounds(
+    formula_sheet: Any, value_sheet: Any, cell_range: str | None
+) -> tuple[int, int, int | None, int | None]:
     if not cell_range:
-        return sheet.min_column or 1, sheet.min_row or 1, sheet.max_column, sheet.max_row
+        # A saved dimension can be stale, so whole-sheet reads stream to the last row.
+        formula_sheet.reset_dimensions()
+        value_sheet.reset_dimensions()
+        return formula_sheet.min_column or 1, formula_sheet.min_row or 1, None, None
     min_col, min_row, max_col, max_row = parse_range(cell_range)
     return min_col or 1, min_row or 1, max_col, max_row
 
@@ -262,7 +282,7 @@ def _valid_bounds(
     min_col: int | None, min_row: int | None, max_col: int | None, max_row: int | None
 ) -> bool:
     """Checks that a range is ordered and inside the sheet. Whole rows and columns omit a pair."""
-    for low, high, limit in ((min_col, max_col, _MAX_COLUMNS), (min_row, max_row, _MAX_ROWS)):
+    for low, high, limit in ((min_col, max_col, MAX_COLUMNS), (min_row, max_row, MAX_ROWS)):
         if (low is None) != (high is None):
             return False
         if low is not None and not 1 <= low <= high <= limit:
@@ -407,16 +427,12 @@ def _read_part(archive: zipfile.ZipFile, part: str) -> Any:
     return _parse(archive.read(info))
 
 
-def _local(tag: Any) -> str:
-    return str(tag).rsplit("}", 1)[-1]
+def _find_all(root: Any, tag: str) -> list[Any]:
+    return [element for element in root.iter() if local_name(element.tag) == tag]
 
 
-def _find_all(root: Any, local_name: str) -> list[Any]:
-    return [element for element in root.iter() if _local(element.tag) == local_name]
-
-
-def _attribute(root: Any, local_name: str, attribute: str) -> str | None:
-    for element in _find_all(root, local_name):
+def _attribute(root: Any, tag: str, attribute: str) -> str | None:
+    for element in _find_all(root, tag):
         return name(element.get(attribute)) or None
     return None
 

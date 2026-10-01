@@ -3,6 +3,13 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router"
 import { describe, expect, it } from "vitest"
 
 import { DocumentToolRow } from "@/features/conversations/components/document-tool-row"
@@ -50,19 +57,44 @@ describe("DocumentToolRow", () => {
       true
     )
 
-    expect(html).toContain('aria-label="View details for Board update.pptx"')
+    expect(html).toContain('href="/files?folder=folder-1"')
+  })
+
+  it("explains a scripted stale-base failure without the raw refusal", () => {
+    const html = render({
+      id: "tool-2",
+      kind: "result",
+      name: "edit_workbook",
+      status: "failed",
+      result:
+        "edit_workbook: The file changed after you read it, so nothing was saved. Its current " +
+        "revision is revision-3. Read it again and redo the edit with that base_revision_id.",
+    })
+
+    expect(html).not.toContain("edit_workbook:")
+    expect(html).not.toContain("base_revision_id")
   })
 })
 
 function render(toolActivity: ToolActivity, defaultOpen = false): string {
+  const rootRoute = createRootRoute()
+  const router = createRouter({
+    history: createMemoryHistory({ initialEntries: ["/"] }),
+    routeTree: rootRoute.addChildren([
+      createRoute({ getParentRoute: () => rootRoute, path: "/files" }),
+    ]),
+  })
   return renderToStaticMarkup(
-    createElement(QueryClientProvider, {
-      client: new QueryClient(),
-      children: createElement(DocumentToolRow, {
-        activity: toolActivity,
-        defaultOpen,
-        label: toolActivity.name,
-        ui: null,
+    createElement(RouterContextProvider, {
+      router,
+      children: createElement(QueryClientProvider, {
+        client: new QueryClient(),
+        children: createElement(DocumentToolRow, {
+          activity: toolActivity,
+          defaultOpen,
+          label: toolActivity.name,
+          ui: null,
+        }),
       }),
     })
   )

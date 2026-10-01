@@ -3,11 +3,11 @@
 Status: **implemented end to end**. Every agent with at least one mounted
 code-eligible tool also gets `run_code`, a peer tool that runs a short
 model-authored Python script in a sandboxed interpreter. The script composes
-the agent's already-authorized tools, which stay directly callable. Every nested call still crosses the same
-authorization, approval, and audit path as a direct call. The web app renders
-the script, its nested calls, and any approval it waits on, live and on
-replay. This note describes how it works, why it is shaped this way, and how
-to build on it.
+the agent's already-authorized tools, which stay directly callable. Every
+nested call still crosses the same authorization, approval, and audit path as
+a direct call. The web app renders the script, its nested calls, and any
+approval it waits on, live and on replay. This note describes how it works,
+why it is shaped this way, and how to build on it.
 
 ## What code mode is
 
@@ -341,8 +341,8 @@ The `run_code` description (`tools/code_mode.py`) is the only
 model-facing guidance: the choice rules above, the last expression as the
 result, intermediate results as variables to reduce rather than payloads to
 return, the exceptions that failed and denied nested calls raise, the
-document tools and `read_table` for files, and the call, time, result, and output limits rendered from the
-`AGENT_CODE_MODE_*` settings. Its sandbox syntax and import claims match the
+document tools and `read_table` for files, and the call, time, result, and
+output limits rendered from the `AGENT_CODE_MODE_*` settings. Its sandbox syntax and import claims match the
 probes of the pinned interpreter
 (`tests/services/agents/runtime/code_mode/test_monty_probes.py`). Change both
 together. The operator sees no Code Mode setting.

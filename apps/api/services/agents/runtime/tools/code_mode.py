@@ -18,6 +18,7 @@ from services.agents.runtime.code_mode.bridge import (
     CodeModeBoundaryError,
     execute_code_mode_workflow,
 )
+from services.agents.runtime.code_mode.metadata import RUN_CODE_TOOL_NAME
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
@@ -31,7 +32,6 @@ from services.agents.runtime.tools.contract import (
 )
 from services.agents.runtime.tools.registry import register_tool_definition
 
-RUN_CODE_TOOL_NAME = "run_code"
 _REASON = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 _GUIDANCE = """Run a short Python script in a sandbox that calls your tools and processes their
 results. Only the script's final value returns to you. This is your only way to run code.
@@ -54,15 +54,16 @@ Write the script like this:
 - A failed call raises `RuntimeError` and a denied call raises `PermissionError`; catch them to
   report partial failures. A call that needs approval pauses the script until someone decides,
   then resumes where it stopped. Calls run one at a time, even under `asyncio.gather`.
-- Work with files through tools, never `open()` or `pathlib`. `read_table` pages rows from sheets,
-  CSV files, and saved results; `read_workbook`, `read_presentation`, and `read_word_document`
-  read Office files; the `edit_*` and `create_*` document tools change and create them. Total rows
-  in the script, and check each edit's `readback` against what you wrote.
+- Work with files through tools; the sandbox has no `open()` and no file access through `os` or
+  `pathlib`. `read_table` pages rows from sheets, CSV files, and saved results; `read_workbook`,
+  `read_presentation`, and `read_word_document` read Office files; the `edit_*` and `create_*`
+  document tools change and create them. Total rows in the script, and check each edit's
+  `readback` against what you wrote.
 - The sandbox supports classes, dataclasses, async code, and f-strings. Allowed imports are
   asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,
-  math, os, pathlib, random, re, sys, time, typing, and unicodedata. There is no network,
-  environment, or filesystem access, and no other packages. `datetime.now()` reads UTC time;
-  sleeps return immediately.
+  math, pathlib (path strings only), random, re, sys, time, typing, and unicodedata. There is no
+  network, environment, or filesystem access, and no other packages. `datetime.now()` reads UTC
+  time; sleeps return immediately.
 - Each script allows at most {max_calls} tool calls and {timeout} seconds. Keep the final value
   under {result_kb} KB of JSON; printed output is capped at {output_chars} characters.
 

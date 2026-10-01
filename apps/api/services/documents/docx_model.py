@@ -4,12 +4,14 @@
 
 from typing import Any
 
+from services.documents.packages import external_relationships, image_parts
 from services.documents.reading import (
     ReadPage,
     color,
     compact,
     external_links,
     formatting,
+    local_name,
     name,
     spans,
 )
@@ -49,7 +51,9 @@ def read_document(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     start = args.get("start")
     limit = min(int(args.get("limit") or _DEFAULT_BLOCKS), _MAX_BLOCKS)
     body = document.element.body
-    elements = [element for element in body.iterchildren() if _local(element.tag) in _BODY_BLOCKS]
+    elements = [
+        element for element in body.iterchildren() if local_name(element.tag) in _BODY_BLOCKS
+    ]
     result: dict[str, Any] = {
         "block_count": len(elements),
         "has_tracked_changes": has_revisions(document),
@@ -59,7 +63,7 @@ def read_document(document: Any, args: dict[str, Any]) -> dict[str, Any]:
     blocks = []
     counts = {"p": 0, "tbl": 0}
     for position, element in enumerate(elements):
-        tag = _local(element.tag)
+        tag = local_name(element.tag)
         index = counts.get(tag, 0)
         if tag in counts:
             counts[tag] += 1
@@ -84,7 +88,9 @@ def has_revisions(document: Any) -> bool:
     """Checks the body, headers, footers, and notes for any tracked-change element."""
     for part in document.part.package.iter_parts():
         element = getattr(part, "_element", None)
-        if element is not None and any(_local(node.tag) in _REVISIONS for node in element.iter()):
+        if element is not None and any(
+            local_name(node.tag) in _REVISIONS for node in element.iter()
+        ):
             return True
     return False
 
@@ -110,7 +116,7 @@ def _document_parts(document: Any, page: ReadPage) -> dict[str, Any]:
             parts["comments_truncated"] = True
             break
         parts["comments"].append(item)
-    parts.update(external_links(_external_relationships(document), page))
+    parts.update(external_links(external_relationships(document), page))
     return compact(parts)
 
 
@@ -138,7 +144,10 @@ def read_story(story: Any, section: int, variant: str, page: ReadPage) -> dict[s
         "section": section,
         "variant": variant,
         **compact(
-            {"text": page.text(_story_text(story)), "images": _images(story._element, story.part)}
+            {
+                "text": page.text(_story_text(story)),
+                "images": image_parts(story._element, story.part),
+            }
         ),
     }
 
@@ -166,12 +175,6 @@ def _story_text(story: Any) -> str:
     return "\n".join(lines).strip("\n")
 
 
-def _external_relationships(document: Any) -> Any:
-    for relationship in document.part.package.iter_rels():
-        if relationship.is_external:
-            yield relationship.reltype, relationship.target_ref
-
-
 def read_block(document: Any, element: Any, tag: str, index: int, page: ReadPage) -> dict[str, Any]:
     """Returns one body paragraph, table, or content control as reads show it."""
     from docx.table import Table
@@ -179,7 +182,7 @@ def read_block(document: Any, element: Any, tag: str, index: int, page: ReadPage
 
     if tag == "p":
         return _paragraph(Paragraph(element, document.part), document, index, page)
-    images = _images(element, document.part)
+    images = image_parts(element, document.part)
     if tag == "tbl":
         table = Table(element, document.part)
         return compact(
@@ -193,9 +196,9 @@ def read_block(document: Any, element: Any, tag: str, index: int, page: ReadPage
         )
     # Content controls hold paragraphs that edit operations can't target yet.
     text = "\n".join(
-        "".join(node.text or "" for node in paragraph.iter() if _local(node.tag) == "t")
+        "".join(node.text or "" for node in paragraph.iter() if local_name(node.tag) == "t")
         for paragraph in element.iter()
-        if _local(paragraph.tag) == "p"
+        if local_name(paragraph.tag) == "p"
     )
     return compact({"type": "content_control", "text": page.text(text), "images": images})
 
@@ -211,7 +214,7 @@ def _paragraph(paragraph: Any, document: Any, index: int, page: ReadPage) -> dic
                 "style": name(paragraph.style.name) if paragraph.style is not None else None,
                 "list_level": _list_level(paragraph),
                 "spans": ranges,
-                "images": _images(paragraph._p, document.part),
+                "images": image_parts(paragraph._p, document.part),
             }
         ),
     }
@@ -257,21 +260,3 @@ def _character_style(run: Any) -> str | None:
     if style is None or style.name == "Default Paragraph Font":
         return None
     return name(style.name)
-
-
-def _images(element: Any, part: Any) -> list[str]:
-    """Returns part names of images embedded in an element, resolved through its part."""
-    refs = []
-    from docx.oxml.ns import nsmap
-    from lxml import etree
-
-    # Content controls are plain lxml elements, so the namespaces are passed explicitly.
-    for rel_id in etree.XPath(".//a:blip/@r:embed", namespaces=nsmap)(element):
-        related = part.related_parts.get(rel_id)
-        if related is not None and str(related.partname).lstrip("/") not in refs:
-            refs.append(str(related.partname).lstrip("/"))
-    return refs
-
-
-def _local(tag: Any) -> str:
-    return str(tag).rsplit("}", 1)[-1]

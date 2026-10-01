@@ -4,7 +4,6 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import PurePath
 from typing import Any
 from uuid import UUID
 
@@ -163,10 +162,11 @@ async def save_new_file(
     content passes the type's size limit or the name is invalid.
     """
     entry = contract_for_content_type(media_type)
-    extension = PurePath(name).suffix.lower()
-    if extension not in entry.extensions:
+    extension = next((item for item in entry.extensions if name.lower().endswith(item)), None)
+    if extension is None:
+        # A dot inside the name isn't an extension, so the type's own is appended.
         extension = entry.extensions[0]
-        name = f"{PurePath(name).stem}{extension}"
+        name = f"{name}{extension}"
     _check_size(content, media_type, "Generated file exceeds its governed size limit")
     resolved_folder = await folder.get(deps)
     result = await create_file_with_revision(

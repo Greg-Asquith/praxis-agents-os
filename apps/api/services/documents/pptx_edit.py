@@ -7,7 +7,15 @@ from collections.abc import Iterator
 from copy import deepcopy
 from typing import Any
 
-from services.documents.editing import EditLog, OperationError, replace_in_runs, run_operations
+from services.documents.editing import (
+    R_NAMESPACE,
+    EditLog,
+    OperationError,
+    format_font,
+    relink,
+    replace_in_runs,
+    run_operations,
+)
 from services.documents.pptx_model import read_slide
 from services.documents.reading import name
 
@@ -15,8 +23,6 @@ _EMU_PER_POINT = 12_700
 _GROWTH_RATIO = 1.5
 _GROWTH_MIN_CHARS = 40
 _ASPECT_TOLERANCE = 0.05
-_R_NAMESPACE = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
-_IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 _CHART_TYPES = {
     "column": "COLUMN_CLUSTERED",
     "stacked_column": "COLUMN_STACKED",
@@ -30,6 +36,7 @@ _CHART_TYPES = {
 }
 _SINGLE_SERIES = frozenset({"pie", "doughnut"})
 _LINKS = ("hlinkClick", "hlinkMouseOver")
+_SECTION_SLIDE = "{http://schemas.microsoft.com/office/powerpoint/2010/main}sldId"
 # PowerPoint's per-slide identity, which a copy mustn't share with its source.
 _CREATION_ID_EXTENSION = "{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}"
 
@@ -137,6 +144,10 @@ class _PresentationEditor:
         slide_ids = self.presentation.slides._sldIdLst
         element = next(item for item in slide_ids.sldId_lst if item.id == slide_id)
         slide_ids.remove(element)
+        # PowerPoint repairs a deck whose sections still list a removed slide.
+        for entry in list(self.presentation._element.iter(_SECTION_SLIDE)):
+            if entry.get("id") == str(slide_id):
+                entry.getparent().remove(entry)
         _drop_unused(self.presentation.part, element.rId)
         self.touched.pop(slide_id, None)
 
@@ -259,7 +270,7 @@ class _PresentationEditor:
         height = _emu(operation["height"]) if operation.get("height") is not None else None
         try:
             picture = slide.shapes.add_picture(self._image(operation), left, top, width, height)
-        except OperationError:
+        except (OperationError, MemoryError):
             raise
         except Exception:
             raise OperationError("The image File isn't a readable PNG or JPEG image.") from None
@@ -281,7 +292,7 @@ class _PresentationEditor:
             raise OperationError(f"Shape {shape.shape_id} isn't a picture.")
         try:
             image_part, rel_id = slide.part.get_or_add_image_part(self._image(operation))
-        except OperationError:
+        except (OperationError, MemoryError):
             raise
         except Exception:
             raise OperationError("The image File isn't a readable PNG or JPEG image.") from None
@@ -381,7 +392,7 @@ class _PresentationEditor:
             value
             for node in element.iter()
             for key, value in node.attrib.items()
-            if key.startswith(_R_NAMESPACE)
+            if key.startswith(R_NAMESPACE)
         ]
         element.getparent().remove(element)
         for rel_id in rel_ids:
@@ -515,28 +526,11 @@ def _base_run_properties(body: Any) -> Any:
 
 
 def _format_run(font: Any, spec: dict[str, Any]) -> None:
-    from pptx.util import Pt
-
-    for key in ("bold", "italic", "underline"):
-        if spec.get(key) is not None:
-            setattr(font, key, spec[key])
-    if spec.get("size") is not None:
-        font.size = Pt(spec["size"])
-    if spec.get("color"):
-        _set_color(font.color, spec["color"])
-
-
-def _set_color(color_format: Any, value: str) -> None:
     from pptx.dml.color import RGBColor
     from pptx.enum.dml import MSO_THEME_COLOR
+    from pptx.util import Pt
 
-    if value.startswith("#"):
-        color_format.rgb = RGBColor.from_string(value[1:].upper())
-        return
-    try:
-        color_format.theme_color = MSO_THEME_COLOR[value.split(":", 1)[1].upper()]
-    except KeyError:
-        raise OperationError(f"{value!r} isn't a theme colour.") from None
+    format_font(font, spec, points=Pt, rgb=RGBColor, themes=MSO_THEME_COLOR)
 
 
 def _copy_slide_settings(source: Any, target: Any) -> list[Any]:
@@ -639,34 +633,13 @@ def _shape_elements(tree: Any) -> list[Any]:
 
 
 def _relink(elements: list[Any], source: Any, target: Any) -> None:
-    """Points relationship ids in copied elements at the target part's own relationships.
-
-    Images and external links are shared; charts and embedded objects can't be.
-    """
-    mapping: dict[str, str] = {}
-    for element in elements:
-        for node in element.iter():
-            for key, value in node.attrib.items():
-                if not key.startswith(_R_NAMESPACE):
-                    continue
-                if value not in mapping:
-                    relationship = source.rels.get(value)
-                    if relationship is None:
-                        continue
-                    if relationship.is_external:
-                        mapping[value] = target.relate_to(
-                            relationship.target_ref, relationship.reltype, is_external=True
-                        )
-                    elif relationship.reltype == _IMAGE_REL:
-                        mapping[value] = target.relate_to(
-                            relationship.target_part, relationship.reltype
-                        )
-                    else:
-                        raise OperationError(
-                            "The slide has a chart, video, or embedded object that can't be "
-                            "copied. Add a slide and rebuild it instead."
-                        )
-                node.set(key, mapping[value])
+    relink(
+        elements,
+        source,
+        target,
+        refusal="The slide has a chart, video, or embedded object that can't be copied. "
+        "Add a slide and rebuild it instead.",
+    )
 
 
 def _drop_unused(part: Any, rel_id: str) -> None:

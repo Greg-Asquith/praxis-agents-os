@@ -24,7 +24,9 @@ import {
   type StreamError,
 } from "@/features/conversations/stream/protocol"
 import {
+  collectStreamSavedFiles,
   invalidateStreamQueries,
+  type StreamSavedFiles,
   seedStreamQueryCache,
 } from "@/features/conversations/stream/query-cache"
 import { ApiError, parseApiError } from "@/lib/api/errors"
@@ -83,6 +85,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
       let observedDoneStatus: AgentRunStatus | null = null
       let observedConversationCreated = false
       let streamClosedNormally = false
+      const savedFiles: StreamSavedFiles = { callNames: new Map(), fileIds: new Set() }
 
       try {
         const response = await request(abortController.signal)
@@ -96,6 +99,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
           }
           dispatch({ type: "event", event: streamEvent })
           seedStreamQueryCache(queryClient, streamEvent)
+          collectStreamSavedFiles(savedFiles, streamEvent)
           if (streamEvent.event === "conversation.created") {
             observedConversationCreated = true
             onConversationCreated?.(streamEvent.data.conversation.id)
@@ -124,6 +128,7 @@ export function useAgentStream({ onConversationCreated }: UseAgentStreamOptions 
         await invalidateStreamQueries(queryClient, {
           conversationCreated: observedConversationCreated,
           conversationId: observedConversationId,
+          savedFileIds: savedFiles.fileIds,
           status: observedDoneStatus,
         })
         // Route reconciliation clears settled drafts after their persisted replacement renders.

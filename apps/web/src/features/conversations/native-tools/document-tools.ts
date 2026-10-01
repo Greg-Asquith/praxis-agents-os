@@ -2,8 +2,9 @@
 
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import type { FileEntitySnapshot } from "@/features/conversations/native-tools/file-tools"
+import { WORKSPACE_FILE_MIME_TYPES } from "@/lib/file"
 import { pluralize } from "@/lib/format"
-import { isRecord } from "@/lib/guards"
+import { isRecord, isStringArray } from "@/lib/guards"
 
 const READ_TOOL_FORMATS = {
   read_presentation: "pptx",
@@ -22,11 +23,6 @@ const CREATE_TOOL_FORMATS = {
 } as const
 const READ_TABLE_TOOL_NAME = "read_table"
 const VIEW_DOCUMENT_IMAGE_TOOL_NAME = "view_document_image"
-const MEDIA_TYPES = {
-  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-} as const
 const MAX_OUTLINE_ITEMS = 20
 const MAX_READBACK_ITEMS = 50
 const TABLE_PREVIEW_ROWS = 5
@@ -34,7 +30,7 @@ const TABLE_PREVIEW_COLUMNS = 6
 const HEADING_STYLE = /^(Title|Heading \d)$/
 const TITLE_PLACEHOLDERS = new Set(["title", "center_title"])
 
-type OfficeFormat = keyof typeof MEDIA_TYPES
+type OfficeFormat = "pptx" | "xlsx" | "docx"
 type ReadToolName = keyof typeof READ_TOOL_FORMATS
 type EditToolName = keyof typeof EDIT_TOOL_FORMATS
 type CreateToolName = keyof typeof CREATE_TOOL_FORMATS
@@ -137,14 +133,15 @@ export function documentToolResult(name: string, value: unknown): DocumentToolRe
 }
 
 export function fileEntityFromDocumentResult(result: DocumentToolResult): FileEntitySnapshot {
+  const contentType = "format" in result ? WORKSPACE_FILE_MIME_TYPES[result.format] : undefined
   return {
-    ...("format" in result ? { contentType: MEDIA_TYPES[result.format] } : {}),
+    ...(contentType ? { contentType } : {}),
     fileId: result.file.fileId,
     name: result.file.name,
   }
 }
 
-// Matches the edit tools' stale base refusal, so the row can explain it in outcome language.
+// Matches the stale base refusal text in the API's tools/documents/utils.py::_stale; keep in sync.
 export function isStaleRevisionMessage(message: string): boolean {
   return message.includes("changed after you read it")
 }
@@ -369,7 +366,7 @@ function saveResult(
     format,
     revisionNumber,
     folder: folderSummary(result["folder"]),
-    warnings: stringArray(result["warnings"]),
+    warnings: isStringArray(result["warnings"]) ? result["warnings"] : [],
     warningsOmitted: count(result["warnings_omitted"]),
     changes: changes
       .map((change) => change["summary"])
@@ -500,8 +497,9 @@ function cellText(value: unknown): string {
 }
 
 function documentFile(result: Record<string, unknown>): DocumentFile | null {
-  const { file_id: fileId, name, revision_id: revisionId } = result
-  if (typeof fileId !== "string" || typeof name !== "string" || typeof revisionId !== "string") {
+  const { file_id: fileId, revision_id: revisionId } = result
+  const name = nodeText(result["name"])
+  if (typeof fileId !== "string" || name === null || typeof revisionId !== "string") {
     return null
   }
   return { fileId, name, revisionId }
@@ -516,10 +514,6 @@ function folderSummary(value: unknown): { id: string; name: string } | null {
 
 function recordArray(value: unknown): Record<string, unknown>[] | null {
   return Array.isArray(value) ? value.filter(isRecord) : null
-}
-
-function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : []
 }
 
 function stringField(record: Record<string, unknown>, key: string): string {

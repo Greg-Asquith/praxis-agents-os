@@ -2,8 +2,8 @@
 
 """Shared loading, worker calls, and saving for the document tools."""
 
-from collections.abc import Sequence
-from functools import cache
+from collections.abc import Callable, Sequence
+from functools import cache, partial
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -13,7 +13,7 @@ from pydantic_ai import ModelRetry, RunContext
 
 import services.documents
 from core.exceptions.auth import AuthorizationError
-from core.exceptions.general import AppValidationError, ConflictError
+from core.exceptions.general import AppValidationError, ConflictError, NotFoundError
 from core.settings import settings
 from models.files import File, FileRevision
 from services.agents.runtime.context import RuntimeDeps
@@ -28,10 +28,12 @@ from services.documents.outputs import (
     save_file_edit,
     save_new_file,
 )
+from services.documents.reading import MAX_IMAGE_BYTES
 from services.documents.worker import DocumentWorkerResult, get_document_worker_pool
-from services.files.contract import FileCategory
+from services.files.contract import FILE_CONTRACT, FileCategory
 from services.files.utils import file_revision_ref, normalize_required_text
 from services.storage.factory import get_storage_provider
+from services.storage.paths import safe_filename
 from utils.content import ContentScope
 from utils.validation import normalize_optional_text
 
@@ -68,21 +70,38 @@ FOLDER_FIELD = Field(
     max_length=255, description="A folder name. Omit to use this conversation's folder."
 )
 MEDIA_TYPES = {
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    OFFICE_EXTENSIONS[extension]: entry.content_type
+    for entry in FILE_CONTRACT
+    for extension in entry.extensions
+    if extension in OFFICE_EXTENSIONS
 }
 _IMAGE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg"})
-_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _TEMPLATES = Path(services.documents.__file__).resolve().parent / "templates"
 
 
 async def load_file(
-    ctx: RunContext[RuntimeDeps], file_id: UUID | None
-) -> tuple[File, FileRevision, bytes]:
-    """Loads the visible current revision of a File and its bytes."""
+    ctx: RunContext[RuntimeDeps], file_id: UUID | None, file_format: Callable[[File], str]
+) -> tuple[File, FileRevision, str, bytes]:
+    """Loads the visible current revision of a File, checks its format, then reads its bytes."""
     file, revision = await current_file_revision(ctx, file_id)
-    return file, revision, await _load_bytes(revision)
+    document_format = file_format(file)
+    return file, revision, document_format, await _load_bytes(revision)
+
+
+async def read_office_file(
+    ctx: RunContext[RuntimeDeps], file_id: FileReference, document_format: str, **args: Any
+) -> dict[str, Any]:
+    """Reads one page of an Office File, headed by the File and revision it came from."""
+    file, revision, _, data = await load_file(
+        ctx, internal_entity_id(file_id), partial(office_format, expected=document_format)
+    )
+    result = await run_worker(
+        "read",
+        document_format=document_format,
+        data=data,
+        args=read_args(file, revision, **args),
+    )
+    return file_result(file, revision, result.value)
 
 
 async def _load_bytes(revision: FileRevision) -> bytes:
@@ -149,7 +168,14 @@ def source_ref(file: File, revision: FileRevision) -> str:
 
 def file_result(file: File, revision: FileRevision, value: dict[str, Any]) -> dict[str, Any]:
     """Returns a read result headed by the File and the revision it came from."""
-    return {"file_id": str(file.id), "revision_id": str(revision.id), "name": file.name, **value}
+    # A framed name taints Code Mode even when a page holds only numbers and plain names.
+    name = {
+        "node": "praxis_untrusted",
+        "source_kind": "file",
+        "source_ref": source_ref(file, revision),
+        "content": file.name,
+    }
+    return {"file_id": str(file.id), "revision_id": str(revision.id), "name": name, **value}
 
 
 async def edit_office_file(
@@ -195,7 +221,7 @@ async def edit_office_file(
             )
     except ConflictError as exc:
         raise ModelRetry(_stale(exc.details.get("current_revision_id"))) from exc
-    except (AppValidationError, AuthorizationError) as exc:
+    except (AppValidationError, AuthorizationError, NotFoundError) as exc:
         raise ModelRetry(exc.message) from exc
     return {**_saved(stored), "base_revision_id": str(revision.id), **result.value}
 
@@ -218,8 +244,11 @@ async def create_office_file(
         data = _default_template(document_format)
         text_source = f"template:default.{document_format}"
     else:
-        template, revision, data = await load_file(ctx, internal_entity_id(template_file_id))
-        office_format(template, expected=document_format)
+        template, revision, _, data = await load_file(
+            ctx,
+            internal_entity_id(template_file_id),
+            partial(office_format, expected=document_format),
+        )
         text_source = source_ref(template, revision)
         details = {"template_file_id": str(template.id), "template_revision_id": str(revision.id)}
     worker_operations, images = await _worker_operations(ctx, tool_name, operations)
@@ -249,7 +278,7 @@ async def create_office_file(
 async def _worker_operations(
     ctx: RunContext[RuntimeDeps], tool_name: str, operations: Sequence[BaseModel]
 ) -> tuple[list[dict[str, Any]], list[bytes]]:
-    """Returns operations as worker JSON, with image File references swapped for attachment positions."""
+    """Returns worker JSON operations, with image File references as attachment positions."""
     references = [
         reference
         for operation in operations
@@ -261,7 +290,7 @@ async def _worker_operations(
         tool_name=tool_name,
         categories={FileCategory.IMAGE},
         media_types=_IMAGE_MEDIA_TYPES,
-        max_file_bytes=_MAX_IMAGE_BYTES,
+        max_file_bytes=MAX_IMAGE_BYTES,
         max_total_bytes=settings.DOCUMENT_TOOLS_MAX_SOURCE_BYTES,
     )
     positions = {image.file_id: index for index, image in enumerate(images)}
@@ -327,7 +356,7 @@ def _stale(current_revision_id: object) -> str:
 
 
 def _file_name(name: str, document_format: str) -> str:
-    file_name = name.strip()
+    file_name = safe_filename(name, fallback="")
     if not file_name:
         raise ModelRetry("name is required.")
     extension = f".{document_format}"

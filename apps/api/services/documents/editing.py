@@ -1,6 +1,6 @@
 # apps/api/services/documents/editing.py
 
-"""The operation loop, change log, and run-level text replacement shared by document edits.
+"""The operation loop, change log, and run, colour, and relationship helpers shared by edits.
 
 Runs only inside the document worker. Operations apply in order to the file in
 memory, and the handler saves only when every one succeeds, so a failed
@@ -17,6 +17,8 @@ from services.documents.reading import DocumentRequestError, ReadPage
 
 type OperationHandler = Callable[[dict[str, Any], "EditLog"], None]
 
+R_NAMESPACE = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_IMAGE_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 _MAX_WARNINGS = 50
 # Warnings and changes share at most this part of the page; the read-back gets the rest.
 _LOG_SHARE = 0.5
@@ -95,7 +97,8 @@ def run_operations(
             raise DocumentRequestError(
                 f"operations[{index}] ({kind}): {exc} Nothing was saved."
             ) from None
-        except DocumentRequestError:
+        except (DocumentRequestError, MemoryError):
+            # The worker exits after a failed allocation rather than reusing its heap.
             raise
         except Exception as exc:
             # Library messages can quote file content, so only the type is reported.
@@ -157,3 +160,52 @@ def split_attachments(data: bytes, args: dict[str, Any]) -> tuple[bytes, list[by
         attachments.append(data[position : position + size])
         position += size
     return data[:end], attachments
+
+
+def format_font(font: Any, spec: dict[str, Any], *, points: Any, rgb: Any, themes: Any) -> None:
+    """Applies a run spec's bold, italic, underline, size, and colour to a font.
+
+    Takes the Office library's `Pt`, `RGBColor`, and `MSO_THEME_COLOR`, since each
+    library accepts only its own types.
+    """
+    for key in ("bold", "italic", "underline"):
+        if spec.get(key) is not None:
+            setattr(font, key, spec[key])
+    if spec.get("size") is not None:
+        font.size = points(spec["size"])
+    value = spec.get("color")
+    if not value:
+        return
+    if value.startswith("#"):
+        font.color.rgb = rgb.from_string(value[1:].upper())
+        return
+    try:
+        font.color.theme_color = themes[value.split(":", 1)[1].upper()]
+    except KeyError:
+        raise OperationError(f"{value!r} isn't a theme colour.") from None
+
+
+def relink(elements: Sequence[Any], source: Any, target: Any, *, refusal: str) -> None:
+    """Points relationship ids in copied elements at the target part's own relationships.
+
+    Images and external links are shared. Anything else raises `OperationError` with `refusal`.
+    """
+    mapping: dict[str, str] = {}
+    for element in elements:
+        for node in element.iter():
+            for key, value in node.attrib.items():
+                # Action links carry an empty id.
+                if not key.startswith(R_NAMESPACE) or not value:
+                    continue
+                if value not in mapping:
+                    mapping[value] = _relate_copy(source, target, value, refusal)
+                node.set(key, mapping[value])
+
+
+def _relate_copy(source: Any, target: Any, rel_id: str, refusal: str) -> str:
+    relationship = source.rels.get(rel_id)
+    if relationship is not None and relationship.is_external:
+        return target.relate_to(relationship.target_ref, relationship.reltype, is_external=True)
+    if relationship is not None and relationship.reltype == _IMAGE_REL:
+        return target.relate_to(relationship.target_part, relationship.reltype)
+    raise OperationError(refusal)

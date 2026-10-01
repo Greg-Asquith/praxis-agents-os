@@ -486,3 +486,27 @@ async def openai_image_requests(monkeypatch):
 
     async with mock_openai_images(monkeypatch) as requests:
         yield requests
+
+
+@pytest.fixture
+def local_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Store File bytes under this test's temporary directory."""
+    from core.settings import settings
+    from tests.support.storage import reset_storage_provider_cache
+
+    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
+    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
+    reset_storage_provider_cache()
+    try:
+        yield
+    finally:
+        reset_storage_provider_cache()
+
+
+@pytest_asyncio.fixture
+async def document_workers() -> AsyncIterator[None]:
+    """Close the document worker pool, whose pipes belong to this test's event loop."""
+    from services.documents.worker import close_document_worker_pool
+
+    yield
+    await close_document_worker_pool()

@@ -1,13 +1,12 @@
 """Document reads: structure per format, paging, streaming bounds, and table records."""
 
 import json
+import re
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import Callable
 
 import pytest
-import pytest_asyncio
 
-from services.documents.precheck import PackageLimits
 from services.documents.reading import DocumentRequestError
 from services.documents.tables import read_delimited_table, read_saved_list
 from services.documents.worker import (
@@ -21,6 +20,7 @@ from tests.support.office_documents import (
     large_workbook,
     memo_document,
     report_presentation,
+    rewrite_package,
     rich_document,
     rich_presentation,
     sales_workbook,
@@ -28,25 +28,6 @@ from tests.support.office_documents import (
 
 _MIB = 1024 * 1024
 _SOURCE = "file:source/revision:current"
-
-
-def _pool(*, memory_bytes: int = 1024 * _MIB) -> DocumentWorkerPool:
-    return DocumentWorkerPool(
-        workers=1,
-        timeout_seconds=60.0,
-        memory_bytes=memory_bytes,
-        max_source_bytes=50 * _MIB,
-        limits=PackageLimits(
-            max_entries=5_000, max_uncompressed_bytes=200 * _MIB, max_compression_ratio=100
-        ),
-    )
-
-
-@pytest_asyncio.fixture
-async def pool() -> AsyncIterator[DocumentWorkerPool]:
-    worker_pool = _pool()
-    yield worker_pool
-    await worker_pool.close()
 
 
 def _args(max_chars: int = 60_000, **args) -> dict:
@@ -193,6 +174,22 @@ async def test_workbook_table_keeps_uncalculated_formula_rows_and_names_their_ce
     assert page["uncalculated_cells"] == ["B5"]
 
 
+async def test_workbook_reads_past_a_stale_saved_dimension(pool: DocumentWorkerPool) -> None:
+    data = rewrite_package(
+        sales_workbook(rows=9),
+        lambda part, content: (
+            re.sub(rb'<dimension ref="[^"]+"', b'<dimension ref="A1"', content)
+            if part == "xl/worksheets/sheet1.xml"
+            else content
+        ),
+    )
+
+    table = (await pool.run("read_table", document_format="xlsx", data=data, args=_args())).value
+
+    assert table["columns"] == ["Region", "Amount"]
+    assert table["total_rows"] == 10
+
+
 async def test_workbook_refuses_a_reversed_range(pool: DocumentWorkerPool) -> None:
     with pytest.raises(HostRequestError, match="isn't a cell range"):
         await pool.run(
@@ -258,19 +255,18 @@ async def test_word_first_page_lists_header_variants_table_images_revisions_and_
 
 
 @pytest.mark.skipif(sys.platform == "darwin", reason="macOS doesn't enforce RLIMIT_AS")
-async def test_workbook_reads_stream_under_a_memory_limit_a_full_load_exceeds() -> None:
+async def test_workbook_reads_stream_under_a_memory_limit_a_full_load_exceeds(
+    make_pool: Callable[..., DocumentWorkerPool],
+) -> None:
     data = large_workbook(rows=100_000)
-    pool = _pool(memory_bytes=384 * _MIB)
-    try:
-        with pytest.raises(DocumentWorkerError):
-            await pool.run("describe", document_format="xlsx", data=data)
+    pool = make_pool(memory_bytes=384 * _MIB)
+    with pytest.raises(DocumentWorkerError):
+        await pool.run("describe", document_format="xlsx", data=data)
 
-        page = (await pool.run("read", document_format="xlsx", data=data, args=_args())).value
-        table = (
-            await pool.run("read_table", document_format="xlsx", data=data, args=_args(limit=10))
-        ).value
-    finally:
-        await pool.close()
+    page = (await pool.run("read", document_format="xlsx", data=data, args=_args())).value
+    table = (
+        await pool.run("read_table", document_format="xlsx", data=data, args=_args(limit=10))
+    ).value
 
     assert page["rows"][0]["row"] == 1
     assert "next_cursor" in page
@@ -309,6 +305,17 @@ def test_row_larger_than_a_page_is_refused_with_the_offset_that_skips_it() -> No
     assert [_content(row["note"]) for row in page["rows"]] == ["short"]
     assert page["next_offset"] == 1
     assert [_content(row["note"]) for row in after["rows"]] == ["last"]
+
+
+def test_delimited_rows_outside_the_page_add_no_columns() -> None:
+    data = b"name\n" + b"wide" + b",x" * 5_000 + b"\nshort\n"
+
+    page = read_delimited_table(data, delimiter=",", args=_args(offset=1))
+
+    assert page["columns"] == ["name"]
+    assert [_content(row["name"]) for row in page["rows"]] == ["short"]
+    with pytest.raises(DocumentRequestError, match="more columns"):
+        read_delimited_table(data, delimiter=",", args=_args(3_000))
 
 
 def test_saved_list_keeps_only_valid_nodes_of_a_retained_result() -> None:

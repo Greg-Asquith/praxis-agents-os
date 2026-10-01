@@ -35,13 +35,16 @@ from services.documents.operations.presentation import PresentationOperation
     code_eligible=True,
     description=(
         "Create a new .pptx File. Start from template_file_id to keep a brand's layouts, fonts, "
-        "and colours; otherwise a neutral 16:9 deck with title, section, title and content, two "
-        "content, comparison, and blank layouts is used. Unless keep_template_content is true, "
-        "the template's slides are removed so only its layouts remain. Operations are the same "
-        "as edit_presentation's; add slides with add_slide and fill their placeholders. Keep "
-        "slide text short; split slides rather than shrinking fonts. New Files go in this "
-        "conversation's folder unless folder names another. The result gives the new File's id "
-        "and revision_id for further edits."
+        "and colours; otherwise a neutral 16:9 deck is used. Its main layouts, with body "
+        "placeholder idx, are Title Slide and Title (subtitle 1), Section Header, Content (13), "
+        "Two Content (18, 19), Comparison (headings 1 and 3, bodies 18 and 19), Agenda (13), "
+        "Statement (17), Quote (13), Conclusion (13), Title Only, and Empty; every title is "
+        "idx 0. Picture layouts exist too; read the deck for their idx. Unless "
+        "keep_template_content is true, the template's slides are removed so only its layouts "
+        "remain. Operations are the same as edit_presentation's; add slides with add_slide "
+        "and fill their placeholders. Keep slide text short; split slides rather than "
+        "shrinking fonts. New Files go in this conversation's folder unless folder names "
+        "another. The result gives the new File's id and revision_id for further edits."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,

@@ -30,8 +30,9 @@ can't be edited back.
 
 Use `run_code` when the work needs loops, several calls, or maths:
 reading every page of a table, totalling rows, or writing and then checking
-many values. Scripts call these tools with the same arguments. Call a tool
-directly when one call is enough.
+many values. Scripts call these tools with the same arguments, except
+`view_document_image`, which you call directly. Call a tool directly when one
+call is enough.
 
 ## Read before you change anything
 
@@ -66,8 +67,12 @@ directly when one call is enough.
 ## Decks
 
 - Start new decks from the person's template when they have one
-  (`template_file_id`). Otherwise the default template gives neutral title,
-  section, content, two-content, comparison, and blank layouts.
+  (`template_file_id`). Otherwise use the default deck's layouts by their
+  exact names. Every title is placeholder `idx` 0; body placeholders differ by
+  layout: `Title Slide` and `Title` (subtitle 1), `Section Header`, `Content`
+  (13), `Two Content` (18, 19), `Comparison` (headings 1 and 3, bodies 18 and
+  19), `Agenda` (13), `Statement` (17), `Quote` (13), `Conclusion` (13),
+  `Title Only`, and `Empty`. For its picture layouts, read the deck first.
 - Add slides with `add_slide` using a layout name from the read, and fill its
   placeholders by `idx`. Don't draw text boxes over an empty placeholder.
 - Keep slide text short: a title and a few short bullets. When text doesn't

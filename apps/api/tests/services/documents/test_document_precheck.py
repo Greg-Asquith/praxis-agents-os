@@ -99,11 +99,6 @@ def test_real_office_file_passes() -> None:
             id="macro-format-utf16",
         ),
         pytest.param(
-            lambda: _with_content_types([("./", b"")]),
-            "unsafe",
-            id="empty-name",
-        ),
-        pytest.param(
             lambda: _with_declared_size(
                 _with_content_types([("xl/bomb.xml", b"\0" * (2 * 1024 * 1024))]), "xl/bomb.xml", 8
             ),

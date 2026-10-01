@@ -11,6 +11,8 @@ import type {
   ConversationMessagesResponse,
 } from "@/features/conversations/types"
 import type { StreamEvent, StreamRunStatus } from "@/features/conversations/stream/protocol"
+import { documentToolResult } from "@/features/conversations/native-tools/document-tools"
+import { filesQueryKeys } from "@/features/files/api/list-files"
 
 export const EMPTY_CONVERSATION_MESSAGES = {
   messages: [],
@@ -126,21 +128,46 @@ export function seedStreamQueryCache(queryClient: QueryClient, streamEvent: Stre
   )
 }
 
+// Nested Code Mode results can arrive without a name, so names come from their tool.call events.
+export type StreamSavedFiles = { callNames: Map<string, string>; fileIds: Set<string> }
+
+export function collectStreamSavedFiles(saved: StreamSavedFiles, streamEvent: StreamEvent) {
+  if (streamEvent.event === "tool.call") {
+    saved.callNames.set(streamEvent.data.tool_call_id, streamEvent.data.name)
+    return
+  }
+  if (streamEvent.event !== "tool.result") return
+  const name = streamEvent.data.name ?? saved.callNames.get(streamEvent.data.tool_call_id)
+  const result = name ? documentToolResult(name, streamEvent.data.result) : null
+  if (result?.kind === "edit" || result?.kind === "create") saved.fileIds.add(result.file.fileId)
+}
+
 export async function invalidateStreamQueries(
   queryClient: QueryClient,
   {
     conversationCreated,
     conversationId,
+    savedFileIds,
     status,
   }: {
     conversationCreated: boolean
     conversationId: string | null
+    savedFileIds: ReadonlySet<string>
     status: AgentRunStatus | null
   }
 ) {
   const invalidations = [
     queryClient.invalidateQueries({ queryKey: conversationsQueryKeys.lists() }),
   ]
+
+  // Document edits and creates save new revisions, so refresh Files once the stream ends.
+  if (savedFileIds.size > 0) {
+    invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.lists() }))
+    for (const fileId of savedFileIds) {
+      // The detail key prefixes revisions, preview, and revision-content keys.
+      invalidations.push(queryClient.invalidateQueries({ queryKey: filesQueryKeys.detail(fileId) }))
+    }
+  }
 
   if (conversationId !== null && shouldInvalidateConversationDetails(status, conversationCreated)) {
     invalidations.push(

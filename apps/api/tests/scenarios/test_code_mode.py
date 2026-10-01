@@ -242,7 +242,7 @@ def code_mode_scenario_tools() -> dict[str, Any]:
             RUNTIME_TOOL_CATALOG.pop(name, None)
 
 
-async def test_multi_read_workflow_completes_beside_direct_tools_with_nested_audits(
+async def test_multi_read_script_completes_beside_direct_tools_with_nested_audits(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:
@@ -300,7 +300,7 @@ async def test_multi_read_workflow_completes_beside_direct_tools_with_nested_aud
     assert result.output == "The compared value is NORTH."
 
 
-async def test_workflow_cannot_call_a_tool_the_agent_has_not_mounted(
+async def test_script_cannot_call_a_tool_the_agent_has_not_mounted(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:
@@ -829,7 +829,7 @@ async def test_snapshot_degradation_with_read_only_prefix_returns_redraft_result
         actor = await db.get(User, context.user_id)
         workspace = await db.get(Workspace, context.workspace_id)
         assert actor is not None and workspace is not None
-        with pytest.raises(ConflictError, match="Saved workflow state is invalid"):
+        with pytest.raises(ConflictError, match="Saved script state is invalid"):
             await get_agent_run_approval_state(
                 db,
                 actor=actor,
@@ -914,7 +914,7 @@ async def test_restore_failure_after_first_approved_write_requires_recovery(
         ]
 
 
-async def test_nested_denial_resumes_workflow_and_audits_nested_call(
+async def test_nested_denial_resumes_script_and_audits_nested_call(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:
@@ -1103,7 +1103,7 @@ async def test_hostile_intermediate_stays_framed_and_cannot_reach_write_tool(
     assert result.output == "I found an embedded instruction and did not follow it."
 
 
-async def test_scheduled_workflow_requires_approval_under_review_envelope(
+async def test_scheduled_script_requires_approval_under_review_envelope(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:
@@ -1147,7 +1147,7 @@ async def test_scheduled_workflow_requires_approval_under_review_envelope(
     assert code_mode_scenario_tools["effects"] == ["scheduled"]
 
 
-async def test_scheduled_workflow_enforces_deny_envelope(
+async def test_scheduled_script_enforces_deny_envelope(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],
 ) -> None:

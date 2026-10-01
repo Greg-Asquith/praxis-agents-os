@@ -129,7 +129,7 @@ async def test_retained_rows_are_hidden_readable_and_stable(db_session_factory, 
         resolver_ctx = SimpleNamespace(db=db, workspace=workspace)
         assert (await resolver.search(resolver_ctx, "", {}, 25, None)).choices == ()
         assert len(await resolver.resolve(resolver_ctx, [preview["file_reference"]], {})) == 1
-        _, _, loaded = await load_file(ctx, file.id)
+        _, _, _, loaded = await load_file(ctx, file.id, lambda _: "json")
         assert json.loads(loaded) == RESULT
         await append_file_revision(
             db,
@@ -139,7 +139,7 @@ async def test_retained_rows_are_hidden_readable_and_stable(db_session_factory, 
             actor=FileRevisionActor(user_id=context.user_id),
         )
         await db.commit()
-        _, pinned_revision, pinned = await load_file(ctx, file.id)
+        _, pinned_revision, _, pinned = await load_file(ctx, file.id, lambda _: "json")
         assert pinned_revision.id == revision.id
         assert pinned == stored
 

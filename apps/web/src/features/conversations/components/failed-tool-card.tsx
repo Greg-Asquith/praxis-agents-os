@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/failed-tool-card.tsx
 
 import { TriangleAlertIcon } from "lucide-react"
+import type { ReactNode } from "react"
 
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -12,18 +13,23 @@ import { friendlyResultText, type ResolvedToolField } from "@/features/conversat
 export function FailedToolCard({
   activity,
   argFields,
+  children,
   defaultOpen = false,
   label,
   iconToken,
+  message: messageOverride = null,
 }: {
   activity: ToolActivity
   argFields: ResolvedToolField[]
+  children?: ReactNode
   defaultOpen?: boolean
   label: string
   iconToken: string | null
+  message?: string | null
 }) {
   const stopped = activity.status === "stopped"
   const message =
+    messageOverride ??
     friendlyResultText(activity.result) ??
     friendlyResultText(activity.resultExcerpt) ??
     (stopped
@@ -47,7 +53,7 @@ export function FailedToolCard({
       <div className="flex min-w-0 flex-col gap-3">
         <Alert variant={stopped ? "default" : "destructive"}>
           <TriangleAlertIcon />
-          <AlertTitle>{stopped ? "Why this call stopped" : "What went wrong"}</AlertTitle>
+          <AlertTitle>{stopped ? "Why This Call Stopped" : "What Went Wrong"}</AlertTitle>
           <AlertDescription className="wrap-anywhere whitespace-pre-wrap">
             {message}
           </AlertDescription>
@@ -57,6 +63,7 @@ export function FailedToolCard({
             The agent received this error and can adjust its next attempt.
           </p>
         ) : null}
+        {children}
       </div>
     </ToolResultCard>
   )

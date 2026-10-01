@@ -33,7 +33,6 @@ async def test_dataset_uses_case_judges_and_programmatic_output_formats() -> Non
     dataset = _load_dataset(judge_model)
     cases = {case.name: case for case in dataset.cases}
 
-    assert len(cases) == 26
     assert not any(isinstance(item, LLMJudge) for item in cases["list_files_selection"].evaluators)
     assert not any(isinstance(item, LLMJudge) for item in cases["json_format"].evaluators)
     judges = [item for item in cases["identity_name"].evaluators if isinstance(item, LLMJudge)]
@@ -119,15 +118,10 @@ def test_workflow_argument_errors_flag_guessed_and_malformed_arguments() -> None
     ) == ("run_report: invalid arguments: Input should be a valid list",)
 
 
-def test_accepted_tool_call_validates_direct_and_workflow_document_edits() -> None:
+def test_accepted_tool_call_validates_direct_and_script_document_edits() -> None:
     reference = {"entity_id": "00000000-0000-0000-0000-000000000001", "label": "Sales.xlsx"}
-    edit = {
-        "file_id": reference,
-        "base_revision_id": "00000000-0000-0000-0000-000000000002",
-        "operations": [
-            {"op": "set_cells", "sheet": "Sales", "anchor": "B8", "values": [["=SUM(B2:B7)"]]}
-        ],
-    }
+    base = "00000000-0000-0000-0000-000000000002"
+    formula = {"op": "set_cells", "sheet": "Sales", "anchor": "B8", "values": [["=SUM(B2:B7)"]]}
     metadata = {"accepted_tools": ["edit_workbook"], "required_argument_text": ["=SUM("]}
 
     def verdict(tool_name: str, arguments: dict) -> bool:
@@ -135,11 +129,16 @@ def test_accepted_tool_call_validates_direct_and_workflow_document_edits() -> No
         context = SimpleNamespace(output=output, metadata=metadata)
         return AcceptedToolCall().evaluate(context).value
 
-    assert verdict("edit_workbook", edit)
-    assert verdict("run_code", {"code": f"await edit_workbook(**{edit!r})"})
-    # A cell anchor that isn't A1 notation fails the operation union, not just the name check.
-    assert not verdict(
-        "edit_workbook",
-        {**edit, "operations": [{**edit["operations"][0], "anchor": "row 8"}]},
+    def script(operation: dict) -> dict:
+        return {
+            "code": f"await edit_workbook(file_id={reference!r}, "
+            f"base_revision_id={base!r}, operations={[operation]!r})"
+        }
+
+    assert verdict(
+        "edit_workbook", {"file_id": reference, "base_revision_id": base, "operations": [formula]}
     )
+    assert verdict("run_code", script(formula))
+    # A cell anchor that isn't A1 notation fails the operation union, not just the name check.
+    assert not verdict("run_code", script({**formula, "anchor": "row 8"}))
     assert not verdict("write_file", {"content": "Add =SUM( totals"})

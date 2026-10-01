@@ -8,7 +8,7 @@ from pydantic import Field
 from pydantic_ai import RunContext
 
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
+from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_READ,
     ToolFieldPresentation,
@@ -17,11 +17,7 @@ from services.agents.runtime.tools.contract import (
 from services.agents.runtime.tools.documents.utils import (
     DOCUMENT_TOOL_TIMEOUT,
     FILE_ARG_FIELD,
-    file_result,
-    load_file,
-    office_format,
-    read_args,
-    run_worker,
+    read_office_file,
 )
 from services.agents.runtime.tools.registry import runtime_tool
 
@@ -73,11 +69,4 @@ async def read_workbook(
     ] = None,
 ):
     """Read a workbook's sheets and one page of cells."""
-    file, revision, data = await load_file(ctx, internal_entity_id(file_id))
-    result = await run_worker(
-        "read",
-        document_format=office_format(file, expected="xlsx"),
-        data=data,
-        args=read_args(file, revision, sheet=sheet, range=range, cursor=cursor),
-    )
-    return file_result(file, revision, result.value)
+    return await read_office_file(ctx, file_id, "xlsx", sheet=sheet, range=range, cursor=cursor)

@@ -5,9 +5,9 @@ Document tools read, edit, and create `.pptx`, `.xlsx`, and `.docx` Files with
 attacker-controlled input, so every library call runs in a bounded worker
 process, never in the API or worker process itself.
 
-Status: the hardened worker runtime, the read tools, the edit and create
-tools, and their conversation rows are implemented. The bundled default
-templates are pending review by a layout designer.
+Status: the worker runtime, the read, edit, and create tools, and their
+conversation rows are implemented. The bundled default templates are neutral
+placeholders.
 
 ## Read tools
 
@@ -39,8 +39,9 @@ formulas, notes, comments, headers, footers, chart labels, CSV values, and
 external link targets.
 Names and identifiers that edits target, such as sheet, layout, style, and
 shape names, stay plain strings capped at 100 characters. Numbers, booleans,
-and dates stay plain values, so scripts can do maths on them. A script that
-reads document text is tainted, as described in
+and dates stay plain values, so scripts can do maths on them. Every read result
+frames the File name too, so any document read taints a script, even one whose
+page holds only numbers and names, as described in
 [untrusted data in Code Mode](../architecture/code-mode.md#untrusted-data-whole-interpreter-taint).
 
 ### Paging
@@ -73,10 +74,6 @@ error. `read_table` keeps counting rows after a page fills, to report
 Read-only worksheets don't load sheet metadata, so the worker streams the
 chosen sheet part, cuts out `sheetData`, and parses what's left with
 `defusedxml`, along with the relationship, table, and drawing parts.
-
-Measured on Linux with a 384 MiB worker limit, a 100,000-row, 10-column
-numeric workbook that a full load can't open under that limit reads a page
-and counts every table row.
 
 ### Tables and saved results
 
@@ -205,8 +202,8 @@ links with the copy and refuses slides with charts, media, or embedded
 objects. The copy keeps the slide's transition, animation timing, colour
 map, hidden state, and notes with their formatting. `set_table` refuses a row
 count change that would cut through a vertically merged cell or copy a last
-row that is part of one. `replace_image` removes any crop and warns when the new image's shape
-differs from its frame. Charts are native category charts; `set_chart_data`
+row that is part of one. `replace_image` removes any crop and warns when
+the new image's shape differs from its frame. Charts are native category charts; `set_chart_data`
 refuses scatter and bubble charts.
 
 Workbooks target sheets by name and cells in A1 notation. A string starting
@@ -223,12 +220,13 @@ formulas, such as `=SUM(A1`, and refuses spill references such as `=A1#`,
 which fail the call. It doesn't evaluate formulas.
 
 `rename_sheet` rewrites references to the sheet in every formula cell,
-defined name, conditional format, data validation, and chart the call added.
-`delete_sheet` fails when any of those still refers to the sheet; names local
-to the deleted sheet go with it. `merge_cells` fails when a cell other than the
+defined name, table column formula, conditional format, data validation, and
+chart the call added. `delete_sheet` fails when any of those still refers to
+the sheet; names local to the deleted sheet go with it. Both refuse a sheet
+that a pivot table reads, because openpyxl can't rewrite pivot sources. `merge_cells` fails when a cell other than the
 top-left one has a value, comment, or link, because merging would clear it.
 `append_rows` writes after the last row with a value and extends a table that
-ends on that row. It refuses a table that ends with a totals row, because the
+ends on that row, starting at the table's first column. It refuses a table that ends with a totals row, because the
 new rows would land below the totals. A write to a table's header row fails
 unless every header stays distinct text; a saved table's headers can't change,
 because Excel names its columns and structured references after them. A
@@ -272,12 +270,18 @@ Each section break stays as an empty paragraph, which counts in paragraph
 indexes. Content added without an index goes into the last section.
 `create_workbook` keeps a template's sheets and cells.
 
+New File names go through the same filename cleaning as `write_file`, so a
+name can't contain path separators or control characters, and the format's
+extension is added when missing.
+
 Without a template, the tools use the bundled defaults in
 `services/documents/templates/`:
 
-- `default.pptx` is python-pptx's neutral default deck widened to 16:9, with
-  title, title and content, section header, two content, comparison, title
-  only, blank, and caption layouts.
+- `default.pptx` is a neutral 16:9 deck with title, section, content, two
+  content, comparison, agenda, statement, quote, conclusion, title only, empty,
+  and picture layouts. Titles are placeholder `idx` 0; body placeholder
+  indexes differ by layout, so the `create_presentation` description and the
+  office-documents skill list them.
 - `default.docx` is python-docx's default document, with heading, list, and
   table styles.
 - `default.xlsx` is a blank workbook with one sheet, `Sheet1`.
@@ -291,10 +295,8 @@ loading it:
   entity-refusing XML parser, so the count holds in any encoding the part
   declares, and refuses a workbook with more than
   `DOCUMENT_TOOLS_EDIT_MAX_CELLS` cells. Counting stops once the total passes
-  the limit; at the limit it takes about 2 seconds. The default of
-  1,500,000 stays under the 1.8 million numeric cells measured to load and save
-  within the 1 GiB worker limit. The memory limit stays in force for workbooks
-  whose strings or styles cost more.
+  the limit. The memory limit stays in force for workbooks whose strings or
+  styles cost more; see "Settings" for sizing.
 - It refuses workbooks with parts openpyxl drops when it saves, by checking
   every part against the ones it keeps: sheets, styles, shared strings,
   themes, tables, legacy comments, pivot tables, external links, and document
@@ -372,7 +374,6 @@ document call and reuse them after that, in whichever process is running
 the agent turn. At most `DOCUMENT_TOOLS_WORKERS` calls run at once. A call
 waits up to `DOCUMENT_TOOLS_TIMEOUT_SECONDS` for a free worker and then
 fails as busy; once it has a worker, the same limit applies to processing.
-Starting a new worker process takes under a second.
 
 Each worker process:
 
@@ -448,10 +449,9 @@ No library resolves entities or loads external resources:
 | `DOCUMENT_TOOLS_WORKERS` | 2 |
 
 `openpyxl` loads a whole workbook into memory at about 100 times its
-compressed size. Measured on Linux, a dense 200,000-row, 10-column workbook
-(9.3 MB) peaks at 890 MB of address space, near the 1 GiB limit. A full load
-followed by a save, as an edit needs, handles about 1.8 million numeric cells
-within 1 GiB and fails at 2.1 million. Larger workbooks fail with a memory
-error rather than slowing the host. Reads stream cell rows, so numeric
+compressed size. A full load followed by a save, as an edit needs, fits about
+1.8 million numeric cells in 1 GiB, so `DOCUMENT_TOOLS_EDIT_MAX_CELLS` stays
+below that. Larger workbooks fail with a memory error rather than slowing the
+host. Reads stream cell rows, so numeric
 workbooks read well past this size, but shared strings and styles still load
 whole. Decks and documents peak under 100 MB.

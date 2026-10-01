@@ -3,9 +3,8 @@
 """Operations the document worker process runs. Imported only inside the worker."""
 
 import posixpath
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextlib import closing
-from itertools import islice
 from typing import Any
 
 from services.documents.docx_edit import edit_document
@@ -20,7 +19,7 @@ from services.documents.packages import (
 from services.documents.pptx_edit import edit_presentation
 from services.documents.pptx_model import read_presentation
 from services.documents.precheck import PackageLimits
-from services.documents.reading import DocumentRequestError, name
+from services.documents.reading import MAX_IMAGE_BYTES, DocumentRequestError, name
 from services.documents.tables import read_delimited_table, read_saved_list
 from services.documents.xlsx_edit import edit_workbook
 from services.documents.xlsx_model import read_sheet_table, read_workbook
@@ -28,7 +27,6 @@ from services.documents.xlsx_model import read_sheet_table, read_workbook
 type HandlerResult = tuple[dict[str, Any], bytes | None]
 type Handler = Callable[[str, dict[str, Any], bytes, PackageLimits], HandlerResult]
 
-_DESCRIBE_TEXT_CHARS = 2_000
 _MEDIA_DIRECTORIES = {"pptx": "ppt/media/", "xlsx": "xl/media/", "docx": "word/media/"}
 _IMAGE_TYPES = {
     ".png": "image/png",
@@ -37,18 +35,7 @@ _IMAGE_TYPES = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
-_MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _DELIMITERS = {"csv": ",", "tsv": "\t"}
-
-
-def describe(
-    document_format: str, _args: dict[str, Any], data: bytes, limits: PackageLimits
-) -> HandlerResult:
-    """Opens a file and returns its part count and a short text sample."""
-    document = open_package(data, document_format, limits)
-    count, texts = _DESCRIBERS[document_format](document)
-    text = "\n".join(islice(texts, 200))[:_DESCRIBE_TEXT_CHARS]
-    return {"format": document_format, "count": count, "text": text}, None
 
 
 def read(
@@ -105,7 +92,7 @@ def extract_image(
             info = archive.getinfo(ref)
         except KeyError:
             raise DocumentRequestError(f"The file has no image {name(ref)!r}.") from None
-        if info.file_size > _MAX_IMAGE_BYTES:
+        if info.file_size > MAX_IMAGE_BYTES:
             raise DocumentRequestError("The image is too large to view.")
         return {"media_type": media_type}, archive.read(info)
 
@@ -128,38 +115,7 @@ def edit(
     return result, save_package(document, limits)
 
 
-def _describe_presentation(presentation: Any) -> tuple[int, Iterator[str]]:
-    texts = (
-        shape.text_frame.text
-        for slide in presentation.slides
-        for shape in slide.shapes
-        if shape.has_text_frame
-    )
-    return len(presentation.slides), texts
-
-
-def _describe_workbook(workbook: Any) -> tuple[int, Iterator[str]]:
-    texts = (
-        str(value)
-        for row in workbook.worksheets[0].iter_rows(max_row=50, values_only=True)
-        for value in row
-        if value is not None
-    )
-    return len(workbook.worksheets), texts
-
-
-def _describe_document(document: Any) -> tuple[int, Iterator[str]]:
-    return len(document.paragraphs), (paragraph.text for paragraph in document.paragraphs)
-
-
-_DESCRIBERS = {
-    "pptx": _describe_presentation,
-    "xlsx": _describe_workbook,
-    "docx": _describe_document,
-}
-
 HANDLERS: dict[str, Handler] = {
-    "describe": describe,
     "read": read,
     "read_table": read_table,
     "extract_image": extract_image,

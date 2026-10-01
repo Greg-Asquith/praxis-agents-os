@@ -28,13 +28,12 @@ from services.documents.xlsx_formulas import (
     referenced_sheets,
     rename_sheet,
 )
-from services.documents.xlsx_model import parse_range, sheets_with_drawings
+from services.documents.xlsx_model import MAX_COLUMNS, MAX_ROWS, parse_range, sheets_with_drawings
 
 _CELL = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}c"
 _CHUNK_BYTES = 64 * 1024
 _WORKSHEET_PART = re.compile(r"^xl/worksheets/[^/]+\.xml$", re.IGNORECASE)
-# Parts openpyxl reads and writes back, or drops without losing content (calculation
-# chains, printer settings, and thumbnails). Any other part refuses the edit.
+# Parts openpyxl keeps, or drops without losing content; any other part refuses the edit.
 _KEPT_PARTS = re.compile(
     r"^(?:\[content_types\]\.xml|_rels/\.rels|docprops/(?:app|core|custom)\.xml"
     r"|docprops/thumbnail\.\w+|xl/workbook\.xml|xl/_rels/workbook\.xml\.rels|xl/styles\.xml"
@@ -70,8 +69,6 @@ _NEW_WORKBOOK = (
 )
 _MAX_RANGE_CELLS = 100_000
 _MAX_STRING_CHARS = 32_767
-_MAX_ROWS = 1_048_576
-_MAX_COLUMNS = 16_384
 _MAX_LISTED = 20
 _INVALID_SHEET_CHARACTERS = re.compile(r"[\[\]:*?/\\]")
 _DEFINED_NAME = re.compile(r"^[A-Za-z_\\][A-Za-z0-9_.\\]*$")
@@ -260,14 +257,20 @@ class _WorkbookEditor:
             min_col, min_row, max_col, max_row = range_boundaries(table.ref)
             if max_row == last and last > min_row:
                 if table.totalsRowCount:
-                    # Rows would land below the totals row, which can't move in this version.
+                    # Rows would land below the totals row, and openpyxl can't move a totals row.
                     raise OperationError(
                         f"Table {name(table.displayName)!r} ends with a totals row, so rows can't "
                         "be appended to it. Write the rows with set_cells above the totals row "
                         "instead, or build the table in a new workbook."
                     )
                 tables.append((table, min_col, min_row, max_col))
-        self._write_block(sheet, last + 1, 1, rows, log)
+        starts = {min_col for _, min_col, _, _ in tables}
+        if len(starts) > 1:
+            raise OperationError(
+                "Tables in different columns end on the last row, so the rows have no single "
+                "place to go. Write them with set_cells instead."
+            )
+        self._write_block(sheet, last + 1, starts.pop() if starts else 1, rows, log)
         for table, min_col, min_row, max_col in tables:
             table.ref = _range(min_col, min_row, max_col, last + len(rows))
             if table.autoFilter is not None:
@@ -321,6 +324,7 @@ class _WorkbookEditor:
         sheet = self._sheet(operation["sheet"])
         old = sheet.title
         new = self._new_sheet_name(operation["name"], renaming=sheet)
+        self._check_pivot_sources(sheet, "renamed")
         if new != old and new.casefold() == old.casefold():
             # openpyxl numbers a title that matches any sheet's, this one's included.
             sheet.title = "Sheet"
@@ -338,6 +342,7 @@ class _WorkbookEditor:
         visible = [item for item in self.workbook.worksheets if item.sheet_state == "visible"]
         if visible == [sheet]:
             raise OperationError("A workbook needs at least one visible sheet.")
+        self._check_pivot_sources(sheet, "deleted")
         self.workbook.remove(sheet)
         self.deleted[sheet.title.casefold()] = log.index
         self.written = [written for written in self.written if written[0] is not sheet]
@@ -370,7 +375,7 @@ class _WorkbookEditor:
         sheet = self._sheet(operation["sheet"])
         first, _, last = operation["columns"].upper().partition(":")
         start, end = column_index_from_string(first), column_index_from_string(last or first)
-        if not 1 <= start <= end <= _MAX_COLUMNS:
+        if not 1 <= start <= end <= MAX_COLUMNS:
             raise OperationError(f"{operation['columns']!r} isn't a column range.")
         for index in range(start, end + 1):
             sheet.column_dimensions[get_column_letter(index)].width = operation["width"]
@@ -592,7 +597,7 @@ class _WorkbookEditor:
         from openpyxl.cell.cell import MergedCell
 
         width = max((len(row_values) for row_values in values), default=0)
-        if row + len(values) - 1 > _MAX_ROWS or column + max(width, 1) - 1 > _MAX_COLUMNS:
+        if row + len(values) - 1 > MAX_ROWS or column + max(width, 1) - 1 > MAX_COLUMNS:
             raise OperationError("The values run past the edge of the sheet.")
         written = 0
         for row_offset, row_values in enumerate(values):
@@ -651,6 +656,25 @@ class _WorkbookEditor:
                 raise OperationError(f"The workbook already has a sheet named {title!r}.")
         return title
 
+    def _check_pivot_sources(self, sheet: Any, action: str) -> None:
+        """Refuses changing a sheet a pivot cache reads, since caches aren't rewritten."""
+        tables = {table.casefold() for table in sheet.tables}
+        for owner in self.workbook.worksheets:
+            if action == "deleted" and owner is sheet:
+                continue
+            for pivot in owner._pivots:
+                cache = getattr(pivot, "cache", None)
+                source = cache.cacheSource.worksheetSource if cache and cache.cacheSource else None
+                if source is None:
+                    continue
+                on_sheet = (source.sheet or "").casefold() == sheet.title.casefold()
+                if on_sheet or (action == "deleted" and (source.name or "").casefold() in tables):
+                    raise OperationError(
+                        f"Pivot table {name(pivot.name)!r} on {_title(owner)} uses data from "
+                        f"{_title(sheet)}, so the sheet can't be {action} here. Make this change "
+                        "in Excel, which updates the pivot table too."
+                    )
+
     def _bounds(self, sheet: Any, cell_range: str) -> tuple[int, int, int, int]:
         """Returns a bounded range. Whole rows and columns stop at the sheet's used area."""
         try:
@@ -708,7 +732,7 @@ class _WorkbookEditor:
         """Yields (label, owning sheet, formula, setter) for every expression a sheet change affects.
 
         Covers formula cells, defined names, conditional formats, data validations,
-        and charts this edit added. Setters take the formula with its "=".
+        table column formulas, and charts this edit added. Setters take the formula with its "=".
         """
         for cell in self._formula_cells():
             yield (
@@ -726,6 +750,7 @@ class _WorkbookEditor:
             )
         for sheet in self.workbook.worksheets:
             yield from _rule_formulas(sheet)
+            yield from _table_formulas(sheet)
         live = set(map(id, self.workbook.worksheets))
         for _, sheet, chart in self.charts:
             if id(sheet) not in live:
@@ -844,6 +869,20 @@ def _rule_formulas(sheet: Any) -> Iterator[tuple[str, Any, str, Callable[[str], 
                     f"={getattr(validation, attribute)}",
                     lambda new, item=validation, key=attribute: setattr(item, key, new[1:]),
                 )
+
+
+def _table_formulas(sheet: Any) -> Iterator[tuple[str, Any, str, Callable[[str], None]]]:
+    """Yields the calculated column and totals row formulas of a sheet's tables, with setters."""
+    for table in sheet.tables.values():
+        for column in table.tableColumns:
+            for formula in (column.calculatedColumnFormula, column.totalsRowFormula):
+                if formula is not None and formula.attr_text:
+                    yield (
+                        f"table {name(table.displayName)} on {_title(sheet)}",
+                        sheet,
+                        f"={formula.attr_text}",
+                        lambda new, formula=formula: setattr(formula, "attr_text", new[1:]),
+                    )
 
 
 def _chart_references(chart: Any) -> Iterator[Any]:

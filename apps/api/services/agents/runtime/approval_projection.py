@@ -29,6 +29,7 @@ from services.agents.runtime.approval_identity import (
 )
 from services.agents.runtime.approval_state import SuspendedRunState, load_suspended_run_state
 from services.agents.runtime.code_mode.approval import code_mode_nested_call
+from services.agents.runtime.code_mode.metadata import RUN_CODE_TOOL_NAME
 from services.agents.runtime.code_mode.state import (
     CodeModeState,
     CodeModeStateError,
@@ -134,8 +135,8 @@ def _calls(state: SuspendedRunState) -> list[tuple[ToolCallPart, Mapping[str, An
             and metadata.get("kind") != DELEGATED_APPROVAL_KIND
         ):
             raise invalid_approval_state("Saved delegated approval metadata is missing or invalid")
-        if call.tool_name == "run_code" and metadata.get("kind") != "code_mode":
-            raise invalid_approval_state("Saved workflow approval metadata is missing or invalid")
+        if call.tool_name == RUN_CODE_TOOL_NAME and metadata.get("kind") != "code_mode":
+            raise invalid_approval_state("Saved script approval metadata is missing or invalid")
         if "child_run_id" in metadata and metadata.get("kind") != DELEGATED_APPROVAL_KIND:
             raise invalid_approval_state("Saved delegated approval metadata is invalid")
         result.append((call, metadata))
@@ -151,7 +152,7 @@ def _leaf(
     if metadata.get("kind") != "code_mode":
         return DirectApprovalNode(run.id, suspended.approval_batch_id, call, metadata)
     if nested is None or metadata.get("outer_tool_call_id") != call.tool_call_id:
-        raise invalid_approval_state("Saved workflow approval metadata is invalid")
+        raise invalid_approval_state("Saved script approval metadata is invalid")
     try:
         state = load_code_mode_state(
             run,
@@ -159,9 +160,9 @@ def _leaf(
             snapshot_max_bytes=settings.AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES,
         )
     except (CodeModeStateError, KeyError, TypeError, ValueError) as exc:
-        raise invalid_approval_state("Saved workflow state is invalid") from exc
+        raise invalid_approval_state("Saved script state is invalid") from exc
     if state.nested_call_id != nested.tool_call_id:
-        raise invalid_approval_state("Saved workflow leaf does not match its snapshot")
+        raise invalid_approval_state("Saved script leaf does not match its snapshot")
     _validate_pending_trace(state, nested)
     return WorkflowApprovalNode(
         DirectApprovalNode(run.id, suspended.approval_batch_id, nested, metadata),
@@ -175,22 +176,22 @@ def _validate_pending_trace(state: CodeModeState, nested: ToolCallPart) -> None:
         entry for entry in state.nested_trace if entry["tool_call_id"] == nested.tool_call_id
     ]
     if not matches and not state.trace_truncated:
-        raise invalid_approval_state("Saved workflow trace has no pending approval")
+        raise invalid_approval_state("Saved script trace has no pending approval")
     if len(matches) > 1:
-        raise invalid_approval_state("Saved workflow trace repeats its pending approval")
+        raise invalid_approval_state("Saved script trace repeats its pending approval")
     for entry in matches:
         if entry["status"] != "pending":
-            raise invalid_approval_state("Saved workflow approval is already settled")
+            raise invalid_approval_state("Saved script approval is already settled")
         if (
             entry["tool_name"] != nested.tool_name
             or entry["parent_tool_call_id"] != state.outer_tool_call_id
         ):
-            raise invalid_approval_state("Saved workflow trace does not match its approval")
+            raise invalid_approval_state("Saved script trace does not match its approval")
         args = nested.args_as_dict()
         if nested.tool_name == "write_file" and "content_ref" in args:
             continue
         if entry["args_sha256"] != proposal_digest(args):
-            raise invalid_approval_state("Saved workflow arguments do not match its approval")
+            raise invalid_approval_state("Saved script arguments do not match its approval")
 
 
 def _delegated_node(

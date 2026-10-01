@@ -46,6 +46,7 @@ from services.agents.runtime.code_mode.metadata import (
     CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
     CODE_MODE_PENDING_AUDIT_RECORDED_ATTR,
     CODE_MODE_TAINT_SOURCES_METADATA_KEY,
+    RUN_CODE_TOOL_NAME,
 )
 from services.agents.runtime.code_mode.state import (
     CODE_MODE_STATE_EFFECT_LIMIT,
@@ -225,7 +226,7 @@ class CodeModeBridge:
         """Validate the outbound value and preserve sticky taint on result and output."""
         result = _normalize_boundary_value(
             execution.result,
-            tool_name="run_code",
+            tool_name=RUN_CODE_TOOL_NAME,
             max_bytes=self._result_max_bytes,
         )
         output: Any = execution.output
@@ -805,7 +806,9 @@ async def execute_code_mode_workflow(
                 )
             raw_approval_metadata = execution.approval.metadata
             if not isinstance(raw_approval_metadata, dict):
-                raise CodeModeBoundaryError("run_code", "nested approval metadata is invalid")
+                raise CodeModeBoundaryError(
+                    RUN_CODE_TOOL_NAME, "nested approval metadata is invalid"
+                )
             approval_metadata = {
                 **raw_approval_metadata,
                 "executed_effects": [effect.__dict__ for effect in bridge.executed_effects],

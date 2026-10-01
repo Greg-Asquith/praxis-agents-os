@@ -14,6 +14,8 @@ from typing import Any
 MAX_NAME_CHARS = 100
 DEFAULT_TABLE_ROWS = 200
 MAX_TABLE_ROWS = 1_000
+# Covers images viewed from a file and image Files embedded by an edit.
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
 _POINTS_PER_EMU = 1 / 12_700
 # Room for the keys, cursors, and File and revision fields around a page's items.
 _ENVELOPE_CHARS = 1_000
@@ -97,6 +99,11 @@ class ReadPage:
 def name(value: Any) -> str:
     """Returns a file-supplied name or identifier, capped so it can't carry long text."""
     return str(value or "")[:MAX_NAME_CHARS]
+
+
+def local_name(tag: Any) -> str:
+    """Returns an XML tag without its namespace."""
+    return str(tag).rsplit("}", 1)[-1]
 
 
 def points(emu: int | None) -> float | None:

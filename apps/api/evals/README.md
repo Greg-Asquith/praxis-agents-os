@@ -46,7 +46,8 @@ The `document_*` cases place a real document read or saved-report preview in
 history and check the next call. `AcceptedToolCall` passes when the first call
 is an accepted document tool, directly or inside `run_code`, with
 arguments that pass the tool's validator and contain the case's
-`required_argument_text`.
+`required_argument_text`. For a `run_code` call, that text must appear
+literally in the script source, not in a value the script computes.
 
 The evals have no workspace session, so discovery and planning calls run
 without dispatch and don't end a case: `search_tools` and `load_capability`

@@ -37,10 +37,10 @@ from services.documents.operations.word import WordOperation
         "Create a new .docx File. Start from template_file_id to keep a brand's styles, "
         "headers, and footers; otherwise a plain document with heading, list, and table "
         "styles is used. Unless keep_template_content is true, the template's body and "
-        "comments are removed and its styles, headers, footers, and sections stay. Operations are the "
-        "same as edit_word_document's; without an index, insert_paragraphs and insert_table "
-        "add to the end. New Files go in this conversation's folder unless folder names "
-        "another. The result gives the new File's id and revision_id for further edits."
+        "comments are removed and its styles, headers, footers, and sections stay. Operations "
+        "are the same as edit_word_document's; without an index, insert_paragraphs and "
+        "insert_table add to the end. New Files go in this conversation's folder unless folder "
+        "names another. The result gives the new File's id and revision_id for further edits."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,

@@ -3,10 +3,11 @@
 The `document_*` cases in `evals/datasets/agent_behavior.yaml` place these
 tool results in model history. Each read fixture is the worker's `read` output
 for a small file built with `python-pptx`, `openpyxl`, or `python-docx`,
-headed by the File and revision ids the read tools add:
+headed by the File and revision ids and the framed File name that the read
+tools add:
 
-- `read_presentation_template.json`: the bundled default deck with one title
-  slide.
+- `read_presentation_template.json`: a customer template on python-pptx's
+  default layouts, with one title slide.
 - `read_workbook_regional_sales.json`: a Sales sheet of six regions by
   quarter, with no totals.
 - `read_word_document_supplier_agreement.json`: a short agreement with a

@@ -2,7 +2,10 @@
 
 import { describe, expect, it } from "vitest"
 
-import { documentToolResult } from "@/features/conversations/native-tools/document-tools"
+import {
+  documentOperationSummaries,
+  documentToolResult,
+} from "@/features/conversations/native-tools/document-tools"
 
 describe("document tool results", () => {
   it("leaves an unrecognised edit result to the generic row", () => {
@@ -15,5 +18,24 @@ describe("document tool results", () => {
     })
 
     expect(result).toBeNull()
+  })
+})
+
+describe("document operation summaries", () => {
+  it("aggregates operations per kind and target and buckets unknown ones together", () => {
+    const summaries = documentOperationSummaries({
+      operations: [
+        { op: "set_cells", sheet: "Sales", values: [[1, 2], [3]] },
+        { op: "set_cells", sheet: "Sales", values: [[4]] },
+        { op: "set_cells", sheet: "Costs", values: [[5]] },
+        { op: "future_op" },
+        { op: "another_future_op" },
+      ],
+    })
+
+    expect(summaries).toHaveLength(3)
+    expect(summaries[0]).toMatch(/\b4\b.*Sales$/)
+    expect(summaries[1]).toMatch(/\b1\b.*Costs$/)
+    expect(summaries[2]).toMatch(/\b2\b/)
   })
 })

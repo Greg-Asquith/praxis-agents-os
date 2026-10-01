@@ -1,6 +1,5 @@
 """Input gates for Files that document tools load, such as images added to a deck."""
 
-from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -12,7 +11,6 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.settings import settings
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.documents import inputs as document_inputs
@@ -20,24 +18,12 @@ from services.files.contract import FileCategory
 from services.files.create_file_with_revision import create_file_with_revision
 from services.files.revision_actor import FileRevisionActor
 from tests.factories import build_user, build_workspace
-from tests.support.storage import reset_storage_provider_cache
-
-
-@pytest.fixture
-def local_storage_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
-    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
-    reset_storage_provider_cache()
-    try:
-        yield
-    finally:
-        reset_storage_provider_cache()
 
 
 @pytest.mark.asyncio
 async def test_input_gates_reject_out_of_scope_and_oversized_files(
     db_session: AsyncSession,
-    local_storage_settings: None,
+    local_storage: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     user = build_user(email=f"input-gates-{uuid4().hex}@example.com")

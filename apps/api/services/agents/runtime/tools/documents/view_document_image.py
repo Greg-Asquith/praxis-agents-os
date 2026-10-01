@@ -55,10 +55,12 @@ async def view_document_image(
     """Return an embedded image as image content."""
     if not agent_model_supports_vision(ctx.deps):
         raise ModelRetry("The configured model can't look at images.")
-    file, revision, data = await load_file(ctx, internal_entity_id(file_id))
+    file, revision, document_format, data = await load_file(
+        ctx, internal_entity_id(file_id), office_format
+    )
     result = await run_worker(
         "extract_image",
-        document_format=office_format(file),
+        document_format=document_format,
         data=data,
         args={"image_ref": image_ref},
     )

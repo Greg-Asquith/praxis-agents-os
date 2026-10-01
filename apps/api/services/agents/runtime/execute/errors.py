@@ -96,7 +96,7 @@ def public_run_error(exc: Exception) -> PublicRunError:
         return PublicRunError(
             code="code_mode_resume_requires_recovery",
             message=(
-                "This workflow stopped because its saved state could not be restored after "
+                "This script stopped because its saved state could not be restored after "
                 "one or more actions completed. Review the completed actions before continuing."
             ),
             completion_json=exc.completion_json,

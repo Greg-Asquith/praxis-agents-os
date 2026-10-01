@@ -135,10 +135,16 @@ async def _run_local_tool(_ctx, *, call, tool_def, args, handler):
     if call.tool_name == "search_skills":
         return {"skills": [], "total": 0}
     if call.tool_name == "read_todos":
-        return {"items": []}
+        return _todo_result([])
     if call.tool_name == "write_todos":
-        return {"items": to_jsonable_python(args["items"])}
+        return _todo_result(to_jsonable_python(args["items"]))
     return await handler(args)
+
+
+def _todo_result(items: list[dict]) -> dict:
+    statuses = ("pending", "in_progress", "completed")
+    counts = {status: sum(item.get("status") == status for item in items) for status in statuses}
+    return {"items": items, "counts": counts}
 
 
 def _active_context_fixture(inputs: EvalInputs) -> ResolvedActiveContext | None:

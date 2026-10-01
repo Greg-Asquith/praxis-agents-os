@@ -281,8 +281,7 @@ The envelope and report descriptions prohibit repeated or split source queries
 solely to bypass that preview. Further inspection uses `read_file`; calculations
 page the retained reference through `read_table` in `run_code`. These instructions describe the
 agent's data access, independently of the browser's complete-result control.
-If an analysis helper cannot handle the saved data, the agent explains that
-limitation instead of refetching it. Source pagination depends on provider
+Source pagination depends on provider
 metadata, not on the difference between preview and saved-item counts.
 Google Ads reports fetch every streamed row without adding a query limit.
 Analytics standard reports, Search Analytics, and BigQuery collect provider

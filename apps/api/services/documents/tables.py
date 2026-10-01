@@ -22,7 +22,7 @@ from services.documents.reading import (
     ReadPage,
     name,
 )
-from services.documents.xlsx_model import column_names
+from services.documents.xlsx_model import column_names, extend_columns
 
 _INTEGER = re.compile(r"-?(?:0|[1-9]\d{0,17})")
 _DECIMAL = re.compile(r"-?(?:0|[1-9]\d*)?\.\d+(?:[eE][+-]?\d+)?")
@@ -44,8 +44,13 @@ def read_delimited_table(data: bytes, *, delimiter: str, args: dict[str, Any]) -
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
     try:
         columns = column_names(next(reader, []))
-        rows = (_record(columns, row) for row in reader if any(row))
-        return _page(columns, rows, args, frame=lambda row, page: _frame_row(row, page.value))
+        rows = (row for row in reader if any(row))
+        return _page(
+            columns,
+            rows,
+            args,
+            frame=lambda row, page: _frame_row(_record(columns, row, page), page.value),
+        )
     except csv.Error as exc:
         if "field limit" in str(exc):
             raise DocumentRequestError(
@@ -166,10 +171,10 @@ def _read_records(items: list[Any], args: dict[str, Any], *, retained: bool) -> 
 
 def _page(
     columns: list[str],
-    rows: Iterable[dict[str, Any]],
+    rows: Iterable[Any],
     args: dict[str, Any],
     *,
-    frame: Callable[[dict[str, Any], ReadPage], dict[str, Any]],
+    frame: Callable[[Any, ReadPage], dict[str, Any]],
 ) -> dict[str, Any]:
     page = ReadPage(args)
     page.reserve(columns, too_large="The table has more columns than one read page can hold.")
@@ -197,9 +202,10 @@ def _page(
     return result
 
 
-def _record(columns: list[str], row: list[str]) -> dict[str, Any]:
+def _record(columns: list[str], row: list[str], page: ReadPage) -> dict[str, Any]:
+    """Returns a page row as a record, naming any columns past the header."""
     if len(row) > len(columns):
-        columns[:] = column_names([*columns, *([None] * (len(row) - len(columns)))])
+        columns[:] = extend_columns(columns, len(row) - len(columns), page)
     return {column: _number_or_text(value) for column, value in zip(columns, row, strict=False)}
 
 

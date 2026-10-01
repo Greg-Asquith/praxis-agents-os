@@ -1,12 +1,18 @@
 # apps/api/services/documents/packages.py
 
-"""Open and save helpers per Office format. Run only inside the document worker."""
+"""Open, save, and relationship helpers per Office format. Run only inside the document worker."""
 
 import io
 import zipfile
+from collections.abc import Iterator
 from typing import Any
 
 from services.documents.precheck import PackageLimits, PackageRejectedError, precheck_package
+
+_BLIP_NAMESPACES = {
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+}
 
 
 def require_safe_parsers() -> None:
@@ -63,3 +69,26 @@ def save_package(document: Any, limits: PackageLimits) -> bytes:
     data = output.getvalue()
     precheck_package(data, limits)
     return data
+
+
+def external_relationships(document: Any) -> Iterator[tuple[str, str]]:
+    """Yields the type and target of every external relationship in a deck or Word document."""
+    for relationship in document.part.package.iter_rels():
+        if relationship.is_external:
+            yield relationship.reltype, relationship.target_ref
+
+
+def image_parts(element: Any, part: Any) -> list[str]:
+    """Returns part names of images embedded in an element, resolved through its part."""
+    from lxml import etree
+
+    refs = []
+    # Word content controls are plain lxml elements, so the namespaces are passed explicitly.
+    for rel_id in etree.XPath(".//a:blip/@r:embed", namespaces=_BLIP_NAMESPACES)(element):
+        relationship = part.rels.get(rel_id)
+        if relationship is None or relationship.is_external:
+            continue
+        ref = str(relationship.target_part.partname).lstrip("/")
+        if ref not in refs:
+            refs.append(ref)
+    return refs

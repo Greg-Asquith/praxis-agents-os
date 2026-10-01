@@ -246,7 +246,7 @@ function displayResultExcerpt(value: string | undefined): string | null {
     return null
   }
   if (value.includes("…[excerpt truncated]…")) {
-    return "Detailed result preview was truncated. The workflow used the complete result."
+    return "Detailed result preview was truncated. The script used the complete result."
   }
   return value
 }

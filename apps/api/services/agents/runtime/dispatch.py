@@ -70,6 +70,7 @@ from services.agents.runtime.code_mode.metadata import (
     CODE_MODE_PARENT_TOOL_CALL_METADATA_KEY,
     CODE_MODE_PENDING_AUDIT_RECORDED_ATTR,
     CODE_MODE_TAINT_SOURCES_METADATA_KEY,
+    RUN_CODE_TOOL_NAME,
 )
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.delegation.tool_names import DELEGATION_TOOL_NAMES
@@ -158,7 +159,7 @@ async def retain_structured_result(
 ) -> tuple[Any, ResultSize] | None:
     """Retains oversized direct read results before they enter model history."""
     if (
-        tool_name == "run_code"
+        tool_name == RUN_CODE_TOOL_NAME
         or parent_tool_call_id is not None
         or (definition is not None and definition.effect == TOOL_EFFECT_WRITE)
     ):

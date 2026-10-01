@@ -73,7 +73,7 @@ class OutputFormat(Evaluator[dict, EvalOutput, dict]):
 
 @dataclass
 class AcceptedToolCall(Evaluator[dict, EvalOutput, dict]):
-    """Checks that the first call uses an accepted tool, directly or in a workflow, with valid arguments."""
+    """Checks the first call uses an accepted tool, directly or in a script, with valid arguments."""
 
     def evaluate(self, ctx: EvaluatorContext[dict, EvalOutput, dict]) -> EvaluationReason:
         metadata = ctx.metadata or {}
@@ -84,10 +84,12 @@ class AcceptedToolCall(Evaluator[dict, EvalOutput, dict]):
             return EvaluationReason(value=False, reason="no tool was called")
         name, arguments = ctx.output.called_tools[0], ctx.output.tool_arguments[0]
         if name == "run_code":
-            code = str(json.loads(arguments).get("code", ""))
+            code = _script_code(arguments)
+            if code is None:
+                return EvaluationReason(value=False, reason="run_code arguments aren't JSON")
             called, errors = workflow_calls(code, code_eligible_tools())
             if called.isdisjoint(accepted):
-                errors = (*errors, f"the workflow calls none of {sorted(accepted)}")
+                errors = (*errors, f"the script calls none of {sorted(accepted)}")
         elif name in accepted:
             errors = _direct_argument_errors(name, arguments)
         else:
@@ -113,9 +115,19 @@ class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
         if "run_code" not in ctx.output.called_tools:
             return EvaluationReason(value=False, reason="run_code was not called")
         arguments = ctx.output.tool_arguments[ctx.output.called_tools.index("run_code")]
-        code = str(json.loads(arguments).get("code", ""))
+        code = _script_code(arguments)
+        if code is None:
+            return EvaluationReason(value=False, reason="run_code arguments aren't JSON")
         errors = workflow_argument_errors(code, code_eligible_tools(), expected)
         return EvaluationReason(value=not errors, reason="; ".join(errors) or None)
+
+
+def _script_code(arguments: str) -> str | None:
+    try:
+        parsed = json.loads(arguments)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return str(parsed.get("code", "")) if isinstance(parsed, dict) else None
 
 
 def code_eligible_tools() -> dict[str, Tool]:

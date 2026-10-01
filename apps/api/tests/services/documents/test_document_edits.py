@@ -2,18 +2,16 @@
 
 import io
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 from pydantic import TypeAdapter
 
 from services.documents.operations.presentation import PresentationOperation
 from services.documents.operations.word import WordOperation
 from services.documents.operations.workbook import WorkbookOperation
-from services.documents.precheck import PackageLimits
 from services.documents.worker import DocumentRequestError, DocumentWorkerPool
 from tests.support.office_documents import (
     PNG_PIXEL,
@@ -25,27 +23,11 @@ from tests.support.office_documents import (
     sales_workbook,
 )
 
-_MIB = 1024 * 1024
 _ADAPTERS = {
     "pptx": TypeAdapter(list[PresentationOperation]),
     "xlsx": TypeAdapter(list[WorkbookOperation]),
     "docx": TypeAdapter(list[WordOperation]),
 }
-
-
-@pytest_asyncio.fixture
-async def pool() -> AsyncIterator[DocumentWorkerPool]:
-    worker_pool = DocumentWorkerPool(
-        workers=1,
-        timeout_seconds=60.0,
-        memory_bytes=1024 * _MIB,
-        max_source_bytes=50 * _MIB,
-        limits=PackageLimits(
-            max_entries=5_000, max_uncompressed_bytes=200 * _MIB, max_compression_ratio=100
-        ),
-    )
-    yield worker_pool
-    await worker_pool.close()
 
 
 async def _edit(
@@ -379,6 +361,31 @@ async def test_append_extends_a_plain_table_and_its_filter(pool: DocumentWorkerP
     assert change["tables"] == [table_name[:100]]
 
 
+async def test_append_writes_under_a_table_that_starts_past_column_a(
+    pool: DocumentWorkerPool,
+) -> None:
+    from openpyxl import load_workbook
+    from openpyxl.worksheet.table import Table
+
+    def build(workbook: Any) -> None:
+        sheet = workbook.active
+        sheet.title = "Data"
+        sheet.append([None, "Region", "Amount"])
+        sheet.append([None, "North", 5])
+        sheet.add_table(Table(displayName="Sales", ref="B1:C2"))
+
+    _, output = await _edit(
+        pool,
+        "xlsx",
+        _workbook(build),
+        [{"op": "append_rows", "sheet": "Data", "rows": [["South", 7]]}],
+    )
+
+    sheet = load_workbook(io.BytesIO(output))["Data"]
+    assert [cell.value for cell in sheet[3]] == [None, "South", 7]
+    assert sheet.tables["Sales"].ref == "B1:C3"
+
+
 async def test_deleting_a_sheet_a_surviving_name_uses_is_refused(pool: DocumentWorkerPool) -> None:
     from openpyxl.workbook.defined_name import DefinedName
 
@@ -464,6 +471,32 @@ async def test_chart_added_before_a_rename_follows_the_sheet(pool: DocumentWorke
     assert "Sales" not in saved
     # A chart removed with its sheet no longer refers to anything.
     await _edit(pool, "xlsx", sales_workbook(), [chart, {"op": "delete_sheet", "sheet": "Sales"}])
+
+
+async def test_table_column_formulas_follow_a_rename(pool: DocumentWorkerPool) -> None:
+    from openpyxl import load_workbook
+    from openpyxl.worksheet.table import Table, TableFormula
+
+    def build(workbook: Any) -> None:
+        sheet = workbook.active
+        sheet.title = "Data"
+        sheet.append(["Amount", "Scaled"])
+        sheet.append([5, "=Rates!$A$1*2"])
+        table = Table(displayName="Scaled", ref="A1:B2")
+        table._initialise_columns()
+        table.tableColumns[1].calculatedColumnFormula = TableFormula(attr_text="Rates!$A$1*2")
+        sheet.add_table(table)
+        workbook.create_sheet("Rates")["A1"] = 3
+
+    _, output = await _edit(
+        pool,
+        "xlsx",
+        _workbook(build),
+        [{"op": "rename_sheet", "sheet": "Rates", "name": "Prices"}],
+    )
+
+    table = load_workbook(io.BytesIO(output))["Data"].tables["Scaled"]
+    assert table.tableColumns[1].calculatedColumnFormula.attr_text == "Prices!$A$1*2"
 
 
 async def test_workbook_readback_reports_cleared_cells(pool: DocumentWorkerPool) -> None:
@@ -783,6 +816,35 @@ async def test_duplicate_slide_keeps_its_transition_and_notes_formatting(
     assert [(run.text, run.font.bold) for run in runs] == [("Say ", None), ("this", True)]
 
 
+async def test_deleted_slide_leaves_the_deck_sections(pool: DocumentWorkerPool) -> None:
+    from lxml import etree
+    from pptx import Presentation
+
+    sections = "http://schemas.microsoft.com/office/powerpoint/2010/main"
+    presentation = Presentation()
+    kept, deleted = (
+        presentation.slides.add_slide(presentation.slide_layouts[6]).slide_id for _ in range(2)
+    )
+    presentation._element.append(
+        etree.fromstring(
+            '<p:extLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+            '<p:ext uri="{521415D9-36F7-43E2-AB2F-B90AF26B5E84}">'
+            f'<p14:sectionLst xmlns:p14="{sections}"><p14:section name="All" '
+            'id="{2B1D4E1A-8C2E-4E57-9F0B-6C1C1E1D2A3B}"><p14:sldIdLst>'
+            f'<p14:sldId id="{kept}"/><p14:sldId id="{deleted}"/>'
+            "</p14:sldIdLst></p14:section></p14:sectionLst></p:ext></p:extLst>"
+        )
+    )
+
+    _, output = await _edit(
+        pool, "pptx", _saved(presentation), [{"op": "delete_slide", "slide_id": deleted}]
+    )
+
+    saved = Presentation(io.BytesIO(output))._element
+    listed = [entry.get("id") for entry in saved.iter(f"{{{sections}}}sldId")]
+    assert listed == [str(kept)]
+
+
 async def test_large_edit_result_stays_within_the_page_budget(pool: DocumentWorkerPool) -> None:
     from pptx import Presentation
 
@@ -809,3 +871,15 @@ def test_warnings_past_the_cap_are_counted_as_omitted() -> None:
     result = log.result(dict)
 
     assert (len(result["warnings"]), result["warnings_omitted"]) == (50, 1)
+
+
+def test_a_failed_allocation_during_an_edit_reaches_the_worker_loop() -> None:
+    from services.documents.editing import EditLog, run_operations
+
+    def allocate(_operation: dict[str, Any], _log: EditLog) -> None:
+        raise MemoryError
+
+    log = EditLog({"max_chars": 60_000, "source_ref": "file:source/revision:base"})
+    # The worker exits on MemoryError, so the edit loop mustn't turn it into a request error.
+    with pytest.raises(MemoryError):
+        run_operations([{"op": "allocate"}], {"allocate": allocate}, log)

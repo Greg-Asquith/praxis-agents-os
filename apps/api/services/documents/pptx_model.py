@@ -5,6 +5,7 @@
 import math
 from typing import Any
 
+from services.documents.packages import external_relationships, image_parts
 from services.documents.reading import (
     ReadPage,
     color,
@@ -38,7 +39,7 @@ def read_presentation(presentation: Any, args: dict[str, Any]) -> dict[str, Any]
     }
     if requested is None:
         result.update(_layouts(presentation, page))
-        result.update(external_links(_external_relationships(presentation), page))
+        result.update(external_links(external_relationships(presentation), page))
     result["slides"] = []
     missing = []
     for number in requested or range(1, len(slides) + 1):
@@ -54,19 +55,6 @@ def read_presentation(presentation: Any, args: dict[str, Any]) -> dict[str, Any]
     if missing:
         result["missing_slides"] = missing
     return result
-
-
-def image_parts(element: Any, part: Any) -> list[str]:
-    """Returns part names of images embedded in an element, resolved through its part."""
-    refs = []
-    for rel_id in element.xpath(".//a:blip/@r:embed"):
-        try:
-            ref = str(part.related_part(rel_id).partname).lstrip("/")
-        except KeyError:
-            continue
-        if ref not in refs:
-            refs.append(ref)
-    return refs
 
 
 def _layouts(presentation: Any, page: ReadPage) -> dict[str, Any]:
@@ -86,12 +74,6 @@ def _layouts(presentation: Any, page: ReadPage) -> dict[str, Any]:
                 return {"layouts": layouts, "layouts_truncated": True}
             layouts.append(item)
     return {"layouts": layouts}
-
-
-def _external_relationships(presentation: Any) -> Any:
-    for relationship in presentation.part.package.iter_rels():
-        if relationship.is_external:
-            yield relationship.reltype, relationship.target_ref
 
 
 def read_slide(slide: Any, number: int, page: ReadPage) -> dict[str, Any]:

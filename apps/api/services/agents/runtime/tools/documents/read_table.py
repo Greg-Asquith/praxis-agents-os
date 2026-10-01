@@ -85,8 +85,9 @@ async def read_table(
     ] = DEFAULT_TABLE_ROWS,
 ):
     """Read one page of rows from a table-shaped File."""
-    file, revision, data = await load_file(ctx, internal_entity_id(file_id))
-    document_format = _table_format(file)
+    file, revision, document_format, data = await load_file(
+        ctx, internal_entity_id(file_id), _table_format
+    )
     args = read_args(file, revision, sheet=sheet, range=range, offset=offset, limit=limit)
     if document_format == "json":
         args |= {"list_name": list_name, "retained": _is_retained_result(file, revision)}
