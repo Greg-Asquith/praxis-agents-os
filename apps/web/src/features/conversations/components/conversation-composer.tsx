@@ -44,6 +44,7 @@ import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
 import type { Agent } from "@/features/agents/types"
 import {
   chatAttachmentAcceptValue,
+  isChatAttachmentFile,
   MAX_CHAT_ATTACHMENTS,
   uploadChatAttachment,
   type MessageAttachment,
@@ -238,6 +239,16 @@ export function ConversationComposer(props: ConversationComposerProps) {
     }
 
     const selectedFiles = Array.from(files)
+    const unsupportedFile = selectedFiles.find((file) => !isChatAttachmentFile(file))
+    if (unsupportedFile) {
+      setError(
+        `${unsupportedFile.name} can't be attached. Attach documents, spreadsheets, presentations, images, or text files.`
+      )
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = ""
+      }
+      return
+    }
     if (attachments.length + selectedFiles.length > MAX_CHAT_ATTACHMENTS) {
       setError(`Attach up to ${String(MAX_CHAT_ATTACHMENTS)} files per message.`)
       if (attachmentInputRef.current) {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { chatAttachmentAcceptValue } from "@/features/conversations/attachments"
+import {
+  chatAttachmentAcceptValue,
+  isChatAttachmentFile,
+} from "@/features/conversations/attachments"
 import { WORKSPACE_FILE_MIME_TYPES, workspaceFileAcceptValue } from "@/lib/file"
 
 describe("chatAttachmentAcceptValue", () => {
@@ -18,5 +21,14 @@ describe("chatAttachmentAcceptValue", () => {
       expect.arrayContaining([".pptx", ".ppt", ".doc", ".xls", ".json"])
     )
     expect(chatExtensions).not.toEqual(expect.arrayContaining([".mp4", ".mov"]))
+  })
+})
+
+describe("isChatAttachmentFile", () => {
+  it("refuses dropped video and unknown extensions the picker would hide", () => {
+    expect(isChatAttachmentFile(new File([], "Report.PDF"))).toBe(true)
+    expect(isChatAttachmentFile(new File([], "talk.mp4", { type: "video/mp4" }))).toBe(false)
+    expect(isChatAttachmentFile(new File([], "clip.webm"))).toBe(false)
+    expect(isChatAttachmentFile(new File([], "README"))).toBe(false)
   })
 })

@@ -25,6 +25,12 @@ export function chatAttachmentAcceptValue() {
   return CHAT_ATTACHMENT_EXTENSIONS.join(",")
 }
 
+// Drag and drop bypasses the picker's accept list, so both paths check here.
+export function isChatAttachmentFile(file: File) {
+  const extension = file.name.toLowerCase().split(".").pop()
+  return extension !== undefined && CHAT_ATTACHMENT_EXTENSIONS.includes(`.${extension}`)
+}
+
 export function isImageAttachmentMediaType(mediaType: string | null | undefined) {
   return mediaType?.split(";")[0]?.trim().toLowerCase().startsWith("image/") ?? false
 }
