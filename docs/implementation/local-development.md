@@ -17,7 +17,11 @@ uses the major-aware `/var/lib/postgresql` mount and a dedicated
 `praxis-postgres-18-data` volume. `make compose-dev` runs the complete
 development stack in Docker using `docker-compose.dev.yml`, while
 `make quickstart` runs the default production-image stack and prompts for an
-LLM provider key if none is configured.
+LLM provider key if none is configured; `make quickstart-detached` runs the
+same stack in the background. The migrate, API, and worker containers run as
+`PRAXIS_UID:PRAXIS_GID` (default `1001:1001`, the image user). Make exports the
+host user's IDs so the containers can read the mode-600
+`local.secrets.env` and write `.local/data` under Docker Engine on Linux.
 Make detects both `docker compose` and legacy `docker-compose`. When changing Docker
 behaviour: keep local services bound to
 `127.0.0.1`, keep production images small and non-root, and do not bake

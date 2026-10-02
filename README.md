@@ -26,8 +26,10 @@ run.
 
 ## Quickstart (Docker only)
 
-You need Docker and an API key for OpenAI, Anthropic, or Google. The Docker
-quickstart does not require Python, Node.js, `uv`, or `pnpm` on your machine.
+You need Docker, Make, and an API key for OpenAI, Anthropic, or Google. The
+Docker quickstart does not require Python, Node.js, `uv`, or `pnpm` on your
+machine. macOS includes Make with the Xcode Command Line Tools; on a fresh
+Ubuntu or Debian server, install it with `sudo apt install make`.
 
 ```bash
 git clone https://github.com/Greg-Asquith/praxis-agents-os.git
@@ -39,7 +41,13 @@ make quickstart
 of the three providers — it recognizes the key by its prefix), creates the
 local configuration, runs database migrations, builds the production
 images, and starts Praxis at `http://localhost:3000`. Sign up, then create a
-workspace and your first agent.
+workspace and your first agent. OpenRouter keys (`sk-or-...`) are not
+supported at this time.
+
+The stack runs in the foreground; stop it with `Ctrl+C`. On a server, run
+`make quickstart-detached` to start it in the background, `make compose-logs`
+to follow its logs, and `make compose-down` to stop it. The local database is
+preserved as a Docker Volume either way.
 
 To run without Make — for example from Windows PowerShell or Command Prompt —
 put the key in the process environment and run Compose directly:
@@ -51,8 +59,39 @@ OPENAI_API_KEY=sk-your-key docker compose up --build
 In PowerShell, set the variable first with
 `$env:OPENAI_API_KEY = "sk-your-key"` (`ANTHROPIC_API_KEY` and
 `GOOGLE_API_KEY` work the same way). Local values are written only beneath
-`.local/` and `apps/api/.env`, both ignored by Git. Stop the stack with
-`Ctrl+C`; the local database is preserved as a Docker Volume.
+`.local/` and `apps/api/.env`, both ignored by Git.
+
+### Run Compose directly on Linux
+
+The API, worker, and migration containers run as your host user so they can
+read the private `.local/targets/local.secrets.env` file and write local
+storage. Make passes your user and group IDs automatically. When you run
+`docker compose` yourself on a Linux host, export them first:
+
+```bash
+export PRAXIS_UID="$(id -u)" PRAXIS_GID="$(id -g)"
+docker compose up -d
+```
+
+Docker Desktop on macOS and Windows maps file ownership for you, so this step
+is only needed with Docker Engine on Linux.
+
+### Run a scripted install
+
+When the quickstart runs without a terminal, for example from a provisioning
+script, it can't prompt for a key. Create the local configuration, save the key
+from your secret manager, then start the stack:
+
+```bash
+docker compose run --rm init
+printf '%s\n' "$OPENAI_API_KEY" | sh apps/api/bin/replace_env_value.sh \
+  .local/targets/local.secrets.env OPENAI_API_KEY
+make quickstart-detached
+```
+
+Use `ANTHROPIC_API_KEY` or `GOOGLE_API_KEY` as the last argument for those
+providers. The script reads the value from standard input, so the key stays out
+of your shell history and process list.
 
 ## What's included
 

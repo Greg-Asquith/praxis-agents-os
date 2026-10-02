@@ -59,6 +59,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 - The Code Mode tool is now `run_code`, the agent's only code tool; it was
   `run_workflow`. There is no alias, so approvals paused on `run_workflow`
   can't resume. The conversation card is titled "Script".
+- The Docker quickstart works on Docker Engine on Linux. The migrate, API, and
+  worker containers run as the host user, so they can read the private secrets
+  file and write local storage. `make quickstart-detached` starts the stack in
+  the background, and OpenRouter keys are rejected with a clear message. The
+  README covers installing Make and scripted installs that save the key
+  without a prompt.
 
 ### Removed
 
