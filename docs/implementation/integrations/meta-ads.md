@@ -4,7 +4,9 @@ Meta Ads connects a workspace to the ad accounts assigned to an agency's Meta
 system user. Discovered accounts can join active context and Context Groups.
 Agents can run bounded Insights reports, read account totals, list advertising
 objects, discover custom conversions and custom events, and read change
-history on selected accounts. Writes, Facebook sign-in, and event delivery are pending.
+history on selected accounts. With approval, agents can turn campaigns, ad
+sets, and ads on or off. Other writes, Facebook sign-in, and event delivery
+are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -300,10 +302,26 @@ account. Truncated results retain the returned rows with `truncated=true`.
 Objects include names, configured and effective status, objective or
 optimisation goal, bid strategy, budgets, bids, schedules, and parent IDs when
 available. Schedule times are normalised to ISO 8601 and keep any offset Meta
-returns, for example `2026-09-01T00:00:00+01:00`. Ad sets without their own budget identify
-the campaign as the budget holder; ads have no separate budget. The provider operation also accepts
-exact object IDs for later write verification, still through the selected
-account's edge. Write tools remain pending.
+returns, for example `2026-09-01T00:00:00+01:00`. Ads have no separate budget.
+
+Ad sets also carry what ad creation validates before approval:
+
+- `objective`, read from the parent campaign.
+- `destination_type` and `promoted_object` (Page, pixel, application, custom
+  conversion, and custom event type).
+- `placements`: `automatic` when targeting names no publisher platform,
+  otherwise `manual` with entries such as `facebook` (every position on that
+  platform) or `instagram:story`. Null when Meta returns no targeting, because
+  the placements are then unknown. Malformed targeting fails the read.
+- `is_dynamic_creative`.
+- A budget of kind `campaign` when the campaign shows a budget, with the
+  campaign amount and its `period` (daily or lifetime). An ad set with neither
+  its own nor a campaign budget has a null budget, because ownership is
+  unknown.
+
+The provider operation also reads exact object IDs in any status, still through
+the selected account's edge. Writes use it to read state before and after a
+change.
 
 These reads use the existing credential, authorisation, fan-out, and audit
 paths with read policy, a 60-second tool timeout, and Code Mode support.
@@ -311,6 +329,118 @@ One account's error leaves other account results available. Object and
 conversion lists use the same internal retained-result Files and preview
 expansion as Insights. Audits include counts, object type, and status filters;
 they exclude provider names, amounts, name filters, and conversion metadata.
+
+## Writes
+
+Every Meta write is approval-only, cannot run automatically, and requires a
+writable account (see [Discovery and writability](#discovery-and-writability)).
+Meta Ads declares the `spend` capability, so tools that can start spending are
+listed in `tests/services/agents/test_spend_policy.py`.
+
+`MetaAdsClient.graph_post` sends a change with
+`IntegrationRequestPolicy.MUTATION`, and `graph_post_form` sends a multipart
+change such as a media upload. Neither retries. The outcome of each request is
+classified as follows:
+
+- A Graph error response, including a throttle rejection (`613` and its
+  subcodes, `80000`-`80014`, or HTTP 429), is a confirmed failure.
+- A timeout, lost connection, transient Graph error, or cancellation after
+  sending is ambiguous.
+- A success response that can't be parsed is ambiguous.
+- A change is never sent while the account's known throttle is active.
+
+`operations/mutations.py` holds the provider-local ledger: one parent per
+requested object, one or more effects per parent, and `applied`, `failed`, or
+`unverified` outcomes. Parents can be skipped with a reason. The ledger is
+generic over object type, so creation tools add effects without changing it.
+`tools/utils/mutation_evidence.py` projects it into the shared terminal
+evidence and derives `SUCCESS`, `PARTIAL`, `FAILURE`, or `UNVERIFIED`.
+`FAILURE` means every object failed and no effect applied; an object with
+one applied effect makes the result `PARTIAL`. An unverified outcome returns
+its per-object rows with the `unverified_mutation` error.
+
+Write arguments are scoped references resolved within the selected ad
+accounts: `MetaAdsCampaignReference` (`meta_ads_campaign`),
+`MetaAdsAdSetReference` (`meta_ads_ad_set`), and `MetaAdsAdReference`
+(`meta_ads_ad`). Their resolvers search active and paused objects by name and
+re-read exact references through `list_objects` on the account's own edge.
+References to an account outside active context, archived or deleted
+objects, and objects that the account's edge doesn't list produce no choice.
+The ad set reference carries the ad set fields listed in
+[Account and object reads](#account-and-object-reads).
+
+Before the pending audit record, a write reads each object's current state;
+those values are the "before" evidence. Meta replies to a change with only
+`{"success": true}`, so after the change the tool reads each object again. A
+change counts as applied only when the read-back matches.
+
+### Changing status
+
+`meta_ads_update_status` turns up to 50 campaigns, ad sets, or ads on
+(`ACTIVE`) or off (`PAUSED`) in one approval. Archiving and deleting are not
+offered. The tool works as follows:
+
+1. Approval display re-reads the references. When turning objects on, it
+   projects the whole selection as on and lists the parents that stay off and
+   keep each object off. A campaign or ad set that is already on is marked as
+   such and starts nothing new. For each campaign or ad set that the change
+   turns on, it counts the children whose configured status is on, or that the
+   same change turns on, up to 500. An ad set counted this way is enabled; that
+   doesn't prove its ads can deliver. When a complete count is zero, the
+   card shows the budget the object holds without saying spending starts.
+   For a campaign without its own budget, it
+   sums those ad sets' daily and lifetime budgets exactly. Ad sets whose budget
+   is unknown, and truncated child lists, make the total a lower bound rather
+   than zero. If an account can't be read, its objects show that the effect
+   couldn't be checked.
+2. Status and the three object lists are retained review fields; see
+   [Retained approval reviews](../tool-dispatch.md#retained-approval-reviews).
+   Each list is optional, so the operator can add a list the agent left out
+   or clear one to null. The edited approval must still select 1-50 objects.
+   An edit to any of them marks the evidence out of date. The card hides the
+   delivery notes and blocks approval until the operator selects **Check
+   Changes**, which re-runs step 1 on the server for the edited selection.
+   Resume rejects a status or selection that differs from the reviewed one.
+3. After approval, the tool reads each object, its ad set, and its campaign.
+   Missing, archived, or deleted objects stop the change before anything is
+   sent. Pending evidence records the object, its previous status and
+   delivery status, and its parents' statuses.
+4. The tool sends one `POST /{id}` with `status` per object. Turning off
+   goes campaigns first, so spending stops sooner; turning on goes ads first
+   and campaigns last. Objects already at the requested status are skipped
+   as `already_set`.
+5. The tool reads the changed objects again, plus skipped objects whose
+   campaign or ad set was sent a change, since their delivery status can move
+   with it. The result names the account, and each row reports `updated`,
+   `already_set`, `failed`, or `unverified`. Verified and skipped rows include
+   the status and delivery status Meta shows afterwards; a skipped row whose
+   read fails has neither. A read-back that disagrees with the requested
+   status leaves the row unverified and keeps the status Meta returned. A
+   failed read-back leaves the row unverified without a status.
+
+The card shows delivery status beside the configured status wherever Meta's
+delivery status differs, for example `Pending Review`. A reply where every row
+failed shows a failed account summary above the rows and their errors.
+
+The tool has a 120-second timeout and supports Code Mode. The web presenter
+uses the shared write seam and the Meta write kit under
+`apps/web/src/integrations/meta_ads/`. Rows link to Ads Manager in a new tab
+using the following format:
+
+```text
+https://adsmanager.facebook.com/adsmanager/manage/EDGE?act=ACCOUNT_ID&selected_TYPE_ids=OBJECT_ID
+```
+
+Replace the following:
+
+- `EDGE`: `campaigns`, `adsets`, or `ads`.
+- `ACCOUNT_ID`: the numeric ad account ID.
+- `TYPE`: `campaign`, `adset`, or `ad`.
+- `OBJECT_ID`: the numeric object ID.
+
+The link format, the reply shape, and the delivery status of children that
+are on but held by a parent are documented behaviour that hasn't been checked
+against a live account; see [Live qualification record](#live-qualification-record).
 
 ## Custom conversions and custom events
 
@@ -460,6 +590,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | App secret | Successful correct proof and redacted exact error bodies for missing proof and a second app's token |
 | API tier | Initial tier and the dashboard's Full access request prerequisites |
 | Connection UI | Owned and partner discovery, selection beside a Google Ads account, and read-only reporting access |
+| Status change | `POST /{id}` reply for a status change; throttle and permission rejection codes; Ads Manager deep links for a campaign, an ad set, and an ad; ad set placement, destination, and promoted-object fields; campaign budget fields; `CAMPAIGN_PAUSED` and `ADSET_PAUSED` for children that are on |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 
 Keep tokens, secrets, proofs, identifying asset values, and echoed URLs out of

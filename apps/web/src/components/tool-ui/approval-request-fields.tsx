@@ -132,7 +132,8 @@ export function ApprovalRequestFields({
         const options = availableFieldOptions(field, lockedRecord, fields)
         const rawValue = args[field.key]
         const originalValue = editableValue(field, rawValue)
-        const optionalEntity = field.format === "entity" && field.secondary
+        const optionalEntity =
+          (field.format === "entity" || field.format === "entity_list") && field.secondary
         const editable =
           field.editable && (originalValue !== null || (optionalEntity && rawValue == null))
         const value = clearedEntityFields.has(field.key)

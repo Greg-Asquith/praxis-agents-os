@@ -6,6 +6,11 @@ from services.integrations.manifest import IntegrationProviderManifest
 from services.integrations.plugin import IntegrationProviderPlugin
 
 from .discover_resources import discover_resources
+from .entity_resolvers import (
+    META_ADS_AD_RESOLVER,
+    META_ADS_AD_SET_RESOLVER,
+    META_ADS_CAMPAIGN_RESOLVER,
+)
 from .tools import TOOL_DEFINITIONS
 
 PROVIDER = IntegrationProviderPlugin(
@@ -26,4 +31,9 @@ PROVIDER = IntegrationProviderPlugin(
     ),
     discover_resources=discover_resources,
     tool_definitions=TOOL_DEFINITIONS,
+    entity_resolvers=(
+        META_ADS_AD_RESOLVER,
+        META_ADS_AD_SET_RESOLVER,
+        META_ADS_CAMPAIGN_RESOLVER,
+    ),
 )

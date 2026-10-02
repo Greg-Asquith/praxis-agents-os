@@ -1,6 +1,6 @@
 # apps/api/tests/services/agents/test_spend_policy.py
 
-"""Google Ads spend tools cannot be weakened below approval."""
+"""Advertising spend tools cannot be weakened below approval."""
 
 import pytest
 
@@ -17,6 +17,7 @@ from integrations.google_ads.tools.update_campaign_status import (
 from integrations.google_ads.tools.update_device_bid_modifiers import (
     DEFINITION as DEVICE_BID_MODIFIER_DEFINITION,
 )
+from integrations.meta_ads.tools.update_status import DEFINITION as META_ADS_STATUS_DEFINITION
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.agents.utils import validate_tool_configuration
@@ -29,9 +30,10 @@ from services.agents.utils import validate_tool_configuration
         CAMPAIGN_BUDGET_AMOUNT_DEFINITION,
         CREATE_CAMPAIGN_BUDGET_DEFINITION,
         DEVICE_BID_MODIFIER_DEFINITION,
+        META_ADS_STATUS_DEFINITION,
     ],
 )
-def test_google_ads_spend_policy_is_approval_only(monkeypatch, definition) -> None:
+def test_spend_policy_is_approval_only(monkeypatch, definition) -> None:
     monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, definition)
 
     with pytest.raises(AppValidationError):

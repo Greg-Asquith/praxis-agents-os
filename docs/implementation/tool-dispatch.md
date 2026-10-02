@@ -356,11 +356,19 @@ still matches the provider before sending.
 
 ## Retained approval reviews
 
-Tools with `approval_review_fields` declare entity selections that require a
-fresh retained review before approval. The selected source and its revision
-must be reviewed together. `POST /agent-runs/{run_id}/review-approval` accepts
-the root run, current `approval_revision`, exact `approval_id`, and executable
-`override_args`. The actor must own the pending run family in the active
+Tools with `approval_review_fields` declare editable arguments whose display
+evidence must be refreshed before approval when they change. The first field
+must be an `entity` or `entity_list` selection, which authorises the review;
+later fields can be any editable argument. Resume compares single entities and
+entity lists by reference identity, in order, and other fields by value. An
+omitted single entity needs no review. A secondary `entity_list` is optional:
+the editor can add it when absent and clears it to null, never `[]`, and
+resume treats null and a reviewed list as different selections. SharePoint reviews a selected source
+and its revision together. `meta_ads_update_status` reviews its status and
+object lists so its delivery evidence matches the edited selection.
+
+`POST /agent-runs/{run_id}/review-approval` accepts the root run, current
+`approval_revision`, exact `approval_id`, and executable `override_args`. The actor must own the pending run family in the active
 workspace. The same family lock serialises review and resume. Reviews preserve
 the original expiry and record an audit event.
 

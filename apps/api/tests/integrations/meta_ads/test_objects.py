@@ -127,19 +127,52 @@ async def test_campaign_held_budget_bid_schedule_and_parent_ids():
                 "bid_strategy": "COST_CAP",
                 "start_time": "2026-09-01T00:00:00+0100",
                 "end_time": "2026-09-30T00:00:00+0100",
+                "campaign": {"objective": "OUTCOME_SALES", "daily_budget": "5000"},
+                "promoted_object": {"pixel_id": "77", "custom_event_type": "PURCHASE"},
+                "targeting": {
+                    "publisher_platforms": ["facebook", "instagram"],
+                    "instagram_positions": ["story", "reels"],
+                },
             },
             edge="adsets",
         )
     )
     result = await read(client, object_type="adset")
     obj = result.objects[0]
-    assert obj.budget.model_dump() == {"kind": "campaign", "amount": None, "remaining": None}
+    assert obj.budget.model_dump() == {
+        "kind": "campaign",
+        "amount": "50",
+        "remaining": None,
+        "period": "daily",
+    }
+    assert obj.objective == "OUTCOME_SALES"
+    assert obj.promoted_object.pixel_id == "77"
+    assert obj.placements.model_dump() == {
+        "mode": "manual",
+        "positions": ["facebook", "instagram:story", "instagram:reels"],
+    }
     assert obj.bid_amount == "1.23"
     assert obj.campaign_id == "20"
     assert len(obj.name) == 512
     assert obj.start_time == "2026-09-01T00:00:00+01:00"
     assert obj.end_time == "2026-09-30T00:00:00+01:00"
     assert obj.optimization_goal == "OFFSITE_CONVERSIONS"
+
+
+async def test_missing_ad_set_configuration_stays_unknown():
+    client = provider(
+        page(
+            {"id": "10", "targeting": {}, "campaign": {"objective": "OUTCOME_SALES"}},
+            {"id": "11"},
+            edge="adsets",
+        )
+    )
+    automatic, unknown = (await read(client, object_type="adset")).objects
+    assert automatic.placements.mode == "automatic"
+    assert unknown.placements is None
+    assert automatic.budget is None and unknown.budget is None
+    with pytest.raises(IntegrationValidationError):
+        await read(provider(page({"id": "10", "targeting": "all"})), object_type="adset")
 
 
 async def test_paging_limit_truncation_and_cumulative_byte_budget():

@@ -194,7 +194,9 @@ export function useInlineApprovals({
     } catch (error) {
       if (currentScope.current === scope) {
         setFormError(
-          error instanceof Error ? error.message : "The selected File could not be reviewed."
+          error instanceof Error
+            ? error.message
+            : "The changes couldn't be checked. Try again or decline this request."
         )
         setFormErrorToolCallId(key)
         setReviewErrorKey(key)

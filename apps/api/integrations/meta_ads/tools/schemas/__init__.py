@@ -26,7 +26,6 @@ from .insights import (
 )
 from .objects import (
     MetaAdsObject,
-    MetaAdsObjectBudget,
     MetaAdsObjectsData,
     MetaAdsObjectsEntry,
     MetaAdsObjectsInput,
@@ -53,7 +52,6 @@ __all__ = [
     "MetaAdsInsightsLevel",
     "MetaAdsInsightsOutput",
     "MetaAdsObject",
-    "MetaAdsObjectBudget",
     "MetaAdsObjectsData",
     "MetaAdsObjectsEntry",
     "MetaAdsObjectsInput",

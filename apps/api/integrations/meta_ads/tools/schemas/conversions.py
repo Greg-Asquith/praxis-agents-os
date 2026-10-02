@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
-from .base import MetaAdsId, MetaAdsStrictModel, MetaAdsText
+from ...models import MetaAdsId, MetaAdsStrictModel, MetaAdsText
 
 CUSTOM_CONVERSIONS_MAX_ROWS = 500
 # Insights action types: custom conversions by ID, pixel custom events by name.

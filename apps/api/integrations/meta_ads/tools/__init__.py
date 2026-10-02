@@ -7,6 +7,7 @@ from .list_activities import DEFINITION as LIST_ACTIVITIES
 from .list_conversions import DEFINITION as LIST_CONVERSIONS
 from .list_objects import DEFINITION as LIST_OBJECTS
 from .run_insights import DEFINITION as RUN_INSIGHTS
+from .update_status import DEFINITION as UPDATE_STATUS
 
 TOOL_DEFINITIONS = (
     RUN_INSIGHTS,
@@ -14,4 +15,5 @@ TOOL_DEFINITIONS = (
     LIST_OBJECTS,
     LIST_CONVERSIONS,
     LIST_ACTIVITIES,
+    UPDATE_STATUS,
 )

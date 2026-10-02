@@ -528,18 +528,22 @@ def _validate_nested_integration_parameter(
 def _validate_presentation(definition: RuntimeToolDefinition) -> None:
     presentation = definition.presentation
     review_fields = set(definition.approval_review_fields)
-    reviewable_fields = {
+    editable_fields = {field.key for field in presentation.arg_fields if field.editable}
+    entity_fields = {
         field.key
         for field in presentation.arg_fields
-        if field.editable and field.format == "entity" and field.entity_kind
+        if field.editable and field.format in {"entity", "entity_list"} and field.entity_kind
     }
+    # The first review field authorises the review, so it must be an entity selection.
     if review_fields and (
         len(review_fields) != len(definition.approval_review_fields)
-        or not review_fields.issubset(reviewable_fields)
+        or not review_fields.issubset(editable_fields)
+        or definition.approval_review_fields[0] not in entity_fields
         or definition.approval_display_args is None
     ):
         raise RuntimeError(
-            "Approval review fields require unique editable entity arguments and display projection"
+            "Approval review fields require unique editable arguments, led by an entity "
+            "selection, and display projection"
         )
     if presentation.icon not in VALID_TOOL_ICONS:
         raise RuntimeError(

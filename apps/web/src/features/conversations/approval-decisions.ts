@@ -179,7 +179,8 @@ function mergeEditedValue(original: unknown, edit: EditedValue, field?: Approval
   }
 
   if (Array.isArray(edit) && edit.length > 0 && edit.every(isEntityReference)) {
-    if (!Array.isArray(original)) {
+    const optionalList = field?.format === "entity_list" && field.secondary
+    if (!Array.isArray(original) && !(original == null && optionalList)) {
       return INVALID_EDIT
     }
     return structurallyEqual(edit, original) ? NO_CHANGE : edit
@@ -205,6 +206,10 @@ function mergeClearedValue(original: unknown, field?: ApprovalField): unknown {
   }
   if (field?.format === "multiline" && field.editable && field.secondary) {
     return original == null ? NO_CHANGE : typeof original === "string" ? null : INVALID_EDIT
+  }
+  if (field?.format === "entity_list" && field.editable && field.secondary) {
+    if (original == null) return NO_CHANGE
+    return Array.isArray(original) && original.every(isEntityReference) ? null : INVALID_EDIT
   }
   if (field?.format !== "entity" || !field.editable || !field.secondary) return INVALID_EDIT
   if (original == null) return NO_CHANGE

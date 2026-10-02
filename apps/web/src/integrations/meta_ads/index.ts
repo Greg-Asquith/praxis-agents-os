@@ -8,10 +8,11 @@ import { metaAdsActivitiesPresenter } from "@/integrations/meta_ads/presenters/a
 import { metaAdsObjectsPresenter } from "@/integrations/meta_ads/presenters/objects"
 import { metaAdsConversionsPresenter } from "@/integrations/meta_ads/presenters/conversions"
 import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/insights"
+import { metaAdsUpdateStatusPresenter } from "@/integrations/meta_ads/presenters/update-status"
 
 export default {
   catalogDescription:
-    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads.",
+    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, and turn campaigns, ad sets, and ads on or off with your approval.",
   ConnectHelp: MetaAdsConnectHelp,
   credentialLabel: "Access token",
   Logo: MetaAdsLogo,
@@ -22,5 +23,6 @@ export default {
     metaAdsObjectsPresenter,
     metaAdsConversionsPresenter,
     metaAdsActivitiesPresenter,
+    metaAdsUpdateStatusPresenter,
   ],
 } satisfies IntegrationUiModule

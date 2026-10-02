@@ -725,3 +725,72 @@ describe("optional entity approval edits", () => {
     ).toBe("This request can no longer be edited. Refresh and try again.")
   })
 })
+
+describe("optional entity list approval edits", () => {
+  const listField = (key: string, entityKind: string): ApprovalField => ({
+    key,
+    label: key,
+    format: "entity_list",
+    editable: true,
+    secondary: true,
+    min_rows: 0,
+    options: [],
+    placeholder: "",
+    entity_kind: entityKind,
+  })
+  // The Meta status tool's three optional target lists.
+  const fields = [
+    listField("campaigns", "meta_ads_campaign"),
+    listField("ad_sets", "meta_ads_ad_set"),
+    listField("ads", "meta_ads_ad"),
+  ]
+  const ref = (entityKind: string, id: string) => ({
+    version: 1 as const,
+    entity_kind: entityKind,
+    account_id: "111",
+    id,
+    label: id,
+  })
+  const campaign = ref("meta_ads_campaign", "1")
+  const ad = ref("meta_ads_ad", "3")
+  const adSet = ref("meta_ads_ad_set", "2")
+  const approval: PendingToolApproval = {
+    ...approvalIdentity("status"),
+    tool_call_id: "status",
+    name: "meta_ads_update_status",
+    args: { status: "ACTIVE", campaigns: [campaign], ads: [ad] },
+  }
+
+  it("adds an absent family and clears a supplied one while another remains", () => {
+    expect(
+      buildResumeDecisions(
+        [approval],
+        {
+          status: {
+            decision: "approved",
+            message: "",
+            edits: { ad_sets: [adSet], campaigns: null, ads: null },
+          },
+        },
+        () => fields
+      )
+    ).toEqual([
+      {
+        approval_id: "status",
+        tool_call_id: "status",
+        decision: "approved",
+        override_args: { status: "ACTIVE", campaigns: null, ads: null, ad_sets: [adSet] },
+      },
+    ])
+  })
+
+  it("rejects adding a list family the presentation doesn't declare optional", () => {
+    expect(
+      buildResumeDecisions(
+        [approval],
+        { status: { decision: "approved", message: "", edits: { ad_sets: [adSet] } } },
+        () => fields.map((field) => ({ ...field, secondary: false }))
+      )
+    ).toBe("This request can no longer be edited. Refresh and try again.")
+  })
+})

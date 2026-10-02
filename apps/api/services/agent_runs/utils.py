@@ -37,7 +37,7 @@ from services.agents.runtime.completion_contract import validate_completion_json
 
 if TYPE_CHECKING:
     from services.agents.runtime.approval_projection import DirectApprovalNode
-    from services.agents.runtime.tools.contract import RuntimeToolDefinition
+    from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolFieldPresentation
 
 MAX_ERROR_MESSAGE_LENGTH = 1000
 BLOCKED_ERROR_CODES = frozenset(
@@ -292,10 +292,7 @@ async def _audit_approval_completion(
 
 
 def validate_retained_review(leaf: "DirectApprovalNode", args: dict[str, Any]) -> None:
-    """Requires explicit review when an opted-in selection changes identity."""
-    from pydantic import ValidationError
-
-    from services.agents.runtime.entity_references.registry import get_entity_resolver
+    """Requires explicit review when an opted-in field differs from its reviewed value."""
     from services.agents.runtime.tools.registry import get_runtime_tool_definition
 
     definition = get_runtime_tool_definition(leaf.call.tool_name)
@@ -306,28 +303,44 @@ def validate_retained_review(leaf: "DirectApprovalNode", args: dict[str, Any]) -
         raise approval_review_required()
     for key in definition.approval_review_fields:
         field = next(field for field in definition.presentation.arg_fields if field.key == key)
-        resolver = get_entity_resolver(field.entity_kind)
-        selected, reviewed = args.get(key), display.get(key)
-        if selected is None:
-            continue
-        if reviewed is None or resolver is None:
-            raise approval_review_required()
-        adapter = resolver.reference_adapter()
-        try:
-            same = (
+        if not _matches_review(field, args.get(key), display.get(key)):
+            raise approval_review_required(key)
+
+
+def _matches_review(field: "ToolFieldPresentation", selected: Any, reviewed: Any) -> bool:
+    from pydantic import ValidationError
+
+    from services.agents.runtime.entity_references.registry import get_entity_resolver
+
+    if field.format == "entity" and selected is None:
+        return True
+    if field.format not in {"entity", "entity_list"}:
+        return selected == reviewed
+    if field.format == "entity_list" and (selected is None or reviewed is None):
+        return selected is None and reviewed is None
+    resolver = get_entity_resolver(field.entity_kind) if field.entity_kind else None
+    if reviewed is None or resolver is None:
+        return False
+    adapter = resolver.reference_adapter()
+    try:
+        if field.format == "entity":
+            return (
                 adapter.validate_python(selected).identity()
                 == adapter.validate_python(reviewed).identity()
             )
-        except ValidationError as exc:
-            raise approval_review_required() from exc
-        if not same:
-            raise approval_review_required()
+        if not isinstance(selected, list) or not isinstance(reviewed, list):
+            return False
+        return [adapter.validate_python(item).identity() for item in selected] == [
+            adapter.validate_python(item).identity() for item in reviewed
+        ]
+    except ValidationError:
+        return False
 
 
-def approval_review_required() -> AppValidationError:
+def approval_review_required(field: str = "source") -> AppValidationError:
     return AppValidationError(
-        "Review the selected File before approving this action.",
-        field="source",
+        "Review the changed details before approving this action.",
+        field=field,
         details={"error_code": "approval_review_required"},
     )
 

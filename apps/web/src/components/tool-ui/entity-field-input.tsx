@@ -138,7 +138,9 @@ export function EntityFieldInput({
           {...rootProps}
           multiple
           onValueChange={(nextChoices) => {
-            onChange(nextChoices.map((choice) => choice.value))
+            // An optional list is cleared to null, since an empty list isn't a valid selection.
+            if (nextChoices.length === 0 && field.editable && field.secondary) onChange(null)
+            else onChange(nextChoices.map((choice) => choice.value))
           }}
           value={selected}
         >
@@ -275,6 +277,7 @@ function ChoiceContent({
 
 function referenceValues(value: unknown, multiple: boolean): EntityReferenceValue[] | null {
   if (multiple) {
+    if (value === null || value === undefined) return []
     return Array.isArray(value) && value.every(isRecord) ? value : null
   }
   if (value === null || value === undefined) {

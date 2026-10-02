@@ -26,10 +26,10 @@ from services.integrations.operations import (
 from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
 from utils.metadata import metadata_str
 
+from ..models import MetaAdsId
 from ..operations.list_activities import list_activities
 from ..throttle import ensure_account_available
 from .schemas.activities import MetaAdsActivitiesInput, MetaAdsActivitiesOutput
-from .schemas.base import MetaAdsId
 from .utils.audit import activities_audit_detail
 from .utils.bindings import META_ADS_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client

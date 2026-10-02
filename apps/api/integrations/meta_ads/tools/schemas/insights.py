@@ -8,7 +8,7 @@ from pydantic import Field
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
-from .base import MetaAdsId, MetaAdsStrictModel, MetaAdsText
+from ...models import MetaAdsId, MetaAdsStrictModel, MetaAdsText
 
 type MetaAdsInsightsLevel = Literal["account", "campaign", "adset", "ad"]
 type MetaAdsFilterOperator = Literal[

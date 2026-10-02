@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
-from .base import MetaAdsId, MetaAdsStrictModel, MetaAdsText
+from ...models import MetaAdsId, MetaAdsStrictModel, MetaAdsText
 
 ACTIVITIES_MAX_EVENTS = 200
 ACTIVITIES_MAX_DAYS = 31

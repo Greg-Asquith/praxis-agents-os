@@ -419,3 +419,43 @@ async def test_insights_validation_retains_redacted_reference(trace_kind, long_m
         assert error.user_message.endswith(f"Reference: {expected}")
     for sensitive in (TOKEN, secret, proof):
         assert sensitive not in str(error)
+
+
+@pytest.mark.parametrize(
+    "multipart,response",
+    [
+        (True, httpx2.Response(503, json={"error": {"code": 2}})),
+        (False, httpx2.Response(200, content=b"not json")),
+    ],
+)
+async def test_mutations_are_sent_once_and_unclear_replies_are_ambiguous(
+    multipart, response, monkeypatch
+) -> None:
+    requests = []
+    monkeypatch.setattr("services.integrations.http.asyncio.sleep", AsyncMock())
+
+    def handler(request):
+        requests.append(request)
+        return response
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as http:
+        client = MetaAdsClient(static_token, client=http)
+        with pytest.raises((IntegrationConnectionError, IntegrationValidationError)) as caught:
+            if multipart:
+                await client.graph_post_form(
+                    "act_123/adimages",
+                    data={"name": "hero"},
+                    files={"filename": ("hero.png", b"png", "image/png")},
+                    operation="upload_image",
+                )
+            else:
+                await client.graph_post(
+                    "456",
+                    data={"status": "PAUSED"},
+                    operation="update_status",
+                    policy=IntegrationRequestPolicy.MUTATION,
+                )
+    assert len(requests) == 1
+    assert caught.value.failure_disposition == IntegrationFailureDisposition.AMBIGUOUS
+    if multipart:
+        assert requests[0].headers["Content-Type"].startswith("multipart/form-data")

@@ -55,7 +55,7 @@ async def validate_and_canonicalize_override_args(
             definition.approval_input_model.model_validate(effective_args)
         except ValidationError as exc:
             raise AppValidationError(
-                "Check the content and source File before approving.", field="override_args"
+                "Check the changed details before approving.", field="override_args"
             ) from exc
     _validate_scalar_override(definition, effective_args=effective_args)
     _validate_record_fields(definition, effective_args=effective_args)

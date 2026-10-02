@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/client.py
 
-"""Bounded Meta Graph reads over the shared integration HTTP transport."""
+"""Bounded Meta Graph reads and changes over the shared integration HTTP transport."""
 
 import hashlib
 import hmac
@@ -88,6 +88,28 @@ class MetaAdsClient:
             usage_account_id=usage_account_id,
         )
 
+    async def graph_post_form(
+        self,
+        path: str,
+        *,
+        data: dict[str, Any],
+        files: dict[str, tuple[str, bytes, str]],
+        operation: str,
+        max_response_bytes: int | None = None,
+        usage_account_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Sends one multipart change, such as a media upload, without retrying."""
+        return await self._request(
+            "POST",
+            path,
+            operation=operation,
+            policy=IntegrationRequestPolicy.MUTATION,
+            data=data,
+            files=files,
+            max_response_bytes=max_response_bytes,
+            usage_account_id=usage_account_id,
+        )
+
     async def _request(
         self,
         method: str,
@@ -97,6 +119,7 @@ class MetaAdsClient:
         policy: IntegrationRequestPolicy,
         params: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
+        files: dict[str, tuple[str, bytes, str]] | None = None,
         max_response_bytes: int | None = None,
         usage_account_id: str | None = None,
     ) -> dict[str, Any]:
@@ -139,6 +162,7 @@ class MetaAdsClient:
                     headers={"Authorization": f"Bearer {token}"},
                     params=query,
                     data=body_data,
+                    **({"files": files} if files is not None else {}),
                     consume=consume,
                     include_original_error=False,
                     response_error_mapper=map_error,
@@ -147,7 +171,13 @@ class MetaAdsClient:
         except IntegrationError as exc:
             _sanitise_error(exc, (token, proof, secret), last_detail)
             raise exc from None
-        return _response_payload(response, operation)
+        try:
+            return _response_payload(response, operation)
+        except IntegrationValidationError as exc:
+            # Meta accepted the request, so an unreadable reply cannot prove a change failed.
+            if policy is IntegrationRequestPolicy.MUTATION:
+                exc.failure_disposition = IntegrationFailureDisposition.AMBIGUOUS
+            raise
 
     async def graph_get_paged(
         self,

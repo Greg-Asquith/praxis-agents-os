@@ -6,7 +6,7 @@ from pydantic import Field
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
-from .base import MetaAdsMoney, MetaAdsStrictModel, MetaAdsText
+from ...models import MetaAdsMoney, MetaAdsStrictModel, MetaAdsText
 
 
 class MetaAdsAccountData(MetaAdsStrictModel):

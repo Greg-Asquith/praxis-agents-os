@@ -26,9 +26,9 @@ from services.integrations.operations import (
 from services.integrations.report_results import REPORT_RESULT_GUIDANCE, ReportResultBudget
 from utils.metadata import metadata_str
 
+from ..models import MetaAdsId
 from ..operations.list_objects import list_objects
 from ..throttle import ensure_account_available
-from .schemas.base import MetaAdsId
 from .schemas.objects import (
     MetaAdsAdStatus,
     MetaAdsObjectsInput,

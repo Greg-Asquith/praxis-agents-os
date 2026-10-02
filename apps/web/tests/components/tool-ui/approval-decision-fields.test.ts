@@ -326,6 +326,29 @@ describe("ApprovalRequestFields", () => {
     expect(html).not.toContain("<input")
   })
 
+  it("offers to add an optional entity list the request left out", () => {
+    const html = renderToStaticMarkup(
+      createElement(ApprovalRequestFields, {
+        activityId: "status-1",
+        args: { status: "ACTIVE" },
+        decision: { decision: "pending", edits: {}, message: "" },
+        disabled: false,
+        fallbackFields: [],
+        fields: [
+          {
+            ...approvalField("ad_sets", "Ad Sets", "entity_list"),
+            editable: true,
+            secondary: true,
+            entity_kind: "meta_ads_ad_set",
+          },
+        ],
+        onEditsChange: () => undefined,
+      })
+    )
+
+    expect(html).toMatch(/<button[^>]*>\+ Add Ad Sets<\/button>/)
+  })
+
   it("shows undeclared executable arguments in a collapsed disclosure", () => {
     const args = {
       title: "Launch guidance",

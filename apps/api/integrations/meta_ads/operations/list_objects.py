@@ -12,12 +12,16 @@ from pydantic import TypeAdapter, ValidationError
 from services.integrations.report_results import ReportResultBudget, report_result_max_bytes
 
 from ..client import MetaAdsClient, ad_account_path
-from ..tools.schemas.base import MetaAdsId
+from ..models import (
+    MetaAdsId,
+    MetaAdsObjectBudget,
+    MetaAdsPlacements,
+    MetaAdsPromotedObject,
+)
 from ..tools.schemas.objects import (
     DEFAULT_STATUSES,
     OBJECT_STATUSES,
     MetaAdsObject,
-    MetaAdsObjectBudget,
     MetaAdsObjectsData,
     MetaAdsObjectsInput,
     MetaAdsObjectType,
@@ -28,10 +32,12 @@ from .values import bounded_string, invalid_response, iso_datetime, money_value,
 _OPERATION = "list_objects"
 _FIELDS = {
     "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time",
-    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,daily_budget,lifetime_budget,budget_remaining,start_time,end_time",
+    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,daily_budget,lifetime_budget,budget_remaining,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,targeting{publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget}",
     "ad": "id,name,status,effective_status,campaign_id,adset_id",
 }
 _EDGES = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}
+_PLACEMENT_PLATFORMS = ("facebook", "instagram", "audience_network", "messenger", "threads")
+_PROMOTED_IDS = ("page_id", "pixel_id", "application_id", "custom_conversion_id")
 
 
 async def list_objects(
@@ -128,8 +134,12 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
             "objective",
             "optimization_goal",
             "bid_strategy",
+            "destination_type",
         )
     }
+    campaign = _mapping(raw.get("campaign"))
+    if object_type == "adset":
+        values["objective"] = bounded_string(campaign.get("objective"), operation=_OPERATION)
     end_field = "stop_time" if object_type == "campaign" else "end_time"
     return MetaAdsObject(
         id=raw.get("id"),
@@ -140,7 +150,18 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
         adset_id=raw.get("adset_id"),
         bid_amount=money_value(raw.get("bid_amount"), currency, operation=_OPERATION),
         budget=_budget(raw, object_type, currency),
+        promoted_object=_promoted_object(raw.get("promoted_object")),
+        placements=_placements(raw.get("targeting")) if object_type == "adset" else None,
+        is_dynamic_creative=raw.get("is_dynamic_creative"),
     )
+
+
+def _held_budget(raw: dict[str, Any], currency: str) -> tuple[str, str] | None:
+    for kind in ("daily", "lifetime"):
+        amount = money_value(raw.get(f"{kind}_budget"), currency, operation=_OPERATION)
+        if amount is not None and Decimal(amount) != 0:
+            return kind, amount
+    return None
 
 
 def _budget(
@@ -149,10 +170,76 @@ def _budget(
     if object_type == "ad":
         return None
     remaining = money_value(raw.get("budget_remaining"), currency, operation=_OPERATION)
-    for kind in ("daily", "lifetime"):
-        amount = money_value(raw.get(f"{kind}_budget"), currency, operation=_OPERATION)
-        if amount is not None and Decimal(amount) != 0:
-            return MetaAdsObjectBudget(kind=kind, amount=amount, remaining=remaining)
-    if object_type == "adset":
-        return MetaAdsObjectBudget(kind="campaign", amount=None, remaining=remaining)
+    if held := _held_budget(raw, currency):
+        return MetaAdsObjectBudget(kind=held[0], amount=held[1], remaining=remaining)
+    # An ad set without its own budget uses the campaign's only when the campaign shows one.
+    if object_type == "adset" and (
+        campaign := _held_budget(_mapping(raw.get("campaign")), currency)
+    ):
+        return MetaAdsObjectBudget(
+            kind="campaign", amount=campaign[1], remaining=remaining, period=campaign[0]
+        )
     return None
+
+
+def _promoted_object(value: Any) -> MetaAdsPromotedObject | None:
+    raw = _mapping(value)
+    if not raw:
+        return None
+    ids = {key: str(raw[key]) for key in _PROMOTED_IDS if raw.get(key) is not None}
+    return MetaAdsPromotedObject(
+        **ids,
+        custom_event_type=bounded_string(raw.get("custom_event_type"), operation=_OPERATION),
+    )
+
+
+def _placements(targeting: Any) -> MetaAdsPlacements | None:
+    """Returns None when Meta sent no targeting, since placements are then unknown."""
+    if targeting is None:
+        return None
+    if not isinstance(targeting, dict):
+        raise invalid_response("Meta Ads returned invalid placements.", operation=_OPERATION)
+    platforms = targeting.get("publisher_platforms")
+    # Targeting without publisher platforms uses Meta's automatic placements.
+    if platforms is None or platforms == []:
+        return MetaAdsPlacements(mode="automatic")
+    if not isinstance(platforms, list):
+        raise invalid_response("Meta Ads returned invalid placements.", operation=_OPERATION)
+    positions: list[str] = []
+    for platform in platforms:
+        if platform not in _PLACEMENT_PLATFORMS:
+            raise invalid_response("Meta Ads returned invalid placements.", operation=_OPERATION)
+        named = targeting.get(f"{platform}_positions") or []
+        if not isinstance(named, list) or any(not isinstance(item, str) for item in named):
+            raise invalid_response("Meta Ads returned invalid placements.", operation=_OPERATION)
+        positions.extend([f"{platform}:{item}" for item in named] or [platform])
+    return MetaAdsPlacements(mode="manual", positions=positions)
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+async def read_objects_by_id(
+    client: MetaAdsClient,
+    *,
+    account_id: str,
+    object_type: MetaAdsObjectType,
+    object_ids: Sequence[str],
+    currency: str,
+) -> dict[str, MetaAdsObject]:
+    """Returns the requested objects that the account's own edge still lists, in any status."""
+    ids = sorted(set(object_ids))
+    found: dict[str, MetaAdsObject] = {}
+    for start in range(0, len(ids), 50):
+        chunk = ids[start : start + 50]
+        result = await list_objects(
+            client,
+            account_id=account_id,
+            object_type=object_type,
+            object_ids=chunk,
+            limit=len(chunk),
+            currency=currency,
+        )
+        found.update((item.id, item) for item in result.objects)
+    return found

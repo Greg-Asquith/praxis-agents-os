@@ -15,8 +15,8 @@ Use these focused references for provider behaviour:
 - [Google Analytics](google-analytics.md): property discovery and reporting.
 - [Google Search Console](google-search-console.md): site routing and indexing writes.
 - [Meta Ads](meta-ads.md): System User tokens, account discovery and overview,
-  app-secret setup, object listing, change history, and Insights with custom
-  conversion names.
+  app-secret setup, object listing, change history, Insights with custom
+  conversion names, and approved status changes.
 - [Notion](notion.md): personal grants, bounded reads, and approved writes.
 - [Microsoft Graph](microsoft-graph.md): Entra connections, discovery, Outlook tools, and SharePoint file tools.
 

@@ -8,7 +8,15 @@ from pydantic import Field, model_validator
 
 from services.integrations.context.results import IntegrationFanOutEntry, IntegrationFanOutOutput
 
-from .base import MetaAdsId, MetaAdsMoney, MetaAdsStrictModel, MetaAdsText
+from ...models import (
+    MetaAdsId,
+    MetaAdsMoney,
+    MetaAdsObjectBudget,
+    MetaAdsPlacements,
+    MetaAdsPromotedObject,
+    MetaAdsStrictModel,
+    MetaAdsText,
+)
 
 type MetaAdsObjectType = Literal["campaign", "adset", "ad"]
 type MetaAdsCampaignStatus = Literal[
@@ -65,12 +73,6 @@ class MetaAdsObjectsInput(MetaAdsStrictModel):
         return self
 
 
-class MetaAdsObjectBudget(MetaAdsStrictModel):
-    kind: Literal["daily", "lifetime", "campaign"]
-    amount: MetaAdsMoney | None
-    remaining: MetaAdsMoney | None
-
-
 class MetaAdsObject(MetaAdsStrictModel):
     id: MetaAdsId
     name: MetaAdsText | None
@@ -85,6 +87,10 @@ class MetaAdsObject(MetaAdsStrictModel):
     end_time: MetaAdsText | None
     campaign_id: MetaAdsId | None
     adset_id: MetaAdsId | None
+    destination_type: MetaAdsText | None = None
+    promoted_object: MetaAdsPromotedObject | None = None
+    placements: MetaAdsPlacements | None = None
+    is_dynamic_creative: bool | None = None
 
 
 class MetaAdsObjectsData(MetaAdsStrictModel):
