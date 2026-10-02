@@ -21,6 +21,10 @@ nested call and validated effective arguments. Captured print
 output is persisted cumulatively across suspensions, and every resume uses
 only the remaining output budget. Keep script arguments, nested results,
 final values, and print output independently bounded.
+A script that raises, times out, or fails at the value boundary returns a
+failed `run_code` result through `ToolFailed`, not `ModelRetry`. The model
+can rewrite the script without spending the tool's retry budget; run usage
+limits bound repeated attempts.
 Completed-run nested traces retain each complete normalised nested result as
 application-only presentation evidence, with no additional UI sampling or
 truncation. Trace entries record a wall-clock start and, once settled, the

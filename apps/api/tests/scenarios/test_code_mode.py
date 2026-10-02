@@ -344,6 +344,32 @@ async def test_script_cannot_call_a_tool_the_agent_has_not_mounted(
     assert not any(row.tool_name == "scenario_code_read_second" for row in result.audit_rows)
 
 
+async def test_repeated_script_failures_reach_the_model_without_failing_the_run(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    context = await build_scenario_agent(db_session_factory)
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(
+            turns=[
+                ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": "{}['missing']"}, "first"),)),
+                ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": "1 + True"}, "second"),)),
+                ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": "1 + 1"}, "third"),)),
+                "The total is 2.",
+            ],
+        ),
+    )
+
+    assert result.run.status == "completed"
+    first, second, third = result.tool_returns(RUN_CODE_TOOL_NAME)
+    assert first["outcome"] == "failed"
+    assert "KeyError" in str(first["content"])
+    assert "unsupported operand" in str(second["content"])
+    assert third["outcome"] == "success"
+
+
 async def test_gated_nested_call_suspends_without_partial_effect(
     db_session_factory: async_sessionmaker[AsyncSession],
     code_mode_scenario_tools: dict[str, Any],

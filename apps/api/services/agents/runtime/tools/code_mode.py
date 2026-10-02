@@ -9,7 +9,7 @@ from dataclasses import replace
 from typing import Annotated
 
 from pydantic import StringConstraints
-from pydantic_ai import ModelRetry, RunContext, Tool, ToolReturn
+from pydantic_ai import ModelRetry, RunContext, Tool, ToolFailed, ToolReturn
 from pydantic_ai.toolsets import FunctionToolset
 from pydantic_monty import MontyError
 
@@ -63,7 +63,8 @@ Write the script like this:
   asyncio, base64, binascii, collections, copy, dataclasses, datetime, functools, itertools, json,
   math, pathlib (path strings only), random, re, sys, time, typing, and unicodedata. There is no
   network, environment, or filesystem access, and no other packages. `datetime.now()` reads UTC
-  time; sleeps return immediately.
+  time; sleeps return immediately. Booleans are not integers: count matches with
+  `sum(1 for x in rows if cond)`, not `sum(cond for x in rows)`.
 - Each script allows at most {max_calls} tool calls and {timeout} seconds. Keep the final value
   under {result_kb} KB of JSON; printed output is capped at {output_chars} characters.
 
@@ -142,7 +143,8 @@ def build_run_code_tool(
                 reason=reason,
             )
         except (CodeModeBoundaryError, MontyError, TimeoutError) as exc:
-            raise ModelRetry(f"The script failed: {exc}") from exc
+            # A failed script is a finished call; run usage limits bound rewrites, not the retry budget.
+            raise ToolFailed(f"The script failed: {exc}") from exc
 
     definition = replace(
         RUN_CODE_DEFINITION,

@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import httpx2
-from pydantic_ai.messages import RetryPromptPart
 
 from core.settings import settings
 from integrations.meta_ads import throttle
@@ -89,7 +88,6 @@ async def test_code_mode_deadline_cancels_background_report_without_partial_deli
         f"report = await meta_ads_run_insights(fields=['spend'], since={today!r}, until={today!r})\n"
         "report"
     )
-    seen = []
     try:
         async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
             provider = MetaAdsClient(static_token, client=http)
@@ -105,7 +103,6 @@ async def test_code_mode_deadline_cancels_background_report_without_partial_deli
                         ToolTurn((ToolCall(RUN_CODE_TOOL_NAME, {"code": code}),)),
                         "The workflow timed out.",
                     ],
-                    seen_requests=seen,
                 ),
             )
     finally:
@@ -122,17 +119,10 @@ async def test_code_mode_deadline_cancels_background_report_without_partial_deli
         ("POST", "act_222/insights"),
         ("GET", "902"),
     ]
-    assert result.tool_returns(RUN_CODE_TOOL_NAME) == []
+    [workflow] = result.tool_returns(RUN_CODE_TOOL_NAME)
+    assert workflow["outcome"] == "failed"
+    assert "The script failed" in str(workflow["content"])
     assert result.tool_returns(DEFINITION.name) == []
-    retries = [
-        part
-        for message in seen[-1][0]
-        for part in message.parts
-        if isinstance(part, RetryPromptPart)
-    ]
-    assert len(retries) == 1
-    assert retries[0].tool_name == RUN_CODE_TOOL_NAME
-    assert "The script failed" in str(retries[0].content)
     operations = [row for row in result.audit_rows if row.resource_type == "integration_resource"]
     assert len(operations) == 2
     by_account = {row.details["external_id"]: row for row in operations}
