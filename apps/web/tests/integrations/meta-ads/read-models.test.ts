@@ -13,6 +13,7 @@ import {
   conversionsData,
   conversionRow,
   customAction,
+  customEventRow,
   activitiesData,
   activityRow,
 } from "./read-fixtures"
@@ -63,18 +64,22 @@ describe("Meta Ads account and discovery models", () => {
           description: null,
           is_archived: null,
           is_unavailable: null,
+          recent_conversions: null,
         }),
+        customEventRow("Menu View"),
       ],
-      conversion_count: 3,
+      conversion_count: 4,
     })
     expect(parseMetaAdsConversions(data)).toEqual(data)
   })
-  it.each([{ conversion_count: 0 }, { conversions: [conversionRow({ is_unavailable: "true" })] }])(
-    "rejects malformed conversions %j",
-    (override) => {
-      expect(parseMetaAdsConversions(conversionsData(override))).toBeNull()
-    }
-  )
+  it.each([
+    { conversion_count: 0 },
+    { conversions: [conversionRow({ is_unavailable: "true" })] },
+    { conversions: [conversionRow({ action_type: "offsite_conversion.custom.999" })] },
+    { conversions: [customEventRow("Menu View", { name: "Other" })] },
+  ])("rejects malformed conversions %j", (override) => {
+    expect(parseMetaAdsConversions(conversionsData(override))).toBeNull()
+  })
 })
 
 describe("Meta Ads change history model", () => {
@@ -154,6 +159,26 @@ describe("Meta Ads custom conversion report columns", () => {
         "Custom conversion (name unavailable) (ID: 901)"
       )
     }
+  })
+  it("labels custom events by name and rejects names that differ from the action type", () => {
+    const event = {
+      action_type: "offsite_conversion.fb_pixel_custom.Menu View",
+      custom_event_name: "Menu View",
+      value: 8,
+      windows: {},
+    }
+    const report = parseMetaAdsInsights(
+      insightsData({ rows: [insightsRow({ actions: { conversions: [event] } })] })
+    )
+    expect(report?.columns.map((column) => column.label).join(" ")).toContain(
+      "Menu View (Custom event)"
+    )
+    const mismatched = { ...event, custom_event_name: "Other" }
+    expect(
+      parseMetaAdsInsights(
+        insightsData({ rows: [insightsRow({ actions: { conversions: [mismatched] } })] })
+      )
+    ).toBeNull()
   })
   it.each([{ custom_conversion_id: "bad" }, { custom_conversion_id: "999" }])(
     "rejects malformed custom conversion identity %j",

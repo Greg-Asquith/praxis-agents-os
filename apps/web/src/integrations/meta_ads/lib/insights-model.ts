@@ -1,7 +1,11 @@
 // apps/web/src/integrations/meta_ads/lib/insights-model.ts
 
 import type { DataColumn, DataRow } from "@/components/ui/data-table"
-import { UNRESOLVED_CONVERSION_NAME } from "@/integrations/meta_ads/lib/read-models"
+import {
+  CUSTOM_CONVERSION_PREFIX,
+  CUSTOM_EVENT_PREFIX,
+  UNRESOLVED_CONVERSION_NAME,
+} from "@/integrations/meta_ads/lib/read-models"
 import { titleCaseToken } from "@/lib/format"
 import {
   isDateString,
@@ -117,26 +121,31 @@ function parseActions(
         typeof item["action_type"] !== "string" ||
         !isNullableFiniteNumber(item["value"]) ||
         !isRecord(item["windows"]) ||
-        !validCustomConversion(item)
+        !validCustomConversion(item) ||
+        !validCustomEvent(item)
       )
         return false
       const breakdowns = parseActionBreakdowns(item["breakdowns"])
       if (!breakdowns) return false
       const suffix =
         breakdowns.length > 0 ? `.${encodeURIComponent(JSON.stringify(breakdowns))}` : ""
-      const key = `actions.${field}.${item["action_type"]}${suffix}`
+      // Encoding keeps "." in event names apart from the ":" window separator.
+      const key = `actions.${field}.${encodeURIComponent(item["action_type"])}${suffix}`
       if (Object.hasOwn(row, key)) return false
       const context = breakdowns
         .map(([name, value]) => `${titleCaseToken(name, name)}: ${value ?? "Not available"}`)
         .join(", ")
       const actionLabel =
-        customConversionLabel(item) ?? titleCaseToken(item["action_type"], item["action_type"])
+        customConversionLabel(item) ??
+        customEventLabel(item) ??
+        titleCaseToken(item["action_type"], item["action_type"])
       const label = `${titleCaseToken(field, field)}: ${actionLabel}${context ? ` (${context})` : ""}`
       row[key] = item["value"]
       columns.set(key, metricColumn(key, field, label, money))
       for (const [window, amount] of Object.entries(item["windows"])) {
         if (!isNullableFiniteNumber(amount)) return false
-        const windowKey = `${key}.${window}`
+        const windowKey = `${key}:${encodeURIComponent(window)}`
+        if (Object.hasOwn(row, windowKey)) return false
         row[windowKey] = amount
         columns.set(
           windowKey,
@@ -169,7 +178,10 @@ function metricColumn(key: string, field: string, label: string, money: MoneyFor
     key,
     kind,
     label,
-    ...(kind === "currency" ? { currencyCode: money.currency } : {}),
+    // Meta amounts are in major units; an event name ending in "micros" must not rescale them.
+    ...(kind === "currency"
+      ? { currencyCode: money.currency, unit: "currency-units" as const }
+      : {}),
     ...(kind === "percent" ? { unit: "percentage-points" as const } : {}),
   }
 }
@@ -198,7 +210,23 @@ function validCustomConversion(item: Record<string, unknown>): boolean {
   return (
     typeof id === "string" &&
     /^[0-9]{1,128}$/.test(id) &&
-    item["action_type"] === `offsite_conversion.custom.${id}` &&
+    item["action_type"] === `${CUSTOM_CONVERSION_PREFIX}${id}` &&
     (!hasName || (typeof name === "string" && name.length <= 512))
+  )
+}
+
+function customEventLabel(item: Record<string, unknown>): string | null {
+  const name = item["custom_event_name"]
+  return typeof name === "string" && name ? `${name} (Custom event)` : null
+}
+
+// A custom event name must be the suffix of the action type it came from.
+function validCustomEvent(item: Record<string, unknown>): boolean {
+  const name = item["custom_event_name"]
+  if (name === undefined || name === null) return true
+  return (
+    typeof name === "string" &&
+    name.length <= 512 &&
+    item["action_type"] === `${CUSTOM_EVENT_PREFIX}${name}`
   )
 }

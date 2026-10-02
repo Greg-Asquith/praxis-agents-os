@@ -23,7 +23,7 @@ export type DataColumn = {
   key: string
   kind: DataColumnKind
   label: string
-  unit?: "micros" | "milliseconds" | "seconds" | "percentage-points"
+  unit?: "currency-units" | "micros" | "milliseconds" | "seconds" | "percentage-points"
   width?: number | "auto"
 }
 
@@ -40,7 +40,7 @@ export function formatDataCell(column: DataColumn, value: unknown): string {
       return text
     }
     const amount =
-      column.unit === "micros" || isMicrosColumnKey(column.key)
+      column.unit === "micros" || (column.unit === undefined && isMicrosColumnKey(column.key))
         ? microsToCurrencyUnits(numeric)
         : numeric
     return formatCurrency(amount, column.currencyCode ?? null, {

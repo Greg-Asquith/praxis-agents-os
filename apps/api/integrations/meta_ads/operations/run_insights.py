@@ -29,9 +29,9 @@ from ..tools.schemas.insights import (
     MetaAdsInsightsRow,
 )
 from ..tools.utils.validation import months_before
-from .enrich_custom_conversions import enrich_custom_conversions
+from .enrich_conversions import enrich_conversion_names
 from .paging import read_pages
-from .values import bounded_string, invalid_response, numeric_value
+from .values import bounded_string, invalid_response, iso_date, numeric_value
 
 _READ = IntegrationRequestPolicy.READ
 _OPERATION = "run_insights"
@@ -75,9 +75,7 @@ async def run_insights(
         )
     typed_rows = [_row(row, request, fields) for row in rows]
     notes.extend(
-        await enrich_custom_conversions(
-            client, account_id=account_id, rows=typed_rows, budget=budget
-        )
+        await enrich_conversion_names(client, account_id=account_id, rows=typed_rows, budget=budget)
     )
     return MetaAdsInsightsData(
         rows=typed_rows,
@@ -258,20 +256,9 @@ def _row(
         keys=keys,
         metrics=metrics,
         actions=actions,
-        date_start=_row_date(raw.get("date_start")),
-        date_stop=_row_date(raw.get("date_stop")),
+        date_start=iso_date(raw.get("date_start"), operation=_OPERATION),
+        date_stop=iso_date(raw.get("date_stop"), operation=_OPERATION),
     )
-
-
-def _row_date(value: Any) -> str:
-    try:
-        if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
-            raise ValueError
-    except ValueError:
-        raise invalid_response(
-            "Meta Ads returned an invalid report date.", operation=_OPERATION
-        ) from None
-    return value
 
 
 def _actions(value: Any, request: MetaAdsInsightsInput) -> list[MetaAdsInsightsAction]:

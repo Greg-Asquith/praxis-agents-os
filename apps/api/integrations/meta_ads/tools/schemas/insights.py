@@ -77,6 +77,7 @@ class MetaAdsInsightsAction(MetaAdsStrictModel):
     action_type: str = Field(max_length=256)
     custom_conversion_id: MetaAdsId | None = None
     custom_conversion_name: MetaAdsText | None = None
+    custom_event_name: MetaAdsText | None = None
     value: float | None
     windows: dict[str, float | None]
     breakdowns: dict[str, Annotated[str, Field(max_length=512)] | None] = Field(

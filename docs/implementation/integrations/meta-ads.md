@@ -3,8 +3,8 @@
 Meta Ads connects a workspace to the ad accounts assigned to an agency's Meta
 system user. Discovered accounts can join active context and Context Groups.
 Agents can run bounded Insights reports, read account totals, list advertising
-objects, discover custom conversions, and read change history on selected
-accounts. Writes, Facebook sign-in, and event delivery are pending.
+objects, discover custom conversions and custom events, and read change
+history on selected accounts. Writes, Facebook sign-in, and event delivery are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -176,7 +176,8 @@ action lists, and report dates. Text fields such as `objective`,
 characters. Missing text and metrics remain null; missing action lists remain
 empty lists. Each action retains its action type, value, attribution
 windows, and requested device or destination breakdown values. Custom actions
-also carry nullable `custom_conversion_id` and `custom_conversion_name` fields.
+also carry nullable `custom_conversion_id`, `custom_conversion_name`, and
+`custom_event_name` fields.
 Money metrics stay in major currency units; Insights spend is never divided by
 100. `MONEY_FIELDS` in `insights_fields.py` is the only list of amounts in the
 account currency, and each result's `money_fields` names the requested ones.
@@ -306,18 +307,57 @@ account's edge. Write tools remain pending.
 
 These reads use the existing credential, authorisation, fan-out, and audit
 paths with read policy, a 60-second tool timeout, and Code Mode support.
-One account's error leaves other account results available. Object and custom
+One account's error leaves other account results available. Object and
 conversion lists use the same internal retained-result Files and preview
 expansion as Insights. Audits include counts, object type, and status filters;
 they exclude provider names, amounts, name filters, and conversion metadata.
 
-## Custom conversion names
+## Custom conversions and custom events
 
-`meta_ads_list_custom_conversions` reads `id`, `name`, `description`,
-`is_archived`, and `is_unavailable` from the selected account's
-`customconversions` edge. Text is bounded to 512 characters and missing
-metadata remains null. Discovery defaults to 100 conversions, with a maximum
-of 500 and 10 pages. Its notes identify a row or pagination limit.
+Advertisers track results either as custom conversions, which are rules defined
+in Events Manager, or as custom events, which their pixel sends by name. Both
+are supported.
+
+`meta_ads_list_conversions` returns one list with a `kind` of
+`custom_conversion` or `custom_event`. Each item carries the Insights
+`action_type` it reports under and `recent_conversions` for the last 90 days.
+`recent_since` and `recent_until` give that window.
+
+- Custom conversions come from the selected account's `customconversions`
+  edge with `id`, `name`, `description`, `is_archived`, and `is_unavailable`.
+  Text is bounded to 512 characters and missing metadata remains null.
+  Discovery defaults to 100 conversions, with a maximum of 500 and 10 pages.
+  Its notes identify a row or pagination limit.
+- Custom events have no definitions edge. The tool reads one account-level
+  Insights row for `date_preset=last_90d`, with each ad set's attribution
+  setting, and lists every `offsite_conversion.fb_pixel_custom.<name>` entry
+  in its `conversions` field. Events that ads did not record in that window
+  are not listed. The same row supplies custom conversion counts from
+  `actions`. A missing count is null, not zero.
+
+The two sources are read independently. If the Insights read fails, the custom
+conversions are still returned with a note. If the definitions read fails, the
+custom events are still returned with a note that definitions are unavailable.
+Authentication, rate limit, and report size failures, or both sources failing,
+fail the account. Audits record the conversion and custom event counts, never
+names.
+
+### Custom events in Insights
+
+Meta names custom events only in the `conversions`, `conversion_values`, and
+`cost_per_conversion` fields, for example
+`offsite_conversion.fb_pixel_custom.Menu View`. These fields also carry
+standard events such as `contact_website` and `schedule_total`. The `actions`
+and `action_values` fields combine every custom event into one
+`offsite_conversion.fb_pixel_custom` entry. Insights sets `custom_event_name`
+from the action type, so naming custom events needs no lookup. Do not add named
+events to that combined entry.
+
+On 28 September 2026, a live check of four agency accounts found that named
+`conversions` entries sum exactly to the combined `actions` count for each
+ad, day, and platform.
+
+### Custom conversion names in Insights
 
 Insights recognises `offsite_conversion.custom.ID` action types with numeric
 IDs. It uses the same bounded account lookup once per report, only when custom

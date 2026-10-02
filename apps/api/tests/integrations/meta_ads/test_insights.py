@@ -152,6 +152,7 @@ async def test_every_parameter_and_action_window_is_preserved():
         "action_type": "purchase",
         "custom_conversion_id": None,
         "custom_conversion_name": None,
+        "custom_event_name": None,
         "value": 4.0,
         "windows": {"1d_click": 3.0},
         "breakdowns": {},

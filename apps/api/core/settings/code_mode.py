@@ -40,7 +40,7 @@ class CodeModeSettingsMixin:
         description="Maximum captured print-output characters per script.",
     )
     AGENT_CODE_MODE_VALUE_MAX_BYTES: int = Field(
-        default=1_048_576,
+        default=8 * 1024 * 1024,
         ge=1,
         description="Maximum serialized bytes for each value crossing the Monty boundary.",
     )
@@ -60,7 +60,7 @@ class CodeModeSettingsMixin:
         description="Maximum JSON-serialized bytes retained for Code Mode resume state.",
     )
     AGENT_CODE_MODE_MEMORY_MAX_BYTES: int = Field(
-        default=64 * 1024 * 1024,
+        default=256 * 1024 * 1024,
         ge=1,
         description="Monty interpreter memory limit for one script checkout.",
     )

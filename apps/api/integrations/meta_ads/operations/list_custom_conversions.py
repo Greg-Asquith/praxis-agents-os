@@ -7,10 +7,11 @@ from pydantic import ValidationError
 from services.integrations.report_results import ReportResultBudget
 
 from ..client import MetaAdsClient, ad_account_path
-from ..tools.schemas.custom_conversions import (
+from ..tools.schemas.conversions import (
+    CUSTOM_CONVERSION_PREFIX,
     CUSTOM_CONVERSIONS_MAX_ROWS,
-    MetaAdsCustomConversion,
-    MetaAdsCustomConversionsData,
+    MetaAdsConversion,
+    MetaAdsConversionsData,
 )
 from .paging import read_pages
 from .values import bounded_string, invalid_response
@@ -24,7 +25,7 @@ async def list_custom_conversions(
     account_id: str,
     limit: int = 100,
     budget: ReportResultBudget | None = None,
-) -> MetaAdsCustomConversionsData:
+) -> MetaAdsConversionsData:
     if (
         isinstance(limit, bool)
         or not isinstance(limit, int)
@@ -44,7 +45,9 @@ async def list_custom_conversions(
     )
     try:
         conversions = [
-            MetaAdsCustomConversion(
+            MetaAdsConversion(
+                kind="custom_conversion",
+                action_type=f"{CUSTOM_CONVERSION_PREFIX}{row.get('id')}",
                 id=row.get("id"),
                 name=bounded_string(row.get("name"), operation=_OPERATION),
                 description=bounded_string(row.get("description"), operation=_OPERATION),
@@ -57,7 +60,7 @@ async def list_custom_conversions(
         raise invalid_response(
             "Meta Ads returned invalid custom conversion metadata.", operation=_OPERATION
         ) from None
-    return MetaAdsCustomConversionsData(
+    return MetaAdsConversionsData(
         conversions=conversions,
         conversion_count=len(conversions),
         truncated=truncated,

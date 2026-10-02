@@ -14,7 +14,7 @@ from services.audit_events import (
 )
 
 from ..schemas.activities import MetaAdsActivitiesData, MetaAdsActivitiesInput
-from ..schemas.custom_conversions import MetaAdsCustomConversionsData
+from ..schemas.conversions import MetaAdsConversionsData
 from ..schemas.insights import MetaAdsInsightsData, MetaAdsInsightsInput
 from ..schemas.objects import DEFAULT_STATUSES, MetaAdsObjectsData, MetaAdsObjectsInput
 
@@ -57,11 +57,14 @@ def activities_audit_detail(
     )
 
 
-def custom_conversions_audit_detail(
-    account_id: str, result: MetaAdsCustomConversionsData
+def conversions_audit_detail(
+    account_id: str, result: MetaAdsConversionsData
 ) -> TerminalIntegrationOperationDetail:
+    events = sum(item.kind == "custom_event" for item in result.conversions)
     return _read_audit_detail(
-        account_id, "custom_conversions", {"conversion_count": result.conversion_count}
+        account_id,
+        "conversions",
+        {"conversion_count": result.conversion_count, "custom_event_count": events},
     )
 
 

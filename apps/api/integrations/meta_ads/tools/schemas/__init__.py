@@ -10,11 +10,11 @@ from .activities import (
     MetaAdsActivitiesOutput,
     MetaAdsActivity,
 )
-from .custom_conversions import (
-    MetaAdsCustomConversion,
-    MetaAdsCustomConversionsData,
-    MetaAdsCustomConversionsEntry,
-    MetaAdsCustomConversionsOutput,
+from .conversions import (
+    MetaAdsConversion,
+    MetaAdsConversionsData,
+    MetaAdsConversionsEntry,
+    MetaAdsConversionsOutput,
 )
 from .insights import (
     MetaAdsInsightsData,
@@ -42,10 +42,10 @@ __all__ = [
     "MetaAdsActivitiesInput",
     "MetaAdsActivitiesOutput",
     "MetaAdsActivity",
-    "MetaAdsCustomConversion",
-    "MetaAdsCustomConversionsData",
-    "MetaAdsCustomConversionsEntry",
-    "MetaAdsCustomConversionsOutput",
+    "MetaAdsConversion",
+    "MetaAdsConversionsData",
+    "MetaAdsConversionsEntry",
+    "MetaAdsConversionsOutput",
     "MetaAdsInsightsData",
     "MetaAdsInsightsEntry",
     "MetaAdsInsightsFilter",

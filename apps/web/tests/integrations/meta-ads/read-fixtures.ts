@@ -42,21 +42,40 @@ export function objectsData(overrides: Record<string, unknown> = {}) {
   }
 }
 export function conversionRow(overrides: Record<string, unknown> = {}) {
+  const id = typeof overrides["id"] === "string" ? overrides["id"] : "901"
   return {
-    id: "901",
+    kind: "custom_conversion",
+    action_type: `offsite_conversion.custom.${id}`,
+    id,
     name: "Qualified lead",
     description: "A completed enquiry",
     is_archived: false,
     is_unavailable: false,
+    recent_conversions: 4,
+    ...overrides,
+  }
+}
+export function customEventRow(name: string, overrides: Record<string, unknown> = {}) {
+  return {
+    kind: "custom_event",
+    action_type: `offsite_conversion.fb_pixel_custom.${name}`,
+    id: null,
+    name,
+    description: null,
+    is_archived: null,
+    is_unavailable: null,
+    recent_conversions: 9,
     ...overrides,
   }
 }
 export function conversionsData(overrides: Record<string, unknown> = {}) {
   return {
-    conversions: [conversionRow()],
-    conversion_count: 1,
+    conversions: [conversionRow(), customEventRow("Menu View")],
+    conversion_count: 2,
     truncated: false,
     notes: [],
+    recent_since: "2026-07-03",
+    recent_until: "2026-09-30",
     ...overrides,
   }
 }

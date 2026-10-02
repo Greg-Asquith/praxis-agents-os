@@ -621,7 +621,7 @@ def test_account_audit_reserve_covers_shared_finalisation_bound():
     [
         ("meta_ads_get_accounts", None),
         ("meta_ads_list_objects", "results.*.data.objects"),
-        ("meta_ads_list_custom_conversions", "results.*.data.conversions"),
+        ("meta_ads_list_conversions", "results.*.data.conversions"),
         ("meta_ads_list_activities", "results.*.data.events"),
     ],
 )
@@ -647,9 +647,9 @@ def test_account_read_tools_use_shared_governance(tool_name, preview_path):
         ("get_accounts", "meta_ads_get_accounts", "get_account", {}),
         ("list_objects", "meta_ads_list_objects", "list_objects", {"object_type": "campaign"}),
         (
-            "list_custom_conversions",
-            "meta_ads_list_custom_conversions",
-            "list_custom_conversions",
+            "list_conversions",
+            "meta_ads_list_conversions",
+            "list_conversions",
             {},
         ),
         (

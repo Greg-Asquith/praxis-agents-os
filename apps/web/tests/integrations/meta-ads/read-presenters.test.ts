@@ -6,7 +6,7 @@ import type { ToolActivity, ToolRowPresenter } from "@/integrations/contract"
 import { metaAdsAccountsPresenter } from "@/integrations/meta_ads/presenters/accounts"
 import { metaAdsActivitiesPresenter } from "@/integrations/meta_ads/presenters/activities"
 import { metaAdsObjectsPresenter } from "@/integrations/meta_ads/presenters/objects"
-import { metaAdsCustomConversionsPresenter } from "@/integrations/meta_ads/presenters/custom-conversions"
+import { metaAdsConversionsPresenter } from "@/integrations/meta_ads/presenters/conversions"
 import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/insights"
 import { envelope } from "../result-preview-fixtures"
 import { accountEntry, insightsData, insightsRow } from "./fixtures"
@@ -17,6 +17,7 @@ import {
   conversionsData,
   conversionRow,
   customAction,
+  customEventRow,
   activitiesData,
   activityRow,
 } from "./read-fixtures"
@@ -33,7 +34,7 @@ const cases = [
     populated: "Summer campaign",
   },
   {
-    presenter: metaAdsCustomConversionsPresenter,
+    presenter: metaAdsConversionsPresenter,
     data: conversionsData(),
     populated: "Qualified lead",
   },
@@ -109,8 +110,8 @@ describe("Meta Ads account and discovery display", () => {
       { presenter: metaAdsAccountsPresenter, data: accountData({ name }) },
       { presenter: metaAdsObjectsPresenter, data: objectsData({ objects: [objectRow({ name })] }) },
       {
-        presenter: metaAdsCustomConversionsPresenter,
-        data: conversionsData({ conversions: [conversionRow({ name })] }),
+        presenter: metaAdsConversionsPresenter,
+        data: conversionsData({ conversions: [conversionRow({ name }), customEventRow(name)] }),
       },
       {
         presenter: metaAdsActivitiesPresenter,
@@ -131,11 +132,13 @@ describe("Meta Ads account and discovery display", () => {
       const preview = envelope("meta_ads", data)
       const lists: Record<string, string> = {
         meta_ads_list_objects: "objects",
-        meta_ads_list_custom_conversions: "conversions",
+        meta_ads_list_conversions: "conversions",
         meta_ads_list_activities: "events",
       }
       const list = lists[presenter.key] ?? "rows"
-      preview.lists = { [`results.0.data.${list}`]: { shown: 1, total: 1000 } }
+      const items: unknown = (data as Record<string, unknown>)[list]
+      const shown = Array.isArray(items) ? items.length : 1
+      preview.lists = { [`results.0.data.${list}`]: { shown, total: 1000 } }
       const results = [
         { results: [accountEntry(data)] },
         ...(presenter.key === "meta_ads_get_accounts" ? [] : [preview]),

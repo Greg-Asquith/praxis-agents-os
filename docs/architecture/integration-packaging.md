@@ -678,10 +678,11 @@ deployment app-secret proof and discovers writability from token permissions,
 account tasks, and active account status. Its web module supplies setup help,
 the Meta logo, and the credential label above. `meta_ads_run_insights`,
 `meta_ads_get_accounts`, `meta_ads_list_objects`,
-`meta_ads_list_custom_conversions`, and `meta_ads_list_activities` contribute
+`meta_ads_list_conversions`, and `meta_ads_list_activities` contribute
 bounded read tools and presenters through the shared fan-out and audit seams.
 Insights, objects, conversions, and change history use retained results.
-Insights resolves custom conversion names within each account's report budget.
+Insights resolves custom conversion names within each account's report budget
+and names custom events from their action types.
 Writes, OAuth, and event delivery remain pending. Live agency qualification remains
 unverified after the maintainer accepted its assumptions for implementation.
 

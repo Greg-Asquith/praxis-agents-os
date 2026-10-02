@@ -1,9 +1,11 @@
 // apps/web/src/integrations/meta_ads/lib/read-models.ts
 
 import {
+  isDateString,
   isDateTimeString,
   isNonEmptyString,
   isNonNegativeInteger,
+  isNullableFiniteNumber,
   isOneOf,
   isRecord,
   isStringArray,
@@ -50,17 +52,22 @@ type MetaAdsObjects = {
   currency: string
 }
 export type MetaAdsConversion = {
-  id: string
+  kind: "custom_conversion" | "custom_event"
+  action_type: string
+  id: string | null
   name: string | null
   description: string | null
   is_archived: boolean | null
   is_unavailable: boolean | null
+  recent_conversions: number | null
 }
 type MetaAdsConversions = {
   conversions: MetaAdsConversion[]
   conversion_count: number
   truncated: boolean
   notes: string[]
+  recent_since: string | null
+  recent_until: string | null
 }
 
 type MetaAdsActivity = {
@@ -83,6 +90,8 @@ type MetaAdsActivities = {
 }
 
 export const UNRESOLVED_CONVERSION_NAME = "Custom conversion (name unavailable)"
+export const CUSTOM_CONVERSION_PREFIX = "offsite_conversion.custom."
+export const CUSTOM_EVENT_PREFIX = "offsite_conversion.fb_pixel_custom."
 
 const OBJECT_TYPES: ReadonlySet<MetaAdsObjects["object_type"]> = new Set([
   "campaign",
@@ -99,6 +108,9 @@ function isId(value: unknown): value is string {
 }
 function isNullableId(value: unknown): value is string | null {
   return value === null || isId(value)
+}
+function isNullableDate(value: unknown): value is string | null {
+  return value === null || isDateString(value)
 }
 
 function isCurrency(value: unknown): value is string {
@@ -200,11 +212,23 @@ export function parseMetaAdsObjects(value: unknown): MetaAdsObjects | null {
 function isConversion(value: unknown): value is MetaAdsConversion {
   return (
     isRecord(value) &&
-    isId(value["id"]) &&
+    hasConversionIdentity(value) &&
     isNullableMetaText(value["name"]) &&
     isNullableMetaText(value["description"]) &&
     isNullableBoolean(value["is_archived"]) &&
-    isNullableBoolean(value["is_unavailable"])
+    isNullableBoolean(value["is_unavailable"]) &&
+    isNullableFiniteNumber(value["recent_conversions"])
+  )
+}
+// Insights reports custom conversions by ID and custom events by name.
+function hasConversionIdentity(value: Record<string, unknown>): boolean {
+  if (value["kind"] === "custom_conversion")
+    return isId(value["id"]) && value["action_type"] === `${CUSTOM_CONVERSION_PREFIX}${value["id"]}`
+  return (
+    value["kind"] === "custom_event" &&
+    value["id"] === null &&
+    isNonEmptyString(value["name"]) &&
+    value["action_type"] === `${CUSTOM_EVENT_PREFIX}${value["name"]}`
   )
 }
 export function parseMetaAdsConversions(value: unknown): MetaAdsConversions | null {
@@ -215,7 +239,9 @@ export function parseMetaAdsConversions(value: unknown): MetaAdsConversions | nu
     !isNonNegativeInteger(value["conversion_count"]) ||
     value["conversion_count"] < value["conversions"].length ||
     typeof value["truncated"] !== "boolean" ||
-    !isStringArray(value["notes"])
+    !isStringArray(value["notes"]) ||
+    !isNullableDate(value["recent_since"]) ||
+    !isNullableDate(value["recent_until"])
   )
     return null
   return {
@@ -223,6 +249,8 @@ export function parseMetaAdsConversions(value: unknown): MetaAdsConversions | nu
     conversion_count: value["conversion_count"],
     truncated: value["truncated"],
     notes: value["notes"],
+    recent_since: value["recent_since"],
+    recent_until: value["recent_until"],
   }
 }
 function isActivity(value: unknown): value is MetaAdsActivity {

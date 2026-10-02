@@ -1,6 +1,6 @@
-# apps/api/integrations/meta_ads/operations/enrich_custom_conversions.py
+# apps/api/integrations/meta_ads/operations/enrich_conversions.py
 
-"""Resolve custom action names once within an account report's limits."""
+"""Name custom events and resolve custom conversions within an account report's limits."""
 
 import re
 
@@ -14,31 +14,47 @@ from core.exceptions.integration import (
 from services.integrations.report_results import ReportResultBudget
 
 from ..client import MetaAdsClient
-from ..tools.schemas.custom_conversions import CUSTOM_CONVERSIONS_MAX_ROWS
-from ..tools.schemas.insights import MetaAdsInsightsRow
+from ..tools.schemas.conversions import (
+    CUSTOM_CONVERSION_PREFIX,
+    CUSTOM_CONVERSIONS_MAX_ROWS,
+    CUSTOM_EVENT_PREFIX,
+)
+from ..tools.schemas.insights import MetaAdsInsightsAction, MetaAdsInsightsRow
 from .list_custom_conversions import list_custom_conversions
 
 
-async def enrich_custom_conversions(
+async def enrich_conversion_names(
     client: MetaAdsClient,
     *,
     account_id: str,
     rows: list[MetaAdsInsightsRow],
     budget: ReportResultBudget,
 ) -> list[str]:
-    actions = [
+    actions = [action for row in rows for values in row.actions.values() for action in values]
+    for action in actions:
+        # Custom events carry their name in the action type, so they need no lookup.
+        if action.action_type.startswith(CUSTOM_EVENT_PREFIX):
+            action.custom_event_name = action.action_type.removeprefix(CUSTOM_EVENT_PREFIX) or None
+    custom = [
         action
-        for row in rows
-        for values in row.actions.values()
-        for action in values
-        if re.fullmatch(r"offsite_conversion\.custom\.[0-9]{1,128}", action.action_type)
+        for action in actions
+        if re.fullmatch(rf"{re.escape(CUSTOM_CONVERSION_PREFIX)}[0-9]{{1,128}}", action.action_type)
     ]
-    if not actions:
+    if not custom:
         return []
+    return await _resolve_custom_conversions(client, account_id, custom, budget)
+
+
+async def _resolve_custom_conversions(
+    client: MetaAdsClient,
+    account_id: str,
+    actions: list[MetaAdsInsightsAction],
+    budget: ReportResultBudget,
+) -> list[str]:
     for action in actions:
         action.custom_conversion_id = action.action_type.rsplit(".", 1)[1]
     notes: list[str] = []
-    names: dict[str, str | None] = {}
+    names: dict[str | None, str | None] = {}
     try:
         metadata = await list_custom_conversions(
             client, account_id=account_id, limit=CUSTOM_CONVERSIONS_MAX_ROWS, budget=budget

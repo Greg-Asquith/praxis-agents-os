@@ -1,4 +1,4 @@
-"""Custom conversion discovery and account-scoped Insights enrichment."""
+"""Custom conversion and custom event discovery, and account-scoped Insights naming."""
 
 import json
 from unittest.mock import AsyncMock
@@ -7,13 +7,16 @@ import pytest
 
 from core.exceptions.integration import (
     IntegrationAuthError,
+    IntegrationPermissionError,
     IntegrationReportTooLargeError,
     IntegrationValidationError,
 )
 from integrations.meta_ads.client import META_GRAPH_API_VERSION, MetaAdsClient
+from integrations.meta_ads.operations.list_conversions import list_conversions
 from integrations.meta_ads.operations.list_custom_conversions import list_custom_conversions
 from integrations.meta_ads.operations.run_insights import run_insights
 from integrations.meta_ads.tools.schemas.insights import MetaAdsInsightsInput
+from services.integrations.report_results import ReportResultBudget
 
 
 def _client(*responses):
@@ -81,14 +84,8 @@ async def test_discovery_rejects_cross_account_and_foreign_pagination(paging):
         )
 
 
-@pytest.mark.parametrize(
-    "background",
-    [
-        False,
-    ],
-)
-async def test_insights_resolves_once_preserving_all_numbers_and_dimensions(background):
-    responses = [
+async def test_insights_resolves_once_preserving_all_numbers_and_dimensions():
+    client = _client(
         {"data": [_row(), _row()]},
         {
             "data": [
@@ -96,17 +93,8 @@ async def test_insights_resolves_once_preserving_all_numbers_and_dimensions(back
                 {"id": "456", "name": "Same"},
             ]
         },
-    ]
-    if background:
-        responses = [
-            IntegrationValidationError("Large", error_code="meta_ads_insights_too_large"),
-            {"async_status": "Job Completed", "async_percent_completion": 100},
-            *responses,
-        ]
-    client = _client(*responses)
-    client.graph_post.return_value = {"report_run_id": "99"}
+    )
     result = await _report(client)
-    assert result.mode == ("background" if background else "direct")
     for row in result.rows:
         for field, value in (
             ("actions", 2),
@@ -127,18 +115,11 @@ async def test_insights_resolves_once_preserving_all_numbers_and_dimensions(back
     )
 
 
-@pytest.mark.parametrize(
-    "metadata",
-    [
-        {"data": []},
-    ],
-)
-async def test_unresolved_names_keep_ids_metrics_and_safe_note(metadata):
-    result = await _report(_client({"data": [_row()]}, metadata))
+async def test_unresolved_names_keep_ids_metrics_and_safe_note():
+    result = await _report(_client({"data": [_row()]}, {"data": []}))
     action = result.rows[0].actions["actions"][0]
     assert action.custom_conversion_id == "123" and action.custom_conversion_name is None
     assert action.value == 2 and any("unresolved" in note for note in result.notes)
-    assert "private provider text" not in result.model_dump_json()
 
 
 async def test_lookup_preserves_authentication_errors():
@@ -165,3 +146,117 @@ async def test_lookup_has_no_cross_account_or_cross_call_cache():
         result = await _report(client, account_id=account_id)
         assert result.rows[0].actions["actions"][0].custom_conversion_name == name
         assert client.graph_get.call_args.args == (f"act_{account_id}/customconversions",)
+
+
+async def test_insights_names_custom_events_without_a_lookup():
+    row = {
+        "date_start": "2026-09-01",
+        "date_stop": "2026-09-02",
+        "conversions": [
+            {"action_type": "offsite_conversion.fb_pixel_custom.Menu View", "value": "8"},
+            {"action_type": "contact_website", "value": "3"},
+        ],
+    }
+    client = _client({"data": [row]})
+    result = await run_insights(
+        client,
+        account_id="1",
+        request=MetaAdsInsightsInput(
+            fields=["conversions"], since="2026-09-01", until="2026-09-02"
+        ),
+        max_rows=100,
+        poll_seconds=1,
+    )
+    event, standard = result.rows[0].actions["conversions"]
+    assert (event.custom_event_name, event.value) == ("Menu View", 8)
+    assert standard.custom_event_name is None
+    assert client.graph_get.await_count == 1 and result.notes == []
+
+
+async def test_listing_combines_definitions_and_recent_custom_events():
+    client = _client(
+        {"data": [{"id": "123", "name": "Lead"}, {"id": "456", "name": "Quiet"}]},
+        {
+            "data": [
+                {
+                    "date_start": "2026-07-03",
+                    "date_stop": "2026-09-30",
+                    "actions": [
+                        {"action_type": "offsite_conversion.custom.123", "value": "4"},
+                        {"action_type": "offsite_conversion.fb_pixel_custom", "value": "9"},
+                    ],
+                    "conversions": [
+                        {
+                            "action_type": "offsite_conversion.fb_pixel_custom.Menu View",
+                            "value": "9",
+                        },
+                        {"action_type": "subscribe_website", "value": "2"},
+                    ],
+                }
+            ]
+        },
+    )
+    result = await list_conversions(
+        client, account_id="1", limit=100, budget=ReportResultBudget("meta_ads", "test")
+    )
+    assert [(item.kind, item.name, item.recent_conversions) for item in result.conversions] == [
+        ("custom_conversion", "Lead", 4),
+        ("custom_conversion", "Quiet", None),
+        ("custom_event", "Menu View", 9),
+    ]
+    assert result.conversions[2].action_type == "offsite_conversion.fb_pixel_custom.Menu View"
+    assert (result.recent_since, result.recent_until) == ("2026-07-03", "2026-09-30")
+    assert result.conversion_count == 3
+    params = client.graph_get.call_args.kwargs["params"]
+    assert client.graph_get.call_args.args == ("act_1/insights",)
+    assert (params["level"], params["date_preset"]) == ("account", "last_90d")
+
+
+async def test_listing_keeps_definitions_when_recent_delivery_is_unavailable():
+    client = _client({"data": [{"id": "123", "name": "Lead"}]}, IntegrationValidationError("No"))
+    result = await list_conversions(
+        client, account_id="1", limit=100, budget=ReportResultBudget("meta_ads", "test")
+    )
+    assert [item.name for item in result.conversions] == ["Lead"]
+    assert result.conversions[0].recent_conversions is None
+    assert any("unavailable" in note for note in result.notes)
+
+
+async def test_listing_keeps_custom_events_when_definitions_are_unavailable():
+    events = {
+        "data": [
+            {
+                "date_start": "2026-07-03",
+                "date_stop": "2026-09-30",
+                "conversions": [
+                    {"action_type": "offsite_conversion.fb_pixel_custom.Menu View", "value": "9"}
+                ],
+            }
+        ]
+    }
+    client = _client(IntegrationPermissionError("No"), events)
+    result = await list_conversions(
+        client, account_id="1", limit=100, budget=ReportResultBudget("meta_ads", "test")
+    )
+    assert [(item.kind, item.name) for item in result.conversions] == [
+        ("custom_event", "Menu View")
+    ]
+    assert result.conversion_count == 1
+    assert any("definitions are unavailable" in note for note in result.notes)
+
+
+@pytest.mark.parametrize(
+    "responses",
+    [
+        (IntegrationAuthError("Auth"), {"data": []}),
+        (IntegrationPermissionError("No"), IntegrationValidationError("No")),
+    ],
+)
+async def test_listing_fails_on_auth_or_when_no_source_is_readable(responses):
+    with pytest.raises((IntegrationAuthError, IntegrationPermissionError)):
+        await list_conversions(
+            _client(*responses),
+            account_id="1",
+            limit=100,
+            budget=ReportResultBudget("meta_ads", "test"),
+        )

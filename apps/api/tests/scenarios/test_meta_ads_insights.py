@@ -358,6 +358,21 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
                     }
                 ]
             }
+        elif path == "act_111/insights":
+            payload = {
+                "data": [
+                    {
+                        "date_start": TODAY,
+                        "date_stop": TODAY,
+                        "conversions": [
+                            {
+                                "action_type": "offsite_conversion.fb_pixel_custom.Event name",
+                                "value": "3",
+                            }
+                        ],
+                    }
+                ]
+            }
         else:
             assert path == "act_111/customconversions"
             payload = {
@@ -371,7 +386,7 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
     calls = [
         ToolCall("meta_ads_get_accounts", {}),
         ToolCall("meta_ads_list_objects", {"object_type": "campaign"}),
-        ToolCall("meta_ads_list_custom_conversions", {}),
+        ToolCall("meta_ads_list_conversions", {}),
         ToolCall("meta_ads_list_activities", {"since": TODAY, "until": TODAY}),
     ]
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
@@ -379,7 +394,7 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
         for module in (
             "get_accounts",
             "list_objects",
-            "list_custom_conversions",
+            "list_conversions",
             "list_activities",
         ):
             monkeypatch.setattr(
@@ -398,7 +413,10 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
         assert report["results"][1]["error_code"] == "IntegrationAuthError"
     assert reports[0]["results"][0]["data"]["name"] == "Account name"
     assert reports[1]["results"][0]["data"]["objects"][0]["name"] == "Campaign name"
-    assert reports[2]["results"][0]["data"]["conversions"][0]["name"] == "Conversion name"
+    assert [item["name"] for item in reports[2]["results"][0]["data"]["conversions"]] == [
+        "Conversion name",
+        "Event name",
+    ]
     change = reports[3]["results"][0]["data"]["events"][0]
     assert (change["actor_name"], change["old_value"], change["new_value"]) == (
         "Actor name",
@@ -415,7 +433,7 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
             "statuses": ["ACTIVE", "PAUSED"],
             "object_count": 1,
         },
-        "list_custom_conversions": {"conversion_count": 1},
+        "list_conversions": {"conversion_count": 2, "custom_event_count": 1},
         "list_activities": {
             "since": TODAY,
             "until": TODAY,
@@ -433,6 +451,7 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
         "Campaign name",
         "Conversion name",
         "Private rule",
+        "Event name",
         "Actor name",
         "Paused",
         "test-meta-token",
@@ -444,6 +463,7 @@ async def test_account_reads_dispatch_with_isolated_failures_and_safe_audits(
             for account in ("111", "222")
             for suffix in ("", "/campaigns", "/customconversions", "/activities")
         ]
+        + ["act_111/insights"]
     )
 
 

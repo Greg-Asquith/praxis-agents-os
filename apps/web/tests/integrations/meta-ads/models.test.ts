@@ -14,8 +14,8 @@ describe("Meta Ads Insights model", () => {
       "metrics.spend": 125.5,
       "metrics.cpc": null,
       "actions.actions.purchase": 3,
-      "actions.actions.purchase.1d_click": 2,
-      "actions.actions.purchase.7d_click": 3,
+      "actions.actions.purchase:1d_click": 2,
+      "actions.actions.purchase:7d_click": 3,
       "actions.action_values.purchase": 450,
     })
     expect(report?.columns.map((column) => column.key)).toEqual([
@@ -28,8 +28,8 @@ describe("Meta Ads Insights model", () => {
       "metrics.impressions",
       "metrics.cpc",
       "actions.actions.purchase",
-      "actions.actions.purchase.1d_click",
-      "actions.actions.purchase.7d_click",
+      "actions.actions.purchase:1d_click",
+      "actions.actions.purchase:7d_click",
       "actions.action_values.purchase",
     ])
     expect(
@@ -133,6 +133,62 @@ describe("Meta Ads Insights model", () => {
     },
   ])("rejects malformed row data: %j", (override) => {
     expect(parseMetaAdsInsights(insightsData({ rows: [insightsRow(override)] }))).toBeNull()
+  })
+
+  it("keeps a custom event's windows apart from an event named like a window", () => {
+    const signup = {
+      action_type: "offsite_conversion.fb_pixel_custom.Signup",
+      custom_event_name: "Signup",
+      value: 3,
+      windows: { "1d_click": 2 },
+    }
+    const named = {
+      action_type: "offsite_conversion.fb_pixel_custom.Signup.1d_click",
+      custom_event_name: "Signup.1d_click",
+      value: 9,
+      windows: {},
+    }
+    for (const conversions of [
+      [signup, named],
+      [named, signup],
+    ]) {
+      const report = parseMetaAdsInsights(
+        insightsData({ rows: [insightsRow({ actions: { conversions } })] })
+      )
+      const row = report?.rows[0] ?? {}
+      const values = report?.columns
+        .filter((column) => column.key.startsWith("actions."))
+        .map((column) => row[column.key])
+      expect(values?.toSorted()).toEqual([2, 3, 9])
+    }
+  })
+
+  it("keeps Meta amounts in major units when an event name ends in micros", () => {
+    const report = parseMetaAdsInsights(
+      insightsData({
+        money_fields: ["conversion_values"],
+        rows: [
+          insightsRow({
+            actions: {
+              conversion_values: [
+                {
+                  action_type: "offsite_conversion.fb_pixel_custom.Revenue_micros",
+                  custom_event_name: "Revenue_micros",
+                  value: 123,
+                  windows: { "1d_click": 123 },
+                },
+              ],
+            },
+          }),
+        ],
+      })
+    )
+    const columns = report?.columns.filter((column) => column.key.startsWith("actions.")) ?? []
+    expect(columns).toHaveLength(2)
+    const expected = new Intl.NumberFormat(undefined, { currency: "EUR", style: "currency" })
+    for (const column of columns) {
+      expect(formatDataCell(column, 123)).toBe(expected.format(123))
+    }
   })
 
   it("keeps action breakdowns distinct and accepts nullable keys and missing account metadata", () => {

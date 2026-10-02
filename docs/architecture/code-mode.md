@@ -163,15 +163,15 @@ nested dispatch requires a session-isolation or per-tool-barrier design first.
 Every resource the sandbox and its boundary can consume has an explicit limit,
 configured in `core/settings/code_mode.py` (`AGENT_CODE_MODE_*`):
 
-| Bound                                                    | Setting (default)                                                                                                                                                                   |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interpreter + cumulative wall-clock time                 | `AGENT_CODE_MODE_TIMEOUT_SECONDS` (60s), backstopped by `AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS`, which replaces an unresponsive worker                                            |
-| Interpreter memory / recursion depth                     | `AGENT_CODE_MODE_MEMORY_MAX_BYTES` (64 MiB) / `AGENT_CODE_MODE_MAX_RECURSION_DEPTH` (100)                                                                                           |
-| Nested calls per script                                  | `AGENT_CODE_MODE_MAX_NESTED_CALLS` (25)                                                                                                                                             |
-| Captured print output                                    | `AGENT_CODE_MODE_OUTPUT_MAX_CHARS` (8,000)                                                                                                                                          |
-| Each value crossing the boundary                         | `AGENT_CODE_MODE_VALUE_MAX_BYTES` (1 MiB)                                                                                                                                           |
+| Bound                                                    | Setting (default)                                                                                                                                                                 |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interpreter + cumulative wall-clock time                 | `AGENT_CODE_MODE_TIMEOUT_SECONDS` (60s), backstopped by `AGENT_CODE_MODE_REQUEST_TIMEOUT_SECONDS`, which replaces an unresponsive worker                                          |
+| Interpreter memory / recursion depth                     | `AGENT_CODE_MODE_MEMORY_MAX_BYTES` (256 MiB) / `AGENT_CODE_MODE_MAX_RECURSION_DEPTH` (100)                                                                                        |
+| Nested calls per script                                  | `AGENT_CODE_MODE_MAX_NESTED_CALLS` (25)                                                                                                                                           |
+| Captured print output                                    | `AGENT_CODE_MODE_OUTPUT_MAX_CHARS` (8,000)                                                                                                                                        |
+| Each value crossing the boundary                         | `AGENT_CODE_MODE_VALUE_MAX_BYTES` (8 MiB), sized so retained integration reports cross intact; interpreter memory needs about 25 times a value's JSON size                        |
 | Model-facing final result                                | `AGENT_CODE_MODE_RESULT_MAX_BYTES` (32 KiB) — intentionally much tighter than the boundary-value limit, so a script returns compact, decision-ready data rather than raw payloads |
-| Suspended interpreter snapshot / durable resume artifact | `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` / `AGENT_CODE_MODE_STATE_MAX_BYTES`, cross-validated so a valid configuration can always fit                                                   |
+| Suspended interpreter snapshot / durable resume artifact | `AGENT_CODE_MODE_SNAPSHOT_MAX_BYTES` / `AGENT_CODE_MODE_STATE_MAX_BYTES`, cross-validated so a valid configuration can always fit                                                 |
 
 Cumulative budgets survive approval suspension and resume. The bridge itself
 rejects or converts over-budget and non-serializable boundary values — normal

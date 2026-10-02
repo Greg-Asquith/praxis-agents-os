@@ -2,7 +2,7 @@
 
 """Bound provider text and parse finite Meta metric values."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -83,6 +83,17 @@ def iso_datetime(value: Any, *, operation: str) -> str | None:
         return datetime.fromisoformat(text).isoformat()
     except ValueError:
         raise invalid_response("Meta Ads returned an invalid time.", operation=operation) from None
+
+
+def iso_date(value: Any, *, operation: str) -> str:
+    try:
+        if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
+            raise ValueError
+    except ValueError:
+        raise invalid_response(
+            "Meta Ads returned an invalid report date.", operation=operation
+        ) from None
+    return value
 
 
 def numeric_value(value: Any, *, operation: str, count: bool = False) -> int | float | None:
