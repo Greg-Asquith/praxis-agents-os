@@ -601,8 +601,9 @@ async def test_worker_renews_lease_during_turn_longer_than_original_ttl(
     committed_db_session_factory: async_sessionmaker[AsyncSession],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "AGENT_RUN_LEASE_TTL_SECONDS", 0.3)
-    monkeypatch.setattr(settings, "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+    # Leave room for a cold database connect on slow CI runners.
+    monkeypatch.setattr(settings, "AGENT_RUN_LEASE_TTL_SECONDS", 1.0)
+    monkeypatch.setattr(settings, "AGENT_RUN_HEARTBEAT_INTERVAL_SECONDS", 0.1)
 
     runtime_context = await _create_committed_runtime_context(committed_db_session_factory)
     stream_entered = asyncio.Event()
@@ -631,8 +632,8 @@ async def test_worker_renews_lease_during_turn_longer_than_original_ttl(
     )
 
     try:
-        await asyncio.wait_for(stream_entered.wait(), timeout=2)
-        await asyncio.sleep(0.4)
+        await asyncio.wait_for(stream_entered.wait(), timeout=5)
+        await asyncio.sleep(1.2)
 
         async with committed_db_session_factory() as db:
             run = await db.get(AgentRun, runtime_context.run_id)
