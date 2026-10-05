@@ -46,6 +46,7 @@ def insights_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "AGENT_STRUCTURED_RESULT_MAX_CHARS", 12_000)
     monkeypatch.setattr(settings, "AGENT_RESULT_PREVIEW_ROWS", 10)
     monkeypatch.setattr(settings, "AGENT_RUN_TOTAL_TOKENS_LIMIT", 100_000)
+    monkeypatch.setattr(settings, "AGENT_CODE_MODE_VALUE_MAX_BYTES", 8 * 1024 * 1024)
     monkeypatch.setattr(meta_ads_settings, "META_ADS_INSIGHTS_MAX_ROWS", 2_000)
     monkeypatch.setitem(
         RUNTIME_TOOL_CATALOG,
