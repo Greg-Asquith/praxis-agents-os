@@ -7,26 +7,25 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from services.integrations.http import IntegrationRequestPolicy
-
 from ..client import MetaAdsClient
-from ..throttle import ensure_account_available
 from ..tools.schemas.objects import MetaAdsObject, MetaAdsObjectType
 from .list_objects import read_objects_by_id
 from .mutations import (
-    NOT_DISPATCHED_CODE,
-    NOT_DISPATCHED_MESSAGE,
     MetaAdsMutationEffect,
     MetaAdsMutationLedger,
     MetaAdsMutationParent,
     freeze_fields,
+    not_dispatched_parent,
+    read_back,
+    send_change,
+    skipped_parent,
+    submitted_parent,
 )
 
 type MetaAdsRequestedStatus = Literal["ACTIVE", "PAUSED"]
 
 _OPERATION = "update_status"
 _OBJECT_TYPES: tuple[MetaAdsObjectType, ...] = ("campaign", "adset", "ad")
-_UNEXPECTED_REPLY = "Meta Ads didn't confirm this change."
 _NOT_CONFIRMED = "Meta Ads accepted the change, but the object still shows a different status."
 _READBACK_FAILED = "Meta Ads accepted the change, but the object couldn't be read back."
 
@@ -121,28 +120,44 @@ async def update_status(
     parents: dict[str, MetaAdsMutationParent] = {}
     for index, target in enumerate(ordered):
         if target.before.status == status:
-            parents[target.object_id] = _skipped(target)
+            parents[target.object_id] = skipped_parent(target.object_id)
             continue
+        fields = {"requested_status": status}
         try:
-            effect = await _send(client, account_id, target, status)
+            effect = await send_change(
+                client,
+                account_id=account_id,
+                object_id=target.object_id,
+                data={"status": status},
+                fields=fields,
+                operation=_OPERATION,
+            )
         except asyncio.CancelledError as exc:
-            parents[target.object_id] = _submitted(
-                target, MetaAdsMutationEffect.from_error({"requested_status": status}, exc)
+            parents[target.object_id] = submitted_parent(
+                target.object_id, MetaAdsMutationEffect.from_error(fields, exc)
             )
             for pending in ordered[index + 1 :]:
-                parents[pending.object_id] = _not_dispatched(pending, status)
+                parents[pending.object_id] = not_dispatched_parent(pending.object_id, fields)
             exc.ledger = _ledger(targets, parents, accepted, {}, exc, status)
             raise
         if effect is None:
             accepted.append(target)
         else:
-            parents[target.object_id] = _submitted(target, effect)
+            parents[target.object_id] = submitted_parent(target.object_id, effect)
 
     stale = _skipped_below_changes(targets, parents, accepted)
+    changed = [*accepted, *stale]
+    after: dict[str, MetaAdsObject] = {}
+    object_ids = {
+        object_type: [target.object_id for target in changed if target.object_type == object_type]
+        for object_type in _OBJECT_TYPES
+    }
     try:
-        after, readback_error = await _read_back(client, account_id, currency, [*accepted, *stale])
+        readback_error = await read_back(
+            client, account_id=account_id, currency=currency, object_ids=object_ids, after=after
+        )
     except asyncio.CancelledError as exc:
-        exc.ledger = _ledger(targets, parents, accepted, {}, exc, status)
+        exc.ledger = _ledger(targets, parents, accepted, after, exc, status)
         raise
     ledger = _ledger(targets, parents, accepted, after, readback_error, status)
     return ledger, {target.object_id: after.get(target.object_id) for target in stale}
@@ -166,52 +181,6 @@ def _skipped_below_changes(
     ]
 
 
-async def _send(
-    client: MetaAdsClient,
-    account_id: str,
-    target: MetaAdsStatusTarget,
-    status: MetaAdsRequestedStatus,
-) -> MetaAdsMutationEffect | None:
-    """Returns a terminal effect for a rejected or unclear reply, or None when Meta accepted it."""
-    fields = {"requested_status": status}
-    try:
-        ensure_account_available(account_id, operation=_OPERATION)
-        payload = await client.graph_post(
-            target.object_id,
-            data={"status": status},
-            operation=_OPERATION,
-            policy=IntegrationRequestPolicy.MUTATION,
-            usage_account_id=account_id,
-        )
-    except Exception as exc:
-        return MetaAdsMutationEffect.from_error(fields, exc)
-    if payload != {"success": True}:
-        return MetaAdsMutationEffect(
-            fields=freeze_fields(fields),
-            outcome="unverified",
-            error_code="UNEXPECTED_REPLY",
-            message=_UNEXPECTED_REPLY,
-        )
-    return None
-
-
-async def _read_back(
-    client: MetaAdsClient,
-    account_id: str,
-    currency: str,
-    accepted: Sequence[MetaAdsStatusTarget],
-) -> tuple[dict[str, MetaAdsObject], Exception | None]:
-    after: dict[str, MetaAdsObject] = {}
-    try:
-        for object_type in _OBJECT_TYPES:
-            ids = [item.object_id for item in accepted if item.object_type == object_type]
-            if ids:
-                after.update(await _read(client, account_id, currency, object_type, ids))
-    except Exception as exc:
-        return after, exc
-    return after, None
-
-
 def _ledger(
     targets: Sequence[MetaAdsStatusTarget],
     parents: dict[str, MetaAdsMutationParent],
@@ -221,8 +190,8 @@ def _ledger(
     status: MetaAdsRequestedStatus,
 ) -> MetaAdsMutationLedger:
     for target in accepted:
-        parents[target.object_id] = _submitted(
-            target, _verified_effect(after.get(target.object_id), status, readback_error)
+        parents[target.object_id] = submitted_parent(
+            target.object_id, _verified_effect(after.get(target.object_id), status, readback_error)
         )
     return MetaAdsMutationLedger(
         action="update_status",
@@ -251,36 +220,6 @@ def _verified_effect(
         outcome="unverified",
         error_code="READBACK_FAILED" if readback_failed else "STATUS_NOT_CONFIRMED",
         message=_READBACK_FAILED if readback_failed else _NOT_CONFIRMED,
-    )
-
-
-def _identity(target: MetaAdsStatusTarget) -> dict[str, str]:
-    return {"object_id": target.object_id}
-
-
-def _skipped(target: MetaAdsStatusTarget) -> MetaAdsMutationParent:
-    return MetaAdsMutationParent(
-        identity=freeze_fields(_identity(target)), decision="skipped", skip_reason="already_set"
-    )
-
-
-def _submitted(target: MetaAdsStatusTarget, effect: MetaAdsMutationEffect) -> MetaAdsMutationParent:
-    return MetaAdsMutationParent(
-        identity=freeze_fields(_identity(target)), decision="submit", effects=(effect,)
-    )
-
-
-def _not_dispatched(
-    target: MetaAdsStatusTarget, status: MetaAdsRequestedStatus
-) -> MetaAdsMutationParent:
-    return _submitted(
-        target,
-        MetaAdsMutationEffect(
-            fields=freeze_fields({"requested_status": status}),
-            outcome="failed",
-            error_code=NOT_DISPATCHED_CODE,
-            message=NOT_DISPATCHED_MESSAGE,
-        ),
     )
 
 

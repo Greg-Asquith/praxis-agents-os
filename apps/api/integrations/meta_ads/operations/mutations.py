@@ -2,11 +2,17 @@
 
 """Exact accounting for Meta Ads changes: one parent per object, one or more effects each."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from services.integrations.http import IntegrationRequestPolicy
+
+from ..client import MetaAdsClient
+from ..throttle import ensure_account_available
+from ..tools.schemas.objects import MetaAdsObject, MetaAdsObjectType
+from .list_objects import read_objects_by_id
 
 type MetaAdsEffectOutcome = Literal["applied", "failed", "unverified"]
 type MetaAdsParentDecision = Literal["submit", "skipped"]
@@ -14,6 +20,7 @@ type FrozenFields = tuple[tuple[str, str], ...]
 
 NOT_DISPATCHED_CODE = "NOT_DISPATCHED"
 NOT_DISPATCHED_MESSAGE = "Meta Ads wasn't asked to make this change."
+_UNEXPECTED_REPLY = "Meta Ads didn't confirm this change."
 
 
 def freeze_fields(fields: Mapping[str, object]) -> FrozenFields:
@@ -59,7 +66,7 @@ class MetaAdsMutationEffect:
             fields=freeze_fields(fields),
             outcome="failed" if rejected else "unverified",
             error_code=exc.__class__.__name__[:100],
-            message=" ".join(message.split())[:1000] or "Meta Ads didn't confirm this change.",
+            message=" ".join(message.split())[:1000] or _UNEXPECTED_REPLY,
         )
 
 
@@ -116,3 +123,94 @@ class MetaAdsMutationLedger:
     @property
     def has_unverified(self) -> bool:
         return any(parent.outcome == "unverified" for parent in self.parents)
+
+
+def skipped_parent(object_id: str) -> MetaAdsMutationParent:
+    """Records an object that already had the requested value, so nothing was sent."""
+    return MetaAdsMutationParent(
+        identity=(("object_id", object_id),), decision="skipped", skip_reason="already_set"
+    )
+
+
+def submitted_parent(object_id: str, effect: MetaAdsMutationEffect) -> MetaAdsMutationParent:
+    return MetaAdsMutationParent(
+        identity=(("object_id", object_id),), decision="submit", effects=(effect,)
+    )
+
+
+def not_dispatched_parent(object_id: str, fields: Mapping[str, str]) -> MetaAdsMutationParent:
+    """Records a change that wasn't sent because the write stopped before it."""
+    return submitted_parent(
+        object_id,
+        MetaAdsMutationEffect(
+            fields=freeze_fields(fields),
+            outcome="failed",
+            error_code=NOT_DISPATCHED_CODE,
+            message=NOT_DISPATCHED_MESSAGE,
+        ),
+    )
+
+
+async def send_change(
+    client: MetaAdsClient,
+    *,
+    account_id: str,
+    object_id: str,
+    data: Mapping[str, str],
+    fields: Mapping[str, str],
+    operation: str,
+) -> MetaAdsMutationEffect | None:
+    """Sends one change once, without retry.
+
+    Returns:
+        A terminal effect for a rejected or unclear reply, or None when Meta accepted it.
+    """
+    try:
+        ensure_account_available(account_id, operation=operation)
+        payload = await client.graph_post(
+            object_id,
+            data=dict(data),
+            operation=operation,
+            policy=IntegrationRequestPolicy.MUTATION,
+            usage_account_id=account_id,
+        )
+    except Exception as exc:
+        return MetaAdsMutationEffect.from_error(fields, exc)
+    if payload != {"success": True}:
+        return MetaAdsMutationEffect(
+            fields=freeze_fields(fields),
+            outcome="unverified",
+            error_code="UNEXPECTED_REPLY",
+            message=_UNEXPECTED_REPLY,
+        )
+    return None
+
+
+async def read_back(
+    client: MetaAdsClient,
+    *,
+    account_id: str,
+    currency: str,
+    object_ids: Mapping[MetaAdsObjectType, Sequence[str]],
+    after: dict[str, MetaAdsObject],
+) -> Exception | None:
+    """Reads changed objects into `after` as each read returns, so a cancellation keeps them.
+
+    Returns:
+        The error that stopped the reads, or None when every read returned.
+    """
+    try:
+        for object_type, ids in object_ids.items():
+            if ids:
+                after.update(
+                    await read_objects_by_id(
+                        client,
+                        account_id=account_id,
+                        object_type=object_type,
+                        object_ids=ids,
+                        currency=currency,
+                    )
+                )
+    except Exception as exc:
+        return exc
+    return None

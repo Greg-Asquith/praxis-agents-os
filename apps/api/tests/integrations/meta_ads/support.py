@@ -2,6 +2,7 @@
 
 import json
 from typing import Any
+from urllib.parse import parse_qsl
 from uuid import uuid4
 
 import httpx2
@@ -91,32 +92,56 @@ GRAPH_EDGES = {"campaigns": "campaign", "adsets": "adset", "ads": "ad"}
 
 
 class FakeGraph:
-    """Serves account edges from in-memory objects and applies status posts."""
+    """Serves the account, its edges, and its history from memory, and applies posted changes."""
 
-    def __init__(self, objects, *, post=None):
+    def __init__(self, objects, *, post=None, account=None, activities=None):
         self.objects = {item["id"]: {"status": "PAUSED", **item} for item in objects}
         self.post = post or {}
+        self.account = {"currency": "EUR", "account_status": 1, **(account or {})}
+        self.activities = activities or []
         self.posts: list[str] = []
+        self.dry_runs: list[str] = []
+        self.sent: list[dict[str, str]] = []
 
     def handle(self, request: httpx2.Request) -> httpx2.Response:
         path = request.url.path.split("/")[2:]
         if request.method == "POST":
-            object_id = path[0]
-            self.posts.append(object_id)
-            behaviour = self.post.get(object_id, "apply")
-            if behaviour == "timeout":
-                raise httpx2.ReadTimeout("lost", request=request)
-            if behaviour == "throttle":
-                error = {"code": 613, "error_subcode": 1487632, "fbtrace_id": "trace"}
-                return httpx2.Response(400, json={"error": error}, request=request)
-            if behaviour == "apply":
-                self.objects[object_id]["status"] = parse_status(request)
-                self.hold_children()
-            return httpx2.Response(200, json={"success": True}, request=request)
+            return self.handle_post(request, path[0])
+        if len(path) == 1:
+            return httpx2.Response(200, json=self.account, request=request)
+        if path[1] == "activities":
+            return httpx2.Response(200, json={"data": self.activities}, request=request)
         object_type = GRAPH_EDGES[path[1]]
         filters = json.loads(request.url.params["filtering"])
         rows = [item for item in self.objects.values() if matches(item, object_type, filters)]
         return httpx2.Response(200, json={"data": rows}, request=request)
+
+    def handle_post(self, request: httpx2.Request, object_id: str) -> httpx2.Response:
+        form = dict(parse_qsl(request.content.decode()))
+        behaviour = self.post.get(object_id, "apply")
+        if "execution_options" in form:
+            self.dry_runs.append(object_id)
+            if behaviour == "reject_dry_run":
+                error = {"code": 100, "error_user_msg": "The budget is too low.", "fbtrace_id": "t"}
+                return httpx2.Response(400, json={"error": error}, request=request)
+            confirmed = behaviour != "unconfirmed_dry_run"
+            return httpx2.Response(200, json={"success": confirmed}, request=request)
+        self.posts.append(object_id)
+        self.sent.append(form)
+        if behaviour == "timeout":
+            raise httpx2.ReadTimeout("lost", request=request)
+        if behaviour == "throttle":
+            error = {"code": 613, "error_subcode": 1487632, "fbtrace_id": "trace"}
+            return httpx2.Response(400, json={"error": error}, request=request)
+        if behaviour == "apply_as_lifetime":
+            self.objects[object_id].pop("daily_budget", None)
+            self.objects[object_id]["lifetime_budget"] = form["daily_budget"]
+        if behaviour == "apply":
+            for key in ("status", "daily_budget", "lifetime_budget"):
+                if key in form:
+                    self.objects[object_id][key] = form[key]
+            self.hold_children()
+        return httpx2.Response(200, json={"success": True}, request=request)
 
     def hold_children(self):
         """Shows a parent that is off as the delivery status of its children that are on."""
@@ -129,10 +154,6 @@ class FakeGraph:
                 if key in item and self.objects[item[key]]["status"] != "ACTIVE"
             ]
             item["effective_status"] = held[-1] if held else "ACTIVE"
-
-
-def parse_status(request: httpx2.Request) -> str:
-    return dict(item.split("=") for item in request.content.decode().split("&"))["status"]
 
 
 def matches(item, object_type, filters) -> bool:

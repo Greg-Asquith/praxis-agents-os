@@ -5,8 +5,8 @@ system user. Discovered accounts can join active context and Context Groups.
 Agents can run bounded Insights reports, read account totals, list advertising
 objects, discover custom conversions and custom events, and read change
 history on selected accounts. With approval, agents can turn campaigns, ad
-sets, and ads on or off. Other writes, Facebook sign-in, and event delivery
-are pending.
+sets, and ads on or off, and change campaign and ad set budget amounts. Other
+writes, Facebook sign-in, and event delivery are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -114,8 +114,9 @@ Provider errors follow the existing integration exceptions and retry policy:
 | `100` and other Graph errors | Validation failure |
 
 Details retain a bounded, validated `fbtrace_id` for support. Insights validation
-errors return Meta's bounded message so the agent can correct fields and
-breakdown combinations. Credentials and proofs are redacted before errors leave
+errors return Meta's bounded message, and dry-run rejections (operations named
+`validate_*`) return Meta's bounded `error_user_msg` or message, so the agent
+or approver can correct the request. Credentials and proofs are redacted before errors leave
 the client. Usage headers remain in process-local numeric state, outside logs
 and audit details. Each process keeps up to 256 account entries. Known account
 or Insights utilisation at 100% blocks further Insights requests until the
@@ -442,6 +443,74 @@ The link format, the reply shape, and the delivery status of children that
 are on but held by a parent are documented behaviour that hasn't been checked
 against a live account; see [Live qualification record](#live-qualification-record).
 
+### Changing budgets
+
+`meta_ads_update_budgets` sets new amounts on up to 50 campaign or ad set
+budgets in one approval. Each update names exactly one campaign or one ad set
+and a positive amount in the account currency, with at most two decimal
+places. The tool converts it to minor units with `money.amount_to_minor`, so
+an amount with fractional minor units, such as `10.5` in `JPY`, is rejected.
+The amount replaces the budget the object already holds; the tool never
+switches a budget between daily and lifetime. The budget rules are as
+follows:
+
+- A change goes to the level that holds the budget. A campaign whose ad sets
+  hold their own budgets, and an ad set that spends from its campaign's
+  budget, are rejected with a message naming the other level.
+- A daily budget below the account's `min_daily_budget` is rejected.
+- A lifetime budget below what it has already spent (its amount minus
+  `budget_remaining`) is rejected.
+- Archived and deleted objects, and budgets that can't be read, are rejected.
+
+The tool works as follows:
+
+1. Approval display re-reads the references, reads the account's minimum
+   daily budget, and applies the rules, including the minor-unit conversion.
+   For each change that passes, it sends a dry run, `POST /{id}` with the
+   budget field and `execution_options=["validate_only"]`. A dry run changes
+   nothing, so it can be retried. Only `{"success": true}` confirms a dry
+   run; Meta's rejection or any other reply becomes the change's problem.
+   For each object, it also counts budget events (`event_type` containing
+   `budget`) in the account's change history between an hour ago and now.
+   The card shows the old amount, the new amount, the change, a monthly
+   estimate for a daily budget (30.4 days), and what a lifetime budget has
+   spent. A recent change adds a warning, because Meta allows an ad set
+   budget to change about four times an hour and rejects more (`613`,
+   subcode `1487632`). When the history is truncated or unreadable, the
+   counts are lower bounds and the card says recent changes couldn't all be
+   read. A broken rule or rejected dry run blocks approval; the operator
+   declines and asks the agent again. The amounts aren't editable on the
+   card. If an account can't be read, or Meta can't run a dry run, those
+   budgets show that they couldn't be checked and stay approvable, because
+   execution checks again.
+2. After approval, the tool reads each object and the account minimum again,
+   applies the same rules, and sends the dry runs again. Any rule problem,
+   rejection, or unconfirmed dry run stops the account before anything is
+   sent and returns Meta's reason.
+3. Pending evidence records the object, its budget kind, the previous and
+   requested amounts, and the currency.
+4. The tool sends one `POST /{id}` with `daily_budget` or `lifetime_budget`
+   in minor units per object. Decreases go first, so spending drops before it
+   rises. Budgets already at the requested amount are skipped as
+   `already_set`.
+5. The tool reads the changed objects again. A change is `updated` only when
+   the same kind of budget shows the requested amount. A disagreeing read-back
+   leaves the row `unverified` and keeps the amount Meta returned. A read-back
+   showing a different kind of budget, or a failed read-back, leaves it
+   `unverified` without an amount. When the write is cancelled during
+   read-back, the budgets already read keep their outcome.
+
+The result names the account and currency. Each row carries the object, the
+budget kind, the previous, requested, and read-back amounts, and the outcome.
+The tool has a 120-second timeout, supports Code Mode, and is listed in the
+spend policy test. The presenter uses the same Meta write kit and Ads Manager
+links as status changes.
+
+The dry-run reply, Meta's minimum-budget and lifetime-spend errors, and the
+`event_type` names for budget changes in the change history are documented
+behaviour that hasn't been checked against a live account; see
+[Live qualification record](#live-qualification-record).
+
 ## Custom conversions and custom events
 
 Advertisers track results either as custom conversions, which are rules defined
@@ -591,6 +660,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | API tier | Initial tier and the dashboard's Full access request prerequisites |
 | Connection UI | Owned and partner discovery, selection beside a Google Ads account, and read-only reporting access |
 | Status change | `POST /{id}` reply for a status change; throttle and permission rejection codes; Ads Manager deep links for a campaign, an ad set, and an ad; ad set placement, destination, and promoted-object fields; campaign budget fields; `CAMPAIGN_PAUSED` and `ADSET_PAUSED` for children that are on |
+| Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 
 Keep tokens, secrets, proofs, identifying asset values, and echoed URLs out of

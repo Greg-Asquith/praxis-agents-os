@@ -17,6 +17,7 @@ from integrations.google_ads.tools.update_campaign_status import (
 from integrations.google_ads.tools.update_device_bid_modifiers import (
     DEFINITION as DEVICE_BID_MODIFIER_DEFINITION,
 )
+from integrations.meta_ads.tools.update_budgets import DEFINITION as META_ADS_BUDGETS_DEFINITION
 from integrations.meta_ads.tools.update_status import DEFINITION as META_ADS_STATUS_DEFINITION
 from services.agents.models.domain import ModelConfigurationError
 from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
@@ -31,6 +32,7 @@ from services.agents.utils import validate_tool_configuration
         CREATE_CAMPAIGN_BUDGET_DEFINITION,
         DEVICE_BID_MODIFIER_DEFINITION,
         META_ADS_STATUS_DEFINITION,
+        META_ADS_BUDGETS_DEFINITION,
     ],
 )
 def test_spend_policy_is_approval_only(monkeypatch, definition) -> None:

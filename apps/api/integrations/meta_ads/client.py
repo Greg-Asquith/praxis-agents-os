@@ -379,6 +379,11 @@ def _meta_response_error(
     if code in (1, 2) or error.get("is_transient") is True:
         response.status_code = 503
         return None
+    # A dry run's rejection goes to the approver, so keep Meta's reason for it.
+    if error and operation.startswith("validate_"):
+        reason = error.get("error_user_msg") or error.get("message")
+        reason = " ".join(reason.split())[:500] if isinstance(reason, str) else ""
+        return IntegrationValidationError(f"{reason} {detail}".strip(), **context)
     if error:
         return IntegrationValidationError(detail, **context)
     return None
