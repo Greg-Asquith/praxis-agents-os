@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react"
 import { useSuspenseQuery } from "@tanstack/react-query"
+import { filterFn_includesString } from "@tanstack/react-table"
 import { UsersIcon } from "lucide-react"
 
 import {
@@ -43,25 +44,32 @@ type WorkspaceMembership = WorkspaceMembershipsListResponse["memberships"][numbe
 const columnHelper = createAppColumnHelper<WorkspaceMembership>()
 
 const columns = columnHelper.columns([
-  columnHelper.display({
-    id: "user",
-    header: ({ header }) => <header.ColumnHeader />,
-    cell: ({ row }) => (
-      <div className="flex flex-col gap-1">
-        <span className="font-medium">{memberDisplayName(row.original)}</span>
-        {row.original.user_email ? (
-          <span className="text-muted-foreground text-xs">{row.original.user_email}</span>
-        ) : null}
-      </div>
-    ),
-    meta: { label: "User" },
-  }),
+  columnHelper.accessor(
+    (membership) => `${memberDisplayName(membership)} ${membership.user_email ?? ""}`,
+    {
+      id: "user",
+      enableSorting: true,
+      filterFn: filterFn_includesString,
+      header: ({ header }) => <header.ColumnHeader />,
+      cell: ({ row }) => (
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">{memberDisplayName(row.original)}</span>
+          {row.original.user_email ? (
+            <span className="text-muted-foreground text-xs">{row.original.user_email}</span>
+          ) : null}
+        </div>
+      ),
+      meta: { label: "User" },
+    }
+  ),
   columnHelper.accessor("role", {
+    enableSorting: true,
     header: ({ header }) => <header.ColumnHeader />,
     cell: ({ getValue }) => <WorkspaceRoleBadge role={getValue()} />,
     meta: { label: "Role" },
   }),
   columnHelper.accessor("created_at", {
+    enableSorting: true,
     header: ({ header }) => <header.ColumnHeader />,
     cell: ({ getValue }) => formatDateTime(getValue()),
     meta: { label: "Added" },
@@ -143,7 +151,13 @@ export function MembersTableContent({
   onRemove?: ((membership: WorkspaceMembership) => void) | undefined
 }) {
   const hasMembers = memberships.length > 0
-  const table = useAppTable({ columns, data: memberships })
+  const table = useAppTable({
+    columns,
+    data: memberships,
+    enableMultiSort: false,
+    globalFilterFn: filterFn_includesString,
+    initialState: { pagination: { pageIndex: 0, pageSize: 10 } },
+  })
 
   return (
     <Card className="border-0 bg-transparent shadow-none ring-0">
@@ -153,21 +167,35 @@ export function MembersTableContent({
       </CardHeader>
       <CardContent>
         {hasMembers ? (
-          <>
-            <ResponsiveList>
-              {memberships.map((membership) => (
-                <MemberMobileRow key={membership.id} membership={membership}>
-                  {onRemove && membership.user_id !== currentUserId ? (
-                    <RemoveMemberButton membership={membership} onRemove={onRemove} />
-                  ) : null}
-                </MemberMobileRow>
-              ))}
-            </ResponsiveList>
+          <table.AppTable>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <table.Search
+                  ariaLabel="Search members"
+                  className="w-full sm:max-w-sm"
+                  placeholder="Search members…"
+                />
+                <table.SortMenu />
+              </div>
+              <ResponsiveList>
+                {table.getRowModel().rows.map(({ original: membership }) => (
+                  <MemberMobileRow key={membership.id} membership={membership}>
+                    {onRemove && membership.user_id !== currentUserId ? (
+                      <RemoveMemberButton membership={membership} onRemove={onRemove} />
+                    ) : null}
+                  </MemberMobileRow>
+                ))}
+              </ResponsiveList>
 
-            <table.AppTable>
               <MembersDesktopTable currentUserId={currentUserId} onRemove={onRemove} />
-            </table.AppTable>
-          </>
+              {table.getRowModel().rows.length === 0 ? (
+                <p className="text-muted-foreground py-6 text-center text-sm">
+                  No members match your search.
+                </p>
+              ) : null}
+              <table.Pagination ariaLabel="Members pagination" />
+            </div>
+          </table.AppTable>
         ) : (
           <EmptyState
             description="Workspace members will appear here after they accept access."

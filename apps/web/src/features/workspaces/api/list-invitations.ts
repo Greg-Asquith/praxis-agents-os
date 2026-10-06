@@ -2,6 +2,7 @@
 
 import { queryOptions, useSuspenseQuery } from "@tanstack/react-query"
 
+import { listAllPages } from "@/lib/api/list-all-pages"
 import { apiRequest } from "@/lib/api/client"
 import type { WorkspaceInvitationsListResponse } from "@/features/workspaces/types"
 
@@ -10,14 +11,16 @@ export function workspaceInvitationsQueryKey(workspaceId: string) {
 }
 
 async function listInvitations(workspaceId: string) {
-  return apiRequest<WorkspaceInvitationsListResponse>(`/workspaces/${workspaceId}/invitations`, {
-    query: {
-      include_accepted: false,
-      include_expired: false,
-      limit: 100,
-      offset: 0,
-    },
+  const invitations = await listAllPages(async (offset) => {
+    const page = await apiRequest<WorkspaceInvitationsListResponse>(
+      `/workspaces/${workspaceId}/invitations`,
+      {
+        query: { include_accepted: false, include_expired: false, limit: 100, offset },
+      }
+    )
+    return { items: page.invitations, total: page.total }
   })
+  return { invitations, total: invitations.length, limit: invitations.length, offset: 0 }
 }
 
 function workspaceInvitationsQueryOptions(workspaceId: string) {
