@@ -31,9 +31,9 @@ _clients_lock = Lock()
 
 def google_vertex_location(model: str | None = None) -> str:
     """Resolve a supported location without constructing a provider client."""
-    if model == "gemini-3.1-flash-image":
+    if model == "gemini-nano-banana-2.1":
         # Image-only models are not ordinary agent choices.
-        default_location, supported_locations = "eu", ("global", "us", "eu")
+        default_location, supported_locations = "global", ("global",)
     else:
         info = get_model(PROVIDER_GOOGLE, model) if model is not None else None
         default_location = info.vertex_default_location if info is not None else "global"

@@ -156,10 +156,19 @@ _OPENAI_IMAGE_OUTPUT_PRICES = tuple(
     for size, cost in costs.items()
 )
 
-# Gemini 3.1 Flash Image standard-tier output pricing. The native helper does
+# Google image standard-tier output pricing. The native helper does
 # not expose a resolution selector and Google documents 1K as the default.
 # https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-image
 _GOOGLE_IMAGE_OUTPUT_PRICES = (
+    # https://ai.google.dev/gemini-api/docs/pricing#gemini-nano-banana-2.1
+    ImageOutputPrice(
+        "google",
+        "gemini-nano-banana-2.1",
+        date(2026, 10, 6),
+        "standard",
+        "1k",
+        Decimal("0.0336"),
+    ),
     ImageOutputPrice(
         "google",
         "gemini-3.1-flash-image",

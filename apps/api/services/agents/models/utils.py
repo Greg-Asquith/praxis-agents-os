@@ -14,6 +14,7 @@ import httpx2 as httpx
 from pydantic_ai.models import DEFAULT_HTTP_TIMEOUT
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles.anthropic import anthropic_model_profile
+from pydantic_ai.profiles.google import google_model_profile
 from pydantic_ai.profiles.openai import openai_model_profile
 from pydantic_ai.retries import wait_retry_after
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -47,6 +48,15 @@ ADAPTIVE_ONLY_ANTHROPIC_MODELS = frozenset({"claude-opus-5-5", "claude-sonnet-5-
 
 def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
     """Supplies release profile settings missing from Pydantic AI 2.50."""
+    if provider == PROVIDER_GOOGLE and model == "gemini-nano-banana-2.1":
+        # Pydantic AI detects image models by an `image` substring in their IDs.
+        return {
+            **(google_model_profile("gemini-3.1-flash-image") or {}),
+            "supports_json_schema_output": False,
+            "supports_json_object_output": False,
+            "thinking_always_enabled": True,
+            "google_thinking_levels": frozenset({"MINIMAL", "MEDIUM", "HIGH"}),
+        }
     if provider == PROVIDER_OPENAI and model == "gpt-6.1-sol":
         # 6.1 keeps GPT-6 Sol's Responses features but rejects the `none` effort.
         return {

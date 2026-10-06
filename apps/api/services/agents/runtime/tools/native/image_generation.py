@@ -64,7 +64,7 @@ SUPPORTED_NATIVE_IMAGE_PROVIDERS = (PROVIDER_GOOGLE, PROVIDER_OPENAI)
 SUPPORTED_IMAGE_ASPECT_RATIOS: tuple[ImageAspectRatio, ...] = get_args(ImageAspectRatio)
 OPENAI_IMAGE_ASPECT_RATIOS: tuple[ImageAspectRatio, ...] = ("1:1", "2:3", "3:2")
 DEFAULT_NATIVE_IMAGE_MODELS = {
-    PROVIDER_GOOGLE: "gemini-3.1-flash-image",
+    PROVIDER_GOOGLE: "gemini-nano-banana-2.1",
     PROVIDER_OPENAI: "gpt-image-2.5-flare",
 }
 DEFAULT_NATIVE_IMAGE_EDIT_MODELS = {
@@ -309,7 +309,7 @@ def resolve_image_generation_model(
         except ModelConfigurationError as exc:
             raise ModelRetry(
                 "Google image actions require a supported Vertex location. "
-                "Set GOOGLE_VERTEX_LOCATION to auto, global, eu, or us."
+                "Set GOOGLE_VERTEX_LOCATION to auto or global."
             ) from exc
     require_configured_provider(
         requested_provider,

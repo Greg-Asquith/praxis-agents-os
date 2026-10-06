@@ -82,7 +82,10 @@ def build_model(spec: ResolvedModel) -> Model:
 
     if spec.provider == PROVIDER_GOOGLE:
         return GoogleModel(
-            spec.transport_model, provider=_google_provider(spec.model), settings=model_settings
+            spec.transport_model,
+            provider=_google_provider(spec.model),
+            profile=provider_model_profile(spec.provider, spec.transport_model),
+            settings=model_settings,
         )
 
     if spec.provider == PROVIDER_AZURE:

@@ -42,7 +42,7 @@ from services.files import write_generated_image
 from services.files.contract import FileCategory
 from utils.validation import normalize_optional_text
 
-DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL = "gemini-3.1-flash-image"
+DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL = "gemini-nano-banana-2.1"
 VIDEO_MEDIA_TYPES = frozenset({"video/mov", "video/mp4"})
 VIDEO_PROVIDER_MEDIA_TYPE_OVERRIDES = {"video/mov": "video/quicktime"}
 
@@ -214,7 +214,7 @@ def resolve_video_to_image_model(*, model: str | None = None) -> ResolvedModel:
     requested_model = normalize_optional_text(model) or DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL
     if requested_model != DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL:
         raise ModelRetry(
-            "generate_image_from_video currently supports gemini-3.1-flash-image. "
+            "generate_image_from_video currently supports gemini-nano-banana-2.1. "
             "Omit model to use it."
         )
     return resolve_image_generation_model(
