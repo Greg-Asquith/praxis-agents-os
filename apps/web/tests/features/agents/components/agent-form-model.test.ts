@@ -133,8 +133,8 @@ const modelCatalog: ModelCatalogResponse = {
       modelType: "light",
     }),
     catalogModel({
-      displayName: "Gemini 3.7 Flash",
-      id: "google:gemini-3.7-flash",
+      displayName: "Gemini 3.8 Flash",
+      id: "google:gemini-3.8-flash",
       modelType: "standard",
     }),
     catalogModel({
@@ -178,7 +178,7 @@ const modelCatalog: ModelCatalogResponse = {
       model_type_defaults: {
         light: "google:gemini-3.5-flash-lite",
         powerful: "google:gemini-3.1-pro",
-        standard: "google:gemini-3.7-flash",
+        standard: "google:gemini-3.8-flash",
       },
       provider: "google",
     },

@@ -14,6 +14,20 @@ pickup. Direct providers share the retrying HTTP client
 embedding adapters use the same transport. Vertex partner authentication and
 endpoint-bound Mistral clients also use HTTPX2.
 
+### Gemini Flash retirement
+
+The catalogue excludes `gemini-3.6-flash` and `gemini-3.7-flash`.
+Google's **Standard** selection, web search, and URL fetching use
+`gemini-3.8-flash`. Historical price rows remain for past usage estimates.
+Migration `core_0065` moves saved agent selections and Google workspace
+defaults from either retired model to 3.8. It includes inactive and deleted
+agents, and agents whose provider comes from a default. Other explicit
+providers and models remain unchanged. Downgrading leaves upgraded selections
+in place because the original version cannot be recovered reliably.
+
+Explicit environment overrides require a configuration update before restarting
+the API and worker. The migration does not edit environment files.
+
 ### Claude Sonnet 5.5 and GPT-6.1 Sol
 
 The following specifications come from the providers' documentation, checked
@@ -153,6 +167,67 @@ checks aliases and regions at startup, catalogue reads, and resolution.
 The removed `VERTEX_PARTNER_LOCATION` setting fails with migration guidance.
 Partner models retain maker/alias usage attribution and do not join native
 helper provider sets. Shared Vertex shutdown closes all partner clients.
+
+## Add or retire a model
+
+Complete this process in the same change as the catalogue update. Provider
+documentation and a catalogue entry alone do not establish live access.
+
+### Add a model
+
+To add a selectable model, complete these steps:
+
+1. Verify the exact API ID, capabilities, context and output limits, thinking
+   restrictions, pricing dates, and transport availability in official provider
+   documentation. Record source links and the verification date in this guide.
+2. In `services/agents/models/registry.py`, add the model's metadata. Catalogue
+   order determines the first available model for each provider and model type.
+   For Vertex, verify the transport ID, default location, supported locations,
+   project access, and Model Garden enablement.
+3. Check the installed SDK's model profile and request handling. Add a focused
+   override only for missing behaviour, including thinking and tool restrictions.
+   Preserve credential resolution, routing validation, and retry ownership.
+4. In `services/ai_usage/pricing.py`, add effective-dated prices. Read the
+   [AI usage reference](ai-usage.md) before changing estimates.
+5. Review defaults in `core/settings/`, native helper tools, workspace settings,
+   deployment examples, and local setup. Change only the intended defaults.
+   Check helper eligibility separately from ordinary agent capabilities.
+6. Update affected provider-boundary tests, catalogue fixtures, and owning
+   documentation. If tool guidance changes, update the corresponding internal
+   skill under `services/agents/runtime/internal_skills/`.
+7. Run focused model resolution, factory, helper, and usage tests as applicable,
+   backend lint and formatting, and affected frontend checks. Qualify live access
+   separately with authorised credentials. Document unverified capabilities as
+   pending.
+
+### Retire a model
+
+To remove a selectable model, complete these steps:
+
+1. Verify the provider notice and choose an available replacement. Compare
+   transport regions, capabilities, pricing, and saved model settings with the
+   replacement. Use the addition process first if it is absent from the catalogue.
+2. Search the repository for the retired API ID, catalogue alias, transport ID,
+   and display name. Remove the catalogue entry and update every affected
+   code-owned default, example, and active test fixture.
+3. Add a `core` Alembic data migration for saved agents and workspace defaults.
+   Include inactive, built-in, and deleted agents so reactivation remains usable.
+   Account for inherited providers and settings that the replacement rejects.
+   Review other saved configuration, such as workspace classifier overrides,
+   when the retired model is eligible there.
+4. Keep migration writes restricted to the retired provider/model selections.
+   Use the maintenance connection across workspaces and preserve row-level
+   security. Leave historical runs, messages, audit records, and usage unchanged.
+5. State the downgrade behaviour explicitly. Do not map every replacement
+   selection back to a retired model because some agents selected it directly.
+6. Retain historical pricing rows. Update this guide, affected helper references,
+   and internal skills whose flow changes. Document required environment override
+   changes and the replacement mapping.
+7. Verify affected rows move to the replacement and unrelated selections remain
+   unchanged. Check migration repeatability and downgrade behaviour, run focused
+   provider tests, and run Alembic drift checks against the migrated database.
+8. Apply migrations before restarting the API and worker with the updated
+   catalogue. Update explicit deployment overrides during the same rollout.
 
 ## Retry ownership
 

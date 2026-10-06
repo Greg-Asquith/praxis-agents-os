@@ -29,7 +29,7 @@ async def test_google_native_helper_wire_and_response(monkeypatch, vertex, actio
     model_id = {
         "classification": "gemini-3.5-flash-lite",
         "search": "gemini-3.8-flash",
-    }.get(action, "gemini-3.7-flash")
+    }.get(action, "gemini-3.8-flash")
     parts = [{"text": "Result"}]
     candidate = {"content": {"role": "model", "parts": parts}, "finishReason": "STOP"}
     capabilities = []

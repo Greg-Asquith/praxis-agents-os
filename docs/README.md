@@ -25,7 +25,7 @@ Use these references before changing the corresponding behaviour:
 | Registration, tool results, and approvals | [Tool dispatch](implementation/tool-dispatch.md) | Governance |
 | Nested execution and transcript replay | [Code Mode](implementation/code-mode.md) | [Code Mode design](architecture/code-mode.md) |
 | Third-party connections and tools | [Integrations and provider references](implementation/integrations/README.md) | [Provider packaging](architecture/integration-packaging.md) |
-| Model routing and provider clients | [Model providers](implementation/model-providers.md) | Runtime |
+| Model routing, provider clients, and model lifecycle | [Model providers](implementation/model-providers.md) | Runtime |
 | Native fetch, code, classification, and images | [Native tools](implementation/native-tools.md) | Governance |
 | Worker admission, leases, and shutdown | [Workers](implementation/workers.md) | Runtime |
 | Usage recording and cost estimates | [AI usage](implementation/ai-usage.md) | Governance |

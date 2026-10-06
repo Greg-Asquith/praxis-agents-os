@@ -1,11 +1,9 @@
 # apps/api/services/agents/models/registry.py
 
-"""The Python-owned model catalog: single source of truth for known models.
+"""Defines selectable models and their provider capabilities.
 
-Adding or swapping a model is a one-entry edit to ``_CATALOG``. This module has
-no database and no per-workspace overrides by design — per-agent selection lives
-on the Agent row, and the one utility use case (naming) is a settings constant.
-The SPA will read this catalog through an API route in a later step.
+Per-agent selections live on Agent rows. Follow the model lifecycle process in
+``docs/implementation/model-providers.md`` when changing the catalogue.
 """
 
 from services.agents.models.domain import (
@@ -144,19 +142,6 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
         vertex_model="gemini-3.8-flash",
-        vertex_default_location="eu",
-        vertex_supported_locations=("global", "us", "eu"),
-    ),
-    ModelInfo(
-        provider=PROVIDER_GOOGLE,
-        model="gemini-3.7-flash",
-        display_name="Gemini 3.7 Flash",
-        context_window=1_048_576,
-        model_type="standard",
-        chars_per_token=4.0,
-        supports_thinking=True,
-        supports_vision=True,
-        vertex_model="gemini-3.7-flash",
         vertex_default_location="eu",
         vertex_supported_locations=("global", "us", "eu"),
     ),
