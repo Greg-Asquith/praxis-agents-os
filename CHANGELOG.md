@@ -45,10 +45,22 @@ minor release. Patch releases contain backward-compatible fixes only.
   returns conversion names alongside unchanged metrics and IDs, including
   Code Mode and retained results.
 - Meta Ads change history for up to 31 days per request, with object filters,
-  bounded before and after values, and retained-result previews. Meta writes
-  are pending.
+  bounded before and after values, and retained-result previews.
+- Meta Ads status and budget changes with approval: turn campaigns, ad sets,
+  and ads on or off, and change campaign and ad set budget amounts, with
+  read-back evidence.
+- Meta Ads asset listing: the Pages, Instagram accounts, images, and videos
+  each ad account can advertise with, as references ad creation can use.
+- Meta Ads media upload: up to 20 workspace images or videos per approval,
+  pinned to the reviewed File versions, with chunked video upload, lost
+  replies settled by finding the upload rather than resending it, and a
+  wait for video processing. Ad creation is pending.
 
 ### Changed
+
+- Google image generation, editing, and video-to-image tools use Nano Banana
+  2.1, with updated 1K image-output estimates. Vertex image actions use the
+  supported global endpoint and reject explicit regional locations.
 
 - Code Mode runs on Monty 1.0. Scripts can read the clock, use random values,
   and import `base64`, `copy`, `functools`, and `time`. Sleeps return at once.

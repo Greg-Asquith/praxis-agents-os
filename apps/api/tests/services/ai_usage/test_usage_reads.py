@@ -221,13 +221,13 @@ async def test_summary_reconciles_inclusive_cached_input_with_provider_cost(
 
 
 @pytest.mark.asyncio
-async def test_summary_adds_gpt_image_output_cost_and_exposes_incomplete_metadata(
+async def test_summary_adds_image_output_cost_and_exposes_incomplete_metadata(
     db_session: AsyncSession,
 ) -> None:
     workspace = build_workspace(slug=f"image-cost-{uuid4().hex}")
     db_session.add(workspace)
     await db_session.flush()
-    occurred_at = datetime(2026, 8, 12, 12, tzinfo=UTC)
+    occurred_at = datetime(2026, 10, 12, 12, tzinfo=UTC)
     db_session.add_all(
         [
             _event(
@@ -253,6 +253,21 @@ async def test_summary_adds_gpt_image_output_cost_and_exposes_incomplete_metadat
                 input_tokens=1,
                 details={"action": "generate", "image_model": "gpt-image-2"},
             ),
+            _event(
+                workspace.id,
+                occurred_at,
+                purpose="image_generation",
+                provider="google",
+                model="gemini-nano-banana-2.1",
+                input_tokens=10,
+                output_tokens=1120,
+                details={
+                    "action": "generate",
+                    "image_model": "gemini-nano-banana-2.1",
+                    "image_quality": "standard",
+                    "image_size": "1k",
+                },
+            ),
         ]
     )
     await db_session.flush()
@@ -260,12 +275,12 @@ async def test_summary_adds_gpt_image_output_cost_and_exposes_incomplete_metadat
     summary = await get_usage_summary(
         db_session,
         workspace_id=workspace.id,
-        from_=datetime(2026, 8, 12, tzinfo=UTC),
-        to=datetime(2026, 8, 13, tzinfo=UTC),
+        from_=datetime(2026, 10, 12, tzinfo=UTC),
+        to=datetime(2026, 10, 13, tzinfo=UTC),
     )
 
-    assert summary.totals.estimated_cost_usd == Decimal("0.0530004")
-    assert summary.pricing_coverage.priced_image_generations == 1
+    assert summary.totals.estimated_cost_usd == Decimal("0.0866004")
+    assert summary.pricing_coverage.priced_image_generations == 2
     assert summary.pricing_coverage.unpriced_image_generations == 1
 
 

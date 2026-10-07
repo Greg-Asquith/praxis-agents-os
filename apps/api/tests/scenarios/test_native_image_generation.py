@@ -105,8 +105,8 @@ async def test_vertex_image_approval_uses_real_adapter_and_persists_once(
         )
     assert resumed.run.status == "completed"
     [request] = requests
-    assert request.url.host == "aiplatform.eu.rep.googleapis.com"
-    assert "/projects/image-test/locations/eu/" in request.url.path
+    assert request.url.host == "aiplatform.googleapis.com"
+    assert "/projects/image-test/locations/global/" in request.url.path
     assert request.headers["authorization"] == "Bearer test-adc"
     async with db_session_factory() as db:
         files = (
@@ -597,7 +597,7 @@ async def test_google_image_failure_preserves_outcome_and_usage(
                 )
             )
         ).all()
-        assert usage.model == "gemini-3.1-flash-image"
+        assert usage.model == "gemini-nano-banana-2.1"
         assert usage.requests == 1
         if failure in {"storage", "refusal"}:
             assert (usage.input_tokens, usage.output_tokens) == (10, 20)

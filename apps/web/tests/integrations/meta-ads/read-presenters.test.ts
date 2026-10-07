@@ -8,6 +8,8 @@ import { metaAdsActivitiesPresenter } from "@/integrations/meta_ads/presenters/a
 import { metaAdsObjectsPresenter } from "@/integrations/meta_ads/presenters/objects"
 import { metaAdsConversionsPresenter } from "@/integrations/meta_ads/presenters/conversions"
 import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/insights"
+import { metaAdsListAssetsPresenter } from "@/integrations/meta_ads/presenters/list-assets"
+import { emptyAssetsMessage, parseMetaAdsAssets } from "@/integrations/meta_ads/lib/assets"
 import { envelope } from "../result-preview-fixtures"
 import { accountEntry, insightsData, insightsRow } from "./fixtures"
 import {
@@ -20,6 +22,7 @@ import {
   customEventRow,
   activitiesData,
   activityRow,
+  assetsData,
 } from "./read-fixtures"
 
 const cases = [
@@ -42,6 +45,11 @@ const cases = [
     presenter: metaAdsActivitiesPresenter,
     data: activitiesData(),
     populated: "Ad set budget updated",
+  },
+  {
+    presenter: metaAdsListAssetsPresenter,
+    data: assetsData(),
+    populated: "Spring hero",
   },
 ]
 
@@ -67,6 +75,17 @@ describe.each(cases)("$presenter.key presenter", ({ presenter, data, populated }
     expect(render(presenter, { result: { results: [accountEntry({ malformed: true })] } })).toBe(
       "<div></div>"
     )
+  })
+})
+
+describe("Meta Ads empty asset reads", () => {
+  it("only describes the kinds that were requested and read", () => {
+    const empty = parseMetaAdsAssets(assetsData({ pages: [], images: [] }))
+    if (!empty) throw new Error("fixture must parse")
+
+    expect(emptyAssetsMessage(empty, { kinds: ["videos"] })).not.toMatch(/Pages|images/)
+    const refused = { ...empty, notes: ["Meta didn't allow reading this account's Pages."] }
+    expect(emptyAssetsMessage(refused, {})).not.toMatch(/No .*Pages/)
   })
 })
 

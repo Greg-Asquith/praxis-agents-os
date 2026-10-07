@@ -14,6 +14,7 @@ from services.audit_events import (
 )
 
 from ..schemas.activities import MetaAdsActivitiesData, MetaAdsActivitiesInput
+from ..schemas.assets import MetaAdsAssetKind, MetaAdsAssetsData
 from ..schemas.conversions import MetaAdsConversionsData
 from ..schemas.insights import MetaAdsInsightsData, MetaAdsInsightsInput
 from ..schemas.objects import DEFAULT_STATUSES, MetaAdsObjectsData, MetaAdsObjectsInput
@@ -55,6 +56,15 @@ def activities_audit_detail(
             "event_count": result.event_count,
         },
     )
+
+
+def assets_audit_detail(
+    account_id: str, kinds: tuple[MetaAdsAssetKind, ...], result: MetaAdsAssetsData
+) -> TerminalIntegrationOperationDetail:
+    fields: dict[str, Any] = {"kinds": list(kinds)}
+    for kind in kinds:
+        fields[f"{kind}_count"] = len(getattr(result, kind))
+    return _read_audit_detail(account_id, "assets", fields)
 
 
 def conversions_audit_detail(

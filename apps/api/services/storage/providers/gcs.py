@@ -650,48 +650,11 @@ class GcsStorageProvider:
             ) from exc
 
     def _remote_signing_kwargs(self) -> dict[str, str]:
-        """Return IAM signing inputs when ADC cannot sign with a private key locally."""
-        credentials = getattr(self.client, "_credentials", None)
-        if credentials is None or google_auth_credentials is None:
-            return {}
-        if isinstance(credentials, google_auth_credentials.Signing):
-            return {}
-        if GoogleAuthRequest is None:
-            raise StorageProviderUnavailableError(
-                "GCS remote signed URLs require google-auth request support",
-                provider_key=self.provider_key,
-                operation="sign_url",
-            )
-
-        with self._signing_credentials_lock:
-            service_account_email = getattr(credentials, "service_account_email", None)
-            if (
-                not getattr(credentials, "valid", False)
-                or not service_account_email
-                or service_account_email == "default"
-            ):
-                try:
-                    credentials.refresh(GoogleAuthRequest())
-                except Exception as exc:
-                    raise StorageProviderUnavailableError(
-                        "Failed to refresh GCS credentials for remote URL signing",
-                        provider_key=self.provider_key,
-                        operation="sign_url",
-                        original_error=exc,
-                    ) from exc
-                service_account_email = getattr(credentials, "service_account_email", None)
-
-            access_token = getattr(credentials, "token", None)
-            if not service_account_email or service_account_email == "default" or not access_token:
-                raise StorageProviderUnavailableError(
-                    "GCS signed URLs require signing credentials or service-account ADC",
-                    provider_key=self.provider_key,
-                    operation="sign_url",
-                )
-            return {
-                "service_account_email": str(service_account_email),
-                "access_token": str(access_token),
-            }
+        return _iam_signing_kwargs(
+            getattr(self.client, "_credentials", None),
+            self._signing_credentials_lock,
+            provider_key=self.provider_key,
+        )
 
     def _raise_no_local_signature(self, operation: str) -> None:
         raise StorageProviderUnavailableError(
@@ -699,6 +662,55 @@ class GcsStorageProvider:
             provider_key=self.provider_key,
             operation=operation,
         )
+
+
+def _iam_signing_kwargs(
+    credentials: Any, lock: threading.Lock, *, provider_key: str
+) -> dict[str, str]:
+    """Returns IAM signing inputs when ADC can't sign with a private key locally.
+
+    Refreshes the credentials under `lock` to learn the service account email.
+    """
+    if credentials is None or google_auth_credentials is None:
+        return {}
+    if isinstance(credentials, google_auth_credentials.Signing):
+        return {}
+    if GoogleAuthRequest is None:
+        raise StorageProviderUnavailableError(
+            "GCS remote signed URLs require google-auth request support",
+            provider_key=provider_key,
+            operation="sign_url",
+        )
+
+    with lock:
+        service_account_email = getattr(credentials, "service_account_email", None)
+        if (
+            not getattr(credentials, "valid", False)
+            or not service_account_email
+            or service_account_email == "default"
+        ):
+            try:
+                credentials.refresh(GoogleAuthRequest())
+            except Exception as exc:
+                raise StorageProviderUnavailableError(
+                    "Failed to refresh GCS credentials for remote URL signing",
+                    provider_key=provider_key,
+                    operation="sign_url",
+                    original_error=exc,
+                ) from exc
+            service_account_email = getattr(credentials, "service_account_email", None)
+
+        access_token = getattr(credentials, "token", None)
+        if not service_account_email or service_account_email == "default" or not access_token:
+            raise StorageProviderUnavailableError(
+                "GCS signed URLs require signing credentials or service-account ADC",
+                provider_key=provider_key,
+                operation="sign_url",
+            )
+        return {
+            "service_account_email": str(service_account_email),
+            "access_token": str(access_token),
+        }
 
 
 def _is_gcs_not_found(exc: Exception) -> bool:

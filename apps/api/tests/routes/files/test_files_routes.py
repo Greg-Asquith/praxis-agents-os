@@ -297,6 +297,20 @@ async def test_file_preview_route_returns_inline_media_url_without_read_audit(
     assert document_preview_response.headers["content-type"].startswith("application/problem+json")
     assert document_preview_response.json()["field"] == "file_id"
 
+    # A pinned revision previews only through its own File.
+    pinned_preview = await db_async_client.post(
+        f"/api/v1/files/{confirmed['id']}/preview",
+        headers=headers,
+        params={"revision_id": confirmed["current_revision_id"]},
+    )
+    assert pinned_preview.status_code == 200
+    foreign_revision_preview = await db_async_client.post(
+        f"/api/v1/files/{confirmed['id']}/preview",
+        headers=headers,
+        params={"revision_id": document["current_revision_id"]},
+    )
+    assert foreign_revision_preview.status_code == 404
+
 
 async def test_file_routes_upload_list_download_edit_conflict_and_delete(
     db_session: AsyncSession,

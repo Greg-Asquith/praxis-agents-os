@@ -23,7 +23,7 @@ from tests.support.openai_images import IMAGE_BYTES
 
 @pytest.mark.parametrize(
     ("vertex", "location", "action"),
-    [(False, "global", "generate"), (True, "auto", "edit"), (True, "us", "video_to_image")],
+    [(False, "global", "generate"), (True, "auto", "edit"), (True, "global", "video_to_image")],
 )
 async def test_google_image_adapter_preserves_media_and_transport(
     monkeypatch, vertex, location, action
@@ -67,9 +67,9 @@ async def test_google_image_adapter_preserves_media_and_transport(
     assert image.data == IMAGE_BYTES
     [request] = requests
     body = json.loads(request.content)
-    assert request.url.path.endswith("/gemini-3.1-flash-image:generateContent")
+    assert request.url.path.endswith("/gemini-nano-banana-2.1:generateContent")
     if vertex:
-        effective_location = "eu" if location == "auto" else location
+        effective_location = "global" if location == "auto" else location
         assert f"/projects/image-test/locations/{effective_location}/" in request.url.path
         assert request.headers["authorization"] == "Bearer test-adc"
         assert "x-goog-api-key" not in request.headers
@@ -88,6 +88,9 @@ async def test_google_image_adapter_preserves_media_and_transport(
         assert base64.urlsafe_b64decode(part["inlineData"]["data"]) == source.data
     assert body["generationConfig"]["responseModalities"] == ["IMAGE"]
     assert body["generationConfig"]["imageConfig"]["aspectRatio"] == "3:2"
+    assert "temperature" not in body["generationConfig"]
+    assert "topP" not in body["generationConfig"]
+    assert "tools" not in body
     event = meter.call_args.args[0]
     assert (event.requests, event.input_tokens, event.output_tokens) == (1, 10, 20)
 
@@ -101,7 +104,7 @@ async def test_invalid_vertex_image_configuration_never_requests_provider(monkey
     )
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", "")
     monkeypatch.setattr(
-        settings, "GOOGLE_VERTEX_LOCATION", "europe-west4" if failure == "location" else "auto"
+        settings, "GOOGLE_VERTEX_LOCATION", "eu" if failure == "location" else "auto"
     )
     constructor = Mock()
     async with mock_google_native(monkeypatch, vertex=True) as requests:

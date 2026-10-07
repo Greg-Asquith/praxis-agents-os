@@ -20,10 +20,16 @@ async def create_file_preview(
     *,
     workspace: Workspace,
     file_id: UUID,
+    revision_id: UUID | None = None,
 ) -> FilePreviewGrant:
-    """Create a short-lived inline preview URL without recording a file-read audit event."""
+    """Create a short-lived inline preview URL without recording a file-read audit event.
+
+    Previews the current revision unless `revision_id` names one of the File's own revisions.
+    """
     file = await get_visible_file(db, workspace_id=workspace.id, file_id=file_id)
-    revision = await get_visible_file_revision(db, workspace_id=workspace.id, file=file)
+    revision = await get_visible_file_revision(
+        db, workspace_id=workspace.id, file=file, revision_id=revision_id
+    )
     entry = contract_for_content_type(revision.content_type)
     previewable = entry.category in {FileCategory.IMAGE, FileCategory.VIDEO} or (
         entry.content_type == "application/pdf"

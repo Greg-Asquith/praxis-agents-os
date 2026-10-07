@@ -2,9 +2,9 @@
 
 import type { ReactNode } from "react"
 
+import { OutcomeSummary } from "@/components/tool-ui/outcome-summary"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   countByKind,
   outcomeKind,
@@ -21,7 +21,6 @@ export type MetaAdsOutcomeRow = DataRow & {
   errorCode?: string | null
 }
 
-const ORDER: OutcomeKind[] = ["applied", "skipped", "failed", "unverified"]
 const BADGE_VARIANTS = {
   applied: "success",
   failed: "destructive",
@@ -54,28 +53,16 @@ export function MetaAdsOutcomeTable({
     outcomeKind: outcomeKind(row.outcome),
     errorCode: row.errorCode ? titleCaseToken(row.errorCode, row.errorCode) : "",
   }))
-  const counts = countByKind(rows)
   return (
     <DataTable
       columns={tableColumns}
       rows={tableRows}
       exportFilename={exportFilename}
       pageSize={25}
-      header={
-        <StatGroup className="px-3 pt-2">
-          {ORDER.flatMap((kind) =>
-            counts
-              .filter((item) => item.kind === kind)
-              .map((item) => (
-                <Stat
-                  key={item.label}
-                  label={item.label}
-                  value={item.count}
-                  tone={item.count > 0 ? outcomeTone(kind) : undefined}
-                />
-              ))
-          )}
-        </StatGroup>
+      summary={
+        <OutcomeSummary
+          items={countByKind(rows).map((item) => ({ ...item, tone: outcomeTone(item.kind) }))}
+        />
       }
       renderCell={(column, row) => {
         if (column.key === "outcome") {

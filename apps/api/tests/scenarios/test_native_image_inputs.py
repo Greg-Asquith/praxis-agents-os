@@ -104,8 +104,8 @@ async def _persist_source(
 @pytest.mark.parametrize(
     ("tool_name", "provider", "image_model"),
     [
-        ("edit_image", "google", "gemini-3.1-flash-image"),
-        ("generate_image_from_video", "google", "gemini-3.1-flash-image"),
+        ("edit_image", "google", "gemini-nano-banana-2.1"),
+        ("generate_image_from_video", "google", "gemini-nano-banana-2.1"),
     ],
 )
 async def test_input_media_tool_auto_path_persists_source_provenance(

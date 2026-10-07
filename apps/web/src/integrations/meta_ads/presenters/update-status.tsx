@@ -51,6 +51,7 @@ export const metaAdsUpdateStatusPresenter = createIntegrationWritePresenter({
         },
         details: statusChangeDetails,
         parseResult: parseStatusChangeResult,
+        settledPartial: (result) => result.objects.some((object) => object.outcome === "failed"),
         settledUnverified: (result) =>
           result.objects.some((object) => object.outcome === "unverified"),
         settledFailure: (result) =>

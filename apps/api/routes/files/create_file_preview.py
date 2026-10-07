@@ -5,7 +5,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Query
 
 from core.dependencies import AsyncDbSessionDep, CurrentWorkspaceDep
 from services.files import create_file_preview as create_file_preview_service
@@ -19,10 +19,12 @@ async def create_file_preview(
     db: AsyncDbSessionDep,
     workspace_context: CurrentWorkspaceDep,
     file_id: Annotated[UUID, Path()],
+    revision_id: Annotated[UUID | None, Query()] = None,
 ) -> FilePreviewGrant:
     workspace, _membership = workspace_context
     return await create_file_preview_service(
         db,
         workspace=workspace,
         file_id=file_id,
+        revision_id=revision_id,
     )

@@ -7,6 +7,7 @@ from services.storage.errors import StorageNotFoundError, StoragePreconditionErr
 
 from .read_file_source import read_file_source
 from .resolve_workspace_file_source import resolve_workspace_file_source
+from .stream_file_source import stream_file_source
 
 __all__ = [
     "FileReference",
@@ -14,4 +15,5 @@ __all__ = [
     "StoragePreconditionError",
     "read_file_source",
     "resolve_workspace_file_source",
+    "stream_file_source",
 ]

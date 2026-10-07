@@ -66,6 +66,21 @@ workspaces. It records workspace audit and security events. Ordinary members
 and read-only members can leave through this endpoint, but cannot remove
 other members.
 
+## Workspace member and invitation tables
+
+The **Members** and **Invitations** tabs show 10 records per page. Search and
+sorting cover the full list, including records beyond the first API page.
+Members can be searched by name, email, or role. Invitations can be searched
+by email or role. Both tables offer sorting on desktop and mobile.
+
+In **Workspace Settings > Invitations**, owners and admins of team workspaces
+can click **Revoke** and confirm the email and workspace. The existing
+`DELETE /api/v1/workspaces/{workspace_id}/invitations/{invitation_id}` endpoint
+invalidates the invitation link and records workspace audit and security events.
+The invitation list refreshes after revocation. Failed requests keep the
+confirmation open with the API error. Changing workspace or losing management
+access closes the confirmation and prevents its submission.
+
 ## Microsoft login tenant
 
 `MICROSOFT_AZURE_TENANT_ID` selects the tenant for Microsoft login authorisation,

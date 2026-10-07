@@ -116,17 +116,24 @@ replaces an unsupported ratio with the first available choice. An explicit
 model selection also follows the provider. Editing has no aspect-ratio
 argument.
 
-Google generation, editing, and video input use `gemini-3.1-flash-image`
-through the same provider factory as chat. Vertex requires an explicit project
+Google generation, editing, and video input use Nano Banana 2.1
+(`gemini-nano-banana-2.1`) through the same provider factory as chat.
+Vertex requires an explicit project
 and Application Default Credentials. `GOOGLE_VERTEX_LOCATION=auto` retains
-the image model's `global` default. Explicit `global`, `eu`, and `us` are
-supported. Other locations make Google image actions unavailable and fail
-with configuration guidance at execution. No direct-API fallback occurs.
+the image model's `global` default. Explicit `global` is supported.
+Other locations, including `eu` and `us`, make Google image actions unavailable
+and fail with configuration guidance at execution. No direct-API fallback occurs.
 Vertex inline source images are limited to 7 MB each, in addition to the
 combined workspace input limit. Convert GIF sources to PNG, JPEG, or WebP
 before Vertex editing. These requirements follow the
-[Google image model specification](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/3-1-flash-image),
-reviewed on 9 September 2026.
+[Google image model specification](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1),
+reviewed on 6 October 2026.
+
+Pydantic AI 2.50 detects image models by an `image` substring, which this ID
+lacks. The model factory supplies an image profile with function tools and
+structured output disabled. Thinking stays enabled with Google's default
+`medium` level. The helper retains the default 1K output resolution.
+Live verification of Nano Banana 2.1 project access remains pending.
 
 Google image helpers do not regenerate an image after output validation fails.
 Provider errors return safe tool failures, moderation refusals request a revised

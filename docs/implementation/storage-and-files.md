@@ -299,6 +299,14 @@ replacement metadata stays outside tenant responses. Withdrawal or deletion
 hides every revision from fresh reads and signed-link creation. Existing
 signed capabilities retain their bounded lifetime.
 
+`POST /files/{file_id}/preview` returns a 10-minute signed inline URL for an
+image, video, or PDF without recording a read audit event. An optional
+`revision_id` previews one of that File's visible revisions, so approval
+cards and upload receipts show the reviewed bytes. A revision of another File
+returns not found. A thumbnail whose URL fails to load, for example
+because it expired before a lazy image loaded, requests one new URL for the
+same revision.
+
 Conversation attachments pin the platform revision when the reference is
 created. Reattaching the same File preserves its pin. Attachment conversion,
 prompt metadata, `read_file`, and the document tools honour that pin after a

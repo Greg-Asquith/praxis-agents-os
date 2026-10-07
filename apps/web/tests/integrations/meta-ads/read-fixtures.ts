@@ -114,3 +114,26 @@ export function activitiesData(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+export function assetsData(overrides: Record<string, unknown> = {}) {
+  const reference = { version: 1, label: "Acme", account_id: "111", scope_label: "Shop account" }
+  return {
+    pages: [{ ...reference, entity_kind: "meta_ads_page", page_id: "41" }],
+    instagram_accounts: [],
+    images: [
+      {
+        ...reference,
+        entity_kind: "meta_ads_media",
+        label: "Spring hero",
+        media_type: "image",
+        image_hash: "abc123",
+        width: 1080,
+        height: 1350,
+      },
+    ],
+    videos: [],
+    truncated: [],
+    notes: [],
+    ...overrides,
+  }
+}

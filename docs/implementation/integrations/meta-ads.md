@@ -4,9 +4,11 @@ Meta Ads connects a workspace to the ad accounts assigned to an agency's Meta
 system user. Discovered accounts can join active context and Context Groups.
 Agents can run bounded Insights reports, read account totals, list advertising
 objects, discover custom conversions and custom events, and read change
-history on selected accounts. With approval, agents can turn campaigns, ad
-sets, and ads on or off, and change campaign and ad set budget amounts. Other
-writes, Facebook sign-in, and event delivery are pending.
+history on selected accounts. Agents can list the Pages, Instagram accounts,
+and media an account can advertise with. With approval, agents can upload
+workspace images and videos to an account's media library, turn campaigns,
+ad sets, and ads on or off, and change campaign and ad set budget amounts.
+Ad creation, other writes, Facebook sign-in, and event delivery are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -37,11 +39,12 @@ The setup requests these permissions:
 | `ads_read` | Ad account reporting |
 | `ads_management` | Ad account management; required for writable discovery |
 | `business_management` | Business asset access |
-| `pages_show_list` | Page discovery for later ad workflows |
-| `pages_manage_ads` | Page advertising for later ad workflows |
-| `pages_read_engagement` | Page data for later ad workflows |
+| `pages_show_list` | Listing the Pages an ad account can advertise as |
+| `pages_manage_ads` | Advertising as a Page |
+| `pages_read_engagement` | Page data for ads |
 
-Page resources and agent operations remain pending. An empty discovery result
+Pages are read per ad account by `meta_ads_list_assets`; they aren't
+connection resources. An empty discovery result
 is valid: assign accounts to the system user, then select **Rediscover**.
 Adding accounts does not require replacing the token if its permissions remain
 sufficient. The connection label is the label entered in Praxis.
@@ -331,10 +334,54 @@ conversion lists use the same internal retained-result Files and preview
 expansion as Insights. Audits include counts, object type, and status filters;
 they exclude provider names, amounts, name filters, and conversion metadata.
 
+## Pages, Instagram accounts, and media
+
+`meta_ads_list_assets` lists, for every selected account, what new ads can
+use. It reads each kind separately, so a refusal on one kind doesn't hide
+the others:
+
+| Kind | Meta edge | Returned |
+| --- | --- | --- |
+| `pages` | `act_{id}/promote_pages` | Up to 100 Pages, as `MetaAdsPageReference` (`meta_ads_page`) |
+| `instagram_accounts` | `act_{id}/connected_instagram_accounts` | Up to 100 accounts, as `MetaAdsInstagramAccountReference` (`meta_ads_instagram_account`) with `instagram_user_id` |
+| `images` | `act_{id}/adimages` | Up to 50 active images, as `MetaAdsMediaReference` with `image_hash` |
+| `videos` | `act_{id}/advideos` | Up to 50 videos, as `MetaAdsMediaReference` with `video_id` and `media_status` |
+
+The tool reads automatically, supports Code Mode, and uses retained results.
+`kinds` limits the read. Each kind follows up to 5 pages of results, and
+deleted or internal images don't count towards the 50, so they can't hide
+active images behind them. `truncated` names kinds with more items than were
+returned. A Graph permission error on a kind becomes a note naming what to
+grant, and that kind's list is empty. Other errors fail the account.
+
+References carry the account ID, so ad creation can check they belong to
+the ad account it writes to. Meta's v22 changes replaced
+`instagram_actor_id` with `instagram_user_id`, which the
+`connected_instagram_accounts` edge returns; that edge doesn't say which
+Page an Instagram account belongs to, so `page_id` on the Instagram
+reference is null. A video's `media_status` is `ready`, `processing`, or
+`failed`, mapped from Meta's `status.video_status`; an unknown state is
+null and never treated as ready.
+
+Picture and thumbnail addresses are kept only when they are HTTPS on
+`fbcdn.net`, `facebook.com`, or `cdninstagram.com`; anything else is
+dropped. Meta signs these addresses, so they expire. The production
+content security policy doesn't allow Meta's image hosts, so the presenter
+shows names, sizes, and IDs without thumbnails. Instagram usernames outside
+Instagram's rules are shown by ID. Names are typed, bounded text, like other
+Meta names.
+
+The search and resolve lookups for these references aren't registered yet:
+the integration loader accepts a resolver only when a tool field uses it,
+and ad creation adds those fields.
+
 ## Writes
 
-Every Meta write is approval-only, cannot run automatically, and requires a
-writable account (see [Discovery and writability](#discovery-and-writability)).
+Every Meta write requires a writable account (see
+[Discovery and writability](#discovery-and-writability)). Writes that change
+campaigns, ad sets, or ads are approval-only and can't run automatically.
+[Media upload](#uploading-media) is the one exception: it defaults to
+approval, and admins can set it to auto because it doesn't set up spend.
 Meta Ads declares the `spend` capability, so tools that can start spending are
 listed in `tests/services/agents/test_spend_policy.py`.
 
@@ -511,6 +558,96 @@ The dry-run reply, Meta's minimum-budget and lifetime-spend errors, and the
 behaviour that hasn't been checked against a live account; see
 [Live qualification record](#live-qualification-record).
 
+### Uploading media
+
+`meta_ads_upload_media` uploads 1-20 workspace Files to the media library of
+one ad account. Agents can't name accounts, so the upload goes to the one
+writable Meta account in Active Context; with none or several, the agent is
+asked to have the operator select exactly one. It defaults to approval and,
+unlike other Meta writes, supports **auto**, because it sends workspace
+content to Meta without setting up spend. It supports Code Mode and has a
+300-second timeout.
+
+Files must follow Meta's media policy:
+
+- Images are JPEG or PNG, at most `META_ADS_IMAGE_MAX_UPLOAD_BYTES`
+  (default and maximum 30 MB).
+- Videos are MP4 or MOV, at most `META_ADS_VIDEO_MAX_UPLOAD_BYTES` (default
+  1 GB, maximum 4 GB). The workspace video size limit still applies first.
+- The extension must match the content type, and empty Files are rejected.
+
+The tool works as follows:
+
+1. Before approval, it checks the account choice, that each File is listed
+   once, and each File against the policy, so the agent can correct the
+   request.
+2. Approval display pins the account and each File's `file_id`,
+   `revision_id`, and `content_hash`, and shows name, type, and size with a
+   thumbnail of the pinned revision. An unchecked File shows no thumbnail. `files` is a retained review field: an edited list
+   blocks approval until the operator selects **Check Files**, which runs
+   the policy and pins again. See
+   [Retained approval reviews](../tool-dispatch.md#retained-approval-reviews).
+3. After approval, a File whose current revision differs from the pin fails
+   the account with `source_changed` before anything is sent. A different
+   account fails the same way. Auto runs have no pin and use each File's
+   current revision.
+4. Pending evidence records each File's ID, revision, content type, size,
+   SHA-256, and media type. File names aren't recorded. The video ID from
+   Meta's `start` reply reaches only terminal evidence, because the shared
+   audit runner has no checkpoint between pending and terminal evidence. A
+   worker that stops mid-upload leaves no video ID.
+5. Files upload in order, one ledger parent each.
+   - An image is read whole, its size and SHA-256 checked, and sent in one
+     multipart `POST /act_{id}/adimages`. If the reply is lost or unclear,
+     the tool looks the image up by the MD5 of its bytes, which is expected
+     to be Meta's image hash. A match counts as uploaded with
+     `recovered=true`; otherwise the upload is unverified. It is never sent
+     twice.
+   - A video uses `POST /act_{id}/advideos` in `start`, `transfer`, and
+     `finish` phases. The tool streams the stored File in the ranges Meta
+     asks for, accepting only the next contiguous range of at most 64 MB, so
+     the video is never held whole in memory. It checks the account throttle
+     before each range. The SHA-256 and size are
+     checked before `finish`. Any failure before `finish`, including a
+     changed File or a `start` reply with an invalid video ID, closes the
+     storage stream, sends a best-effort `cancel`, and fails the upload:
+     nothing is published. A rejected `finish` also sends `cancel`. A known
+     account throttle skips the `cancel`. If `finish` is unclear, the tool
+     reads the video's status:
+     `processing` or `ready` counts as uploaded with `recovered=true`;
+     otherwise it sends `cancel` and the upload is unverified.
+6. The tool reads uploaded images back by hash, once per distinct hash, and
+   gives each File with those bytes the image's details. It reads each video's status
+   until it's ready or failed, for up to
+   `META_ADS_VIDEO_PROCESSING_POLL_SECONDS` (default 120) in all. Each status
+   read is bounded by the time left, with at least 10 seconds for the first
+   reads when the wait is 0, and no read starts once it runs out. A failed or
+   slow read keeps the upload with its last known state.
+
+Each result row has the File, its media type, `uploaded`, `processing`,
+`failed`, or `unverified`, `recovered`, and, when Meta has it, a
+`MetaAdsMediaReference` to pass to ad creation. A video still processing
+says to check it with `meta_ads_list_assets` before use; a video Meta
+couldn't process is `failed`. A video whose state Meta didn't report stays
+`uploaded` with a null `media_status` and says to check it before use. Each
+row also has the uploaded `revision_id`, so its thumbnail shows the bytes that
+were sent, not a later version of the File. The result card shows each File's
+image hash or video ID in a **Media ID** column, which the CSV export
+includes.
+
+Terminal evidence adds, per File, the image hash or video ID, `media_status`
+(`ready`, `processing`, `failed`, or `unknown`), and `recovered` when an
+unclear reply was settled. A published video that Meta then fails to process
+stays an applied upload with `media_status` `failed`. A cancelled upload, or
+one stopped by an unexpected error, keeps what it proved: a File being
+published is unverified, Files already uploaded stay applied, and Files not
+reached are not dispatched.
+
+Meta's upload replies, the image hash rule, chunk sizes, the `title` sent on
+`finish`, and video processing times are documented or expected behaviour
+that hasn't been checked against a live account; see
+[Live qualification record](#live-qualification-record).
+
 ## Custom conversions and custom events
 
 Advertisers track results either as custom conversions, which are rules defined
@@ -661,6 +798,8 @@ permission access levels, and anonymised asset aliases for these checks:
 | Connection UI | Owned and partner discovery, selection beside a Google Ads account, and read-only reporting access |
 | Status change | `POST /{id}` reply for a status change; throttle and permission rejection codes; Ads Manager deep links for a campaign, an ad set, and an ad; ad set placement, destination, and promoted-object fields; campaign budget fields; `CAMPAIGN_PAUSED` and `ADSET_PAUSED` for children that are on |
 | Budget change | `validate_only` reply and rejection for a budget below the minimum; `POST /{id}` reply for `daily_budget` and `lifetime_budget`; the `613`/`1487632` limit on ad set budget changes; budget `event_type` names in `activities` |
+| Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
+| Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 
 Keep tokens, secrets, proofs, identifying asset values, and echoed URLs out of

@@ -45,6 +45,7 @@ export const metaAdsUpdateBudgetsPresenter = createIntegrationWritePresenter({
         },
         details: budgetChangeDetails,
         parseResult: parseBudgetChangeResult,
+        settledPartial: (result) => result.budgets.some((budget) => budget.outcome === "failed"),
         settledUnverified: (result) =>
           result.budgets.some((budget) => budget.outcome === "unverified"),
         settledFailure: (result) =>

@@ -38,7 +38,7 @@ def google_image_response():
             "candidatesTokenCount": 20,
             "totalTokenCount": 30,
         },
-        "modelVersion": "gemini-3.1-flash-image",
+        "modelVersion": "gemini-nano-banana-2.1",
     }
 
 

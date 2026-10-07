@@ -118,8 +118,11 @@ The core platform is wired end to end (API, worker, and UI):
   System User access token and discovers ad accounts for active context and
   Context Groups. Agents can run bounded Insights reports with background
   fallback and retained-result previews, read account totals and advertising
-  objects, discover custom conversions with names in Insights, and read
-  recent change history. Meta writes are pending.
+  objects, discover custom conversions with names in Insights, read recent
+  change history, and list the Pages, Instagram accounts, and media an
+  account can advertise with. With approval, agents can upload images and
+  videos, turn objects on or off, and change budgets. Ad creation is
+  pending.
   Search Console connections discover verified properties for active context;
   agents can query bounded, typed organic-search performance, list submitted
   sitemap status, resubmit sitemaps with approval and read-after-write evidence,

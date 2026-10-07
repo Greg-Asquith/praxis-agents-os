@@ -41,10 +41,16 @@ The following contracts apply in this area:
   explicit workspace predicate, and price UTC-day buckets before wider folds.
   The `/usage` router is owner/admin-only. Costs are read-time estimates from
   effective-dated public rates; unknown models remain unpriced. Native image
-  helpers retain known model/quality/size metadata so GPT Image 2 and Gemini
-  3.1 Flash Image output estimates are added to, not substituted for, mainline
+  helpers retain known model/quality/size metadata so GPT Image 2, Gemini
+  3.1 Flash Image, and Nano Banana 2.1 output estimates are added to mainline
   helper-model token cost. Unavailable image-model input remains disclosed
   rather than guessed.
+- Nano Banana 2.1 uses an effective-dated 1K image-output estimate of $0.0336
+  from 6 October 2026, following Google's
+  [standard pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-nano-banana-2.1).
+  Its aggregated text and image tokens remain unpriced because the ledger
+  cannot separate their rates. Historical Gemini 3.1 Flash Image output
+  estimates remain unchanged.
 - Direct GPT Image 2.5 requests record one invocation under Flare or Sunburst,
   with no Luna token charge. Returned input/output totals and bounded
   text/image modality details are retained. Missing usage stays unknown;

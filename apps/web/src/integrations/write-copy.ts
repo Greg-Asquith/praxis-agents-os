@@ -18,6 +18,7 @@ const PROGRESS = {
   Submit: "Submitting",
   Unlink: "Unlinking",
   Update: "Updating",
+  Upload: "Uploading",
 } as const
 
 const ACRONYMS = new Set(["API", "CPA", "CPC", "CPM", "CPV", "ID", "ROAS", "URL", "URLS"])
