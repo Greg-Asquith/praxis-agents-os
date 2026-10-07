@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { runInterruptionOutcome } from "@/features/conversations/run-error-copy"
 import {
   parseConversationMessages,
   toolActivityIdentity,
@@ -162,7 +163,7 @@ describe("parseConversationMessages", () => {
             id: "unanswered",
             status: "stopped",
             outcome: "budget_exhausted",
-            result: "The run reached its limit.",
+            result: runInterruptionOutcome(stoppedRun)?.message,
           },
           { id: "saved", status: "completed", result: "Saved" },
           { id: "error", status: "failed", result: "Unavailable" },

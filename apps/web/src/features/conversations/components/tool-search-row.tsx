@@ -6,13 +6,22 @@ import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
+import { ToolUiIcon } from "@/features/conversations/components/tool-ui-icon"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   toolSearchQuery,
   toolSearchResult,
 } from "@/features/conversations/native-tools/tool-search"
-import { useToolLabels } from "@/features/tools/use-tool-labels"
+import { useToolPresentations } from "@/features/tools/use-tool-presentations"
 import { pluralize } from "@/lib/format"
 
 type ToolSearchRowProps = {
@@ -47,7 +56,7 @@ function FoundToolsCard({
   query: string | null
   toolNames: string[]
 }) {
-  const labelFor = useToolLabels()
+  const presentationFor = useToolPresentations()
   const countLabel = `${String(toolNames.length)} ${pluralize(toolNames.length, "Tool")}`
   return (
     <ToolResultCard
@@ -61,13 +70,36 @@ function FoundToolsCard({
       trailing={<Badge variant={toolNames.length > 0 ? "success" : "outline"}>{countLabel}</Badge>}
     >
       {toolNames.length > 0 ? (
-        <ul aria-label="Tools found" className="divide-border divide-y rounded-lg border">
-          {toolNames.map((name) => (
-            <li className="truncate px-3 py-2 text-sm" key={name}>
-              {labelFor(name)}
-            </li>
-          ))}
-        </ul>
+        <Table aria-label="Tools found" className="table-fixed">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Tool</TableHead>
+              <TableHead className="w-36">Access</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {toolNames.map((name) => {
+              const presentation = presentationFor(name)
+              return (
+                <TableRow key={name}>
+                  <TableCell>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ToolUiIcon token={presentation?.ui.icon ?? null} />
+                      <span className="truncate">{presentation?.label ?? name}</span>
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs">
+                    {presentation
+                      ? presentation.effect === "write"
+                        ? "Makes Changes"
+                        : "Reads Only"
+                      : null}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
       ) : (
         <p className="text-muted-foreground px-4 py-6 text-center text-sm">
           No matching tools were found.

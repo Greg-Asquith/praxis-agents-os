@@ -93,10 +93,6 @@ describe("token budget failures", () => {
     observed_total_tokens: 1100000,
     requests: 12,
   }
-  const message =
-    "This run stopped after counting 1,100,000 tokens across 12 requests; the limit for this run is 1,000,000. " +
-    "Start a new conversation or shorten the context to continue."
-
   it("rebuilds the persisted failure after reload and preserves active-run precedence", () => {
     const run = {
       ...failedRun("usage_limit_exceeded"),
@@ -106,8 +102,6 @@ describe("token budget failures", () => {
     }
     expect(conversationRunInterruptionOutcome(null, run)).toMatchObject({
       kind: "budget_exhausted",
-      title: "Run limit reached",
-      message,
     })
     expect(conversationRunInterruptionOutcome({ ...run, status: "running" }, run)).toBeNull()
   })

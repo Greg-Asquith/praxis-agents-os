@@ -10,6 +10,14 @@ import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
@@ -83,14 +91,26 @@ function SearchSkillsRow({ activity, defaultOpen }: SkillToolRowProps) {
     >
       <div className="grid min-w-0 gap-2">
         {visible.length > 0 ? (
-          <ol aria-label="Skills found" className="divide-border divide-y rounded-lg border">
-            {visible.map((skill) => (
-              <li className="flex min-w-0 flex-col gap-1 px-3 py-2" key={skill.name}>
-                <SkillIdentity skill={skill} />
-                <p className="text-muted-foreground line-clamp-2 text-sm">{skill.description}</p>
-              </li>
-            ))}
-          </ol>
+          <Table aria-label="Skills found" className="table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-2/5">Skill</TableHead>
+                <TableHead>What It's For</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map((skill) => (
+                <TableRow key={skill.name}>
+                  <TableCell className="align-top">
+                    <SkillIdentity skill={skill} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground align-top whitespace-normal">
+                    <p className="line-clamp-2">{skill.description}</p>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         ) : (
           <p className="text-muted-foreground px-4 py-6 text-center text-sm">
             No matching skills were found.

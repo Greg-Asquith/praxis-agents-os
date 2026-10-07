@@ -7,21 +7,24 @@ import type { RunInterruptionOutcome } from "@/features/conversations/run-error-
 
 export function RunOutcomeAlert({ outcome }: { outcome: RunInterruptionOutcome }) {
   const toolLabel = useToolLabels()
+  const paused = outcome.kind === "budget_exhausted"
   return (
     <div className="w-full px-1 py-2">
-      <Alert variant="destructive">
+      <Alert variant={paused ? "default" : "destructive"}>
         <AlertTitle>{outcome.title}</AlertTitle>
         <AlertDescription>
           <p>{outcome.message}</p>
           {outcome.completedActions.length > 0 ? (
-            <div className="mt-2">
-              <p className="font-medium">Completed Actions</p>
+            <details className="mt-2" open={!paused}>
+              <summary className="cursor-pointer font-medium">
+                {paused ? "What It Did So Far" : "Completed Actions"}
+              </summary>
               <ul className="mt-1 flex list-disc flex-col gap-0.5 pl-5">
-                {outcome.completedActions.map((action) => (
-                  <li key={action.id}>{toolLabel(action.toolName)}</li>
+                {groupedActions(outcome.completedActions, toolLabel).map(([label, count]) => (
+                  <li key={label}>{count > 1 ? `${label} ×${String(count)}` : label}</li>
                 ))}
               </ul>
-            </div>
+            </details>
           ) : null}
           {outcome.uncertainActions?.length ? (
             <div className="mt-2">
@@ -50,4 +53,17 @@ export function RunOutcomeAlert({ outcome }: { outcome: RunInterruptionOutcome }
       </Alert>
     </div>
   )
+}
+
+// Repeated calls collapse into one line with a count, in first-use order.
+function groupedActions(
+  actions: readonly { toolName: string }[],
+  toolLabel: (name: string) => string
+): [string, number][] {
+  const counts = new Map<string, number>()
+  for (const action of actions) {
+    const label = toolLabel(action.toolName)
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  return [...counts]
 }

@@ -35,11 +35,9 @@ export function runInterruptionOutcome(run: AgentRun | null): RunInterruptionOut
   if (run.outcome === "budget_exhausted") {
     return {
       kind: "budget_exhausted",
-      title: "Run limit reached",
+      title: "Paused to Check In",
       message:
-        tokenBudgetMessage(run.completion_json) ??
-        run.error_message ??
-        "This run reached its usage limit. Start a new conversation or shorten the context to continue.",
+        "The agent took on a lot in one go, so it paused here. Reply “Continue” to pick up where it left off, or add instructions to steer it.",
       ...recoveryEvidence(run.completion_json?.["recovery"]),
     }
   }
