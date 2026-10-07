@@ -299,7 +299,9 @@ The following contracts apply in this area:
   tool-return `public_result` metadata while the model-facing content remains
   bounded. Present the complete result rather than its model summary; use the
   shared `DataTable` client pagination for large bounded row sets so copy and
-  CSV export still operate over all rows.
+  CSV export still operate over all rows. The table footer carries the row
+  count, a `summary` of non-zero outcome counts, and the column, copy, and
+  download controls, so they stay in view when wide tables scroll.
 - Artifact reads and discovery include workspace and published platform content,
   scope labels, and selected version IDs. Platform read text uses the shared
   untrusted-content node and model-only framing. `update_artifact` requires

@@ -173,17 +173,8 @@ describe.each(cases)("$name result evidence", (test) => {
           : test.applied === "removed"
             ? "Removed"
             : "Added"
-    const skippedLabel =
-      test.skipped === "already_set"
-        ? "Already set"
-        : test.skipped === "not_found"
-          ? "Not found"
-          : "Already existed"
-    const stats = renderToStaticMarkup(createElement("div", null, table.header))
-    const statValues = [...stats.matchAll(/>([^<>]+)<\/div>/g)].map((match) => match[1])
-    expect(statValues.join("")).toBe(
-      `${appliedLabel}${truncated ? "3" : "1"}${test.skipped ? `${skippedLabel}0` : ""}Failed0${test.name.includes("negative_keywords") ? "" : "Unverified0"}`
-    )
+    const summary = renderToStaticMarkup(createElement("div", null, table.summary))
+    expect(summary.replace(/<[^>]+>/g, "")).toBe(`${truncated ? "3" : "1"} ${appliedLabel}`)
     expect(exported.rows[0]?.[exported.headers.indexOf(test.column)]).toBe(test.label)
     expect(exported.rows[0]?.[exported.headers.indexOf("Outcome")]).toBe(appliedLabel)
     expect(tableToCsv(exported)).toBe(expectedCsv[test.name])

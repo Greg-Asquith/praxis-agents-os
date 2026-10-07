@@ -2,9 +2,9 @@
 
 import type { ReactNode } from "react"
 
+import { OutcomeSummary } from "@/components/tool-ui/outcome-summary"
 import { Badge } from "@/components/ui/badge"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   outcomeKind,
   outcomeLabel,
@@ -61,21 +61,14 @@ export function GoogleAdsOutcomeTable({
       rows={tableRows}
       exportFilename={exportFilename}
       pageSize={25}
-      header={
-        <StatGroup className="px-3 pt-2">
-          {ORDER.flatMap((kind) =>
+      summary={
+        <OutcomeSummary
+          items={ORDER.flatMap((kind) =>
             outcomes
               .filter((outcome) => outcome.kind === kind)
-              .map((outcome) => (
-                <Stat
-                  key={outcome.label}
-                  label={outcome.label}
-                  value={outcome.count}
-                  tone={outcome.count > 0 ? outcomeTone(kind) : undefined}
-                />
-              ))
+              .map((outcome) => ({ ...outcome, tone: outcomeTone(kind) }))
           )}
-        </StatGroup>
+        />
       }
       renderCell={(column, row) =>
         column.key === "outcome" ? (

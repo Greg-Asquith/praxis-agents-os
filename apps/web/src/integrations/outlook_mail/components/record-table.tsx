@@ -2,7 +2,6 @@
 
 import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { pluralize } from "@/lib/format"
 
 export function OutlookRecordTable({
   columns,
@@ -26,11 +25,7 @@ export function OutlookRecordTable({
     <DataTable
       columns={columns}
       exportFilename={exportFilename}
-      header={
-        <p className="text-muted-foreground text-xs">
-          {String(rows.length)} {pluralize(rows.length, noun, nounPlural)}
-        </p>
-      }
+      rowNoun={[noun, nounPlural]}
       pageSize={25}
       rows={rows}
     />

@@ -56,25 +56,28 @@ type DataTableTableRow = {
 }
 
 const columnHelper = createAppColumnHelper<DataTableTableRow>()
+const ROW_NOUN = ["row", "rows"] as const
 const textCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" })
 
 export function DataTable({
   columns,
   exportFilename = "report.csv",
-  header,
   pageSize,
   renderCell,
+  rowNoun = ROW_NOUN,
   rows,
   showTotals = false,
+  summary,
   truncationNote,
 }: {
   columns: DataColumn[]
   exportFilename?: string
-  header?: ReactNode
   pageSize?: number
   renderCell?: (column: DataColumn, row: DataRow) => ReactNode | null
+  rowNoun?: readonly [singular: string, plural: string]
   rows: DataRow[]
   showTotals?: boolean
+  summary?: ReactNode
   truncationNote?: string | null
 }) {
   const { copied, copy } = useClipboardCopy()
@@ -116,34 +119,6 @@ export function DataTable({
     <table.AppTable>
       <TooltipProvider>
         <div className="grid min-w-0 gap-2">
-          <div className={cn("flex gap-3", header ? "items-end justify-between" : "justify-end")}>
-            {header ? <div className="min-w-0 flex-1">{header}</div> : null}
-            <div className="flex shrink-0 items-center gap-1">
-              <table.ViewOptions />
-              <Button
-                aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
-                onClick={() => {
-                  void copy(tableToTsv(exported))
-                }}
-                size="icon-xs"
-                type="button"
-                variant="ghost"
-              >
-                {copied ? <CheckIcon /> : <CopyIcon />}
-              </Button>
-              <Button
-                aria-label="Download Report CSV"
-                onClick={() => {
-                  downloadTableCsv(exported, exportFilename)
-                }}
-                size="icon-xs"
-                type="button"
-                variant="ghost"
-              >
-                <DownloadIcon />
-              </Button>
-            </div>
-          </div>
           <div className="min-w-0">
             <Table className="table-fixed" style={{ minWidth: tableMinWidth(visibleColumns) }}>
               <colgroup>
@@ -208,13 +183,39 @@ export function DataTable({
               ) : null}
             </Table>
           </div>
-          <div className="text-muted-foreground flex flex-wrap items-start justify-between gap-2 text-xs">
+          <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <span>
-              {String(rows.length)} {rows.length === 1 ? "row" : "rows"}
+              {String(rows.length)} {rows.length === 1 ? rowNoun[0] : rowNoun[1]}
             </span>
+            {summary}
             {truncationNote ? (
               <span className="text-warning-foreground max-w-xl">{truncationNote}</span>
             ) : null}
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              <table.ViewOptions />
+              <Button
+                aria-label={copied ? "Copied Report Table" : "Copy Report Table"}
+                onClick={() => {
+                  void copy(tableToTsv(exported))
+                }}
+                size="icon-xs"
+                type="button"
+                variant="ghost"
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </Button>
+              <Button
+                aria-label="Download Report CSV"
+                onClick={() => {
+                  downloadTableCsv(exported, exportFilename)
+                }}
+                size="icon-xs"
+                type="button"
+                variant="ghost"
+              >
+                <DownloadIcon />
+              </Button>
+            </div>
           </div>
           {resolvedPageSize !== null && rows.length > resolvedPageSize ? (
             <table.Pagination total={rows.length} />

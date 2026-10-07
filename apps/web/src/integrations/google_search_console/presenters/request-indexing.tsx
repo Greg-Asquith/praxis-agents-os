@@ -1,7 +1,7 @@
 // apps/web/src/integrations/google_search_console/presenters/request-indexing.tsx
 
+import { OutcomeSummary } from "@/components/tool-ui/outcome-summary"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   isValidHttpUrl,
   matchesWritableSite,
@@ -103,24 +103,14 @@ function renderIndexingOutcome(result: IndexingResult) {
     <DataTable
       columns={COLUMNS}
       exportFilename="search-console-indexing-notifications.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Notified"
-            tone={result.notifiedCount > 0 ? "success" : undefined}
-            value={result.notifiedCount}
-          />
-          <Stat
-            label="Failed"
-            tone={result.failedCount > 0 ? "danger" : undefined}
-            value={result.failedCount}
-          />
-          <Stat
-            label="Unverified"
-            tone={unverifiedCount > 0 ? "warning" : undefined}
-            value={unverifiedCount}
-          />
-        </StatGroup>
+      summary={
+        <OutcomeSummary
+          items={[
+            { count: result.notifiedCount, label: "Notified", tone: "success" },
+            { count: result.failedCount, label: "Failed", tone: "danger" },
+            { count: unverifiedCount, label: "Unverified", tone: "warning" },
+          ]}
+        />
       }
       pageSize={20}
       rows={rows}

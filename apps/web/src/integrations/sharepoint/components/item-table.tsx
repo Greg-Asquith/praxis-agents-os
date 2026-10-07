@@ -2,7 +2,6 @@
 
 import { EmptyResult } from "@/components/tool-ui/empty-result"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { pluralize } from "@/lib/format"
 
 const COLUMNS: DataColumn[] = [
   { key: "name", label: "Name", kind: "text", width: 240 },
@@ -31,11 +30,7 @@ export function SharePointItemTable({
     <DataTable
       columns={COLUMNS}
       exportFilename="sharepoint-items.csv"
-      header={
-        <p className="text-muted-foreground text-xs">
-          {String(rows.length)} {pluralize(rows.length, "item", "items")}
-        </p>
-      }
+      rowNoun={["item", "items"]}
       pageSize={25}
       rows={rows}
       truncationNote={more}

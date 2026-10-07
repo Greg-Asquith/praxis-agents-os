@@ -1,8 +1,8 @@
 // apps/web/src/integrations/google_search_console/presenters/submit-sitemap.tsx
 
 import { Badge } from "@/components/ui/badge"
+import { OutcomeSummary } from "@/components/tool-ui/outcome-summary"
 import { DataTable, type DataColumn, type DataRow } from "@/components/ui/data-table"
-import { Stat, StatGroup } from "@/components/ui/stat"
 import {
   isValidHttpUrl,
   matchesWritableSite,
@@ -130,24 +130,14 @@ function renderSubmissionOutcome(result: SubmissionResult) {
     <DataTable
       columns={COLUMNS}
       exportFilename="search-console-sitemap-submissions.csv"
-      header={
-        <StatGroup className="px-3 pt-2">
-          <Stat
-            label="Submitted"
-            tone={result.submittedCount > 0 ? "success" : undefined}
-            value={result.submittedCount}
-          />
-          <Stat
-            label="Failed"
-            tone={result.failedCount > 0 ? "danger" : undefined}
-            value={result.failedCount}
-          />
-          <Stat
-            label="Unverified"
-            tone={unverifiedCount > 0 ? "warning" : undefined}
-            value={unverifiedCount}
-          />
-        </StatGroup>
+      summary={
+        <OutcomeSummary
+          items={[
+            { count: result.submittedCount, label: "Submitted", tone: "success" },
+            { count: result.failedCount, label: "Failed", tone: "danger" },
+            { count: unverifiedCount, label: "Unverified", tone: "warning" },
+          ]}
+        />
       }
       pageSize={20}
       rows={rows}

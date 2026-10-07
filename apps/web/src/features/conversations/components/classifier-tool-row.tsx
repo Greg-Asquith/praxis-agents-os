@@ -80,9 +80,9 @@ export function ClassifierToolRow({
       <DataTable
         columns={CLASSIFIER_COLUMNS}
         exportFilename="classifications.csv"
-        header={<LabelDistribution labels={result.labels} rows={result.rows} />}
         pageSize={25}
         rows={result.rows.map((row) => ({ ...row, index: row.index + 1 }))}
+        summary={<LabelDistribution labels={result.labels} rows={result.rows} />}
       />
     </ToolResultCard>
   )

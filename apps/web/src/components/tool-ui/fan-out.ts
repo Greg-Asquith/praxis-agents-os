@@ -8,6 +8,8 @@ export type FanOutEntry = {
   errorCode?: string | null
   errorMessage: string | null
   externalId: string
+  // Succeeded, but some items in the result failed.
+  partial?: boolean
   providerKey: string
   renderKey: string
   status: string

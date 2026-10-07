@@ -305,6 +305,24 @@ describe("integration write presenter", () => {
     )
   })
 
+  it("marks successes with failed items as partly done, below a settled failure", () => {
+    const context = props()
+    context.activity.result = { results: [entry("Mixed"), entry("Applied")] }
+    const config = {
+      ...variant,
+      settledPartial: (result: string) => result !== "Applied",
+    }
+    const html = render(context, config)
+    expect(html.match(/>Partly Done</g)).toHaveLength(1)
+    expect(html).toContain(">Done<")
+    const failed = render(context, {
+      ...config,
+      settledFailure: (result) => (result === "Mixed" ? "Provider rejected it" : null),
+    })
+    expect(failed).not.toContain("Partly Done")
+    expect(failed).toContain(">Failed<")
+  })
+
   it("matches only its own tool names", () => {
     const presenter = createIntegrationWritePresenter({
       key: "example-change",

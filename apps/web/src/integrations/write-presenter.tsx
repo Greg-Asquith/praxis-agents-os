@@ -62,6 +62,8 @@ export type IntegrationWriteVariant<Args, Result> = Partial<
   renderUnverifiedOutcome?: (result: Result, args: Args | null) => ReactNode
   /** Describes a failure the provider reported inside a successful entry. */
   settledFailure?: (result: Result) => string | null
+  /** Identifies a success where some items in the result failed. */
+  settledPartial?: (result: Result) => boolean
   /** Identifies ambiguous evidence even when the outer entry reports success. */
   settledUnverified?: (result: Result) => boolean
 }
@@ -374,9 +376,10 @@ function settleEntries<Args, Result>(
       }
     }
     const description = variant.settledFailure?.(result) ?? null
-    return description === null
-      ? entry
-      : { ...entry, errorCode: null, errorMessage: description, status: "failed" }
+    if (description !== null) {
+      return { ...entry, errorCode: null, errorMessage: description, status: "failed" }
+    }
+    return variant.settledPartial?.(result) ? { ...entry, partial: true } : entry
   })
 }
 

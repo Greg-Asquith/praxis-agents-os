@@ -178,6 +178,7 @@ function FanOutCard({
   )
   const declined = entry.status === "denied"
   const unconfirmed = isUnconfirmed(entry)
+  const partial = entry.status === "success" && entry.partial === true
 
   return (
     <ToolResultCard
@@ -188,22 +189,26 @@ function FanOutCard({
       trailing={
         <Badge
           variant={
-            entry.status === "success"
-              ? "success"
-              : declined
-                ? "secondary"
-                : unconfirmed
-                  ? "warning"
-                  : "destructive"
+            partial
+              ? "warning"
+              : entry.status === "success"
+                ? "success"
+                : declined
+                  ? "secondary"
+                  : unconfirmed
+                    ? "warning"
+                    : "destructive"
           }
         >
-          {entry.status === "success"
-            ? "Done"
-            : declined
-              ? "Declined"
-              : unconfirmed
-                ? "Unconfirmed"
-                : "Failed"}
+          {partial
+            ? "Partly Done"
+            : entry.status === "success"
+              ? "Done"
+              : declined
+                ? "Declined"
+                : unconfirmed
+                  ? "Unconfirmed"
+                  : "Failed"}
         </Badge>
       }
     >

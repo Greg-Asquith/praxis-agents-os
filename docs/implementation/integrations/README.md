@@ -189,8 +189,9 @@ forbid one provider directory importing another.
   Unconfirmed badge; confirmed failures and declines stay distinct. Detailed
   unverified evidence requires `renderUnverifiedOutcome`; a provider that
   reports a failed outcome inside a successful entry supplies `settledFailure`,
-  and one that accepts unverified evidence inside a successful entry supplies
-  `settledUnverified`. Edited entity selections refresh through
+  one whose result mixes applied and failed items supplies `settledPartial` to
+  show a Partly Done badge, and one that accepts unverified evidence inside a
+  successful entry supplies `settledUnverified`. Edited entity selections refresh through
   `approval.refreshDisplay` and the conversation-scoped entity lookup.
 - `write-copy.ts`: `integrationWriteCopy(provider, { verb, object, effect })`
   produces every lifecycle sentence (heading, approval title and labels,
