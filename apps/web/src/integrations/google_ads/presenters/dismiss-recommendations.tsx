@@ -10,7 +10,7 @@ import {
 } from "@/integrations/google_ads/components/outcome-table"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
-import { countByKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+import { countByKind, outcomeLabel, rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import {
   parseRecommendationOutcome,
   parseRecommendationReference,
@@ -70,6 +70,7 @@ export const googleAdsDismissRecommendationsPresenter = createIntegrationWritePr
         "This dismissal was declined. The recommendations remain visible in Google Ads.",
       details: (args) =>
         args ? [{ label: "Recommendations", value: String(args.recommendations.length) }] : [],
+      settledPartial: (result) => rowsPartlyFailed(result.recommendations),
       parseResult: dismissRecommendationResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

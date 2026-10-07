@@ -6,7 +6,13 @@ import {
 } from "@/integrations/google_ads/lib/field-values"
 
 import { parseOutcomeEnvelope, parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
-import { countByKind, outcomeDetails, outcomeTone } from "@/integrations/google_ads/lib/outcomes"
+import {
+  countByKind,
+  countsPartlyFailed,
+  outcomeDetails,
+  outcomeTone,
+  rowsPartlyFailed,
+} from "@/integrations/google_ads/lib/outcomes"
 import {
   campaignBudgetIdentity,
   parseCampaignBudgetReference,
@@ -42,6 +48,12 @@ describe("Google Ads outcome vocabulary", () => {
     expect(outcomeDetails("Try again", null, "Not confirmed")).toBe("Try again · Not confirmed")
     expect(outcomeDetails(null, null, null)).toBe("")
   })
+  it("treats only a mix of failed and other outcomes as partly failed", () => {
+    expect(countsPartlyFailed({ updated: 2, failed: 1, unverified: 0 })).toBe(true)
+    expect(countsPartlyFailed({ updated: 0, failed: 3 })).toBe(false)
+    expect(rowsPartlyFailed([{ outcome: "already_set" }, { outcome: "updated" }])).toBe(false)
+  })
+
   it("keeps advertising acronyms and fallback labels", () => {
     expect(googleAdsTokenLabel("TARGET_CPA_CPC_CPM_CPV_ROAS_ID_URL")).toBe(
       "Target CPA CPC CPM CPV ROAS ID URL"

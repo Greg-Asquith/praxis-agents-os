@@ -10,7 +10,7 @@ import {
 } from "@/integrations/google_ads/components/outcome-table"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
-import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import { countByKind, rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import {
   parseRecommendationOutcome,
   parseRecommendationReference,
@@ -109,6 +109,7 @@ export const googleAdsApplyRecommendationsPresenter = createIntegrationWritePres
       },
       details: (args) =>
         args ? [{ label: "Recommendations", value: String(args.recommendations.length) }] : [],
+      settledPartial: (result) => rowsPartlyFailed(result.recommendations),
       parseResult: applyRecommendationResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

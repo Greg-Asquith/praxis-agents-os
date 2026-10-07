@@ -7,7 +7,11 @@ import {
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
 import { UpdatePositiveKeywordsApproval } from "@/integrations/google_ads/components/update-positive-keywords-approval"
-import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+import {
+  outcomeKind,
+  outcomeLabel,
+  countsPartlyFailed,
+} from "@/integrations/google_ads/lib/outcomes"
 import {
   POSITIVE_KEYWORD_PATCH_FIELDS_BY_KEY,
   formatPositiveKeywordValue,
@@ -62,6 +66,7 @@ export const googleAdsUpdatePositiveKeywordsPresenter = createIntegrationWritePr
         },
       },
       details: (args) => (args ? [{ label: "Keywords", value: String(args.keywords.length) }] : []),
+      settledPartial: (result) => countsPartlyFailed(result.counts),
       parseResult: updateKeywordResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

@@ -63,3 +63,17 @@ export function countByKind(rows: readonly { outcome: OutcomeToken }[]) {
     count: counts[kind],
   }))
 }
+
+// True when some items failed and others did not.
+export function rowsPartlyFailed(rows: readonly { outcome: string }[]): boolean {
+  return partlyFailed(rows.filter((row) => row.outcome === "failed").length, rows.length)
+}
+
+export function countsPartlyFailed(counts: Readonly<Record<string, number>>): boolean {
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0)
+  return partlyFailed(counts["failed"] ?? 0, total)
+}
+
+function partlyFailed(failed: number, total: number): boolean {
+  return failed > 0 && failed < total
+}

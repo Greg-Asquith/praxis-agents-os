@@ -9,6 +9,7 @@ import {
   type NegativeKeywordRemovalResult,
   type NegativeKeywordResult,
 } from "@/integrations/google_ads/components/negative-keyword-outcome"
+import { countsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import {
   listNegativeKeywordApprovalSummary,
   listNegativeKeywordArgs,
@@ -45,6 +46,12 @@ export const googleAdsListNegativeKeywordsPresenter = createIntegrationWritePres
         <GoogleAdsFailureTargets description={description} targets={args ? [args.listName] : []} />
       ),
       renderOutcome: (result) => <NegativeKeywordOutcome result={result} />,
+      settledPartial: (result) =>
+        countsPartlyFailed({
+          added: result.addedCount,
+          failed: result.failedCount,
+          skipped: result.skippedCount,
+        }),
     }),
     google_ads_remove_negative_keywords: defineIntegrationWriteVariant(googleAdsProvider, {
       copy: { verb: "Remove", object: "negative keywords", effect: "removed" },
@@ -70,6 +77,12 @@ export const googleAdsListNegativeKeywordsPresenter = createIntegrationWritePres
         <GoogleAdsFailureTargets description={description} targets={args ? [args.listName] : []} />
       ),
       renderOutcome: (result) => <NegativeKeywordRemovalOutcome result={result} />,
+      settledPartial: (result) =>
+        countsPartlyFailed({
+          failed: result.failedCount,
+          notFound: result.notFoundCount,
+          removed: result.removedCount,
+        }),
     }),
   },
 })

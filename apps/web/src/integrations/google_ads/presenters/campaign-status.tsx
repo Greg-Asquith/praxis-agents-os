@@ -9,7 +9,7 @@ import {
 } from "@/integrations/google_ads/components/outcome-table"
 import { approvalCountLine } from "@/integrations/google_ads/lib/copy"
 import { parseOutcomeList } from "@/integrations/google_ads/lib/envelopes"
-import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import { countByKind, rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import {
   campaignReferenceLabels,
   googleAdsCampaignDetails,
@@ -43,6 +43,7 @@ export const googleAdsCampaignStatusPresenter = createIntegrationWritePresenter(
         prompt: "This changes live campaign delivery.",
       },
       details: (args) => googleAdsCampaignDetails(args),
+      settledPartial: rowsPartlyFailed,
       parseResult: campaignResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

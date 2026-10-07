@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/remove-positive-keywords.tsx
 
+import { countsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
@@ -44,6 +45,7 @@ export const googleAdsRemovePositiveKeywordsPresenter = createIntegrationWritePr
           renderRemovalApprovalSummary(removalArgs(value) ?? fallback),
       },
       details: (args) => (args ? [{ label: "Keywords", value: String(args.keywords.length) }] : []),
+      settledPartial: (result) => countsPartlyFailed(result.counts),
       parseResult: removalResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

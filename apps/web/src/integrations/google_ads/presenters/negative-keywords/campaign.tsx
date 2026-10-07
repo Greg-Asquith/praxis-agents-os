@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/campaign.tsx
 
+import { countsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
   CampaignNegativeKeywordApprovalSummary,
@@ -35,6 +36,7 @@ export const googleAdsCampaignNegativeKeywordsPresenter = createIntegrationWrite
         },
       },
       parseResult: (value) => campaignNegativeKeywordResult(value, false),
+      settledPartial: (result) => countsPartlyFailed(result.totals),
       renderOutcome: (result) => <CampaignNegativeKeywordOutcome action="add" result={result} />,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets description={description} targets={args?.selectionLabels ?? []} />
@@ -57,6 +59,7 @@ export const googleAdsCampaignNegativeKeywordsPresenter = createIntegrationWrite
         },
       },
       parseResult: (value) => campaignNegativeKeywordResult(value, true),
+      settledPartial: (result) => countsPartlyFailed(result.totals),
       renderOutcome: (result) => <CampaignNegativeKeywordOutcome action="remove" result={result} />,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets description={description} targets={args?.selectionLabels ?? []} />

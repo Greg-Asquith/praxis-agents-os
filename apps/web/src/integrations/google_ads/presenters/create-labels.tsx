@@ -17,7 +17,7 @@ import {
   parseLabelDrafts,
   type GoogleAdsLabelDraft,
 } from "@/integrations/google_ads/lib/labels"
-import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import { countByKind, rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
   createIntegrationWritePresenter,
@@ -69,6 +69,7 @@ export const googleAdsCreateLabelsPresenter = createIntegrationWritePresenter({
       },
       details: (args) =>
         args ? [{ label: "Labels", value: args.labels.map((label) => label.name).join(", ") }] : [],
+      settledPartial: rowsPartlyFailed,
       parseResult: createLabelResult,
       renderOutcome: renderLabelOutcome,
       renderUnverifiedOutcome: renderLabelOutcome,

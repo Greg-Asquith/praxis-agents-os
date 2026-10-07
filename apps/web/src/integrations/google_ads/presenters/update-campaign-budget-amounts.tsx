@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/update-campaign-budget-amounts.tsx
 
+import { countsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
@@ -46,6 +47,7 @@ export const googleAdsUpdateCampaignBudgetAmountsPresenter = createIntegrationWr
           renderUpdateBudgetApprovalSummary(updateBudgetArgs(value) ?? fallback),
       },
       details: (args) => (args ? [{ label: "Budgets", value: String(args.updates.length) }] : []),
+      settledPartial: (result) => countsPartlyFailed(result.counts),
       parseResult: updateBudgetResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

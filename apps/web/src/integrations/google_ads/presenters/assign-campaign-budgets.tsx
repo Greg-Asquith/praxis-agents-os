@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/assign-campaign-budgets.tsx
 
+import { countsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import { refreshBudgetAssignment } from "@/integrations/google_ads/api/refresh-budget-assignment"
 import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 import {
@@ -56,6 +57,7 @@ export const googleAdsAssignCampaignBudgetsPresenter = createIntegrationWritePre
               { label: "Campaigns", value: String(args.campaigns.length) },
             ]
           : [],
+      settledPartial: (result) => countsPartlyFailed(result.counts),
       parseResult: assignmentResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

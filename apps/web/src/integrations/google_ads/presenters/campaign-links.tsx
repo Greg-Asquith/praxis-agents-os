@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/campaign-links.tsx
 
+import { rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 
@@ -54,6 +55,7 @@ export const googleAdsCampaignLinksPresenter = createIntegrationWritePresenter({
       details: campaignLinkDetails,
       progressLabel: (args) =>
         args?.action === "UNLINK" ? unlinkCopy.progressLabel : linkCopy.progressLabel,
+      settledPartial: (result) => rowsPartlyFailed(result.campaigns),
       parseResult: campaignLinkResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets targets={args?.campaignLabels ?? []} description={description} />

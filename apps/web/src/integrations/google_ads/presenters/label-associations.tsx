@@ -16,7 +16,7 @@ import {
   type LabelAssociationArgs,
   type LabelTargetKind,
 } from "@/integrations/google_ads/lib/labels"
-import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import { countByKind, rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
   createIntegrationWritePresenter,
@@ -82,6 +82,7 @@ function labelAssociationSpec(
             { label: "Items", value: String(args.targets.length) },
           ]
         : [],
+    settledPartial: rowsPartlyFailed,
     parseResult: (value) => parseAssociationResult(value, action),
     renderFailure: (args, description) => (
       <GoogleAdsFailureTargets

@@ -17,7 +17,7 @@ import {
   parseLabelDeletionArgs,
   type LabelDeletionSelection,
 } from "@/integrations/google_ads/lib/labels"
-import { countByKind } from "@/integrations/google_ads/lib/outcomes"
+import { countByKind, rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import { googleAdsProvider } from "@/integrations/google_ads/provider"
 import {
   createIntegrationWritePresenter,
@@ -46,6 +46,7 @@ export const googleAdsDeleteLabelsPresenter = createIntegrationWritePresenter({
       },
       details: (args) =>
         args ? [{ label: "Labels", value: args.labels.map((label) => label.name).join(", ") }] : [],
+      settledPartial: rowsPartlyFailed,
       parseResult: deleteLabelResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

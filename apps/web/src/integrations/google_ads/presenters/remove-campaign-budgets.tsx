@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/remove-campaign-budgets.tsx
 
+import { countsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import type { GoogleAdsOutcomeColumn as DataColumn } from "@/integrations/google_ads/components/outcome-table"
 
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
@@ -45,6 +46,7 @@ export const googleAdsRemoveCampaignBudgetsPresenter = createIntegrationWritePre
           renderRemovalApprovalSummary(removalArgs(value) ?? fallback),
       },
       details: (args) => (args ? [{ label: "Budgets", value: String(args.budgets.length) }] : []),
+      settledPartial: (result) => countsPartlyFailed(result.counts),
       parseResult: removalResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets

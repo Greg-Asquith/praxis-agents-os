@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/negative-keywords/ad-group.tsx
 
+import { countsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import { GoogleAdsFailureTargets } from "@/integrations/google_ads/components/failure-targets"
 import {
   AdGroupNegativeKeywordApprovalSummary,
@@ -36,6 +37,7 @@ export const googleAdsAdGroupNegativeKeywordsPresenter = createIntegrationWriteP
         },
       },
       parseResult: (value) => adGroupNegativeKeywordResult(value, false),
+      settledPartial: (result) => countsPartlyFailed(result.totals),
       renderOutcome: (result) => <AdGroupNegativeKeywordOutcome action="add" result={result} />,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets description={description} targets={args?.selectionLabels ?? []} />
@@ -59,6 +61,7 @@ export const googleAdsAdGroupNegativeKeywordsPresenter = createIntegrationWriteP
         },
       },
       parseResult: (value) => adGroupNegativeKeywordResult(value, true),
+      settledPartial: (result) => countsPartlyFailed(result.totals),
       renderOutcome: (result) => <AdGroupNegativeKeywordOutcome action="remove" result={result} />,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets description={description} targets={args?.selectionLabels ?? []} />

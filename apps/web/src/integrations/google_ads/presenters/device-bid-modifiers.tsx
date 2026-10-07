@@ -1,5 +1,6 @@
 // apps/web/src/integrations/google_ads/presenters/device-bid-modifiers.tsx
 
+import { rowsPartlyFailed } from "@/integrations/google_ads/lib/outcomes"
 import {
   DeviceBidModifierApprovalSummary,
   DeviceBidModifierOutcomeCard,
@@ -44,6 +45,8 @@ export const googleAdsDeviceBidModifiersPresenter = createIntegrationWritePresen
         validateArgs: deviceBidModifierArgsError,
       },
       details: deviceBidModifierDetails,
+      settledPartial: (result) =>
+        rowsPartlyFailed(result.campaigns.flatMap((campaign) => campaign.devices)),
       parseResult: deviceBidModifierResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets targets={args?.campaignLabels ?? []} description={description} />

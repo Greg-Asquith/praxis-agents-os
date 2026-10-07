@@ -5,7 +5,11 @@ import {
   GoogleAdsOutcomeTable,
   type GoogleAdsOutcomeRow,
 } from "@/integrations/google_ads/components/outcome-table"
-import { outcomeKind, outcomeLabel } from "@/integrations/google_ads/lib/outcomes"
+import {
+  outcomeKind,
+  outcomeLabel,
+  countsPartlyFailed,
+} from "@/integrations/google_ads/lib/outcomes"
 import { googleAdsTokenLabel } from "@/integrations/google_ads/lib/tokens"
 
 import { GoogleAdsApprovalSection } from "@/integrations/google_ads/components/approval-section"
@@ -106,6 +110,7 @@ export const googleAdsCreatePositiveKeywordsPresenter = createIntegrationWritePr
               },
             ]
           : [],
+      settledPartial: (result) => countsPartlyFailed(result.counts),
       parseResult: createKeywordResult,
       renderFailure: (args, description) => (
         <GoogleAdsFailureTargets
