@@ -170,6 +170,11 @@ def _pieces(paragraph: Any) -> Any:
 
 
 def _run_style(font: Any) -> dict[str, Any]:
+    from pptx.enum.dml import MSO_FILL
+
+    # `font.color` adds an empty solid fill to a run without one, which renders
+    # black and would be saved by an edit's read-back.
+    solid = font.fill.type == MSO_FILL.SOLID
     return formatting(
         {
             "bold": font.bold,
@@ -177,7 +182,7 @@ def _run_style(font: Any) -> dict[str, Any]:
             "underline": bool(font.underline) if font.underline is not None else None,
             "size": font.size.pt if font.size is not None else None,
             "font": name(font.name) if font.name else None,
-            "color": color(font.color),
+            "color": color(font.color) if solid else None,
         }
     )
 

@@ -247,12 +247,17 @@ class _PresentationEditor:
         )
 
     def add_table(self, operation: dict[str, Any], log: EditLog) -> None:
+        from pptx.oxml.ns import qn
+
         slide = self._slide(operation["slide_id"])
         rows = operation["rows"]
         columns = max(len(row) for row in rows)
         if not columns:
             raise OperationError("The table needs at least one column.")
         frame = slide.shapes.add_table(len(rows), columns, *_box(operation))
+        style_id = _default_table_style(self.presentation)
+        if style_id:
+            frame.table._tbl.tblPr.find(qn("a:tableStyleId")).text = style_id
         for row_index, values in enumerate(rows):
             for column in range(columns):
                 _set_cell_text(frame.table.cell(row_index, column), _at(values, column), row_index)
@@ -328,8 +333,9 @@ class _PresentationEditor:
             XL_CHART_TYPE[_CHART_TYPES[chart_type]], *_box(operation), data
         )
         chart = frame.chart
-        if operation.get("title"):
-            chart.has_title = True
+        # Without a title, PowerPoint would show a one-series chart's series name as one.
+        chart.has_title = bool(operation.get("title"))
+        if chart.has_title:
             chart.chart_title.text_frame.text = operation["title"]
         chart.has_legend = len(operation["series"]) > 1 or chart_type in _SINGLE_SERIES
         if chart.has_legend:
@@ -664,6 +670,18 @@ def _chart_data(operation: dict[str, Any], *, single_series: bool) -> Any:
             )
         data.add_series(item["name"], item["values"])
     return data
+
+
+def _default_table_style(presentation: Any) -> str | None:
+    """Returns the deck's default table style, so new tables match its template."""
+    from pptx.opc.constants import RELATIONSHIP_TYPE
+    from pptx.oxml import parse_xml
+
+    try:
+        part = presentation.part.part_related_by(RELATIONSHIP_TYPE.TABLE_STYLES)
+    except KeyError:
+        return None
+    return parse_xml(part.blob).get("def")
 
 
 def _fit(picture: Any, presentation: Any, left: int, top: int) -> None:

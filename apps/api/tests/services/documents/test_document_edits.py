@@ -845,6 +845,66 @@ async def test_deleted_slide_leaves_the_deck_sections(pool: DocumentWorkerPool) 
     assert listed == [str(kept)]
 
 
+async def test_deck_edit_read_back_leaves_inherited_text_colour_alone(
+    pool: DocumentWorkerPool,
+) -> None:
+    from pptx import Presentation
+
+    presentation = Presentation()
+    layout = presentation.slide_layouts[5].name
+
+    _, output = await _edit(
+        pool,
+        "pptx",
+        _saved(presentation),
+        [{"op": "add_slide", "layout": layout, "placeholders": [{"idx": 0, "paragraphs": ["Q3"]}]}],
+    )
+
+    title = Presentation(io.BytesIO(output)).slides[0].shapes.title
+    [run] = title.text_frame.paragraphs[0].runs
+    # An empty solid fill renders black, hiding text on a dark layout.
+    assert run.font.fill.type is None
+
+
+async def test_new_deck_table_takes_the_decks_default_table_style(
+    pool: DocumentWorkerPool,
+) -> None:
+    from pptx import Presentation
+    from pptx.opc.constants import RELATIONSHIP_TYPE
+
+    style_id = "{6F3C2E8A-5B1D-4C8E-9A7F-3D2B1E0C4A51}"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    styles = presentation.part.part_related_by(RELATIONSHIP_TYPE.TABLE_STYLES)
+    styles._blob = (
+        '<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        f'def="{style_id}"/>'
+    ).encode()
+
+    result, output = await _edit(
+        pool,
+        "pptx",
+        _saved(presentation),
+        [
+            {
+                "op": "add_table",
+                "slide_id": slide.slide_id,
+                "rows": [["Region"], ["EMEA"]],
+                "left": 10,
+                "top": 10,
+                "width": 200,
+                "height": 60,
+            }
+        ],
+    )
+
+    saved = Presentation(io.BytesIO(output)).slides[0]
+    [table] = [
+        shape for shape in saved.shapes if shape.shape_id == result["changes"][0]["shape_id"]
+    ]
+    assert table._element.xpath(".//a:tableStyleId/text()") == [style_id]
+
+
 async def test_large_edit_result_stays_within_the_page_budget(pool: DocumentWorkerPool) -> None:
     from pptx import Presentation
 
