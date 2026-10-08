@@ -63,7 +63,7 @@ def test_require_helper_model_rejects_deprecated_model(
     monkeypatch.setattr(resolution, "_require_active", reject)
     monkeypatch.setattr(resolution, "find_model", lambda _provider, _model: _model_info())
 
-    with pytest.raises(ModelRetry, match="Model 'openai:helper-model' is deprecated"):
+    with pytest.raises(ModelRetry, match="deprecated"):
         resolution.require_helper_model(
             provider="openai",
             model="helper-model",

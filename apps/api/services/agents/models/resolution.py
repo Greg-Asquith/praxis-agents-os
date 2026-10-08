@@ -28,12 +28,14 @@ from services.agents.models.domain import (
 from services.agents.models.registry import find_model, get_model
 from services.agents.models.utils import (
     has_provider_api_key,
+    is_model_available,
+    is_vertex_model_enabled,
     partner_location,
     provider_transport,
     vertex_project,
 )
-from services.agents.models.validate_partner_configuration import (
-    validate_partner_configuration,
+from services.agents.models.validate_vertex_configuration import (
+    validate_vertex_configuration,
 )
 
 
@@ -43,6 +45,11 @@ def _require_active(provider: str, model: str) -> ModelInfo:
     if info.deprecated:
         raise ModelConfigurationError(
             f"Model '{provider}:{model}' is deprecated and cannot be used for new runs.",
+            details={"provider": provider, "model": model},
+        )
+    if not is_vertex_model_enabled(info):
+        raise ModelConfigurationError(
+            f"Model '{provider}:{model}' is not enabled for this deployment's Vertex AI project.",
             details={"provider": provider, "model": model},
         )
     return info
@@ -68,7 +75,7 @@ def resolve_catalog_model(
     max_steps: int = DEFAULT_MAX_STEPS,
 ) -> ResolvedModel:
     """Resolves an active catalog entry to its provider-facing model ID."""
-    validate_partner_configuration()
+    validate_vertex_configuration()
     info = _require_active(provider, model)
     partner = provider in VERTEX_PARTNER_PROVIDERS
     merged: dict[str, Any] = {
@@ -99,6 +106,13 @@ def configured_helper_providers(
     allowlist and, when needed, its credential predicate.
     """
     return tuple(provider for provider in supported if is_configured(provider))
+
+
+def has_available_helper_model(provider: str, defaults: Mapping[str, str]) -> bool:
+    """Returns whether a provider's default helper model can run on this deployment."""
+    model = defaults.get(provider)
+    info = find_model(provider, model) if model else None
+    return info is not None and not info.deprecated and is_model_available(info)
 
 
 def format_provider_list(providers: Sequence[str]) -> str:
@@ -156,9 +170,7 @@ def require_helper_model(
         info = _require_active(normalized_provider, resolved_model)
     except ModelConfigurationError as exc:
         if find_model(normalized_provider, resolved_model) is not None:
-            raise ModelRetry(
-                f"Model '{normalized_provider}:{resolved_model}' is deprecated."
-            ) from exc
+            raise ModelRetry(exc.message) from exc
         raise ModelRetry(
             f"Unknown native {tool_name} helper model. Choose a model from the "
             f"{normalized_provider} model catalog or omit model."

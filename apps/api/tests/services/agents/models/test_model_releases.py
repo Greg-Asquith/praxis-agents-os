@@ -110,6 +110,7 @@ async def test_gpt_6_1_sol_never_sends_unsupported_none_effort(monkeypatch):
 def opus_transport(request, monkeypatch):
     monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", request.param)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_MODELS", ["claude-opus-5-5"])
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
     return request.param
@@ -177,3 +178,45 @@ async def test_opus_tool_loop_preserves_thinking_and_recovers_binding(monkeypatc
     assert requests[1]["messages"][1]["content"][0] == thinking
     assert requests[2]["messages"] == requests[1]["messages"]
     assert requests[2]["thinking"]["block_binding"]["prefix_mismatch_behavior"] == "drop_block"
+
+
+async def test_haiku_5_5_sends_adaptive_effort_without_sampling(monkeypatch):
+    monkeypatch.setattr(models, "ALLOW_MODEL_REQUESTS", True)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("test-key"))
+    requests = []
+
+    def respond(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "msg_haiku",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-haiku-5-5",
+                "content": [{"type": "text", "text": "Done"}],
+                "stop_reason": "end_turn",
+                "usage": {"input_tokens": 3, "output_tokens": 2},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        monkeypatch.setattr(factory, "retrying_http_client", lambda: client)
+        model = factory.build_model(
+            resolve_catalog_model(
+                "anthropic",
+                "claude-haiku-5-5",
+                settings_overrides={"thinking": "low", "temperature": 0},
+            )
+        )
+        with pytest.warns(UserWarning, match="Sampling parameters"):
+            await model.request(
+                [ModelRequest(parts=[UserPromptPart("Classify.")])], None, ModelRequestParameters()
+            )
+
+    [body] = requests
+    assert body["thinking"]["type"] == "adaptive"
+    assert "budget_tokens" not in body["thinking"]
+    assert body["output_config"]["effort"] == "low"
+    assert "temperature" not in body

@@ -26,7 +26,7 @@ from services.agents.models.utils import (
     is_provider_configured,
     provider_transport,
 )
-from services.agents.models.validate_partner_configuration import validate_partner_configuration
+from services.agents.models.validate_vertex_configuration import validate_vertex_configuration
 
 _PROVIDER_DISPLAY_NAMES = {
     PROVIDER_OPENAI: "OpenAI",
@@ -51,7 +51,7 @@ _PROVIDER_ORDER = (
 
 def list_model_catalog(workspace: Workspace | None = None) -> ModelCatalogResponse:
     """Return configured non-deprecated models and the workspace's default agent model."""
-    validate_partner_configuration()
+    validate_vertex_configuration()
     configured_providers = {
         provider for provider in _PROVIDER_ORDER if is_provider_configured(provider)
     }

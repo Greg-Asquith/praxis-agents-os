@@ -167,6 +167,9 @@ def _build_parser() -> argparse.ArgumentParser:
     render_parser.add_argument("output", type=Path)
     render_parser.add_argument("allowlist", help="space-separated ${VAR} references")
     subparsers.add_parser("partner-locations")
+    vertex_models_parser = subparsers.add_parser("vertex-models")
+    vertex_models_parser.add_argument("list_variable")
+    vertex_models_parser.add_argument("switch_variable")
     microsoft_env_parser = subparsers.add_parser("microsoft-graph-env")
     microsoft_env_parser.add_argument("indent")
     return parser
@@ -192,6 +195,21 @@ def partner_locations_yaml() -> str:
     return json.dumps(json.dumps(locations, separators=(",", ":")))
 
 
+def vertex_models_yaml(list_variable: str, switch_variable: str) -> str:
+    """Validate a Vertex model list and encode it as a YAML string scalar."""
+    try:
+        models = json.loads(os.environ.get(list_variable, "[]"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{list_variable} must contain valid JSON") from exc
+    if not isinstance(models, list) or any(
+        not isinstance(model, str) or not model.strip() for model in models
+    ):
+        raise ValueError(f"{list_variable} must be a JSON array of model IDs")
+    if os.environ.get(switch_variable) == "true" and not models:
+        raise ValueError(f"{switch_variable}=true requires {list_variable}")
+    return json.dumps(json.dumps(models, separators=(",", ":")))
+
+
 def main() -> None:
     args = _build_parser().parse_args()
     if args.command == "microsoft-graph-env":
@@ -200,6 +218,12 @@ def main() -> None:
     if args.command == "partner-locations":
         try:
             print(partner_locations_yaml())
+        except ValueError as exc:
+            raise SystemExit(f"error: {exc}") from exc
+        return
+    if args.command == "vertex-models":
+        try:
+            print(vertex_models_yaml(args.list_variable, args.switch_variable))
         except ValueError as exc:
             raise SystemExit(f"error: {exc}") from exc
         return

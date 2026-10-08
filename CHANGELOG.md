@@ -12,6 +12,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Claude Haiku 5.5 is available directly and through Google Cloud. It is the
+  Anthropic **Light** default and the default Claude model for native web
+  search, web fetch, and classification, priced from $0.10 input and $0.50
+  output per million tokens.
 - Agents read PowerPoint, Excel, and Word files with dedicated tools that
   return slides, cells, formulas, paragraphs, tables, charts, comments, and
   embedded images, in pages. `read_table` returns rows from workbook sheets,
@@ -58,6 +62,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Each deployment lists the Claude and partner models its Google Cloud
+  project can use, in `ANTHROPIC_VERTEX_MODELS` and `VERTEX_PARTNER_MODELS`.
+  `ANTHROPIC_VERTEX_AI=true` and `VERTEX_PARTNER_MODELS_ENABLED=true` now
+  require their list. Models that aren't listed are hidden from the model
+  picker and rejected at run time. Add the lists to existing environment
+  files before deploying.
 - Google image generation, editing, and video-to-image tools use Nano Banana
   2.1, with updated 1K image-output estimates. Vertex image actions use the
   supported global endpoint and reject explicit regional locations.

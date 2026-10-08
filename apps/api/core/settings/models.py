@@ -180,11 +180,25 @@ class LLMSettingsMixin:
             "The project uses GOOGLE_VERTEX_PROJECT, then GCP_PROJECT_ID."
         ),
     )
+    ANTHROPIC_VERTEX_MODELS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Anthropic catalog model IDs enabled in the Vertex AI project. "
+            "Required when ANTHROPIC_VERTEX_AI is true."
+        ),
+    )
     VERTEX_PARTNER_MODELS_ENABLED: bool = Field(
         default=False,
         description=(
             "Expose Vertex AI partner models through Application Default Credentials. "
             "The project uses GOOGLE_VERTEX_PROJECT, then GCP_PROJECT_ID."
+        ),
+    )
+    VERTEX_PARTNER_MODELS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Provider-qualified partner catalog aliases enabled in the Vertex AI project. "
+            "Required when VERTEX_PARTNER_MODELS_ENABLED is true."
         ),
     )
     VERTEX_PARTNER_MODEL_LOCATIONS: dict[str, str] = Field(
@@ -215,6 +229,30 @@ class LLMSettingsMixin:
         ):
             raise ValueError("VERTEX_PARTNER_MODEL_LOCATIONS must be a JSON object of strings.")
         return value
+
+    @field_validator("ANTHROPIC_VERTEX_MODELS", "VERTEX_PARTNER_MODELS", mode="before")
+    @classmethod
+    def validate_vertex_model_list_shape(cls, value, info):
+        if not isinstance(value, list) or any(
+            not isinstance(model, str) or not model.strip() for model in value
+        ):
+            raise ValueError(f"{info.field_name} must be a JSON array of model IDs.")
+        return [model.strip() for model in value]
+
+    @model_validator(mode="after")
+    def require_vertex_model_lists(self):
+        """Vertex projects enable models one by one, so each deployment lists its own."""
+        if self.ANTHROPIC_VERTEX_AI and not self.ANTHROPIC_VERTEX_MODELS:
+            raise ValueError(
+                "ANTHROPIC_VERTEX_AI=true requires ANTHROPIC_VERTEX_MODELS, "
+                "for example '[\"claude-haiku-5-5\"]'."
+            )
+        if self.VERTEX_PARTNER_MODELS_ENABLED and not self.VERTEX_PARTNER_MODELS:
+            raise ValueError(
+                "VERTEX_PARTNER_MODELS_ENABLED=true requires VERTEX_PARTNER_MODELS, "
+                "for example '[\"mistral:mistral-small-2503\"]'."
+            )
+        return self
 
     # Azure OpenAI (deployment-based; uses the agent's azure_deployment at resolution).
     AZURE_OPENAI_API_KEY: SecretStr | None = Field(

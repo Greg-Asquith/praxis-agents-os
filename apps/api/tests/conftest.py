@@ -107,6 +107,17 @@ def _eager_runtime_tools(request: pytest.FixtureRequest, monkeypatch: pytest.Mon
 
 
 @pytest.fixture(autouse=True)
+def _direct_model_transports(monkeypatch: pytest.MonkeyPatch):
+    """Starts every test on direct model transports, whatever the local .env selects."""
+    from core.settings import settings
+
+    for name in ("GOOGLE_VERTEX_AI", "ANTHROPIC_VERTEX_AI", "VERTEX_PARTNER_MODELS_ENABLED"):
+        monkeypatch.setattr(settings, name, False)
+    for name in ("ANTHROPIC_VERTEX_MODELS", "VERTEX_PARTNER_MODELS"):
+        monkeypatch.setattr(settings, name, [])
+
+
+@pytest.fixture(autouse=True)
 def _reset_test_tenant_context():
     workspace_token = _test_workspace_id.set(None)
     user_token = _test_user_id.set(None)

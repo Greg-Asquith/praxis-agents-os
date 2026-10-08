@@ -80,6 +80,8 @@ _ANTHROPIC_PRICES = (
     # https://platform.claude.com/docs/en/about-claude/pricing (2026-09-29).
     _price("anthropic", "claude-opus-5-5", date(2026, 9, 22), "4", "0.2", "5", "20"),
     _price("anthropic", "claude-sonnet-5-5", date(2026, 9, 28), "2", "0.2", "2.5", "10"),
+    # Prompts up to 100K tokens; longer prompts cost 5x and Vertex `eu` adds 10%.
+    _price("anthropic", "claude-haiku-5-5", date(2026, 10, 7), "0.1", "0.01", "0.125", "0.5"),
     _price("anthropic", "claude-fable-5-1", date(2026, 9, 1), "10", "0.25", "12.5", "50"),
     _price("anthropic", "claude-fable-5", date(2026, 6, 9), "10", "1", "12.5", "50"),
     _price("anthropic", "claude-opus-4-8", date(2026, 5, 27), "5", "0.5", "6.25", "25"),

@@ -27,7 +27,7 @@ def _parent(provider: str, model: str) -> SimpleNamespace:
 @pytest.mark.parametrize(
     ("parent_model", "tier", "expected"),
     [
-        ("claude-opus-5-5", "light", ("anthropic", "claude-haiku-4-5")),
+        ("claude-opus-5-5", "light", ("anthropic", "claude-haiku-5-5")),
         ("claude-opus-5-5", "max", ("anthropic", "claude-opus-5-5")),
         ("claude-haiku-4-5", None, ("anthropic", "claude-haiku-4-5")),
     ],

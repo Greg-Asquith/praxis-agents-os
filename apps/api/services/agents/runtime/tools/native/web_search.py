@@ -35,10 +35,10 @@ from services.agents.models.domain import (
 from services.agents.models.resolution import (
     configured_helper_providers,
     format_provider_list,
+    has_available_helper_model,
     require_configured_provider,
     require_helper_model,
 )
-from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EGRESS_PROVIDER_QUERY,
@@ -60,7 +60,7 @@ SUPPORTED_NATIVE_SEARCH_PROVIDERS = (
 )
 
 DEFAULT_NATIVE_SEARCH_MODELS = {
-    PROVIDER_ANTHROPIC: "claude-sonnet-5",
+    PROVIDER_ANTHROPIC: "claude-haiku-5-5",
     PROVIDER_GOOGLE: "gemini-3.8-flash",
     PROVIDER_OPENAI: "gpt-6-luna",
 }
@@ -76,7 +76,9 @@ def configured_native_search_providers() -> tuple[str, ...]:
     """Returns configured native-search providers in stable order."""
     return configured_helper_providers(
         SUPPORTED_NATIVE_SEARCH_PROVIDERS,
-        is_configured=is_provider_configured,
+        is_configured=lambda provider: has_available_helper_model(
+            provider, DEFAULT_NATIVE_SEARCH_MODELS
+        ),
     )
 
 

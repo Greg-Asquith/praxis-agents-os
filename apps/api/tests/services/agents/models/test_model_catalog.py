@@ -187,6 +187,8 @@ def _clear_model_provider_settings(monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
     monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", False)
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS", [])
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_MODELS", [])
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", None)
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
     monkeypatch.setattr(settings, "AZURE_OPENAI_API_KEY", None)

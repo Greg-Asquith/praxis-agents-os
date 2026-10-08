@@ -300,8 +300,17 @@ fi
 grep -q 'production requires CLOUD_SQL_RETAIN_BACKUPS_ON_DELETE=true' \
   "$TEST_TMP/unsafe-production.out"
 
-for flag in ANTHROPIC_VERTEX_AI VERTEX_PARTNER_MODELS_ENABLED; do
+for flag_and_models in ANTHROPIC_VERTEX_AI:ANTHROPIC_VERTEX_MODELS:claude-haiku-5-5 \
+  VERTEX_PARTNER_MODELS_ENABLED:VERTEX_PARTNER_MODELS:mistral:mistral-small-2503; do
+  IFS=: read -r flag models_var model <<<"$flag_and_models"
   sed "s/^${flag}=false$/${flag}=true/" "$GCP_DIR/.env.example" > "$TEST_TMP/partner.env"
+  if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/partner-render" \
+    "$TEST_TMP/partner.env" abcdef0123456789 >"$TEST_TMP/partner.out" 2>&1; then
+    echo "deploy unexpectedly accepted $flag=true without $models_var" >&2
+    exit 1
+  fi
+  grep -q "$flag=true requires $models_var" "$TEST_TMP/partner.out"
+  printf '\n%s=%s\n' "$models_var" "'[\"$model\"]'" >> "$TEST_TMP/partner.env"
   "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/partner-render" \
     "$TEST_TMP/partner.env" abcdef0123456789
   for manifest in "$TEST_TMP/partner-render/services/praxis-api.yaml" \
@@ -310,6 +319,7 @@ for flag in ANTHROPIC_VERTEX_AI VERTEX_PARTNER_MODELS_ENABLED; do
     grep -A1 "name: $flag" "$manifest" | grep -q 'value: "true"'
     grep -A1 'name: ANTHROPIC_VERTEX_LOCATION' "$manifest" | grep -q 'value: "global"'
     grep -A1 'name: VERTEX_PARTNER_MODEL_LOCATIONS' "$manifest" | grep -q 'value: "{}"'
+    grep -A1 "name: $models_var\$" "$manifest" | grep -qF "[\\\"$model\\\"]"
   done
   sed "s/^${flag}=false$/${flag}=invalid/" "$GCP_DIR/.env.example" > "$TEST_TMP/invalid-partner.env"
   for script in deploy bootstrap; do

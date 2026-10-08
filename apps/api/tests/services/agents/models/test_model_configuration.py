@@ -55,6 +55,10 @@ def test_partner_provider_configuration_requires_switch_and_project(
     assert has_provider_api_key(provider) is False
 
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS", ["xai:grok-4-20-reasoning"])
+    assert is_provider_configured(provider) is (provider == PROVIDER_XAI)
+
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS", [f"{provider}:any-listed-model"])
     assert is_provider_configured(provider) is True
 
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", None)
@@ -83,7 +87,15 @@ def test_production_vertex_provider_accepts_deployment_project_fallback(
             "GCP_PROJECT_ID": "deployment-project",
             "GOOGLE_API_KEY": None,
             "ANTHROPIC_API_KEY": None,
+            "ANTHROPIC_VERTEX_MODELS": ["claude-haiku-5-5"],
+            "VERTEX_PARTNER_MODELS": ["meta:llama-4-scout"],
         },
     )
 
     assert provider == resolved.DEFAULT_MODEL_PROVIDER
+
+
+@pytest.mark.parametrize("switch_setting", ["ANTHROPIC_VERTEX_AI", "VERTEX_PARTNER_MODELS_ENABLED"])
+def test_vertex_switch_requires_model_list(switch_setting: str) -> None:
+    with pytest.raises(ValueError, match=f"{switch_setting}=true requires"):
+        production_settings(**{switch_setting: True, "GCP_PROJECT_ID": "deployment-project"})

@@ -28,6 +28,47 @@ in place because the original version cannot be recovered reliably.
 Explicit environment overrides require a configuration update before restarting
 the API and worker. The migration does not edit environment files.
 
+### Claude Haiku 5.5
+
+The following specifications come from the
+[model overview](https://platform.claude.com/docs/en/about-claude/models/overview)
+and [pricing](https://platform.claude.com/docs/en/about-claude/pricing) pages,
+checked on 7 October 2026. `claude-haiku-5-5` is the API ID and the Google Cloud
+ID. It has a 1,000,000-token context window, 128,000 maximum output tokens, and
+a June 2026 knowledge cutoff. It accepts text and images, returns text, and
+supports streaming, tools, and structured output.
+
+Haiku 5.5 prices depend on prompt length. Token prices are USD per million
+tokens, shown as input / cache read / five-minute cache write / output:
+
+| Transport | Prompts up to 100,000 tokens | Prompts over 100,000 tokens |
+| --- | --- | --- |
+| Claude API, and Google Cloud `global` | $0.10 / $0.01 / $0.125 / $0.50 | $0.50 / $0.05 / $0.625 / $2.50 |
+| Google Cloud `eu` multi-region | $0.11 / $0.011 / $0.1375 / $0.55 | $0.55 / $0.055 / $0.6875 / $2.75 |
+
+The Google Cloud `eu` rates apply the 10% premium that Anthropic's pricing page
+documents for regional and multi-region endpoints. Google's own Claude price
+table was not readable when checked, so confirm it before quoting `eu` costs.
+One-hour cache writes cost twice the input rate. Usage estimates use the Claude
+API rate for prompts up to 100,000 tokens. The longer-prompt rate and the `eu`
+premium are pending because the ledger records neither prompt length nor
+transport.
+
+Haiku 5.5 uses adaptive thinking with `medium` default effort and accepts
+`low` through `max`. It rejects budget-based thinking and non-default sampling
+settings. Disabled thinking is accepted only at `high` effort or below. Unlike
+Opus 5.5 and Sonnet 5.5, it accepts forced tool choice, but a forced call skips
+thinking. Thinking blocks are bound to the conversation prefix. Pydantic AI
+2.50 has no Haiku 5.5 profile, so `provider_model_profile` in `utils.py`
+supplies these settings and native JSON schema support. Catalogue defaults
+request summarised thinking. Refusals have no server-side fallback.
+
+Haiku 5.5 is the Anthropic **Light** default and the Anthropic default for
+native web search, web fetch, and classification. These helpers send the
+basic `web_search_20250305` and `web_fetch_20250910` tools because the profile
+override leaves dynamic filtering off. Claude Haiku 4.5 remains in the
+catalogue.
+
 ### Claude Sonnet 5.5 and GPT-6.1 Sol
 
 The following specifications come from the providers' documentation, checked
@@ -146,10 +187,42 @@ shutdown does not create clients; subsequent acquisition creates an open
 client. Anthropic prompt-cache defaults and catalogue attribution
 remain unchanged across transports. Each Claude model requires Model Garden
 enablement and a supported location.
+
+### Vertex model lists
+
+Google Cloud projects enable Claude and partner models one at a time, and a
+project can be restricted to a subset. The catalogue lists every model Praxis
+supports. Each deployment lists the models its Vertex project can use:
+
+```bash
+ANTHROPIC_VERTEX_AI=true
+ANTHROPIC_VERTEX_MODELS='["claude-haiku-5-5"]'
+VERTEX_PARTNER_MODELS_ENABLED=true
+VERTEX_PARTNER_MODELS='["mistral:mistral-small-2503"]'
+```
+
+`ANTHROPIC_VERTEX_MODELS` holds Anthropic catalogue model IDs.
+`VERTEX_PARTNER_MODELS` holds provider-qualified catalogue aliases. Settings
+reject either switch without its list. Startup, catalogue reads, and
+resolution reject unknown or retired entries. The Anthropic list applies only
+while `ANTHROPIC_VERTEX_AI` is true; direct Anthropic keys expose the whole
+catalogue.
+
+`is_vertex_model_enabled` in `utils.py` applies the lists. The model picker,
+workspace defaults, and sub-agent tier choices omit unlisted models. A saved
+agent or settings default that names one fails resolution with a
+configuration error rather than a provider request. A partner provider counts
+as configured only when one of its models is listed. Native search, fetch, and
+classification offer a provider only when its default helper model is
+available, through `has_available_helper_model` in `resolution.py`. All
+three Anthropic helpers use Haiku 5.5, so a deployment that lists only Haiku
+5.5 keeps them. Anthropic web fetch remains unavailable on Vertex.
+
 ### Vertex partner models
 
 Partner models use locked, off-loop ADC loading and refresh.
-`VERTEX_PARTNER_MODELS_ENABLED` gates construction. Resolution carries
+`VERTEX_PARTNER_MODELS_ENABLED` gates construction, and
+`VERTEX_PARTNER_MODELS` selects the enabled models. Resolution carries
 immutable transport, project, model ID, and location into the factory.
 Meta Llama 4 defaults to `us-east5` and Grok 4.20 to `global`, using Chat
 Completions. Both Llama models default to 8,192 output tokens because Vertex
@@ -183,7 +256,8 @@ To add a selectable model, complete these steps:
 2. In `services/agents/models/registry.py`, add the model's metadata. Catalogue
    order determines the first available model for each provider and model type.
    For Vertex, verify the transport ID, default location, supported locations,
-   project access, and Model Garden enablement.
+   project access, and Model Garden enablement. Deployments opt in by adding
+   the model to `ANTHROPIC_VERTEX_MODELS` or `VERTEX_PARTNER_MODELS`.
 3. Check the installed SDK's model profile and request handling. Add a focused
    override only for missing behaviour, including thinking and tool restrictions.
    Preserve credential resolution, routing validation, and retry ownership.

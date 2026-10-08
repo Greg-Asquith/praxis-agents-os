@@ -7,6 +7,7 @@ from models.workspace import Workspace
 from services.agents.models import find_model, list_models
 from services.agents.models.domain import PROVIDER_AZURE, ModelType
 from services.agents.models.resolution import effective_model_pair, workspace_default_model
+from services.agents.models.utils import is_model_available
 
 _TIER_RANK: dict[ModelType, int] = {"light": 0, "standard": 1, "powerful": 2, "max": 3}
 
@@ -27,7 +28,11 @@ def resolve_subagent_model(
     parent_pair = effective_model_pair(parent, workspace=workspace)
     if model_tier is None:
         default_info = find_model(*workspace_default_model(workspace))
-        candidate = default_info if default_info and not default_info.deprecated else None
+        candidate = (
+            default_info
+            if default_info and not default_info.deprecated and is_model_available(default_info)
+            else None
+        )
     else:
         candidate = _tier_candidate(parent_pair[0], model_tier)
     if candidate is None or not within_parent_model(
@@ -57,7 +62,10 @@ def _tier_candidate(provider: str, model_tier: ModelType):
         (
             info
             for info in list_models()
-            if info.provider == provider and info.model_type == model_tier and info.supports_tools
+            if info.provider == provider
+            and info.model_type == model_tier
+            and info.supports_tools
+            and is_model_available(info)
         ),
         None,
     )

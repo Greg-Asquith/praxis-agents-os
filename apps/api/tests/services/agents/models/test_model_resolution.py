@@ -13,7 +13,9 @@ import pytest
 from core.settings import settings
 from services.agents.models import resolution
 from services.agents.models.domain import ModelConfigurationError, ModelInfo
+from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
+from services.agents.models.utils import is_model_available
 
 
 def _agent(provider, model, **kw):
@@ -97,7 +99,25 @@ def test_partner_resolution_carries_catalog_transport_model(
     monkeypatch: pytest.MonkeyPatch, alias: str, transport_id: str
 ) -> None:
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS", [f"meta:{alias}"])
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
     resolved = resolution.resolve_agent_model(_agent("meta", alias), workspace=None)
     assert resolved.model == alias
     assert resolved.transport_model == transport_id
+
+
+def test_vertex_model_list_limits_anthropic_models_and_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", True)
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_MODELS", ["claude-haiku-5-5"])
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "vertex-project")
+
+    assert resolution.resolve_catalog_model("anthropic", "claude-haiku-5-5").transport_model == (
+        "claude-haiku-5-5"
+    )
+    assert not is_model_available(get_model("anthropic", "claude-opus-5-5"))
+    with pytest.raises(ModelConfigurationError, match="not enabled"):
+        resolve_agent_model(_agent("anthropic", "claude-opus-5-5"), workspace=None)
+    assert resolution.has_available_helper_model("anthropic", {"anthropic": "claude-haiku-5-5"})
+    assert not resolution.has_available_helper_model("anthropic", {"anthropic": "claude-sonnet-5"})

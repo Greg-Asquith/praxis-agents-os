@@ -28,10 +28,10 @@ from services.agents.models.domain import (
 from services.agents.models.resolution import (
     configured_helper_providers,
     format_provider_list,
+    has_available_helper_model,
     require_configured_provider,
     require_helper_model,
 )
-from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools import (
     TOOL_EFFECT_READ,
@@ -54,7 +54,7 @@ from utils.validation import normalize_optional_text
 
 DEFAULT_CLASSIFIER_MODELS = {
     PROVIDER_OPENAI: "gpt-6-luna",
-    PROVIDER_ANTHROPIC: "claude-haiku-4-5",
+    PROVIDER_ANTHROPIC: "claude-haiku-5-5",
     PROVIDER_GOOGLE: "gemini-3.5-flash-lite",
 }
 
@@ -89,7 +89,9 @@ def configured_classifier_providers() -> tuple[str, ...]:
     """Returns configured providers supported by the classifier helper."""
     return configured_helper_providers(
         SUPPORTED_CLASSIFIER_PROVIDERS,
-        is_configured=is_provider_configured,
+        is_configured=lambda provider: has_available_helper_model(
+            provider, DEFAULT_CLASSIFIER_MODELS
+        ),
     )
 
 

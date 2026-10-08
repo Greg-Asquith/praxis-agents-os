@@ -42,10 +42,11 @@ from services.agents.models.domain import (
 from services.agents.models.resolution import (
     configured_helper_providers,
     format_provider_list,
+    has_available_helper_model,
     require_configured_provider,
     require_helper_model,
 )
-from services.agents.models.utils import is_provider_configured, provider_transport
+from services.agents.models.utils import provider_transport
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.dispatch import truncate_result
 from services.agents.runtime.tools import (
@@ -65,7 +66,7 @@ NativeWebFetchProvider = Literal["anthropic", "google"]
 SUPPORTED_NATIVE_FETCH_PROVIDERS = (PROVIDER_ANTHROPIC, PROVIDER_GOOGLE)
 
 DEFAULT_NATIVE_FETCH_MODELS = {
-    PROVIDER_ANTHROPIC: "claude-sonnet-5",
+    PROVIDER_ANTHROPIC: "claude-haiku-5-5",
     PROVIDER_GOOGLE: "gemini-3.8-flash",
 }
 
@@ -85,7 +86,9 @@ def configured_native_fetch_providers() -> tuple[str, ...]:
         provider
         for provider in configured_helper_providers(
             SUPPORTED_NATIVE_FETCH_PROVIDERS,
-            is_configured=is_provider_configured,
+            is_configured=lambda provider: has_available_helper_model(
+                provider, DEFAULT_NATIVE_FETCH_MODELS
+            ),
         )
         if not (provider == PROVIDER_GOOGLE and blocked_domains_configured)
         and not (provider == PROVIDER_ANTHROPIC and provider_transport(provider) == "google-cloud")

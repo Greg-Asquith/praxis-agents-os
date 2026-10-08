@@ -119,6 +119,18 @@ _CATALOG: tuple[ModelInfo, ...] = (
         supports_thinking=True,
         supports_vision=True,
     ),
+    # https://platform.claude.com/docs/en/models/haiku-5-5/overview
+    ModelInfo(
+        provider=PROVIDER_ANTHROPIC,
+        model="claude-haiku-5-5",
+        vertex_model="claude-haiku-5-5",
+        display_name="Claude Haiku 5.5",
+        context_window=1_000_000,
+        model_type="light",
+        supports_thinking=True,
+        supports_vision=True,
+        default_settings={"anthropic_thinking": {"type": "adaptive", "display": "summarized"}},
+    ),
     # Model Garden: Claude Haiku 4.5 on Google Cloud.
     ModelInfo(
         provider=PROVIDER_ANTHROPIC,

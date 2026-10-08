@@ -30,6 +30,11 @@ MODELS = (
 @pytest.fixture
 async def configured(monkeypatch):
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODELS_ENABLED", True)
+    monkeypatch.setattr(
+        settings,
+        "VERTEX_PARTNER_MODELS",
+        [f"{provider}:{model}" for provider, model in MODELS] + ["meta:llama-4-maverick"],
+    )
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
     monkeypatch.setattr(settings, "VERTEX_PARTNER_MODEL_LOCATIONS", {})
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 0)

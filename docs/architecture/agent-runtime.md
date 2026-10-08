@@ -356,11 +356,14 @@ apps/api/
   close with Google clients during API, worker, and eval shutdown. Prompt-cache
   defaults remain enabled; Pydantic AI applies per-block caching on Vertex.
   Native web fetch excludes Anthropic on this transport.
-  Web search and classification remain available. Usage attribution retains
-  the Anthropic provider and catalog model. Enable each model in Model Garden
-  before use and select a location supported by that model.
-- **Partner transports:** `VERTEX_PARTNER_MODELS_ENABLED` enables cataloged
-  Meta, xAI, and Mistral models. Resolution carries a stable catalog alias and
+  Web search and classification remain available when their default helper
+  models are listed. Usage attribution retains the Anthropic provider and
+  catalog model. `ANTHROPIC_VERTEX_MODELS` lists the Claude models the
+  project can use; the catalog, defaults, and resolution exclude the rest.
+  Enable each model in Model Garden before use and select a location
+  supported by that model.
+- **Partner transports:** `VERTEX_PARTNER_MODELS_ENABLED` enables the cataloged
+  Meta, xAI, and Mistral models listed in `VERTEX_PARTNER_MODELS`. Resolution carries a stable catalog alias and
   an immutable transport kind, model ID, project, and supported location.
   Meta Llama 4 uses Chat Completions in `us-east5`; Grok 4.20 uses the same API
   in `global`. Both Llama entries default to `max_tokens=8192`; Vertex rejects

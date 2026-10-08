@@ -72,6 +72,19 @@ def provider_model_profile(provider: str, model: str) -> ModelProfile | None:
             "anthropic_binds_thinking_blocks": True,
             "default_structured_output_mode": "native",
         }
+    if provider == PROVIDER_ANTHROPIC and model == "claude-haiku-5-5":
+        # Haiku 5.5 rejects budget thinking and sampling settings but accepts disabled thinking.
+        return {
+            **(anthropic_model_profile(model) or {}),
+            "supports_json_schema_output": True,
+            "anthropic_supports_adaptive_thinking": True,
+            "anthropic_supports_effort": True,
+            "anthropic_supports_xhigh_effort": True,
+            "anthropic_disallows_budget_thinking": True,
+            "anthropic_disallows_sampling_settings": True,
+            "anthropic_disallows_top_effort_when_thinking_disabled": True,
+            "anthropic_binds_thinking_blocks": True,
+        }
     return None
 
 
@@ -190,7 +203,11 @@ def provider_transport(provider: str) -> ProviderTransport:
 def is_provider_configured(provider: str) -> bool:
     """Return whether the provider has the runtime configuration needed to build a model."""
     if provider in VERTEX_PARTNER_PROVIDERS:
-        return settings.VERTEX_PARTNER_MODELS_ENABLED and vertex_project() is not None
+        return (
+            settings.VERTEX_PARTNER_MODELS_ENABLED
+            and vertex_project() is not None
+            and any(alias.startswith(f"{provider}:") for alias in settings.VERTEX_PARTNER_MODELS)
+        )
     if provider_transport(provider) == "google-cloud":
         return vertex_project() is not None
     if provider == PROVIDER_AZURE:
@@ -203,8 +220,18 @@ def is_provider_configured(provider: str) -> bool:
 def is_model_available(info: ModelInfo) -> bool:
     """Return whether this deployment can build the model on its active transport."""
     return is_provider_configured(info.provider) and (
-        provider_transport(info.provider) == "direct" or has_vertex_model_id(info.vertex_model)
+        provider_transport(info.provider) == "direct"
+        or (has_vertex_model_id(info.vertex_model) and is_vertex_model_enabled(info))
     )
+
+
+def is_vertex_model_enabled(info: ModelInfo) -> bool:
+    """Return whether the deployment's Vertex model list allows this Anthropic or partner model."""
+    if info.provider in VERTEX_PARTNER_PROVIDERS:
+        return info.qualified_id in settings.VERTEX_PARTNER_MODELS
+    if info.provider == PROVIDER_ANTHROPIC and provider_transport(info.provider) == "google-cloud":
+        return info.model in settings.ANTHROPIC_VERTEX_MODELS
+    return True
 
 
 def partner_location(info: ModelInfo) -> str:
