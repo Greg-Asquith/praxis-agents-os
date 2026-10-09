@@ -211,6 +211,16 @@ export function normalize(target: string | null) {
   return normalized || null
 }
 
+/** A link's host without a leading www., or null when it isn't a URL with a host. */
+export function urlDomain(url: string | null): string | null {
+  if (!url) return null
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || null
+  } catch {
+    return null
+  }
+}
+
 export function normalizeOptionalText(value: string | null | undefined) {
   const normalized = value?.trim() ?? ""
   return normalized || null

@@ -3,15 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { filesQueryKeys } from "./list-files"
-import type { FileUploadRequest, FileUploadResult } from "../types"
-import { apiRequest } from "@/lib/api/client"
-
-export async function requestFileUpload(payload: FileUploadRequest) {
-  return apiRequest<FileUploadResult>("/files/uploads", {
-    body: payload,
-    method: "POST",
-  })
-}
+import { requestFileUpload } from "@/lib/api/workspace-file-upload"
 
 export function useRequestFileUploadMutation() {
   const queryClient = useQueryClient()

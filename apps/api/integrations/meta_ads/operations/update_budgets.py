@@ -18,7 +18,7 @@ from ..client import MetaAdsClient
 from ..models import MetaAdsObjectBudget
 from ..throttle import ensure_account_available
 from ..tools.schemas.activities import MetaAdsActivitiesInput
-from ..tools.schemas.objects import MetaAdsObject
+from ..tools.schemas.objects import CLOSED_STATUSES, MetaAdsObject
 from .list_activities import list_activities
 from .list_objects import read_objects_by_id
 from .mutations import (
@@ -40,7 +40,6 @@ _OPERATION = "update_budgets"
 # The client keeps Meta's reason for rejections of operations named validate_*.
 _VALIDATE_OPERATION = "validate_update_budgets"
 _OBJECT_TYPES: tuple[MetaAdsBudgetObjectType, ...] = ("campaign", "adset")
-_CLOSED_STATUSES = frozenset({"ARCHIVED", "DELETED"})
 _NOUNS = {"campaign": "campaign", "adset": "ad set"}
 _NOT_CONFIRMED = "Meta Ads accepted the change, but the budget still shows a different amount."
 _READBACK_FAILED = "Meta Ads accepted the change, but the budget couldn't be read back."
@@ -115,7 +114,7 @@ def budget_problem(
 ) -> str | None:
     """Returns why this object's budget can't be set to the requested amount, or None."""
     noun = _NOUNS[object_type]
-    if status in _CLOSED_STATUSES:
+    if status in CLOSED_STATUSES:
         return f"This {noun} is archived or deleted."
     if object_type == "campaign" and budget is None:
         return "This campaign's ad sets hold their own budgets. Change those instead."

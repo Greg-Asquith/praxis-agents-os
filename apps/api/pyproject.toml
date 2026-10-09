@@ -21,6 +21,7 @@ dependencies = [
     "nh3>=0.2.20",
     "openpyxl==3.1.5",
     "pgvector==0.5.0",
+    "pillow>=12.3.0",
     "prometheus-client>=0.26.0",
     "pwdlib[argon2]>=0.3.0",
     "pydantic-ai[retries]>=2.50.0",

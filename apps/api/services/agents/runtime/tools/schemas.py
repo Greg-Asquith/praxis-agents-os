@@ -39,6 +39,8 @@ class ToolFieldPresentationRead(BaseModel):
         default_factory=list, exclude_if=lambda value: not value
     )
     min_rows: int
+    width: str = Field(default="auto", exclude_if=lambda value: value == "auto")
+    show_empty: bool = Field(default=False, exclude_if=lambda value: not value)
 
 
 class ToolPresentationRead(BaseModel):
@@ -94,6 +96,8 @@ class ToolPresentationRead(BaseModel):
                         for column in field.columns
                     ],
                     min_rows=field.min_rows,
+                    width=field.width,
+                    show_empty=field.show_empty,
                 )
                 for field in presentation.arg_fields
             ],
@@ -127,6 +131,8 @@ class ToolPresentationRead(BaseModel):
                         for column in field.columns
                     ],
                     min_rows=field.min_rows,
+                    width=field.width,
+                    show_empty=field.show_empty,
                 )
                 for field in presentation.result_fields
             ],

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from pydantic import BaseModel, Field
 
 from core.exceptions.general import AppValidationError
 from services.agent_runs.validate_override_args import validate_and_canonicalize_override_args
@@ -361,3 +362,50 @@ async def test_scalar_approval_rejects_malformed_effective_values(
             override_args={"value": value} if edited else None,
         )
     assert exc_info.value.field == "value"
+
+
+class _Card(BaseModel):
+    headline: str = Field(max_length=10)
+
+
+class _Cards(BaseModel):
+    cards: list[_Card] = Field(min_length=1)
+
+
+def _cards_tool(cards: list[_Card]) -> str:
+    return "ok"
+
+
+async def test_structured_override_is_checked_by_the_tools_input_model(monkeypatch) -> None:
+    definition = RuntimeToolDefinition(
+        name="cards_write",
+        function=_cards_tool,
+        description="Write nested cards.",
+        approval_input_model=_Cards,
+        presentation=ToolPresentation(
+            arg_fields=(
+                ToolFieldPresentation(
+                    key="cards", label="Cards", format="structured", editable=True
+                ),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "services.agents.runtime.tools.registry.get_runtime_tool_definition",
+        lambda _tool_name: definition,
+    )
+
+    async def override(cards):
+        return await validate_and_canonicalize_override_args(
+            AsyncMock(),
+            actor=SimpleNamespace(),
+            workspace=SimpleNamespace(),
+            membership=SimpleNamespace(),
+            run=SimpleNamespace(conversation_id=uuid4()),
+            tool_call=_call("cards_write", {"cards": [{"headline": "Old"}]}),
+            override_args={"cards": cards},
+        )
+
+    assert await override([{"headline": "New"}]) == {"cards": [{"headline": "New"}]}
+    with pytest.raises(AppValidationError, match="Check the changed details"):
+        await override([{"headline": "A headline that is far too long"}])

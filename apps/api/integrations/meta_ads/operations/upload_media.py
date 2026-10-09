@@ -35,6 +35,17 @@ _POLL_INTERVAL_SECONDS = 5
 # Bounds the first status reads even when no processing wait is configured.
 _MIN_READ_SECONDS = 10
 _CANCEL_TIMEOUT_SECONDS = 5
+_READINESS_MESSAGES = {
+    "processing": (
+        "Meta is still processing this video. List the account's videos to check it's ready "
+        "before using it in an ad."
+    ),
+    "unknown": (
+        "Meta didn't say whether this video is ready. List the account's videos to check it's "
+        "ready before using it in an ad."
+    ),
+    "failed": "Meta couldn't process this video. Upload it again or choose another File.",
+}
 _UNCONFIRMED = (
     "Meta Ads didn't confirm this upload. Check the media library before uploading again."
 )
@@ -135,6 +146,23 @@ def _terminal_effect(upload: MediaUpload) -> MetaAdsMutationEffect:
     if upload.recovered:
         fields["recovered"] = "true"
     return replace(effect, fields=freeze_fields(fields))
+
+
+def media_upload_row(upload: MediaUpload) -> dict[str, Any]:
+    """Builds one upload's result row, shared with ad creation's own uploads."""
+    effect = upload.effect
+    failure = effect if effect is not None and effect.outcome != "applied" else None
+    return {
+        "file_id": upload.file_id,
+        "revision_id": str(upload.source.revision.id),
+        "name": upload.source.file.name[:500],
+        "media_type": upload.source.media_type,
+        "outcome": upload.outcome,
+        "recovered": upload.recovered,
+        "media": upload.media.model_dump(mode="json") if upload.media else None,
+        "error_code": failure.error_code if failure else None,
+        "message": failure.message if failure else _READINESS_MESSAGES.get(upload.readiness),
+    }
 
 
 async def _upload_image(

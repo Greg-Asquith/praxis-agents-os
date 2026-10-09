@@ -5,6 +5,7 @@ import type {
   ResolvedToolField,
   ToolFieldColumn,
   ToolFieldFormat,
+  ToolFieldWidth,
 } from "@/components/tool-ui/field-resolution"
 
 export type ApprovalDecision =
@@ -33,6 +34,8 @@ export type ApprovalField = {
   min_rows: number
   options: string[]
   options_by_field?: string | null
+  show_empty?: boolean
+  width?: ToolFieldWidth
   options_by_value?: Record<string, string[]>
   placeholder: string
   secondary: boolean

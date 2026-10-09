@@ -12,6 +12,10 @@ from services.agents.runtime.entity_references.domain import EntityChoice
 class EntityReferenceLookupRequest(BaseModel):
     tool_name: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_]*$")
     field_key: str = Field(min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_]*$")
+    # Names the kind to look up in a structured field, which can hold several.
+    entity_kind: str | None = Field(
+        default=None, min_length=1, max_length=128, pattern=r"^[a-z][a-z0-9_]*$"
+    )
     dependent_args: dict[str, Any] = Field(default_factory=dict)
     search: str | None = Field(default=None, max_length=500)
     exact_values: list[Any] | None = Field(default=None, max_length=500)

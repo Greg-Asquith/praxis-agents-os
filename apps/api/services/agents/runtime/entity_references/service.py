@@ -43,7 +43,7 @@ from services.tools import get_workspace_tool_defaults
 
 if TYPE_CHECKING:
     from services.agents.runtime.context import RuntimeDeps
-    from services.agents.runtime.tools.contract import RuntimeToolDefinition
+    from services.agents.runtime.tools.contract import RuntimeToolDefinition, ToolFieldPresentation
 
 
 @dataclass(frozen=True)
@@ -86,6 +86,7 @@ async def lookup_entity_references(
         conversation_id=conversation_id,
         tool_name=payload.tool_name,
         field_key=payload.field_key,
+        entity_kind=payload.entity_kind,
     )
     dependent_args = {key: payload.dependent_args.get(key) for key in authorized.depends_on}
     if payload.exact_values is not None:
@@ -375,9 +376,14 @@ async def authorize_entity_field(
     conversation_id: UUID,
     tool_name: str,
     field_key: str,
+    entity_kind: str | None = None,
     run: AgentRun | None = None,
     tool_call_id: str | None = None,
 ) -> AuthorizedEntityField:
+    """Authorises a lookup of one tool field's references for the actor's conversation.
+
+    A structured field holds several kinds, so its caller names the kind to look up.
+    """
     conversation = await get_conversation_for_actor(
         db,
         actor=actor,
@@ -419,24 +425,25 @@ async def authorize_entity_field(
         ),
         None,
     )
-    if field is None or field.format not in {"entity", "entity_list"} or field.entity_kind is None:
+    kind = _field_entity_kind(field, entity_kind)
+    if field is None or kind is None:
         raise AppValidationError(
             "Tool field is not an entity reference",
             field="field_key",
             details={"tool_name": tool_name, "field_key": field_key},
         )
-    resolver = get_entity_resolver(field.entity_kind)
+    resolver = get_entity_resolver(kind)
     if resolver is None:
         raise AppValidationError(
             "Entity resolver is unavailable",
             field="field_key",
-            details={"entity_kind": field.entity_kind},
+            details={"entity_kind": kind},
         )
     if resolver.requires_active_context and active_context.is_empty:
         raise AppValidationError(
             "Select a compatible integration context before choosing a target",
             field="field_key",
-            details={"entity_kind": field.entity_kind},
+            details={"entity_kind": kind},
         )
     return AuthorizedEntityField(
         context=EntityResolverContext(
@@ -453,6 +460,17 @@ async def authorize_entity_field(
         ),
         resolver=resolver,
         field_key=field.key,
-        entity_kind=field.entity_kind,
+        entity_kind=kind,
         depends_on=field.depends_on,
     )
+
+
+def _field_entity_kind(field: "ToolFieldPresentation | None", requested: str | None) -> str | None:
+    """Returns the kind to look up, or None when the field doesn't hold the requested kind."""
+    if field is None:
+        return None
+    if field.format in {"entity", "entity_list"}:
+        return field.entity_kind if requested in (None, field.entity_kind) else None
+    if field.format == "structured" and requested in field.entity_kinds:
+        return requested
+    return None

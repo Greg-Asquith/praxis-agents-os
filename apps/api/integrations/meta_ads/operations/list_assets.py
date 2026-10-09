@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ValidationError
 
 from core.exceptions.integration import IntegrationPermissionError
+from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.report_results import ReportResultBudget, report_result_max_bytes
 
 from ..client import MetaAdsClient, ad_account_path
@@ -19,6 +20,7 @@ from ..references import (
     MetaAdsMediaReference,
     MetaAdsPageReference,
 )
+from ..throttle import ensure_account_available
 from ..tools.schemas.assets import MetaAdsAssetKind, MetaAdsAssetsData
 from .paging import read_pages
 from .values import bounded_string, invalid_response
@@ -28,6 +30,9 @@ _MEDIA_LIMIT = 50
 _IDENTITY_LIMIT = 100
 # Pages read per kind, so inactive or short pages can't hide assets behind them.
 _MAX_PAGES = 5
+_VIDEO_SCAN_PAGE_SIZE = 100
+# Meta's video edge has no ID filter, so exact lookups scan this many recent videos.
+VIDEO_SCAN_LIMIT = _VIDEO_SCAN_PAGE_SIZE * _MAX_PAGES
 _MAX_URL_LENGTH = 2048
 _MEDIA_HOSTS = ("fbcdn.net", "facebook.com", "cdninstagram.com")
 ASSET_KINDS: tuple[MetaAdsAssetKind, ...] = ("pages", "instagram_accounts", "images", "videos")
@@ -86,7 +91,12 @@ async def read_page_references(
     client: MetaAdsClient, *, account_id: str, scope_label: str, budget: ReportResultBudget
 ) -> tuple[list[MetaAdsPageReference], bool]:
     rows, more = await _read(
-        client, account_id, "promote_pages", "id,name,picture{url}", _IDENTITY_LIMIT, budget
+        client,
+        account_id,
+        "promote_pages",
+        "id,name,picture.width(128).height(128){url}",
+        _IDENTITY_LIMIT,
+        budget,
     )
     pages = [
         _reference(
@@ -97,7 +107,7 @@ async def read_page_references(
             label=_label(row.get("name"), "Facebook Page"),
             description="Facebook Page",
             scope_label=scope_label,
-            picture_url=_media_url(_picture_url(row.get("picture"))),
+            picture_url=media_url(_picture_url(row.get("picture"))),
         )
         for row in rows
     ]
@@ -128,7 +138,7 @@ async def read_instagram_references(
                 label=f"@{username}" if username else f"Instagram account {row.get('id')}",
                 description="Instagram account",
                 scope_label=scope_label,
-                picture_url=_media_url(row.get("profile_pic")),
+                picture_url=media_url(row.get("profile_pic")),
             )
         )
     return accounts, more
@@ -172,6 +182,56 @@ async def read_video_references(
     return videos, more
 
 
+async def find_video_references(
+    client: MetaAdsClient,
+    *,
+    account_id: str,
+    scope_label: str,
+    budget: ReportResultBudget,
+    video_ids: Sequence[str],
+) -> list[MetaAdsMediaReference]:
+    """Finds exact videos in the account's library by scanning its most recent videos.
+
+    Meta's video edge has no ID filter, and reading a video directly doesn't prove which
+    account owns it, so a video older than the scanned pages isn't found.
+    """
+    wanted = set(video_ids)
+    rows, _more = await read_pages(
+        client,
+        path=f"{ad_account_path(account_id)}/advideos",
+        account_id=account_id,
+        params={"fields": "id,title,picture,status"},
+        limit=len(wanted),
+        budget=budget,
+        operation=_OPERATION,
+        page_size=_VIDEO_SCAN_PAGE_SIZE,
+        max_pages=_MAX_PAGES,
+        include=lambda row: row.get("id") in wanted,
+    )
+    return [video_reference(row, account_id=account_id, scope_label=scope_label) for row in rows]
+
+
+async def preferred_thumbnail(
+    client: MetaAdsClient, *, account_id: str, video_id: str
+) -> str | None:
+    """Returns the address of the thumbnail Meta prefers for a video, or None."""
+    ensure_account_available(account_id, operation=_OPERATION)
+    payload = await client.graph_get(
+        f"{video_id}/thumbnails",
+        params={"fields": "uri,is_preferred"},
+        operation=_OPERATION,
+        policy=IntegrationRequestPolicy.READ,
+        usage_account_id=account_id,
+    )
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        return None
+    usable = [row for row in rows if isinstance(row, dict) and media_url(row.get("uri"))]
+    preferred = next((row for row in usable if row.get("is_preferred") is True), None)
+    chosen = preferred or (usable[0] if usable else None)
+    return media_url(chosen.get("uri")) if chosen else None
+
+
 def image_reference(
     row: dict[str, Any], *, account_id: str, scope_label: str
 ) -> MetaAdsMediaReference:
@@ -188,7 +248,7 @@ def image_reference(
         width=_dimension(row.get("width")),
         height=_dimension(row.get("height")),
         media_status="ready",
-        thumbnail_url=_media_url(row.get("url_128")),
+        thumbnail_url=media_url(row.get("url_128")),
     )
 
 
@@ -205,7 +265,7 @@ def video_reference(
         description="Video",
         scope_label=scope_label,
         media_status=video_status(row.get("status")),
-        thumbnail_url=_media_url(row.get("picture")),
+        thumbnail_url=media_url(row.get("picture")),
     )
 
 
@@ -271,7 +331,7 @@ def _picture_url(value: Any) -> Any:
     return data.get("url") if isinstance(data, dict) else value
 
 
-def _media_url(value: Any) -> str | None:
+def media_url(value: Any) -> str | None:
     """Keeps only HTTPS addresses on Meta's own hosts; anything else is dropped."""
     if not isinstance(value, str) or len(value) > _MAX_URL_LENGTH:
         return None

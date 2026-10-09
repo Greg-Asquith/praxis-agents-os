@@ -8,10 +8,14 @@ from services.agents.runtime.entity_references.domain import (
     ScopedEntityReference,
 )
 from services.agents.runtime.entity_references.registry import EntityResolverDefinition
-from services.agents.runtime.entity_references.service import resolve_runtime_references
+from services.agents.runtime.entity_references.service import (
+    EntityResolverContext,
+    resolve_runtime_references,
+)
 
 __all__ = [
     "EntityChoice",
+    "EntityResolverContext",
     "EntityResolverDefinition",
     "EntityResolverPage",
     "ScopedEntityReference",

@@ -1,10 +1,8 @@
 // apps/web/src/features/conversations/attachments.ts
 
-import { confirmFileUpload } from "@/features/files/api/confirm-file-upload"
-import { requestFileUpload } from "@/features/files/api/request-file-upload"
 import type { WorkspaceFile } from "@/features/files/types"
-import { uploadFileDirectly } from "@/lib/api/direct-upload"
-import { contentTypeForWorkspaceFile, WORKSPACE_FILE_MIME_TYPES } from "@/lib/file"
+import { uploadWorkspaceFile } from "@/lib/api/workspace-file-upload"
+import { WORKSPACE_FILE_MIME_TYPES } from "@/lib/file"
 import { isRecord, stringValue } from "@/lib/guards"
 
 export const MAX_CHAT_ATTACHMENTS = 5
@@ -36,22 +34,7 @@ export function isImageAttachmentMediaType(mediaType: string | null | undefined)
 }
 
 export async function uploadChatAttachment(file: File): Promise<MessageAttachment> {
-  const result = await requestFileUpload({
-    content_type: contentTypeForWorkspaceFile(file),
-    filename: file.name,
-    size_bytes: file.size,
-  })
-  if (result.file) {
-    return attachmentFromWorkspaceFile(result.file)
-  }
-  if (!result.grant) {
-    throw new Error("Upload grant was not returned.")
-  }
-
-  await uploadFileDirectly(result.grant.upload, file, result.grant.max_size_bytes)
-  return attachmentFromWorkspaceFile(
-    await confirmFileUpload({ uploadToken: result.grant.upload_token })
-  )
+  return attachmentFromWorkspaceFile(await uploadWorkspaceFile(file))
 }
 
 export function isBinaryUserContentPart(value: unknown): value is {

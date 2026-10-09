@@ -3,6 +3,8 @@
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { formatBytes, formatDateTime } from "@/lib/format"
 
+export type ToolFieldWidth = "auto" | "full" | "half" | "third"
+
 export type ToolFieldFormat =
   | "text"
   | "multiline"
@@ -18,6 +20,8 @@ export type ToolFieldFormat =
   | "records"
   | "entity"
   | "entity_list"
+  // Nested arguments only a provider's own approval editor shows and changes.
+  | "structured"
 
 export type ToolFieldDefinition = {
   columns?: ToolFieldColumn[]
@@ -118,7 +122,7 @@ export function scalarToolFieldDisplayValue(value: unknown): string | null {
 }
 
 function toolFieldDisplayValue(value: unknown, format: ToolFieldFormat): string | null {
-  if (value === undefined || value === null) {
+  if (value === undefined || value === null || format === "structured") {
     return null
   }
   if (format === "bytes" && typeof value === "number") {

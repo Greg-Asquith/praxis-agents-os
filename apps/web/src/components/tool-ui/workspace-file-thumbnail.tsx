@@ -14,12 +14,14 @@ const fileQueryKeys = createWorkspaceScopedQueryKeys("files")
 const PREVIEW_STALE_MS = 4 * 60 * 1000
 
 // Keyed by revision, so a replaced File never shows its newer bytes in place of these.
-function revisionPreviewQueryOptions(fileId: string, revisionId: string) {
+function revisionPreviewQueryOptions(fileId: string, revisionId: string | null) {
   return queryOptions({
-    queryKey: [...fileQueryKeys.detail(fileId), "preview", revisionId],
+    queryKey: [...fileQueryKeys.detail(fileId), "preview", revisionId ?? "current"],
     queryFn: () =>
       apiRequest<unknown>(
-        `/files/${fileId}/preview?revision_id=${encodeURIComponent(revisionId)}`,
+        revisionId
+          ? `/files/${fileId}/preview?revision_id=${encodeURIComponent(revisionId)}`
+          : `/files/${fileId}/preview`,
         { method: "POST" }
       ),
     staleTime: PREVIEW_STALE_MS,
@@ -36,20 +38,24 @@ function previewUrl(grant: unknown): string | null {
 /** Shows one revision of a workspace File, or an unavailable tile when it has none to show. */
 export function WorkspaceFileThumbnail({
   className,
+  current = false,
   fileId,
   kind,
   label,
   revisionId,
 }: {
   className?: string
+  // Shows the File's current revision when no revision is pinned yet.
+  current?: boolean
   fileId: string
   kind: "image" | "video"
   label: string
   revisionId: string | null
 }) {
+  const enabled = revisionId !== null || current
   const query = useQuery({
-    ...revisionPreviewQueryOptions(fileId, revisionId ?? ""),
-    enabled: revisionId !== null,
+    ...revisionPreviewQueryOptions(fileId, revisionId),
+    enabled,
   })
   // Recorded by URL, so a new grant or revision tries again.
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
@@ -72,7 +78,7 @@ export function WorkspaceFileThumbnail({
       <ThumbnailContent
         kind={kind}
         label={label}
-        loading={revisionId !== null && query.isPending}
+        loading={enabled && query.isPending}
         onLoadError={handleLoadError}
         url={grantUrl === failedUrl ? null : grantUrl}
       />

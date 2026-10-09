@@ -9,6 +9,6 @@ from pydantic import BaseModel
 
 class IntegrationPreviewRead(BaseModel):
     kind: str
-    content_type: Literal["html", "text"]
+    content_type: Literal["html", "text", "image"]
     content: str
     meta: dict[str, Any]

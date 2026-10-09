@@ -58,7 +58,26 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Meta Ads media upload: up to 20 workspace images or videos per approval,
   pinned to the reviewed File versions, with chunked video upload, lost
   replies settled by finding the upload rather than resending it, and a
-  wait for video processing. Ad creation is pending.
+  wait for video processing.
+- Meta Ads ad creation: up to 50 image, video, and carousel ads across up to
+  10 existing ad sets in one approval, with optional 9:16 versions for
+  Stories and Reels, workspace images uploaded with the ads, and each ad
+  created paused or active. Every Meta advanced setting and AI enhancement
+  is sent off unless the operator turns it on. Meta checks every ad before any is created, and
+  each result reports Meta's review, any change Meta turned on anyway, and
+  a preview link. The approval card lists the ads and opens one at a
+  time, with a preview for Feed and for Stories and Reels beside its text,
+  checks shown under the field they're about, and inline editing of text,
+  links, buttons, status, and carousel card order. Option pickers now show
+  provider values such as `LEARN_MORE` as "Learn More". Ad listings include Meta's
+  review reasons.
+- Meta Ads library images and video thumbnails show on the ad creation card.
+  The API reads them from Meta's hosts and returns a re-encoded JPEG through
+  the conversation preview route, so the browser never loads Meta's image
+  hosts.
+- Approval editors for nested tool arguments: a `structured` field is edited
+  only by its provider's own approval card, and the server checks the whole
+  edit against the tool's input model.
 
 ### Changed
 
@@ -101,6 +120,9 @@ minor release. Patch releases contain backward-compatible fixes only.
 - Pydantic AI 2.50 keeps instructions, exceptions, and output templates out of
   agent spans when trace content is disabled (GHSA-4x9p-g9wm-8q7f). Provider
   SDKs and model pricing data update with it.
+- Integration tool contracts now look inside `type` aliases, so account and
+  connection fields nested behind one are rejected, and scoped references
+  behind one must have a provider resolver.
 
 ## [0.1.0] - 2026-07-28
 

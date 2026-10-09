@@ -63,4 +63,5 @@ async def get_context_preview(
         ref=ref,
         actor=actor,
         workspace=workspace,
+        scope_id=scope_id,
     )

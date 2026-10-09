@@ -2,6 +2,7 @@
 
 """Meta Ads tool contributions."""
 
+from .create_ads import DEFINITION as CREATE_ADS
 from .get_accounts import DEFINITION as GET_ACCOUNTS
 from .list_activities import DEFINITION as LIST_ACTIVITIES
 from .list_assets import DEFINITION as LIST_ASSETS
@@ -22,4 +23,5 @@ TOOL_DEFINITIONS = (
     UPDATE_STATUS,
     UPDATE_BUDGETS,
     UPLOAD_MEDIA,
+    CREATE_ADS,
 )

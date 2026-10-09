@@ -326,27 +326,30 @@ describe("ApprovalRequestFields", () => {
     expect(html).not.toContain("<input")
   })
 
-  it("offers to add an optional entity list the request left out", () => {
-    const html = renderToStaticMarkup(
-      createElement(ApprovalRequestFields, {
-        activityId: "status-1",
-        args: { status: "ACTIVE" },
-        decision: { decision: "pending", edits: {}, message: "" },
-        disabled: false,
-        fallbackFields: [],
-        fields: [
-          {
-            ...approvalField("ad_sets", "Ad Sets", "entity_list"),
-            editable: true,
-            secondary: true,
-            entity_kind: "meta_ads_ad_set",
-          },
-        ],
-        onEditsChange: () => undefined,
-      })
-    )
+  it("offers to add an optional field the request left out, unless it shows empty", () => {
+    const render = (showEmpty: boolean) =>
+      renderToStaticMarkup(
+        createElement(ApprovalRequestFields, {
+          activityId: "status-1",
+          args: { status: "ACTIVE" },
+          decision: { decision: "pending", edits: {}, message: "" },
+          disabled: false,
+          fallbackFields: [],
+          fields: [
+            {
+              ...approvalField("ad_sets", "Ad Sets", "entity_list"),
+              editable: true,
+              secondary: true,
+              entity_kind: "meta_ads_ad_set",
+              show_empty: showEmpty,
+            },
+          ],
+          onEditsChange: () => undefined,
+        })
+      )
 
-    expect(html).toMatch(/<button[^>]*>\+ Add Ad Sets<\/button>/)
+    expect(render(false)).toMatch(/<button[^>]*>\+ Add Ad Sets<\/button>/)
+    expect(render(true)).not.toContain("+ Add Ad Sets")
   })
 
   it("shows undeclared executable arguments in a collapsed disclosure", () => {

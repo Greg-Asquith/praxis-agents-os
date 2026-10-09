@@ -26,6 +26,7 @@ from ..tools.schemas.objects import (
     MetaAdsObjectsInput,
     MetaAdsObjectType,
 )
+from .ad_review import issue_summaries, review_reasons
 from .paging import read_pages
 from .values import bounded_string, invalid_response, iso_datetime, money_value, require_currency
 
@@ -33,7 +34,7 @@ _OPERATION = "list_objects"
 _FIELDS = {
     "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time",
     "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,daily_budget,lifetime_budget,budget_remaining,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,targeting{publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget}",
-    "ad": "id,name,status,effective_status,campaign_id,adset_id",
+    "ad": "id,name,status,effective_status,campaign_id,adset_id,ad_review_feedback,issues_info",
 }
 _EDGES = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}
 _PLACEMENT_PLATFORMS = ("facebook", "instagram", "audience_network", "messenger", "threads")
@@ -153,6 +154,8 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
         promoted_object=_promoted_object(raw.get("promoted_object")),
         placements=_placements(raw.get("targeting")) if object_type == "adset" else None,
         is_dynamic_creative=raw.get("is_dynamic_creative"),
+        review_reasons=review_reasons(raw) if object_type == "ad" else None,
+        issues=issue_summaries(raw) if object_type == "ad" else None,
     )
 
 

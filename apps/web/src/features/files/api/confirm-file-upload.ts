@@ -3,20 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { filesQueryKeys } from "./list-files"
-import type { WorkspaceFile } from "../types"
-import { apiRequest } from "@/lib/api/client"
-
-type ConfirmFileUploadInput = {
-  uploadToken: string
-  folderId?: string | null
-}
-
-export async function confirmFileUpload({ folderId, uploadToken }: ConfirmFileUploadInput) {
-  return apiRequest<WorkspaceFile>("/files/uploads/confirm", {
-    body: { folder_id: folderId, upload_token: uploadToken },
-    method: "POST",
-  })
-}
+import { confirmFileUpload } from "@/lib/api/workspace-file-upload"
 
 export function useConfirmFileUploadMutation() {
   const queryClient = useQueryClient()

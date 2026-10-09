@@ -35,6 +35,8 @@ if TYPE_CHECKING:
         IntegrationResource,
         IntegrationWebhook,
     )
+    from models.user import User
+    from models.workspace import Workspace
     from services.agents.runtime.entity_references.registry import EntityResolverDefinition
     from services.agents.runtime.tools.contract import RuntimeToolDefinition
     from services.integrations.table_scopes.adapter import TableScopeAdapter
@@ -119,13 +121,25 @@ OAuthConfigFn = Callable[[], OAuthClientConfig]
 class IntegrationPreviewPayload:
     """Raw provider content returned to the engine preview boundary."""
 
-    content_type: Literal["html", "text"]
+    # An image is a `data:image/jpeg;base64,` URL the provider re-encoded itself.
+    content_type: Literal["html", "text", "image"]
     content: str
     meta: dict[str, object]
 
 
+@dataclass(frozen=True)
+class IntegrationPreviewRequest:
+    """Who asked for one preview, and the context target it was asked through."""
+
+    ref: str
+    # Set only by the conversation route, after matching an active context target.
+    scope_id: str | None
+    actor: "User"
+    workspace: "Workspace"
+
+
 IntegrationPreviewFetchFn = Callable[
-    ["AsyncSession", "IntegrationConnection", str],
+    ["AsyncSession", "IntegrationConnection", IntegrationPreviewRequest],
     Awaitable[IntegrationPreviewPayload],
 ]
 

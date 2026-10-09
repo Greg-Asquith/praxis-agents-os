@@ -1,6 +1,10 @@
 // apps/web/src/features/tools/types.ts
 
-import type { ToolFieldColumn, ToolFieldFormat } from "@/components/tool-ui/field-resolution"
+import type {
+  ToolFieldColumn,
+  ToolFieldFormat,
+  ToolFieldWidth,
+} from "@/components/tool-ui/field-resolution"
 
 type ToolEffect = "read" | "write"
 type ToolEffectScope = "internal" | "external"
@@ -53,6 +57,8 @@ export type ToolUiField = {
   placeholder: string
   options: string[]
   options_by_field?: string | null
+  show_empty?: boolean
+  width?: ToolFieldWidth
   options_by_value?: Record<string, string[]>
   secondary: boolean
   entity_kind?: string | null

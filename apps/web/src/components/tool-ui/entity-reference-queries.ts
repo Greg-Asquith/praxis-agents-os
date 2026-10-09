@@ -15,6 +15,8 @@ type LookupBase = {
   conversationId: string
   toolName: string
   fieldKey: string
+  // Names the kind to look up in a structured field, which can hold several.
+  entityKind?: string | undefined
   dependentArgs: Record<string, unknown>
   dependsOn?: readonly string[] | undefined
 }
@@ -30,12 +32,20 @@ export type EntityReferenceHydration = LookupBase & {
 
 const entityReferenceQueryKeys = {
   ...baseEntityReferenceQueryKeys,
-  field: ({ conversationId, dependentArgs, dependsOn, fieldKey, toolName }: LookupBase) =>
+  field: ({
+    conversationId,
+    dependentArgs,
+    dependsOn,
+    entityKind,
+    fieldKey,
+    toolName,
+  }: LookupBase) =>
     [
       ...baseEntityReferenceQueryKeys.workspace(),
       conversationId,
       toolName,
       fieldKey,
+      entityKind ?? null,
       entityDependentArgs(dependentArgs, dependsOn),
     ] as const,
   hydration: (request: EntityReferenceHydration) =>
@@ -70,6 +80,7 @@ export async function lookupEntityReferences(
       body: {
         tool_name: request.toolName,
         field_key: request.fieldKey,
+        ...(request.entityKind ? { entity_kind: request.entityKind } : {}),
         dependent_args: entityDependentArgs(request.dependentArgs, request.dependsOn),
         ...(request.search !== undefined ? { search: request.search } : {}),
         ...(request.exactValues !== undefined ? { exact_values: request.exactValues } : {}),

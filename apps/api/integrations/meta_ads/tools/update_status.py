@@ -11,7 +11,7 @@ from typing import Annotated, Any, Literal
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
-from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -50,11 +50,12 @@ from ..operations.update_status import (
 from ..operations.values import require_currency
 from ..references import MetaAdsAdReference, MetaAdsAdSetReference, MetaAdsCampaignReference
 from ..throttle import ensure_account_available
-from .schemas.objects import OBJECT_STATUSES, MetaAdsObject, MetaAdsObjectType
+from .schemas.objects import CLOSED_STATUSES, OBJECT_STATUSES, MetaAdsObject, MetaAdsObjectType
 from .schemas.status import MetaAdsStatusOutput, MetaAdsStatusSelection
 from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
 from .utils.mutation_evidence import (
+    attach_interrupted_evidence,
     audit_status,
     meta_ads_account_target,
     terminal_operation_detail,
@@ -62,7 +63,6 @@ from .utils.mutation_evidence import (
 
 _OPERATION = "update_status"
 _MAX_OBJECTS = 50
-_CLOSED_STATUSES = frozenset({"ARCHIVED", "DELETED"})
 _REFERENCE_FIELDS: tuple[tuple[str, str, MetaAdsObjectType], ...] = (
     ("campaigns", "meta_ads_campaign", "campaign"),
     ("ad_sets", "meta_ads_ad_set", "adset"),
@@ -129,7 +129,7 @@ async def meta_ads_update_status(
                     status=status,
                 )
             except asyncio.CancelledError as exc:
-                _attach_cancelled_evidence(exc, pending_detail)
+                attach_interrupted_evidence(exc, pending_detail, identity_key="object_id")
                 raise
             detail = terminal_operation_detail(pending_detail, ledger, identity_key="object_id")
             result = _result(entry.external_id, targets, ledger, refreshed, status)
@@ -170,7 +170,7 @@ async def _live_targets(
         raise ModelRetry(
             "Some selected Meta Ads objects are no longer in this ad account. Choose them again."
         )
-    if any(target.before.status in _CLOSED_STATUSES for target in targets):
+    if any(target.before.status in CLOSED_STATUSES for target in targets):
         raise ModelRetry(
             "Archived or deleted Meta Ads objects can't be turned on or off. Remove them."
         )
@@ -221,22 +221,6 @@ def _pending_operation_detail(
             )
             for object_type, items in groups.items()
         ],
-    )
-
-
-def _attach_cancelled_evidence(
-    exc: asyncio.CancelledError, pending_detail: PendingIntegrationOperationDetail
-) -> None:
-    ledger: MetaAdsMutationLedger | None = getattr(exc, "ledger", None)
-    if ledger is None:
-        return
-    exc.operation_detail = terminal_operation_detail(
-        pending_detail, ledger, identity_key="object_id"
-    )
-    exc.failure_disposition = (
-        IntegrationFailureDisposition.AMBIGUOUS
-        if ledger.has_unverified
-        else IntegrationFailureDisposition.NOT_DISPATCHED
     )
 
 
@@ -408,7 +392,7 @@ async def _starting_children(
         account_id=account_id,
         object_type=child_type,
         # Every open delivery status, since only the configured status decides what's on.
-        statuses=[item for item in OBJECT_STATUSES[child_type] if item not in _CLOSED_STATUSES],
+        statuses=[item for item in OBJECT_STATUSES[child_type] if item not in CLOSED_STATUSES],
         campaign_ids=list(parent_ids) if parent_type == "campaign" else None,
         adset_ids=list(parent_ids) if parent_type == "adset" else None,
         limit=500,

@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
-from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -38,14 +38,15 @@ from services.integrations.operations import (
 
 from ..client import MetaAdsClient
 from ..operations.media_source import MediaSource, require_pinned, resolve_media_source
-from ..operations.mutations import MetaAdsMutationLedger
-from ..operations.upload_media import MediaUpload, upload_media
+from ..operations.upload_media import MediaUpload, media_upload_row, upload_media
 from ..settings import meta_ads_settings
 from ..throttle import ensure_account_available
 from .schemas.media import MetaAdsMediaUploadOutput
 from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client
 from .utils.mutation_evidence import (
+    account_pin,
+    attach_interrupted_evidence,
     audit_status,
     meta_ads_account_target,
     terminal_operation_detail,
@@ -54,17 +55,6 @@ from .utils.mutation_evidence import (
 _OPERATION = "upload_media"
 _MAX_FILES = 20
 _ACCOUNT_CHANGED = "The approved ad account is no longer selected. Ask for approval again."
-_READINESS_MESSAGES = {
-    "processing": (
-        "Meta is still processing this video. List the account's videos to check it's ready "
-        "before using it in an ad."
-    ),
-    "unknown": (
-        "Meta didn't say whether this video is ready. List the account's videos to check it's "
-        "ready before using it in an ad."
-    ),
-    "failed": "Meta couldn't process this video. Upload it again or choose another File.",
-}
 
 type MediaFiles = Annotated[
     list[FileReference],
@@ -85,7 +75,7 @@ async def meta_ads_upload_media(ctx: RunContext[RuntimeDeps], files: MediaFiles)
 
         async def prepare_pending_operation() -> PendingIntegrationOperationDetail:
             nonlocal client, sources, pending_detail
-            if reviewed is not None and reviewed.get("_account") != _account_pin(entry):
+            if reviewed is not None and reviewed.get("_account") != account_pin(entry):
                 raise ModelRetry(_ACCOUNT_CHANGED)
             ensure_account_available(entry.external_id, operation=_OPERATION)
             sources = await _sources(ctx.deps, files)
@@ -109,7 +99,7 @@ async def meta_ads_upload_media(ctx: RunContext[RuntimeDeps], files: MediaFiles)
                     poll_seconds=meta_ads_settings.META_ADS_VIDEO_PROCESSING_POLL_SECONDS,
                 )
             except (asyncio.CancelledError, Exception) as exc:
-                _attach_interrupted_evidence(exc, pending_detail)
+                attach_interrupted_evidence(exc, pending_detail, identity_key="file_id")
                 raise
             detail = terminal_operation_detail(pending_detail, ledger, identity_key="file_id")
             result = _result(entry.external_id, uploads)
@@ -183,14 +173,10 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     sources = await _sources(deps, references)
     return {
         **args,
-        "_account": _account_pin(entry),
+        "_account": account_pin(entry),
         "_account_name": entry.display_name[:500],
         "_files": [source.approval_details() for source in sources],
     }
-
-
-def _account_pin(entry: ResolvedContextEntry) -> dict[str, str]:
-    return {"account_id": entry.external_id, "resource_id": str(entry.integration_resource_id)}
 
 
 def _pinned_files(reviewed: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
@@ -228,42 +214,8 @@ def _pending_operation_detail(
     )
 
 
-def _attach_interrupted_evidence(
-    exc: BaseException, pending_detail: PendingIntegrationOperationDetail
-) -> None:
-    """Records each File's proved outcome when the upload stops part way."""
-    ledger: MetaAdsMutationLedger | None = getattr(exc, "ledger", None)
-    if ledger is None:
-        return
-    exc.operation_detail = terminal_operation_detail(pending_detail, ledger, identity_key="file_id")
-    exc.failure_disposition = (
-        IntegrationFailureDisposition.AMBIGUOUS
-        if ledger.has_unverified
-        else IntegrationFailureDisposition.NOT_DISPATCHED
-    )
-
-
 def _result(account_id: str, uploads: Sequence[MediaUpload]) -> dict[str, Any]:
-    items = []
-    for upload in uploads:
-        effect = upload.effect
-        failure = effect if effect is not None and effect.outcome != "applied" else None
-        items.append(
-            {
-                "file_id": upload.file_id,
-                "revision_id": str(upload.source.revision.id),
-                "name": upload.source.file.name[:500],
-                "media_type": upload.source.media_type,
-                "outcome": upload.outcome,
-                "recovered": upload.recovered,
-                "media": upload.media.model_dump(mode="json") if upload.media else None,
-                "error_code": failure.error_code if failure else None,
-                "message": failure.message
-                if failure
-                else _READINESS_MESSAGES.get(upload.readiness),
-            }
-        )
-    return {"account_id": account_id, "uploads": items}
+    return {"account_id": account_id, "uploads": [media_upload_row(upload) for upload in uploads]}
 
 
 DEFINITION = RuntimeToolDefinition(

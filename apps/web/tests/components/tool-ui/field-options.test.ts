@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { ApprovalField } from "@/components/tool-ui/approval-types"
 import {
   availableFieldOptions,
+  fieldOptionLabel,
   fieldOptionsError,
   reconcileFieldOptionEdits,
 } from "@/components/tool-ui/field-options"
@@ -73,5 +74,13 @@ describe("dependent approval options", () => {
       "Choose an available option for Aspect Ratio."
     )
     expect(fieldOptionsError(fields, { model_provider: "openai" })).toBeNull()
+  })
+})
+
+describe("option labels", () => {
+  it("reads provider constants as words without breaking acronyms or lower-case values", () => {
+    expect(fieldOptionLabel("LEARN_MORE")).toBe("Learn More")
+    expect(fieldOptionLabel("URL_UPDATED")).toBe("URL Updated")
+    expect(fieldOptionLabel("data_source")).toBe("Data Source")
   })
 })

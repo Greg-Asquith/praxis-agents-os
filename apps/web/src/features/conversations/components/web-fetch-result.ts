@@ -2,6 +2,7 @@
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
+import { urlDomain } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 export const WEB_FETCH_TOOL_NAME = "fetch_url"
@@ -53,7 +54,7 @@ export function webFetchResult(value: unknown): WebFetchResult | null {
     if (title === null && rawTitle !== null && rawTitle !== undefined) {
       return null
     }
-    const domain = sourceDomain(sourceUrl)
+    const domain = urlDomain(sourceUrl)
     if (domain === null) {
       return null
     }
@@ -69,12 +70,4 @@ function nonEmptyText(value: string | null): string | null {
     return null
   }
   return normalized
-}
-
-function sourceDomain(url: string): string | null {
-  try {
-    return nonEmptyText(new URL(url).hostname.replace(/^www\./, ""))
-  } catch {
-    return null
-  }
 }

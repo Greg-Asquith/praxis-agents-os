@@ -12,15 +12,12 @@ import { Label } from "@/components/ui/label"
 import { platformFileQueryOptions } from "@/features/files/api/platform-get-file"
 import type { WorkspaceFile } from "@/features/files/types"
 import { waitForPlatformKnowledgeUpload } from "@/features/knowledge/components/platform-knowledge-upload-state"
-import { confirmFileUpload } from "@/features/files/api/confirm-file-upload"
 import { usePlatformUploadFileMutation } from "@/features/files/api/platform-upload-file"
-import { requestFileUpload } from "@/features/files/api/request-file-upload"
+import { uploadWorkspaceFile } from "@/lib/api/workspace-file-upload"
 import { usePlatformCreateDocumentFromFileMutation } from "@/features/knowledge/api/platform-create-document-from-file"
 import { useCreateDocumentFromFileMutation } from "@/features/knowledge/api/create-document-from-file"
 import { PrivacyField } from "@/features/knowledge/components/privacy-field"
-import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
-import { contentTypeForWorkspaceFile } from "@/lib/file"
 import { formString } from "@/lib/forms"
 
 const KNOWLEDGE_FILE_ACCEPT = [
@@ -95,23 +92,9 @@ export function DocumentUploadButton({
           ...(title ? { title } : {}),
         })
       } else {
-        const upload = await requestFileUpload({
-          content_type: contentTypeForWorkspaceFile(file),
-          filename: file.name,
-          size_bytes: file.size,
-        })
-        let fileId: string
-        if (upload.file) {
-          fileId = upload.file.id
-        } else if (upload.grant) {
-          await uploadFileDirectly(upload.grant.upload, file, upload.grant.max_size_bytes)
-          const confirmed = await confirmFileUpload({ uploadToken: upload.grant.upload_token })
-          fileId = confirmed.id
-        } else {
-          throw new Error("Upload grant was not returned.")
-        }
+        const uploaded = await uploadWorkspaceFile(file)
         await mutation.mutateAsync({
-          file_id: fileId,
+          file_id: uploaded.id,
           is_private: isPrivate,
           ...(title ? { title } : {}),
         })

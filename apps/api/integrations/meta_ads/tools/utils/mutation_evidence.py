@@ -4,6 +4,7 @@
 
 from collections.abc import Iterable
 
+from core.exceptions.integration import IntegrationFailureDisposition
 from services.audit_events import (
     AuditStatus,
     IntegrationOperationCounts,
@@ -83,6 +84,35 @@ def terminal_operation_detail(
         intent_counts=_counts(outcome.status for outcome in outcomes),
         effect_counts=_counts(effect.status for outcome in outcomes for effect in outcome.effects),
     )
+
+
+def account_pin(entry: ResolvedContextEntry) -> dict[str, str]:
+    """Identifies the approved ad account selection, so execution can require the same one."""
+    return {"account_id": entry.external_id, "resource_id": str(entry.integration_resource_id)}
+
+
+def attach_interrupted_evidence(
+    exc: BaseException,
+    pending: PendingIntegrationOperationDetail,
+    *,
+    identity_key: str,
+    refs_mean_changed: bool = False,
+) -> None:
+    """Records the proved outcomes on an error that stopped the run part way."""
+    ledger: MetaAdsMutationLedger | None = getattr(exc, "ledger", None)
+    if ledger is None:
+        return
+    changed = ledger.has_unverified or (refs_mean_changed and bool(ledger.external_refs))
+    exc.failure_disposition = (
+        IntegrationFailureDisposition.AMBIGUOUS
+        if changed
+        else IntegrationFailureDisposition.NOT_DISPATCHED
+    )
+    try:
+        exc.operation_detail = terminal_operation_detail(pending, ledger, identity_key=identity_key)
+    except ValueError:
+        # Never let incomplete evidence replace the error that stopped the run.
+        exc.failure_disposition = IntegrationFailureDisposition.AMBIGUOUS
 
 
 def audit_status(detail: TerminalIntegrationOperationDetail) -> AuditStatus:

@@ -19,6 +19,7 @@ from ...models import (
 )
 
 type MetaAdsObjectType = Literal["campaign", "adset", "ad"]
+type MetaAdsReviewState = Literal["in_review", "approved", "rejected", "with_issues", "unknown"]
 type MetaAdsCampaignStatus = Literal[
     "ACTIVE", "PAUSED", "ARCHIVED", "DELETED", "IN_PROCESS", "WITH_ISSUES"
 ]
@@ -40,11 +41,15 @@ type MetaAdsAdStatus = Literal[
     "PREAPPROVED",
 ]
 
+# Archived and deleted objects can't be turned on, paused, or added to.
+CLOSED_STATUSES = frozenset({"ARCHIVED", "DELETED"})
 OBJECT_STATUSES = {
     "campaign": get_args(MetaAdsCampaignStatus.__value__),
     "adset": get_args(MetaAdsAdsetStatus.__value__),
     "ad": get_args(MetaAdsAdStatus.__value__),
 }
+# Ads in review or held by a paused parent still count, so only deleted ones are left out.
+UNDELETED_AD_STATUSES = [status for status in OBJECT_STATUSES["ad"] if status != "DELETED"]
 DEFAULT_STATUSES = {
     "campaign": ["ACTIVE", "PAUSED"],
     "adset": ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED"],
@@ -91,6 +96,9 @@ class MetaAdsObject(MetaAdsStrictModel):
     promoted_object: MetaAdsPromotedObject | None = None
     placements: MetaAdsPlacements | None = None
     is_dynamic_creative: bool | None = None
+    # Ads only: why Meta's review rejected the ad, and what stops it delivering.
+    review_reasons: list[MetaAdsText] | None = Field(default=None, max_length=5)
+    issues: list[MetaAdsText] | None = Field(default=None, max_length=5)
 
 
 class MetaAdsObjectsData(MetaAdsStrictModel):

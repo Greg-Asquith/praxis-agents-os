@@ -22,7 +22,11 @@ import {
   isScalarOrListField,
   isStringList,
 } from "@/components/tool-ui/field-edit-values"
-import { resolveToolField, type ToolFieldFormat } from "@/components/tool-ui/field-resolution"
+import {
+  resolveToolField,
+  type ToolFieldFormat,
+  type ToolFieldWidth,
+} from "@/components/tool-ui/field-resolution"
 import {
   fieldLabelClass,
   fieldWellClass,
@@ -39,6 +43,7 @@ import {
 import { ScalarFieldInput } from "@/components/tool-ui/scalar-field-input"
 import {
   availableFieldOptions,
+  fieldOptionLabel,
   reconcileFieldOptionEdits,
 } from "@/components/tool-ui/field-options"
 import { Button } from "@/components/ui/button"
@@ -53,7 +58,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { titleCaseToken } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
 import { ToolConversationContext } from "@/components/tool-ui/tool-conversation-context"
@@ -88,7 +92,7 @@ export function ApprovalRequestFields({
 
   if (fields.length === 0 || !isRecord(args)) {
     return fallbackFields.length > 0 ? (
-      <div className="grid min-w-0 gap-3 sm:grid-flow-dense sm:grid-cols-2">
+      <div className="grid min-w-0 gap-3 sm:grid-flow-dense sm:grid-cols-6">
         {fallbackFields.map((field) => (
           <div className={fieldSpanClass(field.format)} key={field.key}>
             <ApprovalStaticField field={field} />
@@ -127,8 +131,10 @@ export function ApprovalRequestFields({
     )
   }
   return (
-    <div className="grid min-w-0 gap-3 sm:grid-flow-dense sm:grid-cols-2">
+    <div className="grid min-w-0 gap-3 sm:grid-flow-dense sm:grid-cols-6">
       {fields.map((field) => {
+        // Only the provider's own approval editor shows and changes structured arguments.
+        if (field.format === "structured") return null
         const options = availableFieldOptions(field, lockedRecord, fields)
         const rawValue = args[field.key]
         const originalValue = editableValue(field, rawValue)
@@ -150,7 +156,7 @@ export function ApprovalRequestFields({
         if (decision.decision !== "pending") {
           const resolved = resolveApprovalField(field, lockedRecord[field.key])
           return resolved ? (
-            <div className={fieldSpanClass(field.format)} key={field.key}>
+            <div className={fieldSpanClass(field.format, field.width)} key={field.key}>
               <ApprovalStaticField field={resolved} />
             </div>
           ) : null
@@ -158,10 +164,13 @@ export function ApprovalRequestFields({
         if (field.secondary && rawValue == null && !editable) {
           return null
         }
-        if (isEmptySecondary && !isRevealed) {
+        if (isEmptySecondary && !isRevealed && !field.show_empty) {
           return editable ? (
             <Button
-              className="text-muted-foreground w-fit px-0"
+              className={cn(
+                "text-muted-foreground w-fit px-0",
+                fieldSpanClass(field.format, field.width)
+              )}
               disabled={disabled}
               key={field.key}
               onClick={() => {
@@ -179,7 +188,7 @@ export function ApprovalRequestFields({
         if (!editable) {
           const resolved = resolveApprovalField(field, rawValue)
           return resolved ? (
-            <div className={fieldSpanClass(field.format)} key={field.key}>
+            <div className={fieldSpanClass(field.format, field.width)} key={field.key}>
               <ApprovalStaticField field={resolved} />
             </div>
           ) : null
@@ -203,7 +212,7 @@ export function ApprovalRequestFields({
         }
         return (
           <Field
-            className={cn("gap-1", fieldSpanClass(field.format))}
+            className={cn("gap-1", fieldSpanClass(field.format, field.width))}
             data-disabled={disabled}
             orientation={field.format === "boolean" ? "horizontal" : "vertical"}
             key={field.key}
@@ -268,12 +277,8 @@ export function ApprovalRequestFields({
                 <SelectContent align="start">
                   <SelectGroup>
                     {options.map((option) => (
-                      <SelectItem
-                        key={option}
-                        label={titleCaseToken(option, option)}
-                        value={option}
-                      >
-                        {titleCaseToken(option, option)}
+                      <SelectItem key={option} label={fieldOptionLabel(option)} value={option}>
+                        {fieldOptionLabel(option)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -402,7 +407,7 @@ function UnavailableEntityField({
   }, [field.key, onValidityChange])
 
   return (
-    <Field className={cn("gap-1", fieldSpanClass(field.format))} data-disabled>
+    <Field className={cn("gap-1", fieldSpanClass(field.format, field.width))} data-disabled>
       <FieldLabel className={fieldLabelClass}>{field.label}</FieldLabel>
       <div className={cn(readOnlyFieldWellClass, "text-muted-foreground flex items-center")}>
         Target unavailable
@@ -414,19 +419,26 @@ function UnavailableEntityField({
   )
 }
 
-function fieldSpanClass(format: ToolFieldFormat): string | undefined {
-  return [
-    "multiline",
-    "markdown",
-    "html",
-    "list",
-    "keyvalue",
-    "records",
-    "entity",
-    "entity_list",
-  ].includes(format)
-    ? "sm:col-span-2"
-    : undefined
+const FIELD_SPANS: Record<Exclude<ToolFieldWidth, "auto">, string> = {
+  full: "sm:col-span-6",
+  half: "sm:col-span-3",
+  third: "sm:col-span-2",
+}
+const FULL_WIDTH_FORMATS: readonly ToolFieldFormat[] = [
+  "multiline",
+  "markdown",
+  "html",
+  "list",
+  "keyvalue",
+  "records",
+  "entity",
+  "entity_list",
+]
+
+// Six columns let a tool lay fields out in halves or thirds; auto keeps each format's default.
+function fieldSpanClass(format: ToolFieldFormat, width: ToolFieldWidth = "auto"): string {
+  if (width !== "auto") return FIELD_SPANS[width]
+  return FULL_WIDTH_FORMATS.includes(format) ? FIELD_SPANS.full : FIELD_SPANS.half
 }
 
 function editableValue(field: ApprovalField, value: unknown): EditedValue | null {
@@ -457,7 +469,10 @@ function resolveApprovalField(field: ApprovalField, value: unknown): ApprovalFal
   if (resolved === null || (!resolved.value.trim() && field.secondary)) {
     return null
   }
-  return resolved
+  // A decided choice reads the same as it did in the picker.
+  return typeof value === "string" && field.options.includes(value)
+    ? { ...resolved, value: fieldOptionLabel(value) }
+    : resolved
 }
 
 function changeHandler(key: string, applyFieldEdit: (key: string, value: EditedValue) => void) {

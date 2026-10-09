@@ -349,12 +349,25 @@ The following contracts apply in this area:
   Keep editor feedback, approval gating, and decision merge on the shared
   record-validity helper, and give repeated controls row-specific accessible
   names.
+- A `structured` field holds a nested argument, such as Meta ad creation's
+  ads with their ad sets, media, and carousel cards, that only the
+  provider's own approval card shows and edits. The generic field editor
+  skips it. The card sends the whole edited value, and the decision merge
+  accepts it only for a declared editable `structured` field. An editable
+  `structured` field requires the tool's `approval_input_model`, which is
+  the only server check of its shape. Nested references in it aren't
+  re-resolved on resume, so the tool must re-read them before acting.
+  A structured field can declare `entity_kinds`; the entity lookup route
+  then searches or hydrates one of those kinds when the request names it as
+  `entity_kind`, and refuses any other kind.
 
 The `services.integrations.approved_display_args` helper returns retained
 server-side display evidence only for the approved run and matching tool call.
 It resolves direct and Code Mode approvals and never accepts replay arguments
 as evidence. Outlook send-draft uses this to check that the reviewed draft
-still matches the provider before sending.
+still matches the provider before sending. Its `proposed_args` returns the
+arguments the agent proposed for that call, before any edit or review; Meta
+ad creation uses them to keep each ad's ad sets as proposed.
 
 ## Retained approval reviews
 
@@ -396,7 +409,16 @@ value until an option is selected. Fields can declare `options_by_field`
 and `options_by_value` to restrict choices using another argument. The
 frontend filters these choices against the effective approval arguments,
 replaces an incompatible selection when the controlling argument changes,
-and blocks approval while a supplied value remains incompatible.
+and blocks approval while a supplied value remains incompatible. Options
+display in Title Case, in the picker and after a decision: upper-case provider
+values such as `LEARN_MORE` read as "Learn More", and common acronyms such as
+URL stay upper case.
+
+Approval fields sit on a six-column grid on wider screens. A field's `width`
+is `full`, `half`, or `third` of a row; `auto`, the default, makes long text,
+lists, records, and entity pickers full width and everything else half.
+`show_empty` makes an editable secondary field show its empty editor instead
+of an "Add" button, for optional choices the operator should always see.
 
 Editable date-time fields use the shared input with `type="datetime-local"`
 and `step={60}`. Preserve the raw value, including supplied seconds, and remove

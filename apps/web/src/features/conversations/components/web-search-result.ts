@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/web-search-result.ts
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
+import { urlDomain } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 export const WEB_SEARCH_TOOL_NAME = "web_search"
@@ -52,7 +53,7 @@ export function webSearchResult(value: unknown): WebSearchResult | null {
     if (url === null || invalidTitle || invalidSnippet) {
       return null
     }
-    const domain = sourceDomain(url)
+    const domain = urlDomain(url)
     if (domain === null) {
       return null
     }
@@ -73,12 +74,4 @@ function nonEmptyText(value: string | null): string | null {
     return null
   }
   return normalized
-}
-
-function sourceDomain(url: string): string | null {
-  try {
-    return nonEmptyText(new URL(url).hostname.replace(/^www\./, ""))
-  } catch {
-    return null
-  }
 }

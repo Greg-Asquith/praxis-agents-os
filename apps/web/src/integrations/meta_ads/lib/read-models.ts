@@ -43,6 +43,9 @@ type MetaAdsObject = {
   adset_id: string | null
   budget: MetaAdsBudget | null
   bid_amount: string | null
+  // Ads only: why Meta's review rejected the ad, and what stops it delivering.
+  review_reasons?: string[] | null
+  issues?: string[] | null
 }
 type MetaAdsObjects = {
   object_type: "campaign" | "adset" | "ad"
@@ -186,8 +189,13 @@ function isObject(value: unknown): value is MetaAdsObject {
     isNullableId(value["campaign_id"]) &&
     isNullableId(value["adset_id"]) &&
     isBudget(value["budget"]) &&
-    isMoney(value["bid_amount"])
+    isMoney(value["bid_amount"]) &&
+    isOptionalTextList(value["review_reasons"]) &&
+    isOptionalTextList(value["issues"])
   )
+}
+function isOptionalTextList(value: unknown): boolean {
+  return value === undefined || value === null || isStringArray(value)
 }
 export function parseMetaAdsObjects(value: unknown): MetaAdsObjects | null {
   if (

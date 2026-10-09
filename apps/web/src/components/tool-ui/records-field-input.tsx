@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { titleCaseToken } from "@/lib/format"
+import { fieldOptionLabel } from "@/components/tool-ui/field-options"
 import { cn } from "@/lib/utils"
 
 const MAX_RECORD_ROWS = 500
@@ -305,8 +305,8 @@ function RecordSelectCell({
       <SelectContent align="start">
         <SelectGroup>
           {column.options.map((option) => (
-            <SelectItem key={option} label={titleCaseToken(option, option)} value={option}>
-              {titleCaseToken(option, option)}
+            <SelectItem key={option} label={fieldOptionLabel(option)} value={option}>
+              {fieldOptionLabel(option)}
             </SelectItem>
           ))}
         </SelectGroup>

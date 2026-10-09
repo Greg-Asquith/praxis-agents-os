@@ -7,7 +7,7 @@ import { baseIntegrationQueryKeys } from "@/lib/integration-query-keys"
 
 export type ProviderPreview<Meta extends { subject?: string } = { subject?: string }> = {
   kind: string
-  content_type: "html" | "text"
+  content_type: "html" | "text" | "image"
   content: string
   meta: Meta
 }

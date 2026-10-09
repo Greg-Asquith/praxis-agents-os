@@ -2,6 +2,7 @@
 
 import type { ApprovalField } from "@/components/tool-ui/approval-types"
 import type { EditedValues } from "@/components/tool-ui/edited-values"
+import { titleCaseToken } from "@/lib/format"
 
 export function availableFieldOptions(
   field: ApprovalField,
@@ -55,4 +56,20 @@ export function fieldOptionsError(
     }
   }
   return null
+}
+
+// Upper-case provider values like LEARN_MORE read as Title Case; short acronyms stay as they are.
+const KEPT_ACRONYMS = new Set(["URL", "CPC", "CPM", "CPA", "CTR", "ID", "API", "SMS", "FAQ"])
+
+export function fieldOptionLabel(option: string): string {
+  if (option !== option.toUpperCase() || !/[A-Z]/.test(option)) {
+    return titleCaseToken(option, option)
+  }
+  return option
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) =>
+      KEPT_ACRONYMS.has(word) ? word : `${word.slice(0, 1)}${word.slice(1).toLowerCase()}`
+    )
+    .join(" ")
 }

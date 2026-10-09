@@ -2,6 +2,8 @@
 
 """Gmail message preview route coverage: scoping, sanitization, bounds, audit."""
 
+import base64
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -14,6 +16,11 @@ import integrations.gmail.operations.preview_message as preview_message_module
 from core.exceptions.integration import IntegrationValidationError
 from models.audit_event import AuditEvent
 from models.workspace import WorkspaceRole
+from services.integrations.plugin import (
+    PROVIDER_PLUGINS,
+    IntegrationPreviewDefinition,
+    IntegrationPreviewPayload,
+)
 from tests.factories import build_external_credential, build_integration_connection
 from tests.routes.integrations.conftest import create_identity
 
@@ -172,3 +179,31 @@ async def test_preview_404_outside_workspace_visibility(
         headers=outsider_headers,
     )
     assert response.status_code == 404
+
+
+async def test_image_preview_must_be_a_jpeg_data_url(
+    db_session: AsyncSession,
+    db_async_client: AsyncClient,
+    integration_identity: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = await _gmail_connection(db_session, integration_identity)
+    svg = base64.b64encode(b"<svg onload='alert(1)'></svg>").decode()
+
+    async def fetch(_db: Any, _connection: Any, _request: Any) -> IntegrationPreviewPayload:
+        return IntegrationPreviewPayload(
+            content_type="image", content=f"data:image/svg+xml;base64,{svg}", meta={}
+        )
+
+    definition = IntegrationPreviewDefinition(kind="gmail_message", operation="test", fetch=fetch)
+    plugin = replace(PROVIDER_PLUGINS["gmail"], preview_definitions=(definition,))
+    monkeypatch.setitem(PROVIDER_PLUGINS, "gmail", plugin)
+
+    response = await db_async_client.get(
+        f"/api/v1/integrations/connections/{connection.id}/previews/gmail_message",
+        params={"ref": "message-1"},
+        headers=integration_identity["headers"],
+    )
+
+    assert response.status_code == 400
+    assert "svg" not in response.text

@@ -2,6 +2,7 @@
 
 """Resolve, dispatch, sanitize, bound, and audit one integration preview."""
 
+import base64
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,9 +25,16 @@ from services.audit_events import (
 from services.integrations.connections.utils import (
     get_visible_connection,
 )
-from services.integrations.plugin import PROVIDER_PLUGINS, IntegrationPreviewDefinition
+from services.integrations.plugin import (
+    PROVIDER_PLUGINS,
+    IntegrationPreviewDefinition,
+    IntegrationPreviewRequest,
+)
 from services.integrations.previews.sanitize import sanitize_preview_html
 from services.integrations.previews.schemas import IntegrationPreviewRead
+
+_JPEG_DATA_URL_PREFIX = "data:image/jpeg;base64,"
+_JPEG_MAGIC = b"\xff\xd8\xff"
 
 
 async def get_integration_preview(
@@ -37,6 +45,7 @@ async def get_integration_preview(
     ref: str,
     actor: User,
     workspace: Workspace,
+    scope_id: str | None = None,
 ) -> IntegrationPreviewRead:
     connection = await get_visible_connection(
         db,
@@ -54,7 +63,10 @@ async def get_integration_preview(
                 operation=definition.operation,
             )
         await db.commit()
-        payload = await definition.fetch(db, connection, ref)
+        request = IntegrationPreviewRequest(
+            ref=ref, scope_id=scope_id, actor=actor, workspace=workspace
+        )
+        payload = await definition.fetch(db, connection, request)
         content = payload.content
         if len(content.encode("utf-8")) > settings.INTEGRATION_PREVIEW_MAX_BYTES:
             raise IntegrationValidationError(
@@ -66,6 +78,8 @@ async def get_integration_preview(
         content_type = payload.content_type
         if content_type == "html":
             content = sanitize_preview_html(content)
+        elif content_type == "image":
+            _require_jpeg_data_url(content, provider_key=connection.provider_key)
     except Exception as exc:
         await _record_preview_failure_audit(
             connection=connection,
@@ -86,6 +100,21 @@ async def get_integration_preview(
         content=content,
         meta=payload.meta,
     )
+
+
+def _require_jpeg_data_url(content: str, *, provider_key: str) -> None:
+    # Providers re-encode images themselves; anything else could carry markup or scripts.
+    encoded = content.removeprefix(_JPEG_DATA_URL_PREFIX)
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except ValueError:
+        decoded = b""
+    if encoded == content or not decoded.startswith(_JPEG_MAGIC):
+        raise IntegrationValidationError(
+            "The provider returned an invalid image preview",
+            provider_key=provider_key,
+            operation="preview_image",
+        )
 
 
 def _get_preview_definition(

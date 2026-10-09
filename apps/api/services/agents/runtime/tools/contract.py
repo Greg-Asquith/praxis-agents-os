@@ -6,7 +6,16 @@ import inspect
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field as dataclass_field, replace
-from typing import TYPE_CHECKING, Annotated, Any, Literal, get_args, get_origin, get_type_hints
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Literal,
+    TypeAliasType,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from pydantic import BaseModel
 from pydantic_ai import Tool
@@ -36,8 +45,12 @@ ToolFieldFormat = Literal[
     "records",
     "entity",
     "entity_list",
+    "structured",
 ]
 ToolRecordCellFormat = Literal["text", "number", "list", "keyvalue", "scalar_or_list"]
+# Share of an approval card row on wider screens; auto keeps the format's default.
+ToolFieldWidth = Literal["auto", "full", "half", "third"]
+VALID_TOOL_FIELD_WIDTHS = frozenset({"auto", "full", "half", "third"})
 
 TOOL_POLICY_AUTO: ToolPolicy = "auto"
 TOOL_POLICY_APPROVAL: ToolPolicy = "approval"
@@ -102,6 +115,7 @@ VALID_TOOL_FIELD_FORMATS = frozenset(
         "records",
         "entity",
         "entity_list",
+        "structured",
     }
 )
 EDITABLE_TOOL_FIELD_FORMATS = frozenset(
@@ -118,6 +132,7 @@ EDITABLE_TOOL_FIELD_FORMATS = frozenset(
         "records",
         "entity",
         "entity_list",
+        "structured",
     }
 )
 STRING_TOOL_FIELD_FORMATS = frozenset({"text", "multiline", "markdown"})
@@ -185,9 +200,14 @@ class ToolFieldPresentation:
     options_by_field: str | None = None
     options_by_value: dict[str, tuple[str, ...]] = dataclass_field(default_factory=dict)
     entity_kind: str | None = None
+    # Entity kinds a structured field holds, so its card can search and pick them.
+    entity_kinds: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     columns: tuple[ToolFieldColumn, ...] = ()
     min_rows: int = 0
+    width: ToolFieldWidth = "auto"
+    # Shows an empty optional field's editor instead of an "Add" button.
+    show_empty: bool = False
 
 
 @dataclass(frozen=True)
@@ -498,6 +518,10 @@ def _validate_nested_integration_parameter(
         seen_models = set()
     if reference_types is None:
         reference_types = set()
+    # A `type` alias hides its value from get_origin, so walk the value it names.
+    if isinstance(annotation, TypeAliasType):
+        _validate_nested_integration_parameter(annotation.__value__, seen_models, reference_types)
+        return
     origin = get_origin(annotation)
     if origin is Annotated:
         args = get_args(annotation)
@@ -545,6 +569,11 @@ def _validate_presentation(definition: RuntimeToolDefinition) -> None:
             "Approval review fields require unique editable arguments, led by an entity "
             "selection, and display projection"
         )
+    # Nothing else checks a nested edit's shape, so the tool's own model must.
+    if definition.approval_input_model is None and any(
+        field.editable and field.format == "structured" for field in presentation.arg_fields
+    ):
+        raise RuntimeError("Editable structured fields require an approval input model")
     if presentation.icon not in VALID_TOOL_ICONS:
         raise RuntimeError(
             f"Runtime tool presentation icon must be one of the known tokens, got {presentation.icon!r}"
@@ -594,6 +623,10 @@ def _validate_presentation_field_shape(field: ToolFieldPresentation) -> None:
         )
     if field.editable and field.format not in EDITABLE_TOOL_FIELD_FORMATS:
         raise RuntimeError("Editable runtime tool presentation fields must use an editable format")
+    if field.width not in VALID_TOOL_FIELD_WIDTHS:
+        raise RuntimeError(f"Runtime tool presentation field width is unknown, got {field.width!r}")
+    if field.show_empty and not (field.editable and field.secondary):
+        raise RuntimeError("Only editable secondary fields can show their empty editor")
     _validate_presentation_field_options(field)
     _validate_presentation_record_shape(field)
 
@@ -647,8 +680,13 @@ def _validate_presentation_entity(field: ToolFieldPresentation) -> None:
         raise RuntimeError("Entity runtime tool presentation fields require an entity kind")
     if not is_entity and field.entity_kind is not None:
         raise RuntimeError("Non-entity runtime tool presentation fields cannot set entity kind")
-    if field.entity_kind is not None and not _TOOL_NAME_PATTERN.fullmatch(field.entity_kind):
-        raise RuntimeError("Runtime tool presentation entity kind must be lowercase snake_case")
+    if field.entity_kinds and field.format != "structured":
+        raise RuntimeError("Only structured runtime tool presentation fields list entity kinds")
+    if len(field.entity_kinds) != len(set(field.entity_kinds)):
+        raise RuntimeError("Runtime tool presentation field entity kinds must be unique")
+    for kind in (field.entity_kind, *field.entity_kinds):
+        if kind is not None and not _TOOL_NAME_PATTERN.fullmatch(kind):
+            raise RuntimeError("Runtime tool presentation entity kind must be lowercase snake_case")
     if field.depends_on and not is_entity:
         raise RuntimeError("Only entity runtime tool presentation fields can declare dependencies")
     if len(field.depends_on) != len(set(field.depends_on)):

@@ -3,9 +3,11 @@
 """Runtime integration-binding contract and filtering tests."""
 
 from inspect import Parameter, Signature
+from typing import Annotated
 from uuid import uuid4
 
 import pytest
+from pydantic import BaseModel, Field
 
 from models.agent import Agent
 from services.agents.runtime.tools.contract import (
@@ -98,6 +100,21 @@ def test_binding_rejects_model_selected_context_parameters(
     )
 
     with pytest.raises(RuntimeError, match="context is server-resolved"):
+        validate_definition(_definition(tool))
+
+
+class _Target(BaseModel):
+    account_id: str
+
+
+type _Targets = Annotated[list[_Target], Field(max_length=5)]
+
+
+def test_binding_rejects_scope_fields_nested_behind_a_type_alias(integration_manifest) -> None:
+    def tool(targets: _Targets) -> None:
+        return None
+
+    with pytest.raises(RuntimeError, match="only inside registered scoped references"):
         validate_definition(_definition(tool))
 
 

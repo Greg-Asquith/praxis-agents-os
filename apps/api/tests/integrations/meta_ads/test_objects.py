@@ -175,6 +175,33 @@ async def test_missing_ad_set_configuration_stays_unknown():
         await read(provider(page({"id": "10", "targeting": "all"})), object_type="adset")
 
 
+async def test_ads_carry_bounded_review_reasons_and_delivery_issues():
+    feedback = {
+        "global": {"BRAND_USAGE": "  Uses another   brand's logo. "},
+        "placement_specific": {"instagram": {"TEXT": "Too much text."}},
+    }
+    issues = [{"error_summary": "Billing problem"}, {"level": "AD"}]
+    client = provider(
+        page(
+            {
+                "id": "10",
+                "effective_status": "DISAPPROVED",
+                "ad_review_feedback": feedback,
+                "issues_info": issues,
+            },
+            edge="ads",
+        )
+    )
+
+    (ad,) = (await read(client, object_type="ad")).objects
+
+    assert ad.review_reasons == [
+        "Brand usage: Uses another brand's logo.",
+        "Instagram: Too much text.",
+    ]
+    assert ad.issues == ["Billing problem"]
+
+
 async def test_paging_limit_truncation_and_cumulative_byte_budget():
     client = provider(page({"id": "10"}, cursor="one"), page({"id": "11"}, {"id": "12"}))
     result = await read(client, limit=2)

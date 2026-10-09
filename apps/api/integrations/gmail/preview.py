@@ -8,7 +8,7 @@ from core.exceptions.integration import IntegrationAuthError
 from models.integrations import IntegrationConnection
 from services.integrations.connections.utils import refresh_oauth_credential
 from services.integrations.credentials import ensure_fresh_credential
-from services.integrations.plugin import IntegrationPreviewPayload
+from services.integrations.plugin import IntegrationPreviewPayload, IntegrationPreviewRequest
 
 from .client import GmailClient
 
@@ -18,14 +18,14 @@ PREVIEW_OPERATION = "preview_gmail_message"
 async def fetch_message_preview(
     db: AsyncSession,
     connection: IntegrationConnection,
-    ref: str,
+    request: IntegrationPreviewRequest,
 ) -> IntegrationPreviewPayload:
     """Fetch one raw Gmail message for engine-owned bounding and sanitization."""
     # Resolve at call time so provider operation tests can replace the transport
     # boundary without rebuilding the registered plugin.
     from .operations.preview_message import preview_message
 
-    payload = await preview_message(_gmail_client(db, connection), message_id=ref)
+    payload = await preview_message(_gmail_client(db, connection), message_id=request.ref)
     return IntegrationPreviewPayload(
         content_type="html" if payload.get("content_type") == "html" else "text",
         content=str(payload.get("content", "")),

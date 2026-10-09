@@ -160,6 +160,11 @@ function buildMergedArgs(
 
 function mergeEditedValue(original: unknown, edit: EditedValue, field?: ApprovalField): unknown {
   if (field && !field.editable) return INVALID_EDIT
+  // The server checks a structured edit against the tool's own input model.
+  if (field?.format === "structured") {
+    if ((original == null || edit === null) && !field.secondary) return INVALID_EDIT
+    return structurallyEqual(edit, original ?? null) ? NO_CHANGE : edit
+  }
   if (edit === null) return mergeClearedValue(original, field)
 
   if (field?.format === "records") {

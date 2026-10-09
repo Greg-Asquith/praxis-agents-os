@@ -103,6 +103,8 @@ DEFINITION = RuntimeToolDefinition(
         "adset_ids to filter ads, and name_contains for a name substring. Parent IDs are digits only. "
         "Budgets and bids use exact decimal strings in major units of data.currency; a campaign "
         "budget kind means the parent campaign holds an ad set's budget. Ad budgets are null. "
+        "Ads include Meta's review_reasons and delivery issues; use them with effective_status "
+        "to say whether new ads passed review. "
         "limit defaults to 100, at most 500 objects and 10 pages per account. Inspect truncated "
         "before treating returned objects as complete."
     )

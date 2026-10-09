@@ -21,6 +21,7 @@ const columns: DataColumn[] = [
   { key: "name", label: "Name", kind: "text" },
   { key: "status", label: "Status", kind: "status" },
   { key: "effective_status", label: "Delivery status", kind: "status" },
+  { key: "review", label: "Review notes", kind: "text" },
   { key: "budget", label: "Budget", kind: "text" },
   { key: "budget_remaining", label: "Budget remaining", kind: "text" },
   { key: "bid_strategy", label: "Bid strategy", kind: "text" },
@@ -69,6 +70,7 @@ export const metaAdsObjectsPresenter = defineIntegrationReadPresenter(metaAdsPro
           optimization_goal: object.optimization_goal
             ? titleCaseToken(object.optimization_goal.toLowerCase(), object.optimization_goal)
             : null,
+          review: [...(object.review_reasons ?? []), ...(object.issues ?? [])].join(" ") || null,
         }))}
         pageSize={25}
         exportFilename={`meta-ads-${entry.externalId}-${result.object_type}.csv`}

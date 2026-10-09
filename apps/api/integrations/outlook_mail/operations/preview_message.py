@@ -4,12 +4,15 @@
 
 from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.microsoft_graph import graph_client_for_connection
-from services.integrations.plugin import IntegrationPreviewPayload
+from services.integrations.plugin import IntegrationPreviewPayload, IntegrationPreviewRequest
 
 from .utils import message_path, object_payload, text
 
 
-async def fetch_message_preview(db, connection, ref: str) -> IntegrationPreviewPayload:
+async def fetch_message_preview(
+    db, connection, request: IntegrationPreviewRequest
+) -> IntegrationPreviewPayload:
+    ref = request.ref
     client = graph_client_for_connection(db, connection, expected_provider_key="outlook_mail")
     payload = object_payload(
         await client.get(

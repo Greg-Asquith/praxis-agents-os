@@ -12,7 +12,7 @@ from typing import Annotated, Any
 from pydantic import Field, ValidationError
 from pydantic_ai import ModelRetry, RunContext
 
-from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_EXTERNAL,
@@ -64,6 +64,7 @@ from .schemas.budgets import MetaAdsBudgetOutput, MetaAdsBudgetUpdate
 from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
 from .utils.mutation_evidence import (
+    attach_interrupted_evidence,
     audit_status,
     meta_ads_account_target,
     terminal_operation_detail,
@@ -112,7 +113,7 @@ async def meta_ads_update_budgets(
                     client, account_id=entry.external_id, currency=_currency(entry), targets=targets
                 )
             except asyncio.CancelledError as exc:
-                _attach_cancelled_evidence(exc, pending_detail)
+                attach_interrupted_evidence(exc, pending_detail, identity_key="object_id")
                 raise
             detail = terminal_operation_detail(pending_detail, ledger, identity_key="object_id")
             result = _result(entry.external_id, _currency(entry), targets, ledger)
@@ -260,22 +261,6 @@ def _pending_operation_detail(
             )
             for object_type, items in groups.items()
         ],
-    )
-
-
-def _attach_cancelled_evidence(
-    exc: asyncio.CancelledError, pending_detail: PendingIntegrationOperationDetail
-) -> None:
-    ledger: MetaAdsMutationLedger | None = getattr(exc, "ledger", None)
-    if ledger is None:
-        return
-    exc.operation_detail = terminal_operation_detail(
-        pending_detail, ledger, identity_key="object_id"
-    )
-    exc.failure_disposition = (
-        IntegrationFailureDisposition.AMBIGUOUS
-        if ledger.has_unverified
-        else IntegrationFailureDisposition.NOT_DISPATCHED
     )
 
 

@@ -2,6 +2,8 @@
 
 """Resolve workspace credentials through the shared secret store."""
 
+from uuid import UUID
+
 from pydantic_ai import RunContext
 
 from core.exceptions.integration import IntegrationAuthError
@@ -26,9 +28,15 @@ async def meta_ads_client(
 async def meta_ads_client_for_principal(
     db, *, actor, workspace, entry: ResolvedContextEntry
 ) -> MetaAdsClient:
+    return meta_ads_client_for_connection(
+        db, actor=actor, workspace=workspace, connection_id=entry.connection_id
+    )
+
+
+def meta_ads_client_for_connection(db, *, actor, workspace, connection_id: UUID) -> MetaAdsClient:
     async def access_token() -> str:
         credential = await get_usable_connection_credential(
-            db, connection_id=entry.connection_id, actor=actor, workspace=workspace
+            db, connection_id=connection_id, actor=actor, workspace=workspace
         )
         if credential.auth_mode != "api_key":
             raise IntegrationAuthError(

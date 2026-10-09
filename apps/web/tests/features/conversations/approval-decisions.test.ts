@@ -396,6 +396,47 @@ describe("approval decision helpers", () => {
     }
   })
 
+  it("sends a nested structured edit whole, and only when its field is declared", () => {
+    const ads = [{ name: "Spring", ad_sets: [{ adset_id: "8" }], cards: [{ headline: "A" }] }]
+    const approval: PendingToolApproval = {
+      ...approvalIdentity("ads-1"),
+      tool_call_id: "ads-1",
+      name: "create_ads",
+      args: { ads, _ad_sets: { "8": { label: "Display only" } } },
+      replay_args: { ads, page: { label: "Acme" } },
+    }
+    const fields: ApprovalField[] = [
+      {
+        key: "ads",
+        label: "Ads",
+        format: "structured",
+        editable: true,
+        min_rows: 0,
+        options: [],
+        placeholder: "",
+        secondary: false,
+      },
+    ]
+    const edited = [{ ...ads[0], cards: [{ headline: "B" }] }]
+    const decide = (edit: Record<string, unknown>[], fieldsForTool?: () => ApprovalField[]) =>
+      buildResumeDecisions(
+        [approval],
+        { "ads-1": { decision: "approved", message: "", edits: { ads: edit } } },
+        fieldsForTool
+      )
+
+    expect(decide(edited, () => fields)).toEqual([
+      {
+        approval_id: "ads-1",
+        tool_call_id: "ads-1",
+        decision: "approved",
+        override_args: { ads: edited, page: { label: "Acme" } },
+      },
+    ])
+    expect(decide(ads, () => fields)).toEqual([expect.objectContaining({ override_args: null })])
+    expect(decide(edited)).toBe("This request can no longer be edited. Refresh and try again.")
+  })
+
   it("does not classify an empty array as records or entity references without metadata", () => {
     const approval: PendingToolApproval = {
       ...approvalIdentity("records-1"),
