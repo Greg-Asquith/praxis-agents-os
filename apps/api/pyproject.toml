@@ -24,7 +24,7 @@ dependencies = [
     "pillow>=12.3.0",
     "prometheus-client>=0.26.0",
     "pwdlib[argon2]>=0.3.0",
-    "pydantic-ai[retries]>=2.50.0",
+    "pydantic-ai[retries]>=2.53.0",
     "pydantic-evals>=2.50.0",
     "pydantic-monty==1.0.0",
     "pydantic-settings>=2.15.0",
