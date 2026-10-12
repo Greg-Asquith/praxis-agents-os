@@ -361,6 +361,7 @@ for google, anthropic, partner in itertools.product(("false", "true"), repeat=3)
     ).stdout
     enabled = "true" in (google, anthropic, partner)
     assert ("aiplatform.googleapis.com" in result) == enabled
+    assert ("compute.googleapis.com" in result) == ("true" in (anthropic, partner))
     assert result.count("--role=roles/aiplatform.user") == (2 if enabled else 0)
 PYTEST
 

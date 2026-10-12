@@ -200,6 +200,10 @@ VERTEX_PARTNER_MODELS='["mistral:mistral-small-2503"]'
 ```
 
 Both scripts reject a switch set to `true` without its list.
+Either switch also makes bootstrap enable Compute Engine: without it, Claude
+and partner model quotas stay at zero. Enabling it creates the default Compute
+Engine service account, which Praxis doesn't use. Remove any Editor grant it
+receives.
 Model defaults select `us-east5` for Meta Llama 4, `global` for Grok 4.20, and
 `europe-west4` for Mistral Small. The operator selects the model; the application
 selects its supported transport and region. Meta and Grok use Chat Completions;

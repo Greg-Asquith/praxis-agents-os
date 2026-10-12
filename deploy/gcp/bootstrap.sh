@@ -250,6 +250,10 @@ apis=(
 if [[ "$GOOGLE_VERTEX_AI" == "true" || "$ANTHROPIC_VERTEX_AI" == "true" \
   || "$VERTEX_PARTNER_MODELS_ENABLED" == "true" ]]; then
   apis+=(aiplatform.googleapis.com)
+  # Model Garden partner quotas, including Claude, stay at zero without Compute Engine.
+  if [[ "$ANTHROPIC_VERTEX_AI" == "true" || "$VERTEX_PARTNER_MODELS_ENABLED" == "true" ]]; then
+    apis+=(compute.googleapis.com)
+  fi
 fi
 for api in "${apis[@]}"; do
   state=$(gcloud services list --enabled --project="$GCP_PROJECT_ID" \
