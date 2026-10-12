@@ -258,6 +258,17 @@ async def test_video_attachment_reaches_the_model_as_a_framed_reference_without_
         filename=hostile_name,
         content=video_bytes,
     )
+    revision.media_metadata = {
+        "duration_ms": 3_612_480,
+        "width": 1920,
+        "height": 1080,
+        "fps": 29.97,
+        "video_codec": "h264",
+        "has_audio": True,
+        "audio_codec": "aac",
+        "rotation": 90,
+    }
+    await db_session.flush()
 
     files = await resolve_chat_attachments(
         db_session,
@@ -272,6 +283,8 @@ async def test_video_attachment_reaches_the_model_as_a_framed_reference_without_
     note = content.data.decode()
     assert f"File id: {video.id}" in note
     assert "QuickTime (video/quicktime), 18 bytes" in note
+    # A phone's portrait recording is described upright.
+    assert "Video: 1:00:12, 1080x1920, 29.97 fps, with audio" in note
     assert video_bytes.decode() not in note
     # The hostile name stays inside one frame carrying the authorised revision's provenance.
     assert note.count(UNTRUSTED_CONTENT_START) == 1

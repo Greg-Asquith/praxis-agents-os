@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from services.files.domain import VideoMetadata
 from services.storage.domain import StorageObjectRef
 
 MEDIA_STAGING_PREFIX = "platform/media-staging"
@@ -69,23 +70,12 @@ class _Result(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class ProbeResult(_Result):
-    duration_ms: int = Field(ge=0)
-    width: int | None = Field(default=None, gt=0)
-    height: int | None = Field(default=None, gt=0)
-    fps: float | None = Field(default=None, gt=0)
-    video_codec: str | None = Field(default=None, max_length=32)
-    has_audio: bool
-    audio_codec: str | None = Field(default=None, max_length=32)
-    rotation: int = Field(ge=0, lt=360)
-
-
 class SceneCutsResult(_Result):
     cuts_ms: tuple[int, ...] = Field(max_length=2000)
     duration_ms: int = Field(ge=0)
 
 
-class CutResult(ProbeResult):
+class CutResult(VideoMetadata):
     mode: Literal["copy", "encode"]
 
 
@@ -97,8 +87,8 @@ class FramesResult(_Result):
     times_ms: tuple[int, ...]
 
 
-RESULT_MODELS: dict[str, type[_Result]] = {
-    "probe": ProbeResult,
+RESULT_MODELS: dict[str, type[BaseModel]] = {
+    "probe": VideoMetadata,
     "scene_cuts": SceneCutsResult,
     "cut": CutResult,
     "extract_audio": ExtractAudioResult,
@@ -128,7 +118,7 @@ class StagedMediaOutput(BaseModel):
 class MediaOperationResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    result: ProbeResult | SceneCutsResult | CutResult | ExtractAudioResult | FramesResult
+    result: VideoMetadata | SceneCutsResult | CutResult | ExtractAudioResult | FramesResult
     outputs: tuple[StagedMediaOutput, ...]
     elapsed_ms: int
 

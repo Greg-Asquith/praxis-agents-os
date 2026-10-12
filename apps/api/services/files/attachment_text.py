@@ -5,7 +5,7 @@
 from models.files import File, FileRevision
 from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
 from services.assets.utils import normalize_content_type
-from services.files.utils import file_revision_ref
+from services.files.utils import describe_video, file_revision_ref, revision_video_metadata
 from services.storage.factory import get_storage_provider
 from utils.document_markdown import convert_document_to_markdown, truncate_markdown
 
@@ -86,7 +86,19 @@ def video_attachment_note(file: File, revision: FileRevision) -> bytes:
         "Attached video\n"
         f"File id: {file.id}\n"
         f"Format: {format_label} ({content_type}), {revision.size_bytes:,} bytes\n"
+        f"{_video_state_line(file, revision)}"
         f"{name}\n"
         "The video itself isn't included in this message. To work with it, pass the file id "
         "to the video tools."
     ).encode()
+
+
+def _video_state_line(file: File, revision: FileRevision) -> str:
+    metadata = revision_video_metadata(revision)
+    if metadata is not None:
+        return f"Video: {describe_video(metadata)}\n"
+    if file.processing_status == "error":
+        return f"Video couldn't be prepared: {file.processing_error}\n"
+    if file.processing_status in ("pending", "processing"):
+        return "Video is still being prepared; its duration isn't known yet.\n"
+    return ""

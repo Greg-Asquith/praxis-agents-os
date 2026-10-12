@@ -19,7 +19,7 @@ from sqlalchemy import (
     select,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from models.base import Base, BaseModel, CreatedAtMixin, UUIDMixin
 
@@ -27,7 +27,7 @@ FILE_PROCESSING_STATUSES = ("pending", "processing", "ready", "error")
 FILE_REVISION_KINDS = ("create", "edit", "replace", "restore", "import")
 FILE_REFERENCE_TARGET_TYPES = ("conversation", "artifact", "agent", "schedule_run")
 
-_REVISION_MUTABLE_ONCE = frozenset({"markdown_object_key", "markdown_size_bytes"})
+_REVISION_MUTABLE_ONCE = frozenset({"markdown_object_key", "markdown_size_bytes", "media_metadata"})
 
 
 def _in_sql(column_name: str, values: tuple[str, ...]) -> str:
@@ -203,6 +203,8 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
     )
     markdown_object_key = Column(String(1024), nullable=True)
     markdown_size_bytes = Column(BigInteger, nullable=True)
+    # The renderer's probe result for video revisions; see services.files.domain.VideoMetadata.
+    media_metadata = Column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -321,7 +323,7 @@ class FileUpload(Base, UUIDMixin, CreatedAtMixin):
 
 @event.listens_for(FileRevision, "before_update")
 def _reject_file_revision_mutation(_mapper, connection, target: FileRevision) -> None:
-    """Allows publication and set-once derived markdown without rewriting content."""
+    """Allows publication and set-once derived fields without rewriting content."""
     state = inspect(target)
     for attr in state.attrs:
         if not attr.history.has_changes():

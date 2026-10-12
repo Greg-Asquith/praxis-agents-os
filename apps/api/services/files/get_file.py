@@ -29,4 +29,5 @@ async def get_file(
     return file_to_read(
         file_for_revision(file, revision),
         folder_name=await get_file_folder_name(db, workspace=workspace, file=file),
+        revision=revision,
     )

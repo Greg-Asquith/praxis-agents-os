@@ -5,7 +5,7 @@
 import logging
 from pathlib import PurePosixPath
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +17,7 @@ from core.exceptions.general import AppValidationError, NotFoundError
 from models.files import File, FileFolder, FileRevision, FileUpload
 from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
-from services.files.domain import FileRead, FileRevisionRead
+from services.files.domain import FileRead, FileRevisionRead, VideoMetadata
 from services.files.visibility import visible_file_filter, visible_file_revision_filter
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
@@ -270,42 +270,6 @@ def distinct_object_keys(revisions: list[FileRevision]) -> set[str]:
     return keys
 
 
-async def set_processing_state_for_revision(
-    db: AsyncSession,
-    *,
-    file: File,
-    revision: FileRevision,
-    initiated_by_user_id: UUID | None,
-    publish_when_ready: bool = False,
-) -> None:
-    """Set file processing state and enqueue extraction for ingestible revisions."""
-    from services.files.contract import is_ingestible
-    from services.jobs.enqueue_job import enqueue_job
-
-    file.processing_error = None
-    file.processing_attempts = 0
-    if not is_ingestible(revision.content_type):
-        file.processing_status = "ready"
-        return
-
-    file.processing_status = "pending"
-    await enqueue_job(
-        db,
-        kind="files.extract_platform" if file.scope == ContentScope.PLATFORM else "files.extract",
-        workspace_id=file.workspace_id,
-        concurrency_user_id=initiated_by_user_id if file.scope == ContentScope.PLATFORM else None,
-        subject_type="file_revision",
-        subject_id=revision.id,
-        payload={
-            "file_id": str(file.id),
-            "revision_id": str(revision.id),
-            **({"publish_when_ready": True} if publish_when_ready else {}),
-        },
-        content_hash=revision.content_hash,
-        initiated_by_user_id=initiated_by_user_id,
-    )
-
-
 async def get_file_folder_name(
     db: AsyncSession,
     *,
@@ -324,8 +288,43 @@ async def get_file_folder_name(
     ).name
 
 
-def file_to_read(file: File, *, folder_name: str | None, actor: User | None = None) -> FileRead:
-    """Serialize a file model for API responses."""
+def revision_video_metadata(revision: FileRevision | None) -> VideoMetadata | None:
+    """Returns a video revision's probe result, or None before the probe stores one."""
+    if revision is None or revision.media_metadata is None:
+        return None
+    return VideoMetadata.model_validate(revision.media_metadata)
+
+
+def format_duration(duration_ms: int) -> str:
+    """Formats a duration as M:SS, or H:MM:SS from one hour."""
+    minutes, seconds = divmod(duration_ms // 1000, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
+
+
+def describe_video(metadata: VideoMetadata) -> str:
+    """Summarises a video as it plays: duration, upright dimensions, frame rate, and audio."""
+    parts = [format_duration(metadata.duration_ms)]
+    if metadata.width and metadata.height:
+        width, height = metadata.width, metadata.height
+        # Phones store portrait video as landscape frames with a rotation flag.
+        if metadata.rotation in (90, 270):
+            width, height = height, width
+        parts.append(f"{width}x{height}")
+    if metadata.fps:
+        parts.append(f"{metadata.fps:g} fps")
+    parts.append("with audio" if metadata.has_audio else "no audio")
+    return ", ".join(parts)
+
+
+def file_to_read(
+    file: File,
+    *,
+    folder_name: str | None,
+    actor: User | None = None,
+    revision: FileRevision | None = None,
+) -> FileRead:
+    """Serializes a file model for API responses, with video metadata when given its revision."""
     if file.current_revision_id is None:
         raise RuntimeError("Workspace file has no current revision")
     return FileRead(
@@ -352,6 +351,7 @@ def file_to_read(file: File, *, folder_name: str | None, actor: User | None = No
         revision_count=file.revision_count,
         processing_status=file.processing_status,
         processing_error=file.processing_error,
+        video=revision_video_metadata(revision),
         created_at=file.created_at,
         updated_at=file.updated_at,
     )
@@ -442,43 +442,6 @@ def apply_file_metadata_update(
         file.description = description
         changed_fields.append("description")
     return changed_fields
-
-
-async def append_restore_revision(
-    db: AsyncSession, *, file: File, source: FileRevision, actor: User
-) -> FileRevision:
-    """Appends an immutable restore revision after the caller locks and validates the parent."""
-    revision = FileRevision(
-        id=uuid4(),
-        file_id=file.id,
-        workspace_id=file.workspace_id,
-        scope=file.scope,
-        revision_number=file.revision_count + 1,
-        revision_kind="restore",
-        content_type=source.content_type,
-        extension=source.extension,
-        size_bytes=source.size_bytes,
-        content_hash=source.content_hash,
-        object_key=source.object_key,
-        created_by_user_id=actor.id,
-        restored_from_revision_id=source.id,
-    )
-    db.add(revision)
-    await db.flush()
-    file.current_revision_id = revision.id
-    if file.scope == ContentScope.PLATFORM and not file.is_published:
-        # A fresh draft can process after withdrawal cancelled the previous revision.
-        file.published_revision_id = None
-    file.revision_count = revision.revision_number
-    file.content_type = revision.content_type
-    file.extension = revision.extension
-    file.size_bytes = revision.size_bytes
-    file.content_hash = revision.content_hash
-    await set_processing_state_for_revision(
-        db, file=file, revision=revision, initiated_by_user_id=actor.id
-    )
-    await db.flush()
-    return revision
 
 
 async def conversation_file_revision_id(

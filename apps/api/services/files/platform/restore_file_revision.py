@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError, ConflictError
 from models.user import User
 from services.audit_events.platform_content_events import PlatformContentAuditDetails
+from services.files.append_restore_revision import append_restore_revision
 from services.files.domain import FileRead, FileRestoreRequest
 from services.files.platform.utils import (
     get_platform_file,
@@ -18,7 +19,6 @@ from services.files.platform.utils import (
     platform_session,
     record_file_change,
 )
-from services.files.utils import append_restore_revision
 
 
 async def restore_file_revision(

@@ -14,6 +14,7 @@ from utils.content import ContentScope
 from utils.validation import normalize_optional_text
 
 _SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
+VIDEO_PROBE_JOB_KIND = "video.probe"
 
 
 class FileUploadRequest(BaseModel):
@@ -139,6 +140,21 @@ class FileDownloadRequest(BaseModel):
     force_download: bool = True
 
 
+class VideoMetadata(BaseModel):
+    """A video revision as the media renderer measured it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    duration_ms: int = Field(ge=0)
+    width: int | None = Field(default=None, gt=0)
+    height: int | None = Field(default=None, gt=0)
+    fps: float | None = Field(default=None, gt=0)
+    video_codec: str | None = Field(default=None, max_length=32)
+    has_audio: bool
+    audio_codec: str | None = Field(default=None, max_length=32)
+    rotation: int = Field(ge=0, lt=360)
+
+
 class FileRead(BaseModel):
     """API representation of a workspace file."""
 
@@ -161,6 +177,7 @@ class FileRead(BaseModel):
     revision_count: int
     processing_status: str
     processing_error: str | None = None
+    video: VideoMetadata | None = None
     created_at: datetime
     updated_at: datetime
 

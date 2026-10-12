@@ -18,6 +18,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   CPU, output, and time; the renderer refuses to start if that isolation
   fails. On GCP it is a private Cloud Run service that scales to zero.
   Agent video tools that use it are pending.
+- Uploaded and saved videos are measured by the media renderer. Each video
+  File shows as processing until its duration, dimensions, frame rate, and
+  audio are recorded, and `list_files`, `read_file`, and chat attachment
+  notes describe them to the agent. A video that can't be read, has no
+  video stream, or runs longer than `VIDEO_MAX_SOURCE_DURATION_SECONDS`
+  (default 4 hours) fails processing with a plain reason.
 - Claude Haiku 5.5 is available directly and through Google Cloud. It is the
   Anthropic **Light** default and the default Claude model for native web
   search, web fetch, and classification, priced from $0.10 input and $0.50

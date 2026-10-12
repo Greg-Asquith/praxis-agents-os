@@ -15,9 +15,11 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.untrusted import UntrustedNode
 from services.files.utils import (
     conversation_file_revision_id,
+    describe_video,
     file_for_revision,
     get_visible_file,
     get_visible_file_revision,
+    revision_video_metadata,
 )
 from utils.content import ContentScope
 from utils.text_window import TextWindowError, utf8_window
@@ -111,6 +113,7 @@ def slice_text(
 
 def file_metadata(file: File, revision: FileRevision, *, source: str) -> dict[str, object]:
     """Return common metadata for file read outputs."""
+    video = revision_video_metadata(revision)
     return {
         "kind": "file",
         "source": "tool_result" if file.is_tool_result else source,
@@ -121,6 +124,7 @@ def file_metadata(file: File, revision: FileRevision, *, source: str) -> dict[st
         "category": file.category,
         "media_type": file.content_type,
         "processing_status": file.processing_status,
+        **({"video": describe_video(video)} if video is not None else {}),
     }
 
 

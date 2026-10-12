@@ -14,9 +14,9 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
+from services.files.append_restore_revision import append_restore_revision
 from services.files.domain import FileRead, FileRestoreRequest
 from services.files.utils import (
-    append_restore_revision,
     file_to_read,
     get_file_folder_name,
     get_file_for_workspace,

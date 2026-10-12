@@ -97,7 +97,9 @@ async def list_files(
     total = await db.scalar(count_stmt)
     return FileListResponse(
         files=[
-            file_to_read(file_for_revision(file, revision), folder_name=folder_name)
+            file_to_read(
+                file_for_revision(file, revision), folder_name=folder_name, revision=revision
+            )
             for file, folder_name, revision in rows
         ],
         total=int(total or 0),

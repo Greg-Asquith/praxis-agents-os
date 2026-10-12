@@ -150,6 +150,19 @@ async def read_file(
             metadata={"file_id": str(file.id), "revision_id": str(revision.id)},
         )
 
+    if file.category == FileCategory.VIDEO.value:
+        if file.processing_status == "error":
+            message = f"The video couldn't be prepared: {file.processing_error}"
+        elif file.processing_status in ("pending", "processing"):
+            message = "The video is still being prepared. Its duration isn't known yet."
+        else:
+            message = "Video can't be read as text. Pass the file id to the video tools."
+        return {
+            **file_metadata(file, revision, source="video"),
+            "status": file.processing_status,
+            "message": message,
+        }
+
     raise ModelRetry(
         "This file type cannot be inspected as content. "
         "Use mode='url' only if the user requested a download."

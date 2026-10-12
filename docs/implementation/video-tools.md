@@ -98,9 +98,9 @@ stalled transfer ends inside Cloud Run's 60 seconds of request headroom.
   the upload sweeper removes them if it never does. The staged object stays as
   the retry source: call `discard_staged_outputs` after commit, or leave it to
   the one-day staging lifecycle rule.
-- `media_renderer_available()` is true when `MEDIA_RENDERER_URL` is set and
-  storage is `gcs` or `local_fs`. Azure and S3 adapters are pending; see
-  [Other clouds](#other-clouds).
+- `settings.media_renderer_available` is true when `MEDIA_RENDERER_URL` is
+  set and storage is `gcs` or `local_fs`. Azure and S3 adapters are pending;
+  see [Other clouds](#other-clouds).
 
 Failures raise `MediaRendererError` with a stable code and a plain message.
 
@@ -113,6 +113,36 @@ Failures raise `MediaRendererError` with a stable code and a plain message.
 | `MEDIA_RENDERER_MAX_OUTPUT_BYTES` | `524288000` | Largest output a renderer upload may write. |
 | `MEDIA_STAGING_URL_TTL_SECONDS` | `1800` | Lifetime of the renderer's signed URLs. Must be at least the timeout plus 60 seconds, so uploads can't expire mid-render. |
 | `MEDIA_RENDERER_LOCAL_STORAGE_URL` | `http://host.docker.internal:8000` | Local only: the API origin as the renderer container reaches it. |
+
+## Video probe
+
+A workspace video revision is measured once, in the background, by the
+renderer's `probe` operation. `queue_video_probe` (`services/files/`) runs
+wherever a revision becomes a File's current revision (upload confirmation,
+platform copies, restores, `create_file_with_revision`, and
+`append_file_revision`). It marks the File `pending` and enqueues a
+`video.probe` job, unless the File isn't a workspace video or
+`settings.media_renderer_available` is false. It lives in Files because
+`services/media` imports the Files writers that call it.
+
+The `probe_video` job handler stores the result in the revision's
+`media_metadata` (`VideoMetadata` in `services/files/domain.py`). A restore
+copies the measurement from the revision it restores instead of probing again.
+The File's processing status follows its current revision:
+
+| Outcome | File | Retried |
+|---|---|---|
+| Measured, with a video stream, within `VIDEO_MAX_SOURCE_DURATION_SECONDS` | `ready` | No |
+| No video stream, longer than the limit, unreadable, or over the renderer's limits | `error`, with a plain reason | No |
+| Renderer unreachable, timed out, or another renderer failure | `error` until the next attempt | Up to 3 attempts |
+
+The job's timeout is `MEDIA_RENDERER_TIMEOUT_SECONDS` plus 120 seconds, so it
+outlasts the client's own wait. Tools read duration and size from
+`media_metadata` and never probe inline.
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `VIDEO_MAX_SOURCE_DURATION_SECONDS` | `14400` | Longest video a File may hold. Longer videos fail processing. |
 
 ## Deployment
 
@@ -148,14 +178,15 @@ rule for staging.
 | Isolation self-check | Verified locally in Docker; Cloud Run gen2 is pending (G1) | Unverified. The runtime must let an unprivileged process set `no_new_privs` and install a seccomp filter, and run the renderer as its container's first process. |
 
 The repository has no Azure or AWS deployment tooling yet. Until a deployment
-has a staging adapter, `media_renderer_available()` is false and video stays
+has a staging adapter, `settings.media_renderer_available` is false and video stays
 refused in chat.
 
 Locally, set `MEDIA_RENDERER_URL=http://127.0.0.1:8090` and
 `MEDIA_RENDERER_AUTH=none` in `apps/api/.env`, and `make dev` starts the
 renderer on `127.0.0.1:8090`. See [Local development](local-development.md).
-No model-facing tool calls the renderer yet (plans 249 and 250), so verify it
-with the checks below.
+Uploading a video to **Files** runs the probe, so the File moving from
+**Processing** to ready confirms the renderer works end to end. No
+model-facing tool calls the renderer yet (plans 249 and 250).
 
 ## Verification
 

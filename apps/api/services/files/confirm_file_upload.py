@@ -27,6 +27,7 @@ from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.contract import FILE_CONTRACT, require_matching_pair
 from services.files.domain import FileConfirmRequest, FileRead, PlatformFileConfirmRequest
 from services.files.platform.utils import publish_locked_revision
+from services.files.set_processing_state_for_revision import set_processing_state_for_revision
 from services.files.utils import (
     best_effort_delete_file_object,
     file_storage_bucket,
@@ -37,7 +38,6 @@ from services.files.utils import (
     get_folder_for_workspace,
     require_declared_upload_size,
     require_file_write_access,
-    set_processing_state_for_revision,
     sha256_hex_stream,
 )
 from services.storage.domain import make_storage_object_ref

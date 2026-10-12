@@ -21,7 +21,6 @@ from services.media.domain import (
     MediaRendererError,
     StagedMediaOutput,
 )
-from services.media.media_renderer_available import media_renderer_available
 from services.media.utils import (
     discard_staged_outputs,
     renderer_auth_headers,
@@ -46,7 +45,7 @@ async def run_media_operation(
     receives one signed GET for that revision and signed PUTs under this
     workspace's staging prefix; it never sees a storage name it could change.
     """
-    if not media_renderer_available():
+    if not settings.media_renderer_available:
         raise MediaRendererError("unavailable", "The media renderer isn't available.")
     if source.scope != "workspace" or source.workspace_id != workspace_id:
         raise MediaRendererError("forbidden", "The video isn't in this workspace.")

@@ -6,6 +6,9 @@ from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 
+# Providers whose signed URLs the renderer can use. Azure and S3 adapters are pending.
+RENDERER_STORAGE_PROVIDERS = frozenset({"gcs", "local_fs"})
+
 
 class MediaSettingsMixin:
     MEDIA_RENDERER_URL: str | None = Field(
@@ -40,6 +43,12 @@ class MediaSettingsMixin:
         ge=60,
         le=7200,
         description="Lifetime of a renderer operation's signed URLs; at least the timeout + 60.",
+    )
+    VIDEO_MAX_SOURCE_DURATION_SECONDS: int = Field(
+        default=14400,
+        ge=60,
+        le=86400,
+        description="Longest video a File may hold; longer videos fail processing (4 hours).",
     )
     MEDIA_RENDERER_LOCAL_STORAGE_URL: str = Field(
         default="http://host.docker.internal:8000",

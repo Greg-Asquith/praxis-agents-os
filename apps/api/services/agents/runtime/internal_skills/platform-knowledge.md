@@ -325,10 +325,10 @@ workspace copy** to keep your own editable version.
 **Files** holds the material agents work with: documents, PDFs,
 spreadsheets, presentations, images, and videos. To add files, click
 **Upload Files**, drag them onto the page, or attach them to a message.
-Documents can be up to 100 MB and images up to 10 MB. Videos uploaded to
-**Files** can be up to 4 GB by default when the deployment stores files in
-Google Cloud or Amazon S3; elsewhere, and for videos agents save, the limit
-is 100 MB. Use **New Folder** and **Move to Folder** to organise them.
+Documents can be up to 100 MB and images up to 10 MB. Uploaded videos can be
+up to 4 GB on Google Cloud or Amazon S3 storage, otherwise 100 MB. A video
+shows as processing until it's measured, then fails if it can't play or runs
+over 4 hours. Use **New Folder** and **Move to Folder** to organise them.
 
 Agents can read and change any workspace file, editing text directly. They
 edit and create Excel, PowerPoint, and Word files with any model, keeping
@@ -444,9 +444,6 @@ remove members from a team workspace.
 Say so plainly when someone asks for these:
 
 - Edit or branch an earlier message, or delete a conversation.
-- Change the agent in a conversation after it starts.
-- Delete an artifact.
 - Add a memory by hand on the **Memory** page.
 - Change a member's role without removing and re-inviting them.
 - Send invitation emails or in-app notifications.
-- Let an agent choose its own active context.

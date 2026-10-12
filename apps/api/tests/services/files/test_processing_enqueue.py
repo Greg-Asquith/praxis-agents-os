@@ -119,6 +119,41 @@ async def test_confirm_ingestible_upload_sets_pending_and_enqueues_ids_only(
     )
 
 
+async def test_confirmed_video_waits_for_its_probe_before_it_is_ready(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "MEDIA_RENDERER_URL", "http://renderer.test")
+    actor, workspace, membership = await _workspace_context(db_session)
+    grant_result = await create_file_upload(
+        db_session,
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        payload=FileUploadRequest(filename="talk.mp4", content_type="video/mp4", size_bytes=5),
+    )
+    assert grant_result.grant is not None
+    await get_storage_provider().put_object(
+        grant_result.grant.upload.ref, b"video", content_type="video/mp4"
+    )
+
+    confirmed = await confirm_file_upload(
+        db_session,
+        request=build_test_request(path="/api/v1/files/uploads/confirm"),
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        payload=FileConfirmRequest(upload_token=grant_result.grant.upload_token),
+    )
+
+    assert confirmed.processing_status == "pending"
+    job = await db_session.scalar(select(Job).where(Job.kind == "video.probe"))
+    assert job is not None
+    assert job.subject_id == confirmed.current_revision_id
+    assert job.initiated_by_user_id == actor.id
+
+
 async def test_files_processing_summary_counts_workspace_statuses_and_jobs(
     db_session: AsyncSession,
 ) -> None:

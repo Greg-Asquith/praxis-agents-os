@@ -56,6 +56,18 @@ be confirmed. Other asset tokens keep the 10-minute lifetime.
 `reserve_file_revision` reject content over its type's limit in the file
 contract, so a tool can't save a video larger than `MAX_FILE_SIZE_VIDEO`.
 
+When the media renderer is available, every new workspace video revision, from
+an upload, a copy, a restore, or a tool write, starts `pending` and queues a
+`video.probe` job. The File becomes `ready` once the probe stores the video's
+duration, dimensions, frame rate, codecs, audio presence, and rotation in the
+revision's set-once `media_metadata`. A file the renderer can't read, one
+without a video stream, and one longer than
+`VIDEO_MAX_SOURCE_DURATION_SECONDS` (default `14400`) fail processing with a
+plain reason. Without the renderer, videos are `ready` with no measurement.
+File responses carry the measurement as `video`, and `list_files`,
+`read_file`, and the chat attachment note describe it to the model, with
+portrait recordings shown upright. See [Video tools](video-tools.md#video-probe).
+
 Chat accepts a video attachment only when the deployment has a tool that finds
 moments in video or cuts it (`cut_video_clips` or `find_video_moments`).
 `GET /models/catalog` reports this check as `video_tools_available`. Those
@@ -63,7 +75,8 @@ tools are pending, so every deployment refuses video in chat. The composer
 refuses a picked or dropped video before uploading it, and the API refuses a
 video attachment on send. Both say "Video can't be attached to messages yet.
 Upload it to Files instead." When the check passes, the model receives a text
-note with the video's File id, format, and size, never its bytes. The
+note with the video's File id, format, size, and measurement (or that it is
+still being prepared), never its bytes. The
 uploader-controlled name sits inside the shared untrusted-content frame with
 File and revision provenance.
 

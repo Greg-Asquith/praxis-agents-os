@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.files import File, FileFolder, FileRevision, FileUpload
 from models.workspace import Workspace
 from services.files.contract import require_matching_pair, require_written_size
+from services.files.queue_video_probe import queue_video_probe
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import (
     get_folder_for_workspace,
@@ -110,6 +111,7 @@ async def create_file_with_revision(
     await db.flush()
     file.current_revision_id = revision.id
     file.revision_count = 1
+    await queue_video_probe(db, file=file, revision=revision, initiated_by_user_id=actor.user_id)
     await db.flush()
     await db.refresh(file)
     provider = get_storage_provider()

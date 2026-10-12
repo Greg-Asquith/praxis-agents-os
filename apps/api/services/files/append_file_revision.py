@@ -11,6 +11,7 @@ from models.files import FileRevision
 from models.workspace import Workspace
 from services.files.contract import contract_for_content_type, require_written_size
 from services.files.create_file_with_revision import FileRevisionWriteResult
+from services.files.queue_video_probe import queue_video_probe
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import (
     get_file_for_workspace,
@@ -74,6 +75,7 @@ async def append_file_revision(
     file.content_hash = revision.content_hash
     file.processing_status = "ready"
     file.processing_error = None
+    await queue_video_probe(db, file=file, revision=revision, initiated_by_user_id=actor.user_id)
     await db.flush()
     await db.refresh(file)
     await put_new_object_with_cleanup(

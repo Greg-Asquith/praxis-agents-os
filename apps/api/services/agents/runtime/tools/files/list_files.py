@@ -18,6 +18,7 @@ from services.agents.runtime.tools.contract import (
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files import list_files as list_workspace_files
 from services.files.folder_utils import folder_by_name
+from services.files.utils import describe_video
 
 
 class RuntimeFileSummary(BaseModel):
@@ -30,6 +31,7 @@ class RuntimeFileSummary(BaseModel):
     processing_status: str
     updated_at: str
     folder_name: str | None = None
+    video: str | None = None
     reference: FileReference
 
 
@@ -113,6 +115,7 @@ async def list_files(
                 processing_status=file.processing_status,
                 updated_at=file.updated_at.isoformat(),
                 folder_name=file.folder_name,
+                video=describe_video(file.video) if file.video is not None else None,
                 reference=FileReference(
                     entity_id=file.id,
                     label=file.name,

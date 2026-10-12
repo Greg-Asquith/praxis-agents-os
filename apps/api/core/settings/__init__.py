@@ -30,7 +30,7 @@ from core.settings.gcp import GcpSettingsMixin
 from core.settings.integrations import IntegrationsSettingsMixin
 from core.settings.jobs import JobsSettingsMixin
 from core.settings.kb import KBSettingsMixin
-from core.settings.media import MediaSettingsMixin
+from core.settings.media import RENDERER_STORAGE_PROVIDERS, MediaSettingsMixin
 from core.settings.memory import MemorySettingsMixin
 from core.settings.microsoft_graph import MicrosoftGraphSettingsMixin
 from core.settings.models import LLMSettingsMixin
@@ -296,6 +296,14 @@ class Settings(
     def is_prod(self) -> bool:
         """Check if running in production mode."""
         return self.ENVIRONMENT == "production"
+
+    @property
+    def media_renderer_available(self) -> bool:
+        """Checks the renderer is configured and the storage provider can stage for it."""
+        return (
+            self.MEDIA_RENDERER_URL is not None
+            and self.STORAGE_PROVIDER in RENDERER_STORAGE_PROVIDERS
+        )
 
     model_config = SettingsConfigDict(
         env_file=".env",

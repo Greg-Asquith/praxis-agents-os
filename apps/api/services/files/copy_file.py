@@ -19,6 +19,7 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditActorType, AuditResourceType
 from services.audit_events.operations import record_operation_audit_event
 from services.files.domain import FileCopyRequest, FileRead
+from services.files.set_processing_state_for_revision import set_processing_state_for_revision
 from services.files.utils import (
     file_to_read,
     get_file_copy_source,
@@ -26,7 +27,6 @@ from services.files.utils import (
     require_file_copy_editor,
     require_file_write_access,
     revision_object_key,
-    set_processing_state_for_revision,
 )
 from services.storage.copy_object import copy_object
 from services.storage.domain import StorageBucket, make_storage_object_ref
