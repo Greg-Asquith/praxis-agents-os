@@ -13,6 +13,7 @@ import pytest
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.errors import (
     StoragePreconditionError,
+    StorageValidationError,
 )
 from services.storage.providers.gcs import GcsStorageProvider
 
@@ -339,3 +340,29 @@ async def test_gcs_platform_objects_remain_private_and_sign_in_the_platform_buck
     assert await provider.delete_object(ref) is True
     assert await provider.stat_object(ref) is None
     assert await provider.delete_object(ref) is False
+
+
+async def test_gcs_staging_upload_signs_a_size_range_and_refuses_workspace_objects() -> None:
+    client = _FakeGcsClient()
+    provider = _provider(client)
+    ref = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE, "platform/media-staging/run/output-0.mp4"
+    )
+
+    upload = await provider.create_signed_staging_upload(
+        ref, content_type="video/mp4", max_size_bytes=500, expires_in=timedelta(minutes=5)
+    )
+
+    signed = client.bucket("platform-private").signed_calls[0]
+    assert signed["headers"] == {
+        "x-goog-content-length-range": "0,500",
+        "x-goog-if-generation-match": "0",
+    }
+    assert upload.headers["x-goog-content-length-range"] == "0,500"
+    with pytest.raises(StorageValidationError):
+        await provider.create_signed_staging_upload(
+            make_storage_object_ref(StorageBucket.PRIVATE, f"workspaces/{WORKSPACE_ID}/out.mp4"),
+            content_type="video/mp4",
+            max_size_bytes=500,
+            expires_in=timedelta(minutes=5),
+        )

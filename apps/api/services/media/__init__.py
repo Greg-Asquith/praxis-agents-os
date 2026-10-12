@@ -2,6 +2,16 @@
 
 """Video and audio services shared by the media tools."""
 
+from services.media.media_renderer_available import media_renderer_available
+from services.media.run_media_operation import run_media_operation
+from services.media.save_media_output import save_media_output
+from services.media.utils import discard_staged_outputs
 from services.media.video_tools_available import video_tools_available
 
-__all__ = ["video_tools_available"]
+__all__ = [
+    "discard_staged_outputs",
+    "media_renderer_available",
+    "run_media_operation",
+    "save_media_output",
+    "video_tools_available",
+]

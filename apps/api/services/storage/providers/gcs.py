@@ -27,7 +27,7 @@ from services.storage.errors import (
     StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
-from services.storage.platform_buckets import platform_bucket_name
+from services.storage.platform_buckets import platform_bucket_name, validate_platform_ref
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
@@ -525,6 +525,53 @@ class GcsStorageProvider:
             expires_at=expires_at,
         )
 
+    async def create_signed_staging_upload(
+        self,
+        ref: StorageObjectRef,
+        *,
+        content_type: str,
+        max_size_bytes: int,
+        expires_in: timedelta,
+    ) -> SignedUpload:
+        validate_platform_ref(ref)
+        normalized_content_type = _require_content_type(
+            content_type, provider_key=self.provider_key, ref=ref
+        )
+        expires_at = datetime.now(UTC) + expires_in
+        # GCS rejects a body outside the signed content-length range.
+        headers = {
+            "x-goog-content-length-range": f"0,{max_size_bytes}",
+            "x-goog-if-generation-match": "0",
+        }
+        try:
+            signing_kwargs = await asyncio.to_thread(self._remote_signing_kwargs)
+            url = await asyncio.to_thread(
+                self._bucket(ref).blob(ref.key).generate_signed_url,
+                expiration=expires_at,
+                method="PUT",
+                content_type=normalized_content_type,
+                version="v4",
+                headers=headers,
+                **signing_kwargs,
+            )
+        except StorageError:
+            raise
+        except Exception as exc:
+            raise StorageError(
+                "Failed to create GCS signed staging upload URL",
+                provider_key=self.provider_key,
+                operation="create_signed_staging_upload",
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+                original_error=exc,
+            ) from exc
+        return SignedUpload(
+            ref=ref,
+            url=str(url),
+            headers={"content-type": normalized_content_type, **headers},
+            expires_at=expires_at,
+        )
+
     async def create_signed_download(
         self,
         ref: StorageObjectRef,
@@ -590,6 +637,7 @@ class GcsStorageProvider:
         signature: str,
         content_type: str,
         expected_size_bytes: int,
+        bounded: bool = False,
     ) -> None:
         self._raise_no_local_signature("require_valid_upload_signature")
 

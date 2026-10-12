@@ -27,7 +27,7 @@ from services.files.utils import (
     get_visible_file_revision,
 )
 from services.files.visibility import visible_file_filter
-from services.media import video_tools_available
+from services.media.video_tools_available import video_tools_available
 from utils.content import ContentScope
 
 # Pydantic AI accepts these image types and PDFs as native model input.

@@ -35,15 +35,34 @@ def _service_env_names(document: dict[str, Any]) -> set[str]:
     return {entry["name"] for entry in container.get("env") or []}
 
 
+def _check_renderer(document: dict[str, Any]) -> None:
+    # Ingress is open because there is no VPC, so invoker IAM must stay on.
+    annotations = document["metadata"]["annotations"]
+    if "run.googleapis.com/invoker-iam-disabled" in annotations:
+        raise ValueError("media renderer must keep invoker IAM enabled")
+    template = document["spec"]["template"]
+    if template["spec"]["containerConcurrency"] != 1:
+        raise ValueError("media renderer must handle one request per instance")
+    timeout = template["spec"]["timeoutSeconds"]
+    if not isinstance(timeout, int) or isinstance(timeout, bool):
+        raise TypeError(f"media renderer timeoutSeconds must be an integer, got {timeout!r}")
+    if not isinstance(template["metadata"]["annotations"]["autoscaling.knative.dev/maxScale"], str):
+        raise TypeError("media renderer maxScale must render as a string")
+    env_names = {entry["name"] for entry in template["spec"]["containers"][0]["env"]}
+    if any(not name.startswith("RENDERER_") for name in env_names):
+        raise ValueError("media renderer must receive only RENDERER_* settings")
+
+
 def main() -> None:
     rendered_dir = Path(sys.argv[1])
     manifests = {
         "api": _load(rendered_dir / "services/praxis-api.yaml"),
         "web": _load(rendered_dir / "services/praxis-web.yaml"),
+        "renderer": _load(rendered_dir / "services/praxis-media-renderer.yaml"),
         "migrate": _load(rendered_dir / "jobs/praxis-migrate.yaml"),
         "worker": _load(rendered_dir / "jobs/praxis-worker.yaml"),
     }
-    for name in ("api", "web"):
+    for name in ("api", "web", "renderer"):
         cpu = _service_cpu(manifests[name])
         if not isinstance(cpu, str):
             raise TypeError(f"{name} CPU limit must render as a string, got {cpu!r}")
@@ -59,6 +78,7 @@ def main() -> None:
     for name in ("api", "web"):
         if "PORT" in _service_env_names(manifests[name]):
             raise ValueError(f"{name} sets PORT, a reserved Cloud Run env name")
+    _check_renderer(manifests["renderer"])
     if "SUPER_ADMIN_EMAILS" not in _service_env_names(manifests["api"]):
         raise ValueError("API manifest does not configure the super-admin allowlist")
     if "EMAIL_AUTH_ENABLED" not in _service_env_names(manifests["api"]):

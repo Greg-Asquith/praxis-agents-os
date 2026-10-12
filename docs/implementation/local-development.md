@@ -27,6 +27,28 @@ behaviour: keep local services bound to
 `127.0.0.1`, keep production images small and non-root, and do not bake
 runtime secrets into images.
 
+## Media renderer
+
+The media renderer cuts and encodes video in an isolated container. It's
+optional. To use it, add these settings to `apps/api/.env`:
+
+```bash
+MEDIA_RENDERER_URL=http://127.0.0.1:8090
+MEDIA_RENDERER_AUTH=none
+```
+
+`make dev` then builds and starts it with the `media` Compose profile, bound to
+`127.0.0.1:8090` (override with `PRAXIS_MEDIA_RENDERER_PORT`). Without
+`MEDIA_RENDERER_URL`, `make dev` skips it. The container runs as a non-root
+user with a 4 GiB memory limit and keeps running after `make dev` stops, like
+Postgres. It fetches inputs only from `http://host.docker.internal:8000/`, the
+local API.
+
+`MEDIA_RENDERER_AUTH=none` is accepted only when `ENVIRONMENT=local`; other
+environments use `google_id_token` or `shared_secret`. Run the
+renderer tests with `make media-renderer-check`; they build the `test` image
+target and run it with `docker run --rm --init`.
+
 ## Backend tests
 
 The following contracts apply in this area:

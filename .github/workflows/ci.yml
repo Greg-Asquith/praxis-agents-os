@@ -129,3 +129,24 @@ jobs:
         run: docker build --target production --tag praxis-api-check apps/api
       - name: Build web production image
         run: docker build --target production --tag praxis-web-check apps/web
+
+  media-renderer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+          prune-cache: true
+      - run: uv sync --locked --project apps/api
+      - name: Lint renderer
+        working-directory: apps/renderer
+        run: |
+          uv run --locked --project ../api ruff check .
+          uv run --locked --project ../api ruff format --check .
+      # Real ffmpeg and Linux isolation (seccomp, rlimits, process cleanup) in Docker.
+      - run: make media-renderer-check
+      - name: Build renderer production image
+        run: docker build --target production -f apps/renderer/media/Dockerfile --tag praxis-media-renderer-check apps/renderer

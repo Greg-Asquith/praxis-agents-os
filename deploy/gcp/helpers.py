@@ -29,6 +29,7 @@ GCS_BROWSER_CORS_RESPONSE_HEADERS = (
     "x-goog-if-generation-match",
 )
 GCS_BROWSER_CORS_MAX_AGE_SECONDS = 3600
+MEDIA_STAGING_PREFIX = "platform/media-staging/"
 MICROSOFT_GRAPH_ENV_DEFAULTS = {
     "MICROSOFT_GRAPH_TENANT": "",
     "MICROSOFT_GRAPH_REQUESTS_PER_SECOND": "4.0",
@@ -114,6 +115,32 @@ def gcs_browser_cors_config(origins_csv: str) -> list[dict[str, object]]:
     ]
 
 
+def media_staging_lifecycle_config(bucket: dict[str, Any]) -> dict[str, Any]:
+    """Add the one-day media staging expiry while keeping every other lifecycle rule.
+
+    The bucket is versioned, so a second rule removes the noncurrent versions the
+    first rule leaves behind.
+    """
+    existing = (bucket.get("lifecycle_config") or {}).get("rule") or []
+    kept = [
+        rule
+        for rule in existing
+        if (rule.get("condition") or {}).get("matchesPrefix") != [MEDIA_STAGING_PREFIX]
+    ]
+    delete = {"type": "Delete"}
+    prefix = [MEDIA_STAGING_PREFIX]
+    kept.append(
+        {"action": delete, "condition": {"age": 1, "isLive": True, "matchesPrefix": prefix}}
+    )
+    kept.append(
+        {
+            "action": delete,
+            "condition": {"daysSinceNoncurrentTime": 1, "isLive": False, "matchesPrefix": prefix},
+        }
+    )
+    return {"rule": kept}
+
+
 def render_template(template: str, values: dict[str, str], allowed: list[str]) -> str:
     """Substitute only allowlisted ${VAR} references; every allowed value is required."""
     missing = [name for name in allowed if not values.get(name)]
@@ -161,6 +188,10 @@ def _build_parser() -> argparse.ArgumentParser:
     cors_parser = subparsers.add_parser("storage-cors")
     cors_parser.add_argument("origins")
     cors_parser.add_argument("output", type=Path)
+
+    lifecycle_parser = subparsers.add_parser("storage-lifecycle")
+    lifecycle_parser.add_argument("bucket_json", type=Path)
+    lifecycle_parser.add_argument("output", type=Path)
 
     render_parser = subparsers.add_parser("render-template")
     render_parser.add_argument("input", type=Path)
@@ -241,6 +272,12 @@ def main() -> None:
         except ValueError as exc:
             raise SystemExit(f"error: {exc}") from exc
         args.output.write_text(rendered, encoding="utf-8")
+        return
+
+    if args.command == "storage-lifecycle":
+        bucket = json.loads(args.bucket_json.read_text(encoding="utf-8") or "{}")
+        config = media_staging_lifecycle_config(bucket)
+        args.output.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         return
 
     if args.command == "storage-cors":

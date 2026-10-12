@@ -98,7 +98,8 @@ REGION=europe-west4              # = GCP_REGION
 - [ ] `make gcp-bootstrap ENV_FILE=$ENV_FILE` — creates Artifact Registry,
       Cloud SQL (instance, database, and password-backed users), the
       public-assets and platform-private buckets with explicit-origin
-      browser-upload CORS, Secret
+      browser-upload CORS (the private bucket also expires
+      `platform/media-staging/` objects after one day), Secret
       Manager resources, service accounts and custom roles, the Scheduler
       trigger, and log/audit config.
       It generates and stores the database credentials, database URLs,
@@ -148,7 +149,7 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
       target project before the first inference request.
 - [ ] Optional local preview:
       `deploy/gcp/deploy.sh --render-only /tmp/praxis-render $ENV_FILE`
-- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes both images,
+- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes the API, web, and media renderer images,
       runs the migration job, then creates the services and the worker job.
       A failed migration stops the script before any service is created.
 - [ ] Until this first deployment completes, the Scheduler trigger fails every
@@ -271,11 +272,11 @@ domains: session cookies don't flow between the `run.app` service URLs.
 
 ### 6. Configure public access, domains, and external platforms
 
-The manifests disable the Cloud Run invoker IAM check, so both services accept
+The API and web manifests disable the Cloud Run invoker IAM check, so both services accept
 public requests as soon as they deploy. If your organization enforces the
 `constraints/run.managed.requireInvokerIam` policy, the deployment fails;
 remove the `run.googleapis.com/invoker-iam-disabled` annotation from both
-service templates and grant `roles/run.invoker` to `allUsers` instead.
+service templates (the media renderer already requires IAM) and grant `roles/run.invoker` to `allUsers` instead.
 
 Map the custom domains from the env file (`APP_BASE_URL`, `FRONTEND_URL`)
 with Cloud Run domain mappings. They exist only in the regions listed in the
@@ -382,6 +383,38 @@ gcloud run services update-traffic praxis-web --to-revisions=PREVIOUS_REVISION=1
 ```bash
 gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="praxis-api"' --limit=20 --project=$PROJECT --format=json --quiet
 ```
+
+## Media renderer
+
+`praxis-media-renderer` is a Cloud Run service that cuts and encodes video. The
+API and worker call it with a short-lived signed URL for each input and output
+object. `make gcp-deploy` builds its image from `apps/renderer`, deploys it
+before the API and worker, and passes them `MEDIA_RENDERER_URL`, the service's
+stable `https://praxis-media-renderer-PROJECT_NUMBER.REGION.run.app` address.
+
+- **Identity:** it runs as `praxis-media-renderer@PROJECT.iam.gserviceaccount.com`
+  (`MEDIA_RENDERER_SERVICE_ACCOUNT`). Bootstrap creates the account and grants
+  it no IAM roles. The service has no secrets, no Cloud SQL connection, and no
+  application settings beyond its `RENDERER_*` limits. It fetches only
+  `https://storage.googleapis.com/` URLs.
+- **Access:** this deployment has no VPC, so `internal` ingress would block the
+  API. The service uses ingress `all` with invoker IAM required; the
+  `invoker-iam-disabled` annotation is absent. The deploy script grants
+  `roles/run.invoker` on this service to the API and worker accounts only, then
+  reads the policy back and stops if any other member holds the role. The API
+  authenticates with a Google ID token (`MEDIA_RENDERER_AUTH=google_id_token`).
+- **Sizing:** one render per instance (`containerConcurrency: 1`), 4 vCPU and
+  16 GiB by default, scaling from zero to `MEDIA_RENDERER_MAX_INSTANCES`
+  (default 3). Cloud Run counts the instance's temporary files against its
+  memory, so keep `MAX_FILE_SIZE_SOURCE_VIDEO` (default 4 GiB) well below
+  `MEDIA_RENDERER_MEMORY`. The request timeout is
+  `MEDIA_RENDERER_TIMEOUT_SECONDS` plus 60 seconds (default 960).
+- **Cost:** it bills per request and scales to zero. A three-minute cut at
+  4 vCPU and 16 GiB costs about $0.03.
+- **Staging objects:** the platform-private bucket deletes objects under
+  `platform/media-staging/` one day after creation and removes their
+  noncurrent versions a day later. Bootstrap merges this rule into the bucket's
+  existing lifecycle rules. The bucket's 30-day soft delete still applies.
 
 ## Rotate secrets and keys
 

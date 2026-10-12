@@ -29,6 +29,7 @@ from services.storage.errors import (
     StorageValidationError,
 )
 from services.storage.paths import build_content_disposition, quote_object_key
+from services.storage.platform_buckets import validate_platform_ref
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
 from services.storage.workspace_buckets import workspace_id_for_ref
 
@@ -326,6 +327,42 @@ class LocalStorageProvider:
             expires_at=expires_at,
         )
 
+    async def create_signed_staging_upload(
+        self,
+        ref: StorageObjectRef,
+        *,
+        content_type: str,
+        max_size_bytes: int,
+        expires_in: timedelta,
+    ) -> SignedUpload:
+        validate_platform_ref(ref)
+        normalized_content_type = content_type.strip()
+        expires_at = datetime.now(UTC) + expires_in
+        expires = int(expires_at.timestamp())
+        query = {
+            "content_type": normalized_content_type,
+            "expires": str(expires),
+            "size_bytes": str(max_size_bytes),
+            "bounded": "1",
+            "sig": self._signature(
+                action="upload_bounded",
+                ref=ref,
+                expires=expires,
+                content_type=normalized_content_type,
+                expected_size_bytes=max_size_bytes,
+            ),
+        }
+        url = (
+            f"{self._local_route_base()}/upload/{ref.bucket.value}/{quote_object_key(ref.key)}"
+            f"?{urlencode(query)}"
+        )
+        return SignedUpload(
+            ref=ref,
+            url=url,
+            headers={"content-type": normalized_content_type},
+            expires_at=expires_at,
+        )
+
     async def create_signed_download(
         self,
         ref: StorageObjectRef,
@@ -447,9 +484,10 @@ class LocalStorageProvider:
         signature: str,
         content_type: str,
         expected_size_bytes: int,
+        bounded: bool = False,
     ) -> None:
         self.require_valid_signature(
-            action="upload",
+            action="upload_bounded" if bounded else "upload",
             ref=ref,
             expires=expires,
             signature=signature,

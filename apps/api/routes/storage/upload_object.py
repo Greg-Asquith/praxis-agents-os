@@ -22,6 +22,7 @@ async def upload_storage_object(
     sig: Annotated[str, Query()],
     content_type: Annotated[str, Query()],
     size_bytes: Annotated[int, Query(ge=1)],
+    bounded: Annotated[bool, Query()] = False,
 ) -> Response:
     content_length_value = request.headers.get("content-length")
     try:
@@ -35,6 +36,7 @@ async def upload_storage_object(
         signature=sig,
         content_type=content_type,
         expected_size_bytes=size_bytes,
+        bounded=bounded,
         request_content_type=request.headers.get("content-type") or "",
         request_content_length=content_length,
         chunks=request.stream(),

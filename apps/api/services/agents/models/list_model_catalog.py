@@ -27,7 +27,7 @@ from services.agents.models.utils import (
     provider_transport,
 )
 from services.agents.models.validate_vertex_configuration import validate_vertex_configuration
-from services.media import video_tools_available
+from services.media.video_tools_available import video_tools_available
 
 _PROVIDER_DISPLAY_NAMES = {
     PROVIDER_OPENAI: "OpenAI",

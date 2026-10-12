@@ -564,6 +564,20 @@ class AzureBlobStorageProvider:
             expires_at=expires_at,
         )
 
+    async def create_signed_staging_upload(
+        self,
+        ref: StorageObjectRef,
+        *,
+        content_type: str,
+        max_size_bytes: int,
+        expires_in: timedelta,
+    ) -> SignedUpload:
+        raise StorageProviderUnavailableError(
+            "Azure Blob Storage has no renderer staging uploads yet",
+            provider_key=self.provider_key,
+            operation="create_signed_staging_upload",
+        )
+
     async def create_signed_download(
         self,
         ref: StorageObjectRef,
@@ -606,15 +620,20 @@ class AzureBlobStorageProvider:
         signature: str,
         content_type: str,
         expected_size_bytes: int,
+        bounded: bool = False,
     ) -> None:
-        if expires < int(datetime.now(UTC).timestamp()) or not hmac.compare_digest(
-            signature,
-            self._upload_signature(
-                ref=ref,
-                expires=expires,
-                content_type=content_type,
-                expected_size_bytes=expected_size_bytes,
-            ),
+        if (
+            bounded
+            or expires < int(datetime.now(UTC).timestamp())
+            or not hmac.compare_digest(
+                signature,
+                self._upload_signature(
+                    ref=ref,
+                    expires=expires,
+                    content_type=content_type,
+                    expected_size_bytes=expected_size_bytes,
+                ),
+            )
         ):
             raise StorageSignatureError(
                 "Invalid or expired Azure upload URL",

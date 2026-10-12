@@ -52,6 +52,7 @@ web-install: ## Install frontend dependencies with pnpm
 .PHONY: dev
 dev: doctor local-env ## Start Postgres, migrate, then run API, worker, and web dev servers
 	@$(MAKE) db-up
+	@$(MAKE) media-renderer-up
 	@$(MAKE) db-wait
 	@$(MAKE) migrate
 	@$(MAKE) -j3 api-dev worker-dev web-dev
@@ -84,6 +85,13 @@ dev-kill: ## Stop local API, worker, and web dev processes
 .PHONY: db-up
 db-up: local-env ## Start local Postgres in Docker
 	$(COMPOSE) up -d postgres
+
+# make dev starts the renderer only when the API is configured to use it.
+.PHONY: media-renderer-up
+media-renderer-up:
+	@if grep -Eq '^MEDIA_RENDERER_URL=[^[:space:]]+' $(API_DIR)/.env 2>/dev/null; then \
+		$(COMPOSE) --profile media up -d --build media-renderer; \
+	fi
 
 .PHONY: db-wait
 db-wait: ## Wait for local Postgres to accept connections

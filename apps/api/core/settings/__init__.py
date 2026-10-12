@@ -30,6 +30,7 @@ from core.settings.gcp import GcpSettingsMixin
 from core.settings.integrations import IntegrationsSettingsMixin
 from core.settings.jobs import JobsSettingsMixin
 from core.settings.kb import KBSettingsMixin
+from core.settings.media import MediaSettingsMixin
 from core.settings.memory import MemorySettingsMixin
 from core.settings.microsoft_graph import MicrosoftGraphSettingsMixin
 from core.settings.models import LLMSettingsMixin
@@ -69,6 +70,7 @@ class Settings(
     IntegrationsSettingsMixin,
     JobsSettingsMixin,
     KBSettingsMixin,
+    MediaSettingsMixin,
     MemorySettingsMixin,
     MicrosoftGraphSettingsMixin,
     LLMSettingsMixin,
@@ -118,6 +120,9 @@ class Settings(
             raise ValueError(
                 "WORKSPACE_BUCKET_PREFIX must identify the deployment outside local environments"
             )
+
+        if self.MEDIA_RENDERER_AUTH == "none" and self.ENVIRONMENT != "local":
+            raise ValueError("MEDIA_RENDERER_AUTH=none is only allowed when ENVIRONMENT=local")
 
         if self.EMAIL_PROVIDER == "console" and self.ENVIRONMENT != "local":
             raise ValueError("EMAIL_PROVIDER=console is only allowed when ENVIRONMENT=local")

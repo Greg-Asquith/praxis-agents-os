@@ -12,6 +12,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- An isolated media renderer (`apps/renderer`) runs ffmpeg for video probe,
+  scene detection, cuts, audio extraction, and still frames. Each command
+  runs under a seccomp filter with no network sockets and bounded memory,
+  CPU, output, and time; the renderer refuses to start if that isolation
+  fails. On GCP it is a private Cloud Run service that scales to zero.
+  Agent video tools that use it are pending.
 - Claude Haiku 5.5 is available directly and through Google Cloud. It is the
   Anthropic **Light** default and the default Claude model for native web
   search, web fetch, and classification, priced from $0.10 input and $0.50

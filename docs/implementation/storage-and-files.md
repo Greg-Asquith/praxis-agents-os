@@ -163,6 +163,18 @@ validation. GCS promotes with object rewrite and follows rewrite tokens
 until the copy completes, because a large or dual-region copy can need more
 than one request.
 
+`create_signed_staging_upload` signs a create-only upload of a
+`platform/...` object bounded by a maximum size rather than an exact one. The
+media renderer writes outputs whose size isn't known in advance through it,
+under `platform/media-staging/<workspace id>/<request id>/`. GCS signs an
+`x-goog-content-length-range` header, local storage accepts a `bounded=1`
+upload whose signature covers that flag, and Azure and S3 refuse it until the
+renderer has adapters for them. The size bound at signing is best effort: a
+provider that can't sign a range may omit it. The guarantee is the caller's
+check of the stored object's size before trusting it, which
+`run_media_operation` makes for every output. The GCP bootstrap deletes
+staging objects after a day. See [Video tools](video-tools.md#other-clouds).
+
 `services/storage/copy_object.py` copies pinned content between workspace-private
 and platform-private storage. Domain callers must persist the destination
 identity for retries, serialise writes to it with resource locks, and supply an

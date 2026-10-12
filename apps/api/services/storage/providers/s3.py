@@ -615,6 +615,20 @@ class S3StorageProvider:
             expires_at=expires_at,
         )
 
+    async def create_signed_staging_upload(
+        self,
+        ref: StorageObjectRef,
+        *,
+        content_type: str,
+        max_size_bytes: int,
+        expires_in: timedelta,
+    ) -> SignedUpload:
+        raise StorageProviderUnavailableError(
+            "S3 has no renderer staging uploads yet",
+            provider_key=self.provider_key,
+            operation="create_signed_staging_upload",
+        )
+
     async def create_signed_download(
         self,
         ref: StorageObjectRef,
@@ -675,6 +689,7 @@ class S3StorageProvider:
         signature: str,
         content_type: str,
         expected_size_bytes: int,
+        bounded: bool = False,
     ) -> None:
         self._raise_no_local_signature("require_valid_upload_signature")
 

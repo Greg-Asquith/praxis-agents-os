@@ -30,5 +30,10 @@ evals: ## Run opt-in live-model agent behavior evaluations
 web-check: ## Run the frontend local gate
 	cd $(WEB_DIR) && pnpm check
 
+.PHONY: media-renderer-check
+media-renderer-check: ## Build and run the media renderer tests in Docker
+	docker build --target test -f $(RENDERER_DIR)/media/Dockerfile -t praxis-media-renderer-test $(RENDERER_DIR)
+	docker run --rm --init praxis-media-renderer-test
+
 .PHONY: check
 check: api-lint api-format-check stream-protocol-check api-migrations-check api-test web-check ## Run the main backend and frontend checks

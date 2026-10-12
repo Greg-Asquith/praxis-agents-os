@@ -22,6 +22,7 @@ source "$ENV_FILE"
 GOOGLE_VERTEX_AI=${GOOGLE_VERTEX_AI:-false}
 ANTHROPIC_VERTEX_AI=${ANTHROPIC_VERTEX_AI:-false}
 VERTEX_PARTNER_MODELS_ENABLED=${VERTEX_PARTNER_MODELS_ENABLED:-false}
+MEDIA_RENDERER_SERVICE_ACCOUNT=${MEDIA_RENDERER_SERVICE_ACCOUNT:-praxis-media-renderer@${GCP_PROJECT_ID}.iam.gserviceaccount.com}
 set +a
 VERTEX_PARTNER_MODEL_LOCATIONS_YAML=$(python3 "$SCRIPT_DIR/helpers.py" partner-locations)
 export VERTEX_PARTNER_MODEL_LOCATIONS_YAML
@@ -510,7 +511,7 @@ fi
 
 echo "Checking public-assets bucket"
 public_assets_cors_file=$(mktemp "${TMPDIR:-/tmp}/praxis-public-assets-cors.json.XXXXXX")
-trap 'rm -f "${public_assets_cors_file:-}" "${policy_input:-}" "${policy_output:-}"' EXIT
+trap 'rm -f "${public_assets_cors_file:-}" "${policy_input:-}" "${policy_output:-}" "${private_bucket_json:-}" "${private_lifecycle_file:-}"' EXIT
 python3 "$SCRIPT_DIR/helpers.py" storage-cors "$ALLOWED_CORS_ORIGINS" \
   "$public_assets_cors_file"
 if ! gcs_value storage buckets describe "gs://${GCS_PUBLIC_ASSETS_BUCKET}" \
@@ -534,8 +535,11 @@ plan_gcs storage buckets add-iam-policy-binding "gs://${GCS_PUBLIC_ASSETS_BUCKET
 execute_section "Public-assets bucket"
 
 echo "Checking platform-private bucket"
+private_bucket_json=$(mktemp "${TMPDIR:-/tmp}/praxis-private-bucket.json.XXXXXX")
+private_lifecycle_file=$(mktemp "${TMPDIR:-/tmp}/praxis-private-lifecycle.json.XXXXXX")
 if ! gcs_value storage buckets describe "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
   --project="$GCP_PROJECT_ID" --format='value(name)' --quiet >/dev/null 2>&1; then
+  echo '{}' > "$private_bucket_json"
   plan_gcs storage buckets create "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
     --project="$GCP_PROJECT_ID" --location="$GCP_REGION" \
     --uniform-bucket-level-access --public-access-prevention \
@@ -546,18 +550,26 @@ else
   normalized_bucket_location=$(printf '%s' "$actual_bucket_location" | tr '[:upper:]' '[:lower:]')
   [[ "$normalized_bucket_location" == "$GCP_REGION" ]] \
     || die "existing platform-private bucket location $actual_bucket_location does not match $GCP_REGION"
+  # An unread bucket would replace its lifecycle rules with only the staging rules.
+  gcs_value storage buckets describe "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
+    --project="$GCP_PROJECT_ID" --format=json --quiet > "$private_bucket_json" \
+    || die "couldn't read the platform-private bucket's lifecycle rules; nothing was changed"
 fi
+# Expire media staging copies after a day, keeping any other lifecycle rules.
+python3 "$SCRIPT_DIR/helpers.py" storage-lifecycle "$private_bucket_json" "$private_lifecycle_file"
 plan_gcs storage buckets update "gs://${GCS_PLATFORM_PRIVATE_BUCKET}" \
   --project="$GCP_PROJECT_ID" --uniform-bucket-level-access \
   --public-access-prevention --versioning --soft-delete-duration=30d \
-  --cors-file="$public_assets_cors_file" --quiet
+  --cors-file="$public_assets_cors_file" --lifecycle-file="$private_lifecycle_file" --quiet
 execute_section "Platform-private bucket"
 
 echo "Checking dedicated service accounts and IAM"
 service_accounts=(
   "$API_SERVICE_ACCOUNT" "$WEB_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"
-  "$MIGRATE_SERVICE_ACCOUNT"
+  "$MIGRATE_SERVICE_ACCOUNT" "$MEDIA_RENDERER_SERVICE_ACCOUNT"
 )
+# The media renderer account holds no IAM roles and no secrets. Callers get
+# run.invoker on the renderer service during deploy, once the service exists.
 for service_account in "${service_accounts[@]}"; do
   if ! gcloud iam service-accounts describe "$service_account" --project="$GCP_PROJECT_ID" \
     --format='value(email)' --quiet >/dev/null 2>&1; then

@@ -75,6 +75,7 @@ cd "$REPO_ROOT"
 "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/rendered" "$GCP_DIR/.env.example" abcdef0123456789
 test -s "$TEST_TMP/rendered/services/praxis-api.yaml"
 test -s "$TEST_TMP/rendered/services/praxis-web.yaml"
+test -s "$TEST_TMP/rendered/services/praxis-media-renderer.yaml"
 test -s "$TEST_TMP/rendered/jobs/praxis-migrate.yaml"
 test -s "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 if grep -R -E '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$TEST_TMP/rendered"; then
@@ -94,6 +95,41 @@ if grep -q '/readyz' "$TEST_TMP/rendered/services/praxis-api.yaml"; then
   echo "API lifecycle probes must not use /readyz" >&2
   exit 1
 fi
+grep -A1 'name: RENDERER_MAX_INPUT_BYTES' "$TEST_TMP/rendered/services/praxis-media-renderer.yaml" \
+  | grep -q 'value: "4294967296"'
+grep -q 'timeoutSeconds: 960' "$TEST_TMP/rendered/services/praxis-media-renderer.yaml"
+
+# One nondefault source-video limit must reach uploads, workers, and the renderer.
+sed 's/^MAX_FILE_SIZE_SOURCE_VIDEO=.*$/MAX_FILE_SIZE_SOURCE_VIDEO=2147483648/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/source-limit.env"
+"$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/source-limit-render" \
+  "$TEST_TMP/source-limit.env" abcdef0123456789
+grep -A1 'name: RENDERER_MAX_INPUT_BYTES' \
+  "$TEST_TMP/source-limit-render/services/praxis-media-renderer.yaml" | grep -q 'value: "2147483648"'
+for manifest in services/praxis-api.yaml jobs/praxis-worker.yaml; do
+  grep -A1 'name: MAX_FILE_SIZE_SOURCE_VIDEO' "$TEST_TMP/source-limit-render/$manifest" \
+    | grep -q 'value: "2147483648"'
+done
+
+# Signed output URLs must outlive the longest render request.
+sed 's/^MEDIA_RENDERER_TIMEOUT_SECONDS=900$/MEDIA_RENDERER_TIMEOUT_SECONDS=3000/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/short-staging-ttl.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/short-staging-ttl-render" \
+  "$TEST_TMP/short-staging-ttl.env" abcdef0123456789 \
+  >"$TEST_TMP/short-staging-ttl.out" 2>&1; then
+  echo "render unexpectedly accepted staging URLs that expire mid-render" >&2
+  exit 1
+fi
+grep -q 'MEDIA_STAGING_URL_TTL_SECONDS must be at least' "$TEST_TMP/short-staging-ttl.out"
+
+# Bootstrap must stop, not replace lifecycle rules, when it can't read the bucket.
+grep -Fq -- "couldn't read the platform-private bucket's lifecycle rules" "$GCP_DIR/bootstrap.sh"
+for manifest in \
+  "$TEST_TMP/rendered/services/praxis-api.yaml" \
+  "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do
+  grep -A1 'name: MEDIA_RENDERER_URL' "$manifest" \
+    | grep -q 'value: https://praxis-media-renderer-123456789012.europe-west4.run.app'
+done
 grep -q 'value: drain' "$TEST_TMP/rendered/jobs/praxis-worker.yaml"
 grep -A1 'name: GOOGLE_VERTEX_AI' "$TEST_TMP/rendered/jobs/praxis-migrate.yaml" \
   | grep -q 'value: "false"'

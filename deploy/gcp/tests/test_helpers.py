@@ -46,10 +46,12 @@ GCS_PLATFORM_PRIVATE_BUCKET=example-private
 GCP_PROJECT_ID=example-project
 GCP_REGION=europe-west4
 public_assets_cors_file=/tmp/explicit-cors.json
+SCRIPT_DIR={shlex.quote(str(REPO_ROOT / "deploy/gcp"))}
 exists={str(exists).lower()}
 location={shlex.quote(location)}
 gcs_value() {{
   if [[ "$*" == *"value(name)"* ]]; then "$exists";
+  elif [[ "$*" == *"--format=json"* ]]; then echo '{{}}';
   else printf '%s' "$location"; fi
 }}
 plan_gcs() {{ printf 'PLAN %s\\n' "$*"; }}
@@ -87,6 +89,7 @@ die() {{ echo "$*" >&2; exit 1; }}
                 self.assertIn("buckets update", commands[-1])
                 self.assertIn("--versioning", commands[-1])
                 self.assertIn("--cors-file=/tmp/explicit-cors.json", commands[-1])
+                self.assertIn("--lifecycle-file=", commands[-1])
                 self.assertTrue(
                     result.stdout.endswith("APPROVAL Platform-private bucket\n")
                 )
@@ -192,6 +195,16 @@ die() {{ echo "$*" >&2; exit 1; }}
         for origins in ("", "*", "https://app.example.invalid/path", "file://local"):
             with self.subTest(origins=origins), self.assertRaises(ValueError):
                 helpers.gcs_browser_cors_config(origins)
+
+    def test_media_staging_lifecycle_keeps_other_rules_and_is_idempotent(self) -> None:
+        keep = {"action": {"type": "Delete"}, "condition": {"age": 365}}
+        first = helpers.media_staging_lifecycle_config({"lifecycle_config": {"rule": [keep]}})
+        second = helpers.media_staging_lifecycle_config({"lifecycle_config": first})
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["rule"][0], keep)
+        prefixed = [r for r in first["rule"] if r["condition"].get("matchesPrefix")]
+        self.assertEqual(len(prefixed), 2)
 
     def test_render_template_substitutes_only_allowlisted_variables(self) -> None:
         template = "image: ${API_IMAGE}\nother: ${NOT_ALLOWED}\n"

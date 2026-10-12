@@ -1,5 +1,6 @@
 API_DIR := apps/api
 WEB_DIR := apps/web
+RENDERER_DIR := apps/renderer
 COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'; elif docker-compose version >/dev/null 2>&1; then printf '%s' 'docker-compose'; else printf '%s' 'docker compose'; fi)
 # Compose runs the API containers as this user; see docker-compose.yml.
 export PRAXIS_UID ?= $(shell id -u)

@@ -1,0 +1,57 @@
+# deploy/gcp/services/praxis-media-renderer.yaml.tmpl
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: praxis-media-renderer
+  namespace: "${GCP_PROJECT_NUMBER}"
+  labels:
+    cloud.googleapis.com/location: ${GCP_REGION}
+  annotations:
+    # The deployment has no VPC, so internal ingress would block the API. Invoker
+    # IAM stays on: only the API and worker identities hold run.invoker.
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "${MEDIA_RENDERER_MAX_INSTANCES}"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      # One render per instance: the child process owns the CPU and memory.
+      containerConcurrency: 1
+      timeoutSeconds: ${MEDIA_RENDERER_REQUEST_TIMEOUT_SECONDS}
+      # A dedicated identity with no IAM roles, secrets, or database access.
+      serviceAccountName: ${MEDIA_RENDERER_SERVICE_ACCOUNT}
+      containers:
+        - name: praxis-media-renderer
+          image: ${MEDIA_RENDERER_IMAGE}
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "${MEDIA_RENDERER_CPU}"
+              memory: ${MEDIA_RENDERER_MEMORY}
+          env:
+            - name: RENDERER_ALLOWED_URL_PREFIXES
+              value: https://storage.googleapis.com/
+            - name: RENDERER_MAX_INPUT_BYTES
+              value: "${MEDIA_RENDERER_MAX_INPUT_BYTES}"
+            - name: RENDERER_MAX_OUTPUT_BYTES
+              value: "${MEDIA_RENDERER_MAX_OUTPUT_BYTES}"
+            - name: RENDERER_MAX_TIMEOUT_SECONDS
+              value: "${MEDIA_RENDERER_TIMEOUT_SECONDS}"
+            - name: RENDERER_CHILD_MEMORY_BYTES
+              value: "${MEDIA_RENDERER_CHILD_MEMORY_BYTES}"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            timeoutSeconds: 5
+            failureThreshold: 12
+            periodSeconds: 5
+  traffic:
+    - percent: 100
+      latestRevision: true

@@ -295,3 +295,32 @@ async def test_platform_local_bytes_are_unavailable_through_public_route(
     await provider.put_object(ref, b"private", content_type="text/plain")
     response = await db_async_client.get(f"/api/v1/storage/public/{ref.key}")
     assert response.status_code == 404
+
+
+async def test_staging_upload_accepts_up_to_its_bound_and_exact_grants_cannot_become_bounded(
+    db_async_client: AsyncClient,
+    local_storage_settings: None,
+) -> None:
+    provider = get_local_storage_provider()
+    staged = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE, "platform/media-staging/out/output-0.mp4"
+    )
+    exact = make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, "platform/files/exact.txt")
+    bounded = await provider.create_signed_staging_upload(
+        staged, content_type="video/mp4", max_size_bytes=10, expires_in=timedelta(minutes=5)
+    )
+    exact_grant = await provider.create_signed_upload(
+        exact, content_type="text/plain", expected_size_bytes=10, expires_in=timedelta(minutes=5)
+    )
+
+    accepted = await db_async_client.put(
+        _relative_url(bounded.url), content=b"short", headers=bounded.headers
+    )
+    widened = await db_async_client.put(
+        f"{_relative_url(exact_grant.url)}&bounded=1", content=b"short", headers=exact_grant.headers
+    )
+
+    assert accepted.status_code == 204
+    assert await provider.get_object(staged) == b"short"
+    assert widened.status_code == 403
+    assert await provider.stat_object(exact) is None

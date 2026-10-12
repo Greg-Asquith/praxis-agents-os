@@ -17,11 +17,15 @@ async def accept_signed_upload(
     signature: str,
     content_type: str,
     expected_size_bytes: int,
+    bounded: bool = False,
     request_content_type: str,
     request_content_length: int | None,
     chunks: AsyncIterator[bytes],
 ) -> None:
-    """Validate and persist an exactly sized signed upload."""
+    """Validate and persist a signed upload.
+
+    A bounded upload accepts any size up to expected_size_bytes.
+    """
     provider = get_storage_provider()
     ref = make_storage_object_ref(bucket, object_key)
     provider.require_valid_upload_signature(
@@ -30,6 +34,7 @@ async def accept_signed_upload(
         signature=signature,
         content_type=content_type,
         expected_size_bytes=expected_size_bytes,
+        bounded=bounded,
     )
 
     if request_content_type.strip().lower() != content_type.strip().lower():
@@ -41,7 +46,10 @@ async def accept_signed_upload(
             object_key=ref.key,
         )
 
-    if request_content_length is not None and request_content_length != expected_size_bytes:
+    if request_content_length is not None and (
+        request_content_length > expected_size_bytes
+        or (not bounded and request_content_length != expected_size_bytes)
+    ):
         raise StorageValidationError(
             "Signed upload Content-Length does not match the granted size",
             provider_key=provider.provider_key,
@@ -61,7 +69,7 @@ async def accept_signed_upload(
                 bucket=ref.bucket.value,
                 object_key=ref.key,
             )
-    if len(data) != expected_size_bytes:
+    if not bounded and len(data) != expected_size_bytes:
         raise StorageValidationError(
             "Signed upload size does not match the granted size",
             provider_key=provider.provider_key,
