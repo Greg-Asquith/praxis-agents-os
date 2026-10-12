@@ -35,6 +35,9 @@ The following contracts apply in this area:
   but may not update or delete. Its exact cardinality is one row per logical
   agent-run invocation (including each approval resume), helper invocation, or
   embedding API batch; `requests` sums provider requests within that row.
+  Agent rows count the model responses the run acted on. A model call that
+  fails without a response adds no request, and an invocation with no
+  usage writes no row.
   Agent usage is transactional with lifecycle settlement, including when
   another actor already recorded the terminal verdict. Helper, embedding, and
   shutdown-only usage use the separate bounded runtime-role AI usage pool.
@@ -114,7 +117,7 @@ a separate counter without deleting prior accounting.
 
 ## Invocation settlement
 
-Image tools retain their existing invocation meters. Pydantic AI 2.50's
+Image tools retain their existing invocation meters. Pydantic AI 2.54's
 direct image adapters return usage only after accepting image output. Empty
 OpenAI responses and empty or content-filtered Google responses can contain
 usage that the adapters discard when raising. Switching to result-only

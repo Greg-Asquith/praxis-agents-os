@@ -58,7 +58,7 @@ async def test_gpt_6_responses_reasoning_and_tools(monkeypatch, thinking, effort
                 ]
             ),
         )
-        assert model.profile["openai_reasoning_enabled_by_default"] is True
+        assert model.profile["thinking_enabled_by_default"] is True
         assert model.profile["openai_supports_phase"] is True
 
     [request] = requests
@@ -165,7 +165,11 @@ async def test_opus_tool_loop_preserves_thinking_and_recovers_binding(monkeypatc
             http_client=client,
         )
         monkeypatch.setattr(factory, "get_anthropic_vertex_client", lambda: vertex)
-        model = factory.build_model(resolve_catalog_model("anthropic", "claude-opus-5-5"))
+        model = factory.build_model(
+            resolve_catalog_model(
+                "anthropic", "claude-opus-5-5", settings_overrides={"max_tokens": 1024}
+            )
+        )
         with pytest.warns(
             AnthropicStaleThinkingBlockWarning, match="rejected a replayed thinking block"
         ):

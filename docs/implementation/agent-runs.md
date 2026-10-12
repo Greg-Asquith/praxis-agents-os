@@ -20,7 +20,7 @@ configured model window once per turn. Stable user-turn watermarks select the
 matching stored summary. Skill and capability load pairs survive trimming and reload.
 Disabling compaction retains the full history.
 
-Pydantic AI 2.50's `RunContext.context_window_used` does not drive compaction.
+Pydantic AI's `RunContext.context_window_used` does not drive compaction.
 It describes the last response, can remain high after trimming, and can refer
 to another model or window. It also excludes subsequent prompt and tool-result
 additions. The character estimate remains approximate and is not recomputed
@@ -242,14 +242,15 @@ or monetary guarantee. Observed exhaustion stops further model/tool continuation
 Invocation metering still records partial responses under each agent's model.
 
 For a total-token stop, `completion_json.observed_total_tokens` records the
-cache-weighted count checked against the ceiling, and `requests` records the
-cumulative request count. The typed exception copies these values at the
-failure boundary, including inherited specialist failures. Public counts are
-bounded to zero through `2**53 - 1`; they do not replace raw ledger usage.
+cache-weighted count checked against the ceiling. It includes the response
+that crossed the ceiling, which Pydantic AI does not count as a request, so
+the public evidence omits a request count. The typed exception copies the
+value at the failure boundary, including inherited specialist failures.
+Public counts are bounded to zero through `2**53 - 1`; they do not replace raw ledger usage.
 Exception text is never parsed for budget evidence.
 
-The live error message and reloaded transcript show the counted tokens, request
-count, and ceiling, followed by: "Start a new conversation or shorten the context
+The live error message and reloaded transcript show the counted tokens and
+ceiling, followed by: "Start a new conversation or shorten the context
 to continue." Run history shows the same complete message on desktop and mobile.
 The frontend rebuilds it from validated completion evidence. Historical records
 without observed counts retain their saved message. A reloaded limit alert stays

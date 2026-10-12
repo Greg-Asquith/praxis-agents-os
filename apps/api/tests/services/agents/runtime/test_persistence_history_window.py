@@ -129,7 +129,7 @@ async def test_anthropic_recovery_survives_normalisation_reload_and_trimming(
                 provider="anthropic",
                 model="claude-sonnet-5",
                 transport_model="claude-sonnet-5",
-                settings={},
+                settings={"max_tokens": 1024},
                 max_steps=3,
             )
         )

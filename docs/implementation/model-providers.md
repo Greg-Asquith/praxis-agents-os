@@ -59,7 +59,7 @@ Haiku 5.5 uses adaptive thinking with `medium` default effort and accepts
 settings. Disabled thinking is accepted only at `high` effort or below. Unlike
 Opus 5.5 and Sonnet 5.5, it accepts forced tool choice, but a forced call skips
 thinking. Thinking blocks are bound to the conversation prefix. Pydantic AI
-2.50 has no Haiku 5.5 profile, so `provider_model_profile` in `utils.py`
+2.54 has no Haiku 5.5 profile, so `provider_model_profile` in `utils.py`
 supplies these settings and native JSON schema support. Catalogue defaults
 request summarised thinking. Refusals have no server-side fallback.
 
@@ -84,16 +84,15 @@ structured output. Sonnet 5.5 uses the same Vertex ID as its API ID.
 
 Sonnet 5.5 shares Opus 5.5's request restrictions: adaptive thinking only,
 no forced tool choice, and thinking blocks bound to the model and
-conversation. `ADAPTIVE_ONLY_ANTHROPIC_MODELS` in `utils.py` applies the
-Opus profile override and local thinking validation to both models, because
-the Pydantic AI 2.50 Sonnet 5.5 profile still allows forced tool choice.
+conversation. Pydantic AI's profiles for both models carry these
+restrictions and select native structured output, so a structured result
+never forces a tool call that would suppress thinking.
 Catalogue defaults request summarised thinking, because Sonnet 5.5 returns
 text between tool calls as thinking blocks that are empty by default.
 
 GPT-6.1 Sol accepts `low`, `medium` (default), `high`, `xhigh`, and `max`
-reasoning efforts; it rejects `none` and `minimal`. Pydantic AI 2.50 has no
-6.1 profile, so `provider_model_profile` reuses GPT-6 Sol's profile with
-reasoning always on. The UI's disabled-thinking preference sends no effort,
+reasoning efforts; it rejects `none` and `minimal`. Pydantic AI's 6.1 profile
+keeps reasoning always on. The UI's disabled-thinking preference sends no effort,
 and `minimal` maps to `low`.
 
 The catalogue no longer lists GPT-5.4, GPT-5.5, GPT-5.6, Claude Opus 4.6 to
@@ -136,15 +135,13 @@ Garden model with `ANTHROPIC_VERTEX_LOCATION=global`, `us`, or `eu` and the
 configured project. Regional availability and account access require provider
 verification; catalogue visibility alone does not prove access.
 
-Pydantic AI 2.50 profiles cover Sol and Luna, and cover Opus's disabled
-forced tool choice and thinking-block recovery. The factory adds the remaining
-Opus settings through `provider_model_profile` in `utils.py`: thinking always
-enabled and native JSON schemas for structured output. Remove the override
-when the upstream Opus profile covers both.
+Pydantic AI profiles cover Sol, Luna, and Opus without local overrides,
+including Opus's always-on adaptive thinking, disabled forced tool choice,
+native structured output, and thinking-block recovery.
 
 The [Opus migration guide](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide)
-documents its request restrictions. Explicit disabled or budget-based thinking
-fails locally. The UI's disabled-thinking preference only applies where a
+documents its request restrictions. The model factory reads the model profile
+and rejects explicit disabled or budget-based thinking before any request. The UI's disabled-thinking preference only applies where a
 provider supports it, so Opus continues thinking. Catalogue defaults request
 summarised thinking so progress text remains visible. Thinking blocks retain
 their signatures through tool results; after a prefix-binding rejection, the
@@ -315,11 +312,11 @@ including their status and body; connection failures remain connection
 failures. Run failures persist and emit the same safe `model_rate_limited`
 message for HTTP 429, without provider bodies or project details.
 
-The API locks Pydantic AI, slim, evals, and graph to 2.50.0, with OpenAI
-3.19.2, Anthropic 1.8.0, and Google Gen AI 2.25.0. The manifest retains minimum
+The API locks Pydantic AI, slim, evals, and graph to 2.54.0, with OpenAI
+3.19.2, Anthropic 1.13.0, and Google Gen AI 2.25.0. The manifest retains minimum
 version ranges. It explicitly selects Pydantic AI's `retries` extra and
-Tenacity because the transport imports their retry APIs. The 2.50 retries
-module still imports legacy HTTPX for upstream deprecated transports, so that
+Tenacity because the transport imports their retry APIs. The `retries` extra
+still depends on legacy HTTPX for upstream deprecated transports, so that
 package remains a transitive runtime dependency. Application provider clients
 have no legacy HTTPX exception. Framework tests can retain legacy HTTPX where
 required. Monty is pinned to 1.0.0.
@@ -329,9 +326,15 @@ with its unread body intact. SDKs translate that final response into their
 provider error types. Do not replace it with SDK defaults or add a second
 retry owner. Rerun adapter request-count tests for future SDK upgrades.
 
+Anthropic requests without `max_tokens` ask for the model's maximum output.
+When that exceeds the SDK's non-streaming limit, Pydantic AI streams the
+request behind the scenes, so non-streaming helper calls to Claude 5.5
+models stream on the wire. Offline tests that mock JSON message bodies set
+`max_tokens` to keep the non-streaming path.
+
 ## Content-filter failures
 
-Azure Chat Completions uses the shared OpenAI adapter. Pydantic AI 2.50.0
+Azure Chat Completions uses the shared OpenAI adapter. Pydantic AI 2.54.0
 maps an HTTP 400 `content_filter` response to a filtered result for ordinary
 requests. Its streaming path instead raises an internal `TypeError` while
 handling that result. Praxis settles the run as failed with its generic safe

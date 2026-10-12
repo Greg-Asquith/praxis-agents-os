@@ -82,11 +82,8 @@ def public_run_error(exc: Exception) -> PublicRunError:
             "error_code": "usage_limit_exceeded",
             **({"tripped_budget": tripped_budget} if tripped_budget is not None else {}),
         }
-        if isinstance(exc, BudgetLimitExceeded):
-            for name in ("observed_total_tokens", "requests"):
-                value = getattr(exc, name)
-                if type(value) is int:
-                    completion[name] = min(2**53 - 1, max(0, value))
+        if isinstance(exc, BudgetLimitExceeded) and type(exc.observed_total_tokens) is int:
+            completion["observed_total_tokens"] = min(2**53 - 1, max(0, exc.observed_total_tokens))
         return PublicRunError(
             code="usage_limit_exceeded",
             message=_usage_limit_message(completion),
@@ -124,16 +121,10 @@ def _tripped_budget(exc: UsageLimitExceeded) -> dict[str, str | int] | None:
 def _usage_limit_message(completion: dict[str, Any]) -> str:
     tripped_budget = completion.get("tripped_budget")
     kind = tripped_budget.get("kind") if tripped_budget is not None else None
-    if (
-        kind == "total_tokens"
-        and "observed_total_tokens" in completion
-        and "requests" in completion
-    ):
-        requests = completion["requests"]
-        noun = "request" if requests == 1 else "requests"
+    if kind == "total_tokens" and "observed_total_tokens" in completion:
         return (
-            f"This run stopped after counting {completion['observed_total_tokens']:,} tokens "
-            f"across {requests:,} {noun}; the limit for this run is {tripped_budget['limit']:,}. "
+            f"This run stopped after counting {completion['observed_total_tokens']:,} tokens; "
+            f"the limit for this run is {tripped_budget['limit']:,}. "
             "Start a new conversation or shorten the context to continue."
         )
     messages = {

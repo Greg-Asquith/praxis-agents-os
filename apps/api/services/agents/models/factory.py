@@ -31,7 +31,6 @@ from services.agents.models.domain import (
     ResolvedModel,
 )
 from services.agents.models.utils import (
-    ADAPTIVE_ONLY_ANTHROPIC_MODELS,
     provider_api_key,
     provider_model_profile,
     provider_transport,
@@ -59,12 +58,22 @@ def build_model(spec: ResolvedModel) -> Model:
                 http_client=retrying_http_client(),
             )
         provider.client.max_retries = 0
-        return AnthropicModel(
+        model = AnthropicModel(
             spec.transport_model,
             provider=provider,
             profile=provider_model_profile(spec.provider, spec.transport_model),
             settings=model_settings,
         )
+        thinking = (model_settings or {}).get("anthropic_thinking")
+        thinking_type = thinking.get("type") if isinstance(thinking, dict) else None
+        if (thinking_type == "disabled" and model.profile.get("thinking_always_enabled")) or (
+            thinking_type == "enabled" and model.profile.get("anthropic_disallows_budget_thinking")
+        ):
+            raise ModelConfigurationError(
+                "This Claude model requires adaptive thinking. Choose a thinking effort instead.",
+                details={"provider": spec.provider, "model": spec.model},
+            )
+        return model
 
     if spec.provider == PROVIDER_OPENAI:
         provider = OpenAIProvider(
@@ -114,13 +123,6 @@ def _google_provider(model: str) -> GoogleProvider:
 
 def _model_settings_for(spec: ResolvedModel):
     model_settings = dict(spec.settings)
-    if spec.provider == PROVIDER_ANTHROPIC and spec.model in ADAPTIVE_ONLY_ANTHROPIC_MODELS:
-        thinking = model_settings.get("anthropic_thinking")
-        if isinstance(thinking, dict) and thinking.get("type") in {"disabled", "enabled"}:
-            raise ModelConfigurationError(
-                "This Claude model requires adaptive thinking. Choose a thinking effort instead.",
-                details={"provider": spec.provider, "model": spec.model},
-            )
     if spec.provider == PROVIDER_ANTHROPIC and settings.AGENT_PROMPT_CACHE_ENABLED:
         model_settings = {
             "anthropic_cache": True,

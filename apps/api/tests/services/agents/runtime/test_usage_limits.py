@@ -105,16 +105,15 @@ async def test_restored_weighted_usage_keeps_absolute_inherited_boundary() -> No
     assert error.value.limit == 200
     assert len(requests) == 1
     assert usage.input_tokens == 1000 and usage.cache_read_tokens == 900
-    assert usage.output_tokens == 11 and usage.requests == 2
+    assert usage.output_tokens == 11 and usage.requests == 1
     public = public_run_error(error.value)
     assert public.completion_json == {
         "error_code": "usage_limit_exceeded",
         "tripped_budget": {"kind": "total_tokens", "limit": 200, "scope": "inherited"},
         "observed_total_tokens": 201,
-        "requests": 2,
     }
     assert public.message == (
-        "This run stopped after counting 201 tokens across 2 requests; "
+        "This run stopped after counting 201 tokens; "
         "the limit for this run is 200. "
         "Start a new conversation or shorten the context to continue."
     )

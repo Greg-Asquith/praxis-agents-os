@@ -89,7 +89,6 @@ class BudgetLimitExceeded(UsageLimitExceeded):
         self.observed_total_tokens = (
             observed.total_tokens if isinstance(observed, RunUsage) else None
         )
-        self.requests = observed.requests if isinstance(observed, RunUsage) else None
 
 
 class RuntimeUsageLimits(UsageLimits):

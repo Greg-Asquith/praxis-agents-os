@@ -65,6 +65,21 @@ def test_provider_api_key_missing_raises(monkeypatch):
     assert exc_info.value.details == {"provider": "openai", "setting": "OPENAI_API_KEY"}
 
 
+def test_build_anthropic_model_rejects_thinking_the_profile_disallows(monkeypatch):
+    monkeypatch.setattr(settings, "ANTHROPIC_VERTEX_AI", False)
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("key"))
+    disabled = {"anthropic_thinking": {"type": "disabled"}}
+    budget = {"anthropic_thinking": {"type": "enabled", "budget_tokens": 2048}}
+
+    with pytest.raises(ModelConfigurationError, match="requires adaptive thinking"):
+        build_model(_spec("anthropic", "claude-opus-5-5", settings=disabled))
+    with pytest.raises(ModelConfigurationError, match="requires adaptive thinking"):
+        build_model(_spec("anthropic", "claude-haiku-5-5", settings=budget))
+    assert isinstance(
+        build_model(_spec("anthropic", "claude-haiku-5-5", settings=disabled)), AnthropicModel
+    )
+
+
 def test_build_anthropic_model_respects_agent_cache_settings(monkeypatch, anthropic_transport):
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", SecretStr("sk-ant-test"))
     monkeypatch.setattr(settings, "AGENT_PROMPT_CACHE_ENABLED", True)

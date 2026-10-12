@@ -86,7 +86,7 @@ async def test_failed_run_records_completed_partial_request(
         run_id=context.run_id,
     )
     assert event.purpose == "agent_run"
-    assert event.requests == 2
+    assert event.requests == 1
     assert event.details["usage_source"] == "accumulator_delta"
     await _assert_run_usage_matches_ledger(db_session_factory, context, [event], tool_calls=1)
 
@@ -126,7 +126,7 @@ async def test_failed_approval_resume_excludes_persisted_baseline(
         workspace_id=context.workspace_id,
         run_id=context.run_id,
     )
-    assert [event.requests for event in events] == [1, 1]
+    assert [event.requests for event in events] == [1]
     await _assert_run_usage_matches_ledger(db_session_factory, context, events, tool_calls=1)
 
 

@@ -118,11 +118,9 @@ export function tokenBudgetMessage(completion: Record<string, unknown> | null): 
   if (!isRecord(budget) || budget["kind"] !== "total_tokens") return null
   const limit = budget["limit"]
   const observed = completion?.["observed_total_tokens"]
-  const requests = completion?.["requests"]
-  if (!isUsageCount(limit) || !isUsageCount(observed) || !isUsageCount(requests)) return null
+  if (!isUsageCount(limit) || !isUsageCount(observed)) return null
   return (
-    `This run stopped after counting ${observed.toLocaleString("en-GB")} tokens across ` +
-    `${requests.toLocaleString("en-GB")} ${requests === 1 ? "request" : "requests"}; ` +
+    `This run stopped after counting ${observed.toLocaleString("en-GB")} tokens; ` +
     `the limit for this run is ${limit.toLocaleString("en-GB")}. ` +
     "Start a new conversation or shorten the context to continue."
   )

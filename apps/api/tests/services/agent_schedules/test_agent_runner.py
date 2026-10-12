@@ -368,7 +368,6 @@ async def test_worker_request_budget_is_cumulative_across_approval_resume(
             "error_code": "usage_limit_exceeded",
             "tripped_budget": {"kind": "requests", "limit": 1, "scope": "local"},
             "observed_total_tokens": observed_total_tokens,
-            "requests": 1,
         }
         assert agent_run.metadata_json["effective_usage_limits"]["limits"]["request_limit"] == 1
 

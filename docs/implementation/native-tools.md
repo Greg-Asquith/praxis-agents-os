@@ -95,7 +95,7 @@ produce a prompt-revision outcome; other provider errors produce safe tool
 failures. Cancellation propagates. Google retains its Pydantic AI helper.
 Paid live verification of the direct 2.5 calls remains pending before release.
 
-Pydantic AI 2.50's `ImageGenerator` is not used by these tools. Its OpenAI
+Pydantic AI 2.54's `ImageGenerator` is not used by these tools. Its OpenAI
 adapter decodes every returned base64 image before application byte or count
 checks. The retained OpenAI adapter checks encoded length before decoding
 and records usage before validating outputs. The direct OpenAI and Google
@@ -129,7 +129,7 @@ before Vertex editing. These requirements follow the
 [Google image model specification](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/nano-banana-2-1),
 reviewed on 6 October 2026.
 
-Pydantic AI 2.50 detects image models by an `image` substring, which this ID
+Pydantic AI 2.54 detects image models by an `image` substring, which this ID
 lacks. The model factory supplies an image profile with function tools and
 structured output disabled. Thinking stays enabled with Google's default
 `medium` level. The helper retains the default 1K output resolution.

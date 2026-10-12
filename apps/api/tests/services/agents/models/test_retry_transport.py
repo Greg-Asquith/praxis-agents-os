@@ -118,7 +118,7 @@ async def test_anthropic_sdk_retry_boundary(monkeypatch, vertex, status):
                 provider="anthropic",
                 model="claude-sonnet-5",
                 transport_model="claude-sonnet-5",
-                settings={},
+                settings={"max_tokens": 1024},
                 max_steps=3,
                 vertex_project="test-project",
                 vertex_location="global",
