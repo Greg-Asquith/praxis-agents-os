@@ -383,13 +383,14 @@ import sys
 
 source = pathlib.Path(sys.argv[1]).read_text()
 blocks = re.findall(r'if \[\[ "\$GOOGLE_VERTEX_AI".*?\nfi', source, re.S)
-assert len(blocks) == 2
+assert len(blocks) == 3
 for google, anthropic, partner in itertools.product(("false", "true"), repeat=3):
     setup = (
         f"GOOGLE_VERTEX_AI={google}\nANTHROPIC_VERTEX_AI={anthropic}\n"
         f"VERTEX_PARTNER_MODELS_ENABLED={partner}\n"
         "apis=()\nAPI_SERVICE_ACCOUNT=api\nWORKER_SERVICE_ACCOUNT=worker\n"
-        "GCP_PROJECT_ID=test-project\nplan() { echo \"$*\"; }\n"
+        "GCP_PROJECT_ID=test-project\nGCP_PROJECT_NUMBER=123\n"
+        "WORKSPACE_BUCKET_PREFIX=praxis-ws\nplan() { echo \"$*\"; }\n"
     )
     result = subprocess.run(
         ["bash", "-c", setup + "\n".join(blocks) + '\nprintf "%s" "${apis[*]}"'],
@@ -399,6 +400,12 @@ for google, anthropic, partner in itertools.product(("false", "true"), repeat=3)
     assert ("aiplatform.googleapis.com" in result) == enabled
     assert ("compute.googleapis.com" in result) == ("true" in (anthropic, partner))
     assert result.count("--role=roles/aiplatform.user") == (2 if enabled else 0)
+    # Only Gemini on Vertex reads by URI, and only from workspace buckets.
+    grants = [line for line in result.splitlines() if "storage.objectViewer" in line]
+    assert len(grants) == (1 if google == "true" else 0)
+    for grant in grants:
+        assert "service-123@gcp-sa-aiplatform.iam.gserviceaccount.com" in grant
+        assert "startsWith('projects/_/buckets/praxis-ws-')" in grant
 PYTEST
 
 if command -v shellcheck >/dev/null 2>&1; then

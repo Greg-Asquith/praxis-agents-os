@@ -2,10 +2,11 @@
 
 """Governed Google video-to-image generation from workspace Files.
 
-Pydantic AI 2.20.0 maps video ``BinaryContent`` to Gemini ``inline_data``.
-Inline data is bounded before provider dispatch by
-``NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES``. Gemini image output and explicit
-safety refusals use the same normalized seams as ``generate_image``.
+The shared video input sends the revision by ``gs://`` URI on Vertex with GCS
+storage, or through a Files API upload on the Gemini API. Otherwise the video
+is inline and bounded by ``NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES``. Gemini
+image output and explicit safety refusals use the same normalized seams as
+``generate_image``.
 
 An inline MP4 conditions Gemini 3.1 Flash Image output. Google can return
 image-only JPEG bytes despite the PNG request, which the shared persistence
@@ -30,7 +31,7 @@ from services.agents.runtime.tools import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.media_inputs import load_workspace_media_input
+from services.agents.runtime.tools.media_inputs import load_workspace_video_input
 from services.agents.runtime.tools.native.image_generation import (
     configured_native_image_providers,
     resolve_image_generation_model,
@@ -38,11 +39,9 @@ from services.agents.runtime.tools.native.image_generation import (
 )
 from services.agents.runtime.tools.registry import runtime_tool
 from services.files import write_generated_image
-from services.files.contract import FileCategory
 from utils.validation import normalize_optional_text
 
 DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL = "gemini-nano-banana-2.1"
-VIDEO_MEDIA_TYPES = frozenset({"video/mp4", "video/quicktime", "video/webm"})
 
 
 class VideoToImageOutput(BaseModel):
@@ -147,16 +146,13 @@ async def generate_image_from_video(
     if not normalized_prompt:
         raise ModelRetry("generate_image_from_video requires a non-empty prompt.")
 
-    input_media = await load_workspace_media_input(
+    model_spec = resolve_video_to_image_model(model=model)
+    input_media = await load_workspace_video_input(
         ctx,
         file_id,
-        category=FileCategory.VIDEO,
-        allowed_media_types=VIDEO_MEDIA_TYPES,
         tool_name="generate_image_from_video",
-        kind_label="video",
-        max_bytes=settings.NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES,
+        inline_max_bytes=settings.NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES,
     )
-    model_spec = resolve_video_to_image_model(model=model)
     await ctx.deps.db.commit()
     image = await run_native_image_generation(
         deps=ctx.deps,

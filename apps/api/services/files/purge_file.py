@@ -19,6 +19,7 @@ from services.files.utils import (
     get_file_for_workspace,
     require_file_purge_access,
 )
+from services.gemini_files import delete_gemini_file
 from services.storage.factory import get_storage_provider
 
 
@@ -51,6 +52,9 @@ async def purge_file(
     provider = get_storage_provider()
     for object_key in distinct_object_keys(list(revisions)):
         await best_effort_delete_file_object(object_key, provider=provider)
+    for revision in revisions:
+        if revision.gemini_file_name is not None:
+            await delete_gemini_file(revision.gemini_file_name)
 
     await record_workspace_audit_event(
         db,

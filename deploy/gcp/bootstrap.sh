@@ -81,7 +81,7 @@ for required_logical_name in "$ENCRYPTION_KEYS_SECRET_NAME" "$CREDENTIAL_MASTER_
   esac
 done
 
-for command_name in gcloud python3; do
+for command_name in gcloud python3 curl; do
   command -v "$command_name" >/dev/null 2>&1 || die "$command_name is required"
 done
 [[ -t 0 ]] || die "bootstrap changes APIs, IAM, and billable resources and must run interactively"
@@ -646,6 +646,19 @@ if [[ "$GOOGLE_VERTEX_AI" == "true" || "$ANTHROPIC_VERTEX_AI" == "true" \
       --member="serviceAccount:${service_account}" --role=roles/aiplatform.user \
       --condition=None --quiet
   done
+fi
+# Gemini on Vertex reads workspace video by gs:// URI as the Vertex AI service agent. The condition limits it to workspace buckets; the platform-private bucket can't use the workspace prefix (checked above).
+if [[ "$GOOGLE_VERTEX_AI" == "true" ]]; then
+  # gcloud creates service agents only in its beta track, so call the Service
+  # Usage API directly. The token is fetched at run time and passed on stdin,
+  # keeping it out of the preview and process arguments.
+  service_identity_url="https://serviceusage.googleapis.com/v1beta1/projects/${GCP_PROJECT_ID}/services/aiplatform.googleapis.com:generateServiceIdentity"
+  plan bash -c "gcloud auth print-access-token --quiet | sed 's/^/Authorization: Bearer /' | curl -fsS -o /dev/null -X POST -H @- -H 'Content-Type: application/json' -d '{}' '${service_identity_url}'"
+  vertex_service_agent="service-${GCP_PROJECT_NUMBER}@gcp-sa-aiplatform.iam.gserviceaccount.com"
+  workspace_bucket_condition="expression=resource.name.startsWith('projects/_/buckets/${WORKSPACE_BUCKET_PREFIX}-'),title=Praxis workspace buckets,description=Read workspace objects Gemini receives by URI"
+  plan gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
+    --member="serviceAccount:${vertex_service_agent}" --role=roles/storage.objectViewer \
+    --condition="$workspace_bucket_condition" --quiet
 fi
 secret_namespace_condition="expression=(resource.type == 'secretmanager.googleapis.com/Secret' || resource.type == 'secretmanager.googleapis.com/SecretVersion') && resource.name.startsWith('projects/${GCP_PROJECT_NUMBER}/secrets/praxis-'),title=Praxis application secret namespace,description=Manage only application-owned Praxis secrets"
 for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do

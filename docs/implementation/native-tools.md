@@ -76,9 +76,11 @@ PNG, WebP, or JPEG bytes in an audited workspace File, and defaults to
 `auto`. `edit_image` uses the current revision of a workspace image with
 OpenAI or Google and limits combined raw source bytes with
 `NATIVE_IMAGE_EDITING_MAX_INPUT_BYTES` (64 MiB by default);
-`generate_image_from_video` uses Google only and rejects inline videos larger
-than `NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES` (18 MiB by default). Both
-input-media tools preserve the source file and revision ids in their result
+`generate_image_from_video` uses Google only and reads the video through the
+shared video input (see [Video tools](video-tools.md#gemini-video-input)): by
+`gs://` URI on Vertex with GCS storage, through a Files API upload on the
+Gemini API, and otherwise inline up to `NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES`
+(18 MiB by default). Both input-media tools preserve the source file and revision ids in their result
 and generated-file audit evidence.
 
 OpenAI calls the Images API directly: `gpt-image-2.5-flare` for generation

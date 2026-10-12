@@ -28,6 +28,8 @@ FILE_REVISION_KINDS = ("create", "edit", "replace", "restore", "import")
 FILE_REFERENCE_TARGET_TYPES = ("conversation", "artifact", "agent", "schedule_run")
 
 _REVISION_MUTABLE_ONCE = frozenset({"markdown_object_key", "markdown_size_bytes", "media_metadata"})
+# A provider upload cache that is replaced when it expires; never the revision's content.
+_REVISION_REPLACEABLE = frozenset({"gemini_file_name", "gemini_file_uri", "gemini_file_expires_at"})
 
 
 def _in_sql(column_name: str, values: tuple[str, ...]) -> str:
@@ -205,6 +207,10 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
     markdown_size_bytes = Column(BigInteger, nullable=True)
     # The renderer's probe result for video revisions; see services.files.domain.VideoMetadata.
     media_metadata = Column(JSONB, nullable=True)
+    # A Gemini Files API upload of this revision, reused until it expires.
+    gemini_file_name = Column(String(128), nullable=True)
+    gemini_file_uri = Column(String(512), nullable=True)
+    gemini_file_expires_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -217,6 +223,11 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
             name="file_revisions_workspace_publication_check",
         ),
         CheckConstraint("revision_number > 0", name="file_revisions_revision_number_check"),
+        CheckConstraint(
+            "(gemini_file_name IS NULL) = (gemini_file_uri IS NULL) AND "
+            "(gemini_file_name IS NULL) = (gemini_file_expires_at IS NULL)",
+            name="file_revisions_gemini_file_check",
+        ),
         CheckConstraint(
             _in_sql("revision_kind", FILE_REVISION_KINDS),
             name="file_revisions_revision_kind_check",
@@ -329,6 +340,8 @@ def _reject_file_revision_mutation(_mapper, connection, target: FileRevision) ->
         if not attr.history.has_changes():
             continue
         if attr.key == "is_published" and target.is_published is True:
+            continue
+        if attr.key in _REVISION_REPLACEABLE:
             continue
         if attr.key not in _REVISION_MUTABLE_ONCE:
             raise RuntimeError(f"File revisions are immutable: {attr.key}")

@@ -164,6 +164,11 @@ service accounts access through its existing approval prompts. Google model
 and embedding usage is billed to `GCP_PROJECT_ID` through Application Default
 Credentials. `GOOGLE_VERTEX_LOCATION` defaults to `auto`: the catalog selects
 `eu` for Gemini Flash and Flash-Lite, and `global` for Gemini 3.1 Pro.
+Bootstrap also creates the Vertex AI service agent and grants it
+`roles/storage.objectViewer`, conditioned on bucket names starting
+`<WORKSPACE_BUCKET_PREFIX>-`, so Gemini can read workspace video by `gs://`
+URI. The platform-private bucket can't use that prefix, so the grant never
+reaches it.
 Embeddings retain their `global` default. Existing environment files with an
 explicit `global` value keep that routing; set `auto` to adopt model defaults.
 An explicit location must be supported by every Gemini model you use. The

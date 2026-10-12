@@ -612,6 +612,9 @@ class AzureBlobStorageProvider:
         base = self.public_assets_base_url or f"{self.account_url}/{self.public_container_name}"
         return f"{base}/{quote_object_key(ref.key)}"
 
+    def model_input_uri(self, ref: StorageObjectRef) -> str | None:
+        return None
+
     def require_valid_upload_signature(
         self,
         ref: StorageObjectRef,

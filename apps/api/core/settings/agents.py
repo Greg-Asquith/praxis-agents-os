@@ -150,7 +150,10 @@ class AgentRunSettingsMixin:
         default=18 * 1024 * 1024,
         ge=1,
         le=20 * 1024 * 1024,
-        description="Maximum inline workspace video bytes for one video-to-image helper call.",
+        description=(
+            "Largest workspace video sent inline to the video-to-image helper. Larger videos "
+            "go by GCS URI on Vertex or by Files API upload on the Gemini API."
+        ),
     )
     AGENT_SCHEDULED_SIDE_EFFECT_POLICY: Literal["allow", "require_approval", "deny"] = Field(
         default="require_approval",

@@ -144,6 +144,51 @@ outlasts the client's own wait. Tools read duration and size from
 |---|---:|---|
 | `VIDEO_MAX_SOURCE_DURATION_SECONDS` | `14400` | Longest video a File may hold. Longer videos fail processing. |
 
+## Gemini video input
+
+Tools hand workspace video to Gemini with `load_workspace_video_input`
+(`services/agents/runtime/tools/media_inputs.py`). It resolves the current
+revision the caller can see, then picks the input by transport:
+
+| Transport | Input | Limit |
+|---|---|---|
+| Vertex, GCS storage | `VideoUrl` with the revision's `gs://` URI | The model's own limits |
+| Gemini API (`GOOGLE_API_KEY`) | Inline up to the tool's bound, otherwise `UploadedFile` from a Files API upload | 2 GB per file, 20 GB per project, kept 48 hours |
+| Vertex, other storage, or a platform File | Inline `BinaryContent` | The tool's `inline_max_bytes` |
+
+`VideoInputOptions` sets `fps`, a start and end offset, and media resolution;
+Pydantic AI sends them as the part's `video_metadata` and `media_resolution`.
+The server builds every URI from the revision's object key, and refuses a key
+outside the caller's workspace before building one. A model never supplies a
+URI, bucket, or object name.
+
+On Vertex, `StorageProvider.model_input_uri` returns the URI for workspace
+objects on GCS and `None` for every other provider or bucket. GCP bootstrap
+grants the Vertex AI service agent
+(`service-<project number>@gcp-sa-aiplatform.iam.gserviceaccount.com`)
+`roles/storage.objectViewer` on the project, with a condition that limits it to
+buckets named `<WORKSPACE_BUCKET_PREFIX>-…`. Gemini can therefore read any
+workspace bucket in the project; the URI the server builds is the isolation
+boundary.
+
+On the Gemini API, `services/gemini_files` streams the object to the Files API
+in 8 MiB chunks without holding it in memory, waits for the file to become
+`ACTIVE` (up to 5 minutes), and returns its name, URI, and expiry. The caller
+caches them on the revision (`file_revisions.gemini_file_*`) and reuses the
+upload while it has at least an hour left. A replaced or purged revision's
+upload is deleted, best effort; Google deletes anything missed after 48 hours.
+Each upload records a `gemini_files_upload` audit event on the File, because
+workspace bytes leave the deployment, and commits it before the model call.
+Files API uploads aren't scoped to a workspace on Google's side: one API key
+serves the deployment, so the cached name is only read back from the revision
+the tool resolved for the caller. Two concurrent first uploads of one revision
+both succeed; the later one is cached and the other expires unused.
+
+`long_video_input_available()` is true when Google is configured and can read
+past the inline bound: on the Gemini API, or on Vertex with GCS storage. Tools
+that need long video combine it with `settings.media_renderer_available` in
+their `availability_check`, so they're hidden rather than failing at call time.
+
 ## Deployment
 
 On GCP, `deploy/gcp/deploy.sh` deploys `praxis-media-renderer` as a Cloud Run

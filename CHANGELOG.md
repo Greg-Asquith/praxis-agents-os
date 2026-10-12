@@ -24,6 +24,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   notes describe them to the agent. A video that can't be read, has no
   video stream, or runs longer than `VIDEO_MAX_SOURCE_DURATION_SECONDS`
   (default 4 hours) fails processing with a plain reason.
+- Gemini reads workspace video without the 18 MiB inline limit. On Vertex
+  with GCS storage it reads the File by `gs://` URI, after bootstrap grants
+  the Vertex AI service agent read access to workspace buckets only. With a
+  `GOOGLE_API_KEY`, larger videos are uploaded once per revision to the
+  Gemini Files API (up to 2 GB), reused until they expire, audited, and
+  deleted when the File is purged. `generate_image_from_video` uses this
+  path.
 - Claude Haiku 5.5 is available directly and through Google Cloud. It is the
   Anthropic **Light** default and the default Claude model for native web
   search, web fetch, and classification, priced from $0.10 input and $0.50

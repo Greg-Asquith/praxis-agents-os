@@ -629,6 +629,12 @@ class GcsStorageProvider:
             f"https://storage.googleapis.com/{self.public_bucket_name}/{quote_object_key(ref.key)}"
         )
 
+    def model_input_uri(self, ref: StorageObjectRef) -> str | None:
+        # Vertex's service agent can read workspace buckets only (deploy/gcp/bootstrap.sh).
+        if ref.bucket != StorageBucket.PRIVATE:
+            return None
+        return f"gs://{self._bucket(ref).name}/{ref.key}"
+
     def require_valid_upload_signature(
         self,
         ref: StorageObjectRef,

@@ -405,6 +405,9 @@ class LocalStorageProvider:
         base = self.public_assets_base_url or f"{self._local_route_base()}/public"
         return f"{base}/{quote_object_key(ref.key)}"
 
+    def model_input_uri(self, ref: StorageObjectRef) -> str | None:
+        return None
+
     def filesystem_path(self, ref: StorageObjectRef) -> Path:
         root = self._bucket_root(ref)
         relative = Path(ref.key)

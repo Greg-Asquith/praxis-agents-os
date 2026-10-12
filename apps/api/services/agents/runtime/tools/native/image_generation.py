@@ -21,6 +21,8 @@ from pydantic_ai.messages import (
     BinaryImage,
     ModelMessage,
     ModelResponse,
+    UploadedFile,
+    VideoUrl,
 )
 from pydantic_ai.native_tools import ImageAspectRatio
 from pydantic_ai.usage import RunUsage, UsageLimits
@@ -338,7 +340,7 @@ async def run_native_image_generation(
     aspect_ratio: ImageAspectRatio | None,
     model_spec: ResolvedModel,
     action: Literal["generate", "edit", "video_to_image"] = "generate",
-    input_media: Sequence[BinaryContent] = (),
+    input_media: Sequence[BinaryContent | VideoUrl | UploadedFile] = (),
     output_format: Literal["png", "webp", "jpeg"] | None = None,
 ) -> BinaryImage:
     """Generate one image through the selected provider."""
@@ -369,7 +371,8 @@ async def run_native_image_generation(
             "Convert the source image to PNG, JPEG, or WebP and try again."
         )
     if settings.GOOGLE_VERTEX_AI and any(
-        media.is_image and len(media.data) > 7_000_000 for media in input_media
+        isinstance(media, BinaryContent) and media.is_image and len(media.data) > 7_000_000
+        for media in input_media
     ):
         raise ModelRetry(
             "Google Vertex image editing accepts at most 7 MB per source image. "
@@ -391,7 +394,7 @@ async def run_native_image_generation(
             if action == "edit"
             else (
                 VIDEO_TO_IMAGE_HELPER_INSTRUCTIONS
-                if len(input_media) == 1 and input_media[0].is_video
+                if action == "video_to_image"
                 else IMAGE_GENERATION_HELPER_INSTRUCTIONS
             )
         ),
@@ -408,7 +411,7 @@ async def run_native_image_generation(
             else "Generate exactly one new image from this prompt"
         )
     )
-    user_content: str | list[str | BinaryContent] = f"{task}:\n\n{prompt}"
+    user_content: str | list[str | BinaryContent | VideoUrl | UploadedFile] = f"{task}:\n\n{prompt}"
     if input_media:
         user_content = [user_content, *input_media]
 

@@ -112,6 +112,10 @@ class StorageProvider(Protocol):
         """Return a stable public URL for public objects when available."""
         ...
 
+    def model_input_uri(self, ref: StorageObjectRef) -> str | None:
+        """Return the URI a cloud model reads a workspace object by, or None when unsupported."""
+        ...
+
     def require_valid_upload_signature(
         self,
         ref: StorageObjectRef,

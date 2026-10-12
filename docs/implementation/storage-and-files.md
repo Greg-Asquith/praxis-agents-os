@@ -68,6 +68,13 @@ File responses carry the measurement as `video`, and `list_files`,
 `read_file`, and the chat attachment note describe it to the model, with
 portrait recordings shown upright. See [Video tools](video-tools.md#video-probe).
 
+Gemini reads workspace video by `gs://` URI on Vertex with GCS
+(`StorageProvider.model_input_uri`), or through a Gemini Files API upload when
+the deployment uses `GOOGLE_API_KEY`. The upload's name, URI, and expiry are
+cached on the revision in `gemini_file_*`, the one revision field that can be
+replaced; purging a File deletes its uploads. See
+[Video tools](video-tools.md#gemini-video-input).
+
 Chat accepts a video attachment only when the deployment has a tool that finds
 moments in video or cuts it (`cut_video_clips` or `find_video_moments`).
 `GET /models/catalog` reports this check as `video_tools_available`. Those
