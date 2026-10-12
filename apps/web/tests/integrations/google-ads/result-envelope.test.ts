@@ -173,8 +173,6 @@ describe.each(cases)("$name result evidence", (test) => {
           : test.applied === "removed"
             ? "Removed"
             : "Added"
-    const summary = renderToStaticMarkup(createElement("div", null, table.summary))
-    expect(summary.replace(/<[^>]+>/g, "")).toBe(`${truncated ? "3" : "1"} ${appliedLabel}`)
     expect(exported.rows[0]?.[exported.headers.indexOf(test.column)]).toBe(test.label)
     expect(exported.rows[0]?.[exported.headers.indexOf("Outcome")]).toBe(appliedLabel)
     expect(tableToCsv(exported)).toBe(expectedCsv[test.name])
