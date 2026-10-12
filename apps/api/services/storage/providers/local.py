@@ -37,6 +37,7 @@ class LocalStorageProvider:
     """Filesystem-backed object storage for local development."""
 
     provider_key = "local_fs"
+    signs_direct_uploads = False
 
     def __init__(
         self,

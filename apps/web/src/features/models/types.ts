@@ -33,4 +33,5 @@ export type ModelCatalogResponse = {
   providers: ModelCatalogProvider[]
   models: ModelCatalogEntry[]
   defaults: ModelCatalogDefaults
+  video_tools_available: boolean
 }

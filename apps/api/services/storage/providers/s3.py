@@ -68,6 +68,7 @@ class S3StorageProvider:
     """S3 implementation of the provider-neutral contract."""
 
     provider_key = "s3"
+    signs_direct_uploads = True
 
     def __init__(
         self,

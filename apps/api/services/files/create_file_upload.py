@@ -19,7 +19,11 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.assets.domain import AssetKind
 from services.assets.tokens import create_asset_upload_token
-from services.files.contract import max_size_bytes, require_matching_pair
+from services.files.contract import (
+    max_size_bytes,
+    require_matching_pair,
+    upload_max_size_bytes,
+)
 from services.files.domain import FileUploadGrant, FileUploadRequest, FileUploadResult
 from services.files.get_files_usage import get_files_usage
 from services.files.utils import (
@@ -75,7 +79,8 @@ async def _create_upload(
     if not extension:
         raise AppValidationError("Filename must include a supported extension", field="filename")
     entry = require_matching_pair(payload.content_type, extension)
-    size_limit = max_size_bytes(entry)
+    # Platform publication reads the whole revision into memory.
+    size_limit = max_size_bytes(entry) if workspace is None else upload_max_size_bytes(entry)
     if payload.size_bytes > size_limit:
         raise AppValidationError("File is too large", field="size_bytes")
 
@@ -176,6 +181,8 @@ async def _create_upload(
         ref=ref,
         content_type=entry.content_type,
         max_size_bytes=size_limit,
+        # Large uploads can outlast the default token lifetime; the pending upload bounds it.
+        expires_at=expires_at,
     )
     return FileUploadResult(
         grant=FileUploadGrant(

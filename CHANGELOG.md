@@ -106,6 +106,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   the background, and OpenRouter keys are rejected with a clear message. The
   README covers installing Make and scripted installs that save the key
   without a prompt.
+- People can upload videos up to 4 GiB to Files on Google Cloud Storage and
+  Amazon S3, set by `MAX_FILE_SIZE_SOURCE_VIDEO`. Azure and local storage keep
+  the 100 MB `MAX_FILE_SIZE_VIDEO` limit, which also bounds every video a tool
+  saves. Files accept WebM, and QuickTime files are stored as
+  `video/quicktime` instead of `video/mov`.
 
 ### Removed
 

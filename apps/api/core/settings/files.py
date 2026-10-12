@@ -92,7 +92,13 @@ class FilesSettingsMixin:
         default=104857600,
         ge=1048576,
         le=524288000,
-        description="Max AI generated video file size (100MB)",
+        description="Max video size outside direct workspace uploads, including tool writes (100MB)",
+    )
+    MAX_FILE_SIZE_SOURCE_VIDEO: int = Field(
+        default=4294967296,
+        ge=1048576,
+        le=21474836480,
+        description="Max size of a video a person uploads to workspace Files (4GiB)",
     )
     MAX_CHAT_ATTACHMENTS: int = Field(
         default=5,

@@ -12,7 +12,7 @@ from core.database import get_async_db_session_factory, set_session_tenant_conte
 from core.exceptions.general import NotFoundError
 from core.settings import settings
 from models.files import FileUpload
-from services.files.contract import require_matching_pair
+from services.files.contract import require_matching_pair, require_written_size
 from services.files.utils import revision_object_key, sha256_hex
 
 
@@ -28,6 +28,7 @@ async def reserve_file_revision(
 ) -> FileUpload:
     """Commits an isolated reservation and locks it until the caller settles."""
     contract = require_matching_pair(content_type, extension)
+    require_written_size(contract, len(content))
     file_id, revision_id, reservation_id = uuid4(), uuid4(), uuid4()
     async with get_async_db_session_factory()() as reservation_db:
         await set_session_tenant_context(reservation_db, workspace_id=workspace_id, user_id=user_id)

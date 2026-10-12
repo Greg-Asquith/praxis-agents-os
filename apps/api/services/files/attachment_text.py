@@ -3,6 +3,7 @@
 """Text conversion helpers for workspace file attachments."""
 
 from models.files import File, FileRevision
+from services.agents.runtime.untrusted import UntrustedContent, frame_untrusted_content
 from services.assets.utils import normalize_content_type
 from services.files.utils import file_revision_ref
 from services.storage.factory import get_storage_provider
@@ -20,6 +21,12 @@ DOCUMENT_FORMAT_LABELS: dict[str, str] = {
     "text/html": "HTML",
     "text/markdown": "Markdown",
     "text/plain": "Text",
+}
+
+VIDEO_FORMAT_LABELS: dict[str, str] = {
+    "video/mp4": "MP4",
+    "video/quicktime": "QuickTime",
+    "video/webm": "WebM",
 }
 
 
@@ -61,3 +68,25 @@ def attachment_text_payload(
         "read_word_document."
     )
     return f"{header}\n\n{markdown}".encode()
+
+
+def video_attachment_note(file: File, revision: FileRevision) -> bytes:
+    """Returns a reference to an attached video for the model, without its bytes."""
+    content_type = normalize_content_type(revision.content_type)
+    format_label = VIDEO_FORMAT_LABELS.get(content_type, content_type)
+    # The name is uploader-controlled, so it is framed like other untrusted File content.
+    name = frame_untrusted_content(
+        UntrustedContent(
+            source_kind="file",
+            source_ref=f"file:{file.id}/revision:{revision.id}",
+            content=f"Video name: {file.name}",
+        )
+    )
+    return (
+        "Attached video\n"
+        f"File id: {file.id}\n"
+        f"Format: {format_label} ({content_type}), {revision.size_bytes:,} bytes\n"
+        f"{name}\n"
+        "The video itself isn't included in this message. To work with it, pass the file id "
+        "to the video tools."
+    ).encode()

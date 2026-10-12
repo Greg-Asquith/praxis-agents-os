@@ -48,6 +48,7 @@ from core.storage_buckets import (
 
 _LOCAL_EXAMPLE_SECRET_KEY = "not-a-secret-local-development-secret-key-change-me"
 _LOCAL_EXAMPLE_ENCRYPTION_KEY = "bm90LWEtc2VjcmV0LWxvY2FsLWRldi1rZXktMDAwMDA="
+_S3_PUT_MAX_BYTES = 5_368_709_120
 
 
 class Settings(
@@ -209,6 +210,12 @@ class Settings(
             and self.AGENT_HISTORY_KEEP_TURNS >= self.AGENT_HISTORY_MAX_TURNS
         ):
             raise ValueError("AGENT_HISTORY_KEEP_TURNS must be less than AGENT_HISTORY_MAX_TURNS")
+
+        if self.STORAGE_PROVIDER == "s3" and self.MAX_FILE_SIZE_SOURCE_VIDEO > _S3_PUT_MAX_BYTES:
+            raise ValueError(
+                f"MAX_FILE_SIZE_SOURCE_VIDEO must be at most {_S3_PUT_MAX_BYTES} bytes "
+                "with STORAGE_PROVIDER=s3, which caps single uploads"
+            )
 
         if self.STORAGE_PROVIDER == "azure_blob":
             required_fields = {

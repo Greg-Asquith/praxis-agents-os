@@ -20,6 +20,7 @@ from services.files import confirm_file_upload, create_file_upload, get_files_us
 from services.files.domain import FileConfirmRequest, FileUploadRequest
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
+from services.storage.providers.local import LocalStorageProvider
 from tests.factories import build_file, build_user, build_workspace, build_workspace_membership
 from tests.support.requests import build_test_request
 from tests.support.storage import reset_storage_provider_cache
@@ -69,6 +70,22 @@ async def _confirm(db, context, token):
         request=build_test_request(),
         payload=FileConfirmRequest(upload_token=token),
     )
+
+
+async def test_platform_video_upload_keeps_the_in_memory_limit(
+    db_session, upload_context, monkeypatch
+):
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_VIDEO", 5)
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_SOURCE_VIDEO", 10)
+    monkeypatch.setattr(LocalStorageProvider, "signs_direct_uploads", True)
+
+    with pytest.raises(AppValidationError, match="File is too large"):
+        await create_file_upload(
+            db_session,
+            **upload_context,
+            scope=ContentScope.PLATFORM,
+            payload=FileUploadRequest(filename="intro.mp4", content_type="video/mp4", size_bytes=6),
+        )
 
 
 @pytest.mark.parametrize("operation", ["confirm"])

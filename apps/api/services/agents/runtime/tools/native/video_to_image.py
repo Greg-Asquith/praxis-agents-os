@@ -3,8 +3,7 @@
 """Governed Google video-to-image generation from workspace Files.
 
 Pydantic AI 2.20.0 maps video ``BinaryContent`` to Gemini ``inline_data``.
-Workspace ``video/mov`` revisions are normalized to ``video/quicktime``, the
-SDK-recognized MIME type. Inline data is bounded before provider dispatch by
+Inline data is bounded before provider dispatch by
 ``NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES``. Gemini image output and explicit
 safety refusals use the same normalized seams as ``generate_image``.
 
@@ -43,8 +42,7 @@ from services.files.contract import FileCategory
 from utils.validation import normalize_optional_text
 
 DEFAULT_NATIVE_VIDEO_TO_IMAGE_MODEL = "gemini-nano-banana-2.1"
-VIDEO_MEDIA_TYPES = frozenset({"video/mov", "video/mp4"})
-VIDEO_PROVIDER_MEDIA_TYPE_OVERRIDES = {"video/mov": "video/quicktime"}
+VIDEO_MEDIA_TYPES = frozenset({"video/mp4", "video/quicktime", "video/webm"})
 
 
 class VideoToImageOutput(BaseModel):
@@ -157,7 +155,6 @@ async def generate_image_from_video(
         tool_name="generate_image_from_video",
         kind_label="video",
         max_bytes=settings.NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES,
-        media_type_overrides=VIDEO_PROVIDER_MEDIA_TYPE_OVERRIDES,
     )
     model_spec = resolve_video_to_image_model(model=model)
     await ctx.deps.db.commit()

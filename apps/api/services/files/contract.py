@@ -9,6 +9,7 @@ from core.exceptions.general import AppValidationError
 from core.settings import settings
 from services.assets.utils import normalize_content_type
 from services.files.utils import normalize_extension
+from services.storage.factory import get_storage_provider
 
 
 class FileCategory(StrEnum):
@@ -31,6 +32,8 @@ class FileContractEntry:
     max_size_setting: str
     editable: bool
     ingestible: bool
+    # Raises the limit for workspace uploads that go straight to storage.
+    upload_max_size_setting: str | None = None
 
 
 FILE_CONTRACT: tuple[FileContractEntry, ...] = (
@@ -161,14 +164,25 @@ FILE_CONTRACT: tuple[FileContractEntry, ...] = (
         max_size_setting="MAX_FILE_SIZE_VIDEO",
         editable=False,
         ingestible=False,
+        upload_max_size_setting="MAX_FILE_SIZE_SOURCE_VIDEO",
     ),
     FileContractEntry(
         category=FileCategory.VIDEO,
-        content_type="video/mov",
+        content_type="video/quicktime",
         extensions=(".mov",),
         max_size_setting="MAX_FILE_SIZE_VIDEO",
         editable=False,
         ingestible=False,
+        upload_max_size_setting="MAX_FILE_SIZE_SOURCE_VIDEO",
+    ),
+    FileContractEntry(
+        category=FileCategory.VIDEO,
+        content_type="video/webm",
+        extensions=(".webm",),
+        max_size_setting="MAX_FILE_SIZE_VIDEO",
+        editable=False,
+        ingestible=False,
+        upload_max_size_setting="MAX_FILE_SIZE_SOURCE_VIDEO",
     ),
 )
 
@@ -207,11 +221,40 @@ def require_matching_pair(content_type: str, extension: str) -> FileContractEntr
 
 
 def max_size_bytes(entry: FileContractEntry) -> int:
-    """Resolve the configured byte limit for a contract entry."""
+    """Resolve the configured byte limit for a contract entry.
+
+    This bounds every file the server writes or reads into memory.
+    """
+    return _size_setting(entry.max_size_setting)
+
+
+def upload_max_size_bytes(entry: FileContractEntry) -> int:
+    """Returns the byte limit for a workspace upload.
+
+    The larger upload limit applies only when the storage provider signs direct uploads,
+    because a relayed upload passes through API memory.
+    """
+    if entry.upload_max_size_setting is None or not get_storage_provider().signs_direct_uploads:
+        return max_size_bytes(entry)
+    return _size_setting(entry.upload_max_size_setting)
+
+
+def require_written_size(entry: FileContractEntry, size_bytes: int) -> None:
+    """Rejects server-written content over the contract limit for its type."""
+    limit = max_size_bytes(entry)
+    if size_bytes > limit:
+        raise AppValidationError(
+            "File content is too large",
+            field="content",
+            details={"content_bytes": size_bytes, "max_bytes": limit},
+        )
+
+
+def _size_setting(name: str) -> int:
     try:
-        return int(getattr(settings, entry.max_size_setting))
+        return int(getattr(settings, name))
     except AttributeError as exc:
-        raise RuntimeError(f"Missing file size setting: {entry.max_size_setting}") from exc
+        raise RuntimeError(f"Missing file size setting: {name}") from exc
 
 
 def tool_result_max_size_bytes() -> int:

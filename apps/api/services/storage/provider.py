@@ -23,6 +23,8 @@ class StorageProvider(Protocol):
     """
 
     provider_key: str
+    # False when signed uploads relay through the API, which buffers the body.
+    signs_direct_uploads: bool
 
     async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
         """Create and harden a workspace-private bucket when it does not exist."""

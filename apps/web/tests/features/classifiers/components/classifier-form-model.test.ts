@@ -33,6 +33,7 @@ const classifier: Classifier = {
 
 const modelCatalog: ModelCatalogResponse = {
   defaults: { agent_model: "openai:gpt-5.4-mini" },
+  video_tools_available: false,
   models: [
     {
       context_window: 100_000,

@@ -82,6 +82,7 @@ class AzureBlobStorageProvider:
     """Azure Blob implementation of the provider-neutral contract."""
 
     provider_key = "azure_blob"
+    signs_direct_uploads = False
 
     def __init__(
         self,

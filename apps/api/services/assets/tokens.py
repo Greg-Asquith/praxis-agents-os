@@ -28,10 +28,14 @@ def create_asset_upload_token(
     target_user_id: UUID | None = None,
     workspace_id: UUID | None = None,
     token_id: str | None = None,
+    expires_at: datetime | None = None,
 ) -> tuple[str, datetime]:
-    """Create a short-lived API token that binds a signed upload to one asset."""
+    """Create an API token that binds a signed upload to one asset.
+
+    The token expires after 10 minutes unless the caller passes ``expires_at``.
+    """
     now = datetime.now(UTC)
-    expires_at = now + _ASSET_UPLOAD_TOKEN_TTL
+    expires_at = expires_at or now + _ASSET_UPLOAD_TOKEN_TTL
     payload = {
         "type": _ASSET_UPLOAD_TOKEN_TYPE,
         "kind": kind.value,

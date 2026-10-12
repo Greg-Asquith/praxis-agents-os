@@ -87,6 +87,30 @@ class _FakeGcsBlob:
     def delete(self) -> None:
         self.bucket.objects.pop(self.key, None)
 
+    def rewrite(
+        self,
+        source: _FakeGcsBlob,
+        *,
+        token: str | None,
+        if_source_generation_match: int,
+        if_generation_match: int,
+    ) -> tuple[str | None, int, int]:
+        self.bucket.rewrite_calls.append(token)
+        source_obj = source.bucket.objects.get(source.key)
+        if source_obj is None:
+            raise _GcsNotFoundError()
+        if source_obj["generation"] != if_source_generation_match:
+            raise _GcsPreconditionError()
+        if if_generation_match == 0 and self.key in self.bucket.objects:
+            raise _GcsPreconditionError()
+        size = len(source_obj["data"])
+        calls = int(token or 0) + 1
+        if calls < self.bucket.rewrite_calls_per_copy:
+            return str(calls), 0, size
+        self.bucket.objects[self.key] = {**source_obj, "generation": self.bucket.next_generation}
+        self.bucket.next_generation += 1
+        return None, size, size
+
     def generate_signed_url(self, **kwargs) -> str:
         if self.bucket.signed_error is not None:
             raise self.bucket.signed_error
@@ -101,7 +125,8 @@ class _FakeGcsBucket:
         self.objects: dict[str, dict] = {}
         self.signed_calls: list[dict] = []
         self.signed_error: Exception | None = None
-        self.copy_calls: list[dict] = []
+        self.rewrite_calls_per_copy = 1
+        self.rewrite_calls: list[str | None] = []
         self.next_generation = 1
         self.labels: dict[str, str] = {}
         self.cors: list[dict[str, object]] = []
@@ -122,23 +147,6 @@ class _FakeGcsBucket:
 
     def blob(self, key: str) -> _FakeGcsBlob:
         return _FakeGcsBlob(self, key)
-
-    def copy_blob(self, source, destination_bucket, **kwargs):
-        self.copy_calls.append({"source": source.key, **kwargs})
-        destination_key = kwargs["new_name"]
-        source_obj = self.objects.get(source.key)
-        if source_obj is None:
-            raise _GcsNotFoundError()
-        if kwargs["if_generation_match"] == 0 and destination_key in destination_bucket.objects:
-            raise _GcsPreconditionError()
-        if source_obj["generation"] != kwargs["if_source_generation_match"]:
-            raise _GcsPreconditionError()
-        destination_bucket.objects[destination_key] = {
-            **source_obj,
-            "generation": destination_bucket.next_generation,
-        }
-        destination_bucket.next_generation += 1
-        return destination_bucket.blob(destination_key)
 
 
 class _FakeGcsClient:
@@ -187,6 +195,26 @@ def _provider(client: _FakeGcsClient) -> GcsStorageProvider:
         ),
         client=client,
     )
+
+
+async def test_gcs_promotion_follows_rewrite_tokens_until_the_copy_completes() -> None:
+    client = _FakeGcsClient()
+    provider = _provider(client)
+    source = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("uploads/staged.mp4"))
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/video.mp4"))
+    stored = await provider.put_object(source, b"large-video", content_type="video/mp4")
+    bucket = client.bucket(WORKSPACE_BUCKET)
+    bucket.rewrite_calls_per_copy = 3
+
+    promoted = await provider.promote_object(
+        source,
+        destination,
+        expected_source_etag=stored.etag,
+    )
+
+    assert bucket.rewrite_calls == [None, "1", "2"]
+    assert await provider.get_object(destination) == b"large-video"
+    assert promoted.size_bytes == len(b"large-video")
 
 
 async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> None:

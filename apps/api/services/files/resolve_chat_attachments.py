@@ -16,13 +16,18 @@ from models.workspace import Workspace
 from services.agents.models.registry import get_model
 from services.agents.models.resolution import resolve_agent_model
 from services.assets.utils import normalize_content_type
-from services.files.contract import FileCategory, contract_for_content_type
+from services.files.contract import (
+    FileCategory,
+    contract_for_content_type,
+    upload_max_size_bytes,
+)
 from services.files.utils import (
     conversation_file_revision_id,
     file_for_revision,
     get_visible_file_revision,
 )
 from services.files.visibility import visible_file_filter
+from services.media import video_tools_available
 from utils.content import ContentScope
 
 # Pydantic AI accepts these image types and PDFs as native model input.
@@ -114,6 +119,9 @@ def _validate_chat_attachment(file: File, *, agent: Agent, workspace: Workspace)
     if entry.category in {FileCategory.INGESTIBLE_DOCUMENT, FileCategory.EDITABLE_TEXT}:
         _validate_document_attachment(file, media_type=media_type)
         return
+    if entry.category == FileCategory.VIDEO:
+        _validate_video_attachment(file)
+        return
 
     raise AppValidationError(
         "File type cannot be attached to chat",
@@ -169,6 +177,26 @@ def _validate_document_attachment(file: File, *, media_type: str) -> None:
     if file.size_bytes > max_size_bytes:
         raise AppValidationError(
             "Document attachment is too large",
+            field="attachments",
+            details={
+                "file_id": str(file.id),
+                "size_bytes": file.size_bytes,
+                "max_size_bytes": max_size_bytes,
+            },
+        )
+
+
+def _validate_video_attachment(file: File) -> None:
+    if not video_tools_available():
+        raise AppValidationError(
+            "Video can't be attached to messages yet. Upload it to Files instead.",
+            field="attachments",
+            details={"file_id": str(file.id), "content_type": file.content_type},
+        )
+    max_size_bytes = upload_max_size_bytes(contract_for_content_type(file.content_type))
+    if file.size_bytes > max_size_bytes:
+        raise AppValidationError(
+            "Video attachment is too large",
             field="attachments",
             details={
                 "file_id": str(file.id),

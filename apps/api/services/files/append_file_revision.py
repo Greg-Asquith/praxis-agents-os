@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import ConflictError
 from models.files import FileRevision
 from models.workspace import Workspace
+from services.files.contract import contract_for_content_type, require_written_size
 from services.files.create_file_with_revision import FileRevisionWriteResult
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import (
@@ -48,6 +49,7 @@ async def append_file_revision(
             conflicting_resource="file",
             details={"current_revision_id": str(file.current_revision_id)},
         )
+    require_written_size(contract_for_content_type(file.content_type), len(content))
     revision_id = uuid4()
     object_key = revision_object_key(workspace.id, file.id, revision_id, file.extension)
     content_hash = sha256_hex(content)

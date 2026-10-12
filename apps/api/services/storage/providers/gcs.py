@@ -51,6 +51,8 @@ GCS_BROWSER_CORS_RESPONSE_HEADERS = (
 )
 GCS_BROWSER_CORS_MAX_AGE_SECONDS = 3600
 GCS_ADC_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
+# Large or cross-location copies need several rewrite calls; this bounds the loop.
+GCS_REWRITE_MAX_CALLS = 1000
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,7 @@ class GcsStorageProvider:
     """Google Cloud Storage implementation of the provider-neutral contract."""
 
     provider_key = "gcs"
+    signs_direct_uploads = True
 
     def __init__(
         self,
@@ -396,17 +399,8 @@ class GcsStorageProvider:
                     bucket=source.bucket.value,
                     object_key=source.key,
                 )
-            source_generation = int(source_blob.generation)
-            await asyncio.to_thread(
-                bucket.copy_blob,
-                source_blob,
-                bucket,
-                new_name=destination.key,
-                source_generation=source_generation,
-                if_source_generation_match=source_generation,
-                if_generation_match=0,
-            )
-        except StoragePreconditionError:
+            await self._rewrite_until_done(source_blob, bucket.blob(destination.key), destination)
+        except StorageError:
             raise
         except Exception as exc:
             if _is_gcs_precondition_failed(exc):
@@ -446,6 +440,33 @@ class GcsStorageProvider:
                 object_key=destination.key,
             )
         return stored
+
+    async def _rewrite_until_done(
+        self,
+        source_blob: Any,
+        destination_blob: Any,
+        destination: StorageObjectRef,
+    ) -> None:
+        # source_blob.generation was set by reload, so each call pins that generation.
+        source_generation = int(source_blob.generation)
+        token = None
+        for _ in range(GCS_REWRITE_MAX_CALLS):
+            token, _written, _total = await asyncio.to_thread(
+                destination_blob.rewrite,
+                source_blob,
+                token=token,
+                if_source_generation_match=source_generation,
+                if_generation_match=0,
+            )
+            if token is None:
+                return
+        raise StorageError(
+            "GCS rewrite did not finish",
+            provider_key=self.provider_key,
+            operation="promote_object",
+            bucket=destination.bucket.value,
+            object_key=destination.key,
+        )
 
     async def create_signed_upload(
         self,

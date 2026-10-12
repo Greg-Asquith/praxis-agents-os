@@ -325,8 +325,10 @@ workspace copy** to keep your own editable version.
 **Files** holds the material agents work with: documents, PDFs,
 spreadsheets, presentations, images, and videos. To add files, click
 **Upload Files**, drag them onto the page, or attach them to a message.
-Documents and videos can be up to 100 MB and images up to 10 MB. Use **New
-Folder** and **Move to Folder** to organise them.
+Documents can be up to 100 MB and images up to 10 MB. Videos uploaded to
+**Files** can be up to 4 GB by default when the deployment stores files in
+Google Cloud or Amazon S3; elsewhere, and for videos agents save, the limit
+is 100 MB. Use **New Folder** and **Move to Folder** to organise them.
 
 Agents can read and change any workspace file, editing text directly. They
 edit and create Excel, PowerPoint, and Word files with any model, keeping

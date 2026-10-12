@@ -40,3 +40,5 @@ class ModelCatalogResponse(BaseModel):
     providers: list[ModelCatalogProvider]
     models: list[ModelCatalogEntry]
     defaults: ModelCatalogDefaults
+    # The composer accepts video attachments only when this is true.
+    video_tools_available: bool

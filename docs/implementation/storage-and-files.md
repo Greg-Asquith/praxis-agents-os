@@ -33,6 +33,40 @@ String-returning callers retain their existing contract. For byte caps smaller
 than the marker, bounding returns only the marker prefix that fits. A zero cap
 returns empty text; negative caps are rejected.
 
+## Video uploads and attachments
+
+Workspace Files accept MP4 (`video/mp4`), QuickTime (`video/quicktime`,
+`.mov`), and WebM (`video/webm`). Two settings bound video size:
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `MAX_FILE_SIZE_SOURCE_VIDEO` | `4294967296` | Maximum size of a video a person uploads to workspace Files. Configuration accepts up to `21474836480` bytes, and at most 5 GiB with `STORAGE_PROVIDER=s3`. |
+| `MAX_FILE_SIZE_VIDEO` | `104857600` | Maximum size of every other video, including any video the server writes. Configuration accepts up to `524288000` bytes. |
+
+The source limit applies only to workspace uploads on storage providers that
+sign direct uploads (`gcs` and `s3`). Azure and local storage relay uploads
+through the API, which buffers the body, so their uploads keep
+`MAX_FILE_SIZE_VIDEO`. Platform uploads keep it too, because publication
+reads the whole revision. Upload confirmation hashes the object by streaming
+and doesn't load a source video into memory. A signed upload URL must be used
+within 10 minutes, but a Files upload's confirmation token lasts as long as
+the pending upload (`FILES_UPLOAD_EXPIRY_HOURS`), so a long upload can still
+be confirmed. Other asset tokens keep the 10-minute lifetime.
+`create_file_with_revision`, `append_file_revision`, and
+`reserve_file_revision` reject content over its type's limit in the file
+contract, so a tool can't save a video larger than `MAX_FILE_SIZE_VIDEO`.
+
+Chat accepts a video attachment only when the deployment has a tool that finds
+moments in video or cuts it (`cut_video_clips` or `find_video_moments`).
+`GET /models/catalog` reports this check as `video_tools_available`. Those
+tools are pending, so every deployment refuses video in chat. The composer
+refuses a picked or dropped video before uploading it, and the API refuses a
+video attachment on send. Both say "Video can't be attached to messages yet.
+Upload it to Files instead." When the check passes, the model receives a text
+note with the video's File id, format, and size, never its bytes. The
+uploader-controlled name sits inside the shared untrusted-content frame with
+File and revision provenance.
+
 ## Storage providers and upload lifecycle
 
 Storage goes through the `services/storage` provider abstraction.
@@ -125,7 +159,9 @@ deployment-owned private bucket or container. `StorageBucket.PRIVATE` keeps
 its workspace namespace and per-workspace resolution. Pass the complete
 `StorageObjectRef` through operations; a key alone does not identify a bucket.
 Same-bucket promotion preserves create-only destination writes and source
-validation.
+validation. GCS promotes with object rewrite and follows rewrite tokens
+until the copy completes, because a large or dual-region copy can need more
+than one request.
 
 `services/storage/copy_object.py` copies pinned content between workspace-private
 and platform-private storage. Domain callers must persist the destination

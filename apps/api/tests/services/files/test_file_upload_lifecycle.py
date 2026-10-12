@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+import jwt
 import pytest
 from httpx2 import AsyncClient
 from sqlalchemy import func, select
@@ -30,6 +31,7 @@ from services.files import (
     restore_file_revision,
 )
 from services.files.contract import contract_for_content_type
+from services.files.create_file_with_revision import create_file_with_revision
 from services.files.domain import (
     FileConfirmRequest,
     FileDownloadRequest,
@@ -37,9 +39,11 @@ from services.files.domain import (
     FileRestoreRequest,
     FileUploadRequest,
 )
+from services.files.revision_actor import FileRevisionActor
 from services.files.utils import private_ref_from_key, revision_object_key, sha256_hex
 from services.jobs.handlers.sweep_deleted_files import ensure_files_sweep_job, sweep_deleted_files
 from services.storage.factory import get_storage_provider
+from services.storage.providers.local import LocalStorageProvider
 from tests.factories import (
     build_file,
     build_file_revision,
@@ -227,6 +231,89 @@ async def test_create_file_upload_validates_metadata_deduplicates_and_flags_soft
                 size_bytes=5,
             ),
         )
+
+
+async def test_source_video_limit_applies_only_to_direct_workspace_uploads(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actor, workspace, membership = await _workspace_context(db_session)
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_VIDEO", 5)
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_SOURCE_VIDEO", 10)
+
+    async def request_upload(size_bytes: int):
+        return await create_file_upload(
+            db_session,
+            actor=actor,
+            workspace=workspace,
+            membership=membership,
+            payload=FileUploadRequest(
+                filename="talk.webm", content_type="video/webm", size_bytes=size_bytes
+            ),
+        )
+
+    # Local storage relays uploads through API memory, so the tool limit stays.
+    with pytest.raises(AppValidationError, match="File is too large"):
+        await request_upload(6)
+
+    monkeypatch.setattr(LocalStorageProvider, "signs_direct_uploads", True)
+    result = await request_upload(10)
+    assert result.grant is not None
+    assert result.grant.max_size_bytes == 10
+    with pytest.raises(AppValidationError, match="File is too large"):
+        await request_upload(11)
+
+
+async def test_file_upload_token_lasts_as_long_as_the_pending_upload(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+) -> None:
+    actor, workspace, membership = await _workspace_context(db_session)
+
+    result = await create_file_upload(
+        db_session,
+        actor=actor,
+        workspace=workspace,
+        membership=membership,
+        payload=FileUploadRequest(filename="talk.mp4", content_type="video/mp4", size_bytes=5),
+    )
+
+    assert result.grant is not None
+    upload = await db_session.scalar(
+        select(FileUpload).where(FileUpload.file_id == result.grant.file_id)
+    )
+    assert upload is not None
+    claims = jwt.decode(result.grant.upload_token, options={"verify_signature": False})
+    assert claims["exp"] == int(upload.expires_at.timestamp())
+
+
+async def test_server_written_video_keeps_the_tool_video_limit(
+    db_session: AsyncSession,
+    local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _actor, workspace, _membership = await _workspace_context(db_session)
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_VIDEO", 5)
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_SOURCE_VIDEO", 10)
+
+    with pytest.raises(AppValidationError, match="File content is too large"):
+        await create_file_with_revision(
+            db_session,
+            workspace=workspace,
+            name="clip.mp4",
+            content=b"sixbyt",
+            content_type="video/mp4",
+            extension=".mp4",
+            actor=FileRevisionActor(system=True),
+        )
+
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(File).where(File.workspace_id == workspace.id)
+        )
+        == 0
+    )
 
 
 async def test_confirm_file_upload_computes_hash_is_idempotent_and_replaces(

@@ -7,10 +7,6 @@ import { isRecord, stringValue } from "@/lib/guards"
 
 export const MAX_CHAT_ATTACHMENTS = 5
 
-const CHAT_ATTACHMENT_EXTENSIONS = Object.entries(WORKSPACE_FILE_MIME_TYPES)
-  .filter(([, contentType]) => !contentType.startsWith("video/"))
-  .map(([extension]) => `.${extension}`)
-
 export type MessageAttachment = {
   scope?: "platform"
   fileId: string
@@ -19,14 +15,27 @@ export type MessageAttachment = {
   sizeBytes?: number
 }
 
-export function chatAttachmentAcceptValue() {
-  return CHAT_ATTACHMENT_EXTENSIONS.join(",")
+export function chatAttachmentAcceptValue(videoToolsAvailable: boolean) {
+  return Object.entries(WORKSPACE_FILE_MIME_TYPES)
+    .filter(([, contentType]) => videoToolsAvailable || !contentType.startsWith("video/"))
+    .map(([extension]) => `.${extension}`)
+    .join(",")
 }
 
 // Drag and drop bypasses the picker's accept list, so both paths check here.
-export function isChatAttachmentFile(file: File) {
-  const extension = file.name.toLowerCase().split(".").pop()
-  return extension !== undefined && CHAT_ATTACHMENT_EXTENSIONS.includes(`.${extension}`)
+export function chatAttachmentRefusal(file: File, videoToolsAvailable: boolean) {
+  const extension = file.name.toLowerCase().split(".").pop() ?? ""
+  const contentType = Object.hasOwn(WORKSPACE_FILE_MIME_TYPES, extension)
+    ? WORKSPACE_FILE_MIME_TYPES[extension]
+    : undefined
+  if (contentType === undefined) {
+    const kinds = videoToolsAvailable ? "images, videos, or text files" : "images, or text files"
+    return `${file.name} can't be attached. Attach documents, spreadsheets, presentations, ${kinds}.`
+  }
+  if (contentType.startsWith("video/") && !videoToolsAvailable) {
+    return "Video can't be attached to messages yet. Upload it to Files instead."
+  }
+  return null
 }
 
 export function isImageAttachmentMediaType(mediaType: string | null | undefined) {

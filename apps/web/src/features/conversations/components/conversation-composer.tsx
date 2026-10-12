@@ -44,7 +44,7 @@ import { AgentSelectItem } from "@/features/agents/components/agent-select-item"
 import type { Agent } from "@/features/agents/types"
 import {
   chatAttachmentAcceptValue,
-  isChatAttachmentFile,
+  chatAttachmentRefusal,
   MAX_CHAT_ATTACHMENTS,
   uploadChatAttachment,
   type MessageAttachment,
@@ -131,6 +131,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
     ? formatAgentModel(composerAgent, props.modelCatalog)
     : null
   const isCreateWithoutAgent = props.mode === "create" && activeAgents.length === 0
+  const videoToolsAvailable = props.modelCatalog.video_tools_available
   const isCurrentStreamBlocking =
     props.mode === "create"
       ? stream.isStreaming
@@ -239,11 +240,11 @@ export function ConversationComposer(props: ConversationComposerProps) {
     }
 
     const selectedFiles = Array.from(files)
-    const unsupportedFile = selectedFiles.find((file) => !isChatAttachmentFile(file))
-    if (unsupportedFile) {
-      setError(
-        `${unsupportedFile.name} can't be attached. Attach documents, spreadsheets, presentations, images, or text files.`
-      )
+    const refusal = selectedFiles
+      .map((file) => chatAttachmentRefusal(file, videoToolsAvailable))
+      .find((message) => message !== null)
+    if (refusal) {
+      setError(refusal)
       if (attachmentInputRef.current) {
         attachmentInputRef.current.value = ""
       }
@@ -409,7 +410,7 @@ export function ConversationComposer(props: ConversationComposerProps) {
 
         <div className="flex min-w-0 items-center gap-1 px-2.5 pb-2">
           <input
-            accept={chatAttachmentAcceptValue()}
+            accept={chatAttachmentAcceptValue(videoToolsAvailable)}
             aria-label="Attach Files"
             className="sr-only"
             id={attachmentInputId}

@@ -13,7 +13,11 @@ from core.exceptions.general import AppValidationError, NotFoundError
 from core.settings import settings
 from models.files import File, FileRevision
 from services.assets.utils import normalize_content_type
-from services.files.attachment_text import attachment_text_payload, markdown_for_revision
+from services.files.attachment_text import (
+    attachment_text_payload,
+    markdown_for_revision,
+    video_attachment_note,
+)
 from services.files.contract import FileCategory, contract_for_content_type
 from services.files.resolve_chat_attachments import PDF_MEDIA_TYPE
 from services.files.utils import file_revision_ref
@@ -72,6 +76,12 @@ async def _build_revision_content(*, file: File, revision: FileRevision) -> Bina
         return BinaryContent(
             data=await provider.get_object(file_revision_ref(revision)),
             media_type=media_type,
+            identifier=str(file.id),
+        )
+    if category == FileCategory.VIDEO:
+        return BinaryContent(
+            data=video_attachment_note(file, revision),
+            media_type="text/plain",
             identifier=str(file.id),
         )
 

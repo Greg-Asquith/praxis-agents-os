@@ -104,6 +104,7 @@ function catalogModel({
 
 const modelCatalog: ModelCatalogResponse = {
   defaults: { agent_model: "openai:gpt-6-luna" },
+  video_tools_available: false,
   models: [
     catalogModel({ displayName: "GPT-6 Luna", id: "openai:gpt-6-luna", modelType: "standard" }),
     catalogModel({ displayName: "GPT-5.4 Nano", id: "openai:gpt-5.4-nano", modelType: "light" }),
@@ -468,6 +469,7 @@ describe("buildModelOptions", () => {
         },
       ],
       defaults: { agent_model: "openai:gpt-5.4" },
+      video_tools_available: false,
     }
 
     expect(buildModelOptions(catalog, agent).map((option) => option.value)).toEqual([

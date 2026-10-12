@@ -2,7 +2,7 @@
 
 """Governed workspace media loading shared by runtime tools."""
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -48,7 +48,6 @@ async def load_workspace_media_input(
     tool_name: str,
     kind_label: str,
     max_bytes: int | None = None,
-    media_type_overrides: Mapping[str, str] | None = None,
 ) -> WorkspaceMediaInput:
     """Load and validate one current workspace file revision as model media."""
     resolved = await _resolve_workspace_media_input(
@@ -65,7 +64,6 @@ async def load_workspace_media_input(
         tool_name=tool_name,
         kind_label=kind_label,
         max_bytes=max_bytes,
-        media_type_overrides=media_type_overrides,
     )
 
 
@@ -109,7 +107,6 @@ async def _load_workspace_media_input(
     tool_name: str,
     kind_label: str,
     max_bytes: int | None,
-    media_type_overrides: Mapping[str, str] | None,
 ) -> WorkspaceMediaInput:
     data = await get_storage_provider().get_object(private_ref_from_key(resolved.object_key))
     if max_bytes is not None and len(data) > max_bytes:
@@ -117,11 +114,10 @@ async def _load_workspace_media_input(
             f"This {kind_label} is too large for {tool_name}. Choose a {kind_label} smaller "
             f"than {max_bytes:,} bytes."
         )
-    overrides = media_type_overrides or {}
     return WorkspaceMediaInput(
         content=BinaryContent(
             data=data,
-            media_type=overrides.get(resolved.media_type, resolved.media_type),
+            media_type=resolved.media_type,
             identifier=str(resolved.file_id),
         ),
         file_id=resolved.file_id,
@@ -140,7 +136,6 @@ async def load_workspace_media_inputs(
     kind_label: str,
     max_bytes: int | None = None,
     max_total_bytes: int | None = None,
-    media_type_overrides: Mapping[str, str] | None = None,
 ) -> tuple[WorkspaceMediaInput, ...]:
     """Validate aggregate size, then load workspace media in reference order."""
     resolved = tuple(
@@ -172,7 +167,6 @@ async def load_workspace_media_inputs(
             tool_name=tool_name,
             kind_label=kind_label,
             max_bytes=max_bytes,
-            media_type_overrides=media_type_overrides,
         )
         loaded_bytes += len(media_input.content.data)
         _validate_aggregate_size(

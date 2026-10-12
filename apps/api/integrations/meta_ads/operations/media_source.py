@@ -27,7 +27,7 @@ _MEDIA_TYPES: dict[str, MetaAdsMediaType] = {
     "image/jpeg": "image",
     "image/png": "image",
     "video/mp4": "video",
-    "video/mov": "video",
+    "video/quicktime": "video",
 }
 _BYTES_PER_MB = 1024 * 1024
 _CHANGED = "The File changed after it was approved. Ask the agent to prepare the upload again."

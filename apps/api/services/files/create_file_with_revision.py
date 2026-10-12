@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.files import File, FileFolder, FileRevision, FileUpload
 from models.workspace import Workspace
-from services.files.contract import require_matching_pair
+from services.files.contract import require_matching_pair, require_written_size
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import (
     get_folder_for_workspace,
@@ -49,6 +49,7 @@ async def create_file_with_revision(
     """
     actor.validate()
     contract = require_matching_pair(content_type, extension)
+    require_written_size(contract, len(content))
     if folder_id is not None and resolved_folder is not None:
         raise ValueError("Provide folder_id or resolved_folder, not both")
     if resolved_folder is not None:
