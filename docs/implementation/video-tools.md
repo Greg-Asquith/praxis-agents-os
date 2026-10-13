@@ -32,12 +32,14 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500 `[input, time_ms]`), `keep` (up to 500 `[segment, first_frame, end_frame]`), and `captions` | one H.264 and AAC MP4 joining the segments in order |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500 `[input, time_ms]`), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms`, and `fade_out_ms` (0 to 3000) | one H.264 and AAC MP4 joining the segments in order |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file (32 kbit/s) per chunk, plus each chunk's range on the source timeline |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
-Arguments are numbers and booleans only. The driver rejects unknown fields and any value of
-the wrong type, and builds every ffmpeg argument itself. A range must start
+Arguments are numbers, booleans, and names from a fixed list. The only names
+are a transition's style and audio curve, which the driver checks against its
+own lists before building any filter. The driver rejects unknown fields and any
+value of the wrong type, and builds every ffmpeg argument itself. A range must start
 before the end of the video; an end past it is trimmed to the end. A frame time
 must be strictly before the end.
 
@@ -87,6 +89,20 @@ subtitle file the API built. The renderer reads only its `[Script Info]`,
 `[V4+ Styles]`, and `[Events]` sections, refuses any other section (such as
 embedded fonts or graphics), caps it at 4 MiB, and burns it into the joined
 video with the `ass` filter. libass runs inside the isolated ffmpeg child.
+
+Each segment's video and audio last exactly its frame count (a source that
+ends early repeats its last frame for up to a second), so joins line up.
+`transitions` has one entry per join, or none for hard cuts throughout. A
+style is one of the 58 named `xfade` transitions in the pinned ffmpeg, or
+`none` for a hard cut; `xfade`'s `custom` expression is left out because it
+is code. A curve is one of the 24 `acrossfade` curves. A transition of 100 to
+3000 ms overlaps the end of one segment with the start of the next: `xfade`
+blends the video and `acrossfade` the audio over the same frames, so the clip
+is shorter by each overlap. A transition can't be longer than the segments it
+joins. `fade_in_ms` and `fade_out_ms` fade the finished clip, captions
+included, from and to black and silence. A renderer test checks both lists
+against `ffmpeg -h filter=xfade` and `-h filter=acrossfade`, so an ffmpeg
+upgrade that changes them fails the build.
 
 Every operation, `probe` included, downloads each whole input. Container
 metadata can sit anywhere in the file, so a head-and-tail read can report a
@@ -389,7 +405,7 @@ available, and **Add to chat** in Files offers video then too.
 
 ## Clips
 
-`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?, remove_silences?, folder?)`
+`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?, remove_silences?, transition?, folder?)`
 renders up to five clips and
 saves each as a new video File in the output folder of the video its first
 segment comes from (see "Output folders"), or in the folder `folder` names,
@@ -447,6 +463,27 @@ code-eligible.
   refused when a video's transcript came from Gemini (about a second out at
   p95). Captions and pause removal need a transcription provider; a video
   without audio is left uncaptioned, and a clip with no speech reports it.
+- Segments join with hard cuts unless a `transition` says otherwise:
+  `{style, duration_ms?, audio_curve?}`. The most specific one wins: a
+  segment's `transition_in` (the join before it), then the clip's
+  `transition`, then the call's, which suits a set of reels that should look
+  alike. `style` is any renderer style or `none`. The duration defaults to
+  400 ms (500 ms for `fadeblack` and `fadewhite`) and is 100 to 3000 ms; the
+  curve defaults to `tri`. Each clip can also `fade_in_ms` from black and
+  `fade_out_ms` to black, 0 to 3000 ms each. The tool description tells the
+  agent to add transitions and fades only when the person asks for them.
+- A transition overlaps the segments either side of it, which would blend
+  away the words snapped to their edges. So after snapping, each side is
+  extended by half the transition into the surrounding footage, putting the
+  blend over the cut. At the start or end of a video there is nothing to
+  extend into, so the blend takes the segment's own edge. The clip reports a
+  warning when the range was asked to end or start at that edge; a whole
+  video (no `start_ms` or `end_ms`) always blends its edges, so it says
+  nothing. A transition longer than half of either segment it joins (after
+  any pauses are removed) fails the call with a reason, and so do fades
+  longer than the clip. The clip's length is the segments' total less every
+  overlap. Captions follow that timeline and switch from one segment's words
+  to the next halfway through the blend, so two captions never show at once.
 - A clip has no length cap of its own. A clip File can be as large as an
   uploaded video (`MAX_FILE_SIZE_SOURCE_VIDEO`), and never more than
   `MEDIA_RENDERER_MAX_OUTPUT_BYTES`, so the longest clip is the smaller of
@@ -467,7 +504,8 @@ event on every source video.
 In the conversation, a completed call says how many clips it saved, the
 shape and framing when the shape changed, and the captions and pause
 removal when used, and shows them as a grid of stills
-with their length, name, and ranges; selecting one opens the player in a
+with their length, name, ranges, and any fades and transitions in the order
+they play (such as "Fade In 0.5 s · Wipe Left 0.4 s"); selecting one opens the player in a
 dialog, and a line under the grid links the folder the clips went to. A
 failed clip's tile shows its reason. The moments card
 has a checkbox per moment and **Cut N Clips**, which sends the person's own

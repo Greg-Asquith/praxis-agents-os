@@ -1,13 +1,21 @@
 # apps/api/tests/services/media/test_clips.py
 
-"""Planning clips: bounds, snapping, input numbering, framing, pauses, captions, and size."""
+"""Planning clips: bounds, snapping, input numbering, framing, pauses, captions, transitions,
+and size.
+"""
 
 import pytest
 
 from services.files.domain import VideoMetadata
 from services.media.captions import CaptionStyle, caption_file
-from services.media.clips import ClipSource, output_fps, output_size, plan_clip
-from services.media.domain import Transcript, TranscriptSentence, TranscriptWord
+from services.media.clips import (
+    ClipSource,
+    TransitionOptions,
+    output_fps,
+    output_size,
+    plan_clip,
+)
+from services.media.domain import CutTransition, Transcript, TranscriptSentence, TranscriptWord
 from tests.factories import build_file, build_file_revision, build_workspace
 
 SENTENCES = (
@@ -171,3 +179,92 @@ def test_caption_words_cant_style_the_file_and_lines_stay_within_the_bound() -> 
     # Bold Montserrat on a 1080 pixel wide frame fits 15 characters a line.
     assert max(len(line) for line in lines) <= 15
     assert "".join(lines).count("x") == 40
+
+
+def test_a_segments_transition_overrides_the_clips_and_each_side_extends_over_the_cut() -> None:
+    talk = _source(60_000)
+
+    clip = plan_clip(
+        [(talk, 10_000, 20_000), (talk, 30_000, 40_000), (talk, 45_000, 50_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        transition=TransitionOptions(style="fade"),
+        transitions_in=[None, None, TransitionOptions(style="wipeleft", duration_ms=300)],
+    )
+
+    assert clip.operation.transitions == (
+        CutTransition(style="fade", duration_ms=400),
+        CutTransition(style="wipeleft", duration_ms=300),
+    )
+    # Half of each transition either side of the cut, so no snapped speech is blended away.
+    assert [(segment.start_ms, segment.end_ms) for segment in clip.operation.segments] == [
+        (10_000, 20_200),
+        (29_800, 40_150),
+        (44_850, 50_000),
+    ]
+    assert clip.duration_ms == 25_000
+    assert clip.warnings == ()
+
+
+def test_a_transition_at_a_videos_start_blends_the_segments_edge_with_a_warning() -> None:
+    talk, broll = _source(60_000), _source(5_000)
+
+    whole = plan_clip(
+        [(talk, 10_000, 20_000), (broll, None, None)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        transition=TransitionOptions(style="fadeblack"),
+    )
+    clip = plan_clip(
+        [(talk, 10_000, 20_000), (broll, 0, 5_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        transition=TransitionOptions(style="fadeblack"),
+    )
+
+    assert [(segment.start_ms, segment.end_ms) for segment in clip.operation.segments] == [
+        (10_000, 20_250),
+        (0, 5_000),
+    ]
+    assert clip.warnings == (
+        "Segment 2 starts at the start of its video, so the transition blends its first moments.",
+    )
+    # A whole video always blends its edges, so it says nothing.
+    assert whole.operation.segments == clip.operation.segments
+    assert whole.warnings == ()
+
+
+def test_a_transition_longer_than_half_a_segment_fails_with_a_reason() -> None:
+    talk = _source(60_000)
+
+    with pytest.raises(ValueError, match="before segment 2 lasts 3 s, more than half"):
+        plan_clip(
+            [(talk, 10_000, 20_000), (talk, 30_000, 34_000)],
+            size=(1080, 1920),
+            framing="center",
+            snap=False,
+            transition=TransitionOptions(style="slideleft", duration_ms=3_000),
+        )
+
+
+def test_captions_switch_segments_halfway_through_a_transition() -> None:
+    talk = _source(60_000, transcript=_transcript())
+
+    clip = plan_clip(
+        [(talk, 0, 3_000), (talk, 5_100, 6_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        captions=CaptionStyle(preset="bold"),
+        transition=TransitionOptions(style="fade"),
+    )
+
+    starts = [
+        line.split(",")[1] for line in clip.captions.splitlines() if line.startswith("Dialogue")
+    ]
+    # The blend runs 2.8 to 3.2 s. "You" is spoken 150 ms into the second segment's extra
+    # 200 ms, at 2.95 s, so it waits for the blend's middle.
+    assert starts == ["0:00:01.05", "0:00:03.00"]

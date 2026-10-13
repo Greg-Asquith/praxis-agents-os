@@ -5,7 +5,7 @@ import { isVideoAttachmentMediaType } from "@/features/conversations/attachments
 import { videoSummary } from "@/features/files/format"
 import { isFileProcessing } from "@/features/files/processing"
 import type { WorkspaceFile } from "@/features/files/types"
-import { formatBytes } from "@/lib/format"
+import { formatBytes, titleCaseToken } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 export type VideoFileReference = {
@@ -181,6 +181,8 @@ export type VideoClip = {
   video: VideoFileReference | null
   durationMs: number | null
   ranges: string[]
+  // Fades and transitions in the order they play, such as "Fade In 0.5 s".
+  effects: string[]
   warnings: string[]
   error: string | null
 }
@@ -230,19 +232,55 @@ function videoClip(value: unknown): VideoClip | null {
   if (saved && !video) {
     return null
   }
+  const segments = value["segments"].filter(isRecord)
   return {
     index: value["index"],
     name: value["name"],
     video,
     durationMs: typeof value["duration_ms"] === "number" ? value["duration_ms"] : null,
-    ranges: value["segments"]
-      .filter(isRecord)
-      .map((segment) => `${String(segment["start"])}–${String(segment["end"])}`),
+    ranges: segments.map((segment) => `${String(segment["start"])}–${String(segment["end"])}`),
+    effects: clipEffects(value, segments),
     warnings: Array.isArray(value["warnings"])
       ? value["warnings"].filter((warning) => typeof warning === "string")
       : [],
     error: saved ? null : typeof value["error"] === "string" ? value["error"] : "Couldn't cut.",
   }
+}
+
+function clipEffects(clip: Record<string, unknown>, segments: Record<string, unknown>[]) {
+  const effects: string[] = []
+  const fade = (key: string, label: string) => {
+    const value = clip[key]
+    if (typeof value === "number" && value > 0) {
+      effects.push(`${label} ${seconds(value)}`)
+    }
+  }
+  fade("fade_in_ms", "Fade In")
+  for (const segment of segments) {
+    const transition = segment["transition_in"]
+    if (
+      isRecord(transition) &&
+      typeof transition["style"] === "string" &&
+      typeof transition["duration_ms"] === "number"
+    ) {
+      effects.push(`${transitionLabel(transition["style"])} ${seconds(transition["duration_ms"])}`)
+    }
+  }
+  fade("fade_out_ms", "Fade Out")
+  return effects
+}
+
+// ffmpeg's xfade names run words together, such as "wipeleft" for Wipe Left.
+function transitionLabel(style: string) {
+  const spaced = style.replace(
+    /(left|right|up|down|black|white|grays|fast|slow|open|close|crop|in)$/,
+    " $1"
+  )
+  return titleCaseToken(spaced, style)
+}
+
+function seconds(milliseconds: number) {
+  return `${String(milliseconds / 1000)} s`
 }
 
 // The turn "Cut These" sends. Moment titles and reasons come from a model watching untrusted

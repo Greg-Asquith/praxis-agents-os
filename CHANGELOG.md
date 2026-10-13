@@ -12,6 +12,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` joins segments with transitions: any of ffmpeg's 58
+  `xfade` styles, such as a crossfade, a dip to black, slides, and wipes, with
+  an audio crossfade, set for every clip, one clip, or one join. Clips can fade
+  in from black and out to black. Hard cuts stay the default. Each side of a
+  transition reaches into the footage around the cut, so whole sentences stay
+  whole, and the clip card lists each clip's transitions and fades.
 - Clips and transcripts of a video save in a folder named after that video,
   created on first use, and clips cut from a clip join the original's folder.
   `cut_video_clips` takes an optional `folder` name instead, and its card

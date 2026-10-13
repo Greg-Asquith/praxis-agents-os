@@ -2,9 +2,10 @@
 
 """Typed media renderer operations and results.
 
-Operation fields are numbers and booleans only. Nothing a model writes reaches an
-ffmpeg argument, path, or URL; the renderer builds every command line itself.
-Caption text travels separately, as an escaped ASS file staged as an input.
+Operation fields are numbers, booleans, and names from a fixed list, which the renderer
+checks against its own. Nothing a model writes reaches an ffmpeg argument, path, or URL;
+the renderer builds every command line itself. Caption text travels separately, as an
+escaped ASS file staged as an input.
 """
 
 from typing import Annotated, ClassVar, Literal
@@ -32,6 +33,29 @@ MIN_OUTPUT_EDGE_PX = 64
 MAX_OUTPUT_EDGE_PX = 3840
 MIN_OUTPUT_FPS = 24
 MAX_OUTPUT_FPS = 60
+MIN_TRANSITION_MS = 100
+MAX_TRANSITION_MS = 3000
+MAX_FADE_MS = 3000
+# Every named xfade style in the renderer's ffmpeg, and "none" for a hard cut.
+TransitionStyle = Literal[
+    "none", "fade", "fadeblack", "fadewhite", "fadegrays", "fadefast", "fadeslow", "dissolve",
+    "distance", "pixelize", "radial", "hblur", "zoomin", "squeezeh", "squeezev",
+    "wipeleft", "wiperight", "wipeup", "wipedown", "wipetl", "wipetr", "wipebl", "wipebr",
+    "slideleft", "slideright", "slideup", "slidedown",
+    "smoothleft", "smoothright", "smoothup", "smoothdown",
+    "coverleft", "coverright", "coverup", "coverdown",
+    "revealleft", "revealright", "revealup", "revealdown",
+    "circleopen", "circleclose", "circlecrop", "rectcrop",
+    "vertopen", "vertclose", "horzopen", "horzclose",
+    "diagtl", "diagtr", "diagbl", "diagbr",
+    "hlslice", "hrslice", "vuslice", "vdslice", "hlwind", "hrwind", "vuwind", "vdwind",
+]  # fmt: skip
+# Every acrossfade curve in the renderer's ffmpeg.
+AudioCurve = Literal[
+    "nofade", "tri", "qsin", "esin", "hsin", "log", "ipar", "qua", "cub", "squ", "cbr",
+    "par", "exp", "iqsin", "ihsin", "dese", "desi", "losi", "sinc", "isinc", "quat",
+    "quatr", "qsin2", "hsin2",
+]  # fmt: skip
 
 
 class _Operation(BaseModel):
@@ -79,6 +103,25 @@ class CutSegment(_Range):
     end_ms: int = Field(gt=0)
 
 
+class CutTransition(BaseModel):
+    """How one segment joins the next; ``none`` with no duration is a hard cut."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    style: TransitionStyle = "none"
+    duration_ms: int = Field(default=0, ge=0, le=MAX_TRANSITION_MS)
+    audio_curve: AudioCurve = "tri"
+
+    @model_validator(mode="after")
+    def require_duration(self):
+        if self.style == "none":
+            if self.duration_ms:
+                raise ValueError("a hard cut has no duration")
+        elif self.duration_ms < MIN_TRANSITION_MS:
+            raise ValueError(f"a transition lasts {MIN_TRANSITION_MS} to {MAX_TRANSITION_MS} ms")
+        return self
+
+
 class CutOperation(_Operation):
     """Joins segments of one or more sources into one H.264 and AAC MP4 of a fixed size.
 
@@ -86,7 +129,8 @@ class CutOperation(_Operation):
     largest face in each shot, jumping only at ``shot_cuts_ms`` (input, time) pairs.
     Otherwise frames are centre-cropped. ``keep_frames`` lists (segment, first, end) output
     frames to keep, dropping the rest with their audio. ``captions`` adds a staged ASS
-    file as the last input, burned in on the joined timeline.
+    file as the last input, burned in on the joined timeline. ``transitions`` has one entry
+    per junction, or none for hard cuts throughout; the fades run from and to black and silence.
     """
 
     name: Literal["cut"] = "cut"
@@ -102,6 +146,9 @@ class CutOperation(_Operation):
         default=(), max_length=MAX_CUT_KEEP_RANGES
     )
     captions: bool = False
+    transitions: tuple[CutTransition, ...] = Field(default=(), max_length=MAX_CUT_SEGMENTS - 1)
+    fade_in_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS)
+    fade_out_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS)
 
     @model_validator(mode="after")
     def require_every_input(self):
@@ -121,6 +168,8 @@ class CutOperation(_Operation):
             for position, first, end in self.keep_frames
         ):
             raise ValueError("keep_frames must name a segment and a frame range")
+        if self.transitions and len(self.transitions) != len(self.segments) - 1:
+            raise ValueError("transitions must list one per junction")
         return self
 
     def video_count(self) -> int:
@@ -142,6 +191,12 @@ class CutOperation(_Operation):
             "shot_cuts": [list(cut) for cut in self.shot_cuts_ms],
             "keep": [list(keep) for keep in self.keep_frames],
             "captions": self.captions,
+            "transitions": [
+                [transition.style, transition.duration_ms, transition.audio_curve]
+                for transition in self.transitions
+            ],
+            "fade_in_ms": self.fade_in_ms,
+            "fade_out_ms": self.fade_out_ms,
         }
 
 

@@ -48,11 +48,17 @@ from services.media.clips import (
     ClipSource,
     Framing,
     PlannedClip,
+    TransitionOptions,
     output_size,
     plan_clip,
     render_clips,
 )
-from services.media.domain import MAX_CUT_SEGMENTS, MediaOperationResult, MediaRendererError
+from services.media.domain import (
+    MAX_CUT_SEGMENTS,
+    MAX_FADE_MS,
+    MediaOperationResult,
+    MediaRendererError,
+)
 from services.media.get_video_shot_cuts import get_video_shot_cuts
 from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS
 from services.media.transcription_providers import transcription_provider
@@ -75,6 +81,13 @@ class ClipSegmentArgument(BaseModel):
     )
     end_ms: int | None = Field(
         default=None, gt=0, description="End in milliseconds. Omit for the end of the video."
+    )
+    transition_in: TransitionOptions | None = Field(
+        default=None,
+        description=(
+            "How the previous segment joins this one, overriding the clip's transition. "
+            "Ignored on the first segment."
+        ),
     )
 
 
@@ -101,6 +114,13 @@ class ClipArgument(BaseModel):
             "times given."
         ),
     )
+    transition: TransitionOptions | None = Field(
+        default=None, description="How this clip's segments join, overriding the call's."
+    )
+    fade_in_ms: int = Field(
+        default=0, ge=0, le=MAX_FADE_MS, description="Fade in from black and silence."
+    )
+    fade_out_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS, description="Fade out to black.")
 
 
 def cut_video_clips_available() -> bool:
@@ -123,7 +143,10 @@ def cut_video_clips_available() -> bool:
         "boxed line, 'highlight' to pick out each word as it's spoken; caption_style overrides "
         "any part of the preset, such as the font or colours, when the person asks. "
         "remove_silences cuts pauses between words with hard jump cuts; leave it off unless the "
-        "person asks for tighter pacing or no pauses. Both apply to every clip. Clips save in a "
+        "person asks for tighter pacing or no pauses. Both apply to every clip. Segments join "
+        "with hard cuts unless transition says otherwise, for every clip, one clip, or one "
+        "segment's transition_in; any ffmpeg xfade style, 400 ms by default. Use transitions "
+        "and fade_in_ms or fade_out_ms only when the person asks for them. Clips save in a "
         "folder named after their first video unless folder names another. One clip failing "
         "doesn't stop the others; the result reports each clip."
     ),
@@ -198,6 +221,14 @@ async def cut_video_clips(
             )
         ),
     ] = False,
+    transition: Annotated[
+        TransitionOptions | None,
+        Field(
+            description=(
+                "How segments join in every clip, so a set looks consistent. Omit for hard cuts."
+            )
+        ),
+    ] = None,
     folder: Annotated[
         str | None,
         Field(
@@ -240,6 +271,10 @@ async def cut_video_clips(
                     snap=clip.snap,
                     captions=style,
                     remove_silences=remove_silences,
+                    transition=clip.transition or transition,
+                    transitions_in=[segment.transition_in for segment in clip.segments],
+                    fade_in_ms=clip.fade_in_ms,
+                    fade_out_ms=clip.fade_out_ms,
                 )
             )
         except ValueError as exc:
@@ -399,6 +434,8 @@ async def _save_clip(
         "size_bytes": saved.revision.size_bytes,
         "folder": {"id": str(folder.id), "name": folder.name},
         "segments": _segments(request),
+        "fade_in_ms": request.operation.fade_in_ms,
+        "fade_out_ms": request.operation.fade_out_ms,
         "warnings": list(request.warnings),
     }
 
@@ -434,11 +471,14 @@ def _failed(index: int, name: str, request: PlannedClip, reason: str) -> dict[st
         "name": name,
         "error": reason,
         "segments": _segments(request),
+        "fade_in_ms": request.operation.fade_in_ms,
+        "fade_out_ms": request.operation.fade_out_ms,
         "warnings": list(request.warnings),
     }
 
 
 def _segments(request: PlannedClip) -> list[dict[str, object]]:
+    transitions = request.operation.transitions
     return [
         {
             "file_id": str(segment.source.revision.file_id),
@@ -446,8 +486,13 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
             "end_ms": segment.end_ms,
             "start": format_duration(segment.start_ms),
             "end": format_duration(segment.end_ms),
+            "transition_in": (
+                transitions[position - 1].model_dump()
+                if position and transitions and transitions[position - 1].duration_ms
+                else None
+            ),
         }
-        for segment in request.segments
+        for position, segment in enumerate(request.segments)
     ]
 
 

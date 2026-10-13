@@ -2,13 +2,15 @@
 
 """Media operations through the driver, against real ffmpeg on Linux."""
 
+import re
+import subprocess
 from typing import Any
 
 import cv2
 import numpy as np
 import pytest
 from driver.server import DriverConfig, OperationError, handle_request
-from media.operations import OPERATIONS
+from media.operations import ACROSSFADE_CURVES, FFMPEG, OPERATIONS, XFADE_STYLES
 
 from tests.conftest import FakeStorage
 
@@ -168,6 +170,58 @@ def test_cut_keeps_only_the_given_frames_and_burns_in_captions(
     assert captioned.max() > 200 > plain.max()
 
 
+def test_a_transition_overlaps_its_segments_and_fades_start_from_black(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # 1.5 s of red then 1.5 s of blue, crossfaded over 500 ms from 1 s, after a 300 ms fade in.
+    response = _run(
+        storage,
+        config,
+        "cut",
+        outputs=1,
+        arguments={
+            "segments": [[0, 0, 1500], [0, 2000, 3500]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+            "transitions": [["fade", 500, "tri"]],
+            "fade_in_ms": 300,
+            "fade_out_ms": 300,
+        },
+    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    times = [0, 600, 1250, 1900]
+    _run(storage, config, "frames", sources=("clip.mp4",), outputs=4, arguments={"times_ms": times})
+
+    assert abs(response["result"]["duration_ms"] - 2500) <= 50
+    black, red, blend, blue = (
+        cv2.imdecode(np.frombuffer(storage.uploads[f"out-{index}"], np.uint8), 1).mean(axis=(0, 1))
+        for index in range(len(times))
+    )
+    assert black.max() < 30
+    # BGR: red alone, then both at once mid-transition, then blue alone.
+    assert red[2] > 150 > red[0]
+    assert blend[0] > 60 and blend[2] > 60
+    assert blue[0] > 150 > blue[2]
+
+
+def test_transition_names_match_the_ffmpeg_build() -> None:
+    def names(filter_name: str, option: str) -> set[str]:
+        help_text = subprocess.run(
+            [FFMPEG, "-hide_banner", "-h", f"filter={filter_name}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        # The option's own values, up to the next option at three spaces' indent.
+        section = re.split(r"\n {3}(?=\S)", help_text.split(f"\n   {option} ", 1)[1])[0]
+        return set(re.findall(r"^\s{5}(\w+)\s+-?\d+\s", section, re.MULTILINE))
+
+    assert names("xfade", "transition") - {"custom"} == XFADE_STYLES
+    assert names("acrossfade", "curve1") == ACROSSFADE_CURVES
+
+
 def test_captions_with_sections_beyond_styles_and_dialogue_are_refused(
     storage: FakeStorage, config: DriverConfig
 ) -> None:
@@ -303,6 +357,23 @@ def test_malformed_media_fails_with_a_plain_error(
         },
         # Input 1 needs a second signed download the request doesn't have.
         {"segments": [[1, 0, 1000]], "width": 320, "height": 180, "fps": 30, "fit": False},
+        # Transitions are names from a fixed list; xfade's custom expression is code.
+        {
+            "segments": [[0, 0, 1000], [0, 2000, 3000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+            "transitions": [["custom", 500, "tri"]],
+        },
+        {
+            "segments": [[0, 0, 1000], [0, 2000, 3000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+            "transitions": [["fade", 500, "tri,movie=/etc/passwd"]],
+        },
     ],
 )
 def test_bad_arguments_fail_validation_before_anything_runs(

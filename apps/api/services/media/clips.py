@@ -8,6 +8,8 @@ from dataclasses import dataclass, replace
 from typing import Literal
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from core.settings import settings
 from models.files import FileRevision
 from services.files.contract import contract_for_content_type, stored_max_size_bytes
@@ -19,13 +21,18 @@ from services.media.domain import (
     MAX_CUT_SHOT_CUTS,
     MAX_OUTPUT_EDGE_PX,
     MAX_OUTPUT_FPS,
+    MAX_TRANSITION_MS,
     MIN_OUTPUT_FPS,
+    MIN_TRANSITION_MS,
+    AudioCurve,
     CutOperation,
     CutSegment,
+    CutTransition,
     MediaOperationResult,
     MediaRendererError,
     Transcript,
     TranscriptWord,
+    TransitionStyle,
 )
 from services.media.run_media_operation import run_media_operation
 from services.media.snapping import SnapLimits, snap_range
@@ -52,6 +59,45 @@ SNAP_NOTICE_MS = 1000
 # Pauses between words longer than this are cut, leaving this much either side of speech.
 SILENCE_MIN_MS = 600
 SILENCE_PAD_MS = 150
+DEFAULT_TRANSITION_MS = 400
+# Dipping through black or white reads better a little slower.
+DEFAULT_DIP_TRANSITION_MS = 500
+DIP_STYLES = frozenset({"fadeblack", "fadewhite"})
+
+
+class TransitionOptions(BaseModel):
+    """How segments join: an ffmpeg xfade style, its length, and the audio crossfade curve."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    style: TransitionStyle = Field(
+        description=(
+            "'none' is a hard cut. 'fade' or 'fadeblack' suit talking heads; slides, wipes, "
+            "and covers suit B-roll."
+        )
+    )
+    duration_ms: int | None = Field(
+        default=None,
+        ge=MIN_TRANSITION_MS,
+        le=MAX_TRANSITION_MS,
+        description="Omit for 400 ms (500 ms for fadeblack and fadewhite).",
+    )
+    audio_curve: AudioCurve = Field(
+        default="tri", description="The audio crossfade's shape; 'tri' is linear."
+    )
+
+    def cut_transition(self) -> CutTransition:
+        if self.style == "none":
+            return CutTransition()
+        default = DEFAULT_DIP_TRANSITION_MS if self.style in DIP_STYLES else DEFAULT_TRANSITION_MS
+        return CutTransition(
+            style=self.style,
+            duration_ms=self.duration_ms or default,
+            audio_curve=self.audio_curve,
+        )
+
+
+HARD_CUT = TransitionOptions(style="none")
 
 
 @dataclass(frozen=True)
@@ -92,7 +138,9 @@ class PlannedClip:
 
     @property
     def duration_ms(self) -> int:
-        return sum(segment.output_ms(self.operation.fps) for segment in self.segments)
+        fps = self.operation.fps
+        overlaps = sum(transition.duration_ms for transition in self.operation.transitions)
+        return sum(segment.output_ms(fps) for segment in self.segments) - overlaps
 
 
 def max_clip_ms() -> int:
@@ -138,11 +186,21 @@ def plan_clip(
     snap: bool,
     captions: CaptionStyle | None = None,
     remove_silences: bool = False,
+    transition: TransitionOptions | None = None,
+    transitions_in: Sequence[TransitionOptions | None] = (),
+    fade_in_ms: int = 0,
+    fade_out_ms: int = 0,
 ) -> PlannedClip:
     """Bounds, snaps, and numbers a clip's segments, removes pauses, and builds captions.
 
-    Raises ValueError with a reason to show.
+    ``transition`` joins every pair of segments unless the later segment's own entry in
+    ``transitions_in`` (one per segment, the first unused) says otherwise. Raises ValueError
+    with a reason to show.
     """
+    joins = [
+        (own or transition or HARD_CUT).cut_transition()
+        for own in (list(transitions_in) or [None] * len(segments))[1:]
+    ]
     planned, warnings = [], []
     for position, (source, start_ms, end_ms) in enumerate(segments, start=1):
         duration_ms = source.metadata.duration_ms
@@ -175,6 +233,7 @@ def plan_clip(
                     )
                 start_ms, end_ms = snapped
         planned.append(PlannedSegment(source=source, start_ms=start_ms, end_ms=end_ms))
+    planned = _overlap_joins(planned, joins, [edges[1:] for edges in segments], warnings)
     fps = output_fps(planned[0].source.metadata)
     if (remove_silences or (captions and captions.preset == "highlight")) and any(
         segment.source.transcript and segment.source.transcript.model not in WORD_TIMED_MODELS
@@ -193,9 +252,10 @@ def plan_clip(
     )
     if len(keep) > MAX_CUT_KEEP_RANGES:
         raise ValueError("The clip has too many pauses to remove. Cut it shorter or keep pauses.")
+    _require_room_for_joins(planned, joins, fps)
     caption_text = None
     if captions:
-        words = _timeline_words(planned, fps)
+        words = _timeline_words(planned, joins, fps)
         if words:
             caption_text = caption_file(words, size=size, style=captions)
         else:
@@ -233,6 +293,9 @@ def plan_clip(
             shot_cuts_ms=tuple(sorted(shot_cuts)[:MAX_CUT_SHOT_CUTS]),
             keep_frames=keep,
             captions=caption_text is not None,
+            transitions=tuple(joins) if any(join.duration_ms for join in joins) else (),
+            fade_in_ms=fade_in_ms,
+            fade_out_ms=fade_out_ms,
         ),
         warnings=tuple(warnings),
         captions=caption_text,
@@ -243,7 +306,58 @@ def plan_clip(
             f"The clip is {format_duration(clip.duration_ms)} long. "
             f"Clips can be up to {format_duration(limit_ms)}."
         )
+    if fade_in_ms + fade_out_ms > clip.duration_ms:
+        raise ValueError("The fades are longer than the clip.")
     return clip
+
+
+def _overlap_joins(
+    segments: list[PlannedSegment],
+    joins: Sequence[CutTransition],
+    requested: Sequence[tuple[int | None, int | None]],
+    warnings: list[str],
+) -> list[PlannedSegment]:
+    """Extends each side of a transition by half its length, so the blend sits over the cut.
+
+    Snapped cuts end and start on whole sentences; without this, the overlap would blend
+    away their first and last words. At a video's start or end the overlap takes the
+    segment's own edge instead, with a warning when the range asked for that edge. A whole
+    video, with no start or end given, always blends its edges, so it doesn't warn.
+    """
+    extended = list(segments)
+    for position, join in enumerate(joins):
+        half = join.duration_ms // 2
+        if not half:
+            continue
+        before, after = extended[position], extended[position + 1]
+        room_after = before.source.metadata.duration_ms - before.end_ms
+        extended[position] = replace(before, end_ms=before.end_ms + min(half, room_after))
+        extended[position + 1] = replace(after, start_ms=after.start_ms - min(half, after.start_ms))
+        if room_after < half and requested[position][1] is not None:
+            warnings.append(
+                f"Segment {position + 1} ends at the end of its video, so the transition "
+                "blends its last moments."
+            )
+        if after.start_ms < half and requested[position + 1][0] is not None:
+            warnings.append(
+                f"Segment {position + 2} starts at the start of its video, so the transition "
+                "blends its first moments."
+            )
+    return extended
+
+
+def _require_room_for_joins(
+    segments: Sequence[PlannedSegment], joins: Sequence[CutTransition], fps: int
+) -> None:
+    """A transition may take at most half of either segment it joins."""
+    for position, join in enumerate(joins):
+        shorter = min(segments[position].output_ms(fps), segments[position + 1].output_ms(fps))
+        if join.duration_ms * 2 > shorter:
+            raise ValueError(
+                f"The transition before segment {position + 2} lasts "
+                f"{join.duration_ms / 1000:g} s, more than half of a {shorter / 1000:g} s "
+                "segment beside it. Use a shorter transition."
+            )
 
 
 def _segment_words(segment: PlannedSegment) -> list[TranscriptWord]:
@@ -306,20 +420,27 @@ def _timeline_ms(segment: PlannedSegment, time_ms: int, fps: int) -> int:
     return round(kept * 1000 / fps)
 
 
-def _timeline_words(segments: Sequence[PlannedSegment], fps: int) -> list[TranscriptWord]:
-    """Every segment's words on the joined clip's timeline."""
+def _timeline_words(
+    segments: Sequence[PlannedSegment], joins: Sequence[CutTransition], fps: int
+) -> list[TranscriptWord]:
+    """Every segment's words on the joined clip's timeline.
+
+    Where a transition overlaps two segments, each keeps its words up to the middle of the
+    blend, so captions never show both at once.
+    """
     words, offset = [], 0
-    for segment in segments:
-        words += [
-            word.model_copy(
-                update={
-                    "start_ms": offset + _timeline_ms(segment, word.start_ms, fps),
-                    "end_ms": offset + _timeline_ms(segment, word.end_ms, fps),
-                }
-            )
-            for word in _segment_words(segment)
-        ]
-        offset += segment.output_ms(fps)
+    overlaps = [join.duration_ms for join in joins]
+    for position, segment in enumerate(segments):
+        before = overlaps[position - 1] if position else 0
+        after = overlaps[position] if position < len(overlaps) else 0
+        length = segment.output_ms(fps)
+        first, last = offset + before // 2, offset + length - after + after // 2
+        for word in _segment_words(segment):
+            start = max(first, offset + _timeline_ms(segment, word.start_ms, fps))
+            end = min(last, offset + _timeline_ms(segment, word.end_ms, fps))
+            if start < end:
+                words.append(word.model_copy(update={"start_ms": start, "end_ms": end}))
+        offset += length - after
     return words
 
 

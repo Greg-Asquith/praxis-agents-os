@@ -138,7 +138,7 @@ class Operation:
     """A typed operation a toolchain offers.
 
     ``validate`` returns the arguments or raises OperationError; it sees only
-    numbers and booleans. ``output_count`` and ``input_count`` say how many
+    numbers, booleans, and names it checks against fixed lists. ``output_count`` and ``input_count`` say how many
     signed uploads and downloads the caller must provide. ``run`` writes
     outputs by index and returns the result.
     """

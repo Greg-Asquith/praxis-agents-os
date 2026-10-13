@@ -1,6 +1,8 @@
 # apps/renderer/media/operations.py
 
-"""Media operations. Arguments are numbers and booleans; the driver builds every command line."""
+"""Media operations. Arguments are numbers, booleans, and names from a fixed list; the driver
+builds every command line.
+"""
 
 import json
 import math
@@ -57,6 +59,32 @@ SILENCE_MIN_SECONDS = "0.3"
 SILENCE_EDGE = re.compile(rb"lavfi\.silence_(start|end)=(-?\d+(?:\.\d+)?)")
 # A split moves at most this share of a chunk's length to land in a silence.
 CHUNK_SPLIT_REACH = 0.1
+# Transitions between segments: every named xfade style and acrossfade curve in the pinned
+# ffmpeg (xfade's custom expression is code, so it's left out), and "none" for a hard cut.
+XFADE_STYLES = frozenset({
+    "fade", "fadeblack", "fadewhite", "fadegrays", "fadefast", "fadeslow", "dissolve",
+    "distance", "pixelize", "radial", "hblur", "zoomin", "squeezeh", "squeezev",
+    "wipeleft", "wiperight", "wipeup", "wipedown", "wipetl", "wipetr", "wipebl", "wipebr",
+    "slideleft", "slideright", "slideup", "slidedown",
+    "smoothleft", "smoothright", "smoothup", "smoothdown",
+    "coverleft", "coverright", "coverup", "coverdown",
+    "revealleft", "revealright", "revealup", "revealdown",
+    "circleopen", "circleclose", "circlecrop", "rectcrop",
+    "vertopen", "vertclose", "horzopen", "horzclose",
+    "diagtl", "diagtr", "diagbl", "diagbr",
+    "hlslice", "hrslice", "vuslice", "vdslice", "hlwind", "hrwind", "vuwind", "vdwind",
+})  # fmt: skip
+NO_TRANSITION = "none"
+ACROSSFADE_CURVES = frozenset({
+    "nofade", "tri", "qsin", "esin", "hsin", "log", "ipar", "qua", "cub", "squ", "cbr",
+    "par", "exp", "iqsin", "ihsin", "dese", "desi", "losi", "sinc", "isinc", "quat",
+    "quatr", "qsin2", "hsin2",
+})  # fmt: skip
+MIN_TRANSITION_MS = 100
+MAX_TRANSITION_MS = 3000
+MAX_FADE_MS = 3000
+# A source shorter than its range is padded with its last frame for at most this long.
+END_PAD_SECONDS = 1
 
 
 def _arguments(
@@ -65,7 +93,10 @@ def _arguments(
     required: dict[str, type],
     optional: dict[str, type] | None = None,
 ) -> dict[str, Any]:
-    """Checks argument names and exact types. Strings are never accepted."""
+    """Checks argument names and exact types.
+
+    Strings appear only in transitions, whose names the operation checks against fixed lists.
+    """
     optional = optional or {}
     unknown = set(arguments) - set(required) - set(optional)
     missing = set(required) - set(arguments)
@@ -82,6 +113,12 @@ def _arguments(
                 for row in value
             ):
                 raise OperationError("invalid_request", f"{name} must be lists of integers.")
+        elif expected == list[tuple[str, int, str]]:
+            if not isinstance(value, list) or any(
+                not isinstance(row, list) or [type(item) for item in row] != [str, int, str]
+                for row in value
+            ):
+                raise OperationError("invalid_request", f"{name} must be [name, number, name].")
         elif expected is float:
             if type(value) not in {int, float}:
                 raise OperationError("invalid_request", f"{name} must be a number.")
@@ -267,6 +304,9 @@ def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "shot_cuts": list[list[int]],
             "keep": list[list[int]],
             "captions": bool,
+            "transitions": list[tuple[str, int, str]],
+            "fade_in_ms": int,
+            "fade_out_ms": int,
         },
     )
     segments = arguments["segments"]
@@ -301,7 +341,29 @@ def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
                 f"width and height must be even, {MIN_OUTPUT_EDGE_PX} to {MAX_OUTPUT_EDGE_PX}.",
             )
     _validate_keep(arguments)
+    _validate_transitions(arguments)
     return arguments
+
+
+def _validate_transitions(arguments: dict[str, Any]) -> None:
+    """One [style, duration_ms, audio curve] per junction between segments, by name."""
+    transitions = arguments.get("transitions", [])
+    if transitions and len(transitions) != len(arguments["segments"]) - 1:
+        raise OperationError("invalid_request", "transitions must list one per junction.")
+    for style, duration, curve in transitions:
+        if style not in XFADE_STYLES | {NO_TRANSITION} or curve not in ACROSSFADE_CURVES:
+            raise OperationError("invalid_request", "A transition isn't one the renderer offers.")
+        if style == NO_TRANSITION:
+            if duration != 0:
+                raise OperationError("invalid_request", "A hard cut has no duration.")
+        elif not MIN_TRANSITION_MS <= duration <= MAX_TRANSITION_MS:
+            raise OperationError(
+                "invalid_request",
+                f"A transition must last {MIN_TRANSITION_MS} to {MAX_TRANSITION_MS} ms.",
+            )
+    for name in ("fade_in_ms", "fade_out_ms"):
+        if not 0 <= arguments.get(name, 0) <= MAX_FADE_MS:
+            raise OperationError("invalid_request", f"{name} must be 0 to {MAX_FADE_MS}.")
 
 
 def _validate_keep(arguments: dict[str, Any]) -> None:
@@ -316,8 +378,7 @@ def _validate_keep(arguments: dict[str, Any]) -> None:
         if not 0 <= position < len(segments) or (position, first) < previous:
             raise OperationError("invalid_request", "keep ranges must be in segment order.")
         _, start_ms, end_ms = segments[position]
-        frames = math.ceil((end_ms - start_ms) * arguments["fps"] / 1000)
-        if not 0 <= first < end <= frames:
+        if not 0 <= first < end <= _frame_count(end_ms - start_ms, arguments["fps"]):
             raise OperationError("invalid_request", "keep ranges must be inside their segment.")
         previous = (position, end)
 
@@ -348,11 +409,13 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
     keep: dict[int, list[tuple[int, int]]] = {}
     for position, first, end in arguments.get("keep", []):
         keep.setdefault(position, []).append((first, end))
-    options, filters = [], []
+    samples = round(OUTPUT_AUDIO_RATE / fps)
+    options, filters, lengths = [], [], []
     for position, (index, start, end) in enumerate(arguments["segments"]):
         summary = summaries[index]
         start, end = _clamp_range(summary, start, end)
-        duration = _seconds(end - start)
+        frames = _frame_count(end - start, fps)
+        lengths.append(sum(last - first for first, last in keep.get(position, [])) or frames)
         options += [
             *_range_options(start, end),
             "-threads",
@@ -367,9 +430,11 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
         else:
             framing = _fill_filter(width, height)
         video_keep, audio_keep = _keep_filters(keep.get(position), fps)
+        # Both streams last exactly the segment's frames, so transitions line up.
         filters.append(
-            f"[{position}:v:0]{framing},fps={fps},"
-            f"format=yuv420p,trim=duration={duration},setpts=PTS-STARTPTS{video_keep}[v{position}]"
+            f"[{position}:v:0]{framing},fps={fps},format=yuv420p,"
+            f"tpad=stop_mode=clone:stop_duration={END_PAD_SECONDS},trim=end_frame={frames},"
+            f"setpts=PTS-STARTPTS{video_keep}[v{position}]"
         )
         audio = (
             f"[{position}:a:0]"
@@ -378,16 +443,15 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
         )
         filters.append(
             f"{audio}aresample={OUTPUT_AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,"
-            f"apad,atrim=duration={duration},asetpts=PTS-STARTPTS{audio_keep}[a{position}]"
+            f"apad,atrim=end_sample={frames * samples},asetpts=PTS-STARTPTS{audio_keep}[a{position}]"
         )
-    count = len(arguments["segments"])
-    pairs = "".join(f"[v{position}][a{position}]" for position in range(count))
-    filters.append(f"{pairs}concat=n={count}:v=1:a=1[joined][a]")
+    total = _join(filters, lengths, arguments.get("transitions", []), fps)
+    video = "[joined]"
     if arguments.get("captions"):
         captions = _captions_input(context, len(summaries))
-        filters.append(f"[joined]ass=filename={captions.name}[v]")
-    else:
-        filters.append("[joined]null[v]")
+        filters.append(f"{video}ass=filename={captions.name}[captioned]")
+        video = "[captioned]"
+    filters += _fades(video, arguments, total, fps)
     output = context.output_path(0)
     _ffmpeg(
         context,
@@ -409,6 +473,75 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
         output.name,
     )
     return _probe_file(context, output.name)
+
+
+def _frame_count(duration_ms: int, fps: int) -> int:
+    return math.ceil(duration_ms * fps / 1000)
+
+
+def _join(filters: list[str], lengths: list[int], transitions: list[list[Any]], fps: int) -> int:
+    """Joins the segments into [joined] and [mixed], returning the clip's length in frames.
+
+    A transition overlaps the end of one segment with the start of the next: xfade blends the
+    video and acrossfade the audio over the same frames.
+    """
+    count = len(lengths)
+    if all(style == NO_TRANSITION for style, _, _ in transitions):
+        pairs = "".join(f"[v{position}][a{position}]" for position in range(count))
+        filters.append(f"{pairs}concat=n={count}:v=1:a=1[joined][mixed]")
+        return sum(lengths)
+    samples = round(OUTPUT_AUDIO_RATE / fps)
+    overlaps = [
+        0 if style == NO_TRANSITION else max(1, round(duration * fps / 1000))
+        for style, duration, _ in transitions
+    ]
+    edges = [0, *overlaps, 0]
+    if any(edges[position] + edges[position + 1] > lengths[position] for position in range(count)):
+        raise OperationError("invalid_request", "A transition is longer than its segments.")
+    video, audio, elapsed = "[v0]", "[a0]", lengths[0]
+    for position, ((style, _, curve), overlap) in enumerate(
+        zip(transitions, overlaps, strict=True), start=1
+    ):
+        last = position == count - 1
+        joined_video = "[joined]" if last else f"[jv{position}]"
+        joined_audio = "[mixed]" if last else f"[ja{position}]"
+        if overlap == 0:
+            filters.append(
+                f"{video}{audio}[v{position}][a{position}]concat=n=2:v=1:a=1"
+                f"{joined_video}{joined_audio}"
+            )
+        else:
+            filters.append(
+                f"{video}[v{position}]xfade=transition={style}:"
+                f"duration={overlap / fps:.6f}:offset={(elapsed - overlap) / fps:.6f}{joined_video}"
+            )
+            filters.append(
+                f"{audio}[a{position}]acrossfade=ns={overlap * samples}:c1={curve}:c2={curve}"
+                f"{joined_audio}"
+            )
+        video, audio = joined_video, joined_audio
+        elapsed += lengths[position] - overlap
+    return elapsed
+
+
+def _fades(video: str, arguments: dict[str, Any], total: int, fps: int) -> list[str]:
+    """Fades the clip in from black and silence, and out to them, ending at [v] and [a]."""
+    fade_in = round(arguments.get("fade_in_ms", 0) * fps / 1000)
+    fade_out = round(arguments.get("fade_out_ms", 0) * fps / 1000)
+    if fade_in + fade_out > total:
+        raise OperationError("invalid_request", "The fades are longer than the clip.")
+    samples = round(OUTPUT_AUDIO_RATE / fps)
+    video_fades, audio_fades = [], []
+    if fade_in:
+        video_fades.append(f"fade=t=in:s=0:n={fade_in}")
+        audio_fades.append(f"afade=t=in:ss=0:ns={fade_in * samples}")
+    if fade_out:
+        video_fades.append(f"fade=t=out:s={total - fade_out}:n={fade_out}")
+        audio_fades.append(f"afade=t=out:ss={(total - fade_out) * samples}:ns={fade_out * samples}")
+    return [
+        f"{video}{','.join(video_fades) or 'null'}[v]",
+        f"[mixed]{','.join(audio_fades) or 'anull'}[a]",
+    ]
 
 
 def _keep_filters(ranges: list[tuple[int, int]] | None, fps: int) -> tuple[str, str]:

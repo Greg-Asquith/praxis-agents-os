@@ -56,7 +56,15 @@ describe("cut video clips row", () => {
               media_type: "video/mp4",
               duration_ms: 29_000,
               folder: { id: "folder-1", name: "Talk" },
-              segments: [segment],
+              segments: [
+                segment,
+                {
+                  ...segment,
+                  transition_in: { style: "wipeleft", duration_ms: 400, audio_curve: "tri" },
+                },
+              ],
+              fade_in_ms: 500,
+              fade_out_ms: 0,
               warnings: [],
             },
             {
@@ -96,5 +104,6 @@ describe("cut video clips row", () => {
     expect(html).toContain('src="https://storage.test/clip-1.mp4?signed=1#t=0.1"')
     expect(html).toContain('href="/files?folder=folder-1"')
     expect(html).toContain("The video couldn&#x27;t be read.")
+    expect(html).toContain("Fade In 0.5 s · Wipe Left 0.4 s")
   })
 })

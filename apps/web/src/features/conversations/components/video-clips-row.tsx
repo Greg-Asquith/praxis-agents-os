@@ -121,6 +121,11 @@ function ClipTile({ clip }: { clip: VideoClip }) {
       <p className="text-muted-foreground truncate text-xs tabular-nums">
         {clip.ranges.join(" + ")}
       </p>
+      {clip.effects.length > 0 ? (
+        <p className="text-muted-foreground truncate text-xs" title={clip.effects.join(" · ")}>
+          {clip.effects.join(" · ")}
+        </p>
+      ) : null}
       {clip.warnings.map((warning) => (
         <p className="text-muted-foreground text-xs wrap-break-word" key={warning}>
           {warning}
