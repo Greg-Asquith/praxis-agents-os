@@ -1,6 +1,7 @@
 // apps/web/src/features/files/format.ts
 
-import type { WorkspaceFile } from "@/features/files/types"
+import type { VideoMetadata, WorkspaceFile } from "@/features/files/types"
+import { formatDuration } from "@/lib/format"
 
 const FILE_TYPE_LABELS: Readonly<Record<string, string>> = {
   "application/json": "JSON",
@@ -55,6 +56,26 @@ export function fileCategoryLabel(category: string) {
     default:
       return category.replace(/_/g, " ")
   }
+}
+
+function videoDimensions(video: VideoMetadata) {
+  if (!video.width || !video.height) {
+    return null
+  }
+  // Phones store portrait video as landscape frames with a rotation flag.
+  const upright = video.rotation === 90 || video.rotation === 270
+  const [width, height] = upright ? [video.height, video.width] : [video.width, video.height]
+  return `${String(width)} x ${String(height)}`
+}
+
+export function videoSummary(video: VideoMetadata) {
+  return [
+    formatDuration(video.duration_ms, "milliseconds"),
+    videoDimensions(video),
+    video.has_audio ? null : "No audio",
+  ]
+    .filter((part) => part !== null)
+    .join(" · ")
 }
 
 export function fileProcessingStatusLabel(status: string) {

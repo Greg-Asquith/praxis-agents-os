@@ -35,6 +35,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   stream event. `generate_image_from_video` reports when it prepares the
   video and when it generates the image, and gives up after 10 minutes
   instead of running until the run's own limit.
+- Conversations play video. A tool result that saves a video shows a player
+  with its duration, dimensions, and File details, and a sent video shows the
+  same card. Running tool rows show the tool's current stage, and chat
+  attachments show their upload percentage, then "Preparing video" until the
+  video is measured.
 - The usage ledger accepts video understanding, generation, and
   transcription usage. **AI Usage** prices Veo 3.1 output per second by
   resolution and shows unpriced video output as **Incomplete video outputs**.

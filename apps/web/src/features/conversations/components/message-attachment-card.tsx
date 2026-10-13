@@ -7,8 +7,10 @@ import { DownloadIcon, ExternalLinkIcon, ImageIcon, Loader2Icon, PaperclipIcon }
 import { Button } from "@/components/ui/button"
 import {
   isImageAttachmentMediaType,
+  isVideoAttachmentMediaType,
   type MessageAttachment,
 } from "@/features/conversations/attachments"
+import { VideoFileCard } from "@/features/conversations/components/video-file-card"
 import { fileQueryOptions } from "@/features/files/api/get-file"
 import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { FileCard } from "@/features/files/components/file-card"
@@ -22,6 +24,9 @@ import { formatBytes } from "@/lib/format"
 export function MessageAttachmentCard({ attachment }: { attachment: MessageAttachment }) {
   if (isImageAttachmentMediaType(attachment.mediaType)) {
     return <ImageAttachmentCard attachment={attachment} />
+  }
+  if (isVideoAttachmentMediaType(attachment.mediaType)) {
+    return <VideoFileCard video={attachment} />
   }
 
   return <DocumentAttachmentCard attachment={attachment} />

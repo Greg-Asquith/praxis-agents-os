@@ -151,6 +151,7 @@ function VisibleToolCallRow({
         argFields={argFields}
         headline={headlineForActivity(activity, title, ui)}
         iconToken={ui?.icon ?? null}
+        stage={activity.progressStage ?? null}
       />
     )
   } else {
@@ -281,10 +282,12 @@ function RunningToolCard({
   argFields,
   headline,
   iconToken,
+  stage,
 }: {
   argFields: ReturnType<typeof resolveUiFields>
   headline: string
   iconToken: string | null
+  stage: string | null
 }) {
   return (
     <ToolSurfaceCard
@@ -306,6 +309,7 @@ function RunningToolCard({
         )
       }
     >
+      {stage ? <p className="text-muted-foreground text-xs">{stage}</p> : null}
       <ToolFieldGrid fields={argFields} />
     </ToolSurfaceCard>
   )

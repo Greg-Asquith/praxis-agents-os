@@ -43,6 +43,9 @@ export function buildLiveToolActivities(
       result: toolCall.result,
       ...(decisionReason === undefined ? {} : { decisionReason }),
       ...(toolCall.name === LOAD_CAPABILITY_TOOL_NAME ? { toolKind: "capability-load" } : {}),
+      ...(toolCall.status === "running" && toolCall.progressStage
+        ? { progressStage: toolCall.progressStage }
+        : {}),
     }
     const delegate = delegationDetailsForToolActivity(toolCall.name, args, toolCall.result)
     if (delegate) {

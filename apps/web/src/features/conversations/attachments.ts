@@ -42,8 +42,15 @@ export function isImageAttachmentMediaType(mediaType: string | null | undefined)
   return mediaType?.split(";")[0]?.trim().toLowerCase().startsWith("image/") ?? false
 }
 
-export async function uploadChatAttachment(file: File): Promise<MessageAttachment> {
-  return attachmentFromWorkspaceFile(await uploadWorkspaceFile(file))
+export function isVideoAttachmentMediaType(mediaType: string | null | undefined) {
+  return mediaType?.split(";")[0]?.trim().toLowerCase().startsWith("video/") ?? false
+}
+
+export async function uploadChatAttachment(
+  file: File,
+  onProgress: (fraction: number) => void
+): Promise<MessageAttachment> {
+  return attachmentFromWorkspaceFile(await uploadWorkspaceFile(file, onProgress))
 }
 
 export function isBinaryUserContentPart(value: unknown): value is {

@@ -213,7 +213,8 @@ outputs does the work concurrently inside one call instead.
 A long call reports its stage with a `tool.progress` stream event, emitted
 through `ctx.deps.sink` with the call's `tool_call_id` and a short Title Case
 `stage` (at most 80 characters), such as `Preparing Video`. The event is live
-only and isn't saved; the client keeps the latest stage on a running call.
+only and isn't saved; the client keeps the latest stage on a running call and
+shows it under the tool row's heading, next to the elapsed time.
 
 The runtime never runs a tool call twice. An interrupted call gets an
 interrupted return, approval continuations aren't replayed after a process
@@ -221,6 +222,27 @@ failure, and recovery evidence lists uncertain actions. A completed paid call
 therefore isn't repeated on resume. A per-call idempotency record, and
 reserving cleanup of the output before the call, are pending with the first
 provider that writes output straight into workspace storage (Veo).
+
+## Video in the conversation
+
+Any completed tool result that names a video File gets a video row, unless a
+more specific presenter claims the result first (`video-tool-presenter.tsx`,
+registered after integration presenters). A result names a video when it has
+`file_id` and a `video/*` `media_type`, either at the top level or in a list
+such as `clips`. Tools in plans 249 and 250 return that shape, so they need no
+presenter of their own to show their videos.
+
+Each video plays from a signed preview URL, with the File's duration and
+upright dimensions, a details button that opens the File, and a download
+button. The row reads the File itself, so it shows "Preparing video" while the
+probe runs and the processing error if it fails. The player keeps its first
+signed URL, because a refetch would restart playback; the URL lasts 10
+minutes, so a long pause can need the row reopened.
+
+In the composer, a chat attachment shows its upload percentage, then
+"Preparing video" while the probe runs, then the duration and dimensions. The
+person can send once the upload is confirmed, before the probe finishes. A
+sent video shows the same card as a tool result.
 
 ## Deployment
 

@@ -92,6 +92,7 @@ export type ComposerAttachment = {
   name: string
   sizeBytes: number
   status: "uploading" | "ready"
+  uploadPercent?: number
 }
 
 export function ConversationComposer(props: ConversationComposerProps) {
@@ -279,7 +280,16 @@ export function ConversationComposer(props: ConversationComposerProps) {
     }
     setAttachments((current) => [...current, initialAttachment])
     try {
-      const uploaded = await uploadChatAttachment(file)
+      const uploaded = await uploadChatAttachment(file, (fraction) => {
+        const uploadPercent = Math.floor(fraction * 100)
+        setAttachments((current) =>
+          current.map((attachment) =>
+            attachment.localId === localId && attachment.uploadPercent !== uploadPercent
+              ? { ...attachment, uploadPercent }
+              : attachment
+          )
+        )
+      })
       setAttachments((current) =>
         current.map((attachment) =>
           attachment.localId === localId

@@ -247,10 +247,12 @@ export function FanOutSkeleton({
   heading,
   label,
   summary,
+  trailing,
 }: {
   heading?: ReactNode
   label: string
   summary?: string
+  trailing?: ReactNode
 }) {
   return (
     <section aria-busy="true" aria-label={label} className="border-border rounded-lg border p-3">
@@ -267,7 +269,7 @@ export function FanOutSkeleton({
         ) : (
           <Skeleton className="h-4 w-36" />
         )}
-        <Skeleton className="h-5 w-14 rounded-full" />
+        {trailing ?? <Skeleton className="h-5 w-14 rounded-full" />}
       </div>
       <div className="grid gap-2">
         <Skeleton className="h-12 w-full" />

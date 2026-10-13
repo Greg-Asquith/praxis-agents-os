@@ -20,7 +20,10 @@ import { ApprovalDecisionBlock } from "@/features/conversations/components/appro
 import { FileEntityRow } from "@/features/conversations/components/file-entity-row"
 import { MessageAttachmentCard } from "@/features/conversations/components/message-attachment-card"
 import { MediaInputPreview } from "@/features/conversations/components/media-input-preview"
-import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
+import {
+  ActivityStatusBadge,
+  ActivityStatusSuffix,
+} from "@/features/conversations/components/tool-activity-status"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   type ReadFileContentToolResult,
@@ -58,6 +61,7 @@ type FileToolRowProps = {
   approvalDecision?: ToolApprovalDecisionControls
   defaultOpen: boolean
   label?: string
+  live?: boolean
   ui?: ToolUi | null
 }
 
@@ -66,6 +70,7 @@ export function FileToolRow({
   approvalDecision,
   defaultOpen,
   label = "Save File",
+  live = false,
   ui = null,
 }: FileToolRowProps) {
   if (
@@ -136,6 +141,10 @@ export function FileToolRow({
       <FanOutSkeleton
         heading={<FileToolHeading icon={state.icon}>{state.heading}</FileToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
+        {...(activity.progressStage ? { summary: activity.progressStage } : {})}
+        {...(live && activity.status === "running"
+          ? { trailing: <ActivityStatusSuffix liveRunning status="running" suffix={null} /> }
+          : {})}
       />
     ) : null
   }

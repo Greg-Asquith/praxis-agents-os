@@ -25,6 +25,7 @@ const file: WorkspaceFile = {
   revision_count: 1,
   processing_status: "ready",
   processing_error: null,
+  video: null,
   created_at: "2026-09-10",
   updated_at: "2026-09-10",
 }

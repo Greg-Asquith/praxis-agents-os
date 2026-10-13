@@ -56,6 +56,7 @@ export type ToolActivity = {
   toolKind?: string
   derivedFromUntrusted?: boolean
   taintSources?: TaintSource[]
+  progressStage?: string
 }
 
 type UnsupportedMessagePart = {

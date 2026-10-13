@@ -26,7 +26,10 @@ export async function confirmFileUpload({
 }
 
 /** Uploads a file from the computer into workspace Files, reusing a File with the same content. */
-export async function uploadWorkspaceFile(file: File): Promise<WorkspaceFile> {
+export async function uploadWorkspaceFile(
+  file: File,
+  onProgress?: (fraction: number) => void
+): Promise<WorkspaceFile> {
   const result = await requestFileUpload({
     content_type: contentTypeForWorkspaceFile(file),
     filename: file.name,
@@ -34,6 +37,6 @@ export async function uploadWorkspaceFile(file: File): Promise<WorkspaceFile> {
   })
   if (result.file) return result.file
   if (!result.grant) throw new Error("Upload grant was not returned.")
-  await uploadFileDirectly(result.grant.upload, file, result.grant.max_size_bytes)
+  await uploadFileDirectly(result.grant.upload, file, result.grant.max_size_bytes, onProgress)
   return confirmFileUpload({ uploadToken: result.grant.upload_token })
 }

@@ -16,6 +16,16 @@ export type FileScope = "workspace" | "platform"
 
 export type FileScopeFilter = "all" | FileScope
 
+// The media renderer's measurement of a video revision; null until it finishes.
+export type VideoMetadata = {
+  duration_ms: number
+  width: number | null
+  height: number | null
+  fps: number | null
+  has_audio: boolean
+  rotation: number
+}
+
 type FileRevisionKind = "create" | "edit" | "replace" | "restore" | "import"
 
 export type WorkspaceFile = {
@@ -38,6 +48,7 @@ export type WorkspaceFile = {
   revision_count: number
   processing_status: FileProcessingStatus
   processing_error: string | null
+  video: VideoMetadata | null
   created_at: string
   updated_at: string
 }
