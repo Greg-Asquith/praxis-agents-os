@@ -1,6 +1,6 @@
 // apps/web/src/features/files/components/use-file-upload.ts
 
-import { useState } from "react"
+import { useCallback, useRef, useState } from "react"
 
 import { useConfirmFileUploadMutation } from "@/features/files/api/confirm-file-upload"
 import { useRequestFileUploadMutation } from "@/features/files/api/request-file-upload"
@@ -9,6 +9,21 @@ import type { FileScope } from "@/features/files/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
 import { contentTypeForWorkspaceFile } from "@/lib/file"
+
+export type FileUploadProgress = {
+  fileName: string
+  fileNumber: number
+  fileCount: number
+  // Null when the transfer can't report progress (platform uploads).
+  loadedBytes: number | null
+  totalBytes: number
+}
+
+export type FileUpload = ReturnType<typeof useFileUpload>
+
+function uploadedMessage(count: number) {
+  return `${String(count)} ${count === 1 ? "file" : "files"} uploaded.`
+}
 
 export function useFileUpload({
   folderId = null,
@@ -22,10 +37,12 @@ export function useFileUpload({
   const platformUploadMutation = usePlatformUploadFileMutation()
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
+  const [progress, setProgress] = useState<FileUploadProgress | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const isUploading = progress !== null
 
   async function uploadFiles(files: Iterable<File> | null) {
-    if (isUploading) return
+    if (abortRef.current) return
     setError(null)
     setMessage(null)
     const pending = files ? Array.from(files) : []
@@ -33,11 +50,21 @@ export function useFileUpload({
       return
     }
 
-    setIsUploading(true)
+    const controller = new AbortController()
+    abortRef.current = controller
     let uploadedCount = 0
     try {
-      for (const file of pending) {
-        if (scope === "platform") {
+      for (const [index, file] of pending.entries()) {
+        if (controller.signal.aborted) break
+        const measured = scope !== "platform"
+        setProgress({
+          fileName: file.name,
+          fileNumber: index + 1,
+          fileCount: pending.length,
+          loadedBytes: measured ? 0 : null,
+          totalBytes: file.size,
+        })
+        if (!measured) {
           await platformUploadMutation.mutateAsync(file)
           uploadedCount += 1
           continue
@@ -56,20 +83,53 @@ export function useFileUpload({
           throw new Error("Upload grant was not returned.")
         }
 
-        await uploadFileDirectly(result.grant.upload, file, result.grant.max_size_bytes)
+        await uploadFileDirectly(
+          result.grant.upload,
+          file,
+          result.grant.max_size_bytes,
+          (fraction) => {
+            setProgress((current) =>
+              current ? { ...current, loadedBytes: Math.round(fraction * file.size) } : current
+            )
+          },
+          controller.signal
+        )
         await confirmUploadMutation.mutateAsync({
           uploadToken: result.grant.upload_token,
           folderId,
         })
         uploadedCount += 1
       }
-      setMessage(`${String(uploadedCount)} ${uploadedCount === 1 ? "file" : "files"} uploaded.`)
+      setMessage(
+        controller.signal.aborted
+          ? `Upload cancelled. ${uploadedMessage(uploadedCount)}`
+          : uploadedMessage(uploadedCount)
+      )
     } catch (uploadError) {
-      setError(getErrorMessage(uploadError))
+      if (controller.signal.aborted) {
+        setMessage(
+          uploadedCount > 0
+            ? `Upload cancelled. ${uploadedMessage(uploadedCount)}`
+            : "Upload cancelled."
+        )
+      } else {
+        setError(getErrorMessage(uploadError))
+      }
     } finally {
-      setIsUploading(false)
+      abortRef.current = null
+      setProgress(null)
     }
   }
 
-  return { error, isUploading, message, uploadFiles }
+  function cancel() {
+    abortRef.current?.abort()
+  }
+
+  // Stable, so the status panel's auto-dismiss timer doesn't restart on every render.
+  const dismiss = useCallback(() => {
+    setError(null)
+    setMessage(null)
+  }, [])
+
+  return { cancel, dismiss, error, isUploading, message, progress, uploadFiles }
 }

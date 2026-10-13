@@ -112,6 +112,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Files uploads show a floating panel with the file name, a progress bar,
+  bytes sent, and a Cancel button, shared by the upload button and drag and
+  drop. The panel confirms when uploads finish and keeps errors until
+  dismissed.
 - Each deployment lists the Claude and partner models its Google Cloud
   project can use, in `ANTHROPIC_VERTEX_MODELS` and `VERTEX_PARTNER_MODELS`.
   `ANTHROPIC_VERTEX_AI=true` and `VERTEX_PARTNER_MODELS_ENABLED=true` now

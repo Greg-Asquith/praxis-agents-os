@@ -6,13 +6,14 @@ export async function uploadFileDirectly(
   upload: SignedUpload,
   file: File,
   maxSizeBytes: number,
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal
 ) {
   if (file.size > maxSizeBytes) {
     throw new Error("Selected file is larger than the upload limit.")
   }
   if (onProgress) {
-    await uploadWithProgress(upload, file, onProgress)
+    await uploadWithProgress(upload, file, onProgress, signal)
     return
   }
 
@@ -21,6 +22,7 @@ export async function uploadFileDirectly(
     credentials: "omit",
     headers: upload.headers,
     method: upload.method,
+    signal: signal ?? null,
   })
 
   if (!response.ok) {
@@ -32,10 +34,18 @@ export async function uploadFileDirectly(
 function uploadWithProgress(
   upload: SignedUpload,
   file: File,
-  onProgress: (fraction: number) => void
+  onProgress: (fraction: number) => void,
+  signal?: AbortSignal
 ) {
   return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Upload cancelled.", "AbortError"))
+      return
+    }
     const request = new XMLHttpRequest()
+    signal?.addEventListener("abort", () => {
+      request.abort()
+    })
     request.open(upload.method, upload.url)
     request.withCredentials = false
     for (const [name, value] of Object.entries(upload.headers)) {
@@ -52,6 +62,9 @@ function uploadWithProgress(
       } else {
         reject(new Error(`Upload failed (${String(request.status)}).`))
       }
+    }
+    request.onabort = () => {
+      reject(new DOMException("Upload cancelled.", "AbortError"))
     }
     request.onerror = () => {
       reject(new Error("Upload failed. Check your connection and try again."))

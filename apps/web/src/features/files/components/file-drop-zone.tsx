@@ -2,20 +2,20 @@
 
 import { useRef, useState, type DragEvent, type ReactNode } from "react"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { useFileUpload } from "@/features/files/components/use-file-upload"
+import { FileUploadStatus } from "@/features/files/components/file-upload-status"
+import type { FileUpload } from "@/features/files/components/use-file-upload"
 import { cn } from "@/lib/utils"
 
 export function FileDropZone({
   children,
   className,
-  folderId,
+  upload,
 }: {
   children: ReactNode
   className?: string
-  folderId: string | null
+  upload: FileUpload
 }) {
-  const { error, isUploading, message, uploadFiles } = useFileUpload({ folderId })
+  const { isUploading, uploadFiles } = upload
   const [isDragging, setIsDragging] = useState(false)
   // Nested elements fire enter and leave in pairs, so the depth tells when the pointer really left.
   const dragDepth = useRef(0)
@@ -59,17 +59,7 @@ export function FileDropZone({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      {error ? (
-        <Alert variant="destructive">
-          <AlertTitle>Upload failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
-      {isUploading || message ? (
-        <p className="text-muted-foreground text-sm" role="status">
-          {isUploading ? "Uploading…" : message}
-        </p>
-      ) : null}
+      <FileUploadStatus upload={upload} />
       {children}
       {isDragging ? (
         <div

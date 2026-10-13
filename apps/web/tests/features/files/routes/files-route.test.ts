@@ -63,9 +63,10 @@ vi.mock("@/features/files/components/file-drop-zone", () => ({
     createElement("div", { "data-drop-zone": true }, children),
 }))
 vi.mock("@/features/files/components/file-upload-button", () => ({
-  FileUploadButton: ({ scope = "workspace" }: { scope?: string }) =>
-    createElement("button", null, `Upload ${scope}`),
+  FileUploadButton: () => createElement("button", null, "Upload Files"),
 }))
+vi.mock("@/features/files/components/use-file-upload", () => ({ useFileUpload: () => ({}) }))
+vi.mock("@/features/files/components/file-upload-status", () => ({ FileUploadStatus: () => null }))
 vi.mock("@/features/files/components/new-folder-button", () => ({
   NewFolderButton: () => "New Folder",
 }))

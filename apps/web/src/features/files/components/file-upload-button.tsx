@@ -3,22 +3,14 @@
 import { useId, useRef } from "react"
 import { UploadIcon } from "lucide-react"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { useFileUpload } from "@/features/files/components/use-file-upload"
-import type { FileScope } from "@/features/files/types"
+import type { FileUpload } from "@/features/files/components/use-file-upload"
 import { workspaceFileAcceptValue } from "@/lib/file"
 
-export function FileUploadButton({
-  folderId = null,
-  scope = "workspace",
-}: {
-  folderId?: string | null
-  scope?: FileScope
-}) {
+export function FileUploadButton({ upload }: { upload: FileUpload }) {
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const { error, isUploading, message, uploadFiles } = useFileUpload({ folderId, scope })
+  const { isUploading, uploadFiles } = upload
 
   async function handleFiles(files: FileList | null) {
     await uploadFiles(files)
@@ -28,7 +20,7 @@ export function FileUploadButton({
   }
 
   return (
-    <div className="flex max-w-full min-w-0 flex-col items-start gap-2 self-start md:items-end">
+    <>
       <input
         accept={workspaceFileAcceptValue()}
         aria-label="Choose Files to Upload"
@@ -56,20 +48,6 @@ export function FileUploadButton({
         <UploadIcon data-icon="inline-start" />
         {isUploading ? "Uploading" : "Upload Files"}
       </Button>
-      {error ? (
-        <Alert className="w-64 max-w-full wrap-anywhere" variant="destructive">
-          <AlertTitle>Upload failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : null}
-      {message ? (
-        <p
-          role="status"
-          className="text-muted-foreground max-w-40 text-xs wrap-anywhere md:text-right"
-        >
-          {message}
-        </p>
-      ) : null}
-    </div>
+    </>
   )
 }

@@ -15,6 +15,8 @@ import { foldersQueryOptions } from "@/features/files/api/list-folders"
 import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { FileDropZone } from "@/features/files/components/file-drop-zone"
 import { FileUploadButton } from "@/features/files/components/file-upload-button"
+import { FileUploadStatus } from "@/features/files/components/file-upload-status"
+import { useFileUpload } from "@/features/files/components/use-file-upload"
 import { FilesTable } from "@/features/files/components/files-table"
 import { FolderHeader } from "@/features/files/components/folder-header"
 import { NewFolderButton } from "@/features/files/components/new-folder-button"
@@ -65,6 +67,9 @@ export function FilesRoute() {
     ? (folderData.folders.find((folder) => folder.id === search.folder) ?? null)
     : null
   const canUpload = scope !== "platform" && canEditWorkspace(workspace.current_user_role)
+  // One upload per page, so the header, empty state, and drop zone share its progress.
+  const upload = useFileUpload({ folderId: currentFolder?.id ?? null })
+  const platformUpload = useFileUpload({ scope: "platform" })
   const showFolders = !currentFolder && scope !== "platform" && !query
   const folders = showFolders ? folderData.folders : NO_FOLDERS
   const offset = (page - 1) * PAGE_SIZE
@@ -151,7 +156,7 @@ export function FilesRoute() {
     )
   }
 
-  const uploadButton = <FileUploadButton folderId={currentFolder?.id ?? null} />
+  const uploadButton = <FileUploadButton upload={upload} />
   const emptyState = query
     ? {
         emptyDescription: "Try a different word, or clear the search to see everything.",
@@ -223,9 +228,10 @@ export function FilesRoute() {
               ? "Files you upload here become available in every workspace after processing."
               : "Shared files are available in every workspace."}
           </p>
-          {platformManagement ? <FileUploadButton scope="platform" /> : null}
+          {platformManagement ? <FileUploadButton upload={platformUpload} /> : null}
         </div>
       ) : null}
+      {platformManagement ? <FileUploadStatus upload={platformUpload} /> : null}
       <FilesTable
         canEdit={canEditWorkspace(workspace.current_user_role)}
         entries={entries}
@@ -314,9 +320,5 @@ export function FilesRoute() {
     </div>
   )
 
-  return canUpload ? (
-    <FileDropZone folderId={currentFolder?.id ?? null}>{content}</FileDropZone>
-  ) : (
-    content
-  )
+  return canUpload ? <FileDropZone upload={upload}>{content}</FileDropZone> : content
 }
