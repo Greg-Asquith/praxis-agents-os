@@ -176,6 +176,7 @@ async def _read_response(
                 extension=extension,
                 size_bytes=stored.size_bytes,
                 sha256=digest,
+                etag=stored.etag,
             )
         )
     return MediaOperationResult(

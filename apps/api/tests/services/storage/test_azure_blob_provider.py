@@ -63,6 +63,9 @@ class _FakeDownload:
     def readall(self) -> bytes:
         return self.data
 
+    def chunks(self):
+        yield self.data
+
 
 class _FakeProperties:
     def __init__(self, obj: dict) -> None:
@@ -80,7 +83,7 @@ class _FakeBlobClient:
 
     def upload_blob(
         self,
-        data: bytes,
+        data,
         *,
         overwrite: bool,
         content_settings,
@@ -88,6 +91,10 @@ class _FakeBlobClient:
     ) -> None:
         if not overwrite and self.key in self.container.objects:
             raise _AzurePreconditionError()
+        if hasattr(data, "read"):
+            data = data.read()
+        elif not isinstance(data, bytes):
+            data = b"".join(data)
         self.container.objects[self.key] = {
             "data": data,
             "content_settings": content_settings,

@@ -12,6 +12,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from core.settings import settings
 from middleware.utils import _base64_request_limit
+from services.media.domain import MEDIA_STAGING_PREFIX
+from services.storage.domain import StorageBucket
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,9 @@ class BodySizeLimitMiddleware(BaseHTTPMiddleware):
     # Base64 payloads are ~33% larger than raw bytes, so include headroom.
     ROUTE_LIMITS: ClassVar[dict[str, int]] = {
         "/api/v1/example": _base64_request_limit(settings.MAX_FILE_SIZE_IMAGE),
+        # Renderer outputs stream to storage, so they aren't held in memory; listed first to win.
+        f"{settings.API_V1_PREFIX}/storage/upload/{StorageBucket.PLATFORM_PRIVATE.value}/"
+        f"{MEDIA_STAGING_PREFIX}/": settings.MEDIA_RENDERER_MAX_OUTPUT_BYTES,
         f"{settings.API_V1_PREFIX}/storage/upload": max(
             settings.MAX_FILE_SIZE_AGENT_FILE,
             settings.MAX_FILE_SIZE_DOCUMENT,

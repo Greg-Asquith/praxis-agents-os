@@ -144,6 +144,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Clips from `cut_video_clips` can be about 35 minutes long, up from 1
+  minute 43 seconds. The storage provider copies renderer outputs into Files
+  (GCS rewrite, S3 copy, Azure and local streamed copies), so a clip File can
+  be as large as an uploaded video, and `MEDIA_RENDERER_MAX_OUTPUT_BYTES`
+  defaults to 2 GiB. Local and Azure signed uploads stream to storage instead
+  of buffering in API memory.
 - Files uploads show a floating panel with the file name, a progress bar,
   bytes sent, and a Cancel button, shared by the upload button and drag and
   drop. The panel confirms when uploads finish and keeps errors until

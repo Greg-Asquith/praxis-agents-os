@@ -33,10 +33,13 @@ class MediaSettingsMixin:
         description="Total time one renderer operation may take, transfers included.",
     )
     MEDIA_RENDERER_MAX_OUTPUT_BYTES: int = Field(
-        default=524288000,
+        default=2147483648,
         ge=1048576,
         le=5368709120,
-        description="Largest single file a renderer operation may write (500 MiB).",
+        description=(
+            "Largest single file a renderer operation may write (2 GiB, about 35 minutes of "
+            "clip at the bitrate caps). The renderer's disk is its memory, shared with inputs."
+        ),
     )
     MEDIA_STAGING_URL_TTL_SECONDS: int = Field(
         default=1800,

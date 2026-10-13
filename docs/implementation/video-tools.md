@@ -149,11 +149,14 @@ stalled transfer ends inside Cloud Run's 60 seconds of request headroom.
   renderer reported. On any failure it deletes the staged objects.
 - `save_media_output` copies a staged output into a new File inside the
   caller's transaction. It requires platform-private storage under the
-  workspace's staging prefix and the written-size limit (`MAX_FILE_SIZE_VIDEO`
-  for video), then reads the object with the shared bounded reader, which
-  checks the size and the SHA-256 the renderer reported. A committed
-  `FileUpload` reservation owns the File's bytes until the caller commits, so
-  the upload sweeper removes them if it never does. The staged object stays as
+  workspace's staging prefix and the stored limit for the type
+  (`MAX_FILE_SIZE_SOURCE_VIDEO` for video). It commits a `FileUpload`
+  reservation, has the storage provider copy the object into the
+  reservation's key (`import_staged_object`, pinned to the staged ETag), and
+  checks the copy's size and streamed SHA-256 against what the renderer
+  reported. The bytes never pass through API memory. The reservation owns
+  them until the caller commits, so the upload sweeper removes them if it
+  never does. The staged object stays as
   the retry source: call `discard_staged_outputs` after commit, or leave it to
   the one-day staging lifecycle rule.
 - `settings.media_renderer_available` is true when `MEDIA_RENDERER_URL` is
@@ -168,7 +171,7 @@ Failures raise `MediaRendererError` with a stable code and a plain message.
 | `MEDIA_RENDERER_AUTH` | `google_id_token` | `google_id_token` sends a Google ID token for Cloud Run IAM. `shared_secret` sends `MEDIA_RENDERER_SHARED_SECRET` as a bearer token, for a renderer on a private network. `none` is local only. |
 | `MEDIA_RENDERER_SHARED_SECRET` | empty | At least 32 characters when `MEDIA_RENDERER_AUTH=shared_secret`. The renderer holds the same value as `RENDERER_SHARED_SECRET`. |
 | `MEDIA_RENDERER_TIMEOUT_SECONDS` | `900` | Total time one operation may take, transfers included. The client waits 60 seconds more for cold start and the round trip. |
-| `MEDIA_RENDERER_MAX_OUTPUT_BYTES` | `524288000` | Largest output a renderer upload may write. |
+| `MEDIA_RENDERER_MAX_OUTPUT_BYTES` | `2147483648` | Largest output a renderer upload may write (2 GiB). On Cloud Run the renderer's disk is memory, so instance memory must cover the inputs (up to `MAX_FILE_SIZE_SOURCE_VIDEO`), this output, and `RENDERER_CHILD_MEMORY_BYTES`: 4 + 2 + 8 GiB within the default 16 GiB. |
 | `MEDIA_STAGING_URL_TTL_SECONDS` | `1800` | Lifetime of the renderer's signed URLs. Must be at least the timeout plus 60 seconds, so uploads can't expire mid-render. |
 | `MEDIA_RENDERER_LOCAL_STORAGE_URL` | `http://host.docker.internal:8000` | Local only: the API origin as the renderer container reaches it. |
 
@@ -442,12 +445,15 @@ code-eligible.
   refused when a video's transcript came from Gemini (about a second out at
   p95). Captions and pause removal need a transcription provider; a video
   without audio is left uncaptioned, and a clip with no speech reports it.
-- A clip has no length cap of its own. A clip File is held to the written
-  size limit for video (`MAX_FILE_SIZE_VIDEO`, 100 MB, and never more than
-  `MEDIA_RENDERER_MAX_OUTPUT_BYTES`), so the longest clip is that size at the
-  renderer's bitrate caps: 1 minute 43 seconds by default. A segment outside
-  its video, or a clip over that length, fails the call with a reason before
-  anything renders.
+- A clip has no length cap of its own. A clip File can be as large as an
+  uploaded video (`MAX_FILE_SIZE_SOURCE_VIDEO`), and never more than
+  `MEDIA_RENDERER_MAX_OUTPUT_BYTES`, so the longest clip is the smaller of
+  those at the renderer's bitrate caps: about 35 minutes by default, on any
+  storage provider the renderer supports. A segment outside its video, or a
+  clip over that length, fails the call with a reason before anything
+  renders. A long clip must also render within `MEDIA_RENDERER_TIMEOUT_SECONDS`
+  and the run within `AGENT_RUN_MAX_DURATION_SECONDS`; a 2-minute 1080p
+  screen recording renders to 9:16 in about 18 seconds on 4 CPUs.
 
 Clips render three at a time (the renderer's default maximum instances). One
 clip failing doesn't stop the others: each saved clip is a File with the
@@ -556,7 +562,7 @@ rule for staging.
 | Staging uploads (`create_signed_staging_upload`) | GCS signs a size range | Pending. Azure SAS and S3 presigned `PUT` can't sign a range, so their adapters can rely on the API's stored-size check (see [Storage and files](storage-and-files.md)). |
 | Caller authentication | Cloud Run IAM with `google_id_token` | `shared_secret` on private ingress (Container Apps internal ingress, or a private ECS or App Runner service). The renderer refuses operation requests without the secret. |
 | Staging expiry | GCP bootstrap's one-day lifecycle rule on `platform/media-staging/` | Pending: a Blob lifecycle management policy or an S3 lifecycle rule on the same prefix. |
-| Large source uploads | Signed direct upload, up to `MAX_FILE_SIZE_SOURCE_VIDEO` | S3 signs direct uploads but caps a single `PUT` at 5 GiB. Azure relays uploads through the API, so it keeps `MAX_FILE_SIZE_VIDEO` (100 MB) until it signs direct uploads. |
+| Large source uploads | Signed direct upload, up to `MAX_FILE_SIZE_SOURCE_VIDEO` | S3 signs direct uploads but caps a single `PUT` at 5 GiB. Azure relays uploads through the API, so person uploads keep `MAX_FILE_SIZE_VIDEO` (100 MB) until it signs direct uploads. The relay streams, so renderer outputs and clip Files aren't held to that. |
 | Isolation self-check | Verified locally in Docker and on Cloud Run gen2 | Unverified. The runtime must let an unprivileged process set `no_new_privs` and install a seccomp filter, and run the renderer as its container's first process. |
 
 The repository has no Azure or AWS deployment tooling. Until a deployment has

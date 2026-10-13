@@ -8,6 +8,7 @@ import asyncio
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -33,6 +34,8 @@ from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
     require_content_type as _require_content_type,
     require_setting as _require_setting,
+    require_staged_import as _require_staged_import,
+    spool_chunks,
     string_metadata as _string_metadata,
 )
 from services.storage.workspace_buckets import workspace_bucket_name, workspace_id_for_ref
@@ -215,12 +218,36 @@ class GcsStorageProvider:
             resolved_cache_control = self.public_cache_control
         blob.cache_control = resolved_cache_control
         blob.metadata = _string_metadata(metadata)
+        upload_kwargs: dict[str, Any] = {"content_type": content_type}
+        if not overwrite:
+            upload_kwargs["if_generation_match"] = 0
+        return await self._upload(ref, blob.upload_from_string, data, **upload_kwargs)
 
+    async def put_object_stream(
+        self,
+        ref: StorageObjectRef,
+        chunks: AsyncIterator[bytes],
+        *,
+        content_type: str,
+    ) -> StoredObject:
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
+        blob = self._bucket(ref).blob(ref.key)
+        with await spool_chunks(chunks) as spooled:
+            return await self._upload(
+                ref,
+                blob.upload_from_file,
+                spooled,
+                content_type=content_type,
+                if_generation_match=0,
+            )
+
+    async def _upload(
+        self, ref: StorageObjectRef, upload: Callable[..., None], body: Any, **kwargs: Any
+    ) -> StoredObject:
         try:
-            upload_kwargs: dict[str, Any] = {"content_type": content_type}
-            if not overwrite:
-                upload_kwargs["if_generation_match"] = 0
-            await asyncio.to_thread(blob.upload_from_string, data, **upload_kwargs)
+            await asyncio.to_thread(upload, body, **kwargs)
         except Exception as exc:
             if _is_gcs_precondition_failed(exc):
                 raise StoragePreconditionError(
@@ -387,44 +414,74 @@ class GcsStorageProvider:
             )
         if destination_workspace_id is not None:
             await self.ensure_workspace_bucket(destination_workspace_id)
-        bucket = self._bucket(source)
-        source_blob = bucket.blob(source.key)
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="promote_object"
+        )
+
+    async def import_staged_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        workspace_id = _require_staged_import(source, destination, provider_key=self.provider_key)
+        await self.ensure_workspace_bucket(workspace_id)
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="import_staged_object"
+        )
+
+    async def _copy_pinned(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        expected_source_etag: str,
+        *,
+        operation: str,
+    ) -> StoredObject:
+        """Rewrites the source generation it validated into a new destination object."""
+        source_blob = self._bucket(source).blob(source.key)
         try:
             await asyncio.to_thread(source_blob.reload)
             if str(source_blob.etag or "") != expected_source_etag:
                 raise StoragePreconditionError(
-                    "Storage promotion source changed after validation",
+                    "Storage copy source changed after validation",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=source.bucket.value,
                     object_key=source.key,
                 )
-            await self._rewrite_until_done(source_blob, bucket.blob(destination.key), destination)
+            await self._rewrite_until_done(
+                source_blob,
+                self._bucket(destination).blob(destination.key),
+                destination,
+                operation=operation,
+            )
         except StorageError:
             raise
         except Exception as exc:
             if _is_gcs_precondition_failed(exc):
                 raise StoragePreconditionError(
-                    "Storage promotion precondition failed",
+                    "Storage copy precondition failed",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=destination.bucket.value,
                     object_key=destination.key,
                     original_error=exc,
                 ) from exc
             if _is_gcs_not_found(exc):
                 raise StorageNotFoundError(
-                    "Storage promotion source was not found",
+                    "Storage copy source was not found",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=source.bucket.value,
                     object_key=source.key,
                     original_error=exc,
                 ) from exc
             raise StorageError(
-                "Failed to promote GCS object",
+                "Failed to copy GCS object",
                 provider_key=self.provider_key,
-                operation="promote_object",
+                operation=operation,
                 bucket=destination.bucket.value,
                 object_key=destination.key,
                 original_error=exc,
@@ -433,9 +490,9 @@ class GcsStorageProvider:
         stored = await self.stat_object(destination)
         if stored is None:
             raise StorageNotFoundError(
-                "Promoted object could not be read after copy",
+                "Copied object could not be read after copy",
                 provider_key=self.provider_key,
-                operation="promote_object",
+                operation=operation,
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )
@@ -446,6 +503,8 @@ class GcsStorageProvider:
         source_blob: Any,
         destination_blob: Any,
         destination: StorageObjectRef,
+        *,
+        operation: str,
     ) -> None:
         # source_blob.generation was set by reload, so each call pins that generation.
         source_generation = int(source_blob.generation)
@@ -463,7 +522,7 @@ class GcsStorageProvider:
         raise StorageError(
             "GCS rewrite did not finish",
             provider_key=self.provider_key,
-            operation="promote_object",
+            operation=operation,
             bucket=destination.bucket.value,
             object_key=destination.key,
         )

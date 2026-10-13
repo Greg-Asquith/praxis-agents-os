@@ -17,6 +17,7 @@ from services.files.create_file_with_revision import (
 )
 from services.files.reserve_file_revision import reserve_file_revision
 from services.files.revision_actor import FileRevisionActor
+from services.files.utils import sha256_hex
 
 if TYPE_CHECKING:
     from services.agents.runtime.context import RuntimeDeps
@@ -43,7 +44,8 @@ async def save_tool_result(
         workspace_id=deps.workspace.id,
         user_id=deps.user.id,
         name=name,
-        content=content,
+        size_bytes=len(content),
+        content_hash=sha256_hex(content),
         content_type="application/json",
         extension=".json",
     )

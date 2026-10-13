@@ -1,12 +1,20 @@
+# apps/api/services/storage/providers/_common.py
+
 """Shared helpers for concrete storage provider adapters."""
 
 from __future__ import annotations
 
+import asyncio
+import tempfile
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any
+from typing import IO, Any
+from uuid import UUID
 
-from services.storage.domain import StorageObjectRef
+from services.storage.domain import StorageBucket, StorageObjectRef
 from services.storage.errors import StorageProviderUnavailableError, StorageValidationError
+from services.storage.platform_buckets import validate_platform_ref
+from services.storage.workspace_buckets import workspace_id_for_ref
 
 _PROVIDER_LABELS = {
     "azure_blob": "Azure Blob",
@@ -43,6 +51,38 @@ def require_content_type(
         bucket=ref.bucket.value,
         object_key=ref.key,
     )
+
+
+def require_staged_import(
+    source: StorageObjectRef, destination: StorageObjectRef, *, provider_key: str
+) -> UUID:
+    """Returns the destination workspace when the refs are a staging-to-workspace import."""
+    validate_platform_ref(source)
+    workspace_id = (
+        workspace_id_for_ref(destination) if destination.bucket == StorageBucket.PRIVATE else None
+    )
+    if workspace_id is None:
+        raise StorageValidationError(
+            "Staged imports must land in a workspace bucket",
+            provider_key=provider_key,
+            operation="import_staged_object",
+            bucket=destination.bucket.value,
+            object_key=destination.key,
+        )
+    return workspace_id
+
+
+async def spool_chunks(chunks: AsyncIterator[bytes]) -> IO[bytes]:
+    """Writes chunks to an anonymous temporary file and rewinds it; the caller closes it."""
+    spooled = await asyncio.to_thread(tempfile.TemporaryFile)
+    try:
+        async for chunk in chunks:
+            await asyncio.to_thread(spooled.write, chunk)
+        await asyncio.to_thread(spooled.seek, 0)
+    except BaseException:
+        spooled.close()
+        raise
+    return spooled
 
 
 def string_metadata(metadata: Any) -> dict[str, str]:

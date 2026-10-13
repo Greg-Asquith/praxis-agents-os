@@ -253,7 +253,7 @@ async def test_source_video_limit_applies_only_to_direct_workspace_uploads(
             ),
         )
 
-    # Local storage relays uploads through API memory, so the tool limit stays.
+    # Local storage relays uploads through the API, so the written limit stays.
     with pytest.raises(AppValidationError, match="File is too large"):
         await request_upload(6)
 

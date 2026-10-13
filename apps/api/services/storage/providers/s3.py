@@ -9,6 +9,7 @@ import json
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -36,6 +37,8 @@ from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
     require_content_type as _require_content_type,
     require_setting as _require_setting,
+    require_staged_import as _require_staged_import,
+    spool_chunks,
     string_metadata as _string_metadata,
 )
 from services.storage.workspace_buckets import s3_workspace_bucket_name, workspace_id_for_ref
@@ -280,12 +283,7 @@ class S3StorageProvider:
         metadata: dict[str, str] | None = None,
         overwrite: bool = True,
     ) -> StoredObject:
-        workspace_id = workspace_id_for_ref(ref)
-        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
-            self._bucket_name(ref)
-            await self.ensure_platform_bucket()
-        elif workspace_id is not None:
-            await self.ensure_workspace_bucket(workspace_id)
+        await self._ensure_bucket_for(ref)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
             resolved_cache_control = self.public_cache_control
@@ -303,7 +301,37 @@ class S3StorageProvider:
             params["Metadata"] = _string_metadata(metadata)
         if not overwrite:
             params["IfNoneMatch"] = "*"
+        return await self._put(ref, params)
 
+    async def put_object_stream(
+        self,
+        ref: StorageObjectRef,
+        chunks: AsyncIterator[bytes],
+        *,
+        content_type: str,
+    ) -> StoredObject:
+        await self._ensure_bucket_for(ref)
+        with await spool_chunks(chunks) as spooled:
+            return await self._put(
+                ref,
+                {
+                    "Bucket": self._bucket_name(ref),
+                    "Key": ref.key,
+                    "Body": spooled,
+                    "ContentType": content_type,
+                    "IfNoneMatch": "*",
+                },
+            )
+
+    async def _ensure_bucket_for(self, ref: StorageObjectRef) -> None:
+        workspace_id = workspace_id_for_ref(ref)
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._bucket_name(ref)
+            await self.ensure_platform_bucket()
+        elif workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
+
+    async def _put(self, ref: StorageObjectRef, params: dict[str, Any]) -> StoredObject:
         try:
             await asyncio.to_thread(self.client.put_object, **params)
         except Exception as exc:
@@ -505,18 +533,39 @@ class S3StorageProvider:
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )
-        if destination.bucket == StorageBucket.PLATFORM_PRIVATE:
-            self._bucket_name(destination)
-            await self.ensure_platform_bucket()
-        elif destination_workspace_id is not None:
-            await self.ensure_workspace_bucket(destination_workspace_id)
-        bucket_name = self._bucket_name(source)
+        await self._ensure_bucket_for(destination)
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="promote_object"
+        )
+
+    async def import_staged_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        workspace_id = _require_staged_import(source, destination, provider_key=self.provider_key)
+        await self.ensure_workspace_bucket(workspace_id)
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="import_staged_object"
+        )
+
+    async def _copy_pinned(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        expected_source_etag: str,
+        *,
+        operation: str,
+    ) -> StoredObject:
+        """Copies the source only while its ETag matches, into a new destination object."""
         try:
             await asyncio.to_thread(
                 self.client.copy_object,
-                Bucket=bucket_name,
+                Bucket=self._bucket_name(destination),
                 Key=destination.key,
-                CopySource={"Bucket": bucket_name, "Key": source.key},
+                CopySource={"Bucket": self._bucket_name(source), "Key": source.key},
                 CopySourceIfMatch=f'"{expected_source_etag}"',
                 IfNoneMatch="*",
                 MetadataDirective="COPY",
@@ -524,26 +573,26 @@ class S3StorageProvider:
         except Exception as exc:
             if _is_precondition_error(exc):
                 raise StoragePreconditionError(
-                    "Storage promotion precondition failed",
+                    "Storage copy precondition failed",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=destination.bucket.value,
                     object_key=destination.key,
                     original_error=exc,
                 ) from exc
             if _is_not_found_error(exc):
                 raise StorageNotFoundError(
-                    "Storage promotion source was not found",
+                    "Storage copy source was not found",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=source.bucket.value,
                     object_key=source.key,
                     original_error=exc,
                 ) from exc
             raise StorageError(
-                "Failed to promote S3 object",
+                "Failed to copy S3 object",
                 provider_key=self.provider_key,
-                operation="promote_object",
+                operation=operation,
                 bucket=destination.bucket.value,
                 object_key=destination.key,
                 original_error=exc,
@@ -552,9 +601,9 @@ class S3StorageProvider:
         stored = await self.stat_object(destination)
         if stored is None:
             raise StorageNotFoundError(
-                "Promoted object could not be read after copy",
+                "Copied object could not be read after copy",
                 provider_key=self.provider_key,
-                operation="promote_object",
+                operation=operation,
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )

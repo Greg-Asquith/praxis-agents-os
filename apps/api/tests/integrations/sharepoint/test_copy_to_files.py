@@ -123,7 +123,7 @@ async def test_copy_retains_original_bytes_and_records_file_effects(
     assert data.source.reference.item_id == "file"
     assert len(requests) == 2
     reserve.assert_awaited_once()
-    assert reserve.await_args.kwargs["content"] == content
+    assert reserve.await_args.kwargs["size_bytes"] == len(content)
     assert create.await_args.kwargs["reservation"] is reserve.return_value
     assert create.await_args.kwargs["content"] == content
     assert create.await_args.kwargs["workspace"] is ctx.deps.workspace

@@ -23,7 +23,7 @@ class StorageProvider(Protocol):
     """
 
     provider_key: str
-    # False when signed uploads relay through the API, which buffers the body.
+    # False when signed uploads relay through the API; person uploads then keep the written limit.
     signs_direct_uploads: bool
 
     async def ensure_workspace_bucket(self, workspace_id: UUID) -> None:
@@ -67,6 +67,30 @@ class StorageProvider(Protocol):
         expected_source_etag: str,
     ) -> StoredObject:
         """Copies validated bytes within one class and physical bucket, create-only."""
+        ...
+
+    async def import_staged_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        """Copies a platform staging object into a workspace bucket, create-only.
+
+        The copy runs inside the provider where it can, so large objects never pass
+        through API memory. The caller authorises both refs.
+        """
+        ...
+
+    async def put_object_stream(
+        self,
+        ref: StorageObjectRef,
+        chunks: AsyncIterator[bytes],
+        *,
+        content_type: str,
+    ) -> StoredObject:
+        """Writes a new object from chunks without buffering it in memory, create-only."""
         ...
 
     async def create_signed_upload(

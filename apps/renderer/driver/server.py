@@ -67,7 +67,7 @@ class DriverConfig:
         return cls(
             allowed_url_prefixes=prefixes,
             max_input_bytes=int(os.environ.get("RENDERER_MAX_INPUT_BYTES", 5 * 1024**3)),
-            max_output_bytes=int(os.environ.get("RENDERER_MAX_OUTPUT_BYTES", 500 * 1024**2)),
+            max_output_bytes=int(os.environ.get("RENDERER_MAX_OUTPUT_BYTES", 2 * 1024**3)),
             max_timeout_seconds=int(os.environ.get("RENDERER_MAX_TIMEOUT_SECONDS", 900)),
             child_memory_bytes=int(os.environ.get("RENDERER_CHILD_MEMORY_BYTES", 8 * 1024**3)),
             shared_secret=shared_secret,

@@ -212,6 +212,8 @@ class StagedMediaOutput(BaseModel):
     extension: str
     size_bytes: int
     sha256: str
+    # The staged object's version when it was checked; the copy into Files pins it.
+    etag: str
 
 
 class MediaOperationResult(BaseModel):

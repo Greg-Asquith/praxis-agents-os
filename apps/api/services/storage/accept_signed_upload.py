@@ -55,24 +55,27 @@ async def accept_signed_upload(
             object_key=ref.key,
         )
 
-    data = bytearray()
-    async for chunk in chunks:
-        data.extend(chunk)
-        if len(data) > expected_size_bytes:
+    async def bounded_chunks() -> AsyncIterator[bytes]:
+        received = 0
+        async for chunk in chunks:
+            received += len(chunk)
+            if received > expected_size_bytes:
+                raise StorageValidationError(
+                    "Signed upload exceeds the granted size",
+                    provider_key=provider.provider_key,
+                    operation="accept_signed_upload",
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                )
+            yield chunk
+        if not bounded and received != expected_size_bytes:
             raise StorageValidationError(
-                "Signed upload exceeds the granted size",
+                "Signed upload size does not match the granted size",
                 provider_key=provider.provider_key,
                 operation="accept_signed_upload",
                 bucket=ref.bucket.value,
                 object_key=ref.key,
             )
-    if not bounded and len(data) != expected_size_bytes:
-        raise StorageValidationError(
-            "Signed upload size does not match the granted size",
-            provider_key=provider.provider_key,
-            operation="accept_signed_upload",
-            bucket=ref.bucket.value,
-            object_key=ref.key,
-        )
 
-    await provider.put_object(ref, bytes(data), content_type=content_type, overwrite=False)
+    # A failed check stops the stream, and the provider removes what it wrote.
+    await provider.put_object_stream(ref, bounded_chunks(), content_type=content_type)

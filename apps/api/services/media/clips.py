@@ -10,7 +10,7 @@ from uuid import UUID
 
 from core.settings import settings
 from models.files import FileRevision
-from services.files.contract import contract_for_content_type, max_size_bytes
+from services.files.contract import contract_for_content_type, stored_max_size_bytes
 from services.files.domain import VideoMetadata
 from services.files.utils import format_duration
 from services.media.captions import CaptionStyle, caption_file
@@ -98,7 +98,7 @@ class PlannedClip:
 def max_clip_ms() -> int:
     """Returns the longest clip a File can hold at the renderer's bitrate caps."""
     limit_bytes = min(
-        max_size_bytes(contract_for_content_type("video/mp4")),
+        stored_max_size_bytes(contract_for_content_type("video/mp4")),
         settings.MEDIA_RENDERER_MAX_OUTPUT_BYTES,
     )
     return min(

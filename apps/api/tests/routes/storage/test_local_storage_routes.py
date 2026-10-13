@@ -177,6 +177,19 @@ async def test_signed_upload_rejects_body_one_byte_over_granted_size(
     assert response.json()["title"] == "Storage Validation Error"
     assert await provider.stat_object(ref) is None
 
+    # Without a Content-Length the body streams to storage; the partial object is removed.
+    async def chunked():
+        yield b"123"
+        yield b"45"
+
+    response = await db_async_client.put(
+        _relative_url(upload.url), content=chunked(), headers=upload.headers
+    )
+
+    assert response.status_code == 400
+    assert await provider.stat_object(ref) is None
+    assert not provider.filesystem_path(ref).exists()
+
 
 async def test_local_private_download_rejects_tampered_signature_inputs(
     db_async_client: AsyncClient,

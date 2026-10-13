@@ -9,11 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_async_db_session_factory, set_session_tenant_context
-from core.exceptions.general import NotFoundError
+from core.exceptions.general import AppValidationError, NotFoundError
 from core.settings import settings
 from models.files import FileUpload
-from services.files.contract import require_matching_pair, require_written_size
-from services.files.utils import revision_object_key, sha256_hex
+from services.files.contract import require_matching_pair, stored_max_size_bytes
+from services.files.utils import revision_object_key
 
 
 async def reserve_file_revision(
@@ -22,13 +22,23 @@ async def reserve_file_revision(
     workspace_id: UUID,
     user_id: UUID,
     name: str,
-    content: bytes,
+    size_bytes: int,
+    content_hash: str,
     content_type: str,
     extension: str,
 ) -> FileUpload:
-    """Commits an isolated reservation and locks it until the caller settles."""
+    """Commits an isolated reservation and locks it until the caller settles.
+
+    The size is checked against the largest File of its type; the write itself
+    applies the limit for how the bytes arrive.
+    """
     contract = require_matching_pair(content_type, extension)
-    require_written_size(contract, len(content))
+    if size_bytes > stored_max_size_bytes(contract):
+        raise AppValidationError(
+            "File content is too large",
+            field="content",
+            details={"content_bytes": size_bytes, "max_bytes": stored_max_size_bytes(contract)},
+        )
     file_id, revision_id, reservation_id = uuid4(), uuid4(), uuid4()
     async with get_async_db_session_factory()() as reservation_db:
         await set_session_tenant_context(reservation_db, workspace_id=workspace_id, user_id=user_id)
@@ -42,8 +52,8 @@ async def reserve_file_revision(
                 object_key=revision_object_key(workspace_id, file_id, revision_id, extension),
                 filename=name,
                 content_type=contract.content_type,
-                declared_size_bytes=len(content),
-                declared_content_hash=sha256_hex(content),
+                declared_size_bytes=size_bytes,
+                declared_content_hash=content_hash,
                 created_by_user_id=user_id,
                 expires_at=datetime.now(UTC) + timedelta(hours=settings.FILES_UPLOAD_EXPIRY_HOURS),
             )

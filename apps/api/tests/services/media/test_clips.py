@@ -94,13 +94,14 @@ def test_a_segment_outside_the_video_fails_before_rendering(
         )
 
 
-def test_a_clip_longer_than_a_saved_video_can_hold_fails_before_rendering() -> None:
-    # 100 MB at 8.128 Mbit/s holds about 1 minute 43 seconds.
-    source = _source(600_000)
+def test_a_clip_longer_than_the_renderer_can_write_fails_before_rendering() -> None:
+    # A 2 GiB renderer output at 8.128 Mbit/s holds about 35 minutes; the 4 GiB File limit
+    # no longer binds, because outputs are copied into Files by the storage provider.
+    source = _source(3_600_000)
 
-    with pytest.raises(ValueError, match="Clips can be up to 1:43"):
+    with pytest.raises(ValueError, match="Clips can be up to 35:13"):
         plan_clip(
-            [(source, 0, 60_000), (source, 200_000, 250_000)],
+            [(source, 0, 1_200_000), (source, 1_800_000, 2_760_000)],
             size=(1080, 1920),
             framing="center",
             snap=False,

@@ -224,6 +224,33 @@ async def test_gcs_promotion_follows_rewrite_tokens_until_the_copy_completes() -
     assert promoted.size_bytes == len(b"large-video")
 
 
+async def test_gcs_staged_import_rewrites_the_pinned_generation_into_the_workspace_bucket() -> None:
+    client = _FakeGcsClient()
+    provider = _provider(client)
+    staged = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE, f"platform/media-staging/{WORKSPACE_ID}/r/output-0.mp4"
+    )
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, _private_key("files/clip.mp4"))
+    stored = await provider.put_object(staged, b"rendered-clip", content_type="video/mp4")
+
+    # Only staging into a workspace bucket; never workspace to workspace.
+    with pytest.raises(StorageValidationError):
+        await provider.import_staged_object(
+            destination, destination, expected_source_etag=stored.etag
+        )
+    with pytest.raises(StoragePreconditionError):
+        await provider.import_staged_object(staged, destination, expected_source_etag="stale")
+    imported = await provider.import_staged_object(
+        staged, destination, expected_source_etag=stored.etag
+    )
+
+    assert client.bucket(WORKSPACE_BUCKET).rewrite_calls == [None]
+    assert client.bucket(WORKSPACE_BUCKET).objects[destination.key]["data"] == b"rendered-clip"
+    assert imported.size_bytes == len(b"rendered-clip")
+    with pytest.raises(StoragePreconditionError):
+        await provider.import_staged_object(staged, destination, expected_source_etag=stored.etag)
+
+
 async def test_gcs_provider_signed_urls_bind_content_type_and_disposition() -> None:
     client = _FakeGcsClient()
     provider = _provider(client)

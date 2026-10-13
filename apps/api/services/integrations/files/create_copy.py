@@ -13,6 +13,7 @@ from services.files.create_file_with_revision import (
 )
 from services.files.reserve_file_revision import reserve_file_revision
 from services.files.revision_actor import FileRevisionActor
+from services.files.utils import sha256_hex
 from services.storage.paths import safe_filename
 from utils.validation import normalize_optional_text
 
@@ -38,7 +39,8 @@ async def create_copy(
         workspace_id=deps.workspace.id,
         user_id=deps.user.id,
         name=name,
-        content=content,
+        size_bytes=len(content),
+        content_hash=sha256_hex(content),
         content_type=contract.content_type,
         extension=extension,
     )

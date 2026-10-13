@@ -4,12 +4,14 @@
 
 from collections.abc import Iterator
 from urllib.parse import unquote
+from uuid import uuid4
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 
 from core.database import set_session_tenant_context
+from core.settings import settings
 from models.files import File, FileUpload
 from models.workspace import Workspace
 from services.files.revision_actor import FileRevisionActor
@@ -21,8 +23,9 @@ from services.media.domain import (
     FramesOperation,
     MediaOperation,
     MediaRendererError,
+    StagedMediaOutput,
 )
-from services.media.utils import stage_media_input
+from services.media.utils import stage_media_input, staging_ref
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from tests.factories.files import build_file, build_file_revision
@@ -245,3 +248,86 @@ async def test_saved_output_keeps_cleanup_ownership_until_commit(
     destination = make_storage_object_ref(StorageBucket.PRIVATE, reservation.object_key)
     assert await provider.stat_object(destination) is not None
     assert await provider.stat_object(output.ref) is not None
+
+
+async def _staged_video(workspace_id, content: bytes) -> StagedMediaOutput:
+    ref = staging_ref(workspace_id, uuid4(), 0, ".mp4")
+    stored = await get_storage_provider().put_object(ref, content, content_type="video/mp4")
+    return StagedMediaOutput(
+        ref=ref,
+        content_type="video/mp4",
+        extension=".mp4",
+        size_bytes=len(content),
+        sha256=sha256_hex(content),
+        etag=stored.etag,
+    )
+
+
+async def test_an_output_over_the_written_limit_is_copied_into_a_file_by_storage(
+    committed_db_session_factory, renderer: list[dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = await build_scenario_agent(committed_db_session_factory)
+    content = b"a rendered clip larger than the in-memory write limit"
+    monkeypatch.setattr(settings, "MAX_FILE_SIZE_VIDEO", 5)
+    provider = get_storage_provider()
+
+    async def no_whole_reads(ref):
+        raise AssertionError("save_media_output must not read the output into memory")
+
+    monkeypatch.setattr(provider, "get_object", no_whole_reads)
+    async with committed_db_session_factory() as db:
+        await set_session_tenant_context(
+            db, workspace_id=context.workspace_id, user_id=context.user_id
+        )
+        workspace = await db.get(Workspace, context.workspace_id)
+        output = await _staged_video(workspace.id, content)
+        saved = await save_media_output(
+            db,
+            workspace=workspace,
+            user_id=context.user_id,
+            output=output,
+            name="clip.mp4",
+            actor=FileRevisionActor(system=True),
+        )
+        await db.commit()
+
+    assert saved.revision.size_bytes == len(content)
+    assert saved.revision.content_hash == sha256_hex(content)
+    destination = make_storage_object_ref(StorageBucket.PRIVATE, saved.revision.object_key)
+    chunks = [chunk async for chunk in provider.stream_object(destination)]
+    assert b"".join(chunks) == content
+
+
+async def test_an_output_that_changed_after_the_render_is_refused(
+    committed_db_session_factory, renderer: list[dict]
+) -> None:
+    context = await build_scenario_agent(committed_db_session_factory)
+    async with committed_db_session_factory() as db:
+        await set_session_tenant_context(
+            db, workspace_id=context.workspace_id, user_id=context.user_id
+        )
+        workspace = await db.get(Workspace, context.workspace_id)
+        output = await _staged_video(workspace.id, b"what the renderer reported")
+        provider = get_storage_provider()
+        await provider.delete_object(output.ref)
+        await provider.put_object(output.ref, b"what someone wrote after", content_type="video/mp4")
+
+        with pytest.raises(MediaRendererError) as error:
+            await save_media_output(
+                db,
+                workspace=workspace,
+                user_id=context.user_id,
+                output=output,
+                name="clip.mp4",
+                actor=FileRevisionActor(system=True),
+            )
+        await db.commit()
+
+    assert error.value.code == "invalid_response"
+    async with committed_db_session_factory() as db:
+        await set_session_tenant_context(
+            db, workspace_id=context.workspace_id, user_id=context.user_id
+        )
+        assert (
+            await db.scalar(select(File).where(File.workspace_id == context.workspace_id)) is None
+        )

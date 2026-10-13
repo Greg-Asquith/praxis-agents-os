@@ -225,11 +225,16 @@ def max_size_bytes(entry: FileContractEntry) -> int:
     return _size_setting(entry.max_size_setting)
 
 
+def stored_max_size_bytes(entry: FileContractEntry) -> int:
+    """Returns the limit for content that reaches storage without passing through API memory."""
+    return _size_setting(entry.upload_max_size_setting or entry.max_size_setting)
+
+
 def upload_max_size_bytes(entry: FileContractEntry) -> int:
     """Returns the workspace upload limit, raised only when the provider signs direct uploads."""
-    if entry.upload_max_size_setting is None or not get_storage_provider().signs_direct_uploads:
+    if not get_storage_provider().signs_direct_uploads:
         return max_size_bytes(entry)
-    return _size_setting(entry.upload_max_size_setting)
+    return stored_max_size_bytes(entry)
 
 
 def require_written_size(entry: FileContractEntry, size_bytes: int) -> None:

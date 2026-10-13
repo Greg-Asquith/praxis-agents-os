@@ -40,21 +40,35 @@ Workspace Files accept MP4 (`video/mp4`), QuickTime (`video/quicktime`,
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| `MAX_FILE_SIZE_SOURCE_VIDEO` | `4294967296` | Maximum size of a video a person uploads to workspace Files. Configuration accepts up to `21474836480` bytes, and at most 5 GiB with `STORAGE_PROVIDER=s3`. |
-| `MAX_FILE_SIZE_VIDEO` | `104857600` | Maximum size of every other video, including any video the server writes. Configuration accepts up to `524288000` bytes. |
+| `MAX_FILE_SIZE_SOURCE_VIDEO` | `4294967296` | Maximum size of a video a person uploads to workspace Files, and of a video the storage provider copies into Files (renderer outputs). Configuration accepts up to `21474836480` bytes, and at most 5 GiB with `STORAGE_PROVIDER=s3`. |
+| `MAX_FILE_SIZE_VIDEO` | `104857600` | Maximum size of every other video, including any video the server writes from memory. Configuration accepts up to `524288000` bytes. |
 
-The source limit applies only to workspace uploads on storage providers that
+For person uploads, the source limit applies only on storage providers that
 sign direct uploads (`gcs` and `s3`). Azure and local storage relay uploads
-through the API, which buffers the body, so their uploads keep
-`MAX_FILE_SIZE_VIDEO`. Platform uploads keep it too, because publication
+through the API, so their workspace uploads keep `MAX_FILE_SIZE_VIDEO`. The
+relay streams each body to storage instead of buffering it
+(`put_object_stream`, create-only; a refused body leaves no object), and
+renderer staging uploads may use the full `MEDIA_RENDERER_MAX_OUTPUT_BYTES`
+on every provider. Platform uploads keep `MAX_FILE_SIZE_VIDEO`, because publication
 reads the whole revision. Upload confirmation hashes the object by streaming
 and doesn't load a source video into memory. A signed upload URL must be used
 within 10 minutes, but a Files upload's confirmation token lasts as long as
 the pending upload (`FILES_UPLOAD_EXPIRY_HOURS`), so a long upload can still
 be confirmed. Other asset tokens keep the 10-minute lifetime.
-`create_file_with_revision`, `append_file_revision`, and
-`reserve_file_revision` reject content over its type's limit in the file
-contract, so a tool can't save a video larger than `MAX_FILE_SIZE_VIDEO`.
+`create_file_with_revision` and `append_file_revision` reject content over
+its type's limit in the file contract, so a tool can't write a video larger
+than `MAX_FILE_SIZE_VIDEO` from memory. `reserve_file_revision` takes a size
+and SHA-256 and checks the largest File of the type (`stored_max_size_bytes`).
+
+Renderer outputs reach Files without passing through API memory.
+`import_staged_object` copies a platform staging object into a workspace
+bucket inside the provider, create-only and pinned to the ETag the API
+checked: a GCS `rewrite` across buckets, an S3 `copy_object`, a block-by-block
+Azure Blob copy, and a streamed file copy for local storage. It refuses any
+source outside `platform/` and any destination outside a workspace bucket.
+`create_file_from_stored_revision` then adds the File and revision for the
+object at a committed reservation's key, after the caller has checked its
+size and streamed SHA-256.
 
 When the media renderer is available, every new workspace video revision, from
 an upload, a copy, a restore, or a tool write, starts `pending` and queues a

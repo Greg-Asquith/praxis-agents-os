@@ -11,6 +11,7 @@ import hmac
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
@@ -38,6 +39,8 @@ from services.storage.providers._common import (
     as_aware_datetime as _as_aware_datetime,
     require_content_type as _require_content_type,
     require_setting as _require_setting,
+    require_staged_import as _require_staged_import,
+    spool_chunks,
     string_metadata as _string_metadata,
 )
 from services.storage.workspace_buckets import workspace_bucket_name, workspace_id_for_ref
@@ -264,12 +267,7 @@ class AzureBlobStorageProvider:
         metadata: dict[str, str] | None = None,
         overwrite: bool = True,
     ) -> StoredObject:
-        workspace_id = workspace_id_for_ref(ref)
-        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
-            self._container_name(ref)
-            await self.ensure_platform_bucket()
-        elif workspace_id is not None:
-            await self.ensure_workspace_bucket(workspace_id)
+        await self._ensure_container_for(ref)
         resolved_cache_control = cache_control
         if ref.bucket == StorageBucket.PUBLIC and resolved_cache_control is None:
             resolved_cache_control = self.public_cache_control
@@ -277,15 +275,42 @@ class AzureBlobStorageProvider:
             content_type=content_type,
             cache_control=resolved_cache_control,
         )
+        return await self._upload(
+            ref,
+            data,
+            overwrite=overwrite,
+            content_settings=content_settings,
+            metadata=_string_metadata(metadata) or None,
+        )
+
+    async def put_object_stream(
+        self,
+        ref: StorageObjectRef,
+        chunks: AsyncIterator[bytes],
+        *,
+        content_type: str,
+    ) -> StoredObject:
+        await self._ensure_container_for(ref)
+        with await spool_chunks(chunks) as spooled:
+            return await self._upload(
+                ref,
+                spooled,
+                overwrite=False,
+                content_settings=self.content_settings_cls(content_type=content_type),
+            )
+
+    async def _ensure_container_for(self, ref: StorageObjectRef) -> None:
+        workspace_id = workspace_id_for_ref(ref)
+        if ref.bucket == StorageBucket.PLATFORM_PRIVATE:
+            self._container_name(ref)
+            await self.ensure_platform_bucket()
+        elif workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
+
+    async def _upload(self, ref: StorageObjectRef, data: Any, **kwargs: Any) -> StoredObject:
         blob = self._container(ref).get_blob_client(ref.key)
         try:
-            await asyncio.to_thread(
-                blob.upload_blob,
-                data,
-                overwrite=overwrite,
-                content_settings=content_settings,
-                metadata=_string_metadata(metadata) or None,
-            )
+            await asyncio.to_thread(blob.upload_blob, data, **kwargs)
         except Exception as exc:
             if _is_azure_precondition_failed(exc):
                 raise StoragePreconditionError(
@@ -450,21 +475,42 @@ class AzureBlobStorageProvider:
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )
-        if destination.bucket == StorageBucket.PLATFORM_PRIVATE:
-            self._container_name(destination)
-            await self.ensure_platform_bucket()
-        elif destination_workspace_id is not None:
-            await self.ensure_workspace_bucket(destination_workspace_id)
-        container = self._container(source)
-        source_blob = container.get_blob_client(source.key)
-        destination_blob = container.get_blob_client(destination.key)
+        await self._ensure_container_for(destination)
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="promote_object"
+        )
+
+    async def import_staged_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        workspace_id = _require_staged_import(source, destination, provider_key=self.provider_key)
+        await self.ensure_workspace_bucket(workspace_id)
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="import_staged_object"
+        )
+
+    async def _copy_pinned(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        expected_source_etag: str,
+        *,
+        operation: str,
+    ) -> StoredObject:
+        """Streams the source, pinned to its ETag, into a new destination blob in blocks."""
+        source_blob = self._container(source).get_blob_client(source.key)
+        destination_blob = self._container(destination).get_blob_client(destination.key)
         try:
             properties = await asyncio.to_thread(source_blob.get_blob_properties)
             if str(_get_property(properties, "etag") or "") != expected_source_etag:
                 raise StoragePreconditionError(
-                    "Storage promotion source changed after validation",
+                    "Storage copy source changed after validation",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=source.bucket.value,
                     object_key=source.key,
                 )
@@ -473,10 +519,9 @@ class AzureBlobStorageProvider:
                 etag=expected_source_etag,
                 match_condition=self.match_conditions_cls.IfNotModified,
             )
-            data = await asyncio.to_thread(download.readall)
             await asyncio.to_thread(
                 destination_blob.upload_blob,
-                data,
+                download.chunks(),
                 overwrite=False,
                 content_settings=_get_property(properties, "content_settings"),
                 metadata=_string_metadata(_get_property(properties, "metadata")) or None,
@@ -486,26 +531,26 @@ class AzureBlobStorageProvider:
         except Exception as exc:
             if _is_azure_precondition_failed(exc):
                 raise StoragePreconditionError(
-                    "Storage promotion precondition failed",
+                    "Storage copy precondition failed",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=destination.bucket.value,
                     object_key=destination.key,
                     original_error=exc,
                 ) from exc
             if _is_azure_not_found(exc):
                 raise StorageNotFoundError(
-                    "Storage promotion source was not found",
+                    "Storage copy source was not found",
                     provider_key=self.provider_key,
-                    operation="promote_object",
+                    operation=operation,
                     bucket=source.bucket.value,
                     object_key=source.key,
                     original_error=exc,
                 ) from exc
             raise StorageError(
-                "Failed to promote Azure Blob object",
+                "Failed to copy Azure Blob object",
                 provider_key=self.provider_key,
-                operation="promote_object",
+                operation=operation,
                 bucket=destination.bucket.value,
                 object_key=destination.key,
                 original_error=exc,
@@ -514,9 +559,9 @@ class AzureBlobStorageProvider:
         stored = await self.stat_object(destination)
         if stored is None:
             raise StorageNotFoundError(
-                "Promoted object could not be read after copy",
+                "Copied object could not be read after copy",
                 provider_key=self.provider_key,
-                operation="promote_object",
+                operation=operation,
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )

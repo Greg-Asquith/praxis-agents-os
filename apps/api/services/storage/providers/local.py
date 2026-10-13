@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import json
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
@@ -31,6 +32,7 @@ from services.storage.errors import (
 from services.storage.paths import build_content_disposition, quote_object_key
 from services.storage.platform_buckets import validate_platform_ref
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
+from services.storage.providers._common import require_staged_import
 from services.storage.workspace_buckets import workspace_id_for_ref
 
 
@@ -249,24 +251,50 @@ class LocalStorageProvider:
                 bucket=destination.bucket.value,
                 object_key=destination.key,
             )
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="promote_object"
+        )
 
-        try:
-            data = await self.get_object(source)
-            if not hmac.compare_digest(_content_hash(data), expected_source_etag):
-                raise StoragePreconditionError(
-                    "Storage promotion source changed after validation",
-                    provider_key=self.provider_key,
-                    operation="promote_object",
-                    bucket=source.bucket.value,
-                    object_key=source.key,
-                )
-            metadata = await self._read_metadata(source)
-            return await self.put_object(
-                destination,
-                data,
-                content_type=_optional_str(metadata.get("content_type")),
-                cache_control=_optional_str(metadata.get("cache_control")),
-                metadata={
+    async def import_staged_object(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        *,
+        expected_source_etag: str,
+    ) -> StoredObject:
+        require_staged_import(source, destination, provider_key=self.provider_key)
+        return await self._copy_pinned(
+            source, destination, expected_source_etag, operation="import_staged_object"
+        )
+
+    async def put_object_stream(
+        self,
+        ref: StorageObjectRef,
+        chunks: AsyncIterator[bytes],
+        *,
+        content_type: str,
+    ) -> StoredObject:
+        return await self._write_stream(
+            ref, chunks, {"content_type": content_type}, operation="put_object"
+        )
+
+    async def _copy_pinned(
+        self,
+        source: StorageObjectRef,
+        destination: StorageObjectRef,
+        expected_source_etag: str,
+        *,
+        operation: str,
+    ) -> StoredObject:
+        """Streams the source into a new destination, removed again if its hash isn't the ETag."""
+        metadata = await self._read_metadata(source)
+        return await self._write_stream(
+            destination,
+            self.stream_object(source),
+            {
+                "content_type": _optional_str(metadata.get("content_type")),
+                "cache_control": _optional_str(metadata.get("cache_control")),
+                "metadata": {
                     str(key): str(value)
                     for key, value in (
                         metadata.get("metadata")
@@ -274,12 +302,80 @@ class LocalStorageProvider:
                         else {}
                     ).items()
                 },
-                overwrite=False,
+            },
+            operation=operation,
+            expected_etag=expected_source_etag,
+        )
+
+    async def _write_stream(
+        self,
+        ref: StorageObjectRef,
+        chunks: AsyncIterator[bytes],
+        metadata: dict[str, object],
+        *,
+        operation: str,
+        expected_etag: str | None = None,
+    ) -> StoredObject:
+        """Writes a new object chunk by chunk; its SHA-256 becomes the ETag."""
+        workspace_id = workspace_id_for_ref(ref)
+        if workspace_id is not None:
+            await self.ensure_workspace_bucket(workspace_id)
+        path = self.filesystem_path(ref)
+        metadata_path = self._metadata_path(ref)
+        await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(metadata_path.parent.mkdir, parents=True, exist_ok=True)
+        try:
+            handle = await asyncio.to_thread(path.open, "xb")
+        except FileExistsError as exc:
+            raise StoragePreconditionError(
+                "Storage object already exists",
+                provider_key=self.provider_key,
+                operation=operation,
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+                original_error=exc,
+            ) from exc
+        digest = hashlib.sha256()
+        try:
+            try:
+                async for chunk in chunks:
+                    digest.update(chunk)
+                    await asyncio.to_thread(handle.write, chunk)
+            finally:
+                await asyncio.to_thread(handle.close)
+            etag = digest.hexdigest()
+            if expected_etag is not None and not hmac.compare_digest(etag, expected_etag):
+                raise StoragePreconditionError(
+                    "Storage copy source changed after validation",
+                    provider_key=self.provider_key,
+                    operation=operation,
+                    bucket=ref.bucket.value,
+                    object_key=ref.key,
+                )
+            stored_metadata = {
+                "cache_control": None,
+                "metadata": {},
+                **metadata,
+                "etag": etag,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+            await asyncio.to_thread(
+                metadata_path.write_text, json.dumps(stored_metadata, sort_keys=True), "utf-8"
             )
-        except StoragePreconditionError:
+        except BaseException:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+            await asyncio.to_thread(metadata_path.unlink, missing_ok=True)
             raise
-        except StorageNotFoundError:
-            raise
+        stored = await self.stat_object(ref)
+        if stored is None:
+            raise StorageNotFoundError(
+                "Stored object could not be read after write",
+                provider_key=self.provider_key,
+                operation=operation,
+                bucket=ref.bucket.value,
+                object_key=ref.key,
+            )
+        return stored
 
     async def create_signed_upload(
         self,
