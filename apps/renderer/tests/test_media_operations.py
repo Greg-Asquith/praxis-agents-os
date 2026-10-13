@@ -96,8 +96,29 @@ def test_extract_audio_and_webm_input(storage: FakeStorage, config: DriverConfig
     webm = _run(storage, config, "probe", source="sample.webm")
 
     assert abs(audio["result"]["duration_ms"] - 2000) <= 100
+    assert storage.uploads["out-0"][:4] == b"OggS"
     assert webm["result"]["video_codec"] == "vp9"
     assert webm["result"]["has_audio"] is False
+
+
+def test_extract_audio_splits_chunks_inside_the_nearest_silence(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # The fixture is silent from 3.05 s to 3.45 s; an even split would fall at 3.05 s.
+    response = _run(
+        storage,
+        config,
+        "extract_audio",
+        source="speech_gaps.mp4",
+        outputs=2,
+        arguments={"start_ms": 100, "chunks": 2},
+    )
+
+    first, second = response["result"]["chunks_ms"]
+    assert first[0] == 100 and first[1] == second[0]
+    assert 3100 <= first[1] <= 3400
+    assert abs(second[1] - 6000) <= 100
+    assert storage.uploads["out-0"][:4] == storage.uploads["out-1"][:4] == b"OggS"
 
 
 def test_times_must_start_before_the_end_of_the_video(

@@ -3,7 +3,7 @@
 """Renderer client: what reaches the renderer, and what comes back into Files."""
 
 from collections.abc import Iterator
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote
 from uuid import uuid4
 
 import pytest
@@ -26,7 +26,11 @@ from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from tests.factories.files import build_file, build_file_revision
 from tests.factories.workspaces import build_workspace
-from tests.support.media import run_media_operation_module as run_module, use_fake_renderer
+from tests.support.media import (
+    run_media_operation_module as run_module,
+    staged_ref,
+    use_fake_renderer,
+)
 from tests.support.scenario import build_scenario_agent
 from tests.support.storage import reset_storage_provider_cache
 
@@ -52,7 +56,7 @@ def renderer(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict]]:
         outputs = []
         for index, target in enumerate(payload["outputs"]):
             content = f"output-{index}".encode()
-            await get_storage_provider().put_object(_staged_ref(target["url"]), content)
+            await get_storage_provider().put_object(staged_ref(target["url"]), content)
             outputs.append({"size_bytes": len(content), "sha256": sha256_hex(content)})
         result = (
             PROBE
@@ -66,11 +70,6 @@ def renderer(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict]]:
         yield requests
     finally:
         reset_storage_provider_cache()
-
-
-def _staged_ref(url: str):
-    key = unquote(urlsplit(url).path.split("/upload/platform_private/", 1)[1])
-    return make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, key)
 
 
 def _video(workspace):
@@ -104,7 +103,7 @@ async def test_renderer_receives_only_server_built_urls_and_numeric_arguments(
     assert revision.object_key in unquote(payload["input"]["url"])
     staging_prefix = f"platform/media-staging/{workspace.id}/"
     assert all(
-        _staged_ref(item["url"]).key.startswith(staging_prefix) for item in payload["outputs"]
+        staged_ref(item["url"]).key.startswith(staging_prefix) for item in payload["outputs"]
     )
     assert [output.content_type for output in result.outputs] == ["image/jpeg", "image/jpeg"]
 
@@ -142,7 +141,7 @@ async def test_output_that_doesnt_match_the_report_is_refused_and_discarded(
         )
 
     assert error.value.code == "invalid_response"
-    staged = _staged_ref(renderer[0]["outputs"][0]["url"])
+    staged = staged_ref(renderer[0]["outputs"][0]["url"])
     assert await get_storage_provider().stat_object(staged) is None
 
 

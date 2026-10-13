@@ -4,14 +4,24 @@
 
 import asyncio
 import logging
+import re
 from uuid import UUID
 
 from core.settings import settings
-from services.media.domain import MEDIA_STAGING_PREFIX, MediaRendererError, StagedMediaOutput
+from services.media.domain import (
+    MEDIA_STAGING_PREFIX,
+    MediaRendererError,
+    StagedMediaOutput,
+    TranscriptSentence,
+    TranscriptWord,
+)
 from services.storage.domain import StorageBucket, StorageObjectRef, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 
 logger = logging.getLogger(__name__)
+
+_SENTENCE_END = re.compile(r"[.?!][\"')\]]*$")
+SENTENCE_PAUSE_MS = 2000
 
 
 def staging_ref(
@@ -61,3 +71,52 @@ async def discard_staged_outputs(
             await provider.delete_object(ref)
         except Exception:
             logger.warning("Failed to delete staged media output", extra={"object_key": ref.key})
+
+
+def normalized_token(text: str) -> str:
+    """Lowercases a word and drops punctuation, for matching one provider's words to its text."""
+    return "".join(
+        character for character in text.lower() if character.isalnum() or character == "'"
+    )
+
+
+def sentences_from_words(words: tuple[TranscriptWord, ...]) -> tuple[TranscriptSentence, ...]:
+    """Groups words into sentences at end punctuation, a change of speaker, or a long pause."""
+    sentences: list[TranscriptSentence] = []
+    current: list[TranscriptWord] = []
+    for index, word in enumerate(words):
+        current.append(word)
+        following = words[index + 1] if index + 1 < len(words) else None
+        if (
+            following is None
+            or _SENTENCE_END.search(word.text)
+            or following.speaker != word.speaker
+            or following.start_ms - word.end_ms >= SENTENCE_PAUSE_MS
+        ):
+            sentences.append(
+                TranscriptSentence(
+                    text=" ".join(item.text for item in current),
+                    start_ms=current[0].start_ms,
+                    end_ms=current[-1].end_ms,
+                    speaker=word.speaker,
+                )
+            )
+            current = []
+    return tuple(sentences)
+
+
+def transcript_srt(sentences: tuple[TranscriptSentence, ...]) -> str:
+    """Formats sentences as SubRip cues, one cue per sentence."""
+    cues = [
+        f"{index}\n{_srt_time(sentence.start_ms)} --> {_srt_time(sentence.end_ms)}\n"
+        f"{sentence.text}\n"
+        for index, sentence in enumerate(sentences, start=1)
+    ]
+    return "\n".join(cues)
+
+
+def _srt_time(milliseconds: int) -> str:
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    seconds, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"

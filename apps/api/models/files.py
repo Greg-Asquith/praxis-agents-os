@@ -27,7 +27,16 @@ FILE_PROCESSING_STATUSES = ("pending", "processing", "ready", "error")
 FILE_REVISION_KINDS = ("create", "edit", "replace", "restore", "import")
 FILE_REFERENCE_TARGET_TYPES = ("conversation", "artifact", "agent", "schedule_run")
 
-_REVISION_MUTABLE_ONCE = frozenset({"markdown_object_key", "markdown_size_bytes", "media_metadata"})
+_REVISION_MUTABLE_ONCE = frozenset(
+    {
+        "markdown_object_key",
+        "markdown_size_bytes",
+        "media_metadata",
+        "transcript_object_key",
+        "transcript_size_bytes",
+        "shot_cuts_ms",
+    }
+)
 # A provider upload cache that is replaced when it expires; never the revision's content.
 _REVISION_REPLACEABLE = frozenset({"gemini_file_name", "gemini_file_uri", "gemini_file_expires_at"})
 
@@ -211,6 +220,10 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
     gemini_file_name = Column(String(128), nullable=True)
     gemini_file_uri = Column(String(512), nullable=True)
     gemini_file_expires_at = Column(DateTime(timezone=True), nullable=True)
+    # A video revision's transcript (services.media.transcripts) and shot cut times.
+    transcript_object_key = Column(String(1024), nullable=True)
+    transcript_size_bytes = Column(BigInteger, nullable=True)
+    shot_cuts_ms = Column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -227,6 +240,10 @@ class FileRevision(Base, UUIDMixin, CreatedAtMixin):
             "(gemini_file_name IS NULL) = (gemini_file_uri IS NULL) AND "
             "(gemini_file_name IS NULL) = (gemini_file_expires_at IS NULL)",
             name="file_revisions_gemini_file_check",
+        ),
+        CheckConstraint(
+            "(transcript_object_key IS NULL) = (transcript_size_bytes IS NULL)",
+            name="file_revisions_transcript_check",
         ),
         CheckConstraint(
             _in_sql("revision_kind", FILE_REVISION_KINDS),

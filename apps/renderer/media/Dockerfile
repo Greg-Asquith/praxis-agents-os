@@ -9,7 +9,7 @@ ARG FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e00
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl nasm pkg-config xz-utils libx264-dev libass-dev \
+        build-essential ca-certificates curl nasm pkg-config xz-utils libx264-dev libass-dev libopus-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -27,14 +27,15 @@ RUN curl -fsSL -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VER
         --enable-gpl \
         --enable-libx264 \
         --enable-libass \
+        --enable-libopus \
         --enable-protocol=file,pipe \
-        --enable-demuxer=mov,matroska \
-        --enable-muxer=mp4,mov,ipod,image2,null \
+        --enable-demuxer=mov,matroska,ogg \
+        --enable-muxer=mp4,mov,ipod,ogg,image2,null \
         --enable-decoder=h264,hevc,vp8,vp9,mpeg4,prores,mjpeg,aac,mp3float,opus,vorbis,flac,alac,ac3,eac3,pcm_s16le,pcm_s24le,pcm_f32le \
-        --enable-encoder=libx264,aac,mjpeg,wrapped_avframe \
+        --enable-encoder=libx264,libopus,aac,mjpeg,wrapped_avframe \
         --enable-parser=h264,hevc,vp8,vp9,aac,opus,vorbis,mpegaudio,ac3,mjpeg \
         --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb,vp9_superframe \
-        --enable-filter=scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy \
+        --enable-filter=scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy,silencedetect,ametadata \
     && make -j"$(nproc)" \
     && make install \
     && ! /opt/ffmpeg/bin/ffmpeg -hide_banner -protocols | grep -qE '^\s+(https?|tcp|udp|tls|rtmp|rtp)$'
@@ -47,7 +48,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libx264-164 libass9 fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends libx264-164 libass9 libopus0 fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1001 renderer
 

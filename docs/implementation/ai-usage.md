@@ -67,7 +67,11 @@ The following contracts apply in this area:
   lists only with-audio rates, so silent clips, Vertex model IDs, and video
   rows without that metadata (such as Omni) count as
   `unpriced_video_generations`, displayed as **Incomplete video outputs**.
-  Agent video tools that record these purposes are pending.
+  Speech-to-text bills per audio minute: a `video_transcription` row carries
+  `audio_seconds`, and reads price Chirp 3 ($0.016) and `whisper-1`
+  ($0.006) from `AUDIO_INPUT_PRICES`, effective from 13 October 2026, and
+  count its requests as priced. Gemini transcription rows are priced by
+  their tokens like any other Gemini call.
 - Direct GPT Image 2.5 requests record one invocation under Flare or Sunburst,
   with no Luna token charge. Returned input/output totals and bounded
   text/image modality details are retained. Missing usage stays unknown;

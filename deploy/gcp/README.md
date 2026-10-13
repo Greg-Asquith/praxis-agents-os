@@ -177,6 +177,12 @@ Bootstrap also creates the Vertex AI service agent and grants it
 URI. The platform-private bucket can't use that prefix, so the grant never
 reaches it.
 
+With `GOOGLE_VERTEX_AI=true`, bootstrap also enables the Speech-to-Text API
+and grants the API and worker service accounts `roles/speech.client`, so
+`transcribe_video` can use Chirp 3 in the `eu` multi-region. Speech reads the
+staged audio from the platform-private bucket as its own service agent, which
+can read buckets in the same project.
+
 Google's model cards document the following availability (checked 2026-09-07):
 
 | Gemini model | Supported Vertex locations | Automatic default |

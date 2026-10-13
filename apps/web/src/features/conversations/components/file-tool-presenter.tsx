@@ -11,6 +11,8 @@ import {
   readFileStatusResult,
   READ_FILE_TOOL_NAME,
   readFileUrlResult,
+  transcribeVideoResult,
+  TRANSCRIBE_VIDEO_TOOL_NAME,
   writeFileResult,
   WRITE_FILE_TOOL_NAME,
 } from "@/features/conversations/native-tools/file-tools"
@@ -34,6 +36,10 @@ export const fileToolPresenter: ToolRowPresenter = {
 }
 
 function fileToolRowMatches(activity: ToolActivity) {
+  // Running and failed transcriptions keep the default row; only the saved transcript needs a card.
+  if (activity.name === TRANSCRIBE_VIDEO_TOOL_NAME) {
+    return activity.status === "completed" && transcribeVideoResult(activity.result) !== null
+  }
   if (
     (activity.name === LIST_FILES_TOOL_NAME ||
       isImageOutputTool(activity.name) ||

@@ -10,6 +10,7 @@ export const LIST_FILES_TOOL_NAME = "list_files"
 const IMAGE_TOOL_NAME = "generate_image"
 export const EDIT_IMAGE_TOOL_NAME = "edit_image"
 export const VIDEO_TO_IMAGE_TOOL_NAME = "generate_image_from_video"
+export const TRANSCRIBE_VIDEO_TOOL_NAME = "transcribe_video"
 
 export function isImageOutputTool(name: string) {
   return (
@@ -112,6 +113,31 @@ export type FileEntitySnapshot = {
   processingStatus?: FileProcessingStatus
   sizeBytes?: number
   updatedAt?: string
+}
+
+export type TranscribeVideoToolResult = {
+  name: string
+  file_id: string
+  duration_ms: number
+  word_count: number
+}
+
+export function transcribeVideoResult(value: unknown): TranscribeVideoToolResult | null {
+  if (
+    !isRecord(value) ||
+    typeof value["name"] !== "string" ||
+    typeof value["file_id"] !== "string" ||
+    typeof value["duration_ms"] !== "number" ||
+    typeof value["word_count"] !== "number"
+  ) {
+    return null
+  }
+  return {
+    name: value["name"],
+    file_id: value["file_id"],
+    duration_ms: value["duration_ms"],
+    word_count: value["word_count"],
+  }
 }
 
 export function writeFileResult(value: unknown): WriteFileToolResult | null {

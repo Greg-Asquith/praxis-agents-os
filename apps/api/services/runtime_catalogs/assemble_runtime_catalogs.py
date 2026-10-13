@@ -144,6 +144,7 @@ def _assemble_runtime_catalogs() -> None:
         web_fetch,
         web_search,
     )
+    from services.agents.runtime.tools.video import transcribe_video
 
     _ = (
         artifacts,
@@ -169,6 +170,7 @@ def _assemble_runtime_catalogs() -> None:
         read_word_document,
         read_workbook,
         skills,
+        transcribe_video,
         video_to_image,
         view_document_image,
         web_fetch,

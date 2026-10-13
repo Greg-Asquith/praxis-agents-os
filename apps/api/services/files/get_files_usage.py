@@ -24,6 +24,8 @@ async def get_files_usage(
                 FileRevision.size_bytes,
                 FileRevision.markdown_object_key,
                 FileRevision.markdown_size_bytes,
+                FileRevision.transcript_object_key,
+                FileRevision.transcript_size_bytes,
             )
             .join(File, File.id == FileRevision.file_id)
             .where(
@@ -36,10 +38,14 @@ async def get_files_usage(
     ).all()
 
     sizes_by_key: dict[str, int] = {}
-    for object_key, size_bytes, markdown_object_key, markdown_size_bytes in rows:
-        sizes_by_key.setdefault(object_key, int(size_bytes))
-        if markdown_object_key:
-            sizes_by_key.setdefault(markdown_object_key, int(markdown_size_bytes or 0))
+    for row in rows:
+        sizes_by_key.setdefault(row.object_key, int(row.size_bytes))
+        for key, size in (
+            (row.markdown_object_key, row.markdown_size_bytes),
+            (row.transcript_object_key, row.transcript_size_bytes),
+        ):
+            if key:
+                sizes_by_key.setdefault(key, int(size or 0))
 
     used_bytes = sum(sizes_by_key.values())
     soft_limit = settings.FILES_WORKSPACE_STORAGE_SOFT_LIMIT_BYTES

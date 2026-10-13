@@ -77,6 +77,13 @@ def revision_markdown_key(workspace_id: UUID, file_id: UUID, revision_id: UUID) 
     return key
 
 
+def revision_transcript_key(workspace_id: UUID, file_id: UUID, revision_id: UUID) -> str:
+    """Build the private object key for a video revision's transcript."""
+    key = f"workspaces/{workspace_id}/files/{file_id}/{revision_id}.transcript.json"
+    make_storage_object_ref(StorageBucket.PRIVATE, key)
+    return key
+
+
 def file_prefix(workspace_id: UUID, file_id: UUID) -> str:
     """Build the object-key prefix for all blobs belonging to a file."""
     return validate_object_key(f"workspaces/{workspace_id}/files/{file_id}")
@@ -262,12 +269,13 @@ async def best_effort_delete_file_object(
 
 
 def distinct_object_keys(revisions: list[FileRevision]) -> set[str]:
-    """Return distinct original and markdown object keys for revisions."""
+    """Return distinct original and derived object keys for revisions."""
     keys: set[str] = set()
     for revision in revisions:
         keys.add(revision.object_key)
-        if revision.markdown_object_key:
-            keys.add(revision.markdown_object_key)
+        keys.update(
+            key for key in (revision.markdown_object_key, revision.transcript_object_key) if key
+        )
     return keys
 
 

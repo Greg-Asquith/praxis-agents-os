@@ -50,6 +50,10 @@ class MediaSettingsMixin:
         le=86400,
         description="Longest video a File may hold; longer videos fail processing (4 hours).",
     )
+    VIDEO_TRANSCRIPTION_SPEECH_LOCATION: Literal["eu", "us"] = Field(
+        default="eu",
+        description="Speech-to-Text multi-region for Chirp 3 transcription on Vertex deployments.",
+    )
     MEDIA_RENDERER_LOCAL_STORAGE_URL: str = Field(
         default="http://host.docker.internal:8000",
         description="Local only: the API origin as the renderer container reaches it.",

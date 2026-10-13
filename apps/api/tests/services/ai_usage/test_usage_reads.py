@@ -325,6 +325,47 @@ async def test_summary_prices_video_output_seconds_by_resolution_and_audio(
     assert summary.pricing_coverage.unpriced_video_generations == 1
 
 
+async def test_summary_prices_transcription_per_audio_minute_or_by_tokens(
+    db_session: AsyncSession,
+) -> None:
+    workspace = build_workspace(slug=f"transcription-cost-{uuid4().hex}")
+    db_session.add(workspace)
+    await db_session.flush()
+    occurred_at = datetime(2026, 10, 13, 12, tzinfo=UTC)
+
+    def transcription(provider: str, model: str, seconds: int, **tokens) -> AIUsageEvent:
+        return _event(
+            workspace.id,
+            occurred_at,
+            purpose="video_transcription",
+            provider=provider,
+            model=model,
+            input_tokens=tokens.get("input_tokens", 0),
+            details={"audio_seconds": seconds, "chunks": 1},
+        )
+
+    db_session.add_all(
+        [
+            transcription("google", "chirp_3", 90),
+            transcription("google", "chirp_3", 30),
+            transcription("openai", "whisper-1", 300),
+            transcription("google", "gemini-3.8-flash", 600, input_tokens=1_000_000),
+        ]
+    )
+    await db_session.flush()
+
+    summary = await get_usage_summary(
+        db_session,
+        workspace_id=workspace.id,
+        from_=datetime(2026, 10, 13, tzinfo=UTC),
+        to=datetime(2026, 10, 14, tzinfo=UTC),
+    )
+
+    # 2 minutes of Chirp 3 ($0.016), 5 of whisper-1 ($0.006), and Gemini's tokens alone.
+    assert summary.totals.estimated_cost_usd == Decimal("0.812")
+    assert summary.pricing_coverage.unpriced_requests == 0
+
+
 @pytest.mark.parametrize("direct", [False, True])
 async def test_summary_discloses_unpriced_direct_and_historical_2_5_images(
     db_session: AsyncSession, direct: bool

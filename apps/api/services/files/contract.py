@@ -40,7 +40,7 @@ FILE_CONTRACT: tuple[FileContractEntry, ...] = (
     FileContractEntry(
         category=FileCategory.EDITABLE_TEXT,
         content_type="text/plain",
-        extensions=(".txt", ".mmd"),
+        extensions=(".txt", ".mmd", ".srt"),
         max_size_setting="MAX_FILE_SIZE_DOCUMENT",
         editable=True,
         ingestible=False,

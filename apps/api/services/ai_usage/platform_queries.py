@@ -19,10 +19,10 @@ from services.ai_usage.utils import (
     UsageBucket,
     build_usage_breakdown_rows,
     build_usage_summary_response,
+    metered_seconds_columns,
     output_price_columns,
     output_price_values,
     resolve_usage_range,
-    video_output_seconds_column,
 )
 
 
@@ -44,7 +44,7 @@ async def get_platform_usage_summary(
             AIUsageEvent.model,
             AIUsageEvent.purpose,
             *price_columns,
-            video_output_seconds_column(),
+            *metered_seconds_columns(),
             func.count(AIUsageEvent.id).label("invocations"),
             func.sum(AIUsageEvent.input_tokens).label("input_tokens"),
             func.sum(AIUsageEvent.cache_read_tokens).label("cache_read_tokens"),
@@ -88,7 +88,7 @@ async def get_platform_usage_breakdown(
         AIUsageEvent.model,
         AIUsageEvent.purpose,
         *price_columns,
-        video_output_seconds_column(),
+        *metered_seconds_columns(),
         key.label("dimension_key"),
         label.label("dimension_label"),
         func.sum(AIUsageEvent.input_tokens).label("input_tokens"),

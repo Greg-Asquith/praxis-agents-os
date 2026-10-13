@@ -23,6 +23,7 @@ MAX_FRAMES = 20
 MIN_FRAME_EDGE_PX = 64
 MAX_FRAME_EDGE_PX = 1920
 DEFAULT_FRAME_EDGE_PX = 1280
+MAX_AUDIO_CHUNKS = 32
 
 
 class _Operation(BaseModel):
@@ -67,8 +68,14 @@ class CutOperation(_Range):
 
 
 class ExtractAudioOperation(_Range):
+    """Mono 16 kHz Ogg Opus speech audio, split at silences into ``chunks`` files."""
+
     name: Literal["extract_audio"] = "extract_audio"
-    output_type: ClassVar[tuple[str, str]] = ("audio/mp4", ".m4a")
+    output_type: ClassVar[tuple[str, str]] = ("audio/ogg", ".ogg")
+    chunks: int = Field(default=1, ge=1, le=MAX_AUDIO_CHUNKS)
+
+    def output_count(self) -> int:
+        return self.chunks
 
 
 class FramesOperation(_Operation):
@@ -104,6 +111,8 @@ class CutResult(VideoMetadata):
 
 class ExtractAudioResult(_Result):
     duration_ms: int = Field(ge=0)
+    # Each chunk's [start_ms, end_ms] on the source video's timeline.
+    chunks_ms: tuple[tuple[int, int], ...] = Field(min_length=1, max_length=MAX_AUDIO_CHUNKS)
 
 
 class FramesResult(_Result):
@@ -139,6 +148,10 @@ class MediaOperationResult(BaseModel):
     elapsed_ms: int
 
 
+class TranscriptionError(Exception):
+    """A transcription failure with a message safe to show an agent."""
+
+
 class MediaRendererError(Exception):
     """A renderer failure with a stable code and a message safe to show an agent."""
 
@@ -146,3 +159,39 @@ class MediaRendererError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+# Transcripts: words come from a provider reading untrusted audio, so text is bounded.
+MAX_TRANSCRIPT_WORD_CHARS = 100
+MAX_SPEAKER_LABEL_CHARS = 16
+
+
+class TranscriptWord(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    text: str = Field(min_length=1, max_length=MAX_TRANSCRIPT_WORD_CHARS)
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(ge=0)
+    speaker: str | None = Field(default=None, max_length=MAX_SPEAKER_LABEL_CHARS)
+
+
+class TranscriptSentence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    text: str
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(ge=0)
+    speaker: str | None = Field(default=None, max_length=MAX_SPEAKER_LABEL_CHARS)
+
+
+class Transcript(BaseModel):
+    """A video revision's words and sentences on the source timeline, in milliseconds."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    provider: str
+    model: str
+    language: str | None = None
+    duration_ms: int = Field(ge=0)
+    words: tuple[TranscriptWord, ...]
+    sentences: tuple[TranscriptSentence, ...]

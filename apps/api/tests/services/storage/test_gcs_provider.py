@@ -115,7 +115,13 @@ class _FakeGcsBlob:
     def generate_signed_url(self, **kwargs) -> str:
         if self.bucket.signed_error is not None:
             raise self.bucket.signed_error
-        self.bucket.signed_calls.append({"key": self.key, **kwargs})
+        headers = kwargs.get("headers")
+        self.bucket.signed_calls.append(
+            {"key": self.key, **kwargs, **({"headers": dict(headers)} if headers else {})}
+        )
+        # Like google-cloud-storage, signing adds Host to the caller's headers dict.
+        if headers is not None:
+            headers["Host"] = "storage.googleapis.com"
         return f"https://gcs-signed.example/{self.key}"
 
 
@@ -358,7 +364,12 @@ async def test_gcs_staging_upload_signs_a_size_range_and_refuses_workspace_objec
         "x-goog-content-length-range": "0,500",
         "x-goog-if-generation-match": "0",
     }
-    assert upload.headers["x-goog-content-length-range"] == "0,500"
+    # The renderer accepts only these lowercase names, whatever the signer adds.
+    assert upload.headers == {
+        "content-type": "video/mp4",
+        "x-goog-content-length-range": "0,500",
+        "x-goog-if-generation-match": "0",
+    }
     with pytest.raises(StorageValidationError):
         await provider.create_signed_staging_upload(
             make_storage_object_ref(StorageBucket.PRIVATE, f"workspaces/{WORKSPACE_ID}/out.mp4"),

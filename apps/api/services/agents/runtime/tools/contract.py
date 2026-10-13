@@ -151,6 +151,7 @@ VALID_TOOL_ICONS = frozenset(
         "sparkles",
         "bot",
         "image",
+        "captions",
         "book",
         "link",
         "mail",

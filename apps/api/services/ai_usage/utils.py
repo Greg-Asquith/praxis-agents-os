@@ -18,10 +18,12 @@ from models.ai_usage_event import AIUsageEvent
 from services.ai_usage.domain import (
     PURPOSE_IMAGE_GENERATION,
     PURPOSE_VIDEO_GENERATION,
+    PURPOSE_VIDEO_TRANSCRIPTION,
     AIUsageEventData,
 )
 from services.ai_usage.pricing import (
     ModelPrice,
+    find_audio_input_price,
     find_image_output_price,
     find_price,
     find_video_output_price,
@@ -74,6 +76,7 @@ class UsageBucket:
     video_resolution: str | None = None
     video_audio: str | None = None
     video_output_seconds: Decimal = Decimal(0)
+    audio_seconds: Decimal = Decimal(0)
     key: str | None = None
     label: str | None = None
 
@@ -151,10 +154,12 @@ def output_price_columns() -> list[Label]:
     return [AIUsageEvent.details[key].astext.label(key) for key in _OUTPUT_PRICE_DETAIL_KEYS]
 
 
-def video_output_seconds_column() -> Label:
-    """Returns the summed video output seconds for one grouped bucket."""
-    seconds = cast(AIUsageEvent.details["video_output_seconds"].astext, Numeric)
-    return func.sum(seconds).label("video_output_seconds")
+def metered_seconds_columns() -> list[Label]:
+    """Returns the summed video output and audio input seconds for one grouped bucket."""
+    return [
+        func.sum(cast(AIUsageEvent.details[key].astext, Numeric)).label(key)
+        for key in ("video_output_seconds", "audio_seconds")
+    ]
 
 
 def output_price_values(row: Any) -> dict[str, Any]:
@@ -162,6 +167,7 @@ def output_price_values(row: Any) -> dict[str, Any]:
     return {
         **{key: getattr(row, key) for key in _OUTPUT_PRICE_DETAIL_KEYS},
         "video_output_seconds": Decimal(row.video_output_seconds or 0),
+        "audio_seconds": Decimal(row.audio_seconds or 0),
     }
 
 
@@ -184,14 +190,23 @@ def fold_buckets(
         folded.tokens_by_class.cache_write += bucket.cache_write_tokens
         folded.tokens_by_class.output += bucket.output_tokens
         folded.requests += bucket.requests
-        if price is None:
+        # Speech-to-text models bill per minute of audio, not per token.
+        audio_price = (
+            find_audio_input_price(bucket.provider, bucket.model, bucket.day)
+            if bucket.purpose == PURPOSE_VIDEO_TRANSCRIPTION
+            else None
+        )
+        if price is None and audio_price is None:
             folded.unpriced_tokens += bucket.tokens
             folded.unpriced_requests += bucket.requests
         else:
             folded.has_priced_bucket = True
             folded.priced_tokens += bucket.tokens
             folded.priced_requests += bucket.requests
-            folded.estimated_cost_usd += bucket_cost(bucket, price)
+            if price is not None:
+                folded.estimated_cost_usd += bucket_cost(bucket, price)
+            if audio_price is not None:
+                folded.estimated_cost_usd += bucket.audio_seconds / 60 * audio_price.usd_per_minute
         if bucket.purpose == PURPOSE_VIDEO_GENERATION:
             _fold_video_output(folded, bucket)
         if bucket.purpose == PURPOSE_IMAGE_GENERATION:

@@ -251,6 +251,10 @@ apis=(
 if [[ "$GOOGLE_VERTEX_AI" == "true" || "$ANTHROPIC_VERTEX_AI" == "true" \
   || "$VERTEX_PARTNER_MODELS_ENABLED" == "true" ]]; then
   apis+=(aiplatform.googleapis.com)
+  # Chirp 3 transcribes video audio on Gemini Vertex deployments.
+  if [[ "$GOOGLE_VERTEX_AI" == "true" ]]; then
+    apis+=(speech.googleapis.com)
+  fi
   # Model Garden partner quotas, including Claude, stay at zero without Compute Engine.
   if [[ "$ANTHROPIC_VERTEX_AI" == "true" || "$VERTEX_PARTNER_MODELS_ENABLED" == "true" ]]; then
     apis+=(compute.googleapis.com)
@@ -661,6 +665,13 @@ if [[ "$GOOGLE_VERTEX_AI" == "true" ]]; then
   plan gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
     --member="serviceAccount:${vertex_service_agent}" --role=roles/storage.objectViewer \
     --condition="$workspace_bucket_condition" --quiet
+  # Speech reads staged audio from the platform-private bucket as its own service agent,
+  # which can read buckets in its project; the callers only need to start recognition.
+  for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do
+    plan gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID" \
+      --member="serviceAccount:${service_account}" --role=roles/speech.client \
+      --condition=None --quiet
+  done
 fi
 secret_namespace_condition="expression=(resource.type == 'secretmanager.googleapis.com/Secret' || resource.type == 'secretmanager.googleapis.com/SecretVersion') && resource.name.startsWith('projects/${GCP_PROJECT_NUMBER}/secrets/praxis-'),title=Praxis application secret namespace,description=Manage only application-owned Praxis secrets"
 for service_account in "$API_SERVICE_ACCOUNT" "$WORKER_SERVICE_ACCOUNT"; do

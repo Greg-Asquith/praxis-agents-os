@@ -38,6 +38,14 @@ class VideoOutputPrice:
     usd_per_second: Decimal
 
 
+@dataclass(frozen=True)
+class AudioInputPrice:
+    provider: str
+    model: str
+    effective_from: date
+    usd_per_minute: Decimal
+
+
 def _price(
     provider: str,
     model: str,
@@ -210,6 +218,14 @@ VIDEO_OUTPUT_PRICES: tuple[VideoOutputPrice, ...] = tuple(
 )
 
 
+# Speech-to-text bills per minute of audio. Chirp 3 uses the standard tier, before volume discounts.
+# https://cloud.google.com/speech-to-text/pricing and https://openai.com/api/pricing
+AUDIO_INPUT_PRICES: tuple[AudioInputPrice, ...] = (
+    AudioInputPrice("google", "chirp_3", date(2026, 10, 13), Decimal("0.016")),
+    AudioInputPrice("openai", "whisper-1", date(2026, 10, 13), Decimal("0.006")),
+)
+
+
 def find_price(provider: str, model: str, on_date: date) -> ModelPrice | None:
     """Return the latest price effective on a UTC usage date."""
     applicable = (
@@ -256,5 +272,15 @@ def find_video_output_price(
         and price.resolution == resolution
         and price.audio == audio
         and price.effective_from <= on_date
+    )
+    return max(applicable, key=lambda price: price.effective_from, default=None)
+
+
+def find_audio_input_price(provider: str, model: str, on_date: date) -> AudioInputPrice | None:
+    """Return the latest per-minute estimate for a speech-to-text model."""
+    applicable = (
+        price
+        for price in AUDIO_INPUT_PRICES
+        if price.provider == provider and price.model == model and price.effective_from <= on_date
     )
     return max(applicable, key=lambda price: price.effective_from, default=None)

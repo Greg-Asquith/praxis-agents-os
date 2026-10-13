@@ -1,8 +1,9 @@
 # Video tools
 
 Read this before changing the media renderer, its API client, or anything that
-decodes, cuts, or measures video. Model-facing video tools that find
-moments in video or cut it are pending. For upload limits and video in chat,
+decodes, cuts, or measures video. `transcribe_video` is the first
+model-facing tool on the renderer; tools that find moments in video or cut it
+are pending. For upload limits and video in chat,
 see [Storage and files](storage-and-files.md#video-uploads-and-attachments).
 
 ## Media renderer
@@ -16,7 +17,8 @@ It runs in the media renderer, a separate service:
   with its own image.
 - `apps/renderer/media/` holds the ffmpeg operations and the image. The image
   builds a pinned ffmpeg from source with only the demuxers, decoders,
-  encoders, and filters the operations use, plus `libx264`, AAC, and `libass`.
+  encoders, and filters the operations use, plus `libx264`, `libopus`, AAC,
+  and `libass`.
   Network protocols are compiled out, and the build fails if any remain.
 
 One request runs one typed operation:
@@ -26,13 +28,19 @@ One request runs one typed operation:
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
 | `cut` | `start_ms`, `end_ms` | one MP4. Stream copy when H.264 or HEVC with AAC or no audio starts on a keyframe (within 20 ms); otherwise H.264 and AAC re-encode |
-| `extract_audio` | optional range | one M4A, mono 16 kHz AAC |
+| `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file (32 kbit/s) per chunk, plus each chunk's range on the source timeline |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
 Arguments are numbers only. The driver rejects unknown fields and any value of
 the wrong type, and builds every ffmpeg argument itself. A range must start
 before the end of the video; an end past it is trimmed to the end. A frame time
 must be strictly before the end.
+
+`extract_audio` splits the range into `chunks` near-equal parts. Each split
+moves into the longest silence (quieter than -35 dB for at least 0.3 s) within
+10% of a part's length of the even split, or stays at the even split when
+there's none. Chunks are re-encoded from one extraction, so each starts
+exactly at its reported time.
 
 Every operation, `probe` included, downloads the whole input. Container
 metadata can sit anywhere in the file, so a head-and-tail read can report a
@@ -189,6 +197,69 @@ past the inline bound: on the Gemini API, or on Vertex with GCS storage. Tools
 that need long video combine it with `settings.media_renderer_available` in
 their `availability_check`, so they're hidden rather than failing at call time.
 
+## Transcripts and shot cuts
+
+A video revision's transcript and shot cuts are derived once, on first need,
+and kept with the revision. They aren't Files, so a read can create them.
+
+- `get_video_transcript` (`services/media/`) returns the stored transcript, or
+  extracts the audio with `extract_audio`, transcribes each chunk (four at a
+  time, 16 for Gemini), moves each chunk's words onto the video's timeline, and stores the
+  result as JSON under the File's key prefix
+  (`file_revisions.transcript_object_key`). A word is clamped to its own
+  chunk, so word times never run backwards. Sentences end at `.`, `?`, or
+  `!`, a change of speaker, or a pause of 2 seconds. A stored transcript is
+  reused whatever provider or language a later call asks for, so a revision
+  is transcribed and billed once. Two concurrent first transcriptions of one
+  revision both reach the provider, and the later save fails.
+- `get_video_shot_cuts` stores the renderer's `scene_cuts` times on the
+  revision (`file_revisions.shot_cuts_ms`).
+
+Both columns are set once, like `media_metadata`. Purging a File deletes the
+transcript object with the revision's other objects, and Files usage counts
+it.
+
+The provider is the first one the deployment has, in the order measured in
+plan 249 B1:
+
+| Provider | When | Chunk limit | Notes |
+|---|---|---|---|
+| Chirp 3 (`chirp_3`) | Vertex (`GOOGLE_VERTEX_AI`) with GCS storage | 19 minutes | `BatchRecognize` in `VIDEO_TRANSCRIPTION_SPEECH_LOCATION` (`eu` by default) reads the staged chunk by `gs://` URI, with word timings, punctuation, and speaker labels. Speaker labels restart with each chunk. A language without a region, such as `en`, is sent as `auto`. |
+| `whisper-1` | `OPENAI_API_KEY` | 60 minutes and 25 MB | Receives the chunk bytes. Punctuation comes from the response text, matched back to its words. No speaker labels. |
+| Gemini 3.8 Flash | Google on either transport | 8 minutes | Receives the chunk bytes inline and answers with structured words, times in seconds, and speaker letters. Word starts were about 0.4 s out at the median and 1 s at p95, so it comes last. A chunk takes about half its length to transcribe. |
+
+With none of them (a deployment with only Anthropic models), `transcribe_video`
+is hidden. Asked for word times as JSON text rather than structured output,
+Gemini drifted by up to 13 seconds within a minute of speech. Chirp 3 reads Ogg Opus and FLAC but returns nothing for AAC, which is
+why `extract_audio` writes Opus.
+
+Each transcription records a `video_transcription` usage event with the
+provider's requests (and tokens, for Gemini) and the audio length in
+`details.audio_seconds`. The usage summary prices Chirp 3 ($0.016) and
+`whisper-1` ($0.006) per audio minute from `AUDIO_INPUT_PRICES` in
+`services/ai_usage/pricing.py`, and Gemini by its tokens.
+
+### `transcribe_video`
+
+`transcribe_video(file_id, language?)` takes the current revision of one of
+the workspace's own videos once its probe has finished. It returns the saved
+transcript File, word count, language, and provider, plus the first eight
+sentences with MM:SS times as an untrusted-content node. It writes the
+transcript as `<video name> transcript.srt` (one SubRip cue per sentence) in
+the video's folder; calling it again adds a revision to that File rather than a
+copy. A new transcription records a `video_transcription` audit event on the
+video File with the provider and model, and commits it before the transcript
+File is written. The tool isn't code-eligible; its timeout is the renderer's
+plus 900 seconds for transcription.
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `VIDEO_TRANSCRIPTION_SPEECH_LOCATION` | `eu` | Speech-to-Text multi-region (`eu` or `us`) for Chirp 3. |
+
+On GCP, bootstrap enables the Speech-to-Text API and grants the API and worker
+service accounts `roles/speech.client` when `GOOGLE_VERTEX_AI=true`. Speech
+reads the staged audio as its own service agent.
+
 ## Long media calls
 
 Video calls run inside the tool call, under an explicit tool `timeout`. The
@@ -199,6 +270,7 @@ run's lease heartbeat continues during the call, and
 |---|---|
 | A Google model call over video (generation, edits, understanding) | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` (600 s): 300 s for the model call plus the Files API's 300 s processing wait |
 | A renderer operation | `MEDIA_RENDERER_TIMEOUT_SECONDS` plus the client's 60 second allowance (`REQUEST_ALLOWANCE_SECONDS`) |
+| `transcribe_video` | The renderer operation's timeout plus 900 seconds for transcription |
 
 When a timeout passes, Pydantic AI cancels the call and returns a retry to the
 model. Nothing is saved, because tools write their output File only after the
@@ -285,8 +357,9 @@ Locally, set `MEDIA_RENDERER_URL=http://127.0.0.1:8090` and
 `MEDIA_RENDERER_AUTH=none` in `apps/api/.env`, and `make dev` starts the
 renderer on `127.0.0.1:8090`. See [Local development](local-development.md).
 Uploading a video to **Files** runs the probe, so the File moving from
-**Processing** to ready confirms the renderer works end to end. No
-model-facing tool calls the renderer.
+**Processing** to ready confirms the renderer works end to end. With an
+`OPENAI_API_KEY`, `transcribe_video` then transcribes it through `whisper-1`,
+because local storage can't give Chirp 3 a `gs://` URI.
 
 ## Verification
 

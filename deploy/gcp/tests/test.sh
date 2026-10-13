@@ -400,6 +400,9 @@ for google, anthropic, partner in itertools.product(("false", "true"), repeat=3)
     assert ("aiplatform.googleapis.com" in result) == enabled
     assert ("compute.googleapis.com" in result) == ("true" in (anthropic, partner))
     assert result.count("--role=roles/aiplatform.user") == (2 if enabled else 0)
+    # Chirp 3 transcription runs only where Gemini is on Vertex.
+    assert ("speech.googleapis.com" in result) == (google == "true")
+    assert result.count("--role=roles/speech.client") == (2 if google == "true" else 0)
     # Only Gemini on Vertex reads by URI, and only from workspace buckets.
     grants = [line for line in result.splitlines() if "storage.objectViewer" in line]
     assert len(grants) == (1 if google == "true" else 0)

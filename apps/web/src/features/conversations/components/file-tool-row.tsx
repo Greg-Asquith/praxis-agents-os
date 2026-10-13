@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/file-tool-row.tsx
 
 import {
+  CaptionsIcon,
   FileIcon,
   FilePlus2Icon,
   FilesIcon,
@@ -46,6 +47,8 @@ import {
   readFileStatusResult,
   READ_FILE_TOOL_NAME,
   readFileUrlResult,
+  transcribeVideoResult,
+  TRANSCRIBE_VIDEO_TOOL_NAME,
   writeFileResult,
   WRITE_FILE_TOOL_NAME,
   VIDEO_TO_IMAGE_TOOL_NAME,
@@ -53,7 +56,7 @@ import {
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { FileContentView } from "@/features/files/components/file-content-view"
 import type { ToolUi } from "@/features/tools/types"
-import { formatBytes, formatDateTime, pluralize } from "@/lib/format"
+import { formatBytes, formatDateTime, formatDuration, pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
 type FileToolRowProps = {
@@ -164,6 +167,9 @@ export function FileToolRow({
   if (activity.name === WRITE_FILE_TOOL_NAME) {
     return <WriteFileRow activity={activity} defaultOpen={defaultOpen} />
   }
+  if (activity.name === TRANSCRIBE_VIDEO_TOOL_NAME) {
+    return <TranscribeVideoRow activity={activity} defaultOpen={defaultOpen} />
+  }
   if (activity.name === READ_FILE_TOOL_NAME) {
     return <ReadFileRow activity={activity} defaultOpen={defaultOpen} />
   }
@@ -229,6 +235,31 @@ function WriteFileRow({
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <FileEntityRow file={file} />
+    </ToolResultCard>
+  )
+}
+
+function TranscribeVideoRow({
+  activity,
+  defaultOpen,
+}: Pick<FileToolRowProps, "activity" | "defaultOpen">) {
+  const result = transcribeVideoResult(activity.result)
+  if (!result) {
+    return null
+  }
+  return (
+    <ToolResultCard
+      ariaLabel={`Saved transcript ${result.name}`}
+      defaultOpen={defaultOpen}
+      details={[
+        { label: "Transcript", value: result.name },
+        { label: "Length", value: formatDuration(result.duration_ms, "milliseconds") },
+        { label: "Words", value: result.word_count.toLocaleString() },
+      ]}
+      heading={<FileToolHeading icon={CaptionsIcon}>Transcribe Video</FileToolHeading>}
+      trailing={<ActivityStatusBadge status={activity.status} />}
+    >
+      <FileEntityRow file={{ fileId: result.file_id, name: result.name }} />
     </ToolResultCard>
   )
 }

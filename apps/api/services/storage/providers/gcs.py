@@ -552,7 +552,8 @@ class GcsStorageProvider:
                 method="PUT",
                 content_type=content_type,
                 version="v4",
-                headers=signed_headers,
+                # The library adds Host and Content-Type to the dict it's given.
+                headers=dict(signed_headers),
                 **signing_kwargs,
             )
         except StorageError:
@@ -633,6 +634,10 @@ class GcsStorageProvider:
         # Vertex's service agent can read workspace buckets only (deploy/gcp/bootstrap.sh).
         if ref.bucket != StorageBucket.PRIVATE:
             return None
+        return self.object_uri(ref)
+
+    def object_uri(self, ref: StorageObjectRef) -> str:
+        """Returns the object's gs:// URI; the caller decides which Google service reads it."""
         return f"gs://{self._bucket(ref).name}/{ref.key}"
 
     def require_valid_upload_signature(

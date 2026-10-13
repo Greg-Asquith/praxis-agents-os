@@ -12,12 +12,18 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `transcribe_video` transcribes the speech in a workspace video with word
+  timings and saves it as an SRT File next to the video. Each video revision
+  is transcribed once, by Chirp 3 on Vertex deployments, `whisper-1` with
+  an OpenAI key, or otherwise Gemini 3.8 Flash, and the transcript is kept
+  for later video tools. Long videos are split at silences. **AI Usage**
+  prices transcription per audio minute (Gemini by tokens). On GCP,
+  bootstrap enables the Speech-to-Text API when `GOOGLE_VERTEX_AI=true`.
 - An isolated media renderer (`apps/renderer`) runs ffmpeg for video probe,
   scene detection, cuts, audio extraction, and still frames. Each command
   runs under a seccomp filter with no network sockets and bounded memory,
   CPU, output, and time; the renderer refuses to start if that isolation
   fails. On GCP it is a private Cloud Run service that scales to zero.
-  Agent video tools that use it are pending.
 - Uploaded and saved videos are measured by the media renderer. Each video
   File shows as processing until its duration, dimensions, frame rate, and
   audio are recorded, and `list_files`, `read_file`, and chat attachment

@@ -5,10 +5,12 @@
 import importlib
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
 from core.settings import settings
+from services.storage.domain import StorageBucket, StorageObjectRef, make_storage_object_ref
 from tests.support.storage import reset_storage_provider_cache
 
 # The package exports a function with the module's name.
@@ -31,3 +33,9 @@ def use_fake_renderer(
     )
     reset_storage_provider_cache()
     monkeypatch.setattr(run_media_operation_module, "_post", post)
+
+
+def staged_ref(url: str) -> StorageObjectRef:
+    """Returns the platform staging object a local signed upload URL writes to."""
+    key = unquote(urlsplit(url).path.split("/upload/platform_private/", 1)[1])
+    return make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, key)

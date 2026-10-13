@@ -305,6 +305,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "fetch_url": "arbitrary_url",
         "generate_image": "none",
         "generate_image_from_video": "none",
+        "transcribe_video": "none",
         "forget_memory": "none",
         "gmail_read_message": "provider_query",
         "gmail_search_messages": "provider_query",
