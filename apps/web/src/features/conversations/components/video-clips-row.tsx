@@ -1,7 +1,8 @@
 // apps/web/src/features/conversations/components/video-clips-row.tsx
 
-import { useState } from "react"
+import { Fragment, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "@tanstack/react-router"
 import { PlayIcon, ScissorsIcon, TriangleAlertIcon, VideoIcon } from "lucide-react"
 
 import { ToolResultCard } from "@/components/tool-ui/result-card"
@@ -87,6 +88,24 @@ export function CutVideoClipsRow({
           </li>
         ))}
       </ol>
+      {result.folders.length > 0 ? (
+        <p className="text-muted-foreground pt-3 text-xs">
+          Saved in {result.folders.length === 1 ? "the folder" : "the folders"}{" "}
+          {result.folders.map((folder, index) => (
+            <Fragment key={folder.id}>
+              {index > 0 ? ", " : null}
+              <Link
+                className="text-foreground font-medium underline-offset-4 hover:underline"
+                search={{ folder: folder.id }}
+                to="/files"
+              >
+                {folder.name}
+              </Link>
+            </Fragment>
+          ))}
+          .
+        </p>
+      ) : null}
     </ToolResultCard>
   )
 }

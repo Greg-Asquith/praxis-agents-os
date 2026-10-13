@@ -185,8 +185,12 @@ export type VideoClip = {
   error: string | null
 }
 
+type ClipFolder = { id: string; name: string }
+
 export type CutVideoClipsResult = {
   clips: VideoClip[]
+  // Where the saved clips went, in order of first use.
+  folders: ClipFolder[]
   saved: number
 }
 
@@ -198,7 +202,18 @@ export function cutVideoClipsResult(value: unknown): CutVideoClipsResult | null 
   if (clips.some((clip) => clip === null)) {
     return null
   }
-  return { clips: clips as VideoClip[], saved: value["saved"] }
+  const folders = new Map<string, ClipFolder>()
+  for (const clip of value["clips"]) {
+    const folder = isRecord(clip) ? clip["folder"] : null
+    if (
+      isRecord(folder) &&
+      typeof folder["id"] === "string" &&
+      typeof folder["name"] === "string"
+    ) {
+      folders.set(folder["id"], { id: folder["id"], name: folder["name"] })
+    }
+  }
+  return { clips: clips as VideoClip[], folders: [...folders.values()], saved: value["saved"] }
 }
 
 function videoClip(value: unknown): VideoClip | null {

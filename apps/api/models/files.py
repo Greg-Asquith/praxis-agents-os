@@ -62,6 +62,15 @@ class FileFolder(BaseModel):
         ForeignKey("conversations.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # Holds outputs derived from this File, such as video clips.
+    source_file_id = Column(
+        UUID(as_uuid=True),
+        # Files also reference folders, so this key is added after both tables exist.
+        ForeignKey(
+            "files.id", ondelete="SET NULL", use_alter=True, name="file_folders_source_file_id_fkey"
+        ),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -84,6 +93,14 @@ class FileFolder(BaseModel):
             postgresql_where=text("deleted = false AND source_conversation_id IS NOT NULL"),
         ),
         Index("ix_file_folders_source_conversation", "source_conversation_id"),
+        Index(
+            "uq_file_folders_workspace_source_file_live",
+            "workspace_id",
+            "source_file_id",
+            unique=True,
+            postgresql_where=text("deleted = false AND source_file_id IS NOT NULL"),
+        ),
+        Index("ix_file_folders_source_file", "source_file_id"),
     )
 
 

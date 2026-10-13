@@ -12,6 +12,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- Clips and transcripts of a video save in a folder named after that video,
+  created on first use, and clips cut from a clip join the original's folder.
+  `cut_video_clips` takes an optional `folder` name instead, and its card
+  links the folder.
 - `cut_video_clips` burns in captions from the transcript, in a `bold`,
   `clean`, or word-by-word `highlight` preset, and every part of the style can
   be changed: 16 bundled fonts, size, colours, outline, shadow, box, capitals,

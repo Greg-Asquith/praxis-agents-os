@@ -299,7 +299,7 @@ the workspace's own videos once its probe has finished. It returns the saved
 transcript File, word count, language, and provider, plus the first eight
 sentences with MM:SS times as an untrusted-content node. It writes the
 transcript as `<video name> transcript.srt` (one SubRip cue per sentence) in
-the video's folder; calling it again adds a revision to that File rather than a
+the video's output folder (see "Output folders"); calling it again adds a revision to that File rather than a
 copy. A new transcription records a `video_transcription` audit event on the
 video File with the provider and model, and commits it before the transcript
 File is written. The tool isn't code-eligible; its timeout is the renderer's
@@ -389,10 +389,12 @@ available, and **Add to chat** in Files offers video then too.
 
 ## Clips
 
-`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?, remove_silences?)`
+`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?, remove_silences?, folder?)`
 renders up to five clips and
-saves each as a new video File next to the video its first segment comes
-from. It needs only the renderer. Internal write, auto by default, not
+saves each as a new video File in the output folder of the video its first
+segment comes from (see "Output folders"), or in the folder `folder` names,
+created in the caller's workspace if needed and resolved once per call. It
+needs only the renderer. Internal write, auto by default, not
 code-eligible.
 
 - Each clip has 1 to 10 `segments`, joined in order. A segment is a
@@ -466,13 +468,33 @@ In the conversation, a completed call says how many clips it saved, the
 shape and framing when the shape changed, and the captions and pause
 removal when used, and shows them as a grid of stills
 with their length, name, and ranges; selecting one opens the player in a
-dialog. A failed clip's tile shows its reason. The moments card
+dialog, and a line under the grid links the folder the clips went to. A
+failed clip's tile shows its reason. The moments card
 has a checkbox per moment and **Cut N Clips**, which sends the person's own
 turn: "Cut these moments from `<video>` into separate clips", then each
 chosen moment's times. Titles and reasons come from a model watching
 untrusted video, so they never go into that message. The button is disabled
 while the conversation can't take a turn. Tool rows send turns through
 `ConversationActionsContext`, which the conversation route provides.
+
+### Output folders
+
+Files made from a video go in one folder per original video, as `run_code`
+and document outputs go in one folder per conversation. The folder is named
+after the video without its extension (`Talk` for `Talk.mp4`, with a
+numeric suffix when a live folder already has that name) and linked to it by
+`file_folders.source_file_id`. `ensure_source_file_folder` resolves it:
+
+- A video already inside another video's folder, such as an earlier clip, is
+  itself derived, so its outputs join that folder. Clips of clips stay with
+  the original.
+- Otherwise the live folder linked to the video is reused, or created and
+  audited as a `file_folder` create by the agent. A partial unique index
+  keeps one live folder per video; renaming the folder keeps the link, and
+  deleting it means the next output creates a new one.
+
+`transcribe_video` and `cut_video_clips` use it. A stitched clip goes in its
+first video's folder.
 
 ## Long media calls
 

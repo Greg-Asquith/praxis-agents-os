@@ -331,11 +331,11 @@ shows as processing until it's measured, then fails if it can't play or runs
 over 4 hours. Use **New Folder** and **Move to Folder** to organise them.
 
 Agents can read and change any workspace file, editing text directly. They
-edit and create Excel, PowerPoint, and Word files with any model, keeping
-their template and fonts; an edit saves a new version of the same file.
-**Edit Image** saves the edited picture as a new image and keeps the
-original. Files agents create go in a conversation folder. These
-tools follow the settings on the **Tools** tab.
+edit and create Excel, PowerPoint, and Word files, keeping their template
+and fonts; an edit saves a new version. **Edit Image** saves a new image.
+New files go in a conversation folder; a video's clips and transcript go in
+a folder named after it. These tools follow the settings on the **Tools**
+tab.
 
 You can rename, move, and delete files, but not edit their content
 yourself. Content edits save versions that **Restore Version** brings back;

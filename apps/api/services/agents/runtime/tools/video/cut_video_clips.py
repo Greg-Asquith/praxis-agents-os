@@ -14,7 +14,7 @@ from pydantic_ai.exceptions import ToolFailed
 
 from core.exceptions.general import AppValidationError
 from core.settings import settings
-from models.files import File, FileRevision
+from models.files import File, FileFolder, FileRevision
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools.contract import (
@@ -33,7 +33,11 @@ from services.agents.runtime.tools.video.utils import (
     video_transcript,
     workspace_video,
 )
-from services.files import create_conversation_file_references
+from services.files import (
+    create_conversation_file_references,
+    ensure_source_file_folder,
+    resolve_folder_by_name,
+)
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import format_duration
 from services.media import discard_staged_outputs, save_media_output
@@ -53,6 +57,7 @@ from services.media.get_video_shot_cuts import get_video_shot_cuts
 from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS
 from services.media.transcription_providers import transcription_provider
 from services.storage.paths import safe_filename
+from utils.validation import normalize_optional_text
 
 MAX_CLIPS = 5
 MAX_CLIP_NAME_CHARS = 120
@@ -118,8 +123,9 @@ def cut_video_clips_available() -> bool:
         "boxed line, 'highlight' to pick out each word as it's spoken; caption_style overrides "
         "any part of the preset, such as the font or colours, when the person asks. "
         "remove_silences cuts pauses between words with hard jump cuts; leave it off unless the "
-        "person asks for tighter pacing or no pauses. Both apply to every clip. One clip "
-        "failing doesn't stop the others; the result reports each clip."
+        "person asks for tighter pacing or no pauses. Both apply to every clip. Clips save in a "
+        "folder named after their first video unless folder names another. One clip failing "
+        "doesn't stop the others; the result reports each clip."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -145,6 +151,7 @@ def cut_video_clips_available() -> bool:
             ToolFieldPresentation(key="aspect_ratio", label="Aspect Ratio"),
             ToolFieldPresentation(key="framing", label="Framing", secondary=True),
             ToolFieldPresentation(key="captions", label="Captions", secondary=True),
+            ToolFieldPresentation(key="folder", label="Folder", secondary=True),
         ),
         result_fields=(ToolFieldPresentation(key="saved", label="Clips", format="number"),),
     ),
@@ -191,8 +198,18 @@ async def cut_video_clips(
             )
         ),
     ] = False,
+    folder: Annotated[
+        str | None,
+        Field(
+            max_length=255,
+            description=(
+                "Optional folder name for every clip, created if needed. Omit to save each clip "
+                "in the folder named after its first video."
+            ),
+        ),
+    ] = None,
 ) -> dict[str, object]:
-    """Renders each clip from the caller's own videos and saves it next to its first video."""
+    """Renders each clip from the caller's own videos and saves it in its output folder."""
     stage = progress(ctx)
     videos = await _workspace_videos(ctx, clips)
     style = (
@@ -243,6 +260,7 @@ async def cut_video_clips(
     await stage("Rendering Clips")
     rendered = await render_clips(ctx.deps.workspace.id, planned)
     await stage("Saving Clips")
+    folders = _ClipFolders(normalize_optional_text(folder))
     results = []
     for index, (clip, request, outcome) in enumerate(
         zip(clips, planned, rendered, strict=True), start=1
@@ -252,7 +270,8 @@ async def cut_video_clips(
         if isinstance(outcome, MediaRendererError):
             results.append(_failed(index, name, request, outcome.message))
             continue
-        results.append(await _save_clip(ctx, index, name, request, outcome, first_file.folder_id))
+        clip_folder = await folders.get(ctx, first_file)
+        results.append(await _save_clip(ctx, index, name, request, outcome, clip_folder))
     await ctx.deps.db.commit()
     for outcome in rendered:
         if isinstance(outcome, MediaOperationResult):
@@ -331,7 +350,7 @@ async def _save_clip(
     name: str,
     request: PlannedClip,
     outcome: MediaOperationResult,
-    folder_id: UUID | None,
+    folder: FileFolder,
 ) -> dict[str, object]:
     [output] = outcome.outputs
     try:
@@ -343,7 +362,7 @@ async def _save_clip(
                 output=output,
                 name=name,
                 actor=FileRevisionActor(agent_id=ctx.deps.agent.id),
-                folder_id=folder_id,
+                folder_id=folder.id,
             )
             # The renderer measured the clip, so it is ready without waiting for a probe.
             saved.revision.media_metadata = outcome.result.model_dump(mode="json")
@@ -378,9 +397,34 @@ async def _save_clip(
         "width": metadata.width,
         "height": metadata.height,
         "size_bytes": saved.revision.size_bytes,
+        "folder": {"id": str(folder.id), "name": folder.name},
         "segments": _segments(request),
         "warnings": list(request.warnings),
     }
+
+
+class _ClipFolders:
+    """Resolves each clip's folder once per call: the named folder, or its first video's."""
+
+    def __init__(self, name: str | None) -> None:
+        self._name = name
+        self._resolved: dict[UUID | None, FileFolder] = {}
+
+    async def get(self, ctx: RunContext[RuntimeDeps], first_file: File) -> FileFolder:
+        key = None if self._name is not None else first_file.id
+        if key not in self._resolved:
+            self._resolved[key] = (
+                await resolve_folder_by_name(
+                    ctx.deps.db,
+                    workspace=ctx.deps.workspace,
+                    agent=ctx.deps.agent,
+                    requested_by=ctx.deps.user,
+                    name=self._name,
+                )
+                if self._name is not None
+                else await ensure_source_file_folder(ctx.deps, first_file)
+            )
+        return self._resolved[key]
 
 
 def _failed(index: int, name: str, request: PlannedClip, reason: str) -> dict[str, object]:

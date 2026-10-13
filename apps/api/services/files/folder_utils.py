@@ -13,6 +13,7 @@ from services.files.utils import normalize_required_text
 
 FOLDER_NAME_UNIQUE_INDEX = "uq_file_folders_workspace_name_live"
 FOLDER_CONVERSATION_UNIQUE_INDEX = "uq_file_folders_workspace_conversation_live"
+FOLDER_SOURCE_FILE_UNIQUE_INDEX = "uq_file_folders_workspace_source_file_live"
 FOLDER_NAME_RETRY_LIMIT = 10
 
 

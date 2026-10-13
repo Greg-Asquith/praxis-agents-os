@@ -3,6 +3,13 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import {
+  RouterContextProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router"
 import { describe, expect, it, vi } from "vitest"
 
 import { renderCustomToolCallRow } from "@/features/conversations/components/tool-call-row-registry"
@@ -14,7 +21,7 @@ const integrationToolRowPresenters = vi.hoisted(() => vi.fn((): ToolRowPresenter
 vi.mock("@/integrations/registry", () => ({ integrationToolRowPresenters }))
 
 describe("cut video clips row", () => {
-  it("shows a still of each saved clip and explains a failed one", () => {
+  it("shows a still of each saved clip, links its folder, and explains a failed one", () => {
     const queryClient = new QueryClient()
     queryClient.setQueryData(filesQueryKeys.detail("clip-1"), {
       id: "clip-1",
@@ -48,6 +55,7 @@ describe("cut video clips row", () => {
               file_id: "clip-1",
               media_type: "video/mp4",
               duration_ms: 29_000,
+              folder: { id: "folder-1", name: "Talk" },
               segments: [segment],
               warnings: [],
             },
@@ -71,11 +79,22 @@ describe("cut video clips row", () => {
       ui: null,
     })
 
+    const rootRoute = createRootRoute()
+    const router = createRouter({
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+      routeTree: rootRoute.addChildren([
+        createRoute({ getParentRoute: () => rootRoute, path: "/files" }),
+      ]),
+    })
     const html = renderToStaticMarkup(
-      createElement(QueryClientProvider, { client: queryClient }, row)
+      createElement(RouterContextProvider, {
+        router,
+        children: createElement(QueryClientProvider, { client: queryClient }, row),
+      })
     )
 
     expect(html).toContain('src="https://storage.test/clip-1.mp4?signed=1#t=0.1"')
+    expect(html).toContain('href="/files?folder=folder-1"')
     expect(html).toContain("The video couldn&#x27;t be read.")
   })
 })

@@ -8,7 +8,7 @@ from urllib.parse import unquote, urlsplit
 import pytest
 from sqlalchemy import select
 
-from models.files import File, FileRevision
+from models.files import File, FileFolder, FileRevision
 from services.agents.runtime.entity_references.domain import FileReference
 from services.files.utils import sha256_hex
 from services.media.domain import MediaRendererError
@@ -34,6 +34,17 @@ CLIP = {
     "audio_codec": "aac",
     "rotation": 0,
 }
+
+
+def segment(file: File, start_ms: int | None = None, end_ms: int | None = None) -> dict:
+    reference = FileReference(entity_id=file.id, label=file.name).model_dump(mode="json")
+    return {"file_id": reference, "start_ms": start_ms, "end_ms": end_ms}
+
+
+def cut_once(arguments: dict):
+    return scripted_model(
+        turns=[ToolTurn((ToolCall("cut_video_clips", arguments, "cut_video_clips"),)), "Done."]
+    )
 
 
 @pytest.fixture
@@ -86,10 +97,6 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
         duration_ms=8_000,
         speech=(),
     )
-
-    def segment(file: File, start_ms: int | None = None, end_ms: int | None = None) -> dict:
-        reference = FileReference(entity_id=file.id, label=file.name).model_dump(mode="json")
-        return {"file_id": reference, "start_ms": start_ms, "end_ms": end_ms}
 
     clips = [
         {"segments": [segment(talk, 12_000, 20_000)]},
@@ -154,8 +161,129 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
             )
         ).all()
     assert [file.name for file, _ in saved] == ["Ending.mp4", "Pricing talk 0.10-0.25.mp4"]
+    # Clips go in one folder named after their first video, linked to it.
+    async with db_session_factory() as db:
+        [folder] = (
+            await db.scalars(
+                select(FileFolder).where(FileFolder.workspace_id == context.workspace_id)
+            )
+        ).all()
+    assert (folder.name, folder.source_file_id) == ("Pricing talk", talk.id)
+    assert {file.folder_id for file, _ in saved} == {folder.id}
     # The renderer measured each clip, so it is ready without a probe.
     assert all(
         file.processing_status == "ready" and revision.media_metadata == CLIP
         for file, revision in saved
     )
+
+
+async def test_a_clip_of_a_clip_joins_the_original_videos_folder(
+    db_session_factory, renderer: list[dict]
+) -> None:
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["cut_video_clips"],
+        tool_policies={"cut_video_clips": "auto"},
+    )
+    talk = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=120_000,
+        speech=(),
+    )
+    earlier_clip = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk 0.10-0.25.mp4",
+        duration_ms=15_000,
+        speech=(),
+    )
+    async with db_session_factory() as db:
+        folder = FileFolder(
+            workspace_id=context.workspace_id,
+            name="Pricing talk",
+            created_by_agent_id=context.agent_id,
+            source_file_id=talk.id,
+        )
+        db.add(folder)
+        await db.flush()
+        (await db.get_one(File, earlier_clip.id)).folder_id = folder.id
+        await db.commit()
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=cut_once({"clips": [{"segments": [segment(earlier_clip, 0, 5_000)], "snap": False}]}),
+    )
+
+    [output] = [part["content"] for part in result.tool_returns("cut_video_clips")]
+    assert output["clips"][0]["folder"] == {"id": str(folder.id), "name": "Pricing talk"}
+    async with db_session_factory() as db:
+        folders = (
+            await db.scalars(
+                select(FileFolder.id).where(FileFolder.workspace_id == context.workspace_id)
+            )
+        ).all()
+    assert folders == [folder.id]
+
+
+async def test_a_named_folder_is_created_once_in_the_callers_workspace(
+    db_session_factory, renderer: list[dict]
+) -> None:
+    other = await build_scenario_agent(db_session_factory)
+    async with db_session_factory() as db:
+        theirs = FileFolder(
+            workspace_id=other.workspace_id, name="Reels", created_by_user_id=other.user_id
+        )
+        db.add(theirs)
+        await db.commit()
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["cut_video_clips"],
+        tool_policies={"cut_video_clips": "auto"},
+    )
+    talk = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=120_000,
+        speech=(),
+    )
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=cut_once(
+            {
+                "clips": [
+                    {"segments": [segment(talk, 0, 5_000)], "snap": False},
+                    {"segments": [segment(talk, 5_000, 10_000)], "snap": False},
+                ],
+                "folder": "reels",
+            }
+        ),
+    )
+
+    [output] = [part["content"] for part in result.tool_returns("cut_video_clips")]
+    assert output["saved"] == 2
+    async with db_session_factory() as db:
+        [ours] = (
+            await db.scalars(
+                select(FileFolder).where(FileFolder.workspace_id == context.workspace_id)
+            )
+        ).all()
+        clip_folders = set(
+            await db.scalars(
+                select(File.folder_id).where(
+                    File.workspace_id == context.workspace_id, File.id != talk.id
+                )
+            )
+        )
+        their_files = await db.scalar(select(File.id).where(File.folder_id == theirs.id))
+    assert ours.name == "reels" and ours.id != theirs.id
+    assert clip_folders == {ours.id}
+    assert their_files is None
