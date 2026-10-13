@@ -12,6 +12,13 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` cuts up to five clips from workspace videos and saves each
+  as a new video File. A clip joins ranges or whole videos in order, from one
+  video or several, with cuts snapped to whole sentences and shot changes,
+  in the original shape or 9:16, 1:1, 4:5, or 16:9 (cropped to fill or fitted
+  over a blur), at the source frame rate. One failed clip doesn't stop the
+  others. The moments card gains **Cut N Clips**, which asks the agent to cut
+  the chosen moments.
 - `find_video_moments` finds the best moments in a workspace video for a
   brief, such as five 30 to 60 second clips about pricing, with start and end
   snapped to whole sentences and shot changes. Long videos are watched in

@@ -144,7 +144,12 @@ def _assemble_runtime_catalogs() -> None:
         web_fetch,
         web_search,
     )
-    from services.agents.runtime.tools.video import ask_video, find_video_moments, transcribe_video
+    from services.agents.runtime.tools.video import (
+        ask_video,
+        cut_video_clips,
+        find_video_moments,
+        transcribe_video,
+    )
 
     _ = (
         artifacts,
@@ -156,6 +161,7 @@ def _assemble_runtime_catalogs() -> None:
         create_presentation,
         create_word_document,
         create_workbook,
+        cut_video_clips,
         edit_presentation,
         edit_word_document,
         edit_workbook,

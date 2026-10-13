@@ -10,7 +10,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -29,7 +29,7 @@ from driver.transfer import (
 )
 
 MAX_REQUEST_BYTES = 64 * 1024
-MAX_OUTPUTS = 32
+MAX_INPUTS = 10
 HEADER_NAME = re.compile(r"^[a-z0-9-]{1,64}$")
 
 
@@ -80,37 +80,34 @@ class OperationContext:
 
     config: DriverConfig
     workdir: Path
-    input_transfer: SignedTransfer
-    input_size_bytes: int
+    inputs: list[tuple[SignedTransfer, int]]
     output_count: int
     deadline: float
-    _fetched: bool = False
+    _fetched: set[int] = field(default_factory=set)
 
-    @property
-    def input_path(self) -> Path:
-        return self.workdir / "input"
+    def input_path(self, index: int = 0) -> Path:
+        if not 0 <= index < len(self.inputs):
+            raise IndexError(index)
+        return self.workdir / f"input-{index}"
 
     def output_path(self, index: int) -> Path:
         if not 0 <= index < self.output_count:
             raise IndexError(index)
         return self.workdir / f"output-{index}"
 
-    def fetch_input(self) -> Path:
-        """Downloads the whole input once, within the request's deadline."""
-        if self._fetched:
-            return self.input_path
+    def fetch_input(self, index: int = 0) -> Path:
+        """Downloads one whole input once, within the request's deadline."""
+        path = self.input_path(index)
+        if index in self._fetched:
+            return path
         self.remaining_seconds()
+        transfer, size_bytes = self.inputs[index]
         try:
-            download(
-                self.input_transfer,
-                self.input_path,
-                size_bytes=self.input_size_bytes,
-                deadline=self.deadline,
-            )
+            download(transfer, path, size_bytes=size_bytes, deadline=self.deadline)
         except TransferError as exc:
             raise _transfer_error(exc, "The input couldn't be downloaded.") from exc
-        self._fetched = True
-        return self.input_path
+        self._fetched.add(index)
+        return path
 
     def remaining_seconds(self) -> float:
         remaining = self.deadline - time.monotonic()
@@ -141,13 +138,15 @@ class Operation:
     """A typed operation a toolchain offers.
 
     ``validate`` returns the arguments or raises OperationError; it sees only
-    numbers and booleans. ``output_count`` says how many signed uploads the
-    caller must provide. ``run`` writes outputs by index and returns the result.
+    numbers and booleans. ``output_count`` and ``input_count`` say how many
+    signed uploads and downloads the caller must provide. ``run`` writes
+    outputs by index and returns the result.
     """
 
     validate: Callable[[dict[str, Any]], dict[str, Any]]
     output_count: Callable[[dict[str, Any]], int]
     run: Callable[[OperationContext, dict[str, Any]], dict[str, Any]]
+    input_count: Callable[[dict[str, Any]], int] = lambda arguments: 1
 
 
 def handle_request(
@@ -165,8 +164,7 @@ def handle_request(
         context = OperationContext(
             config=config,
             workdir=workdir,
-            input_transfer=request["input"],
-            input_size_bytes=request["input_size_bytes"],
+            inputs=request["inputs"],
             output_count=len(request["outputs"]),
             deadline=started + request["timeout_seconds"],
         )
@@ -221,7 +219,7 @@ def _parse_request(
     if not isinstance(payload, dict) or set(payload) != {
         "operation",
         "timeout_seconds",
-        "input",
+        "inputs",
         "outputs",
         "arguments",
     }:
@@ -234,27 +232,43 @@ def _parse_request(
     timeout = payload["timeout_seconds"]
     if type(timeout) is not int or not 1 <= timeout <= config.max_timeout_seconds:
         raise OperationError("invalid_request", "timeout_seconds is out of range.")
-    source = payload["input"]
-    if not isinstance(source, dict) or set(source) != {"url", "headers", "size_bytes"}:
-        raise OperationError("invalid_request", "The input has the wrong fields.")
-    size = source["size_bytes"]
-    if type(size) is not int or not 1 <= size <= config.max_input_bytes:
-        raise OperationError("input_too_large", "The input is too large for the renderer.")
     arguments = payload["arguments"]
     if not isinstance(arguments, dict):
         raise OperationError("invalid_request", "arguments must be an object.")
     arguments = operation.validate(arguments)
+    inputs = payload["inputs"]
+    if (
+        not isinstance(inputs, list)
+        or not 1 <= len(inputs) <= MAX_INPUTS
+        or len(inputs) != operation.input_count(arguments)
+    ):
+        raise OperationError("invalid_request", "The request has the wrong number of inputs.")
     outputs = payload["outputs"]
     if not isinstance(outputs, list) or len(outputs) != operation.output_count(arguments):
         raise OperationError("invalid_request", "The request has the wrong number of outputs.")
     return {
         "operation": payload["operation"],
         "timeout_seconds": timeout,
-        "input": _parse_transfer(source, config, extra_keys={"size_bytes"}),
-        "input_size_bytes": size,
+        "inputs": _parse_inputs(inputs, config),
         "outputs": [_parse_transfer(item, config) for item in outputs],
         "arguments": arguments,
     }
+
+
+def _parse_inputs(inputs: list[Any], config: DriverConfig) -> list[tuple[SignedTransfer, int]]:
+    """Parses each signed download and its size; together they must fit the input limit."""
+    parsed = []
+    for source in inputs:
+        if not isinstance(source, dict) or set(source) != {"url", "headers", "size_bytes"}:
+            raise OperationError("invalid_request", "An input has the wrong fields.")
+        size = source["size_bytes"]
+        if type(size) is not int or size < 1:
+            raise OperationError("invalid_request", "An input has the wrong size.")
+        parsed.append((_parse_transfer(source, config, extra_keys={"size_bytes"}), size))
+    # Inputs share the instance's in-memory disk, so the limit covers them together.
+    if sum(size for _, size in parsed) > config.max_input_bytes:
+        raise OperationError("input_too_large", "The input is too large for the renderer.")
+    return parsed
 
 
 def _parse_transfer(

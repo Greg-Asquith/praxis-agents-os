@@ -27,7 +27,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `start_ms`, `end_ms` | one MP4. Stream copy when H.264 or HEVC with AAC or no audio starts on a keyframe (within 20 ms); otherwise H.264 and AAC re-encode |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit` | one H.264 and AAC MP4 joining the segments in order |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file (32 kbit/s) per chunk, plus each chunk's range on the source timeline |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -42,7 +42,17 @@ moves into the longest silence (quieter than -35 dB for at least 0.3 s) within
 there's none. Chunks are re-encoded from one extraction, so each starts
 exactly at its reported time.
 
-Every operation, `probe` included, downloads the whole input. Container
+`cut` takes one signed input per distinct source; segment `input` numbers
+them from 0, and every input must be used. Each segment is scaled to the
+output size (centre-cropped to fill, or with `fit`, the whole frame over a
+blurred, filled copy of itself), resampled to `fps`, and given 48 kHz stereo
+audio, silent for a source without audio, so sources of different sizes,
+frame rates, and audio layouts join cleanly. Rotated phone video is turned
+upright first. Output is `libx264` at CRF 18, capped at 8 Mbit/s, with AAC at
+128 kbit/s: about 61 MB a minute at most. Each segment's decoder uses two
+threads, so ten segments stay inside the child's memory limit.
+
+Every operation, `probe` included, downloads each whole input. Container
 metadata can sit anywhere in the file, so a head-and-tail read can report a
 video without its audio.
 
@@ -79,7 +89,9 @@ the current request, and Cloud Run replaces the instance.
 The driver is the only part with network access. It downloads and uploads only
 URLs that start with a prefix in `RENDERER_ALLOWED_URL_PREFIXES`
 (`https://storage.googleapis.com/` on GCP), ignores proxy settings, and refuses
-redirects. Inputs above `RENDERER_MAX_INPUT_BYTES` are refused.
+redirects. A request takes 1 to 10 inputs; inputs above
+`RENDERER_MAX_INPUT_BYTES` together are refused, because they share the
+instance's in-memory disk.
 
 A request's `timeout_seconds` bounds all of it: the download, every child, and
 the uploads. Transfers check the deadline between chunks and return `timeout`
@@ -90,11 +102,11 @@ stalled transfer ends inside Cloud Run's 60 seconds of request headroom.
 
 `apps/api/services/media/`:
 
-- `run_media_operation(workspace_id, source, operation)` takes a File
-  revision the caller has already resolved for the workspace. It refuses a
-  revision from another workspace or a non-video, signs one download for the
-  revision and one size-bounded staging upload per output, and posts the
-  request. It validates the result against the operation's schema and trusts
+- `run_media_operation(workspace_id, sources, operation)` takes the File
+  revisions the caller has already resolved for the workspace, one per
+  operation input. It refuses the whole request if any revision is from
+  another workspace or isn't a video, signs one download per revision and one
+  size-bounded staging upload per output, and posts the request. It validates the result against the operation's schema and trusts
   an output only when the staged object exists and matches the size the
   renderer reported. On any failure it deletes the staged objects.
 - `save_media_output` copies a staged output into a new File inside the
@@ -309,7 +321,7 @@ excerpt, each as an untrusted-content node with File and revision provenance.
    two windows appears once.
 
 When fewer moments survive than asked for, the result says so in `note`.
-`cut_video_clips` will reuse the same snapping.
+`cut_video_clips` reuses the same snapping.
 
 ### `ask_video`
 
@@ -331,8 +343,55 @@ video and its moments; selecting one plays just that range, with a
 call plays the range it watched, with the question and answer. Running and
 failed calls keep the default row with its progress stage.
 
-Chat accepts video once `find_video_moments` is available, and **Add to
-chat** in Files offers video then too.
+Chat accepts video once `find_video_moments` or `cut_video_clips` is
+available, and **Add to chat** in Files offers video then too.
+
+## Clips
+
+`cut_video_clips(clips, aspect_ratio?, framing?)` renders up to five clips and
+saves each as a new video File next to the video its first segment comes
+from. It needs only the renderer. Internal write, auto by default, not
+code-eligible.
+
+- Each clip has 1 to 10 `segments`, joined in order. A segment is a
+  `file_id` with optional `start_ms` and `end_ms`; omitting both takes the
+  whole video. Segments can come from several of the workspace's own videos.
+  Optional `name` names the File; otherwise it is named from the first video
+  and range, such as `Talk 0.41-1.10.mp4`.
+- `snap` (default true) moves each segment with `find_video_moments`'
+  snapping, without its length bounds: whole sentences, then shot changes
+  within `VIDEO_SNAP_SHOT_TOLERANCE_MS`. A move of a second or more comes back
+  as a warning on that clip. The first snapping call on a video transcribes it
+  and measures its shots, as `find_video_moments` does; a video with no audio,
+  or no transcription provider, snaps to shots only.
+- `aspect_ratio` is `original` (the first video's upright shape), `9:16`,
+  `1:1`, `4:5`, or `16:9`, at 1080 pixels on the short side. The frame rate is
+  the first video's, rounded, between 24 and 60. `framing` is `center` (crop
+  to fill) or `fit` (whole frame over a blur). Subject-aware framing,
+  captions, and silence removal are pending.
+- A clip has no length cap of its own. A clip File is held to the written
+  size limit for video (`MAX_FILE_SIZE_VIDEO`, 100 MB, and never more than
+  `MEDIA_RENDERER_MAX_OUTPUT_BYTES`), so the longest clip is that size at the
+  renderer's bitrate caps: 1 minute 43 seconds by default. A segment outside
+  its video, or a clip over that length, fails the call with a reason before
+  anything renders.
+
+Clips render three at a time (the renderer's default maximum instances). One
+clip failing doesn't stop the others: each saved clip is a File with the
+renderer's probe stored on the revision, so it is ready at once, and the result
+reports every clip with its status, ranges, warnings, and a failure reason.
+When no clip is saved, the call fails. Each call records a `video_clips` audit
+event on every source video.
+
+In the conversation, a completed call says how many clips it saved and shows them as a grid of stills
+with their length, name, and ranges; selecting one opens the player in a
+dialog. A failed clip's tile shows its reason. The moments card
+has a checkbox per moment and **Cut N Clips**, which sends the person's own
+turn: "Cut these moments from `<video>` into separate clips", then each
+chosen moment's times. Titles and reasons come from a model watching
+untrusted video, so they never go into that message. The button is disabled
+while the conversation can't take a turn. Tool rows send turns through
+`ConversationActionsContext`, which the conversation route provides.
 
 ## Long media calls
 

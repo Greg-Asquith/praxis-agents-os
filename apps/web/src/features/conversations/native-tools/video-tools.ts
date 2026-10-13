@@ -171,3 +171,73 @@ function videoMoment(value: unknown): VideoMoment | null {
     excerpt: nodeText(value["transcript_excerpt"]) ?? "",
   }
 }
+
+export const CUT_VIDEO_CLIPS_TOOL_NAME = "cut_video_clips"
+
+export type VideoClip = {
+  index: number
+  name: string
+  // The saved File, or null when this clip failed.
+  video: VideoFileReference | null
+  durationMs: number | null
+  ranges: string[]
+  warnings: string[]
+  error: string | null
+}
+
+export type CutVideoClipsResult = {
+  clips: VideoClip[]
+  saved: number
+}
+
+export function cutVideoClipsResult(value: unknown): CutVideoClipsResult | null {
+  if (!isRecord(value) || !Array.isArray(value["clips"]) || typeof value["saved"] !== "number") {
+    return null
+  }
+  const clips = value["clips"].map(videoClip)
+  if (clips.some((clip) => clip === null)) {
+    return null
+  }
+  return { clips: clips as VideoClip[], saved: value["saved"] }
+}
+
+function videoClip(value: unknown): VideoClip | null {
+  if (
+    !isRecord(value) ||
+    typeof value["index"] !== "number" ||
+    typeof value["name"] !== "string" ||
+    !Array.isArray(value["segments"])
+  ) {
+    return null
+  }
+  const saved = value["status"] === "saved"
+  const video = saved ? videoFileReference(value) : null
+  if (saved && !video) {
+    return null
+  }
+  return {
+    index: value["index"],
+    name: value["name"],
+    video,
+    durationMs: typeof value["duration_ms"] === "number" ? value["duration_ms"] : null,
+    ranges: value["segments"]
+      .filter(isRecord)
+      .map((segment) => `${String(segment["start"])}–${String(segment["end"])}`),
+    warnings: Array.isArray(value["warnings"])
+      ? value["warnings"].filter((warning) => typeof warning === "string")
+      : [],
+    error: saved ? null : typeof value["error"] === "string" ? value["error"] : "Couldn't cut.",
+  }
+}
+
+// The turn "Cut These" sends. Moment titles and reasons come from a model watching untrusted
+// video, so only the File name and the server's times go into the person's own message.
+export function cutMomentsInstruction(videoName: string, moments: VideoMoment[]) {
+  return [
+    `Cut these moments from ${videoName} into separate clips:`,
+    ...moments.map(
+      (moment) =>
+        `- ${moment.start} to ${moment.end} (${String(moment.startMs)}–${String(moment.endMs)} ms)`
+    ),
+  ].join("\n")
+}

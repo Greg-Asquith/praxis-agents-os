@@ -308,6 +308,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "transcribe_video": "none",
         "find_video_moments": "none",
         "ask_video": "none",
+        "cut_video_clips": "none",
         "forget_memory": "none",
         "gmail_read_message": "provider_query",
         "gmail_search_messages": "provider_query",

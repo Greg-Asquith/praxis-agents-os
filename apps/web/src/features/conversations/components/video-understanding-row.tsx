@@ -1,20 +1,25 @@
 // apps/web/src/features/conversations/components/video-understanding-row.tsx
 
-import { useState, type ReactNode } from "react"
-import { FilmIcon } from "lucide-react"
+import { use, useState, type ReactNode } from "react"
+import { FilmIcon, ScissorsIcon } from "lucide-react"
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ConversationActionsContext } from "@/features/conversations/conversation-actions-context"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { VideoFileCard } from "@/features/conversations/components/video-file-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
   askVideoResult,
+  cutMomentsInstruction,
   findVideoMomentsResult,
   type VideoMoment,
 } from "@/features/conversations/native-tools/video-tools"
+import { getErrorMessage } from "@/lib/api/errors"
 import { formatDuration, pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 import { cn } from "@/lib/utils"
@@ -23,6 +28,8 @@ type RowProps = { activity: ToolActivity; defaultOpen: boolean }
 
 export function FindVideoMomentsRow({ activity, defaultOpen }: RowProps) {
   const [selected, setSelected] = useState(0)
+  // Moments left out of "Cut These", by index; all are in by default.
+  const [excluded, setExcluded] = useState<ReadonlySet<number>>(() => new Set())
   const result = findVideoMomentsResult(activity.result)
   if (!result) {
     return null
@@ -30,6 +37,7 @@ export function FindVideoMomentsRow({ activity, defaultOpen }: RowProps) {
   const name = result.video.name ?? "Video"
   const count = result.moments.length
   const moment = result.moments[selected]
+  const chosen = result.moments.filter((_, index) => !excluded.has(index))
   return (
     <ToolResultCard
       ariaLabel={`Moments found in ${name}`}
@@ -50,7 +58,26 @@ export function FindVideoMomentsRow({ activity, defaultOpen }: RowProps) {
         {count > 0 ? (
           <ol aria-label="Moments" className="grid min-w-0 gap-2">
             {result.moments.map((item, index) => (
-              <li className="min-w-0" key={`${String(item.startMs)}-${String(item.endMs)}`}>
+              <li
+                className="flex min-w-0 items-start gap-3"
+                key={`${String(item.startMs)}-${String(item.endMs)}`}
+              >
+                <Checkbox
+                  aria-label={`Include Moment ${String(index + 1)}`}
+                  checked={!excluded.has(index)}
+                  className="mt-3.5"
+                  onCheckedChange={(checked) => {
+                    setExcluded((current) => {
+                      const next = new Set(current)
+                      if (checked) {
+                        next.delete(index)
+                      } else {
+                        next.add(index)
+                      }
+                      return next
+                    })
+                  }}
+                />
                 <MomentButton
                   moment={item}
                   onSelect={() => {
@@ -64,8 +91,48 @@ export function FindVideoMomentsRow({ activity, defaultOpen }: RowProps) {
         ) : (
           <p className="text-muted-foreground text-sm">No moments fit the brief.</p>
         )}
+        {count > 0 ? <CutMomentsAction moments={chosen} videoName={name} /> : null}
       </div>
     </ToolResultCard>
+  )
+}
+
+function CutMomentsAction({ moments, videoName }: { moments: VideoMoment[]; videoName: string }) {
+  const sendInstruction = use(ConversationActionsContext)
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const count = moments.length
+
+  async function handleCut() {
+    if (!sendInstruction) {
+      return
+    }
+    setError(null)
+    setSending(true)
+    try {
+      await sendInstruction(cutMomentsInstruction(videoName, moments))
+    } catch (sendError) {
+      setError(getErrorMessage(sendError))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+      {error ? <p className="text-destructive mr-auto text-xs">{error}</p> : null}
+      <Button
+        disabled={!sendInstruction || sending || count === 0}
+        onClick={() => {
+          void handleCut()
+        }}
+        size="sm"
+        type="button"
+      >
+        <ScissorsIcon />
+        {count === 0 ? "Cut These" : `Cut ${String(count)} ${pluralize(count, "Clip")}`}
+      </Button>
+    </div>
   )
 }
 

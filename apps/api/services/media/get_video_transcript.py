@@ -69,7 +69,7 @@ async def get_video_transcript(
     try:
         extracted = await run_media_operation(
             workspace_id=revision.workspace_id,
-            source=revision,
+            sources=[revision],
             operation=ExtractAudioOperation(chunks=chunks),
         )
     except MediaRendererError as exc:

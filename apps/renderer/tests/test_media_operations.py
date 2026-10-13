@@ -15,14 +15,14 @@ def _request(
     storage: FakeStorage,
     operation: str,
     *,
-    source: str = "sample.mp4",
+    sources: tuple[str, ...] = ("sample.mp4",),
     outputs: int = 0,
     arguments: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "operation": operation,
         "timeout_seconds": 60,
-        "input": storage.source(source),
+        "inputs": [storage.source(source) for source in sources],
         "outputs": [storage.target(f"out-{index}") for index in range(outputs)],
         "arguments": arguments or {},
     }
@@ -57,22 +57,34 @@ def test_scene_cuts_finds_the_colour_change(storage: FakeStorage, config: Driver
     assert [round(cut / 100) for cut in response["result"]["cuts_ms"]] == [20]
 
 
-def test_cut_copies_from_a_keyframe_and_encodes_otherwise(
+def test_cut_joins_segments_from_several_inputs_in_order_at_the_output_size(
     storage: FakeStorage, config: DriverConfig
 ) -> None:
-    on_keyframe = _run(
-        storage, config, "cut", outputs=1, arguments={"start_ms": 1000, "end_ms": 3000}
+    # sample.mp4 is red then blue from 2 s, 320x180 at 30 fps with audio; sample.webm is
+    # grey, 160x90 at 15 fps without audio.
+    response = _run(
+        storage,
+        config,
+        "cut",
+        sources=("sample.mp4", "sample.webm"),
+        outputs=1,
+        arguments={
+            "segments": [[0, 2000, 3500], [1, 0, 500], [0, 0, 1000]],
+            "width": 180,
+            "height": 320,
+            "fps": 60,
+            "fit": True,
+        },
     )
-    off_keyframe = _run(
-        storage, config, "cut", outputs=1, arguments={"start_ms": 500, "end_ms": 1500}
-    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    cuts = _run(storage, config, "scene_cuts", sources=("clip.mp4",), arguments={"threshold": 0.3})
 
-    assert on_keyframe["result"]["mode"] == "copy"
-    assert abs(on_keyframe["result"]["duration_ms"] - 2000) <= 100
-    assert off_keyframe["result"]["mode"] == "encode"
-    assert abs(off_keyframe["result"]["duration_ms"] - 1000) <= 100
-    assert storage.uploads["out-0"][4:8] == b"ftyp"
-    assert off_keyframe["outputs"][0]["size_bytes"] == len(storage.uploads["out-0"])
+    clip = response["result"]
+    assert (clip["width"], clip["height"], clip["fps"]) == (180, 320, 60.0)
+    assert (clip["video_codec"], clip["audio_codec"]) == ("h264", "aac")
+    assert abs(clip["duration_ms"] - 3000) <= 100
+    # Blue for 1.5 s, grey for 0.5 s, then red: joined in the order given.
+    assert [round(cut / 100) for cut in cuts["result"]["cuts_ms"]] == [15, 20]
 
 
 def test_frames_writes_one_bounded_jpeg_per_time(
@@ -93,7 +105,7 @@ def test_frames_writes_one_bounded_jpeg_per_time(
 
 def test_extract_audio_and_webm_input(storage: FakeStorage, config: DriverConfig) -> None:
     audio = _run(storage, config, "extract_audio", outputs=1, arguments={"end_ms": 2000})
-    webm = _run(storage, config, "probe", source="sample.webm")
+    webm = _run(storage, config, "probe", sources=("sample.webm",))
 
     assert abs(audio["result"]["duration_ms"] - 2000) <= 100
     assert storage.uploads["out-0"][:4] == b"OggS"
@@ -109,7 +121,7 @@ def test_extract_audio_splits_chunks_inside_the_nearest_silence(
         storage,
         config,
         "extract_audio",
-        source="speech_gaps.mp4",
+        sources=("speech_gaps.mp4",),
         outputs=2,
         arguments={"start_ms": 100, "chunks": 2},
     )
@@ -124,7 +136,19 @@ def test_extract_audio_splits_chunks_inside_the_nearest_silence(
 def test_times_must_start_before_the_end_of_the_video(
     storage: FakeStorage, config: DriverConfig
 ) -> None:
-    trimmed = _run(storage, config, "cut", outputs=1, arguments={"start_ms": 3000, "end_ms": 9000})
+    trimmed = _run(
+        storage,
+        config,
+        "cut",
+        outputs=1,
+        arguments={
+            "segments": [[0, 3000, 9000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+        },
+    )
 
     for operation, arguments in (
         ("frames", {"times_ms": [4000]}),
@@ -140,7 +164,7 @@ def test_malformed_media_fails_with_a_plain_error(
     storage: FakeStorage, config: DriverConfig
 ) -> None:
     with pytest.raises(OperationError) as error:
-        _run(storage, config, "probe", source="malformed.mp4")
+        _run(storage, config, "probe", sources=("malformed.mp4",))
 
     assert error.value.code == "invalid_media"
 
@@ -148,11 +172,26 @@ def test_malformed_media_fails_with_a_plain_error(
 @pytest.mark.parametrize(
     "arguments",
     [
-        {"start_ms": "/etc/passwd", "end_ms": 1000},
-        {"start_ms": 0, "end_ms": 1000, "filter": "movie=http://example.com"},
+        {
+            "segments": [[0, "/etc/passwd", 1000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+        },
+        {
+            "segments": [[0, 0, 1000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+            "filter": "movie=http://example.com",
+        },
+        # Input 1 needs a second signed download the request doesn't have.
+        {"segments": [[1, 0, 1000]], "width": 320, "height": 180, "fps": 30, "fit": False},
     ],
 )
-def test_text_in_arguments_fails_validation_before_anything_runs(
+def test_bad_arguments_fail_validation_before_anything_runs(
     storage: FakeStorage, config: DriverConfig, arguments: dict
 ) -> None:
     with pytest.raises(OperationError) as error:
@@ -166,7 +205,7 @@ def test_transfer_outside_the_allowed_storage_is_refused(
     storage: FakeStorage, config: DriverConfig
 ) -> None:
     request = _request(storage, "probe")
-    request["input"]["url"] = "http://169.254.169.254/computeMetadata/v1/"
+    request["inputs"][0]["url"] = "http://169.254.169.254/computeMetadata/v1/"
 
     with pytest.raises(OperationError) as error:
         handle_request(request, config=config, operations=OPERATIONS)

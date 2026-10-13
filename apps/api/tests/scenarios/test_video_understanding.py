@@ -4,7 +4,6 @@
 
 import json
 from collections.abc import Iterator
-from hashlib import sha256
 
 import httpx2 as httpx
 import pytest
@@ -14,16 +13,10 @@ from sqlalchemy import select
 from core.settings import settings
 from models.ai_usage_event import AIUsageEvent
 from models.files import File
-from models.workspace import Workspace
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_START
-from services.files.utils import private_ref_from_key, revision_transcript_key
-from services.media.domain import Transcript, TranscriptWord
-from services.media.utils import sentences_from_words
-from services.storage.factory import get_storage_provider
-from tests.factories import build_file, build_file_revision
 from tests.support.google_native import mock_google_native
-from tests.support.media import use_fake_renderer
+from tests.support.media import persist_analysed_video, use_fake_renderer
 from tests.support.scenario import (
     ToolCall,
     ToolTurn,
@@ -59,62 +52,6 @@ def services(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict]]:
         yield renderer
     finally:
         reset_storage_provider_cache()
-
-
-async def _persist_analysed_video(db_session_factory, context) -> File:
-    async with db_session_factory() as db:
-        workspace = await db.get_one(Workspace, context.workspace_id)
-        content = b"source-video"
-        digest = sha256(content).hexdigest()
-        file = build_file(
-            workspace=workspace,
-            name="Pricing talk.mp4",
-            category="video",
-            content_type="video/mp4",
-            extension=".mp4",
-            size_bytes=len(content),
-            content_hash=digest,
-        )
-        db.add(file)
-        await db.flush()
-        revision = build_file_revision(
-            file, created_by_user_id=context.user_id, size_bytes=len(content), content_hash=digest
-        )
-        revision.media_metadata = {
-            "duration_ms": DURATION_MS,
-            "width": 1920,
-            "height": 1080,
-            "fps": 30.0,
-            "video_codec": "h264",
-            "has_audio": True,
-            "audio_codec": "aac",
-            "rotation": 0,
-        }
-        revision.shot_cuts_ms = [39_600, 1_200_000]
-        words = tuple(
-            TranscriptWord(text=text, start_ms=start, end_ms=end) for text, start, end in SPEECH
-        )
-        transcript = Transcript(
-            provider="openai",
-            model="whisper-1",
-            duration_ms=DURATION_MS,
-            words=words,
-            sentences=sentences_from_words(words),
-        )
-        storage = get_storage_provider()
-        await storage.put_object(
-            private_ref_from_key(revision.object_key), content, content_type="video/mp4"
-        )
-        key = revision_transcript_key(workspace.id, file.id, revision.id)
-        data = transcript.model_dump_json().encode()
-        await storage.put_object(private_ref_from_key(key), data)
-        revision.transcript_object_key = key
-        revision.transcript_size_bytes = len(data)
-        db.add(revision)
-        await db.flush()
-        file.current_revision_id = revision.id
-        await db.commit()
-        return file
 
 
 def _gemini_answer(part: dict) -> httpx.Response:
@@ -167,7 +104,15 @@ async def test_moments_from_two_windows_are_snapped_merged_and_framed(
         tool_names=["find_video_moments"],
         tool_policies={"find_video_moments": "auto"},
     )
-    video = await _persist_analysed_video(db_session_factory, context)
+    video = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=DURATION_MS,
+        speech=SPEECH,
+        shot_cuts_ms=(39_600, 1_200_000),
+    )
     bodies: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -234,7 +179,15 @@ async def test_ask_video_watches_only_the_asked_range_and_frames_the_answer(
         tool_names=["ask_video"],
         tool_policies={"ask_video": "auto"},
     )
-    video = await _persist_analysed_video(db_session_factory, context)
+    video = await persist_analysed_video(
+        db_session_factory,
+        workspace_id=context.workspace_id,
+        user_id=context.user_id,
+        name="Pricing talk.mp4",
+        duration_ms=DURATION_MS,
+        speech=SPEECH,
+        shot_cuts_ms=(39_600, 1_200_000),
+    )
     bodies: list[dict] = []
 
     def respond(request: httpx.Request) -> httpx.Response:

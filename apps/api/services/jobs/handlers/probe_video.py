@@ -104,7 +104,7 @@ async def _measure(
 
 async def _probe(revision: FileRevision) -> dict[str, object]:
     operation = await run_media_operation(
-        workspace_id=revision.workspace_id, source=revision, operation=ProbeOperation()
+        workspace_id=revision.workspace_id, sources=[revision], operation=ProbeOperation()
     )
     result = operation.result
     if not isinstance(result, VideoMetadata):

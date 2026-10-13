@@ -14,10 +14,21 @@ import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { getErrorMessage } from "@/lib/api/errors"
+import { cn } from "@/lib/utils"
 
 export type VideoRange = { startMs: number; endMs: number }
 
-export function VideoFileCard({ video, range }: { video: VideoFileReference; range?: VideoRange }) {
+export function VideoFileCard({
+  video,
+  range,
+  autoPlay = false,
+  className,
+}: {
+  video: VideoFileReference
+  range?: VideoRange
+  autoPlay?: boolean
+  className?: string
+}) {
   const detailButtonRef = useRef<HTMLButtonElement>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -45,9 +56,14 @@ export function VideoFileCard({ video, range }: { video: VideoFileReference; ran
 
   return (
     <>
-      <div className="bg-background/80 mx-auto w-full max-w-md overflow-hidden rounded-md border">
+      <div
+        className={cn(
+          "bg-background/80 mx-auto w-full max-w-md overflow-hidden rounded-md border",
+          className
+        )}
+      >
         {status.kind === "ready" ? (
-          <VideoPlayer fileId={video.fileId} name={displayName} range={range} />
+          <VideoPlayer autoPlay={autoPlay} fileId={video.fileId} name={displayName} range={range} />
         ) : (
           <div className="bg-muted/40 text-muted-foreground flex min-h-36 flex-col items-center justify-center gap-2 px-4 text-center text-xs">
             {status.kind === "preparing" ? (
@@ -106,10 +122,12 @@ export function VideoFileCard({ video, range }: { video: VideoFileReference; ran
 }
 
 function VideoPlayer({
+  autoPlay,
   fileId,
   name,
   range,
 }: {
+  autoPlay: boolean
   fileId: string
   name: string
   range: VideoRange | undefined
@@ -127,6 +145,7 @@ function VideoPlayer({
       // eslint-disable-next-line jsx-a11y/media-has-caption
       <video
         aria-label={name}
+        autoPlay={autoPlay}
         className="max-h-112 w-full bg-black object-contain"
         controls
         playsInline

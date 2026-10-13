@@ -24,6 +24,11 @@ MIN_FRAME_EDGE_PX = 64
 MAX_FRAME_EDGE_PX = 1920
 DEFAULT_FRAME_EDGE_PX = 1280
 MAX_AUDIO_CHUNKS = 32
+MAX_CUT_SEGMENTS = 10
+MIN_OUTPUT_EDGE_PX = 64
+MAX_OUTPUT_EDGE_PX = 3840
+MIN_OUTPUT_FPS = 24
+MAX_OUTPUT_FPS = 60
 
 
 class _Operation(BaseModel):
@@ -37,6 +42,9 @@ class _Operation(BaseModel):
 
     def output_count(self) -> int:
         return 1 if self.output_type[0] else 0
+
+    def input_count(self) -> int:
+        return 1
 
 
 class _Range(_Operation):
@@ -60,11 +68,47 @@ class SceneCutsOperation(_Range):
     max_cuts: int = Field(default=MAX_SCENE_CUTS, ge=1, le=MAX_SCENE_CUTS)
 
 
-class CutOperation(_Range):
-    name: Literal["cut"] = "cut"
-    output_type: ClassVar[tuple[str, str]] = ("video/mp4", ".mp4")
+class CutSegment(_Range):
+    """A range of one input, by its position in the operation's sources."""
+
+    input: int = Field(ge=0, lt=MAX_CUT_SEGMENTS)
     start_ms: int = Field(ge=0)
     end_ms: int = Field(gt=0)
+
+
+class CutOperation(_Operation):
+    """Joins segments of one or more sources into one H.264 and AAC MP4 of a fixed size.
+
+    ``fit`` shows each whole frame over a blurred fill; otherwise frames are centre-cropped.
+    """
+
+    name: Literal["cut"] = "cut"
+    output_type: ClassVar[tuple[str, str]] = ("video/mp4", ".mp4")
+    segments: tuple[CutSegment, ...] = Field(min_length=1, max_length=MAX_CUT_SEGMENTS)
+    width: int = Field(ge=MIN_OUTPUT_EDGE_PX, le=MAX_OUTPUT_EDGE_PX, multiple_of=2)
+    height: int = Field(ge=MIN_OUTPUT_EDGE_PX, le=MAX_OUTPUT_EDGE_PX, multiple_of=2)
+    fps: int = Field(default=30, ge=MIN_OUTPUT_FPS, le=MAX_OUTPUT_FPS)
+    fit: bool = False
+
+    @model_validator(mode="after")
+    def require_every_input(self):
+        if {segment.input for segment in self.segments} != set(range(self.input_count())):
+            raise ValueError("segments must use every source from 0")
+        return self
+
+    def input_count(self) -> int:
+        return len({segment.input for segment in self.segments})
+
+    def renderer_arguments(self) -> dict[str, object]:
+        return {
+            "segments": [
+                [segment.input, segment.start_ms, segment.end_ms] for segment in self.segments
+            ],
+            "width": self.width,
+            "height": self.height,
+            "fps": self.fps,
+            "fit": self.fit,
+        }
 
 
 class ExtractAudioOperation(_Range):
@@ -105,10 +149,6 @@ class SceneCutsResult(_Result):
     duration_ms: int = Field(ge=0)
 
 
-class CutResult(VideoMetadata):
-    mode: Literal["copy", "encode"]
-
-
 class ExtractAudioResult(_Result):
     duration_ms: int = Field(ge=0)
     # Each chunk's [start_ms, end_ms] on the source video's timeline.
@@ -122,7 +162,7 @@ class FramesResult(_Result):
 RESULT_MODELS: dict[str, type[BaseModel]] = {
     "probe": VideoMetadata,
     "scene_cuts": SceneCutsResult,
-    "cut": CutResult,
+    "cut": VideoMetadata,
     "extract_audio": ExtractAudioResult,
     "frames": FramesResult,
 }
@@ -143,7 +183,7 @@ class StagedMediaOutput(BaseModel):
 class MediaOperationResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    result: VideoMetadata | SceneCutsResult | CutResult | ExtractAudioResult | FramesResult
+    result: VideoMetadata | SceneCutsResult | ExtractAudioResult | FramesResult
     outputs: tuple[StagedMediaOutput, ...]
     elapsed_ms: int
 

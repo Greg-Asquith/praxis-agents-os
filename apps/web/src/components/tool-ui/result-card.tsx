@@ -28,6 +28,7 @@ export function ToolResultCard({
   details = EMPTY_DETAILS,
   expandable = true,
   heading,
+  summary: summaryText,
   trailing,
 }: {
   ariaLabel: string
@@ -36,10 +37,12 @@ export function ToolResultCard({
   details?: ToolResultDetail[]
   expandable?: boolean
   heading: ReactNode
+  // Replaces the "Label: value" line built from details.
+  summary?: string
   trailing?: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const summary = detailSummary(details)
+  const summary = summaryText ?? detailSummary(details)
 
   return (
     <section

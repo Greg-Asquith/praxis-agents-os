@@ -15,10 +15,20 @@ FFPROBE = "/opt/ffmpeg/bin/ffprobe"
 MAX_SCENE_CUTS = 2000
 MAX_FRAMES = 20
 DEFAULT_MAX_EDGE_PX = 1280
-# Start times within this distance of a keyframe are cut by stream copy.
-KEYFRAME_TOLERANCE_MS = 20
-KEYFRAME_SEARCH_MS = 1000
-COPYABLE_VIDEO_CODECS = {"h264", "hevc"}
+MAX_SEGMENTS = 10
+MIN_OUTPUT_EDGE_PX = 64
+MAX_OUTPUT_EDGE_PX = 3840
+MIN_OUTPUT_FPS = 24
+MAX_OUTPUT_FPS = 60
+# About 61 MB a minute at most; the API derives its longest clip from these caps.
+OUTPUT_VIDEO_OPTIONS = (
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+    "-maxrate", "8M", "-bufsize", "16M", "-pix_fmt", "yuv420p",
+)  # fmt: skip
+OUTPUT_AUDIO_OPTIONS = ("-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2")
+FIT_BLUR_RADIUS = 8
+# Each segment opens its own decoder; a thread per core each would exhaust the child's memory.
+SEGMENT_DECODE_THREADS = 2
 SCENE_TIME = re.compile(rb"pts_time:(\d+(?:\.\d+)?)")
 # Speech audio: mono 16 kHz Ogg Opus, about 14 MB an hour, read by every transcription provider.
 SPEECH_AUDIO_OPTIONS = ("-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "32k", "-f", "ogg")
@@ -47,6 +57,12 @@ def _arguments(
         if expected is list:
             if not isinstance(value, list) or any(type(item) is not int for item in value):
                 raise OperationError("invalid_request", f"{name} must be a list of integers.")
+        elif expected == list[list[int]]:
+            if not isinstance(value, list) or any(
+                not isinstance(row, list) or any(type(item) is not int for item in row)
+                for row in value
+            ):
+                raise OperationError("invalid_request", f"{name} must be lists of integers.")
         elif expected is float:
             if type(value) not in {int, float}:
                 raise OperationError("invalid_request", f"{name} must be a number.")
@@ -218,86 +234,124 @@ def _run_scene_cuts(context: OperationContext, arguments: dict[str, Any]) -> dic
 
 
 def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
-    _arguments(arguments, required={"start_ms": int, "end_ms": int})
-    _range(arguments)
+    _arguments(
+        arguments,
+        required={
+            "segments": list[list[int]],
+            "width": int,
+            "height": int,
+            "fps": int,
+            "fit": bool,
+        },
+    )
+    segments = arguments["segments"]
+    if not 1 <= len(segments) <= MAX_SEGMENTS or any(len(item) != 3 for item in segments):
+        raise OperationError(
+            "invalid_request", f"segments must list 1 to {MAX_SEGMENTS} [input, start, end]."
+        )
+    for _, start, end in segments:
+        _range({"start_ms": start, "end_ms": end})
+    inputs = {item[0] for item in segments}
+    if inputs != set(range(len(inputs))):
+        raise OperationError("invalid_request", "segments must use every input from 0.")
+    if not MIN_OUTPUT_FPS <= arguments["fps"] <= MAX_OUTPUT_FPS:
+        raise OperationError(
+            "invalid_request", f"fps must be {MIN_OUTPUT_FPS} to {MAX_OUTPUT_FPS}."
+        )
+    for edge in (arguments["width"], arguments["height"]):
+        if not MIN_OUTPUT_EDGE_PX <= edge <= MAX_OUTPUT_EDGE_PX or edge % 2:
+            raise OperationError(
+                "invalid_request",
+                f"width and height must be even, {MIN_OUTPUT_EDGE_PX} to {MAX_OUTPUT_EDGE_PX}.",
+            )
     return arguments
 
 
-def _starts_on_keyframe(context: OperationContext, path: str, start_ms: int) -> bool:
-    if start_ms == 0:
-        return True
-    search_start = max(0, start_ms - KEYFRAME_SEARCH_MS)
-    window = f"{_seconds(search_start)}%{_seconds(start_ms + KEYFRAME_SEARCH_MS)}"
-    report = _ffprobe(
-        context,
-        "-select_streams",
-        "v:0",
-        "-read_intervals",
-        window,
-        "-show_entries",
-        "packet=pts_time,flags",
-        path,
-    )
-    packets = report.get("packets") or []
-    for packet in packets:
-        if (
-            "K" in packet.get("flags", "")
-            and packet.get("pts_time") is not None
-            and abs(round(float(packet["pts_time"]) * 1000) - start_ms) <= KEYFRAME_TOLERANCE_MS
-        ):
-            return True
-    return False
+def _cut_input_count(arguments: dict[str, Any]) -> int:
+    return len({item[0] for item in arguments["segments"]})
 
 
 def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, Any]:
-    start, end = arguments["start_ms"], arguments["end_ms"]
-    path = context.fetch_input()
-    summary = _probe_file(context, path.name)
-    _require_video(summary)
-    start, end = _clamp_range(summary, start, end)
-    copy = (
-        summary["video_codec"] in COPYABLE_VIDEO_CODECS
-        and summary["audio_codec"] in {None, "aac"}
-        and _starts_on_keyframe(context, path.name, start)
-    )
-    if copy:
-        codec_options = ["-c", "copy"]
-        if summary["video_codec"] == "hevc":
-            codec_options += ["-tag:v", "hvc1"]
-    else:
-        codec_options = [
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "160k",
+    """Joins segments from one or more inputs into one H.264 and AAC MP4 at a fixed size.
+
+    Every segment is scaled to the output size and frame rate, and 48 kHz stereo, with
+    silence for an input without audio, so mismatched sources join cleanly.
+    """
+    summaries = []
+    for index in range(_cut_input_count(arguments)):
+        summary = _probe_file(context, context.fetch_input(index).name)
+        _require_video(summary)
+        summaries.append(summary)
+    width, height, fps = arguments["width"], arguments["height"], arguments["fps"]
+    options, filters = [], []
+    for position, (index, start, end) in enumerate(arguments["segments"]):
+        summary = summaries[index]
+        start, end = _clamp_range(summary, start, end)
+        duration = _seconds(end - start)
+        options += [
+            *_range_options(start, end),
+            "-threads",
+            str(SEGMENT_DECODE_THREADS),
+            "-i",
+            context.input_path(index).name,
         ]
+        framing = _fit_filter if arguments["fit"] else _fill_filter
+        filters.append(
+            f"[{position}:v:0]{framing(width, height, position)},fps={fps},"
+            f"format=yuv420p,trim=duration={duration},setpts=PTS-STARTPTS[v{position}]"
+        )
+        audio = f"[{position}:a:0]" if summary["has_audio"] else "anullsrc=r=48000:cl=stereo,"
+        filters.append(
+            f"{audio}aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+            f"apad,atrim=duration={duration},asetpts=PTS-STARTPTS[a{position}]"
+        )
+    count = len(arguments["segments"])
+    pairs = "".join(f"[v{position}][a{position}]" for position in range(count))
+    filters.append(f"{pairs}concat=n={count}:v=1:a=1[v][a]")
     output = context.output_path(0)
     _ffmpeg(
         context,
-        *_range_options(start, end),
-        "-i",
-        path.name,
+        *options,
+        "-filter_complex",
+        ";".join(filters),
         "-map",
-        "0:v:0",
+        "[v]",
         "-map",
-        "0:a:0?",
-        *codec_options,
+        "[a]",
+        *OUTPUT_VIDEO_OPTIONS,
+        "-r",
+        str(fps),
+        *OUTPUT_AUDIO_OPTIONS,
         "-movflags",
         "+faststart",
         "-f",
         "mp4",
         output.name,
     )
-    clip = _probe_file(context, output.name)
-    return {"mode": "copy" if copy else "encode", **clip}
+    return _probe_file(context, output.name)
+
+
+def _fill_filter(width: int, height: int, position: int) -> str:
+    # Centre crop: fill the frame and trim what overhangs.
+    return (
+        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height},setsar=1"
+    )
+
+
+def _fit_filter(width: int, height: int, position: int) -> str:
+    # The whole frame over a blurred, filled copy of itself; blurring a small copy is cheap.
+    small_width, small_height = max(2, width // 8 // 2 * 2), max(2, height // 8 // 2 * 2)
+    radius = max(1, min(FIT_BLUR_RADIUS, min(small_width, small_height) // 4))
+    return (
+        f"split[back{position}][front{position}];"
+        f"[back{position}]scale={small_width}:{small_height}:force_original_aspect_ratio=increase,"
+        f"crop={small_width}:{small_height},boxblur={radius}:2,scale={width}:{height},"
+        f"setsar=1[blur{position}];"
+        f"[front{position}]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+        f"setsar=1[sharp{position}];"
+        f"[blur{position}][sharp{position}]overlay=(W-w)/2:(H-h)/2"
+    )
 
 
 # extract_audio
@@ -445,7 +499,12 @@ OPERATIONS: dict[str, Operation] = {
     "scene_cuts": Operation(
         validate=_validate_scene_cuts, output_count=lambda arguments: 0, run=_run_scene_cuts
     ),
-    "cut": Operation(validate=_validate_cut, output_count=lambda arguments: 1, run=_run_cut),
+    "cut": Operation(
+        validate=_validate_cut,
+        output_count=lambda arguments: 1,
+        run=_run_cut,
+        input_count=_cut_input_count,
+    ),
     "extract_audio": Operation(
         validate=_validate_extract_audio,
         output_count=lambda arguments: arguments.get("chunks", 1),

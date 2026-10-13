@@ -39,7 +39,7 @@ def test_a_progressing_download_stops_at_the_deadline(
     request = {
         "operation": "probe",
         "timeout_seconds": 60,
-        "input": storage.source("sample.mp4"),
+        "inputs": [storage.source("sample.mp4")],
         "outputs": [],
         "arguments": {},
     }

@@ -19,7 +19,7 @@ async def get_video_shot_cuts(db: AsyncSession, *, revision: FileRevision) -> tu
     if revision.shot_cuts_ms is not None:
         return tuple(revision.shot_cuts_ms)
     operation = await run_media_operation(
-        workspace_id=revision.workspace_id, source=revision, operation=SceneCutsOperation()
+        workspace_id=revision.workspace_id, sources=[revision], operation=SceneCutsOperation()
     )
     if not isinstance(operation.result, SceneCutsResult):
         raise MediaRendererError("invalid_response", INVALID_RESPONSE_MESSAGE)

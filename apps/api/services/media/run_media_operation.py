@@ -2,6 +2,7 @@
 
 """Runs one typed operation on the isolated media renderer."""
 
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -37,27 +38,33 @@ REQUEST_ALLOWANCE_SECONDS = 60
 async def run_media_operation(
     *,
     workspace_id: UUID,
-    source: FileRevision,
+    sources: Sequence[FileRevision],
     operation: MediaOperation,
 ) -> MediaOperationResult:
-    """Sends one operation on an authorised workspace video and returns its staged outputs.
+    """Sends one operation on authorised workspace videos and returns its staged outputs.
 
-    The caller must have resolved ``source`` for ``workspace_id``. The renderer
-    receives one signed GET for that revision and signed PUTs under this
-    workspace's staging prefix; it never sees a storage name it could change.
+    The caller must have resolved every source for ``workspace_id``. The renderer
+    receives one signed GET per revision and signed PUTs under this workspace's
+    staging prefix; it never sees a storage name it could change.
     """
     if not settings.media_renderer_available:
         raise MediaRendererError("unavailable", "The media renderer isn't available.")
-    if source.scope != "workspace" or source.workspace_id != workspace_id:
-        raise MediaRendererError("forbidden", "The video isn't in this workspace.")
-    if contract_for_content_type(source.content_type).category != FileCategory.VIDEO:
-        raise MediaRendererError("unsupported", "The file isn't a video.")
+    if len(sources) != operation.input_count():
+        raise ValueError("The operation needs one source per input")
+    for source in sources:
+        if source.scope != "workspace" or source.workspace_id != workspace_id:
+            raise MediaRendererError("forbidden", "The video isn't in this workspace.")
+        if contract_for_content_type(source.content_type).category != FileCategory.VIDEO:
+            raise MediaRendererError("unsupported", "The file isn't a video.")
 
     provider = get_storage_provider()
     expires_in = timedelta(seconds=settings.MEDIA_STAGING_URL_TTL_SECONDS)
-    download = await provider.create_signed_download(
-        private_ref_from_key(source.object_key), expires_in=expires_in
-    )
+    downloads = [
+        await provider.create_signed_download(
+            private_ref_from_key(source.object_key), expires_in=expires_in
+        )
+        for source in sources
+    ]
     request_id = uuid4()
     content_type, extension = operation.output_type
     staged_refs = [
@@ -76,11 +83,14 @@ async def run_media_operation(
     payload = {
         "operation": operation.name,
         "timeout_seconds": settings.MEDIA_RENDERER_TIMEOUT_SECONDS,
-        "input": {
-            "url": renderer_transfer_url(download.url),
-            "headers": download.headers,
-            "size_bytes": source.size_bytes,
-        },
+        "inputs": [
+            {
+                "url": renderer_transfer_url(download.url),
+                "headers": download.headers,
+                "size_bytes": source.size_bytes,
+            }
+            for source, download in zip(sources, downloads, strict=True)
+        ],
         "outputs": [
             {"url": renderer_transfer_url(upload.url), "headers": upload.headers}
             for upload in uploads

@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { agentQueryOptions } from "@/features/agents/api/get-agent"
 import { reconcileApprovalSubmission } from "@/features/conversations/approval-submission"
 import { approvalBatchIsReady } from "@/features/conversations/approval-decisions"
+import { ConversationActionsContext } from "@/features/conversations/conversation-actions-context"
 import { ConversationDetailHeader } from "@/features/conversations/components/conversation-detail-header"
 import { ConversationComposer } from "@/features/conversations/components/conversation-composer"
 import { MessageList } from "@/features/conversations/components/message-list"
@@ -21,6 +22,7 @@ import { conversationQueryOptions } from "@/features/conversations/api/get-conve
 import { useConversationAutoScroll } from "@/features/conversations/hooks/use-conversation-auto-scroll"
 import { useConversationReadReceipt } from "@/features/conversations/hooks/use-conversation-read-receipt"
 import { useConversationRunState } from "@/features/conversations/hooks/use-conversation-run-state"
+import { useSendInstruction } from "@/features/conversations/hooks/use-send-instruction"
 import {
   conversationAgentLabel,
   conversationScheduleContext,
@@ -251,6 +253,10 @@ function ConversationDetail({
   const approvalError = approvalStateQuery.error ? getErrorMessage(approvalStateQuery.error) : null
   const isResumingRun = activeRunId !== null && submittingApprovalRunId === activeRunId
   const isReadOnlyTranscript = conversation.source === "delegated"
+  const sendInstruction = useSendInstruction(
+    conversationId,
+    isReadOnlyTranscript || composerDisabledReason !== null
+  )
   const showScrollToBottom = shouldRenderStream && stream.isStreaming && isAwayFromBottom
 
   async function handleApprovalSubmit(decisions: AgentRunResumeDecision[], revision?: string) {
@@ -318,18 +324,22 @@ function ConversationDetail({
               </Alert>
             ) : null}
             {messagesQuery.data || shouldRenderStream ? (
-              <MessageList
-                approvalError={approvalError}
-                runInterruption={runInterruption}
-                assistantAgentMetadata={assistantAgentMetadata}
-                assistantLabel={assistantLabel}
-                conversationId={conversationId}
-                isApprovalLoading={approvalStateQuery.isLoading}
-                isApprovalSubmitting={isResumingRun}
-                onApprovalSubmit={handleApprovalSubmit}
-                streamError={runInterruption && latestRun?.id === stream.runId ? null : streamError}
-                timeline={timeline}
-              />
+              <ConversationActionsContext value={sendInstruction}>
+                <MessageList
+                  approvalError={approvalError}
+                  runInterruption={runInterruption}
+                  assistantAgentMetadata={assistantAgentMetadata}
+                  assistantLabel={assistantLabel}
+                  conversationId={conversationId}
+                  isApprovalLoading={approvalStateQuery.isLoading}
+                  isApprovalSubmitting={isResumingRun}
+                  onApprovalSubmit={handleApprovalSubmit}
+                  streamError={
+                    runInterruption && latestRun?.id === stream.runId ? null : streamError
+                  }
+                  timeline={timeline}
+                />
+              </ConversationActionsContext>
             ) : null}
           </div>
         </div>
