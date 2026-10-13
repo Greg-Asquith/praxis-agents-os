@@ -647,7 +647,9 @@ if [[ "$GOOGLE_VERTEX_AI" == "true" || "$ANTHROPIC_VERTEX_AI" == "true" \
       --condition=None --quiet
   done
 fi
-# Gemini on Vertex reads workspace video by gs:// URI as the Vertex AI service agent. The condition limits it to workspace buckets; the platform-private bucket can't use the workspace prefix (checked above).
+# Gemini on Vertex reads workspace video by gs:// URI as the Vertex AI service agent.
+# The condition limits it to workspace buckets; the platform-private bucket can't
+# use the workspace prefix (checked above).
 if [[ "$GOOGLE_VERTEX_AI" == "true" ]]; then
   # gcloud creates service agents only in its beta track, so call the Service
   # Usage API directly. The token is fetched at run time and passed on stdin,

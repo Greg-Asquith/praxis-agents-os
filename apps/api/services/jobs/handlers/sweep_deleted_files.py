@@ -13,8 +13,7 @@ from models.asset_upload import AssetUpload
 from models.files import File, FileFolder, FileRevision, FileUpload
 from models.jobs import Job
 from services.assets.domain import AssetKind
-from services.files.utils import best_effort_delete_file_object, distinct_object_keys
-from services.gemini_files import delete_gemini_file
+from services.files.utils import delete_revision_objects
 from services.jobs.domain import IN_FLIGHT_JOB_STATUSES
 from services.jobs.registry import job_handler
 from services.storage.domain import StorageBucket, make_storage_object_ref
@@ -96,11 +95,7 @@ async def _purge_expired_deleted_files(db: AsyncSession, *, now: datetime) -> No
                 )
             )
         ).all()
-        for object_key in distinct_object_keys(list(revisions)):
-            await best_effort_delete_file_object(object_key, provider=provider)
-        for revision in revisions:
-            if revision.gemini_file_name is not None:
-                await delete_gemini_file(revision.gemini_file_name)
+        await delete_revision_objects(list(revisions), provider=provider)
         await db.delete(file)
 
 

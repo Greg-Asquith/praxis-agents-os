@@ -2,7 +2,6 @@
 
 """Renderer client: what reaches the renderer, and what comes back into Files."""
 
-import importlib
 from collections.abc import Iterator
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
@@ -12,7 +11,6 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 
 from core.database import set_session_tenant_context
-from core.settings import settings
 from models.files import File, FileUpload
 from models.workspace import Workspace
 from services.files.revision_actor import FileRevisionActor
@@ -28,11 +26,10 @@ from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from tests.factories.files import build_file, build_file_revision
 from tests.factories.workspaces import build_workspace
+from tests.support.media import run_media_operation_module as run_module, use_fake_renderer
 from tests.support.scenario import build_scenario_agent
 from tests.support.storage import reset_storage_provider_cache
 
-# The package exports a function with the module's name.
-run_module = importlib.import_module("services.media.run_media_operation")
 PROBE = {
     "duration_ms": 4000,
     "width": 320,
@@ -48,15 +45,6 @@ PROBE = {
 @pytest.fixture
 def renderer(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict]]:
     """Local storage plus a fake renderer that writes each requested output."""
-    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
-    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setattr(settings, "APP_BASE_URL", "http://testserver")
-    monkeypatch.setattr(settings, "MEDIA_RENDERER_URL", "http://renderer.test")
-    monkeypatch.setattr(settings, "MEDIA_RENDERER_AUTH", "none")
-    monkeypatch.setattr(
-        settings, "MEDIA_RENDERER_LOCAL_STORAGE_URL", "http://host.docker.internal:8000"
-    )
-    reset_storage_provider_cache()
     requests: list[dict] = []
 
     async def fake_post(payload: dict) -> dict:
@@ -73,7 +61,7 @@ def renderer(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[dict]]:
         )
         return {"ok": True, "result": result, "outputs": outputs, "elapsed_ms": 5}
 
-    monkeypatch.setattr(run_module, "_post", fake_post)
+    use_fake_renderer(monkeypatch, tmp_path, fake_post)
     try:
         yield requests
     finally:

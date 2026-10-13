@@ -88,12 +88,9 @@ class StorageProvider(Protocol):
         max_size_bytes: int,
         expires_in: timedelta,
     ) -> SignedUpload:
-        """Create a create-only platform staging upload of unknown size.
+        """Create a create-only platform staging upload of up to ``max_size_bytes``.
 
-        Providers that can sign a size range enforce ``max_size_bytes`` at write
-        time. Others may not, so callers must check the stored size before
-        trusting an object; that check is the guarantee, and the staging
-        lifecycle removes anything left behind.
+        Not every provider enforces the bound, so callers check the stored size before trusting it.
         """
         ...
 
@@ -126,10 +123,7 @@ class StorageProvider(Protocol):
         expected_size_bytes: int,
         bounded: bool = False,
     ) -> None:
-        """Validate a provider-specific upload callback signature.
-
-        A bounded upload treats expected_size_bytes as a maximum.
-        """
+        """Validate an upload callback signature; bounded treats the size as a maximum."""
         ...
 
     def require_valid_download_signature(

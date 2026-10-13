@@ -6,7 +6,7 @@ Operation fields are numbers only. Nothing a model writes reaches an ffmpeg
 argument, path, or URL; the renderer builds every command line itself.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -14,13 +14,28 @@ from services.files.domain import VideoMetadata
 from services.storage.domain import StorageObjectRef
 
 MEDIA_STAGING_PREFIX = "platform/media-staging"
+INVALID_RESPONSE_MESSAGE = "The media renderer gave an invalid answer."
+# Mirrors the renderer's own limits in apps/renderer/media/operations.py.
+MAX_SCENE_CUTS = 2000
+MIN_SCENE_THRESHOLD = 0.05
+MAX_SCENE_THRESHOLD = 0.95
+MAX_FRAMES = 20
+MIN_FRAME_EDGE_PX = 64
+MAX_FRAME_EDGE_PX = 1920
+DEFAULT_FRAME_EDGE_PX = 1280
 
 
 class _Operation(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
+    # (content type, extension) of each output; empty when the operation writes none.
+    output_type: ClassVar[tuple[str, str]] = ("", "")
+
     def renderer_arguments(self) -> dict[str, object]:
         return self.model_dump(mode="json", exclude={"name"}, exclude_none=True)
+
+    def output_count(self) -> int:
+        return 1 if self.output_type[0] else 0
 
 
 class _Range(_Operation):
@@ -40,24 +55,32 @@ class ProbeOperation(_Operation):
 
 class SceneCutsOperation(_Range):
     name: Literal["scene_cuts"] = "scene_cuts"
-    threshold: float = Field(default=0.3, ge=0.05, le=0.95)
-    max_cuts: int = Field(default=2000, ge=1, le=2000)
+    threshold: float = Field(default=0.3, ge=MIN_SCENE_THRESHOLD, le=MAX_SCENE_THRESHOLD)
+    max_cuts: int = Field(default=MAX_SCENE_CUTS, ge=1, le=MAX_SCENE_CUTS)
 
 
 class CutOperation(_Range):
     name: Literal["cut"] = "cut"
+    output_type: ClassVar[tuple[str, str]] = ("video/mp4", ".mp4")
     start_ms: int = Field(ge=0)
     end_ms: int = Field(gt=0)
 
 
 class ExtractAudioOperation(_Range):
     name: Literal["extract_audio"] = "extract_audio"
+    output_type: ClassVar[tuple[str, str]] = ("audio/mp4", ".m4a")
 
 
 class FramesOperation(_Operation):
     name: Literal["frames"] = "frames"
-    times_ms: tuple[Annotated[int, Field(ge=0)], ...] = Field(min_length=1, max_length=20)
-    max_edge_px: int = Field(default=1280, ge=64, le=1920)
+    output_type: ClassVar[tuple[str, str]] = ("image/jpeg", ".jpg")
+    times_ms: tuple[Annotated[int, Field(ge=0)], ...] = Field(min_length=1, max_length=MAX_FRAMES)
+    max_edge_px: int = Field(
+        default=DEFAULT_FRAME_EDGE_PX, ge=MIN_FRAME_EDGE_PX, le=MAX_FRAME_EDGE_PX
+    )
+
+    def output_count(self) -> int:
+        return len(self.times_ms)
 
 
 MediaOperation = Annotated[
@@ -71,7 +94,7 @@ class _Result(BaseModel):
 
 
 class SceneCutsResult(_Result):
-    cuts_ms: tuple[int, ...] = Field(max_length=2000)
+    cuts_ms: tuple[int, ...] = Field(max_length=MAX_SCENE_CUTS)
     duration_ms: int = Field(ge=0)
 
 
@@ -93,13 +116,6 @@ RESULT_MODELS: dict[str, type[BaseModel]] = {
     "cut": CutResult,
     "extract_audio": ExtractAudioResult,
     "frames": FramesResult,
-}
-
-# (content type, extension) of each output an operation writes.
-OUTPUT_TYPES: dict[str, tuple[str, str]] = {
-    "cut": ("video/mp4", ".mp4"),
-    "extract_audio": ("audio/mp4", ".m4a"),
-    "frames": ("image/jpeg", ".jpg"),
 }
 
 

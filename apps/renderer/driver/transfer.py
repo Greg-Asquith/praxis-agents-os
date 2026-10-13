@@ -122,6 +122,3 @@ def _open(request: urllib.request.Request, deadline: float):
         raise TransferError(f"Transfer returned HTTP {exc.code}") from exc
     except (urllib.error.URLError, OSError) as exc:
         raise TransferError("Transfer failed") from exc
-
-
-__all__ = ["SignedTransfer", "TransferError", "TransferTimeoutError", "download", "upload"]

@@ -19,8 +19,8 @@ REGION=europe-west4              # = GCP_REGION
 
 ## Prepare each operator machine
 
-- [ ] Install Docker, `gcloud`, and Python 3.12+. Docker must be running
-      before `make gcp-deploy`.
+- [ ] Install Docker, `gcloud`, `curl`, and Python 3.12+. Docker must be
+      running before `make gcp-deploy`.
 - [ ] `gcloud auth login` as a human operator. Never download a
       service-account JSON key; never use the default Compute Engine SA.
 - [ ] From the repository root, run `make gcp-check` so the scripts and
@@ -149,8 +149,9 @@ FERNET_KEY=$(python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(s
       target project before the first inference request.
 - [ ] Optional local preview:
       `deploy/gcp/deploy.sh --render-only /tmp/praxis-render $ENV_FILE`
-- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes the API, web, and media renderer images,
-      runs the migration job, then creates the services and the worker job.
+- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes the API, web,
+      and media renderer images, runs the migration job, then creates the
+      services and the worker job.
       A failed migration stops the script before any service is created.
 - [ ] Until this first deployment completes, the Scheduler trigger fails every
       minute with `NOT_FOUND` because the deployment creates the
@@ -164,16 +165,17 @@ service accounts access through its existing approval prompts. Google model
 and embedding usage is billed to `GCP_PROJECT_ID` through Application Default
 Credentials. `GOOGLE_VERTEX_LOCATION` defaults to `auto`: the catalog selects
 `eu` for Gemini Flash and Flash-Lite, and `global` for Gemini 3.1 Pro.
-Bootstrap also creates the Vertex AI service agent and grants it
-`roles/storage.objectViewer`, conditioned on bucket names starting
-`<WORKSPACE_BUCKET_PREFIX>-`, so Gemini can read workspace video by `gs://`
-URI. The platform-private bucket can't use that prefix, so the grant never
-reaches it.
 Embeddings retain their `global` default. Existing environment files with an
 explicit `global` value keep that routing; set `auto` to adopt model defaults.
 An explicit location must be supported by every Gemini model you use. The
 `GOOGLE_API_KEY` binding can be removed from `RUNTIME_SECRET_BINDINGS` when no
 other configured feature needs it.
+
+Bootstrap also creates the Vertex AI service agent and grants it
+`roles/storage.objectViewer`, conditioned on bucket names starting
+`<WORKSPACE_BUCKET_PREFIX>-`, so Gemini can read workspace video by `gs://`
+URI. The platform-private bucket can't use that prefix, so the grant never
+reaches it.
 
 Google's model cards document the following availability (checked 2026-09-07):
 
@@ -277,11 +279,12 @@ domains: session cookies don't flow between the `run.app` service URLs.
 
 ### 6. Configure public access, domains, and external platforms
 
-The API and web manifests disable the Cloud Run invoker IAM check, so both services accept
-public requests as soon as they deploy. If your organization enforces the
-`constraints/run.managed.requireInvokerIam` policy, the deployment fails;
-remove the `run.googleapis.com/invoker-iam-disabled` annotation from both
-service templates (the media renderer already requires IAM) and grant `roles/run.invoker` to `allUsers` instead.
+The API and web manifests disable the Cloud Run invoker IAM check, so both
+services accept public requests as soon as they deploy. If your organization
+enforces the `constraints/run.managed.requireInvokerIam` policy, the
+deployment fails; remove the `run.googleapis.com/invoker-iam-disabled`
+annotation from both service templates and grant `roles/run.invoker` to
+`allUsers` instead. The media renderer already requires invoker IAM.
 
 Map the custom domains from the env file (`APP_BASE_URL`, `FRONTEND_URL`)
 with Cloud Run domain mappings. They exist only in the regions listed in the
@@ -367,9 +370,10 @@ the previous revision is compatible with persisted metadata.
 - [ ] If the change adds a Vertex partner model or changes the Vertex project,
       complete [model enablement](#enable-serverless-partner-models) for that
       model and project, then verify inference after deployment.
-- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes both images
-      tagged with the git SHA (override via `GIT_SHA=...`), replaces and
-      waits for the migration job, then replaces the API, web, and worker.
+- [ ] `make gcp-deploy ENV_FILE=$ENV_FILE` — builds and pushes the three
+      images tagged with the git SHA (override via `GIT_SHA=...`), replaces
+      and waits for the migration job, then replaces the media renderer, API,
+      web, and worker.
       A failed migration stops the script before any serving revision
       changes. Re-running the same SHA is safe.
 - [ ] If the migration failed: do not deploy the services. Inspect the
@@ -407,7 +411,8 @@ stable `https://praxis-media-renderer-PROJECT_NUMBER.REGION.run.app` address.
   `invoker-iam-disabled` annotation is absent. The deploy script grants
   `roles/run.invoker` on this service to the API and worker accounts only, then
   reads the policy back and stops if any other member holds the role. The API
-  authenticates with a Google ID token (`MEDIA_RENDERER_AUTH=google_id_token`).
+  and worker authenticate with a Google ID token, the default
+  `MEDIA_RENDERER_AUTH=google_id_token`.
 - **Sizing:** one render per instance (`containerConcurrency: 1`), 4 vCPU and
   16 GiB by default, scaling from zero to `MEDIA_RENDERER_MAX_INSTANCES`
   (default 3). Cloud Run counts the instance's temporary files against its

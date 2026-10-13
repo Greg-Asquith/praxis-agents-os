@@ -3,6 +3,7 @@
 """Runs one typed operation on the isolated media renderer."""
 
 from datetime import timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx2 as httpx
@@ -13,9 +14,8 @@ from models.files import FileRevision
 from services.files.contract import FileCategory, contract_for_content_type
 from services.files.utils import private_ref_from_key
 from services.media.domain import (
-    OUTPUT_TYPES,
+    INVALID_RESPONSE_MESSAGE,
     RESULT_MODELS,
-    FramesOperation,
     MediaOperation,
     MediaOperationResult,
     MediaRendererError,
@@ -27,6 +27,7 @@ from services.media.utils import (
     renderer_transfer_url,
     staging_ref,
 )
+from services.storage.domain import StorageObjectRef
 from services.storage.factory import get_storage_provider
 
 # The renderer's budget covers its transfers; this covers cold start and the round trip.
@@ -58,10 +59,10 @@ async def run_media_operation(
         private_ref_from_key(source.object_key), expires_in=expires_in
     )
     request_id = uuid4()
-    output_count = _output_count(operation)
-    content_type, extension = OUTPUT_TYPES.get(operation.name, ("", ""))
+    content_type, extension = operation.output_type
     staged_refs = [
-        staging_ref(workspace_id, request_id, index, extension) for index in range(output_count)
+        staging_ref(workspace_id, request_id, index, extension)
+        for index in range(operation.output_count())
     ]
     uploads = [
         await provider.create_signed_staging_upload(
@@ -94,13 +95,7 @@ async def run_media_operation(
         raise
 
 
-def _output_count(operation: MediaOperation) -> int:
-    if isinstance(operation, FramesOperation):
-        return len(operation.times_ms)
-    return 1 if operation.name in OUTPUT_TYPES else 0
-
-
-async def _post(payload: dict) -> dict:
+async def _post(payload: dict[str, Any]) -> dict[str, Any]:
     timeout = settings.MEDIA_RENDERER_TIMEOUT_SECONDS + REQUEST_ALLOWANCE_SECONDS
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -113,7 +108,7 @@ async def _post(payload: dict) -> dict:
     except (httpx.HTTPError, ValueError) as exc:
         raise MediaRendererError("unavailable", "The media renderer couldn't be reached.") from exc
     if not isinstance(body, dict):
-        raise MediaRendererError("invalid_response", "The media renderer gave an invalid answer.")
+        raise MediaRendererError("invalid_response", INVALID_RESPONSE_MESSAGE)
     if response.status_code != 200 or body.get("ok") is not True:
         error = body.get("error") if isinstance(body.get("error"), dict) else {}
         raise MediaRendererError(
@@ -124,21 +119,19 @@ async def _post(payload: dict) -> dict:
 
 
 async def _read_response(
-    body: dict,
+    body: dict[str, Any],
     operation: MediaOperation,
-    staged_refs: list,
+    staged_refs: list[StorageObjectRef],
     content_type: str,
     extension: str,
 ) -> MediaOperationResult:
     try:
         result = RESULT_MODELS[operation.name].model_validate(body.get("result"))
     except ValidationError as exc:
-        raise MediaRendererError(
-            "invalid_response", "The media renderer gave an invalid answer."
-        ) from exc
+        raise MediaRendererError("invalid_response", INVALID_RESPONSE_MESSAGE) from exc
     reported = body.get("outputs")
     if not isinstance(reported, list) or len(reported) != len(staged_refs):
-        raise MediaRendererError("invalid_response", "The media renderer gave an invalid answer.")
+        raise MediaRendererError("invalid_response", INVALID_RESPONSE_MESSAGE)
     provider = get_storage_provider()
     outputs = []
     for ref, item in zip(staged_refs, reported, strict=True):

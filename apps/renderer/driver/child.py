@@ -31,7 +31,7 @@ class ChildResult:
         return -self.returncode if self.returncode < 0 else None
 
 
-def child_environment(workdir: Path) -> dict[str, str]:
+def _child_environment(workdir: Path) -> dict[str, str]:
     """Returns the only environment a child sees."""
     return {
         "HOME": str(workdir),
@@ -60,7 +60,7 @@ def run_child(
         process = subprocess.Popen(  # noqa: S603
             [sys.executable, "-E", "-s", "-B", str(LAUNCHER), config, "--", *argv],
             cwd=workdir,
-            env=child_environment(workdir),
+            env=_child_environment(workdir),
             stdin=subprocess.DEVNULL,
             stdout=stdout,
             stderr=stderr,
@@ -110,7 +110,7 @@ def require_no_shared_ancestor() -> None:
     uid = os.getuid()
     for pid in _ancestors(os.getpid()) - {os.getpid(), 0, 1}:
         with contextlib.suppress(FileNotFoundError):
-            if _status_field(Path(f"/proc/{pid}/status").read_text(), "Uid:") == uid:
+            if int(_status_field(Path(f"/proc/{pid}/status").read_text(), "Uid:")) == uid:
                 raise IsolationError("The driver must be its user's first process")
 
 
@@ -123,7 +123,7 @@ def _live_processes(uid: int, keep: set[int]) -> list[int]:
             status = (entry / "status").read_text()
         except FileNotFoundError:
             continue
-        if _status_field(status, "Uid:") == uid and _status_field(status, "State:") != "Z":
+        if int(_status_field(status, "Uid:")) == uid and _status_field(status, "State:") != "Z":
             found.append(int(entry.name))
     return found
 
@@ -135,10 +135,9 @@ def _reap_orphans() -> None:
             pass
 
 
-def _status_field(status: str, name: str):
+def _status_field(status: str, name: str) -> str:
     # /proc/<pid> of a non-dumpable process belongs to root, so read the status instead.
-    value = next(line.split()[1] for line in status.splitlines() if line.startswith(name))
-    return value if name == "State:" else int(value)
+    return next(line.split()[1] for line in status.splitlines() if line.startswith(name))
 
 
 def _ancestors(pid: int) -> set[int]:
@@ -148,7 +147,7 @@ def _ancestors(pid: int) -> set[int]:
             status = Path(f"/proc/{pid}/status").read_text()
         except FileNotFoundError:
             break
-        pid = _status_field(status, "PPid:")
+        pid = int(_status_field(status, "PPid:"))
         chain.add(pid)
     return chain
 

@@ -10,7 +10,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -84,7 +84,7 @@ class OperationContext:
     input_size_bytes: int
     output_count: int
     deadline: float
-    _input_path: Path | None = field(default=None, init=False)
+    _fetched: bool = False
 
     @property
     def input_path(self) -> Path:
@@ -97,8 +97,8 @@ class OperationContext:
 
     def fetch_input(self) -> Path:
         """Downloads the whole input once, within the request's deadline."""
-        if self._input_path is not None:
-            return self._input_path
+        if self._fetched:
+            return self.input_path
         self.remaining_seconds()
         try:
             download(
@@ -109,7 +109,7 @@ class OperationContext:
             )
         except TransferError as exc:
             raise _transfer_error(exc, "The input couldn't be downloaded.") from exc
-        self._input_path = self.input_path
+        self._fetched = True
         return self.input_path
 
     def remaining_seconds(self) -> float:
@@ -171,26 +171,32 @@ def handle_request(
             deadline=started + request["timeout_seconds"],
         )
         result = operation.run(context, request["arguments"])
-        outputs = []
-        for index, transfer in enumerate(request["outputs"]):
-            path = context.output_path(index)
-            if not path.is_file() or path.is_symlink():
-                raise OperationError("missing_output", "The operation produced no output.")
-            if path.stat().st_size > config.max_output_bytes:
-                raise OperationError("output_too_large", "The output is too large.")
-            try:
-                size, digest = upload(transfer, path, deadline=context.deadline)
-            except TransferError as exc:
-                raise _transfer_error(exc, "The output couldn't be uploaded.") from exc
-            outputs.append({"size_bytes": size, "sha256": digest})
         return {
             "ok": True,
             "result": result,
-            "outputs": outputs,
+            "outputs": _upload_outputs(context, request["outputs"]),
             "elapsed_ms": int((time.monotonic() - started) * 1000),
         }
     finally:
         _clean_up(workdir)
+
+
+def _upload_outputs(
+    context: OperationContext, transfers: list[SignedTransfer]
+) -> list[dict[str, Any]]:
+    outputs = []
+    for index, transfer in enumerate(transfers):
+        path = context.output_path(index)
+        if not path.is_file() or path.is_symlink():
+            raise OperationError("missing_output", "The operation produced no output.")
+        if path.stat().st_size > context.config.max_output_bytes:
+            raise OperationError("output_too_large", "The output is too large.")
+        try:
+            size, digest = upload(transfer, path, deadline=context.deadline)
+        except TransferError as exc:
+            raise _transfer_error(exc, "The output couldn't be uploaded.") from exc
+        outputs.append({"size_bytes": size, "sha256": digest})
+    return outputs
 
 
 def _clean_up(workdir: Path) -> None:

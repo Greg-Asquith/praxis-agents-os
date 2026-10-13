@@ -22,10 +22,7 @@ async def accept_signed_upload(
     request_content_length: int | None,
     chunks: AsyncIterator[bytes],
 ) -> None:
-    """Validate and persist a signed upload.
-
-    A bounded upload accepts any size up to expected_size_bytes.
-    """
+    """Validate and persist a signed upload of the granted size, or up to it when bounded."""
     provider = get_storage_provider()
     ref = make_storage_object_ref(bucket, object_key)
     provider.require_valid_upload_signature(

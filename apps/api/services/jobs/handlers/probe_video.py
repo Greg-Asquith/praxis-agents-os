@@ -13,10 +13,13 @@ from models.jobs import Job
 from services.files.domain import VIDEO_PROBE_JOB_KIND, VideoMetadata
 from services.files.utils import format_duration, parse_extraction_payload_ids
 from services.jobs.registry import job_handler
-from services.media.domain import MediaRendererError, ProbeOperation
+from services.media.domain import INVALID_RESPONSE_MESSAGE, MediaRendererError, ProbeOperation
 from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS, run_media_operation
 
 logger = logging.getLogger(__name__)
+
+# Lets the job outlast the renderer request it waits on.
+JOB_ALLOWANCE_SECONDS = 60
 
 # Retrying these can't change the answer, so the File fails without another download.
 PERMANENT_FAILURES: dict[str, str | None] = {
@@ -35,7 +38,9 @@ class VideoRejectedError(Exception):
 
 @job_handler(
     kind=VIDEO_PROBE_JOB_KIND,
-    timeout=settings.MEDIA_RENDERER_TIMEOUT_SECONDS + REQUEST_ALLOWANCE_SECONDS + 60,
+    timeout=settings.MEDIA_RENDERER_TIMEOUT_SECONDS
+    + REQUEST_ALLOWANCE_SECONDS
+    + JOB_ALLOWANCE_SECONDS,
     max_attempts=3,
 )
 async def probe_video(db: AsyncSession, job: Job) -> None:
@@ -103,7 +108,7 @@ async def _probe(revision: FileRevision) -> dict[str, object]:
     )
     result = operation.result
     if not isinstance(result, VideoMetadata):
-        raise MediaRendererError("invalid_response", "The media renderer gave an invalid answer.")
+        raise MediaRendererError("invalid_response", INVALID_RESPONSE_MESSAGE)
     if result.video_codec is None or result.duration_ms <= 0:
         raise VideoRejectedError(PERMANENT_FAILURES["no_video"])
     limit_ms = settings.VIDEO_MAX_SOURCE_DURATION_SECONDS * 1000

@@ -195,24 +195,28 @@ def fold_buckets(
         if bucket.purpose == PURPOSE_VIDEO_GENERATION:
             _fold_video_output(folded, bucket)
         if bucket.purpose == PURPOSE_IMAGE_GENERATION:
-            image_price = (
-                find_image_output_price(
-                    bucket.provider,
-                    bucket.image_model,
-                    bucket.image_quality,
-                    bucket.image_size,
-                    bucket.day,
-                )
-                if bucket.image_model and bucket.image_quality and bucket.image_size
-                else None
-            )
-            if image_price is None:
-                folded.unpriced_image_generations += bucket.invocations
-            else:
-                folded.has_priced_bucket = True
-                folded.priced_image_generations += bucket.invocations
-                folded.estimated_cost_usd += Decimal(bucket.invocations) * image_price.usd_per_image
+            _fold_image_output(folded, bucket)
     return folded
+
+
+def _fold_image_output(folded: UsageFold, bucket: UsageBucket) -> None:
+    image_price = (
+        find_image_output_price(
+            bucket.provider,
+            bucket.image_model,
+            bucket.image_quality,
+            bucket.image_size,
+            bucket.day,
+        )
+        if bucket.image_model and bucket.image_quality and bucket.image_size
+        else None
+    )
+    if image_price is None:
+        folded.unpriced_image_generations += bucket.invocations
+        return
+    folded.has_priced_bucket = True
+    folded.priced_image_generations += bucket.invocations
+    folded.estimated_cost_usd += Decimal(bucket.invocations) * image_price.usd_per_image
 
 
 def _fold_video_output(folded: UsageFold, bucket: UsageBucket) -> None:

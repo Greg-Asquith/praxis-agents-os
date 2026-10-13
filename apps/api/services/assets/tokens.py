@@ -30,10 +30,7 @@ def create_asset_upload_token(
     token_id: str | None = None,
     expires_at: datetime | None = None,
 ) -> tuple[str, datetime]:
-    """Create an API token that binds a signed upload to one asset.
-
-    The token expires after 10 minutes unless the caller passes ``expires_at``.
-    """
+    """Create an API token binding a signed upload to one asset, valid 10 minutes by default."""
     now = datetime.now(UTC)
     expires_at = expires_at or now + _ASSET_UPLOAD_TOKEN_TTL
     payload = {

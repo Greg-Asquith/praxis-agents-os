@@ -302,29 +302,12 @@ class LocalStorageProvider:
                 object_key=ref.key,
             )
 
-        expires_at = datetime.now(UTC) + expires_in
-        expires = int(expires_at.timestamp())
-        query = {
-            "content_type": normalized_content_type,
-            "expires": str(expires),
-            "size_bytes": str(expected_size_bytes),
-            "sig": self._signature(
-                action="upload",
-                ref=ref,
-                expires=expires,
-                content_type=normalized_content_type,
-                expected_size_bytes=expected_size_bytes,
-            ),
-        }
-        url = (
-            f"{self._local_route_base()}/upload/{ref.bucket.value}/{quote_object_key(ref.key)}"
-            f"?{urlencode(query)}"
-        )
-        return SignedUpload(
-            ref=ref,
-            url=url,
-            headers={"content-type": normalized_content_type},
-            expires_at=expires_at,
+        return self._signed_upload(
+            ref,
+            content_type=normalized_content_type,
+            size_bytes=expected_size_bytes,
+            expires_in=expires_in,
+            bounded=False,
         )
 
     async def create_signed_staging_upload(
@@ -336,20 +319,36 @@ class LocalStorageProvider:
         expires_in: timedelta,
     ) -> SignedUpload:
         validate_platform_ref(ref)
-        normalized_content_type = content_type.strip()
+        return self._signed_upload(
+            ref,
+            content_type=content_type.strip(),
+            size_bytes=max_size_bytes,
+            expires_in=expires_in,
+            bounded=True,
+        )
+
+    def _signed_upload(
+        self,
+        ref: StorageObjectRef,
+        *,
+        content_type: str,
+        size_bytes: int,
+        expires_in: timedelta,
+        bounded: bool,
+    ) -> SignedUpload:
         expires_at = datetime.now(UTC) + expires_in
         expires = int(expires_at.timestamp())
         query = {
-            "content_type": normalized_content_type,
+            "content_type": content_type,
             "expires": str(expires),
-            "size_bytes": str(max_size_bytes),
-            "bounded": "1",
+            "size_bytes": str(size_bytes),
+            **({"bounded": "1"} if bounded else {}),
             "sig": self._signature(
-                action="upload_bounded",
+                action="upload_bounded" if bounded else "upload",
                 ref=ref,
                 expires=expires,
-                content_type=normalized_content_type,
-                expected_size_bytes=max_size_bytes,
+                content_type=content_type,
+                expected_size_bytes=size_bytes,
             ),
         }
         url = (
@@ -359,7 +358,7 @@ class LocalStorageProvider:
         return SignedUpload(
             ref=ref,
             url=url,
-            headers={"content-type": normalized_content_type},
+            headers={"content-type": content_type},
             expires_at=expires_at,
         )
 

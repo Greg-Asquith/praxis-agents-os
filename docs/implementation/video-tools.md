@@ -1,9 +1,9 @@
 # Video tools
 
 Read this before changing the media renderer, its API client, or anything that
-decodes, cuts, or measures video. Plan 248 builds this foundation; the
-model-facing video tools (plans 249 and 250) are pending. For upload limits
-and video in chat, see [Storage and files](storage-and-files.md#video-uploads-and-attachments).
+decodes, cuts, or measures video. Model-facing video tools that find
+moments in video or cut it are pending. For upload limits and video in chat,
+see [Storage and files](storage-and-files.md#video-uploads-and-attachments).
 
 ## Media renderer
 
@@ -229,8 +229,8 @@ Any completed tool result that names a video File gets a video row, unless a
 more specific presenter claims the result first (`video-tool-presenter.tsx`,
 registered after integration presenters). A result names a video when it has
 `file_id` and a `video/*` `media_type`, either at the top level or in a list
-such as `clips`. Tools in plans 249 and 250 return that shape, so they need no
-presenter of their own to show their videos.
+such as `clips`. A video tool that returns that shape needs no presenter of
+its own to show its videos.
 
 Each video plays from a signed preview URL, with the File's duration and
 upright dimensions, a details button that opens the File, and a download
@@ -246,14 +246,14 @@ sent video shows the same card as a tool result.
 
 ## Deployment
 
-On GCP, `deploy/gcp/deploy.sh` deploys `praxis-media-renderer` as a Cloud Run
-service: gen2, concurrency 1, minimum 0 and maximum 3 instances, 4 vCPU and
-16 GiB by default, and a request timeout 60 seconds above
-`MEDIA_RENDERER_TIMEOUT_SECONDS`. It scales to zero, so it costs nothing while
-idle. The deployment has no VPC, so ingress is `all`; Cloud Run IAM is the
-caller check, and only the API and worker service accounts hold
-`roles/run.invoker`. The renderer's own service account has no roles. See
-[the GCP deployment guide](../../deploy/gcp/README.md).
+On GCP, `deploy/gcp/deploy.sh` deploys `praxis-media-renderer` as a gen2
+Cloud Run service with one request per instance. It scales to zero, and its
+request timeout is 60 seconds above `MEDIA_RENDERER_TIMEOUT_SECONDS`. The
+deployment has no VPC, so ingress is `all`; Cloud Run IAM is the caller check,
+and only the API and worker service accounts hold `roles/run.invoker`. The
+renderer's own service account has no roles. For sizing, cost, and staging
+expiry, see the
+[GCP deployment guide](../../deploy/gcp/README.md#media-renderer).
 
 Cloud Run's file system is memory, so a 4 GiB source uses 4 GiB of the
 instance before ffmpeg starts. `MAX_FILE_SIZE_SOURCE_VIDEO` sets one limit for
@@ -275,18 +275,18 @@ rule for staging.
 | Caller authentication | Cloud Run IAM with `google_id_token` | `shared_secret` on private ingress (Container Apps internal ingress, or a private ECS or App Runner service). The renderer refuses operation requests without the secret. |
 | Staging expiry | GCP bootstrap's one-day lifecycle rule on `platform/media-staging/` | Pending: a Blob lifecycle management policy or an S3 lifecycle rule on the same prefix. |
 | Large source uploads | Signed direct upload, up to `MAX_FILE_SIZE_SOURCE_VIDEO` | S3 signs direct uploads but caps a single `PUT` at 5 GiB. Azure relays uploads through the API, so it keeps `MAX_FILE_SIZE_VIDEO` (100 MB) until it signs direct uploads. |
-| Isolation self-check | Verified locally in Docker; Cloud Run gen2 is pending (G1) | Unverified. The runtime must let an unprivileged process set `no_new_privs` and install a seccomp filter, and run the renderer as its container's first process. |
+| Isolation self-check | Verified locally in Docker and on Cloud Run gen2 | Unverified. The runtime must let an unprivileged process set `no_new_privs` and install a seccomp filter, and run the renderer as its container's first process. |
 
-The repository has no Azure or AWS deployment tooling yet. Until a deployment
-has a staging adapter, `settings.media_renderer_available` is false and video stays
-refused in chat.
+The repository has no Azure or AWS deployment tooling. Until a deployment has
+a staging adapter, `settings.media_renderer_available` is false and video
+stays refused in chat.
 
 Locally, set `MEDIA_RENDERER_URL=http://127.0.0.1:8090` and
 `MEDIA_RENDERER_AUTH=none` in `apps/api/.env`, and `make dev` starts the
 renderer on `127.0.0.1:8090`. See [Local development](local-development.md).
 Uploading a video to **Files** runs the probe, so the File moving from
 **Processing** to ready confirms the renderer works end to end. No
-model-facing tool calls the renderer yet (plans 249 and 250).
+model-facing tool calls the renderer.
 
 ## Verification
 

@@ -365,13 +365,9 @@ class RuntimeToolDefinition:
 
 
 def _acyclic_return_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Cut reference loops one level below each self-referencing definition.
+    """Unconstrains references back into a loop; Vertex AI rejects self-referencing schemas.
 
-    Providers receive the return schema with the tool declaration, and Vertex
-    AI rejects the whole request when a definition reaches itself, such as a
-    recursive JSON value type. Each looping definition keeps its own union, so
-    Code Mode stubs still name the value types; only the nested references
-    back into a loop become unconstrained.
+    Each looping definition keeps its own union, so Code Mode stubs still name its value types.
     """
     definitions: dict[str, Any] = schema.get("$defs", {})
     references = {

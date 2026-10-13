@@ -1,3 +1,5 @@
+# apps/api/tests/services/gemini_files/test_upload_gemini_file.py
+
 """Gemini Files API upload tests: what we send to Google and what we accept back."""
 
 import importlib

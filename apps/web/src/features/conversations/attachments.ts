@@ -38,12 +38,16 @@ export function chatAttachmentRefusal(file: File, videoToolsAvailable: boolean) 
   return null
 }
 
+function hasMediaTypeFamily(mediaType: string | null | undefined, family: "image" | "video") {
+  return mediaType?.split(";")[0]?.trim().toLowerCase().startsWith(`${family}/`) ?? false
+}
+
 export function isImageAttachmentMediaType(mediaType: string | null | undefined) {
-  return mediaType?.split(";")[0]?.trim().toLowerCase().startsWith("image/") ?? false
+  return hasMediaTypeFamily(mediaType, "image")
 }
 
 export function isVideoAttachmentMediaType(mediaType: string | null | undefined) {
-  return mediaType?.split(";")[0]?.trim().toLowerCase().startsWith("video/") ?? false
+  return hasMediaTypeFamily(mediaType, "video")
 }
 
 export async function uploadChatAttachment(

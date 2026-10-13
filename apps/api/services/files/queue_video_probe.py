@@ -11,6 +11,7 @@ from models.files import File, FileRevision
 from services.files.contract import FileCategory, contract_for_content_type
 from services.files.domain import VIDEO_PROBE_JOB_KIND
 from services.jobs.enqueue_job import enqueue_job
+from utils.content import ContentScope
 
 
 async def queue_video_probe(
@@ -20,13 +21,9 @@ async def queue_video_probe(
     revision: FileRevision,
     initiated_by_user_id: UUID | None,
 ) -> bool:
-    """Marks a workspace video pending and queues its probe.
-
-    Returns false, changing nothing, for other files or when the renderer is
-    unavailable; those videos stay ready without measured metadata.
-    """
+    """Marks a workspace video pending and queues its probe, or returns False and changes nothing."""
     if (
-        revision.scope != "workspace"
+        revision.scope != ContentScope.WORKSPACE
         or contract_for_content_type(revision.content_type).category != FileCategory.VIDEO
         or not settings.media_renderer_available
     ):

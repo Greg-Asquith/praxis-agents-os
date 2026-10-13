@@ -9,8 +9,9 @@ import type { FileScope } from "@/features/files/types"
 import { uploadFileDirectly } from "@/lib/api/direct-upload"
 import { getErrorMessage } from "@/lib/api/errors"
 import { contentTypeForWorkspaceFile } from "@/lib/file"
+import { pluralize } from "@/lib/format"
 
-export type FileUploadProgress = {
+type FileUploadProgress = {
   fileName: string
   fileNumber: number
   fileCount: number
@@ -21,8 +22,10 @@ export type FileUploadProgress = {
 
 export type FileUpload = ReturnType<typeof useFileUpload>
 
-function uploadedMessage(count: number) {
-  return `${String(count)} ${count === 1 ? "file" : "files"} uploaded.`
+function uploadedMessage(count: number, cancelled: boolean) {
+  const uploaded = `${String(count)} ${pluralize(count, "file")} uploaded.`
+  if (!cancelled) return uploaded
+  return count > 0 ? `Upload cancelled. ${uploaded}` : "Upload cancelled."
 }
 
 export function useFileUpload({
@@ -52,11 +55,11 @@ export function useFileUpload({
 
     const controller = new AbortController()
     abortRef.current = controller
+    const measured = scope !== "platform"
     let uploadedCount = 0
     try {
       for (const [index, file] of pending.entries()) {
         if (controller.signal.aborted) break
-        const measured = scope !== "platform"
         setProgress({
           fileName: file.name,
           fileNumber: index + 1,
@@ -100,18 +103,10 @@ export function useFileUpload({
         })
         uploadedCount += 1
       }
-      setMessage(
-        controller.signal.aborted
-          ? `Upload cancelled. ${uploadedMessage(uploadedCount)}`
-          : uploadedMessage(uploadedCount)
-      )
+      setMessage(uploadedMessage(uploadedCount, controller.signal.aborted))
     } catch (uploadError) {
       if (controller.signal.aborted) {
-        setMessage(
-          uploadedCount > 0
-            ? `Upload cancelled. ${uploadedMessage(uploadedCount)}`
-            : "Upload cancelled."
-        )
+        setMessage(uploadedMessage(uploadedCount, true))
       } else {
         setError(getErrorMessage(uploadError))
       }

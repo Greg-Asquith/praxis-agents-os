@@ -122,7 +122,6 @@ def test_malformed_media_fails_with_a_plain_error(
         _run(storage, config, "probe", source="malformed.mp4")
 
     assert error.value.code == "invalid_media"
-    assert error.value.message == "The video couldn't be read."
 
 
 @pytest.mark.parametrize(

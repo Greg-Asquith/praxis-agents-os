@@ -14,13 +14,10 @@ from models.workspace import Workspace, WorkspaceMembership
 from services.audit_events import AuditAction, AuditResourceType
 from services.audit_events.workspace_events import record_workspace_audit_event
 from services.files.utils import (
-    best_effort_delete_file_object,
-    distinct_object_keys,
+    delete_revision_objects,
     get_file_for_workspace,
     require_file_purge_access,
 )
-from services.gemini_files import delete_gemini_file
-from services.storage.factory import get_storage_provider
 
 
 async def purge_file(
@@ -49,12 +46,7 @@ async def purge_file(
             )
         )
     ).all()
-    provider = get_storage_provider()
-    for object_key in distinct_object_keys(list(revisions)):
-        await best_effort_delete_file_object(object_key, provider=provider)
-    for revision in revisions:
-        if revision.gemini_file_name is not None:
-            await delete_gemini_file(revision.gemini_file_name)
+    await delete_revision_objects(list(revisions))
 
     await record_workspace_audit_event(
         db,

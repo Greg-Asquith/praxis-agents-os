@@ -21,7 +21,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 class FakeStorage(ThreadingHTTPServer):
-    """Serves fixtures with Range support and keeps uploaded bodies."""
+    """Serves fixtures and keeps uploaded bodies."""
 
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), _StorageHandler)
@@ -59,18 +59,10 @@ class _StorageHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        byte_range = self.headers.get("range")
-        if byte_range:
-            start, end = (int(value) for value in byte_range.removeprefix("bytes=").split("-"))
-            body = data[start : end + 1]
-            self.send_response(206)
-            self.send_header("content-range", f"bytes {start}-{start + len(body) - 1}/{len(data)}")
-        else:
-            body = data
-            self.send_response(200)
-        self.send_header("content-length", str(len(body)))
+        self.send_response(200)
+        self.send_header("content-length", str(len(data)))
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(data)
 
     def do_PUT(self) -> None:
         self.server.requests.append(("PUT", self.path, None))

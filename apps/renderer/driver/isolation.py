@@ -2,7 +2,7 @@
 
 """Child process isolation: resource limits, no_new_privs, and a seccomp filter.
 
-The filter follows plan 246's design. It kills foreign architectures and x32
+The filter kills foreign architectures and x32
 calls, allows only AF_UNIX sockets, and refuses io_uring, ptrace, and
 cross-process memory access with EPERM. Linux only.
 """

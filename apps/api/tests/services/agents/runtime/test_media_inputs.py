@@ -1,8 +1,9 @@
+# apps/api/tests/services/agents/runtime/test_media_inputs.py
+
 """Tests for provider-neutral governed workspace media loading."""
 
 from dataclasses import dataclass
 from hashlib import sha256
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -26,9 +27,8 @@ from services.agents.runtime.tools.media_inputs import (
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
 from services.storage.factory import get_storage_provider
-from services.storage.providers.gcs import GcsStorageProvider
 from tests.factories import build_file, build_file_revision, build_workspace
-from tests.support.storage import reset_storage_provider_cache
+from tests.support.storage import fake_gcs_storage_provider, reset_storage_provider_cache
 
 
 @dataclass(frozen=True)
@@ -209,22 +209,11 @@ async def test_media_input_hides_cross_workspace_file(
         )
 
 
-class _FakeGcsClient:
-    def bucket(self, name: str) -> SimpleNamespace:
-        return SimpleNamespace(name=name)
-
-
 @pytest.fixture
 def vertex_gcs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "video-test")
-    gcs = GcsStorageProvider(
-        public_bucket_name="praxis-public",
-        workspace_bucket_prefix="praxis-test",
-        workspace_bucket_location="EU",
-        project_id="video-test",
-        client=_FakeGcsClient(),
-    )
+    gcs = fake_gcs_storage_provider()
     monkeypatch.setattr(media_inputs_tools, "get_storage_provider", lambda: gcs)
 
 

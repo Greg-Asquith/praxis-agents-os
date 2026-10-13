@@ -143,16 +143,7 @@ def _validate_image_attachment(
             field="attachments",
             details={"file_id": str(file.id), "content_type": file.content_type},
         )
-    if file.size_bytes > settings.MAX_FILE_SIZE_IMAGE:
-        raise AppValidationError(
-            "Image attachment is too large",
-            field="attachments",
-            details={
-                "file_id": str(file.id),
-                "size_bytes": file.size_bytes,
-                "max_size_bytes": settings.MAX_FILE_SIZE_IMAGE,
-            },
-        )
+    _require_attachment_size(file, kind="Image", max_size_bytes=settings.MAX_FILE_SIZE_IMAGE)
 
     resolved_model = resolve_agent_model(agent, workspace=workspace)
     model_info = get_model(resolved_model.provider, resolved_model.model)
@@ -169,21 +160,15 @@ def _validate_image_attachment(
 
 
 def _validate_document_attachment(file: File, *, media_type: str) -> None:
-    max_size_bytes = (
-        settings.MAX_MULTIMODAL_DOCUMENT_BYTES
-        if media_type == PDF_MEDIA_TYPE
-        else settings.MAX_FILE_SIZE_DOCUMENT
+    _require_attachment_size(
+        file,
+        kind="Document",
+        max_size_bytes=(
+            settings.MAX_MULTIMODAL_DOCUMENT_BYTES
+            if media_type == PDF_MEDIA_TYPE
+            else settings.MAX_FILE_SIZE_DOCUMENT
+        ),
     )
-    if file.size_bytes > max_size_bytes:
-        raise AppValidationError(
-            "Document attachment is too large",
-            field="attachments",
-            details={
-                "file_id": str(file.id),
-                "size_bytes": file.size_bytes,
-                "max_size_bytes": max_size_bytes,
-            },
-        )
 
 
 def _validate_video_attachment(file: File) -> None:
@@ -193,10 +178,17 @@ def _validate_video_attachment(file: File) -> None:
             field="attachments",
             details={"file_id": str(file.id), "content_type": file.content_type},
         )
-    max_size_bytes = upload_max_size_bytes(contract_for_content_type(file.content_type))
+    _require_attachment_size(
+        file,
+        kind="Video",
+        max_size_bytes=upload_max_size_bytes(contract_for_content_type(file.content_type)),
+    )
+
+
+def _require_attachment_size(file: File, *, kind: str, max_size_bytes: int) -> None:
     if file.size_bytes > max_size_bytes:
         raise AppValidationError(
-            "Video attachment is too large",
+            f"{kind} attachment is too large",
             field="attachments",
             details={
                 "file_id": str(file.id),

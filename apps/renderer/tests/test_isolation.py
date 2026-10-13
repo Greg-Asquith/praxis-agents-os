@@ -172,7 +172,6 @@ def test_stray_sweep_empties_a_detached_process_that_keeps_forking(tmp_path: Pat
 
     kill_stray_processes()
 
-    time.sleep(0.2)
     assert _live_strays() == []
 
 

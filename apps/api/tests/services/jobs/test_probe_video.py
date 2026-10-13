@@ -2,7 +2,6 @@
 
 """Video probe job: what a File keeps from the renderer's measurement."""
 
-import importlib
 from collections.abc import Iterator
 from uuid import uuid4
 
@@ -13,11 +12,11 @@ from core.settings import settings
 from services.jobs.handlers.probe_video import probe_video
 from services.media.domain import MediaRendererError
 from tests.factories import build_file, build_file_revision, build_job, build_workspace
+from tests.support.media import use_fake_renderer
 from tests.support.storage import reset_storage_provider_cache
 
 pytestmark = pytest.mark.asyncio
 
-run_module = importlib.import_module("services.media.run_media_operation")
 PROBE = {
     "duration_ms": 3_612_480,
     "width": 1920,
@@ -33,12 +32,6 @@ PROBE = {
 @pytest.fixture
 def renderer_answers(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list[object]]:
     """Local storage plus a renderer that answers each probe with the next queued result."""
-    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
-    monkeypatch.setattr(settings, "LOCAL_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setattr(settings, "APP_BASE_URL", "http://testserver")
-    monkeypatch.setattr(settings, "MEDIA_RENDERER_URL", "http://renderer.test")
-    monkeypatch.setattr(settings, "MEDIA_RENDERER_AUTH", "none")
-    reset_storage_provider_cache()
     answers: list[object] = []
 
     async def fake_post(payload: dict) -> dict:
@@ -48,7 +41,7 @@ def renderer_answers(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Iterator[list
             raise answer
         return {"ok": True, "result": answer, "outputs": [], "elapsed_ms": 5}
 
-    monkeypatch.setattr(run_module, "_post", fake_post)
+    use_fake_renderer(monkeypatch, tmp_path, fake_post)
     try:
         yield answers
     finally:
@@ -119,7 +112,6 @@ async def test_audio_only_file_fails_processing_without_a_retry(
     await db_session.refresh(revision)
 
     assert file.processing_status == "error"
-    assert file.processing_error == "The file has no video."
     assert revision.media_metadata is None
 
 

@@ -2,7 +2,7 @@
 
 """Installs the child's limits and seccomp filter, then execs the command.
 
-Run as ``python -E -s launcher.py <limits json> -- <argv>``. The filter and
+Run as ``python -E -s launcher.py <config json> -- <argv>``. The filter and
 limits survive exec, so the command never runs without them.
 """
 
@@ -19,7 +19,7 @@ from driver.isolation import ChildLimits, install_limits, install_seccomp_filter
 def main() -> None:
     config = json.loads(sys.argv[1])
     if sys.argv[2] != "--" or len(sys.argv) < 4:
-        raise SystemExit("usage: launcher.py <limits json> -- <argv>")
+        raise SystemExit("usage: launcher.py <config json> -- <argv>")
     argv = sys.argv[3:]
     install_limits(ChildLimits(**config["limits"]))
     if config["seccomp"]:

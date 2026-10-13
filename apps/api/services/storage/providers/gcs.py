@@ -483,45 +483,23 @@ class GcsStorageProvider:
             content_type, provider_key=self.provider_key, ref=ref
         )
         expires_at = datetime.now(UTC) + expires_in
-        blob = self._bucket(ref).blob(ref.key)
-        upload_headers = {
-            "content-type": normalized_content_type,
-            "x-goog-if-generation-match": "0",
-        }
-        signed_headers = {
-            "content-length": str(expected_size_bytes),
-            "x-goog-if-generation-match": "0",
-        }
-        try:
-            signing_kwargs = await asyncio.to_thread(self._remote_signing_kwargs)
-            url = await asyncio.to_thread(
-                blob.generate_signed_url,
-                expiration=expires_at,
-                method="PUT",
-                content_type=normalized_content_type,
-                version="v4",
-                headers=signed_headers,
-                **signing_kwargs,
-            )
-        except StorageError:
-            raise
-        except Exception as exc:
-            logger.exception(
-                "GCS signed upload URL generation failed",
-                extra={"error_type": type(exc).__name__},
-            )
-            raise StorageError(
-                "Failed to create GCS signed upload URL",
-                provider_key=self.provider_key,
-                operation="create_signed_upload",
-                bucket=ref.bucket.value,
-                object_key=ref.key,
-                original_error=exc,
-            ) from exc
+        url = await self._signed_put_url(
+            ref,
+            content_type=normalized_content_type,
+            signed_headers={
+                "content-length": str(expected_size_bytes),
+                "x-goog-if-generation-match": "0",
+            },
+            expires_at=expires_at,
+            operation="create_signed_upload",
+        )
         return SignedUpload(
             ref=ref,
-            url=str(url),
-            headers=upload_headers,
+            url=url,
+            headers={
+                "content-type": normalized_content_type,
+                "x-goog-if-generation-match": "0",
+            },
             expires_at=expires_at,
         )
 
@@ -543,34 +521,56 @@ class GcsStorageProvider:
             "x-goog-content-length-range": f"0,{max_size_bytes}",
             "x-goog-if-generation-match": "0",
         }
+        url = await self._signed_put_url(
+            ref,
+            content_type=normalized_content_type,
+            signed_headers=headers,
+            expires_at=expires_at,
+            operation="create_signed_staging_upload",
+        )
+        return SignedUpload(
+            ref=ref,
+            url=url,
+            headers={"content-type": normalized_content_type, **headers},
+            expires_at=expires_at,
+        )
+
+    async def _signed_put_url(
+        self,
+        ref: StorageObjectRef,
+        *,
+        content_type: str,
+        signed_headers: dict[str, str],
+        expires_at: datetime,
+        operation: str,
+    ) -> str:
         try:
             signing_kwargs = await asyncio.to_thread(self._remote_signing_kwargs)
             url = await asyncio.to_thread(
                 self._bucket(ref).blob(ref.key).generate_signed_url,
                 expiration=expires_at,
                 method="PUT",
-                content_type=normalized_content_type,
+                content_type=content_type,
                 version="v4",
-                headers=headers,
+                headers=signed_headers,
                 **signing_kwargs,
             )
         except StorageError:
             raise
         except Exception as exc:
+            logger.exception(
+                "GCS signed upload URL generation failed",
+                extra={"error_type": type(exc).__name__},
+            )
             raise StorageError(
-                "Failed to create GCS signed staging upload URL",
+                "Failed to create GCS signed upload URL",
                 provider_key=self.provider_key,
-                operation="create_signed_staging_upload",
+                operation=operation,
                 bucket=ref.bucket.value,
                 object_key=ref.key,
                 original_error=exc,
             ) from exc
-        return SignedUpload(
-            ref=ref,
-            url=str(url),
-            headers={"content-type": normalized_content_type, **headers},
-            expires_at=expires_at,
-        )
+        return str(url)
 
     async def create_signed_download(
         self,

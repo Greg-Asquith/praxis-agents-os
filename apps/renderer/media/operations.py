@@ -7,14 +7,17 @@ import re
 from fractions import Fraction
 from typing import Any
 
+from driver.child import ChildResult
 from driver.server import Operation, OperationContext, OperationError
 
 FFMPEG = "/opt/ffmpeg/bin/ffmpeg"
 FFPROBE = "/opt/ffmpeg/bin/ffprobe"
 MAX_SCENE_CUTS = 2000
 MAX_FRAMES = 20
+DEFAULT_MAX_EDGE_PX = 1280
 # Start times within this distance of a keyframe are cut by stream copy.
 KEYFRAME_TOLERANCE_MS = 20
+KEYFRAME_SEARCH_MS = 1000
 COPYABLE_VIDEO_CODECS = {"h264", "hevc"}
 SCENE_TIME = re.compile(rb"pts_time:(\d+(?:\.\d+)?)")
 
@@ -71,7 +74,16 @@ def _ffmpeg(context: OperationContext, *options: str) -> None:
     _require_success(result)
 
 
-def _require_success(result) -> None:
+def _ffprobe(context: OperationContext, *options: str) -> dict[str, Any]:
+    result = context.run([FFPROBE, "-v", "error", "-print_format", "json", *options])
+    _require_success(result)
+    try:
+        return json.loads(result.stdout_path.read_bytes())
+    except json.JSONDecodeError as exc:
+        raise OperationError("invalid_media", "The video couldn't be read.") from exc
+
+
+def _require_success(result: ChildResult) -> None:
     if result.returncode == 0:
         return
     if result.signal is not None or "Cannot allocate memory" in result.stderr_tail:
@@ -80,29 +92,12 @@ def _require_success(result) -> None:
 
 
 def _probe_file(context: OperationContext, path: str) -> dict[str, Any]:
-    result = context.run(
-        [
-            FFPROBE,
-            "-v",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            path,
-        ]
-    )
-    _require_success(result)
-    try:
-        report = json.loads(result.stdout_path.read_bytes())
-    except json.JSONDecodeError as exc:
-        raise OperationError("invalid_media", "The video couldn't be read.") from exc
-    return _summarise_probe(report)
+    return _summarise_probe(_ffprobe(context, "-show_format", "-show_streams", path))
 
 
 def _summarise_probe(report: dict[str, Any]) -> dict[str, Any]:
     streams = report.get("streams") or []
-    video = next((s for s in streams if s.get("codec_type") == "video" and not _is_cover(s)), None)
+    video = next((s for s in streams if s.get("codec_type") == "video" and not _is_cover(s)), {})
     audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
     try:
         duration = float((report.get("format") or {}).get("duration") or 0)
@@ -110,13 +105,13 @@ def _summarise_probe(report: dict[str, Any]) -> dict[str, Any]:
         duration = 0
     return {
         "duration_ms": round(duration * 1000),
-        "width": video.get("width") if video else None,
-        "height": video.get("height") if video else None,
-        "fps": _frame_rate(video.get("avg_frame_rate")) if video else None,
-        "video_codec": video.get("codec_name") if video else None,
+        "width": video.get("width"),
+        "height": video.get("height"),
+        "fps": _frame_rate(video.get("avg_frame_rate")),
+        "video_codec": video.get("codec_name"),
         "has_audio": audio is not None,
         "audio_codec": audio.get("codec_name") if audio else None,
-        "rotation": _rotation(video) if video else 0,
+        "rotation": _rotation(video),
     }
 
 
@@ -180,7 +175,7 @@ def _validate_scene_cuts(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_scene_cuts(context: OperationContext, arguments: dict[str, Any]) -> dict[str, Any]:
-    start, end = _range(arguments)
+    start, end = arguments.get("start_ms"), arguments.get("end_ms")
     path = context.fetch_input()
     summary = _probe_file(context, path.name)
     _require_video(summary)
@@ -223,25 +218,19 @@ def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
 def _starts_on_keyframe(context: OperationContext, path: str, start_ms: int) -> bool:
     if start_ms == 0:
         return True
-    window = f"{_seconds(max(0, start_ms - 1000))}%{_seconds(start_ms + 1000)}"
-    result = context.run(
-        [
-            FFPROBE,
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-read_intervals",
-            window,
-            "-show_entries",
-            "packet=pts_time,flags",
-            "-print_format",
-            "json",
-            path,
-        ]
+    search_start = max(0, start_ms - KEYFRAME_SEARCH_MS)
+    window = f"{_seconds(search_start)}%{_seconds(start_ms + KEYFRAME_SEARCH_MS)}"
+    report = _ffprobe(
+        context,
+        "-select_streams",
+        "v:0",
+        "-read_intervals",
+        window,
+        "-show_entries",
+        "packet=pts_time,flags",
+        path,
     )
-    _require_success(result)
-    packets = json.loads(result.stdout_path.read_bytes()).get("packets") or []
+    packets = report.get("packets") or []
     for packet in packets:
         if (
             "K" in packet.get("flags", "")
@@ -313,7 +302,7 @@ def _validate_extract_audio(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_extract_audio(context: OperationContext, arguments: dict[str, Any]) -> dict[str, Any]:
-    start, end = _range(arguments)
+    start, end = arguments.get("start_ms"), arguments.get("end_ms")
     path = context.fetch_input()
     summary = _probe_file(context, path.name)
     if not summary["has_audio"]:
@@ -355,7 +344,7 @@ def _validate_frames(arguments: dict[str, Any]) -> dict[str, Any]:
     times = arguments["times_ms"]
     if not 1 <= len(times) <= MAX_FRAMES or any(time < 0 for time in times):
         raise OperationError("invalid_request", f"times_ms must list 1 to {MAX_FRAMES} times.")
-    if not 64 <= arguments.get("max_edge_px", 1280) <= 1920:
+    if not 64 <= arguments.get("max_edge_px", DEFAULT_MAX_EDGE_PX) <= 1920:
         raise OperationError("invalid_request", "max_edge_px must be 64 to 1920.")
     return arguments
 
@@ -367,7 +356,7 @@ def _run_frames(context: OperationContext, arguments: dict[str, Any]) -> dict[st
     # A frame exists only strictly before the end.
     if any(time >= summary["duration_ms"] for time in arguments["times_ms"]):
         raise OperationError("invalid_request", "A time is past the end of the video.")
-    edge = arguments.get("max_edge_px", 1280)
+    edge = arguments.get("max_edge_px", DEFAULT_MAX_EDGE_PX)
     scale = (
         f"scale=w='min({edge},iw)':h='min({edge},ih)':force_original_aspect_ratio=decrease,"
         "format=yuvj420p"

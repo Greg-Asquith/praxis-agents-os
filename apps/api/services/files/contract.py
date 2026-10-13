@@ -221,19 +221,12 @@ def require_matching_pair(content_type: str, extension: str) -> FileContractEntr
 
 
 def max_size_bytes(entry: FileContractEntry) -> int:
-    """Resolve the configured byte limit for a contract entry.
-
-    This bounds every file the server writes or reads into memory.
-    """
+    """Resolve the byte limit for any file the server writes or reads into memory."""
     return _size_setting(entry.max_size_setting)
 
 
 def upload_max_size_bytes(entry: FileContractEntry) -> int:
-    """Returns the byte limit for a workspace upload.
-
-    The larger upload limit applies only when the storage provider signs direct uploads,
-    because a relayed upload passes through API memory.
-    """
+    """Returns the workspace upload limit, raised only when the provider signs direct uploads."""
     if entry.upload_max_size_setting is None or not get_storage_provider().signs_direct_uploads:
         return max_size_bytes(entry)
     return _size_setting(entry.upload_max_size_setting)

@@ -19,6 +19,7 @@ from models.user import User
 from models.workspace import Workspace, WorkspaceMembership
 from services.files.domain import FileRead, FileRevisionRead, VideoMetadata
 from services.files.visibility import visible_file_filter, visible_file_revision_filter
+from services.gemini_files import delete_gemini_file
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from services.storage.paths import safe_filename, validate_object_key
@@ -268,6 +269,18 @@ def distinct_object_keys(revisions: list[FileRevision]) -> set[str]:
         if revision.markdown_object_key:
             keys.add(revision.markdown_object_key)
     return keys
+
+
+async def delete_revision_objects(
+    revisions: list[FileRevision], *, provider: StorageProvider | None = None
+) -> None:
+    """Best-effort delete of every stored object and Gemini file the revisions hold."""
+    storage_provider = provider or get_storage_provider()
+    for object_key in distinct_object_keys(revisions):
+        await best_effort_delete_file_object(object_key, provider=storage_provider)
+    for revision in revisions:
+        if revision.gemini_file_name is not None:
+            await delete_gemini_file(revision.gemini_file_name)
 
 
 async def get_file_folder_name(

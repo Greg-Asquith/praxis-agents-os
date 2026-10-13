@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_native_image_inputs.py
+
 """Governed image editing and video-to-image runtime scenarios."""
 
 import asyncio
@@ -6,7 +8,6 @@ from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-from types import SimpleNamespace
 
 import pytest
 from pydantic import SecretStr
@@ -30,7 +31,6 @@ from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
 from services.gemini_files import GeminiFile
 from services.storage.factory import get_storage_provider
-from services.storage.providers.gcs import GcsStorageProvider
 from tests.factories import build_file, build_file_revision
 from tests.support.google_native import mock_google_native
 from tests.support.scenario import (
@@ -40,7 +40,7 @@ from tests.support.scenario import (
     run_scenario,
     scripted_model,
 )
-from tests.support.storage import reset_storage_provider_cache
+from tests.support.storage import fake_gcs_storage_provider, reset_storage_provider_cache
 
 _ONE_PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -278,11 +278,6 @@ async def test_vertex_edit_gif_fails_before_provider_dispatch(
         )
 
 
-class _FakeGcsClient:
-    def bucket(self, name: str) -> SimpleNamespace:
-        return SimpleNamespace(name=name)
-
-
 def _video_call(file: File, call_id: str) -> ToolTurn:
     reference = FileReference(entity_id=file.id, label=file.name).model_dump(mode="json")
     return ToolTurn(
@@ -314,13 +309,7 @@ async def test_vertex_video_reaches_gemini_by_its_workspace_uri(
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "video-test")
     monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "global")
     monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
-    gcs = GcsStorageProvider(
-        public_bucket_name="praxis-public",
-        workspace_bucket_prefix="praxis-test",
-        workspace_bucket_location="EU",
-        project_id="video-test",
-        client=_FakeGcsClient(),
-    )
+    gcs = fake_gcs_storage_provider()
     monkeypatch.setattr(media_inputs_tools, "get_storage_provider", lambda: gcs)
     context = await build_scenario_agent(
         db_session_factory,
