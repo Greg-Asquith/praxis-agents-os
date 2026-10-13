@@ -105,6 +105,30 @@ class AcceptedToolCall(Evaluator[dict, EvalOutput, dict]):
 
 
 @dataclass
+class ExpectedClips(Evaluator[dict, EvalOutput, dict]):
+    """Checks the first cut_video_clips call cuts exactly the expected clips, in any order."""
+
+    def evaluate(self, ctx: EvaluatorContext[dict, EvalOutput, dict]) -> EvaluationReason:
+        expected = (ctx.metadata or {}).get("expected_clips")
+        if not expected:
+            return EvaluationReason(value=True)
+        if "cut_video_clips" not in ctx.output.called_tools:
+            return EvaluationReason(value=False, reason="cut_video_clips was not called")
+        arguments = ctx.output.tool_arguments[ctx.output.called_tools.index("cut_video_clips")]
+        try:
+            clips = json.loads(arguments)["clips"]
+            cut = sorted(
+                [[segment.get("start_ms"), segment.get("end_ms")] for segment in clip["segments"]]
+                for clip in clips
+            )
+        except (TypeError, KeyError, AttributeError, json.JSONDecodeError):
+            return EvaluationReason(value=False, reason="cut_video_clips arguments aren't clips")
+        if cut != sorted(expected):
+            return EvaluationReason(value=False, reason=f"cut {cut}, expected {sorted(expected)}")
+        return EvaluationReason(value=True)
+
+
+@dataclass
 class WorkflowArguments(Evaluator[dict, EvalOutput, dict]):
     """Checks that a workflow calls the expected tools with valid keyword arguments."""
 

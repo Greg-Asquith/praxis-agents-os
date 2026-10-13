@@ -1,0 +1,173 @@
+{
+  "name": "Pricing workshop keynote.mp4",
+  "file_id": "00000000-0000-0000-0000-0000000249a1",
+  "revision_id": "00000000-0000-0000-0000-0000000249a2",
+  "count": 5,
+  "moments": [
+    {
+      "start_ms": 754120,
+      "end_ms": 801360,
+      "start": "12:34",
+      "end": "13:21",
+      "duration_seconds": 47.2,
+      "score": 92,
+      "shot_count": 2,
+      "title": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Why discounts train buyers to wait"
+      },
+      "hook": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Every discount you run teaches your buyers one thing: wait."
+      },
+      "reason": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "A sharp, self-contained argument with a strong opening line."
+      },
+      "transcript_excerpt": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Every discount you run teaches your buyers one thing: wait. They learn the calendar better than you do."
+      }
+    },
+    {
+      "start_ms": 1203480,
+      "end_ms": 1251900,
+      "start": "20:03",
+      "end": "20:51",
+      "duration_seconds": 48.4,
+      "score": 88,
+      "shot_count": 3,
+      "title": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "The three-tier anchor"
+      },
+      "hook": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Your middle plan sells because of the one above it."
+      },
+      "reason": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "A clear framework explained in under a minute."
+      },
+      "transcript_excerpt": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Your middle plan sells because of the one above it. The top tier is there to make the middle feel safe."
+      }
+    },
+    {
+      "start_ms": 1630240,
+      "end_ms": 1684020,
+      "start": "27:10",
+      "end": "28:04",
+      "duration_seconds": 53.8,
+      "score": 85,
+      "shot_count": 1,
+      "title": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Handling 'it's too expensive'"
+      },
+      "hook": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "When a buyer says it's too expensive, they're asking you a question."
+      },
+      "reason": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "A common objection answered with a memorable reframe."
+      },
+      "transcript_excerpt": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "When a buyer says it's too expensive, they're asking you a question. The question is: compared to what?"
+      }
+    },
+    {
+      "start_ms": 312800,
+      "end_ms": 356440,
+      "start": "5:12",
+      "end": "5:56",
+      "duration_seconds": 43.6,
+      "score": 79,
+      "shot_count": 2,
+      "title": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Price on value, not cost"
+      },
+      "hook": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Nobody pays you for your costs."
+      },
+      "reason": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "A strong principle, though it leans on the earlier slide."
+      },
+      "transcript_excerpt": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Nobody pays you for your costs. They pay for the problem that goes away."
+      }
+    },
+    {
+      "start_ms": 2210560,
+      "end_ms": 2259080,
+      "start": "36:50",
+      "end": "37:39",
+      "duration_seconds": 48.5,
+      "score": 74,
+      "shot_count": 1,
+      "title": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Annual plans and churn"
+      },
+      "hook": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Annual plans don't reduce churn. They delay it."
+      },
+      "reason": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Counter-intuitive and quotable, with a weaker ending."
+      },
+      "transcript_excerpt": {
+        "node": "praxis_untrusted",
+        "source_kind": "video_moment",
+        "source_ref": "file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2",
+        "content": "Annual plans don't reduce churn. They delay it, and then it arrives all at once."
+      }
+    }
+  ]
+}

@@ -13,6 +13,9 @@ From the repository root, run the live-model evaluations:
 EVALS_MODEL=openai:gpt-6-luna OPENAI_API_KEY=... make evals
 ```
 
+Run a change's evals on each default provider: `anthropic:claude-haiku-5-5`,
+`openai:gpt-6-luna`, and `google:gemini-3.8-flash`.
+
 `EVALS_MODEL` must use `provider:model` form. The runner exits nonzero when the
 matching model key or configured embedding credential is absent, or when the
 live memory calibration violates its pinned threshold invariants. Cases live in
@@ -48,6 +51,19 @@ is an accepted document tool, directly or inside `run_code`, with
 arguments that pass the tool's validator and contain the case's
 `required_argument_text`. For a `run_code` call, that text must appear
 literally in the script source, not in a value the script computes.
+
+The `video_*` cases select the four video tools, as an operator does for a
+reels agent. The tools mount only where the deployment offers them:
+`MEDIA_RENDERER_URL` set with `local_fs` or `gcs` storage, and Google
+configured for `find_video_moments`. Nothing renders, because the runner stops
+at the first call. `video_reels_from_attached_video` sends an attached video the way chat
+does (`attachment` in the case inputs: the note text after the prompt) and
+expects `find_video_moments` before any cut. `video_cut_chosen_moments` puts a
+`find_video_moments` result in history (`structured: true` parses the JSON
+fixture, so its untrusted titles are framed as in production) and checks with
+`ExpectedClips` that one `cut_video_clips` call cuts the two moments the
+person named, as separate clips with the result's exact times. Fixtures live
+in `tests/fixtures/video_evals/`.
 
 The evals have no workspace session, so discovery and planning calls run
 without dispatch and don't end a case: `search_tools` and `load_capability`

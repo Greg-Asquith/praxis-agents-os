@@ -254,6 +254,33 @@ cases:
       expected_tools: ["run_code"]
       workflow_tools: ["read_table"]
       forbidden_tools: ["google_ads_run_report"]
+  - name: video_cut_chosen_moments
+    inputs:
+      prompt: "Cut the discounts one and the 'too expensive' objection as separate 9:16 reels with bold captions."
+      tool_names: ["transcribe_video", "find_video_moments", "ask_video", "cut_video_clips"]
+      channel_fixture:
+        tool_name: find_video_moments
+        args:
+          file_id: {entity_kind: file, entity_id: "00000000-0000-0000-0000-0000000249a1", label: "Pricing workshop keynote.mp4"}
+          brief: "five 30 to 60 second clips about pricing for Instagram Reels"
+        fixture_path: "fixtures/video_evals/find_video_moments_pricing_talk.json"
+        structured: true
+    metadata:
+      judge_response: false
+      accepted_tools: ["cut_video_clips"]
+      required_argument_text: ["00000000-0000-0000-0000-0000000249a1", "9:16", "bold"]
+      expected_clips: [[[754120, 801360]], [[1630240, 1684020]]]
+  - name: video_reels_from_attached_video
+    inputs:
+      prompt: "Turn this talk into five 30 to 60 second Instagram Reels about pricing, with captions."
+      tool_names: ["transcribe_video", "find_video_moments", "ask_video", "cut_video_clips"]
+      attachment:
+        file_id: "00000000-0000-0000-0000-0000000249a1"
+        fixture_path: "fixtures/video_evals/attached_video_pricing_talk.txt"
+    metadata:
+      judge_response: false
+      accepted_tools: ["find_video_moments"]
+      required_argument_text: ["00000000-0000-0000-0000-0000000249a1"]
   - name: uncertainty
     inputs:
       prompt: "State the exact contents of a file you have not read."
@@ -261,6 +288,7 @@ cases:
       forbidden_tools: ["write_file"]
 evaluators:
   - AcceptedToolCall: {}
+  - ExpectedClips: {}
   - ExpectedTools: {}
   - ForbiddenArgumentText: {}
   - ForbiddenTools: {}

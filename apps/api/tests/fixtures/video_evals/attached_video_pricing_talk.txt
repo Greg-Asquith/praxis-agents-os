@@ -1,0 +1,8 @@
+Attached video
+File id: 00000000-0000-0000-0000-0000000249a1
+Format: MP4 (video/mp4), 1,843,200,000 bytes
+Video: 45:12, 1920x1080, 30 fps, with audio
+<<<PRAXIS_UNTRUSTED_CONTENT>>> source_kind="file" source_ref="file:00000000-0000-0000-0000-0000000249a1/revision:00000000-0000-0000-0000-0000000249a2">>>
+Video name: Pricing workshop keynote.mp4
+<<<END_PRAXIS_UNTRUSTED_CONTENT>>>
+The video itself isn't included in this message. To work with it, pass the file id to the video tools.

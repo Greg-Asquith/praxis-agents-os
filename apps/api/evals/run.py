@@ -10,6 +10,7 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic_ai.messages import (
+    BinaryContent,
     FunctionToolCallEvent,
     ModelRequest,
     ModelResponse,
@@ -19,6 +20,7 @@ from pydantic_ai.messages import (
     TextPartDelta,
     ToolCallPart,
     ToolReturnPart,
+    UserContent,
     UserPromptPart,
 )
 from pydantic_ai.models import Model
@@ -30,6 +32,7 @@ import services.agents.runtime.capabilities as runtime_capabilities
 from evals.evaluators import (
     AcceptedToolCall,
     EvalOutput,
+    ExpectedClips,
     ExpectedTools,
     ForbiddenArgumentText,
     ForbiddenTools,
@@ -100,7 +103,7 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
     called_tools: list[str] = []
     tool_arguments: list[str] = []
     async with runtime.agent.run_stream_events(
-        inputs["prompt"],
+        _user_prompt(inputs),
         deps=None,
         message_history=(
             _summary_trigger_history() if summary is not None else _channel_fixture_history(inputs)
@@ -126,6 +129,22 @@ async def _run_case(inputs: EvalInputs) -> EvalOutput:
         called_tools=tuple(called_tools),
         tool_arguments=tuple(tool_arguments),
     )
+
+
+def _user_prompt(inputs: EvalInputs) -> str | list[UserContent]:
+    """Adds an attachment fixture as chat sends it: a text part after the prompt."""
+    attachment = inputs.get("attachment")
+    if not attachment:
+        return inputs["prompt"]
+    path = (FIXTURE_ROOT / str(attachment["fixture_path"])).resolve()
+    if not path.is_relative_to(FIXTURE_ROOT.resolve()):
+        raise ValueError("Attachment fixture path must stay under the shared fixture root")
+    return [
+        inputs["prompt"],
+        BinaryContent(
+            data=path.read_bytes(), media_type="text/plain", identifier=attachment["file_id"]
+        ),
+    ]
 
 
 async def _run_local_tool(_ctx, *, call, tool_def, args, handler):
@@ -191,6 +210,9 @@ def _channel_fixture_history(inputs: EvalInputs):
                 content=str(content or ""),
             )
         )
+    elif fixture.get("structured"):
+        # A structured return keeps its untrusted nodes, which are framed as in production.
+        content = json.loads(content)
     return [
         ModelResponse(
             parts=[
@@ -240,6 +262,7 @@ def _load_dataset(judge_model: Model) -> BehaviorDataset:
         DATASET_PATH,
         custom_evaluator_types=[
             AcceptedToolCall,
+            ExpectedClips,
             ExpectedTools,
             ForbiddenArgumentText,
             ForbiddenTools,
