@@ -20,13 +20,13 @@ def test_pricing_catalogue_returns_one_effective_rate_per_model() -> None:
 
 
 def test_effective_date_lookup_selects_latest_applicable_price() -> None:
-    launch = find_price("openai", "gpt-5.6-luna", date(2026, 7, 29))
-    reduced = find_price("openai", "gpt-5.6-luna", date(2026, 7, 30))
+    launch = find_price("google", "gemini-4-argon", date(2026, 11, 30))
+    standard = find_price("google", "gemini-4-argon", date(2026, 12, 1))
 
     assert launch is not None
-    assert launch.input_usd_per_mtok == 1
-    assert reduced is not None
-    assert reduced.input_usd_per_mtok == Decimal("0.2")
+    assert launch.input_usd_per_mtok == 2
+    assert standard is not None
+    assert standard.input_usd_per_mtok == 4
 
 
 def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
@@ -35,7 +35,7 @@ def test_unknown_or_not_yet_effective_model_is_unpriced() -> None:
 
 
 def test_every_live_catalog_model_has_current_pricing() -> None:
-    on_date = date(2026, 10, 7)
+    on_date = date(2026, 10, 13)
     missing = [
         model.qualified_id
         for model in list_models()

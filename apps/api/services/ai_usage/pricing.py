@@ -115,6 +115,10 @@ _ANTHROPIC_PRICES = (
 # duration and non-standard execution tiers are outside the ledger contract.
 # https://ai.google.dev/gemini-api/docs/pricing
 _GOOGLE_PRICES = (
+    # Argon standard rates checked 2026-10-13; implicit caching has no write charge.
+    # https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon
+    _price("google", "gemini-4-argon", date(2026, 10, 13), "2", "0.1", "0", "10"),
+    _price("google", "gemini-4-argon", date(2026, 12, 1), "4", "0.2", "0", "20"),
     _price("google", "gemini-3.8-flash", date(2026, 9, 2), "0.75", "0.075", "0.75", "3.75"),
     _price("google", "gemini-3.8-flash", date(2027, 1, 1), "1.5", "0.15", "1.5", "7.5"),
     _price("google", "gemini-3.7-flash", date(2026, 8, 13), "0.75", "0.075", "0.75", "3.75"),

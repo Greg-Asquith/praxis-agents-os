@@ -5,8 +5,8 @@ import json
 import httpx2 as httpx
 import pytest
 from anthropic import AsyncAnthropicVertex
-from pydantic import SecretStr
-from pydantic_ai import Agent, models
+from pydantic import BaseModel, SecretStr
+from pydantic_ai import Agent, NativeOutput, models
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.anthropic import AnthropicStaleThinkingBlockWarning
@@ -15,6 +15,92 @@ from pydantic_ai.tools import ToolDefinition
 from core.settings import settings
 from services.agents.models import factory
 from services.agents.models.resolution import resolve_catalog_model
+from tests.support.google_native import mock_google_native
+
+
+@pytest.mark.parametrize(
+    ("vertex", "thinking", "level"), [(False, "minimal", "LOW"), (True, False, None)]
+)
+async def test_argon_tool_loop_preserves_signatures_and_supported_thinking(
+    monkeypatch, vertex, thinking, level
+):
+    monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("test-key"))
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "test-project")
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
+    tool_calls = []
+    bodies = []
+
+    class Answer(BaseModel):
+        answer: str
+
+    def lookup() -> str:
+        tool_calls.append("lookup")
+        return "Record found"
+
+    def respond(request):
+        bodies.append(json.loads(request.content))
+        parts = (
+            [
+                {
+                    "functionCall": {"id": "lookup-1", "name": "lookup", "args": {}},
+                    "thoughtSignature": "c2lnbmVk",
+                }
+            ]
+            if len(bodies) == 1
+            else [{"text": '{"answer":"Record found"}'}]
+        )
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {"content": {"role": "model", "parts": parts}, "finishReason": "STOP"}
+                ],
+                "usageMetadata": {
+                    "promptTokenCount": 10,
+                    "cachedContentTokenCount": 2,
+                    "candidatesTokenCount": 5,
+                    "thoughtsTokenCount": 7,
+                    "totalTokenCount": 22,
+                },
+                "modelVersion": "gemini-4-argon",
+            },
+        )
+
+    async with mock_google_native(monkeypatch, respond, vertex=vertex) as requests:
+        model = factory.build_model(
+            resolve_catalog_model(
+                "google", "gemini-4-argon", settings_overrides={"thinking": thinking}
+            )
+        )
+        result = await Agent(model, tools=[lookup], output_type=NativeOutput(Answer)).run(
+            "Look up the record."
+        )
+
+    assert result.output.answer == "Record found"
+    assert tool_calls == ["lookup"]
+    assert result.usage.input_tokens == 20
+    assert result.usage.cache_read_tokens == 4
+    assert result.usage.output_tokens == 24
+    request = requests[0]
+    assert request.url.path.endswith("/models/gemini-4-argon:generateContent")
+    if vertex:
+        assert request.url.host == "aiplatform.eu.rep.googleapis.com"
+        assert "/projects/test-project/locations/eu/" in request.url.path
+        assert request.headers["authorization"] == "Bearer test-adc"
+        assert "x-goog-api-key" not in request.headers
+    else:
+        assert request.url.host == "generativelanguage.googleapis.com"
+        assert request.headers["x-goog-api-key"] == "test-key"
+    config = bodies[0]["generationConfig"]
+    assert config.get("thinkingConfig", {}).get("thinking_level") == level
+    assert "thinking_budget" not in config.get("thinkingConfig", {})
+    assert config["responseMimeType"] == "application/json"
+    assert bodies[1]["contents"][1]["parts"][0]["thoughtSignature"] == "c2lnbmVk"
+    assert bodies[1]["contents"][2]["parts"][0]["functionResponse"] == {
+        "id": "lookup-1",
+        "name": "lookup",
+        "response": {"return_value": "Record found"},
+    }
 
 
 @pytest.mark.parametrize(

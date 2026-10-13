@@ -45,16 +45,20 @@ async def test_summary_prices_utc_days_before_folding_and_sums_requests(
         [
             _event(
                 workspace.id,
-                datetime(2026, 12, 31, 23, 59, tzinfo=UTC),
+                datetime(2026, 11, 30, 23, 59, tzinfo=UTC),
                 provider="google",
-                model="gemini-3.8-flash",
+                model="gemini-4-argon",
+                cache_read_tokens=500_000,
+                output_tokens=100_000,
                 requests=3,
             ),
             _event(
                 workspace.id,
-                datetime(2027, 1, 1, 0, 0, tzinfo=UTC),
+                datetime(2026, 12, 1, 0, 0, tzinfo=UTC),
                 provider="google",
-                model="gemini-3.8-flash",
+                model="gemini-4-argon",
+                cache_read_tokens=500_000,
+                output_tokens=100_000,
                 requests=2,
             ),
         ]
@@ -64,15 +68,15 @@ async def test_summary_prices_utc_days_before_folding_and_sums_requests(
     summary = await get_usage_summary(
         db_session,
         workspace_id=workspace.id,
-        from_=datetime(2026, 12, 31, tzinfo=UTC),
-        to=datetime(2027, 1, 2, tzinfo=UTC),
+        from_=datetime(2026, 11, 30, tzinfo=UTC),
+        to=datetime(2026, 12, 2, tzinfo=UTC),
     )
 
-    assert summary.totals.estimated_cost_usd == Decimal("2.25")
+    assert summary.totals.estimated_cost_usd == Decimal("6.15")
     assert summary.totals.requests == 5
     assert [point.estimated_cost_usd for point in summary.daily] == [
-        Decimal("0.75"),
-        Decimal("1.5"),
+        Decimal("2.05"),
+        Decimal("4.10"),
     ]
 
 

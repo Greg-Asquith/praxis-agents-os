@@ -215,7 +215,7 @@ async def test_build_google_vertex_uses_project_location_and_request_policy(
     monkeypatch.setattr(settings, "LLM_HTTP_RETRY_MAX_WAIT_SECONDS", 23.5)
 
     try:
-        model = build_model(_spec("google", "gemini-3.8-flash"))
+        model = build_model(_spec("google", "gemini-4-argon"))
 
         assert isinstance(model, GoogleModel)
         client = model.provider.client
@@ -237,7 +237,7 @@ async def test_google_vertex_clients_share_only_matching_locations(monkeypatch):
     try:
         flash = get_google_vertex_client("gemini-3.8-flash")
         pro = get_google_vertex_client("gemini-3.1-pro")
-        assert flash is get_google_vertex_client("gemini-3.5-flash-lite")
+        assert flash is get_google_vertex_client("gemini-4-argon")
         assert flash is not pro
         assert get_google_vertex_client() is pro
         monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "us")

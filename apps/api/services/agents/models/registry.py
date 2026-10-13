@@ -142,6 +142,19 @@ _CATALOG: tuple[ModelInfo, ...] = (
         chars_per_token=4.0,
         supports_vision=True,
     ),
+    # https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon
+    ModelInfo(
+        provider=PROVIDER_GOOGLE,
+        model="gemini-4-argon",
+        display_name="Gemini 4 Argon",
+        context_window=1_048_576,
+        model_type="powerful",
+        supports_thinking=True,
+        supports_vision=True,
+        vertex_model="gemini-4-argon",
+        vertex_default_location="eu",
+        vertex_supported_locations=("global", "us", "eu"),
+    ),
     # Google: Vertex regions checked against model cards on 2026-09-07.
     # https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations
     ModelInfo(
