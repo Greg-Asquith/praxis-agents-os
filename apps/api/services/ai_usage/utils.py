@@ -10,12 +10,22 @@ from decimal import Decimal
 from typing import Any
 
 from pydantic_ai.usage import RunUsage
+from sqlalchemy import Label, Numeric, cast, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions.general import AppValidationError
 from models.ai_usage_event import AIUsageEvent
-from services.ai_usage.domain import AIUsageEventData
-from services.ai_usage.pricing import ModelPrice, find_image_output_price, find_price
+from services.ai_usage.domain import (
+    PURPOSE_IMAGE_GENERATION,
+    PURPOSE_VIDEO_GENERATION,
+    AIUsageEventData,
+)
+from services.ai_usage.pricing import (
+    ModelPrice,
+    find_image_output_price,
+    find_price,
+    find_video_output_price,
+)
 from services.ai_usage.schemas import (
     BreakdownUsageRow,
     DailyUsagePoint,
@@ -28,6 +38,15 @@ from services.ai_usage.schemas import (
 
 _MILLION = Decimal(1_000_000)
 _HUNDRED = Decimal(100)
+# Ledger details that select an output price, grouped on as `UsageBucket` fields.
+_OUTPUT_PRICE_DETAIL_KEYS = (
+    "image_model",
+    "image_quality",
+    "image_size",
+    "video_model",
+    "video_resolution",
+    "video_audio",
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +70,10 @@ class UsageBucket:
     image_model: str | None = None
     image_quality: str | None = None
     image_size: str | None = None
+    video_model: str | None = None
+    video_resolution: str | None = None
+    video_audio: str | None = None
+    video_output_seconds: Decimal = Decimal(0)
     key: str | None = None
     label: str | None = None
 
@@ -81,6 +104,8 @@ class UsageFold:
     has_priced_bucket: bool = False
     priced_image_generations: int = 0
     unpriced_image_generations: int = 0
+    priced_video_generations: int = 0
+    unpriced_video_generations: int = 0
 
     @property
     def tokens(self) -> int:
@@ -121,6 +146,25 @@ def usage_range_days(usage_range: UsageRange) -> list[date]:
     return [first + timedelta(days=offset) for offset in range((last - first).days + 1)]
 
 
+def output_price_columns() -> list[Label]:
+    """Returns the output-price details as labelled columns to select and group on."""
+    return [AIUsageEvent.details[key].astext.label(key) for key in _OUTPUT_PRICE_DETAIL_KEYS]
+
+
+def video_output_seconds_column() -> Label:
+    """Returns the summed video output seconds for one grouped bucket."""
+    seconds = cast(AIUsageEvent.details["video_output_seconds"].astext, Numeric)
+    return func.sum(seconds).label("video_output_seconds")
+
+
+def output_price_values(row: Any) -> dict[str, Any]:
+    """Returns the `UsageBucket` output-price fields of a row selected with both helpers."""
+    return {
+        **{key: getattr(row, key) for key in _OUTPUT_PRICE_DETAIL_KEYS},
+        "video_output_seconds": Decimal(row.video_output_seconds or 0),
+    }
+
+
 def bucket_cost(bucket: UsageBucket, price: ModelPrice) -> Decimal:
     return (
         Decimal(bucket.uncached_input_tokens) * price.input_usd_per_mtok
@@ -148,7 +192,9 @@ def fold_buckets(
             folded.priced_tokens += bucket.tokens
             folded.priced_requests += bucket.requests
             folded.estimated_cost_usd += bucket_cost(bucket, price)
-        if bucket.purpose == "image_generation":
+        if bucket.purpose == PURPOSE_VIDEO_GENERATION:
+            _fold_video_output(folded, bucket)
+        if bucket.purpose == PURPOSE_IMAGE_GENERATION:
             image_price = (
                 find_image_output_price(
                     bucket.provider,
@@ -167,6 +213,26 @@ def fold_buckets(
                 folded.priced_image_generations += bucket.invocations
                 folded.estimated_cost_usd += Decimal(bucket.invocations) * image_price.usd_per_image
     return folded
+
+
+def _fold_video_output(folded: UsageFold, bucket: UsageBucket) -> None:
+    video_price = (
+        find_video_output_price(
+            bucket.provider,
+            bucket.video_model,
+            bucket.video_resolution,
+            bucket.video_audio == "true",
+            bucket.day,
+        )
+        if bucket.video_model and bucket.video_resolution
+        else None
+    )
+    if video_price is None:
+        folded.unpriced_video_generations += bucket.invocations
+        return
+    folded.has_priced_bucket = True
+    folded.priced_video_generations += bucket.invocations
+    folded.estimated_cost_usd += bucket.video_output_seconds * video_price.usd_per_second
 
 
 def decimal_share(numerator: int | Decimal, denominator: int | Decimal) -> Decimal:
@@ -193,6 +259,8 @@ def pricing_coverage(folded: UsageFold) -> PricingCoverage:
         request_coverage_percent=decimal_share(folded.priced_requests, total_requests) * _HUNDRED,
         priced_image_generations=folded.priced_image_generations,
         unpriced_image_generations=folded.unpriced_image_generations,
+        priced_video_generations=folded.priced_video_generations,
+        unpriced_video_generations=folded.unpriced_video_generations,
     )
 
 

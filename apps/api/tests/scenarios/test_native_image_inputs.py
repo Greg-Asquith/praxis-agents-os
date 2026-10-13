@@ -1,7 +1,9 @@
 """Governed image editing and video-to-image runtime scenarios."""
 
+import asyncio
 import base64
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from types import SimpleNamespace
@@ -23,6 +25,7 @@ from services.agents.runtime.tools.native import (
     image_editing as image_editing_tools,
     video_to_image as video_to_image_tools,
 )
+from services.agents.runtime.tools.registry import RUNTIME_TOOL_CATALOG
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
 from services.gemini_files import GeminiFile
@@ -455,3 +458,40 @@ async def test_gemini_api_expired_upload_is_replaced(
     async with db_session_factory() as db:
         saved = await db.get_one(FileRevision, revision.id)
     assert saved.gemini_file_name == "files/new-1"
+
+
+async def test_timed_out_video_call_saves_nothing_and_streams_its_stages(
+    db_session_factory, monkeypatch, image_input_storage
+):
+    _enable_google(monkeypatch)
+    definition = RUNTIME_TOOL_CATALOG["generate_image_from_video"]
+    monkeypatch.setitem(RUNTIME_TOOL_CATALOG, definition.name, replace(definition, timeout=0.05))
+
+    async def never_returns(**_kwargs) -> BinaryImage:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(video_to_image_tools, "run_native_image_generation", never_returns)
+    context = await build_scenario_agent(
+        db_session_factory,
+        tool_names=["generate_image_from_video"],
+        tool_policies={"generate_image_from_video": "auto"},
+    )
+    source, _revision = await _video_source(db_session_factory, context)
+
+    result = await run_scenario(
+        db_session_factory,
+        context,
+        model=scripted_model(turns=[_video_call(source, "slow"), "Done."]),
+    )
+
+    assert result.run.status == "completed"
+    assert [event.data["stage"] for event in result.events if event.event == "tool.progress"] == [
+        "Preparing Video",
+        "Generating Image",
+    ]
+    async with db_session_factory() as db:
+        files = (
+            await db.scalars(select(File).where(File.workspace_id == context.workspace_id))
+        ).all()
+    assert [file.id for file in files] == [source.id]

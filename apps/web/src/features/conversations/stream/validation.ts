@@ -160,6 +160,19 @@ export function parseStreamEvent(eventName: StreamEventName, value: unknown): St
         },
       }
     }
+    case "tool.progress":
+      return {
+        event: "tool.progress",
+        data: {
+          ...envelope,
+          tool_call_id: requiredNonEmptyString(
+            eventName,
+            "data.tool_call_id",
+            data["tool_call_id"]
+          ),
+          stage: requiredNonEmptyString(eventName, "data.stage", data["stage"]),
+        },
+      }
     case "tool.approval_required": {
       const replayArgs = optionalField(data, "replay_args")
       const parentToolCallId = optionalNullableNonEmptyString(

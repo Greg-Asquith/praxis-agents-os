@@ -19,6 +19,8 @@ export type PricingCoverage = {
   request_coverage_percent: string
   priced_image_generations: number
   unpriced_image_generations: number
+  priced_video_generations: number
+  unpriced_video_generations: number
 }
 
 type UsageTotals = {

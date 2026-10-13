@@ -23,6 +23,7 @@ from core.settings import settings
 from services.agents.models.domain import PROVIDER_GOOGLE, ResolvedModel
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
+from services.agents.runtime.stream_protocol import ToolProgressEvent
 from services.agents.runtime.tools import (
     TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
@@ -31,7 +32,10 @@ from services.agents.runtime.tools import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.media_inputs import load_workspace_video_input
+from services.agents.runtime.tools.media_inputs import (
+    VIDEO_MODEL_TOOL_TIMEOUT_SECONDS,
+    load_workspace_video_input,
+)
 from services.agents.runtime.tools.native.image_generation import (
     configured_native_image_providers,
     resolve_image_generation_model,
@@ -85,7 +89,7 @@ def configured_video_to_image_provider() -> bool:
     default_policy=TOOL_POLICY_AUTO,
     egress=TOOL_EGRESS_NONE,
     takes_ctx=True,
-    timeout=None,
+    timeout=VIDEO_MODEL_TOOL_TIMEOUT_SECONDS,
     output_model=VideoToImageOutput,
     availability_check=configured_video_to_image_provider,
     presentation=ToolPresentation(
@@ -147,6 +151,9 @@ async def generate_image_from_video(
         raise ModelRetry("generate_image_from_video requires a non-empty prompt.")
 
     model_spec = resolve_video_to_image_model(model=model)
+    await ctx.deps.sink.emit(
+        ToolProgressEvent(tool_call_id=ctx.tool_call_id, stage="Preparing Video")
+    )
     input_media = await load_workspace_video_input(
         ctx,
         file_id,
@@ -154,6 +161,9 @@ async def generate_image_from_video(
         inline_max_bytes=settings.NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES,
     )
     await ctx.deps.db.commit()
+    await ctx.deps.sink.emit(
+        ToolProgressEvent(tool_call_id=ctx.tool_call_id, stage="Generating Image")
+    )
     image = await run_native_image_generation(
         deps=ctx.deps,
         prompt=normalized_prompt,

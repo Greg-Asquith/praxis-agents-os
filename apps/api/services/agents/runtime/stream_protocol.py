@@ -103,6 +103,13 @@ class ToolResultEvent(StreamEventPayload):
     reason: str | None = None
 
 
+class ToolProgressEvent(StreamEventPayload):
+    event_name: ClassVar[Literal["tool.progress"]] = "tool.progress"
+
+    tool_call_id: str = Field(min_length=1)
+    stage: str = Field(min_length=1, max_length=80)
+
+
 class TaintSource(BaseModel):
     source_kind: str = Field(min_length=1)
     source_ref: str = Field(min_length=1)
@@ -160,6 +167,7 @@ STREAM_EVENT_MODELS: tuple[type[StreamEventPayload], ...] = (
     MessageEndEvent,
     ToolCallEvent,
     ToolResultEvent,
+    ToolProgressEvent,
     ToolApprovalRequiredEvent,
     WorkflowStateEvent,
     ErrorEvent,
@@ -281,6 +289,7 @@ def stream_protocol_samples() -> list[dict[str, Any]]:
             parent_tool_call_id="workflow-call",
             outcome="success",
         ),
+        ToolProgressEvent(tool_call_id="nested-call", stage="Generating Image"),
         ToolApprovalRequiredEvent(
             tool_call_id="nested-call",
             approval_id=UUID("22222222-2222-4222-8222-222222222222"),

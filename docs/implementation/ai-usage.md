@@ -57,6 +57,17 @@ The following contracts apply in this area:
   Its aggregated text and image tokens remain unpriced because the ledger
   cannot separate their rates. Historical Gemini 3.1 Flash Image output
   estimates remain unchanged.
+- Video helpers record under `video_understanding`, `video_generation`, or
+  `video_transcription`, with tokens as the provider reports them. Veo bills
+  per output second, so a Veo row's details carry `video_model`,
+  `video_resolution` (`720p`, `1080p`, or `4k`), `video_audio`, and
+  `video_output_seconds`. Reads price those seconds from Google's
+  [Veo 3.1 rates](https://ai.google.dev/gemini-api/docs/pricing#veo-3.1),
+  effective from 9 October 2026 for the Gemini API preview models. Google
+  lists only with-audio rates, so silent clips, Vertex model IDs, and video
+  rows without that metadata (such as Omni) count as
+  `unpriced_video_generations`, displayed as **Incomplete video outputs**.
+  Agent video tools that record these purposes are pending.
 - Direct GPT Image 2.5 requests record one invocation under Flare or Sunburst,
   with no Luna token charge. Returned input/output totals and bounded
   text/image modality details are retained. Missing usage stays unknown;

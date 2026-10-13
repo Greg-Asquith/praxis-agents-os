@@ -43,6 +43,7 @@
     "message.end",
     "tool.call",
     "tool.result",
+    "tool.progress",
     "tool.approval_required",
     "workflow.state",
     "error",
@@ -1089,6 +1090,43 @@
         "args"
       ],
       "title": "ToolCallEvent",
+      "type": "object"
+    },
+    "tool.progress": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "stage": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Stage",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "minLength": 1,
+          "title": "Tool Call Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "conversation_id",
+        "seq",
+        "tool_call_id",
+        "stage"
+      ],
+      "title": "ToolProgressEvent",
       "type": "object"
     },
     "tool.result": {

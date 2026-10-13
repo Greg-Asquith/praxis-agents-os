@@ -46,6 +46,8 @@ class PricingCoverage(BaseModel):
     request_coverage_percent: Decimal
     priced_image_generations: int = 0
     unpriced_image_generations: int = 0
+    priced_video_generations: int = 0
+    unpriced_video_generations: int = 0
 
 
 class UsageTotals(BaseModel):

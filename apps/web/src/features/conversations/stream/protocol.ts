@@ -19,6 +19,7 @@ export const STREAM_EVENT_NAMES = [
   "message.end",
   "tool.call",
   "tool.result",
+  "tool.progress",
   "tool.approval_required",
   "workflow.state",
   "error",
@@ -95,6 +96,10 @@ export type StreamEvent =
         reason?: string | null
         parent_tool_call_id?: string
       }
+    }
+  | {
+      event: "tool.progress"
+      data: StreamEnvelope & { tool_call_id: string; stage: string }
     }
   | {
       event: "tool.approval_required"

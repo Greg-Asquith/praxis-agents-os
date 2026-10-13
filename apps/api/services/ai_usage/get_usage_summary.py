@@ -13,7 +13,10 @@ from services.ai_usage.schemas import UsageSummaryResponse
 from services.ai_usage.utils import (
     UsageBucket,
     build_usage_summary_response,
+    output_price_columns,
+    output_price_values,
     resolve_usage_range,
+    video_output_seconds_column,
 )
 
 
@@ -27,18 +30,15 @@ async def get_usage_summary(
     """Return exact priced-subset totals and coverage for one workspace."""
     usage_range = resolve_usage_range(from_, to)
     day = cast(func.date_trunc("day", func.timezone("UTC", AIUsageEvent.occurred_at)), Date)
-    image_model = AIUsageEvent.details["image_model"].astext
-    image_quality = AIUsageEvent.details["image_quality"].astext
-    image_size = AIUsageEvent.details["image_size"].astext
+    price_columns = output_price_columns()
     statement = (
         select(
             day.label("day"),
             AIUsageEvent.provider,
             AIUsageEvent.model,
             AIUsageEvent.purpose,
-            image_model.label("image_model"),
-            image_quality.label("image_quality"),
-            image_size.label("image_size"),
+            *price_columns,
+            video_output_seconds_column(),
             func.count(AIUsageEvent.id).label("invocations"),
             func.sum(AIUsageEvent.input_tokens).label("input_tokens"),
             func.sum(AIUsageEvent.cache_read_tokens).label("cache_read_tokens"),
@@ -56,9 +56,7 @@ async def get_usage_summary(
             AIUsageEvent.provider,
             AIUsageEvent.model,
             AIUsageEvent.purpose,
-            image_model,
-            image_quality,
-            image_size,
+            *price_columns,
         )
         .order_by(day, AIUsageEvent.provider, AIUsageEvent.model)
     )
@@ -75,9 +73,7 @@ async def get_usage_summary(
             requests=int(row.requests or 0),
             invocations=int(row.invocations or 0),
             purpose=row.purpose,
-            image_model=row.image_model,
-            image_quality=row.image_quality,
-            image_size=row.image_size,
+            **output_price_values(row),
         )
         for row in result
     ]

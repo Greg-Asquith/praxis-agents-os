@@ -189,6 +189,39 @@ past the inline bound: on the Gemini API, or on Vertex with GCS storage. Tools
 that need long video combine it with `settings.media_renderer_available` in
 their `availability_check`, so they're hidden rather than failing at call time.
 
+## Long media calls
+
+Video calls run inside the tool call, under an explicit tool `timeout`. The
+run's lease heartbeat continues during the call, and
+`AGENT_RUN_MAX_DURATION_SECONDS` bounds the whole continuation:
+
+| Work | Tool timeout |
+|---|---|
+| A Google model call over video (generation, edits, understanding) | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` (600 s): 300 s for the model call plus the Files API's 300 s processing wait |
+| A renderer operation | `MEDIA_RENDERER_TIMEOUT_SECONDS` plus the client's 60 second allowance (`REQUEST_ALLOWANCE_SECONDS`) |
+
+When a timeout passes, Pydantic AI cancels the call and returns a retry to the
+model. Nothing is saved, because tools write their output File only after the
+provider returns. Cancelling the outbound request doesn't stop Google billing a
+generation that was already running.
+
+Video tools that call the renderer or a generation model are
+`code_eligible=False`. `run_code`'s 60 second budget counts time spent in
+nested calls, so they would always time out there. A tool that needs several
+outputs does the work concurrently inside one call instead.
+
+A long call reports its stage with a `tool.progress` stream event, emitted
+through `ctx.deps.sink` with the call's `tool_call_id` and a short Title Case
+`stage` (at most 80 characters), such as `Preparing Video`. The event is live
+only and isn't saved; the client keeps the latest stage on a running call.
+
+The runtime never runs a tool call twice. An interrupted call gets an
+interrupted return, approval continuations aren't replayed after a process
+failure, and recovery evidence lists uncertain actions. A completed paid call
+therefore isn't repeated on resume. A per-call idempotency record, and
+reserving cleanup of the output before the call, are pending with the first
+provider that writes output straight into workspace storage (Veo).
+
 ## Deployment
 
 On GCP, `deploy/gcp/deploy.sh` deploys `praxis-media-renderer` as a Cloud Run

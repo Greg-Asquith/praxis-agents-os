@@ -66,6 +66,8 @@ function usageRow(key: string, cost: string | null, input: number): UsageBreakdo
       request_coverage_percent: priced ? "100" : "0",
       priced_image_generations: 0,
       unpriced_image_generations: 0,
+      priced_video_generations: 0,
+      unpriced_video_generations: 0,
     },
   }
 }

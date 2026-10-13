@@ -80,7 +80,8 @@ OpenAI or Google and limits combined raw source bytes with
 shared video input (see [Video tools](video-tools.md#gemini-video-input)): by
 `gs://` URI on Vertex with GCS storage, through a Files API upload on the
 Gemini API, and otherwise inline up to `NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES`
-(18 MiB by default). Both input-media tools preserve the source file and revision ids in their result
+(18 MiB by default). It times out after `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS`
+(see [Long media calls](video-tools.md#long-media-calls)). Both input-media tools preserve the source file and revision ids in their result
 and generated-file audit evidence.
 
 OpenAI calls the Images API directly: `gpt-image-2.5-flare` for generation

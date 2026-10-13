@@ -13,6 +13,9 @@ type AIUsagePurpose =
   | "web_search"
   | "web_fetch"
   | "image_generation"
+  | "video_understanding"
+  | "video_generation"
+  | "video_transcription"
   | "embedding_kb_ingest"
   | "embedding_kb_search"
   | "embedding_memory_write"
@@ -29,6 +32,9 @@ const AI_TYPE_LABEL_BY_PURPOSE = {
   web_search: "Web research",
   web_fetch: "Web research",
   image_generation: "Image creation",
+  video_understanding: "Video understanding",
+  video_generation: "Video creation",
+  video_transcription: "Transcription",
   embedding_kb_ingest: "Search & document indexing",
   embedding_kb_search: "Search & document indexing",
   embedding_memory_write: "Search & document indexing",
@@ -88,6 +94,10 @@ export function groupPurposeBreakdownRows(rows: UsageBreakdownRow[]): UsageBreak
       row.pricing_coverage.priced_image_generations
     current.pricing_coverage.unpriced_image_generations +=
       row.pricing_coverage.unpriced_image_generations
+    current.pricing_coverage.priced_video_generations +=
+      row.pricing_coverage.priced_video_generations
+    current.pricing_coverage.unpriced_video_generations +=
+      row.pricing_coverage.unpriced_video_generations
     if (row.estimated_cost_usd !== null) {
       current.estimated_cost_usd = "0"
       current.pricedCost += Number(row.estimated_cost_usd)
@@ -137,6 +147,8 @@ function emptyGroup(key: string, label: string) {
     request_coverage_percent: "0",
     priced_image_generations: 0,
     unpriced_image_generations: 0,
+    priced_video_generations: 0,
+    unpriced_video_generations: 0,
   }
   return {
     key,

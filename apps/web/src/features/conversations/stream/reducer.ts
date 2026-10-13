@@ -39,6 +39,7 @@ export type ToolCallState = {
   workflowState?: WorkflowState
   workflowOutputExcerpt?: string | null
   workflowErrorExcerpt?: string | null
+  progressStage?: string
 }
 
 export type ApprovalState = {
@@ -276,6 +277,21 @@ function reduceStreamEvent(state: AgentStreamState, streamEvent: StreamEvent): A
               ? {}
               : { workflowErrorExcerpt: existing.workflowErrorExcerpt }),
           },
+        },
+      }
+    }
+    case "tool.progress": {
+      const key = streamToolKey(streamEvent.data)
+      const existing = nextState.toolCalls[key]
+      // Progress can't create a row or revive a settled one.
+      if (existing?.status !== "running") {
+        return nextState
+      }
+      return {
+        ...nextState,
+        toolCalls: {
+          ...nextState.toolCalls,
+          [key]: { ...existing, progressStage: streamEvent.data.stage },
         },
       }
     }

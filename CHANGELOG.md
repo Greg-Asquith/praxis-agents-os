@@ -31,6 +31,13 @@ minor release. Patch releases contain backward-compatible fixes only.
   Gemini Files API (up to 2 GB), reused until they expire, audited, and
   deleted when the File is purged. `generate_image_from_video` uses this
   path.
+- Long tool calls can report their current stage with a `tool.progress`
+  stream event. `generate_image_from_video` reports when it prepares the
+  video and when it generates the image, and gives up after 10 minutes
+  instead of running until the run's own limit.
+- The usage ledger accepts video understanding, generation, and
+  transcription usage. **AI Usage** prices Veo 3.1 output per second by
+  resolution and shows unpriced video output as **Incomplete video outputs**.
 - Claude Haiku 5.5 is available directly and through Google Cloud. It is the
   Anthropic **Light** default and the default Claude model for native web
   search, web fetch, and classification, priced from $0.10 input and $0.50

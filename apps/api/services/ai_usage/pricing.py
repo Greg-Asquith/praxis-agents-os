@@ -28,6 +28,16 @@ class ImageOutputPrice:
     usd_per_image: Decimal
 
 
+@dataclass(frozen=True)
+class VideoOutputPrice:
+    provider: str
+    model: str
+    effective_from: date
+    resolution: str
+    audio: bool
+    usd_per_second: Decimal
+
+
 def _price(
     provider: str,
     model: str,
@@ -187,6 +197,19 @@ IMAGE_OUTPUT_PRICES: tuple[ImageOutputPrice, ...] = (
 )
 
 
+# Veo bills per output second; Google lists only the default with-audio rates, so
+# silent clips stay unpriced. https://ai.google.dev/gemini-api/docs/pricing#veo-3.1
+VIDEO_OUTPUT_PRICES: tuple[VideoOutputPrice, ...] = tuple(
+    VideoOutputPrice("google", model, date(2026, 10, 9), resolution, True, Decimal(cost))
+    for model, costs in {
+        "veo-3.1-generate-preview": {"720p": "0.40", "1080p": "0.40", "4k": "0.60"},
+        "veo-3.1-fast-generate-preview": {"720p": "0.10", "1080p": "0.12", "4k": "0.30"},
+        "veo-3.1-lite-generate-preview": {"720p": "0.05", "1080p": "0.08"},
+    }.items()
+    for resolution, cost in costs.items()
+)
+
+
 def find_price(provider: str, model: str, on_date: date) -> ModelPrice | None:
     """Return the latest price effective on a UTC usage date."""
     applicable = (
@@ -212,6 +235,26 @@ def find_image_output_price(
         and price.model == model
         and price.quality == quality
         and price.size == size
+        and price.effective_from <= on_date
+    )
+    return max(applicable, key=lambda price: price.effective_from, default=None)
+
+
+def find_video_output_price(
+    provider: str,
+    model: str,
+    resolution: str,
+    audio: bool,
+    on_date: date,
+) -> VideoOutputPrice | None:
+    """Return the latest per-second estimate for known video output metadata."""
+    applicable = (
+        price
+        for price in VIDEO_OUTPUT_PRICES
+        if price.provider == provider
+        and price.model == model
+        and price.resolution == resolution
+        and price.audio == audio
         and price.effective_from <= on_date
     )
     return max(applicable, key=lambda price: price.effective_from, default=None)

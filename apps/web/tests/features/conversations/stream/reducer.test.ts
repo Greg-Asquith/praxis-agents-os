@@ -449,6 +449,39 @@ describe("agentStreamReducer", () => {
     )
   })
 
+  it("shows progress only on a running call", () => {
+    const progress = (seq: number, toolCallId: string, stage: string): StreamEvent => ({
+      event: "tool.progress",
+      data: { ...eventWithSeq(seq), tool_call_id: toolCallId, stage },
+    })
+    const running = reduceEvents([
+      {
+        event: "tool.call",
+        data: { ...eventWithSeq(1), tool_call_id: "video-1", name: "cut_video_clips", args: {} },
+      },
+      progress(2, "video-1", "Downloading Video"),
+      progress(3, "video-1", "Cutting Clips"),
+      progress(4, "unknown-1", "Cutting Clips"),
+    ])
+
+    expect(running.toolCalls["video-1"]?.progressStage).toBe("Cutting Clips")
+    expect(running.toolCalls["unknown-1"]).toBeUndefined()
+
+    const settled = reduceEvents(
+      [
+        {
+          event: "tool.result",
+          data: { ...eventWithSeq(5), tool_call_id: "video-1", name: null, result: {} },
+        },
+        progress(6, "video-1", "Uploading Clips"),
+      ],
+      running
+    )
+
+    expect(settled.toolCalls["video-1"]?.status).toBe("completed")
+    expect(settled.toolCalls["video-1"]?.progressStage).toBeUndefined()
+  })
+
   it("marks error events as failed and stores the stream error", () => {
     const state = reduceEvents([
       {

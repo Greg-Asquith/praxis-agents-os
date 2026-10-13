@@ -18,6 +18,9 @@ PURPOSE_WEB_SEARCH = "web_search"
 PURPOSE_WEB_FETCH = "web_fetch"
 PURPOSE_IMAGE_GENERATION = "image_generation"
 PURPOSE_CODE_EXECUTION = "code_execution"
+PURPOSE_VIDEO_UNDERSTANDING = "video_understanding"
+PURPOSE_VIDEO_GENERATION = "video_generation"
+PURPOSE_VIDEO_TRANSCRIPTION = "video_transcription"
 PURPOSE_EMBEDDING_KB_INGEST = "embedding_kb_ingest"
 PURPOSE_EMBEDDING_KB_SEARCH = "embedding_kb_search"
 PURPOSE_EMBEDDING_MEMORY_WRITE = "embedding_memory_write"
@@ -34,6 +37,9 @@ AI_USAGE_PURPOSES = (
     PURPOSE_WEB_FETCH,
     PURPOSE_IMAGE_GENERATION,
     PURPOSE_CODE_EXECUTION,
+    PURPOSE_VIDEO_UNDERSTANDING,
+    PURPOSE_VIDEO_GENERATION,
+    PURPOSE_VIDEO_TRANSCRIPTION,
     PURPOSE_EMBEDDING_KB_INGEST,
     PURPOSE_EMBEDDING_KB_SEARCH,
     PURPOSE_EMBEDDING_MEMORY_WRITE,
@@ -53,6 +59,9 @@ type AIUsagePurpose = Literal[
     "web_fetch",
     "image_generation",
     "code_execution",
+    "video_understanding",
+    "video_generation",
+    "video_transcription",
     "embedding_kb_ingest",
     "embedding_kb_search",
     "embedding_memory_write",

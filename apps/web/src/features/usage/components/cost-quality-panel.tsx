@@ -5,6 +5,10 @@ import type { PricingCoverage } from "@/features/usage/types"
 import { formatTokenCount } from "@/features/usage/format"
 
 export function CostQualityPanel({ coverage }: { coverage: PricingCoverage }) {
+  const hasImageOutputs =
+    coverage.priced_image_generations + coverage.unpriced_image_generations > 0
+  const hasVideoOutputs =
+    coverage.priced_video_generations + coverage.unpriced_video_generations > 0
   return (
     <aside className="border-border rounded-xl border p-4" aria-labelledby="cost-quality-heading">
       <p className={microLabelClass}>Estimate quality</p>
@@ -22,7 +26,7 @@ export function CostQualityPanel({ coverage }: { coverage: PricingCoverage }) {
           label="Unpriced requests"
           value={formatTokenCount(coverage.unpriced_requests)}
         />
-        {coverage.priced_image_generations + coverage.unpriced_image_generations > 0 ? (
+        {hasImageOutputs ? (
           <>
             <CoverageStat
               label="Priced image outputs"
@@ -34,12 +38,24 @@ export function CostQualityPanel({ coverage }: { coverage: PricingCoverage }) {
             />
           </>
         ) : null}
+        {hasVideoOutputs ? (
+          <>
+            <CoverageStat
+              label="Priced video outputs"
+              value={formatTokenCount(coverage.priced_video_generations)}
+            />
+            <CoverageStat
+              label="Incomplete video outputs"
+              value={formatTokenCount(coverage.unpriced_video_generations)}
+            />
+          </>
+        ) : null}
       </dl>
-      {coverage.priced_image_generations + coverage.unpriced_image_generations > 0 ? (
+      {hasImageOutputs || hasVideoOutputs ? (
         <p className="text-muted-foreground mt-4 text-xs leading-relaxed">
           These figures are estimates based on publicly available pricing information and token
           counts returned from providers. It may not match your bill exactly, especially for web
-          search/image generation.
+          search, image, and video generation.
         </p>
       ) : null}
     </aside>

@@ -25,6 +25,7 @@ from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
 from services.gemini_files import (
     GEMINI_FILES_MAX_BYTES,
+    GEMINI_PROCESSING_TIMEOUT_SECONDS,
     GeminiFile,
     GeminiFileError,
     delete_gemini_file,
@@ -35,6 +36,12 @@ from services.storage.factory import get_storage_provider
 from services.storage.workspace_buckets import workspace_id_for_ref
 
 VIDEO_MEDIA_TYPES = frozenset({"video/mp4", "video/quicktime", "video/webm"})
+# Google video generation, edits, and understanding block for up to this long.
+VIDEO_MODEL_CALL_TIMEOUT_SECONDS = 300
+# A tool that reads long video may first wait for Files API processing.
+VIDEO_MODEL_TOOL_TIMEOUT_SECONDS = (
+    GEMINI_PROCESSING_TIMEOUT_SECONDS + VIDEO_MODEL_CALL_TIMEOUT_SECONDS
+)
 # A cached upload must outlive the longest tool call that reads it.
 _GEMINI_FILE_REUSE_MARGIN = timedelta(hours=1)
 

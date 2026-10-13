@@ -18,7 +18,10 @@ from services.ai_usage.schemas import (
 from services.ai_usage.utils import (
     UsageBucket,
     build_usage_breakdown_rows,
+    output_price_columns,
+    output_price_values,
     resolve_usage_range,
+    video_output_seconds_column,
 )
 
 
@@ -33,18 +36,15 @@ async def get_usage_breakdown(
     """Return an exact breakdown for one supported attribution dimension."""
     usage_range = resolve_usage_range(from_, to)
     day = cast(func.date_trunc("day", func.timezone("UTC", AIUsageEvent.occurred_at)), Date)
-    image_model = AIUsageEvent.details["image_model"].astext
-    image_quality = AIUsageEvent.details["image_quality"].astext
-    image_size = AIUsageEvent.details["image_size"].astext
+    price_columns = output_price_columns()
     key, label, joins = _dimension_expressions(dimension)
     statement = select(
         day.label("day"),
         AIUsageEvent.provider,
         AIUsageEvent.model,
         AIUsageEvent.purpose,
-        image_model.label("image_model"),
-        image_quality.label("image_quality"),
-        image_size.label("image_size"),
+        *price_columns,
+        video_output_seconds_column(),
         key.label("dimension_key"),
         label.label("dimension_label"),
         func.sum(AIUsageEvent.input_tokens).label("input_tokens"),
@@ -67,9 +67,7 @@ async def get_usage_breakdown(
             AIUsageEvent.provider,
             AIUsageEvent.model,
             AIUsageEvent.purpose,
-            image_model,
-            image_quality,
-            image_size,
+            *price_columns,
             key,
             label,
         )
@@ -90,9 +88,7 @@ async def get_usage_breakdown(
             requests=int(row.requests or 0),
             invocations=int(row.invocations or 0),
             purpose=row.purpose,
-            image_model=row.image_model,
-            image_quality=row.image_quality,
-            image_size=row.image_size,
+            **output_price_values(row),
         )
         for row in result
     ]

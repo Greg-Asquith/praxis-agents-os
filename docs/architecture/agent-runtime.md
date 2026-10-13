@@ -484,8 +484,10 @@ contract forms and rejects missing required fields. Run
 `make stream-protocol-export` after changing the contract.
 
 The payload models cover conversation creation and updates, run status,
-assistant text and thinking messages, tool calls and results, approval details,
-Code Mode workflow state, errors, and terminal completion. Approval payloads
+assistant text and thinking messages, tool calls and results, tool progress
+stages, approval details, Code Mode workflow state, errors, and terminal
+completion. `tool.progress` is live only: it names the current stage of a
+running call, and the client ignores it for calls that aren't running. Approval payloads
 include replay arguments, nested workflow parents, delegated-run context, and
 untrusted-content provenance when those values apply. `tool.call.args` and
 `tool.result.result` remain JSON values because individual tool contracts own
