@@ -101,6 +101,7 @@ async def test_tool_catalog_route_exposes_generate_image_for_supported_provider(
         "GOOGLE_VERTEX_PROJECT",
         "vertex-project" if google_vertex_ai else None,
     )
+    monkeypatch.setattr(settings, "GOOGLE_VERTEX_LOCATION", "auto")
     monkeypatch.setattr(settings, "GCP_PROJECT_ID", None)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     if not google_vertex_ai:

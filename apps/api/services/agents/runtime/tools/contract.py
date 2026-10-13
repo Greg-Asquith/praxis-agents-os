@@ -3,6 +3,7 @@
 """Runtime tool catalog value types."""
 
 import inspect
+import json
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field as dataclass_field, replace
@@ -356,9 +357,60 @@ class RuntimeToolDefinition:
             # Workflows use the declared result shape, not the handler's return annotation.
             tool.function_schema = replace(
                 tool.function_schema,
-                return_schema=self.output_model.model_json_schema(mode="serialization"),
+                return_schema=_acyclic_return_schema(
+                    self.output_model.model_json_schema(mode="serialization")
+                ),
             )
         return tool
+
+
+def _acyclic_return_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Cut reference loops one level below each self-referencing definition.
+
+    Providers receive the return schema with the tool declaration, and Vertex
+    AI rejects the whole request when a definition reaches itself, such as a
+    recursive JSON value type. Each looping definition keeps its own union, so
+    Code Mode stubs still name the value types; only the nested references
+    back into a loop become unconstrained.
+    """
+    definitions: dict[str, Any] = schema.get("$defs", {})
+    references = {
+        name: set(re.findall(r'"#/\$defs/([^"]+)"', json.dumps(body)))
+        for name, body in definitions.items()
+    }
+
+    def reaches(start: str, target: str) -> bool:
+        seen: set[str] = set()
+        pending = list(references.get(start, ()))
+        while pending:
+            name = pending.pop()
+            if name == target:
+                return True
+            if name not in seen:
+                seen.add(name)
+                pending.extend(references.get(name, ()))
+        return False
+
+    cyclic = {name for name in definitions if reaches(name, name)}
+    if not cyclic:
+        return schema
+    cyclic_refs = {f"#/$defs/{name}" for name in cyclic}
+
+    def cut(node: Any) -> Any:
+        if isinstance(node, dict):
+            if node.get("$ref") in cyclic_refs:
+                return {}
+            return {key: cut(value) for key, value in node.items()}
+        if isinstance(node, list):
+            return [cut(item) for item in node]
+        return node
+
+    return {
+        **schema,
+        "$defs": {
+            name: cut(body) if name in cyclic else body for name, body in definitions.items()
+        },
+    }
 
 
 def validate_definition(definition: RuntimeToolDefinition) -> None:

@@ -88,8 +88,12 @@ def _bare_customer(customer_id: str) -> str:
     return customer_id
 
 
+type _JsonValue = str | list["_JsonValue"] | dict[str, "_JsonValue"] | None
+
+
 class _CodeReadOutput(BaseModel):
     customer_id: str
+    rows: list[dict[str, _JsonValue]]
 
 
 class _UnsafeNestedScope(BaseModel):
@@ -298,6 +302,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "edit_presentation": "none",
         "edit_word_document": "none",
         "edit_workbook": "none",
+        "fetch_memo_report_data": "provider_query",
         "fetch_url": "arbitrary_url",
         "generate_image": "none",
         "generate_image_from_video": "none",
@@ -339,6 +344,7 @@ def test_first_party_tool_egress_classifications_are_exhaustive() -> None:
         "list_delegate_agents": "none",
         "list_artifacts": "none",
         "list_files": "none",
+        "list_memo_reports": "none",
         "load_skill": "none",
         "read_artifact": "none",
         "read_document": "none",
@@ -584,8 +590,16 @@ def test_code_eligible_tools_stay_direct_beside_run_code(
 
     assert by_name["test_code_read"].defer_loading is True
     assert by_name["test_code_read"].requires_approval is True
-    assert by_name["test_code_read"].tool_def.return_schema["properties"] == {
-        "customer_id": {"title": "Customer Id", "type": "string"}
+    return_schema = by_name["test_code_read"].tool_def.return_schema
+    assert return_schema["properties"]["customer_id"] == {"title": "Customer Id", "type": "string"}
+    # Vertex AI rejects the request when a returned definition references itself.
+    assert return_schema["$defs"]["_JsonValue"] == {
+        "anyOf": [
+            {"type": "string"},
+            {"items": {}, "type": "array"},
+            {"additionalProperties": {}, "type": "object"},
+            {"type": "null"},
+        ]
     }
     assert "test_context_code_read" not in by_name
     assert by_name["run_code"].defer_loading is False
