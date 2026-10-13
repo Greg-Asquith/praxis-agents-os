@@ -12,6 +12,11 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` follows the speaker when it changes a video's shape: the
+  new default framing, `auto`, crops to keep the largest face in frame,
+  holding still unless the face moves out of the middle of the crop and
+  jumping only at shot changes. A shot with no face is centred. Face
+  detection runs inside the media renderer (YuNet), with no network call.
 - `cut_video_clips` cuts up to five clips from workspace videos and saves each
   as a new video File. A clip joins ranges or whole videos in order, from one
   video or several, with cuts snapped to whole sentences and shot changes,

@@ -25,6 +25,7 @@ MAX_FRAME_EDGE_PX = 1920
 DEFAULT_FRAME_EDGE_PX = 1280
 MAX_AUDIO_CHUNKS = 32
 MAX_CUT_SEGMENTS = 10
+MAX_CUT_SHOT_CUTS = 500
 MIN_OUTPUT_EDGE_PX = 64
 MAX_OUTPUT_EDGE_PX = 3840
 MIN_OUTPUT_FPS = 24
@@ -79,7 +80,9 @@ class CutSegment(_Range):
 class CutOperation(_Operation):
     """Joins segments of one or more sources into one H.264 and AAC MP4 of a fixed size.
 
-    ``fit`` shows each whole frame over a blurred fill; otherwise frames are centre-cropped.
+    ``fit`` shows each whole frame over a blurred fill. ``reframe`` crops to follow the
+    largest face in each shot, jumping only at ``shot_cuts_ms`` (input, time) pairs.
+    Otherwise frames are centre-cropped.
     """
 
     name: Literal["cut"] = "cut"
@@ -89,11 +92,22 @@ class CutOperation(_Operation):
     height: int = Field(ge=MIN_OUTPUT_EDGE_PX, le=MAX_OUTPUT_EDGE_PX, multiple_of=2)
     fps: int = Field(default=30, ge=MIN_OUTPUT_FPS, le=MAX_OUTPUT_FPS)
     fit: bool = False
+    reframe: bool = False
+    shot_cuts_ms: tuple[tuple[int, int], ...] = Field(default=(), max_length=MAX_CUT_SHOT_CUTS)
 
     @model_validator(mode="after")
     def require_every_input(self):
         if {segment.input for segment in self.segments} != set(range(self.input_count())):
             raise ValueError("segments must use every source from 0")
+        if self.fit and self.reframe:
+            raise ValueError("fit and reframe can't both be set")
+        if self.shot_cuts_ms and not self.reframe:
+            raise ValueError("shot_cuts_ms need reframe")
+        if any(
+            not 0 <= source < self.input_count() or time_ms < 0
+            for source, time_ms in self.shot_cuts_ms
+        ):
+            raise ValueError("shot_cuts_ms must name a source and a time")
         return self
 
     def input_count(self) -> int:
@@ -108,6 +122,8 @@ class CutOperation(_Operation):
             "height": self.height,
             "fps": self.fps,
             "fit": self.fit,
+            "reframe": self.reframe,
+            "shot_cuts": [list(cut) for cut in self.shot_cuts_ms],
         }
 
 

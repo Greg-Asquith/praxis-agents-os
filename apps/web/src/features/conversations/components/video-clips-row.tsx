@@ -23,6 +23,12 @@ import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { formatDuration, pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
+const FRAMING_LABELS: Record<string, string> = {
+  auto: "Follow Speaker",
+  center: "Centre Crop",
+  fit: "Fit Over Blur",
+}
+
 export function CutVideoClipsRow({
   activity,
   defaultOpen,
@@ -35,7 +41,13 @@ export function CutVideoClipsRow({
     return null
   }
   const total = result.clips.length
-  const shape = isRecord(activity.args) ? activity.args["aspect_ratio"] : null
+  const args = isRecord(activity.args) ? activity.args : {}
+  const shape = args["aspect_ratio"]
+  // Framing only matters when the shape changes; the tool defaults to auto.
+  const framing =
+    typeof shape === "string" && shape !== "original"
+      ? FRAMING_LABELS[typeof args["framing"] === "string" ? args["framing"] : "auto"]
+      : undefined
   const clips =
     result.saved === total
       ? `${String(total)} ${pluralize(total, "Clip")}`
@@ -47,6 +59,7 @@ export function CutVideoClipsRow({
       details={[
         { label: "Clips", value: clips },
         ...(typeof shape === "string" ? [{ label: "Shape", value: shape }] : []),
+        ...(framing ? [{ label: "Framing", value: framing }] : []),
       ]}
       summary={clips}
       heading={

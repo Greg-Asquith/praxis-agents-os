@@ -5,7 +5,7 @@
 from collections.abc import Awaitable, Callable
 from math import ceil
 from pathlib import PurePath
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -41,6 +41,7 @@ from services.media.clips import (
     RENDER_CONCURRENCY,
     AspectRatio,
     ClipSource,
+    Framing,
     PlannedClip,
     output_size,
     plan_clip,
@@ -109,9 +110,10 @@ def cut_video_clips_available() -> bool:
         "Cut up to five clips from workspace videos and save each as a new video File. Each clip "
         "joins one or more segments in order; segments can come from different videos, as "
         "ranges or whole videos. Pass the start_ms and end_ms that find_video_moments returned "
-        "rather than inventing times. aspect_ratio 9:16 suits Reels, Shorts, and TikTok; "
-        "framing 'center' crops to fill the frame, 'fit' shows the whole frame over a blurred "
-        "fill. One clip failing doesn't stop the others; the result reports each clip."
+        "rather than inventing times. aspect_ratio 9:16 suits Reels, Shorts, and TikTok. When "
+        "the shape changes, framing 'auto' (the default) crops to follow the speaker's face, "
+        "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill. One "
+        "clip failing doesn't stop the others; the result reports each clip."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -151,14 +153,19 @@ async def cut_video_clips(
         Field(description="Shape of every clip. 'original' keeps the first video's shape."),
     ] = "original",
     framing: Annotated[
-        Literal["center", "fit"],
-        Field(description="How a frame of another shape fits: crop to fill, or fit over a blur."),
-    ] = "center",
+        Framing,
+        Field(
+            description=(
+                "How a frame of another shape fits: follow the face, crop the middle, or fit "
+                "over a blur."
+            )
+        ),
+    ] = "auto",
 ) -> dict[str, object]:
     """Renders each clip from the caller's own videos and saves it next to its first video."""
     stage = progress(ctx)
     videos = await _workspace_videos(ctx, clips)
-    sources = await _clip_sources(ctx, clips, videos, stage=stage)
+    sources = await _clip_sources(ctx, clips, videos, framing=framing, stage=stage)
     planned = []
     for index, clip in enumerate(clips, start=1):
         first = sources[clip.segments[0].file_id.entity_id]
@@ -170,7 +177,7 @@ async def cut_video_clips(
                         for segment in clip.segments
                     ],
                     size=output_size(aspect_ratio, first.metadata),
-                    fit=framing == "fit",
+                    framing=framing,
                     snap=clip.snap,
                 )
             )
@@ -235,20 +242,23 @@ async def _clip_sources(
     clips: list[ClipArgument],
     videos: dict[UUID, tuple[File, FileRevision]],
     *,
+    framing: Framing,
     stage: Callable[[str], Awaitable[None]],
 ) -> dict[UUID, ClipSource]:
-    """Measures each video, and loads sentences and shot cuts for those a clip snaps."""
+    """Measures each video and loads what its clips need: sentences to snap, shot cuts to
+    snap or follow a face.
+    """
     snapped = {
         segment.file_id.entity_id for clip in clips if clip.snap for segment in clip.segments
     }
     sources = {}
     for file_id, (file, revision) in videos.items():
         metadata = probed_video(revision)
-        if file_id not in snapped:
+        if file_id not in snapped and framing != "auto":
             sources[file_id] = ClipSource(revision=revision, metadata=metadata)
             continue
         sentences = ()
-        if metadata.has_audio and transcription_provider() is not None:
+        if file_id in snapped and metadata.has_audio and transcription_provider() is not None:
             transcript = await video_transcript(
                 ctx, file, revision, language=None, tool_name="cut_video_clips"
             )

@@ -19,7 +19,9 @@ It runs in the media renderer, a separate service:
   builds a pinned ffmpeg from source with only the demuxers, decoders,
   encoders, and filters the operations use, plus `libx264`, `libopus`, AAC,
   and `libass`.
-  Network protocols are compiled out, and the build fails if any remain.
+  Network protocols are compiled out, and the build fails if any remain. The
+  image also holds OpenCV (headless) and the YuNet face detection model,
+  pinned by hash, for automatic framing.
 
 One request runs one typed operation:
 
@@ -27,11 +29,11 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit` | one H.264 and AAC MP4 joining the segments in order |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe` and `shot_cuts` (up to 500 `[input, time_ms]`) | one H.264 and AAC MP4 joining the segments in order |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file (32 kbit/s) per chunk, plus each chunk's range on the source timeline |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
-Arguments are numbers only. The driver rejects unknown fields and any value of
+Arguments are numbers and booleans only. The driver rejects unknown fields and any value of
 the wrong type, and builds every ffmpeg argument itself. A range must start
 before the end of the video; an end past it is trimmed to the end. A frame time
 must be strictly before the end.
@@ -51,6 +53,26 @@ frame rates, and audio layouts join cleanly. Rotated phone video is turned
 upright first. Output is `libx264` at CRF 18, capped at 8 Mbit/s, with AAC at
 128 kbit/s: about 61 MB a minute at most. Each segment's decoder uses two
 threads, so ten segments stay inside the child's memory limit.
+
+With `reframe` (not with `fit`), each segment whose shape differs from the
+output is cropped to follow the speaker:
+
+1. ffmpeg samples the segment at 2 fps, 640 pixels on the long side, as raw
+   BGR frames.
+2. `media/faces.py` runs YuNet on those frames in its own isolated child and
+   prints the faces as JSON. OpenCV reads only raw pixels, never a media
+   file, and the driver checks the shape of what it prints.
+3. `media/reframe.py` plans the crop per shot, with shots split at the
+   segment's `shot_cuts`. The crop starts on the largest face, holds still
+   while that face stays in its middle third, and pans for 400 ms when it
+   leaves. A pan stops at the next cut and the crop jumps there, so it never
+   pans across one. A shot with no face is centred. Frames within 100 ms of a
+   cut are ignored, because they may belong to either shot.
+4. The crop's position becomes an ffmpeg expression of time on the `crop`
+   filter, built by the driver from numbers.
+
+Active-speaker choice when several people are in frame is pending; the
+largest face wins.
 
 Every operation, `probe` included, downloads each whole input. Container
 metadata can sit anywhere in the file, so a head-and-tail read can report a
@@ -366,9 +388,11 @@ code-eligible.
   or no transcription provider, snaps to shots only.
 - `aspect_ratio` is `original` (the first video's upright shape), `9:16`,
   `1:1`, `4:5`, or `16:9`, at 1080 pixels on the short side. The frame rate is
-  the first video's, rounded, between 24 and 60. `framing` is `center` (crop
-  to fill) or `fit` (whole frame over a blur). Subject-aware framing,
-  captions, and silence removal are pending.
+  the first video's, rounded, between 24 and 60. `framing` is `auto` (the
+  default: crop to follow the largest face in each shot, centred where there
+  is none), `center` (crop the middle), or `fit` (whole frame over a blur).
+  `auto` measures each video's shots on first use, so the crop jumps only at
+  a cut. Captions and silence removal are pending.
 - A clip has no length cap of its own. A clip File is held to the written
   size limit for video (`MAX_FILE_SIZE_VIDEO`, 100 MB, and never more than
   `MEDIA_RENDERER_MAX_OUTPUT_BYTES`), so the longest clip is that size at the
@@ -383,7 +407,8 @@ reports every clip with its status, ranges, warnings, and a failure reason.
 When no clip is saved, the call fails. Each call records a `video_clips` audit
 event on every source video.
 
-In the conversation, a completed call says how many clips it saved and shows them as a grid of stills
+In the conversation, a completed call says how many clips it saved, and the
+shape and framing when the shape changed, and shows them as a grid of stills
 with their length, name, and ranges; selecting one opens the player in a
 dialog. A failed clip's tile shows its reason. The moments card
 has a checkbox per moment and **Cut N Clips**, which sends the person's own

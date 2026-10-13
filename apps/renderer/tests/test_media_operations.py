@@ -4,6 +4,8 @@
 
 from typing import Any
 
+import cv2
+import numpy as np
 import pytest
 from driver.server import DriverConfig, OperationError, handle_request
 from media.operations import OPERATIONS
@@ -85,6 +87,42 @@ def test_cut_joins_segments_from_several_inputs_in_order_at_the_output_size(
     assert abs(clip["duration_ms"] - 3000) <= 100
     # Blue for 1.5 s, grey for 0.5 s, then red: joined in the order given.
     assert [round(cut / 100) for cut in cuts["result"]["cuts_ms"]] == [15, 20]
+
+
+def test_reframe_keeps_the_face_inside_a_vertical_crop_in_every_shot(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # talking_head.mp4 is 640x360: a face at the left until a cut at 2 s, then at the right.
+    # A centred 9:16 crop would miss it in both shots.
+    _run(
+        storage,
+        config,
+        "cut",
+        sources=("talking_head.mp4",),
+        outputs=1,
+        arguments={
+            "segments": [[0, 0, 4000]],
+            "width": 180,
+            "height": 320,
+            "fps": 30,
+            "fit": False,
+            "reframe": True,
+            "shot_cuts": [[0, 2000], [0, 4000]],
+        },
+    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    times = [250, 1750, 2250, 3750]
+    _run(storage, config, "frames", sources=("clip.mp4",), outputs=4, arguments={"times_ms": times})
+
+    for index in range(len(times)):
+        frame = cv2.imdecode(np.frombuffer(storage.uploads[f"out-{index}"], np.uint8), 1)
+        detector = cv2.FaceDetectorYN.create(
+            "/opt/yunet/face_detection_yunet_2023mar.onnx", "", (180, 320), 0.7
+        )
+        _, faces = detector.detect(frame)
+        assert faces is not None, f"no face at {times[index]} ms"
+        x, _, width = faces[0][:3]
+        assert x >= 0 and x + width <= 180
 
 
 def test_frames_writes_one_bounded_jpeg_per_time(
@@ -186,6 +224,14 @@ def test_malformed_media_fails_with_a_plain_error(
             "fps": 30,
             "fit": False,
             "filter": "movie=http://example.com",
+        },
+        {
+            "segments": [[0, 0, 1000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": True,
+            "reframe": True,
         },
         # Input 1 needs a second signed download the request doesn't have.
         {"segments": [[1, 0, 1000]], "width": 320, "height": 180, "fps": 30, "fit": False},

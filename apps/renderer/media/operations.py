@@ -1,14 +1,25 @@
 # apps/renderer/media/operations.py
 
-"""Media operations. Arguments are numbers only; the driver builds every command line."""
+"""Media operations. Arguments are numbers and booleans; the driver builds every command line."""
 
 import json
 import re
+import sys
 from fractions import Fraction
+from pathlib import Path
 from typing import Any
 
 from driver.child import ChildResult
 from driver.server import Operation, OperationContext, OperationError
+
+from media.reframe import (
+    SAMPLE_INTERVAL_MS,
+    Track,
+    crop_expression,
+    crop_share,
+    detection_size,
+    subject_track,
+)
 
 FFMPEG = "/opt/ffmpeg/bin/ffmpeg"
 FFPROBE = "/opt/ffmpeg/bin/ffprobe"
@@ -16,6 +27,8 @@ MAX_SCENE_CUTS = 2000
 MAX_FRAMES = 20
 DEFAULT_MAX_EDGE_PX = 1280
 MAX_SEGMENTS = 10
+MAX_SHOT_CUTS = 500
+FACES_SCRIPT = Path(__file__).with_name("faces.py")
 MIN_OUTPUT_EDGE_PX = 64
 MAX_OUTPUT_EDGE_PX = 3840
 MIN_OUTPUT_FPS = 24
@@ -243,6 +256,7 @@ def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "fps": int,
             "fit": bool,
         },
+        optional={"reframe": bool, "shot_cuts": list[list[int]]},
     )
     segments = arguments["segments"]
     if not 1 <= len(segments) <= MAX_SEGMENTS or any(len(item) != 3 for item in segments):
@@ -254,6 +268,17 @@ def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
     inputs = {item[0] for item in segments}
     if inputs != set(range(len(inputs))):
         raise OperationError("invalid_request", "segments must use every input from 0.")
+    if arguments.get("reframe") and arguments["fit"]:
+        raise OperationError("invalid_request", "reframe and fit can't both be set.")
+    shot_cuts = arguments.get("shot_cuts", [])
+    if shot_cuts and not arguments.get("reframe"):
+        raise OperationError("invalid_request", "shot_cuts need reframe.")
+    if len(shot_cuts) > MAX_SHOT_CUTS or any(
+        len(item) != 2 or item[0] not in inputs or item[1] < 0 for item in shot_cuts
+    ):
+        raise OperationError(
+            "invalid_request", f"shot_cuts must list up to {MAX_SHOT_CUTS} [input, time]."
+        )
     if not MIN_OUTPUT_FPS <= arguments["fps"] <= MAX_OUTPUT_FPS:
         raise OperationError(
             "invalid_request", f"fps must be {MIN_OUTPUT_FPS} to {MAX_OUTPUT_FPS}."
@@ -283,6 +308,7 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
         _require_video(summary)
         summaries.append(summary)
     width, height, fps = arguments["width"], arguments["height"], arguments["fps"]
+    tracks = _subject_tracks(context, arguments, summaries) if arguments.get("reframe") else {}
     options, filters = [], []
     for position, (index, start, end) in enumerate(arguments["segments"]):
         summary = summaries[index]
@@ -295,9 +321,14 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
             "-i",
             context.input_path(index).name,
         ]
-        framing = _fit_filter if arguments["fit"] else _fill_filter
+        if arguments["fit"]:
+            framing = _fit_filter(width, height, position)
+        elif position in tracks:
+            framing = _follow_filter(width, height, *tracks[position])
+        else:
+            framing = _fill_filter(width, height)
         filters.append(
-            f"[{position}:v:0]{framing(width, height, position)},fps={fps},"
+            f"[{position}:v:0]{framing},fps={fps},"
             f"format=yuv420p,trim=duration={duration},setpts=PTS-STARTPTS[v{position}]"
         )
         audio = f"[{position}:a:0]" if summary["has_audio"] else "anullsrc=r=48000:cl=stereo,"
@@ -331,7 +362,7 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
     return _probe_file(context, output.name)
 
 
-def _fill_filter(width: int, height: int, position: int) -> str:
+def _fill_filter(width: int, height: int) -> str:
     # Centre crop: fill the frame and trim what overhangs.
     return (
         f"scale={width}:{height}:force_original_aspect_ratio=increase,"
@@ -352,6 +383,121 @@ def _fit_filter(width: int, height: int, position: int) -> str:
         f"setsar=1[sharp{position}];"
         f"[blur{position}][sharp{position}]overlay=(W-w)/2:(H-h)/2"
     )
+
+
+def _follow_filter(width: int, height: int, axis: int, track: Track) -> str:
+    # Crops the source to the output's shape, moving along one axis as the track says.
+    position = crop_expression(track)
+    x, y = (position, "0.5") if axis == 0 else ("0.5", position)
+    return (
+        f"setpts=PTS-STARTPTS,crop=w=min(iw\\,trunc(ih*{width}/{height}/2)*2):"
+        f"h=min(ih\\,trunc(iw*{height}/{width}/2)*2):x=(iw-ow)*({x}):y=(ih-oh)*({y}),"
+        f"scale={width}:{height},setsar=1"
+    )
+
+
+def _subject_tracks(
+    context: OperationContext, arguments: dict[str, Any], summaries: list[dict[str, Any]]
+) -> dict[int, tuple[int, Track]]:
+    """Finds faces in each segment the crop can travel across and plans its (axis, track)."""
+    output = (arguments["width"], arguments["height"])
+    sampled: dict[tuple[int, int], list[tuple[int, int, float, int, list[int]]]] = {}
+    for position, (index, start, end) in enumerate(arguments["segments"]):
+        summary = summaries[index]
+        source = _upright_size(summary)
+        if source is None:
+            continue
+        shares = crop_share(source, output)
+        if min(shares) >= 1:
+            continue
+        start, end = _clamp_range(summary, start, end)
+        size = detection_size(*source)
+        _ffmpeg(
+            context,
+            *_range_options(start, end),
+            "-threads",
+            str(SEGMENT_DECODE_THREADS),
+            "-i",
+            context.input_path(index).name,
+            "-an",
+            "-sn",
+            "-dn",
+            "-vf",
+            f"fps={1000 // SAMPLE_INTERVAL_MS},scale={size[0]}:{size[1]},format=bgr24",
+            "-f",
+            "rawvideo",
+            f"frames-{position}.raw",
+        )
+        axis = 0 if shares[0] < 1 else 1
+        cuts = [
+            time - start for cut_input, time in arguments.get("shot_cuts", []) if cut_input == index
+        ]
+        sampled.setdefault(size, []).append((position, axis, shares[axis], end - start, cuts))
+
+    tracks = {}
+    for size, segments in sampled.items():
+        files = [context.workdir / f"frames-{segment[0]}.raw" for segment in segments]
+        found = _faces(context, size, files)
+        for (position, axis, share, duration_ms, cuts), samples in zip(
+            segments, found, strict=True
+        ):
+            tracks[position] = (
+                axis,
+                subject_track(
+                    samples,
+                    axis=axis,
+                    frame_size=size,
+                    share=share,
+                    shot_cuts_ms=cuts,
+                    duration_ms=duration_ms,
+                ),
+            )
+        for path in files:
+            path.unlink()
+    return tracks
+
+
+def _faces(
+    context: OperationContext, size: tuple[int, int], files: list[Path]
+) -> list[list[list[list[float]]]]:
+    """Runs YuNet in its own isolated child and checks the shape of what it reports."""
+    result = context.run(
+        [sys.executable, "-I", str(FACES_SCRIPT), str(size[0]), str(size[1])]
+        + [path.name for path in files]
+    )
+    _require_success(result)
+    try:
+        found = json.loads(result.stdout_path.read_bytes())
+    except json.JSONDecodeError as exc:
+        raise OperationError("invalid_media", "The video couldn't be read.") from exc
+    valid = (
+        isinstance(found, list)
+        and len(found) == len(files)
+        and all(
+            isinstance(frames, list)
+            and all(
+                isinstance(faces, list)
+                and all(
+                    isinstance(face, list)
+                    and len(face) == 4
+                    and all(type(value) in {int, float} for value in face)
+                    for face in faces
+                )
+                for faces in frames
+            )
+            for frames in found
+        )
+    )
+    if not valid:
+        raise OperationError("invalid_media", "The video couldn't be read.")
+    return found
+
+
+def _upright_size(summary: dict[str, Any]) -> tuple[int, int] | None:
+    width, height = summary["width"], summary["height"]
+    if not width or not height:
+        return None
+    return (height, width) if summary["rotation"] in {90, 270} else (width, height)
 
 
 # extract_audio

@@ -1,6 +1,6 @@
 # apps/api/tests/services/media/test_clips.py
 
-"""Planning clips: bounds, snapping, input numbering, and output size."""
+"""Planning clips: bounds, snapping, input numbering, framing, and output size."""
 
 import pytest
 
@@ -31,10 +31,10 @@ def test_snapped_cuts_land_on_sentences_and_each_video_is_one_input() -> None:
     snapped = plan_clip(
         [(talk, 12_400, 28_000), (broll, None, None), (talk, 0, 5_000)],
         size=(1080, 1920),
-        fit=False,
+        framing="center",
         snap=True,
     )
-    exact = plan_clip([(talk, 12_400, 28_000)], size=(1080, 1920), fit=False, snap=False)
+    exact = plan_clip([(talk, 12_400, 28_000)], size=(1080, 1920), framing="center", snap=False)
 
     # Back to the sentence start, on to its end then 400 ms back to the shot change.
     assert [
@@ -47,6 +47,21 @@ def test_snapped_cuts_land_on_sentences_and_each_video_is_one_input() -> None:
     ]
 
 
+def test_automatic_framing_sends_each_inputs_shot_cuts_inside_its_segments() -> None:
+    talk = _source(60_000, shot_cuts_ms=(5_000, 20_000, 40_000))
+    broll = _source(10_000, shot_cuts_ms=(2_000, 8_000))
+
+    clip = plan_clip(
+        [(broll, 0, 5_000), (talk, 10_000, 30_000), (talk, 35_000, 45_000)],
+        size=(1080, 1920),
+        framing="auto",
+        snap=False,
+    )
+
+    assert clip.operation.reframe
+    assert clip.operation.shot_cuts_ms == ((0, 2_000), (1, 20_000), (1, 40_000))
+
+
 @pytest.mark.parametrize(
     ("start_ms", "end_ms"),
     [(60_000, None), (20_000, 20_000)],
@@ -55,7 +70,9 @@ def test_a_segment_outside_the_video_fails_before_rendering(
     start_ms: int, end_ms: int | None
 ) -> None:
     with pytest.raises(ValueError, match="Segment 1"):
-        plan_clip([(_source(60_000), start_ms, end_ms)], size=(1080, 1920), fit=False, snap=False)
+        plan_clip(
+            [(_source(60_000), start_ms, end_ms)], size=(1080, 1920), framing="center", snap=False
+        )
 
 
 def test_a_clip_longer_than_a_saved_video_can_hold_fails_before_rendering() -> None:
@@ -66,7 +83,7 @@ def test_a_clip_longer_than_a_saved_video_can_hold_fails_before_rendering() -> N
         plan_clip(
             [(source, 0, 60_000), (source, 200_000, 250_000)],
             size=(1080, 1920),
-            fit=False,
+            framing="center",
             snap=False,
         )
 

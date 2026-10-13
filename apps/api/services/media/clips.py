@@ -14,6 +14,7 @@ from services.files.contract import contract_for_content_type, max_size_bytes
 from services.files.domain import VideoMetadata
 from services.files.utils import format_duration
 from services.media.domain import (
+    MAX_CUT_SHOT_CUTS,
     MAX_OUTPUT_EDGE_PX,
     MAX_OUTPUT_FPS,
     MIN_OUTPUT_FPS,
@@ -27,6 +28,8 @@ from services.media.run_media_operation import run_media_operation
 from services.media.snapping import SnapLimits, snap_range
 
 AspectRatio = Literal["original", "9:16", "1:1", "4:5", "16:9"]
+# auto follows the largest face per shot; center crops the middle; fit shows the whole frame.
+Framing = Literal["auto", "center", "fit"]
 ASPECT_RATIOS: dict[str, tuple[int, int]] = {
     "9:16": (9, 16),
     "1:1": (1, 1),
@@ -45,7 +48,7 @@ SNAP_NOTICE_MS = 1000
 
 @dataclass(frozen=True)
 class ClipSource:
-    """An authorised workspace video revision with what snapping reads."""
+    """An authorised workspace video revision with what snapping and framing read."""
 
     revision: FileRevision
     metadata: VideoMetadata
@@ -113,7 +116,7 @@ def plan_clip(
     segments: Sequence[tuple[ClipSource, int | None, int | None]],
     *,
     size: tuple[int, int],
-    fit: bool,
+    framing: Framing,
     snap: bool,
 ) -> PlannedClip:
     """Bounds, snaps, and numbers a clip's segments. Raises ValueError with a reason to show."""
@@ -155,6 +158,13 @@ def plan_clip(
     for segment in planned:
         inputs.setdefault(segment.source.revision.id, len(inputs))
     revisions = {segment.source.revision.id: segment.source.revision for segment in planned}
+    # Automatic framing jumps only at shot cuts, so it needs those inside each segment.
+    shot_cuts = {
+        (inputs[segment.source.revision.id], cut)
+        for segment in planned
+        for cut in segment.source.shot_cuts_ms
+        if framing == "auto" and segment.start_ms < cut < segment.end_ms
+    }
     clip = PlannedClip(
         segments=tuple(planned),
         sources=tuple(revisions[revision_id] for revision_id in inputs),
@@ -170,7 +180,9 @@ def plan_clip(
             width=size[0],
             height=size[1],
             fps=output_fps(planned[0].source.metadata),
-            fit=fit,
+            fit=framing == "fit",
+            reframe=framing == "auto",
+            shot_cuts_ms=tuple(sorted(shot_cuts)[:MAX_CUT_SHOT_CUTS]),
         ),
         warnings=tuple(warnings),
     )
