@@ -88,7 +88,7 @@ lcov.info
 ########################################
 # Environment & Secrets
 ########################################
-.env
+*.env
 .env.*
 !.env.example
 !.env.*.example
