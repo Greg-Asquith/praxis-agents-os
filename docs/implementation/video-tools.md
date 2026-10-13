@@ -1,9 +1,9 @@
 # Video tools
 
 Read this before changing the media renderer, its API client, or anything that
-decodes, cuts, or measures video. `transcribe_video` is the first
-model-facing tool on the renderer; tools that find moments in video or cut it
-are pending. For upload limits and video in chat,
+decodes, cuts, or measures video. The model-facing video tools are
+`transcribe_video`, `find_video_moments`, and `ask_video`; a tool that cuts
+clips is pending. For upload limits and video in chat,
 see [Storage and files](storage-and-files.md#video-uploads-and-attachments).
 
 ## Media renderer
@@ -260,6 +260,80 @@ On GCP, bootstrap enables the Speech-to-Text API and grants the API and worker
 service accounts `roles/speech.client` when `GOOGLE_VERTEX_AI=true`. Speech
 reads the staged audio as its own service agent.
 
+## Moments and questions
+
+`find_video_moments` and `ask_video` send the video to
+`VIDEO_UNDERSTANDING_MODEL` (Gemini 3.8 Flash by default) through the shared
+Gemini video input, at 1 frame a second and low media resolution.
+`services/media/understanding.py` runs the calls, at most three at a time,
+under one `video_understanding` usage event, and answers with structured
+output or text. Both tools need Google on either transport, and
+`find_video_moments` also needs the renderer. Where Gemini can't read long
+video (Vertex without GCS storage), a video up to 18 MB goes inline and a
+larger one is refused before it is transcribed. Each call records a
+`video_understanding` audit event on the video File with the model and the
+range, committed before the model call.
+
+Both take an optional `start` and `end` (`MM:SS` or `H:MM:SS`), sent as the
+part's start and end offsets. With offsets, Gemini still gives times from the
+start of the full video (checked live on a counter video, plan 249 B2), so
+times need no shifting. `detail` raises the frame rate to 5 for fast action and
+covers at most a fifth of a window (8 minutes by default), so a call's frame
+count stays the same.
+
+### `find_video_moments`
+
+`find_video_moments(file_id, brief, count?, min_seconds?, max_seconds?, start?,
+end?, detail?)` returns up to `count` (default 5, at most 10) moments, best
+first. Each has validated `start_ms`, `end_ms`, `score` (0 to 100), and
+`shot_count`, and the model's `title`, `hook`, `reason`, plus the transcript
+excerpt, each as an untrusted-content node with File and revision provenance.
+
+1. It loads the transcript (creating it with `transcribe_video`'s path when
+   missing; a video with no audio has none) and the shot cuts.
+2. Ranges longer than `VIDEO_MOMENTS_WINDOW_SECONDS` are split into the fewest
+   equal windows that overlap by 60 seconds; a 4-hour video is 7 windows. Each
+   window's prompt carries the brief, the length bounds, and that window's
+   transcript lines with times, framed as untrusted content.
+3. The model returns candidate moments with `MM:SS` times. Unreadable times
+   are dropped, and each range is clamped to its window.
+4. `services/media/snapping.py` snaps each range: a start inside a sentence
+   moves back to the sentence start, and a start in a pause moves on to the
+   next sentence; an end inside a sentence moves on to its end, and an end in
+   a pause moves back to the last sentence. A moment shorter than
+   `min_seconds` runs on to the first sentence end that makes it long
+   enough. A moment that then falls outside `min_seconds` to `max_seconds`
+   is dropped. Each cut then moves to a shot change within
+   `VIDEO_SNAP_SHOT_TOLERANCE_MS`, if the range still fits the bounds.
+5. Of two overlapping moments, the higher score is kept, so a moment found in
+   two windows appears once.
+
+When fewer moments survive than asked for, the result says so in `note`.
+`cut_video_clips` will reuse the same snapping.
+
+### `ask_video`
+
+`ask_video(file_id, question, start?, end?, detail?)` answers one question
+with `MM:SS` references, as an untrusted-content node. One call covers at most
+`VIDEO_MOMENTS_WINDOW_SECONDS` (40 minutes), at medium media resolution up to
+10 minutes and low beyond that; for a longer video the agent passes `start`
+and `end`. It doesn't read the transcript.
+
+| Setting | Default | Purpose |
+|---|---:|---|
+| `VIDEO_UNDERSTANDING_MODEL` | `gemini-3.8-flash` | Google catalog model that watches the video. |
+| `VIDEO_MOMENTS_WINDOW_SECONDS` | 2400 | Longest stretch one call watches (300 to 3600). |
+| `VIDEO_SNAP_SHOT_TOLERANCE_MS` | 700 | How far a snapped cut may move to a shot change (0 to 3000). |
+
+In the conversation, a completed `find_video_moments` call shows the source
+video and its moments; selecting one plays just that range, with a
+`#t=start,end` media fragment on the signed URL. A completed `ask_video`
+call plays the range it watched, with the question and answer. Running and
+failed calls keep the default row with its progress stage.
+
+Chat accepts video once `find_video_moments` is available, and **Add to
+chat** in Files offers video then too.
+
 ## Long media calls
 
 Video calls run inside the tool call, under an explicit tool `timeout`. The
@@ -271,6 +345,8 @@ run's lease heartbeat continues during the call, and
 | A Google model call over video (generation, edits, understanding) | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` (600 s): 300 s for the model call plus the Files API's 300 s processing wait |
 | A renderer operation | `MEDIA_RENDERER_TIMEOUT_SECONDS` plus the client's 60 second allowance (`REQUEST_ALLOWANCE_SECONDS`) |
 | `transcribe_video` | The renderer operation's timeout plus 900 seconds for transcription |
+| `find_video_moments` | `transcribe_video`'s timeout plus `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS`, because a first call transcribes too |
+| `ask_video` | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` |
 
 When a timeout passes, Pydantic AI cancels the call and returns a retry to the
 model. Nothing is saved, because tools write their output File only after the

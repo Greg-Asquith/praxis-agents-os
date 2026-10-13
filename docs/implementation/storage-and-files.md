@@ -77,11 +77,13 @@ replaced; purging a File deletes its uploads. See
 
 Chat accepts a video attachment only when the deployment has a tool that finds
 moments in video or cuts it (`cut_video_clips` or `find_video_moments`).
-`GET /models/catalog` reports this check as `video_tools_available`. Those
-tools are pending, so every deployment refuses video in chat. The composer
-refuses a picked or dropped video before uploading it, and the API refuses a
-video attachment on send. Both say "Video can't be attached to messages yet.
-Upload it to Files instead." When the check passes, the model receives a text
+`GET /models/catalog` reports this check as `video_tools_available`.
+`find_video_moments` passes it on deployments with the renderer and Google.
+Otherwise the composer refuses a picked or dropped video
+before uploading it, the API refuses a video attachment on send, and **Add to
+chat** in Files isn't offered for video. The refusals say "Video can't be
+attached to messages yet. Upload it to Files instead." When the check passes,
+the model receives a text
 note with the video's File id, format, size, and measurement (or that it is
 still being prepared), never its bytes. The
 uploader-controlled name sits inside the shared untrusted-content frame with

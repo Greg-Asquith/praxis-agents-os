@@ -221,7 +221,10 @@ async def test_resolve_chat_attachments_rejects_images_for_non_vision_models(
 async def test_resolve_chat_attachments_refuses_video_without_video_tools(
     db_session: AsyncSession,
     local_storage_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    resolver_module = importlib.import_module("services.files.resolve_chat_attachments")
+    monkeypatch.setattr(resolver_module, "video_tools_available", lambda: False)
     actor, workspace, agent = await _persist_workspace_agent(db_session)
     video, _revision = await _persist_file(
         db_session,

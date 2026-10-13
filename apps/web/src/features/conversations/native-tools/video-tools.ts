@@ -1,5 +1,6 @@
 // apps/web/src/features/conversations/native-tools/video-tools.ts
 
+import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { isVideoAttachmentMediaType } from "@/features/conversations/attachments"
 import { videoSummary } from "@/features/files/format"
 import { isFileProcessing } from "@/features/files/processing"
@@ -54,5 +55,119 @@ export function videoFileStatus(file: WorkspaceFile | undefined) {
   return {
     kind: "ready" as const,
     label: file.video ? videoSummary(file.video) : formatBytes(file.size_bytes),
+  }
+}
+
+export const FIND_VIDEO_MOMENTS_TOOL_NAME = "find_video_moments"
+export const ASK_VIDEO_TOOL_NAME = "ask_video"
+
+export type VideoMoment = {
+  // M:SS labels the server formats from the snapped times.
+  start: string
+  end: string
+  startMs: number
+  endMs: number
+  score: number
+  shotCount: number
+  title: string
+  hook: string
+  reason: string
+  excerpt: string
+}
+
+export type FindVideoMomentsResult = {
+  video: VideoFileReference
+  moments: VideoMoment[]
+  note: string | null
+}
+
+export type AskVideoResult = {
+  video: VideoFileReference
+  // The watched range to play; null plays the whole video.
+  range: { startMs: number; endMs: number } | null
+  start: string
+  end: string
+  answer: string
+}
+
+export function findVideoMomentsResult(value: unknown): FindVideoMomentsResult | null {
+  if (!isRecord(value) || !Array.isArray(value["moments"])) {
+    return null
+  }
+  const video = sourceVideo(value)
+  const moments = value["moments"].map(videoMoment)
+  if (!video || moments.some((moment) => moment === null)) {
+    return null
+  }
+  const note = nodeText(value["note"])
+  return { video, moments: moments as VideoMoment[], note: note?.trim() ? note : null }
+}
+
+export function askVideoResult(value: unknown): AskVideoResult | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const video = sourceVideo(value)
+  const answer = nodeText(value["answer"])
+  if (
+    !video ||
+    answer === null ||
+    typeof value["start"] !== "string" ||
+    typeof value["end"] !== "string"
+  ) {
+    return null
+  }
+  const { start_ms: startMs, end_ms: endMs } = value
+  return {
+    video,
+    range:
+      typeof startMs === "number" && typeof endMs === "number" && endMs > startMs
+        ? { startMs, endMs }
+        : null,
+    start: value["start"],
+    end: value["end"],
+    answer,
+  }
+}
+
+function sourceVideo(value: Record<string, unknown>): VideoFileReference | null {
+  if (typeof value["file_id"] !== "string") {
+    return null
+  }
+  return {
+    fileId: value["file_id"],
+    name: typeof value["name"] === "string" ? value["name"] : null,
+  }
+}
+
+function videoMoment(value: unknown): VideoMoment | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const { start_ms: startMs, end_ms: endMs, score, shot_count: shotCount } = value
+  const title = nodeText(value["title"])
+  if (
+    typeof startMs !== "number" ||
+    typeof endMs !== "number" ||
+    endMs <= startMs ||
+    typeof score !== "number" ||
+    typeof shotCount !== "number" ||
+    typeof value["start"] !== "string" ||
+    typeof value["end"] !== "string" ||
+    title === null
+  ) {
+    return null
+  }
+  return {
+    start: value["start"],
+    end: value["end"],
+    startMs,
+    endMs,
+    score,
+    shotCount,
+    title,
+    hook: nodeText(value["hook"]) ?? "",
+    reason: nodeText(value["reason"]) ?? "",
+    excerpt: nodeText(value["transcript_excerpt"]) ?? "",
   }
 }

@@ -8,6 +8,7 @@ import {
   CaptionsIcon,
   CodeIcon,
   FileIcon,
+  FilmIcon,
   FilePlus2Icon,
   FilesIcon,
   GlobeIcon,
@@ -40,6 +41,7 @@ const TOOL_UI_ICONS: Record<string, LucideIcon> = {
   search: SearchIcon,
   sparkles: SparklesIcon,
   tool: WrenchIcon,
+  video: FilmIcon,
 }
 
 export function ToolUiIcon({ token }: { token: string | null }) {

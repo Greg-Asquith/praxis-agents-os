@@ -131,12 +131,12 @@ function NewConversationComposer({
         </p>
       )
     }
-    if (attachment.isError || !canAttachFile(attachment.data)) {
+    if (attachment.isError || !canAttachFile(attachment.data, modelCatalog.video_tools_available)) {
       return (
         <Alert variant="destructive">
           <AlertTitle>File cannot be attached</AlertTitle>
           <AlertDescription>
-            Return to Files and choose an available document or image.
+            Return to Files and choose an available document, image, or video.
           </AlertDescription>
         </Alert>
       )

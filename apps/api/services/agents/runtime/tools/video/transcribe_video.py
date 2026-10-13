@@ -2,12 +2,11 @@
 
 """Transcribes a workspace video once per revision and saves the transcript as a File."""
 
-import re
 from pathlib import PurePath
 from typing import Annotated
 
 from pydantic import BaseModel, Field
-from pydantic_ai import ModelRetry, RunContext
+from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ToolFailed
 from sqlalchemy import select
 
@@ -15,8 +14,7 @@ from core.exceptions.general import AppValidationError
 from core.settings import settings
 from models.files import File
 from services.agents.runtime.context import RuntimeDeps
-from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
-from services.agents.runtime.stream_protocol import ToolProgressEvent
+from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools.contract import (
     TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
@@ -24,17 +22,15 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.files.utils import current_file_revision
 from services.agents.runtime.tools.registry import runtime_tool
+from services.agents.runtime.tools.video.utils import (
+    language_argument,
+    video_transcript,
+    workspace_video,
+)
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
-from services.ai_usage.domain import PURPOSE_VIDEO_TRANSCRIPTION, AIUsageEventData
-from services.audit_events import AuditAction, AuditActorType, AuditResourceType
-from services.audit_events.operations import safe_record_operation_audit_event
 from services.files import create_conversation_file_references, write_agent_file
-from services.files.contract import FileCategory
 from services.files.utils import format_duration
-from services.media.domain import Transcript, TranscriptionError
-from services.media.get_video_transcript import get_video_transcript
 from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS
 from services.media.transcription_providers import transcription_provider
 from services.media.utils import transcript_srt
@@ -43,7 +39,6 @@ from services.storage.paths import safe_filename
 # Extraction waits on the renderer; transcription of a four-hour video takes several minutes more.
 TRANSCRIPTION_ALLOWANCE_SECONDS = 900
 OPENING_SENTENCES = 8
-_LANGUAGE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")
 
 
 class TranscribeVideoOutput(BaseModel):
@@ -126,46 +121,11 @@ async def transcribe_video(
     ] = None,
 ) -> dict[str, object]:
     """Transcribes the current revision of a workspace video and saves an SRT File."""
-    provider = transcription_provider()
-    if provider is None:
-        raise ToolFailed("Transcription isn't available on this deployment.")
-    language = (language or "").strip() or None
-    if language is not None and not _LANGUAGE.match(language):
-        raise ModelRetry("language must be a locale such as en-GB, or omitted.")
-    file, revision = await current_file_revision(ctx, internal_entity_id(file_id))
-    if file.category != FileCategory.VIDEO.value:
-        raise ModelRetry("transcribe_video requires a video file from workspace Files.")
-    if revision.workspace_id != ctx.deps.workspace.id:
-        raise ModelRetry("transcribe_video can only transcribe this workspace's own videos.")
-
-    async def stage(name: str) -> None:
-        await ctx.deps.sink.emit(ToolProgressEvent(tool_call_id=ctx.tool_call_id, stage=name))
-
-    usage = AIUsageEventData(
-        workspace_id=ctx.deps.workspace.id,
-        provider=provider.name,
-        model=provider.model,
-        purpose=PURPOSE_VIDEO_TRANSCRIPTION,
-        agent_id=ctx.deps.agent.id,
-        user_id=ctx.deps.user.id,
-        run_id=ctx.deps.run.id,
-        conversation_id=ctx.deps.conversation.id,
+    language = language_argument(language)
+    file, revision = await workspace_video(ctx, file_id, tool_name="transcribe_video")
+    transcript = await video_transcript(
+        ctx, file, revision, language=language, tool_name="transcribe_video"
     )
-    try:
-        transcript, created = await get_video_transcript(
-            ctx.deps.db,
-            revision=revision,
-            provider=provider,
-            language=language,
-            usage=usage,
-            on_stage=stage,
-        )
-    except TranscriptionError as exc:
-        raise ToolFailed(str(exc)) from exc
-    if created:
-        await _record_transcription(ctx, file.id, revision.id, transcript)
-        # The audio has reached the provider, so keep the record and the transcript.
-        await ctx.deps.db.commit()
     if not transcript.words:
         raise ToolFailed("No speech was found in the video.")
 
@@ -227,29 +187,3 @@ async def transcribe_video(
             ),
         ),
     }
-
-
-async def _record_transcription(
-    ctx: RunContext[RuntimeDeps], file_id, revision_id, transcript: Transcript
-) -> None:
-    # Audio may go to a provider other than the one that reads the video, so record which.
-    await safe_record_operation_audit_event(
-        ctx.deps.db,
-        workspace_id=ctx.deps.workspace.id,
-        action=AuditAction.READ,
-        resource_type=AuditResourceType.FILE,
-        resource_id=file_id,
-        actor_type=AuditActorType.AGENT,
-        actor_id=ctx.deps.agent.id,
-        actor_display=ctx.deps.agent.name,
-        requested_by_user_id=ctx.deps.user.id,
-        details={
-            "operation": "video_transcription",
-            "tool_name": "transcribe_video",
-            "run_id": str(ctx.deps.run.id),
-            "revision_id": str(revision_id),
-            "provider": transcript.provider,
-            "model": transcript.model,
-            "duration_ms": transcript.duration_ms,
-        },
-    )

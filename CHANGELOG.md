@@ -12,6 +12,14 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `find_video_moments` finds the best moments in a workspace video for a
+  brief, such as five 30 to 60 second clips about pricing, with start and end
+  snapped to whole sentences and shot changes. Long videos are watched in
+  overlapping 40 minute windows. `ask_video` answers a question about a video,
+  or part of one, with timestamps. Both use Gemini 3.8 Flash
+  (`VIDEO_UNDERSTANDING_MODEL`). With them available, chat and **Add to chat**
+  in Files accept video, and the Files detail view shows a video's duration
+  and dimensions.
 - `transcribe_video` transcribes the speech in a workspace video with word
   timings and saves it as an SRT File next to the video. Each video revision
   is transcribed once, by Chirp 3 on Vertex deployments, `whisper-1` with

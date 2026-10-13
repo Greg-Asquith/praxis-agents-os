@@ -40,7 +40,7 @@ import { FileStatusBadge } from "@/features/files/components/file-status-badge"
 import { RenameFileDialog } from "@/features/files/components/rename-file-dialog"
 import { MoveFilesDialog } from "@/features/files/components/move-files-dialog"
 import { openWorkspaceFile } from "@/features/files/file-actions"
-import { fileCategoryLabel } from "@/features/files/format"
+import { fileCategoryLabel, videoSummary } from "@/features/files/format"
 import { isFileProcessing } from "@/features/files/processing"
 import type { FileFolder, WorkspaceFile } from "@/features/files/types"
 import { ApiError, getErrorMessage } from "@/lib/api/errors"
@@ -268,8 +268,9 @@ function FileDetailDialog({
                   ) : null}
                 </div>
                 <DialogDescription className="mt-2">
-                  {fileCategoryLabel(file.category)} · {formatBytes(file.size_bytes)} · Updated{" "}
-                  {formatDateTime(file.updated_at)}
+                  {fileCategoryLabel(file.category)} ·{" "}
+                  {file.video ? `${videoSummary(file.video)} · ` : null}
+                  {formatBytes(file.size_bytes)} · Updated {formatDateTime(file.updated_at)}
                 </DialogDescription>
                 {file.description ? (
                   <p className="text-muted-foreground mt-2 text-sm wrap-break-word">

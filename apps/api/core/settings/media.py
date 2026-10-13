@@ -54,6 +54,22 @@ class MediaSettingsMixin:
         default="eu",
         description="Speech-to-Text multi-region for Chirp 3 transcription on Vertex deployments.",
     )
+    VIDEO_UNDERSTANDING_MODEL: str = Field(
+        default="gemini-3.8-flash",
+        description="Google catalog model that watches video for find_video_moments and ask_video.",
+    )
+    VIDEO_MOMENTS_WINDOW_SECONDS: int = Field(
+        default=2400,
+        ge=300,
+        le=3600,
+        description="Longest stretch of video one find_video_moments model call watches.",
+    )
+    VIDEO_SNAP_SHOT_TOLERANCE_MS: int = Field(
+        default=700,
+        ge=0,
+        le=3000,
+        description="How far a snapped cut may move to land on a shot boundary.",
+    )
     MEDIA_RENDERER_LOCAL_STORAGE_URL: str = Field(
         default="http://host.docker.internal:8000",
         description="Local only: the API origin as the renderer container reaches it.",

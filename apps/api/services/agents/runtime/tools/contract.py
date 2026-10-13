@@ -152,6 +152,7 @@ VALID_TOOL_ICONS = frozenset(
         "bot",
         "image",
         "captions",
+        "video",
         "book",
         "link",
         "mail",

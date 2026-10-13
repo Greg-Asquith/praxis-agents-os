@@ -144,8 +144,8 @@ To start a conversation:
 4. Enter your message and press Enter.
 
 To attach up to five files to a message, click the paperclip (**Attach
-Files**). Attachments are saved to **Files**. Video can't be attached to a
-message. On a small screen, agent, context, and attachments are under
+Files**). Attachments are saved to **Files**. Video attaches only where
+video tools are set up. On a small screen, agent, context, and attachments are under
 **Message options**. To stop an agent while it is working, click **Stop**.
 
 In a team workspace, the conversation owner can share a conversation with

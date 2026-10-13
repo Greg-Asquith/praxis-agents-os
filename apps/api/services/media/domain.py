@@ -152,6 +152,10 @@ class TranscriptionError(Exception):
     """A transcription failure with a message safe to show an agent."""
 
 
+class VideoUnderstandingError(Exception):
+    """An understanding model failure with a message safe to show an agent."""
+
+
 class MediaRendererError(Exception):
     """A renderer failure with a stable code and a message safe to show an agent."""
 

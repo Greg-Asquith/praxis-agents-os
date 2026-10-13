@@ -15,7 +15,9 @@ import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { getErrorMessage } from "@/lib/api/errors"
 
-export function VideoFileCard({ video }: { video: VideoFileReference }) {
+export type VideoRange = { startMs: number; endMs: number }
+
+export function VideoFileCard({ video, range }: { video: VideoFileReference; range?: VideoRange }) {
   const detailButtonRef = useRef<HTMLButtonElement>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -45,7 +47,7 @@ export function VideoFileCard({ video }: { video: VideoFileReference }) {
     <>
       <div className="bg-background/80 mx-auto w-full max-w-md overflow-hidden rounded-md border">
         {status.kind === "ready" ? (
-          <VideoPlayer fileId={video.fileId} name={displayName} />
+          <VideoPlayer fileId={video.fileId} name={displayName} range={range} />
         ) : (
           <div className="bg-muted/40 text-muted-foreground flex min-h-36 flex-col items-center justify-center gap-2 px-4 text-center text-xs">
             {status.kind === "preparing" ? (
@@ -103,7 +105,15 @@ export function VideoFileCard({ video }: { video: VideoFileReference }) {
   )
 }
 
-function VideoPlayer({ fileId, name }: { fileId: string; name: string }) {
+function VideoPlayer({
+  fileId,
+  name,
+  range,
+}: {
+  fileId: string
+  name: string
+  range: VideoRange | undefined
+}) {
   // A refetch swaps the signed URL and restarts playback, so keep the first one.
   const previewQuery = useQuery({
     ...filePreviewQueryOptions(fileId),
@@ -121,7 +131,12 @@ function VideoPlayer({ fileId, name }: { fileId: string; name: string }) {
         controls
         playsInline
         preload="metadata"
-        src={previewUrl}
+        // A media fragment plays just the range, from its start to its end.
+        src={
+          range
+            ? `${previewUrl}#t=${String(range.startMs / 1000)},${String(range.endMs / 1000)}`
+            : previewUrl
+        }
       />
     )
   }
