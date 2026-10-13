@@ -14,6 +14,59 @@ pickup. Direct providers share the retrying HTTP client
 embedding adapters use the same transport. Vertex partner authentication and
 endpoint-bound Mistral clients also use HTTPX2.
 
+### Gemini 4 Argon
+
+The [Gemini API model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)
+and [Google Cloud model page](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon),
+checked on 13 October 2026, use `gemini-4-argon` for both transports. Argon is
+Google's **Powerful** default. It accepts text, images, audio, video, and PDFs,
+returns text, and supports streaming, function calls, and structured output.
+Input, thinking, and output share a 1,048,576-token context window.
+
+Vertex supports `global`, `us`, and `eu`. `GOOGLE_VERTEX_LOCATION=auto` selects
+`eu`; explicit unsupported locations fail before client construction. Gemini
+API calls use the configured API key, and Vertex calls use Application Default
+Credentials and the configured project. On 13 October 2026, live smoke tests
+confirmed streamed and non-streamed tool calls and structured output through
+the configured Gemini API key and Vertex `eu` project. Other projects require
+their own access check.
+
+Argon accepts `low`, `medium` (the provider default), and `high` thinking.
+Pydantic AI 2.54's generic Google profile includes unsupported `minimal`, so
+`provider_model_profile` supplies Argon's levels and always-on thinking.
+The UI's `minimal` preference maps to `low`; disabled thinking leaves the
+provider default active. Explicit `thinking_budget` and `MINIMAL` settings are
+unsupported. Google ignores temperature, top-p, and top-k, and rejects frequency
+and presence penalties, candidate counts, explicit caches, and prefilled model
+turns. See the
+[Argon developer guide](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-4-argon).
+
+Praxis uses ordinary `generateContent` and `streamGenerateContent` calls.
+The single-request output limit includes thinking: 65,536 tokens for streaming
+and 32,768 for non-streaming HTTP calls. Long decode up to 1,048,576 tokens is
+pending: it requires Google Gen AI 2.30.1 or later, continuation handling, and
+verification of cumulative usage and context accounting. The installed 2.25.0
+SDK supports the ordinary request path. Provider-native computer use and agentic
+video processing are outside this catalogue addition.
+
+The [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon)
+and [Google Cloud pricing](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing),
+checked on 13 October 2026, supersede the announcement's introductory end date.
+Standard token prices are USD per million tokens:
+
+| Transport | 13 October to 30 November 2026: input / cache read / output | From 1 December 2026: input / cache read / output |
+| --- | --- | --- |
+| Gemini API and Vertex `global` | $2 / $0.10 / $10 | $4 / $0.20 / $20 |
+| Vertex `us` and `eu` | $2.20 / $0.11 / $11 | $4.40 / $0.22 / $22 |
+
+Output rates include thinking tokens. Argon supports implicit caching only,
+with no separate cache-write charge. Vertex provides its introductory discount
+through credits against net spend. Usage estimates use Gemini API and Vertex
+`global` rates for both transports. Regional premiums and billing-credit
+reconciliation are pending because the ledger does not record transport or
+location. Batch, Flex, Priority, and grounding charges remain outside these
+standard token estimates.
+
 ### Gemini Flash retirement
 
 The catalogue excludes `gemini-3.6-flash` and `gemini-3.7-flash`.
@@ -162,8 +215,8 @@ follow the deployment runbook for a deployed environment.
 
 Google Vertex model and embedding calls share a
 process-owned Google client per project, location, and retry policy.
-`GOOGLE_VERTEX_LOCATION=auto` uses catalogue defaults: Gemini Flash and
-Flash-Lite use `eu`, Gemini 3.1 Pro uses `global`, and embeddings retain
+`GOOGLE_VERTEX_LOCATION=auto` uses catalogue defaults: Gemini 4 Argon, Flash,
+and Flash-Lite use `eu`, Gemini 3.1 Pro uses `global`, and embeddings retain
 `global`. Explicit locations must appear in the Gemini model's supported
 locations. Clients use the SDK's multi-region hostname for `eu` and `us`.
 The image-only `gemini-nano-banana-2.1` model uses `global` for `auto`

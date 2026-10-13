@@ -15,6 +15,14 @@ past usage retains its effective-dated estimates. Image output charges are
 outside the token table. The table scrolls within the modal and keeps its
 column headings visible. Click **Close** or press **Escape** to dismiss it.
 
+Gemini 4 Argon rates apply from 13 October 2026: $2 input, $0.10 cached input,
+and $10 output per million tokens. From 1 December 2026, these rates become
+$4, $0.20, and $20. Thinking tokens count as output. Implicit caching has no
+separate cache-write charge, so that column shows zero. Both transports use
+the Gemini API and Vertex `global` rates; Vertex `us` and `eu` premiums and
+billing-credit reconciliation are pending. See
+[Argon pricing and transport limits](model-providers.md#gemini-4-argon).
+
 GPT-6 Sol, GPT-6 Luna, and Claude Opus 5.5 have base rates effective from
 22 September 2026. Claude Sonnet 5.5 rates apply from 28 September 2026 and
 GPT-6.1 Sol rates from 29 September 2026. Claude Haiku 5.5 rates apply from

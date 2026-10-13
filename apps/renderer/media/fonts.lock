@@ -1,0 +1,28 @@
+# apps/renderer/media/fonts.lock
+# Caption fonts from Google Fonts (SIL OFL 1.1, or Apache 2.0 for Luckiest Guy and Permanent Marker),
+# pinned by SHA-256: hash, file name, URL. The API lists the families in services/media/captions.py.
+fd9301f2837c99df2be07cc7f0be66e9470f5354d8fcf1606027c67fcd637a53  Anton-Regular.ttf  https://fonts.gstatic.com/s/anton/v27/1Ptgg87LROyAm0K0.ttf
+355b89d43e95edd50a58dad2029689c56027ef19cf9f2f03c9d3605e87ee182e  ArchivoBlack-Regular.ttf  https://fonts.gstatic.com/s/archivoblack/v23/HTxqL289NzCGg4MzN6KJ7eW6OYs.ttf
+a5ad3f06658ecd92705c3499cf000ff5b0c0c6f49641f7b3a6531dcee4bdb4c0  Bangers-Regular.ttf  https://fonts.gstatic.com/s/bangers/v25/FeVQS0BTqb0h60ACL5k.ttf
+939fea723dad24504f40faadc34eeffadfbbee558754f70c3c736e13786b0ab6  BebasNeue-Regular.ttf  https://fonts.gstatic.com/s/bebasneue/v16/JTUSjIg69CK48gW7PXooxW4.ttf
+b37284b5701b6b168dfc770aa1a4ac492106422fd3ba76bc7641e37434e8019c  Inter-Bold.ttf  https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuFuYMZg.ttf
+1b08e7fc267a5c7e1d614100f604b83e7e8a0be241f0f288faa2b3ac93a683ba  Inter-Regular.ttf  https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfMZg.ttf
+02e8f4be57ddc47cb7882c41b60216b6085b1ceaf717514be2b88fa15396238d  Lato-Bold.ttf  https://fonts.gstatic.com/s/lato/v25/S6u9w4BMUTPHh6UVew8.ttf
+f43f1c7780d69792278f04b136c934a0298fc66f2e974bac13dd2e53adc52bde  Lato-Regular.ttf  https://fonts.gstatic.com/s/lato/v25/S6uyw4BMUTPHvxk.ttf
+26ad0d77404141ff7af714353cdf23c980841829dd270fc26e6c2dfcf654bd6d  LilitaOne-Regular.ttf  https://fonts.gstatic.com/s/lilitaone/v17/i7dPIFZ9Zz-WBtRtedDbUEY.ttf
+bde64ad70289579762149264eeaad6f2bf19b542eca5d62ca9fb0d9cb04a47b2  LuckiestGuy-Regular.ttf  https://fonts.gstatic.com/s/luckiestguy/v25/_gP_1RrxsjcxVyin9l9n_j2RSg.ttf
+247f052d2f5b84a5bbe7831c3b08a71ca391ff54f1dfb9be88a3d3da569e3a38  Montserrat-Bold.ttf  https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCuM70w-.ttf
+84f3d3275dfb159dd311c61828fd754a82ec31c377120518e2cd3e7d34394e96  Montserrat-Regular.ttf  https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCtr6Ew-.ttf
+9f0ce911354e554bbac00c399dcea71c785962cebfd86e965656f0bd011dfca9  NotoSans-Bold.ttf  https://fonts.gstatic.com/s/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyAaBN9d.ttf
+5be701a9511117e73603bdab95947feef4f18bd1851dbddc30659370b26c69f1  NotoSans-Regular.ttf  https://fonts.gstatic.com/s/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf
+75367e6da7d914eaed87883ba51b2a2b5816b5cdbb39f96ec5c81a5b032bfd5a  OpenSans-Bold.ttf  https://fonts.gstatic.com/s/opensans/v44/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsg-1y4n.ttf
+47ed1cfaa7ffca04a04ab850b2938fd52c09d1b44cfa3e2980878e166b0cbd87  OpenSans-Regular.ttf  https://fonts.gstatic.com/s/opensans/v44/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjZ0C4n.ttf
+a6ee8b91ec269a6f48631ba4ba1a3ab7e5039e5482dda8dc9672ee4620d7bd68  Oswald-Bold.ttf  https://fonts.gstatic.com/s/oswald/v57/TK3_WkUHHAIjg75cFRf3bXL8LICs1xZogUE.ttf
+bd6ff5a83bcdc92d7aac6dbb16e4dd2b0b0320bec6402bb81f5dd9735b500e46  Oswald-Regular.ttf  https://fonts.gstatic.com/s/oswald/v57/TK3_WkUHHAIjg75cFRf3bXL8LICs1_FvgUE.ttf
+a73712ce4f3b32d3c7a1a657d56c6aaf50c719b7fa7fe0541905fe77f5a9906c  PermanentMarker-Regular.ttf  https://fonts.gstatic.com/s/permanentmarker/v16/Fh4uPib9Iyv2ucM6pGQMWimMp004Hao.ttf
+1984efdda0fbe207d7ac20feac2ba7c2768c92a90094b02a206c9d58cc30ff2e  Poppins-Bold.ttf  https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLCz7V1s.ttf
+cdedb1729acac414ed01744a11da7badb86adf13108e7bd3fa161b9323f7fe54  Poppins-Regular.ttf  https://fonts.gstatic.com/s/poppins/v24/pxiEyp8kv8JHgFVrFJA.ttf
+35757eaa996b3359022f47f164a67ee9eac04971af24c5b8fbd4b89e844ff190  Roboto-Bold.ttf  https://fonts.gstatic.com/s/roboto/v51/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWuYjammT.ttf
+dece7c71bbe61710787f0839c722c65e87355dd2eb4a823e6b5488121ff81e4b  Roboto-Regular.ttf  https://fonts.gstatic.com/s/roboto/v51/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbWmT.ttf
+2d6393d64232ea3e0eeff79165d80df61c0859213abdd638b0ec1e81d21098dc  Rubik-Bold.ttf  https://fonts.gstatic.com/s/rubik/v31/iJWZBXyIfDnIV5PNhY1KTN7Z-Yh-4I-1UA.ttf
+cc6a4222027f8e57ff86a50c5ba88f12326d7223bde9bf6531538633ebad3343  Rubik-Regular.ttf  https://fonts.gstatic.com/s/rubik/v31/iJWZBXyIfDnIV5PNhY1KTN7Z-Yh-B4i1UA.ttf

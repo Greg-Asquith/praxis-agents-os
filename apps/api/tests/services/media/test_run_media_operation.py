@@ -22,6 +22,7 @@ from services.media.domain import (
     MediaOperation,
     MediaRendererError,
 )
+from services.media.utils import stage_media_input
 from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from tests.factories.files import build_file, build_file_revision
@@ -123,6 +124,29 @@ async def test_video_from_another_workspace_never_reaches_the_renderer(
             workspace_id=workspace.id,
             sources=[_video(workspace), _video(build_workspace())],
             operation=CutOperation(segments=segments, width=1080, height=1920),
+        )
+
+    assert error.value.code == "forbidden"
+    assert renderer == []
+
+
+async def test_staged_file_from_another_workspace_never_reaches_the_renderer(
+    renderer: list[dict],
+) -> None:
+    workspace = build_workspace()
+    captions = await stage_media_input(build_workspace().id, b"[Events]", extension=".ass")
+
+    with pytest.raises(MediaRendererError) as error:
+        await run_media_operation(
+            workspace_id=workspace.id,
+            sources=[_video(workspace)],
+            operation=CutOperation(
+                segments=(CutSegment(input=0, start_ms=0, end_ms=1000),),
+                width=1080,
+                height=1920,
+                captions=True,
+            ),
+            staged_inputs=[captions],
         )
 
     assert error.value.code == "forbidden"

@@ -21,7 +21,10 @@ It runs in the media renderer, a separate service:
   and `libass`.
   Network protocols are compiled out, and the build fails if any remain. The
   image also holds OpenCV (headless) and the YuNet face detection model,
-  pinned by hash, for automatic framing.
+  pinned by hash, for automatic framing, and the caption fonts listed in
+  `media/fonts.lock` (16 Google Fonts families under the SIL Open Font
+  Licence or Apache 2.0, each file pinned by hash), with DejaVu as the
+  fallback for other scripts.
 
 One request runs one typed operation:
 
@@ -29,7 +32,7 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe` and `shot_cuts` (up to 500 `[input, time_ms]`) | one H.264 and AAC MP4 joining the segments in order |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500 `[input, time_ms]`), `keep` (up to 500 `[segment, first_frame, end_frame]`), and `captions` | one H.264 and AAC MP4 joining the segments in order |
 | `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file (32 kbit/s) per chunk, plus each chunk's range on the source timeline |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
@@ -73,6 +76,17 @@ output is cropped to follow the speaker:
 
 Active-speaker choice when several people are in frame is pending; the
 largest face wins.
+
+`keep` lists, per segment, the output frames to keep, in order; the rest are
+dropped with their audio. Audio is cut into frames one video frame long, so
+`select` and `aselect` pick the same indices and the streams stay in sync
+however many pauses go.
+
+With `captions`, the request carries one more input after the videos: an ASS
+subtitle file the API built. The renderer reads only its `[Script Info]`,
+`[V4+ Styles]`, and `[Events]` sections, refuses any other section (such as
+embedded fonts or graphics), caps it at 4 MiB, and burns it into the joined
+video with the `ass` filter. libass runs inside the isolated ffmpeg child.
 
 Every operation, `probe` included, downloads each whole input. Container
 metadata can sit anywhere in the file, so a head-and-tail read can report a
@@ -124,10 +138,12 @@ stalled transfer ends inside Cloud Run's 60 seconds of request headroom.
 
 `apps/api/services/media/`:
 
-- `run_media_operation(workspace_id, sources, operation)` takes the File
-  revisions the caller has already resolved for the workspace, one per
-  operation input. It refuses the whole request if any revision is from
-  another workspace or isn't a video, signs one download per revision and one
+- `run_media_operation(workspace_id, sources, operation, staged_inputs?)`
+  takes the File revisions the caller has already resolved for the workspace,
+  one per video input, then any files the API wrote to staging itself, such
+  as captions (`stage_media_input`). It refuses the whole request if any
+  revision is from another workspace or isn't a video, or any staged file is
+  outside the workspace's staging prefix, signs one download per input and one
   size-bounded staging upload per output, and posts the request. It validates the result against the operation's schema and trusts
   an output only when the staged object exists and matches the size the
   renderer reported. On any failure it deletes the staged objects.
@@ -370,7 +386,8 @@ available, and **Add to chat** in Files offers video then too.
 
 ## Clips
 
-`cut_video_clips(clips, aspect_ratio?, framing?)` renders up to five clips and
+`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?, remove_silences?)`
+renders up to five clips and
 saves each as a new video File next to the video its first segment comes
 from. It needs only the renderer. Internal write, auto by default, not
 code-eligible.
@@ -392,7 +409,39 @@ code-eligible.
   default: crop to follow the largest face in each shot, centred where there
   is none), `center` (crop the middle), or `fit` (whole frame over a blur).
   `auto` measures each video's shots on first use, so the crop jumps only at
-  a cut. Captions and silence removal are pending.
+  a cut.
+- `remove_silences` (off by default, and the agent is told to leave it off
+  unless the person asks, since it makes jump cuts) cuts every pause longer
+  than 600 ms between words, at the segment's edges too, leaving 150 ms
+  beside speech. A segment with no
+  words, such as B-roll, keeps every frame. The cut is in output frames, and
+  the clip's length is what remains.
+- `captions` is `none` (the default) or a preset: `bold` (Montserrat bold,
+  outlined, up to four words), `clean` (Inter in one translucent box, up to
+  two lines), or `highlight` (Montserrat bold capitals, three words at a
+  time, the spoken word in yellow at 110%). `caption_style` overrides any
+  part of the preset: `font` (one of the bundled families), `size` (2 to 15%
+  of the short edge), `bold`, `uppercase`, `text_color`, `highlight_color`,
+  `highlight_scale`, `outline_color`, `outline_width`, `shadow`, `box`,
+  `box_color`, `box_opacity`, `words_per_caption`, `max_lines`, `position`
+  (`top`, `middle`, `lower`), and `margin`. Colours are `#RRGGBB`; every other
+  value is a bounded number or a name from a fixed list.
+- Captions are built by the API (`services/media/captions.py`) as one ASS
+  file on the joined clip's timeline, from each segment's transcript words
+  shifted by the segment's offset and by any pauses removed before them.
+  Words come from untrusted audio: control characters are dropped, and `\`,
+  `{`, and `}` are replaced, so no word can add a style override or line
+  break. Lines are wrapped by the API to a bound derived from the frame width
+  and the font's measured glyph width (libass never wraps), and a word longer
+  than a line is split. A cue breaks at a sentence end, a speaker change, a
+  pause of 700 ms, or its word or line limit. On a vertical frame the
+  default margins keep clear of Reels, Shorts, and TikTok's own buttons and
+  text: 24% from the foot, 12% from the top, 8% on the left and 16% on the
+  right.
+- `highlight` and `remove_silences` need exact word times, so they're
+  refused when a video's transcript came from Gemini (about a second out at
+  p95). Captions and pause removal need a transcription provider; a video
+  without audio is left uncaptioned, and a clip with no speech reports it.
 - A clip has no length cap of its own. A clip File is held to the written
   size limit for video (`MAX_FILE_SIZE_VIDEO`, 100 MB, and never more than
   `MEDIA_RENDERER_MAX_OUTPUT_BYTES`), so the longest clip is that size at the
@@ -407,8 +456,9 @@ reports every clip with its status, ranges, warnings, and a failure reason.
 When no clip is saved, the call fails. Each call records a `video_clips` audit
 event on every source video.
 
-In the conversation, a completed call says how many clips it saved, and the
-shape and framing when the shape changed, and shows them as a grid of stills
+In the conversation, a completed call says how many clips it saved, the
+shape and framing when the shape changed, and the captions and pause
+removal when used, and shows them as a grid of stills
 with their length, name, and ranges; selecting one opens the player in a
 dialog. A failed clip's tile shows its reason. The moments card
 has a checkbox per moment and **Cut N Clips**, which sends the person's own

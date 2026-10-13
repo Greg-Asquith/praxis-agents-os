@@ -3,6 +3,7 @@
 """cut_video_clips against a fake renderer: per-clip results and saved Files."""
 
 from collections.abc import Iterator
+from urllib.parse import unquote, urlsplit
 
 import pytest
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from models.files import File, FileRevision
 from services.agents.runtime.entity_references.domain import FileReference
 from services.files.utils import sha256_hex
 from services.media.domain import MediaRendererError
+from services.storage.domain import StorageBucket, make_storage_object_ref
 from services.storage.factory import get_storage_provider
 from tests.support.media import persist_analysed_video, staged_ref, use_fake_renderer
 from tests.support.scenario import (
@@ -103,7 +105,7 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
                     (
                         ToolCall(
                             "cut_video_clips",
-                            {"clips": clips, "aspect_ratio": "9:16"},
+                            {"clips": clips, "aspect_ratio": "9:16", "captions": "bold"},
                             "cut_video_clips",
                         ),
                     )
@@ -122,7 +124,18 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
     first, _, last = sorted(renderer, key=lambda request: request["arguments"]["segments"][0][1])
     assert first["arguments"]["segments"] == [[0, 10_000, 25_000]]
     assert last["arguments"]["segments"] == [[0, 60_000, 70_000], [1, 0, 8_000]]
-    assert len(last["inputs"]) == 2
+    # Captions follow the videos as one more input, staged and removed after the render;
+    # the last clip has no speech to caption.
+    assert (len(first["inputs"]), first["arguments"]["captions"]) == (2, True)
+    assert (len(last["inputs"]), last["arguments"]["captions"]) == (2, False)
+    captions_key = unquote(urlsplit(first["inputs"][1]["url"]).path.split("/private/", 1)[1])
+    assert captions_key.startswith(f"platform/media-staging/{context.workspace_id}/")
+    assert (
+        await get_storage_provider().stat_object(
+            make_storage_object_ref(StorageBucket.PLATFORM_PRIVATE, captions_key)
+        )
+        is None
+    )
     assert all(
         (request["arguments"]["width"], request["arguments"]["height"], request["arguments"]["fps"])
         == (1080, 1920, 30)

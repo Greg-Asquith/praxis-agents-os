@@ -16,6 +16,7 @@ from services.files.contract import FileCategory, contract_for_content_type
 from services.files.utils import private_ref_from_key
 from services.media.domain import (
     INVALID_RESPONSE_MESSAGE,
+    MEDIA_STAGING_PREFIX,
     RESULT_MODELS,
     MediaOperation,
     MediaOperationResult,
@@ -28,7 +29,7 @@ from services.media.utils import (
     renderer_transfer_url,
     staging_ref,
 )
-from services.storage.domain import StorageObjectRef
+from services.storage.domain import StorageBucket, StorageObjectRef
 from services.storage.factory import get_storage_provider
 
 # The renderer's budget covers its transfers; this covers cold start and the round trip.
@@ -40,30 +41,41 @@ async def run_media_operation(
     workspace_id: UUID,
     sources: Sequence[FileRevision],
     operation: MediaOperation,
+    staged_inputs: Sequence[StorageObjectRef] = (),
 ) -> MediaOperationResult:
     """Sends one operation on authorised workspace videos and returns its staged outputs.
 
-    The caller must have resolved every source for ``workspace_id``. The renderer
-    receives one signed GET per revision and signed PUTs under this workspace's
-    staging prefix; it never sees a storage name it could change.
+    The caller must have resolved every source for ``workspace_id``. ``staged_inputs``
+    are files the API wrote to this workspace's staging, such as captions, and follow
+    the sources. The renderer receives one signed GET per input and signed PUTs under
+    this workspace's staging prefix; it never sees a storage name it could change.
     """
     if not settings.media_renderer_available:
         raise MediaRendererError("unavailable", "The media renderer isn't available.")
-    if len(sources) != operation.input_count():
-        raise ValueError("The operation needs one source per input")
+    if len(sources) + len(staged_inputs) != operation.input_count():
+        raise ValueError("The operation needs one source or staged file per input")
     for source in sources:
         if source.scope != "workspace" or source.workspace_id != workspace_id:
             raise MediaRendererError("forbidden", "The video isn't in this workspace.")
         if contract_for_content_type(source.content_type).category != FileCategory.VIDEO:
             raise MediaRendererError("unsupported", "The file isn't a video.")
+    if any(
+        ref.bucket != StorageBucket.PLATFORM_PRIVATE
+        or not ref.key.startswith(f"{MEDIA_STAGING_PREFIX}/{workspace_id}/")
+        for ref in staged_inputs
+    ):
+        raise MediaRendererError("forbidden", "The staged file isn't in this workspace.")
 
     provider = get_storage_provider()
     expires_in = timedelta(seconds=settings.MEDIA_STAGING_URL_TTL_SECONDS)
+    inputs = [(private_ref_from_key(source.object_key), source.size_bytes) for source in sources]
+    for ref in staged_inputs:
+        stored = await provider.stat_object(ref)
+        if stored is None:
+            raise MediaRendererError("missing_input", "A staged file is missing.")
+        inputs.append((ref, stored.size_bytes))
     downloads = [
-        await provider.create_signed_download(
-            private_ref_from_key(source.object_key), expires_in=expires_in
-        )
-        for source in sources
+        await provider.create_signed_download(ref, expires_in=expires_in) for ref, _ in inputs
     ]
     request_id = uuid4()
     content_type, extension = operation.output_type
@@ -87,9 +99,9 @@ async def run_media_operation(
             {
                 "url": renderer_transfer_url(download.url),
                 "headers": download.headers,
-                "size_bytes": source.size_bytes,
+                "size_bytes": size_bytes,
             }
-            for source, download in zip(sources, downloads, strict=True)
+            for (_, size_bytes), download in zip(inputs, downloads, strict=True)
         ],
         "outputs": [
             {"url": renderer_transfer_url(upload.url), "headers": upload.headers}

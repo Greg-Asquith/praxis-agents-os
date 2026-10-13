@@ -29,6 +29,12 @@ const FRAMING_LABELS: Record<string, string> = {
   fit: "Fit Over Blur",
 }
 
+const CAPTION_LABELS: Record<string, string> = {
+  bold: "Bold",
+  clean: "Clean",
+  highlight: "Word Highlight",
+}
+
 export function CutVideoClipsRow({
   activity,
   defaultOpen,
@@ -48,6 +54,8 @@ export function CutVideoClipsRow({
     typeof shape === "string" && shape !== "original"
       ? FRAMING_LABELS[typeof args["framing"] === "string" ? args["framing"] : "auto"]
       : undefined
+  const captions =
+    typeof args["captions"] === "string" ? CAPTION_LABELS[args["captions"]] : undefined
   const clips =
     result.saved === total
       ? `${String(total)} ${pluralize(total, "Clip")}`
@@ -60,6 +68,8 @@ export function CutVideoClipsRow({
         { label: "Clips", value: clips },
         ...(typeof shape === "string" ? [{ label: "Shape", value: shape }] : []),
         ...(framing ? [{ label: "Framing", value: framing }] : []),
+        ...(captions ? [{ label: "Captions", value: captions }] : []),
+        ...(args["remove_silences"] === true ? [{ label: "Pauses", value: "Removed" }] : []),
       ]}
       summary={clips}
       heading={

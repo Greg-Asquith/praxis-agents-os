@@ -125,6 +125,74 @@ def test_reframe_keeps_the_face_inside_a_vertical_crop_in_every_shot(
         assert x >= 0 and x + width <= 180
 
 
+def test_cut_keeps_only_the_given_frames_and_burns_in_captions(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    # Keeps 0 to 1 s of red and 2.5 to 3.5 s of blue; the caption shows for the first second.
+    storage.objects["captions.ass"] = _captions(
+        "Dialogue: 0,0:00:00.00,0:00:01.00,Caption,,0,0,0,,HELLO"
+    )
+    response = _run(
+        storage,
+        config,
+        "cut",
+        sources=("sample.mp4", "captions.ass"),
+        outputs=1,
+        arguments={
+            "segments": [[0, 0, 4000]],
+            "width": 320,
+            "height": 180,
+            "fps": 30,
+            "fit": False,
+            "keep": [[0, 0, 30], [0, 75, 105]],
+            "captions": True,
+        },
+    )
+    storage.objects["clip.mp4"] = storage.uploads["out-0"]
+    cuts = _run(storage, config, "scene_cuts", sources=("clip.mp4",), arguments={"threshold": 0.3})
+    _run(
+        storage,
+        config,
+        "frames",
+        sources=("clip.mp4",),
+        outputs=2,
+        arguments={"times_ms": [500, 1500]},
+    )
+
+    assert abs(response["result"]["duration_ms"] - 2000) <= 50
+    assert [round(cut / 100) for cut in cuts["result"]["cuts_ms"]] == [10]
+    captioned, plain = (
+        cv2.imdecode(np.frombuffer(storage.uploads[f"out-{index}"], np.uint8), 0)[70:110, 80:240]
+        for index in range(2)
+    )
+    assert captioned.max() > 200 > plain.max()
+
+
+def test_captions_with_sections_beyond_styles_and_dialogue_are_refused(
+    storage: FakeStorage, config: DriverConfig
+) -> None:
+    storage.objects["captions.ass"] = _captions("[Fonts]\nfontname: evil.ttf")
+
+    with pytest.raises(OperationError) as error:
+        _run(
+            storage,
+            config,
+            "cut",
+            sources=("sample.mp4", "captions.ass"),
+            outputs=1,
+            arguments={
+                "segments": [[0, 0, 1000]],
+                "width": 320,
+                "height": 180,
+                "fps": 30,
+                "fit": False,
+                "captions": True,
+            },
+        )
+
+    assert error.value.code == "invalid_request"
+
+
 def test_frames_writes_one_bounded_jpeg_per_time(
     storage: FakeStorage, config: DriverConfig
 ) -> None:
@@ -270,6 +338,17 @@ def test_a_request_succeeds_after_a_child_hits_its_memory_limit(
 
     assert error.value.code in {"resource_limit", "invalid_media"}
     assert response["result"]["duration_ms"] == 4000
+
+
+def _captions(events: str) -> bytes:
+    return (
+        "[Script Info]\nScriptType: v4.00+\nPlayResX: 320\nPlayResY: 180\n\n"
+        "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, "
+        "BorderStyle, Outline, Alignment\n"
+        "Style: Caption,DejaVu Sans,40,&H00FFFFFF,&H00000000,1,2,5\n\n"
+        f"[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, "
+        f"Text\n{events}\n"
+    ).encode()
 
 
 def _dimensions(jpeg: bytes) -> tuple[int, int]:

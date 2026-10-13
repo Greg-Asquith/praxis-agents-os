@@ -3,6 +3,7 @@
 """Media operations. Arguments are numbers and booleans; the driver builds every command line."""
 
 import json
+import math
 import re
 import sys
 from fractions import Fraction
@@ -28,6 +29,11 @@ MAX_FRAMES = 20
 DEFAULT_MAX_EDGE_PX = 1280
 MAX_SEGMENTS = 10
 MAX_SHOT_CUTS = 500
+MAX_KEEP_RANGES = 500
+# Captions arrive as an ASS file the API built; only its styles and dialogue are read.
+MAX_CAPTIONS_BYTES = 4 * 1024 * 1024
+CAPTION_SECTIONS = frozenset({"[Script Info]", "[V4+ Styles]", "[Events]"})
+OUTPUT_AUDIO_RATE = 48000
 FACES_SCRIPT = Path(__file__).with_name("faces.py")
 MIN_OUTPUT_EDGE_PX = 64
 MAX_OUTPUT_EDGE_PX = 3840
@@ -256,7 +262,12 @@ def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
             "fps": int,
             "fit": bool,
         },
-        optional={"reframe": bool, "shot_cuts": list[list[int]]},
+        optional={
+            "reframe": bool,
+            "shot_cuts": list[list[int]],
+            "keep": list[list[int]],
+            "captions": bool,
+        },
     )
     segments = arguments["segments"]
     if not 1 <= len(segments) <= MAX_SEGMENTS or any(len(item) != 3 for item in segments):
@@ -289,26 +300,54 @@ def _validate_cut(arguments: dict[str, Any]) -> dict[str, Any]:
                 "invalid_request",
                 f"width and height must be even, {MIN_OUTPUT_EDGE_PX} to {MAX_OUTPUT_EDGE_PX}.",
             )
+    _validate_keep(arguments)
     return arguments
 
 
-def _cut_input_count(arguments: dict[str, Any]) -> int:
+def _validate_keep(arguments: dict[str, Any]) -> None:
+    """Keep ranges are [segment, first frame, end frame), in order and inside the segment."""
+    keep, segments = arguments.get("keep", []), arguments["segments"]
+    if len(keep) > MAX_KEEP_RANGES or any(len(item) != 3 for item in keep):
+        raise OperationError(
+            "invalid_request", f"keep must list up to {MAX_KEEP_RANGES} [segment, first, end]."
+        )
+    previous = (-1, 0)
+    for position, first, end in keep:
+        if not 0 <= position < len(segments) or (position, first) < previous:
+            raise OperationError("invalid_request", "keep ranges must be in segment order.")
+        _, start_ms, end_ms = segments[position]
+        frames = math.ceil((end_ms - start_ms) * arguments["fps"] / 1000)
+        if not 0 <= first < end <= frames:
+            raise OperationError("invalid_request", "keep ranges must be inside their segment.")
+        previous = (position, end)
+
+
+def _video_input_count(arguments: dict[str, Any]) -> int:
     return len({item[0] for item in arguments["segments"]})
+
+
+def _cut_input_count(arguments: dict[str, Any]) -> int:
+    # The captions file, when there is one, follows the videos.
+    return _video_input_count(arguments) + int(arguments.get("captions", False))
 
 
 def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, Any]:
     """Joins segments from one or more inputs into one H.264 and AAC MP4 at a fixed size.
 
     Every segment is scaled to the output size and frame rate, and 48 kHz stereo, with
-    silence for an input without audio, so mismatched sources join cleanly.
+    silence for an input without audio, so mismatched sources join cleanly. ``keep``
+    drops the frames between its ranges, and ``captions`` burns in the last input's ASS file.
     """
     summaries = []
-    for index in range(_cut_input_count(arguments)):
+    for index in range(_video_input_count(arguments)):
         summary = _probe_file(context, context.fetch_input(index).name)
         _require_video(summary)
         summaries.append(summary)
     width, height, fps = arguments["width"], arguments["height"], arguments["fps"]
     tracks = _subject_tracks(context, arguments, summaries) if arguments.get("reframe") else {}
+    keep: dict[int, list[tuple[int, int]]] = {}
+    for position, first, end in arguments.get("keep", []):
+        keep.setdefault(position, []).append((first, end))
     options, filters = [], []
     for position, (index, start, end) in enumerate(arguments["segments"]):
         summary = summaries[index]
@@ -327,18 +366,28 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
             framing = _follow_filter(width, height, *tracks[position])
         else:
             framing = _fill_filter(width, height)
+        video_keep, audio_keep = _keep_filters(keep.get(position), fps)
         filters.append(
             f"[{position}:v:0]{framing},fps={fps},"
-            f"format=yuv420p,trim=duration={duration},setpts=PTS-STARTPTS[v{position}]"
+            f"format=yuv420p,trim=duration={duration},setpts=PTS-STARTPTS{video_keep}[v{position}]"
         )
-        audio = f"[{position}:a:0]" if summary["has_audio"] else "anullsrc=r=48000:cl=stereo,"
+        audio = (
+            f"[{position}:a:0]"
+            if summary["has_audio"]
+            else f"anullsrc=r={OUTPUT_AUDIO_RATE}:cl=stereo,"
+        )
         filters.append(
-            f"{audio}aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-            f"apad,atrim=duration={duration},asetpts=PTS-STARTPTS[a{position}]"
+            f"{audio}aresample={OUTPUT_AUDIO_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,"
+            f"apad,atrim=duration={duration},asetpts=PTS-STARTPTS{audio_keep}[a{position}]"
         )
     count = len(arguments["segments"])
     pairs = "".join(f"[v{position}][a{position}]" for position in range(count))
-    filters.append(f"{pairs}concat=n={count}:v=1:a=1[v][a]")
+    filters.append(f"{pairs}concat=n={count}:v=1:a=1[joined][a]")
+    if arguments.get("captions"):
+        captions = _captions_input(context, len(summaries))
+        filters.append(f"[joined]ass=filename={captions.name}[v]")
+    else:
+        filters.append("[joined]null[v]")
     output = context.output_path(0)
     _ffmpeg(
         context,
@@ -360,6 +409,36 @@ def _run_cut(context: OperationContext, arguments: dict[str, Any]) -> dict[str, 
         output.name,
     )
     return _probe_file(context, output.name)
+
+
+def _keep_filters(ranges: list[tuple[int, int]] | None, fps: int) -> tuple[str, str]:
+    """Keeps only the given output frames of a segment, and the audio under them.
+
+    Audio is cut into frames one video frame long, so both streams select the same indices
+    and stay in sync however many pauses are removed.
+    """
+    if not ranges:
+        return "", ""
+    chosen = "+".join(f"between(n\\,{first}\\,{end - 1})" for first, end in ranges)
+    samples = round(OUTPUT_AUDIO_RATE / fps)
+    return (
+        f",select={chosen},setpts=N/FRAME_RATE/TB",
+        f",asetnsamples=n={samples}:p=0,aselect={chosen},asetpts=N/SR/TB",
+    )
+
+
+def _captions_input(context: OperationContext, index: int) -> Path:
+    """Downloads the captions file and refuses anything beyond styles and dialogue."""
+    path = context.fetch_input(index)
+    data = path.read_bytes()
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise OperationError("invalid_request", "The captions aren't valid.") from exc
+    sections = {line.strip() for line in text.splitlines() if line.startswith("[")}
+    if len(data) > MAX_CAPTIONS_BYTES or not sections <= CAPTION_SECTIONS:
+        raise OperationError("invalid_request", "The captions aren't valid.")
+    return path
 
 
 def _fill_filter(width: int, height: int) -> str:

@@ -4,7 +4,7 @@
 
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 from uuid import UUID
 
@@ -13,7 +13,9 @@ from models.files import FileRevision
 from services.files.contract import contract_for_content_type, max_size_bytes
 from services.files.domain import VideoMetadata
 from services.files.utils import format_duration
+from services.media.captions import CaptionStyle, caption_file
 from services.media.domain import (
+    MAX_CUT_KEEP_RANGES,
     MAX_CUT_SHOT_CUTS,
     MAX_OUTPUT_EDGE_PX,
     MAX_OUTPUT_FPS,
@@ -22,10 +24,13 @@ from services.media.domain import (
     CutSegment,
     MediaOperationResult,
     MediaRendererError,
-    TranscriptSentence,
+    Transcript,
+    TranscriptWord,
 )
 from services.media.run_media_operation import run_media_operation
 from services.media.snapping import SnapLimits, snap_range
+from services.media.transcription_providers import WORD_TIMED_MODELS
+from services.media.utils import discard_staged_outputs, stage_media_input
 
 AspectRatio = Literal["original", "9:16", "1:1", "4:5", "16:9"]
 # auto follows the largest face per shot; center crops the middle; fit shows the whole frame.
@@ -44,15 +49,18 @@ DEFAULT_OUTPUT_FPS = 30
 RENDER_CONCURRENCY = 3
 # A snap that moves a cut by this much is worth telling the agent about.
 SNAP_NOTICE_MS = 1000
+# Pauses between words longer than this are cut, leaving this much either side of speech.
+SILENCE_MIN_MS = 600
+SILENCE_PAD_MS = 150
 
 
 @dataclass(frozen=True)
 class ClipSource:
-    """An authorised workspace video revision with what snapping and framing read."""
+    """An authorised workspace video revision with what snapping, framing, and captions read."""
 
     revision: FileRevision
     metadata: VideoMetadata
-    sentences: Sequence[TranscriptSentence] = ()
+    transcript: Transcript | None = None
     shot_cuts_ms: Sequence[int] = ()
 
 
@@ -61,20 +69,30 @@ class PlannedSegment:
     source: ClipSource
     start_ms: int
     end_ms: int
+    # Output frame ranges [first, end) left after removing pauses; empty keeps every frame.
+    keep_frames: tuple[tuple[int, int], ...] = ()
+
+    def output_ms(self, fps: int) -> int:
+        if not self.keep_frames:
+            return self.end_ms - self.start_ms
+        return round(sum(end - first for first, end in self.keep_frames) * 1000 / fps)
 
 
 @dataclass(frozen=True)
 class PlannedClip:
-    """One clip ready to render: its sources in input order and the cut operation."""
+    """One clip ready to render: its sources in input order, the cut operation, and its
+    captions file.
+    """
 
     segments: tuple[PlannedSegment, ...]
     sources: tuple[FileRevision, ...]
     operation: CutOperation
     warnings: tuple[str, ...]
+    captions: str | None = None
 
     @property
     def duration_ms(self) -> int:
-        return sum(segment.end_ms - segment.start_ms for segment in self.segments)
+        return sum(segment.output_ms(self.operation.fps) for segment in self.segments)
 
 
 def max_clip_ms() -> int:
@@ -118,8 +136,13 @@ def plan_clip(
     size: tuple[int, int],
     framing: Framing,
     snap: bool,
+    captions: CaptionStyle | None = None,
+    remove_silences: bool = False,
 ) -> PlannedClip:
-    """Bounds, snaps, and numbers a clip's segments. Raises ValueError with a reason to show."""
+    """Bounds, snaps, and numbers a clip's segments, removes pauses, and builds captions.
+
+    Raises ValueError with a reason to show.
+    """
     planned, warnings = [], []
     for position, (source, start_ms, end_ms) in enumerate(segments, start=1):
         duration_ms = source.metadata.duration_ms
@@ -135,7 +158,7 @@ def plan_clip(
             snapped = snap_range(
                 start_ms,
                 end_ms,
-                sentences=source.sentences,
+                sentences=source.transcript.sentences if source.transcript else (),
                 shot_cuts_ms=source.shot_cuts_ms,
                 duration_ms=duration_ms,
                 limits=SnapLimits(
@@ -152,6 +175,31 @@ def plan_clip(
                     )
                 start_ms, end_ms = snapped
         planned.append(PlannedSegment(source=source, start_ms=start_ms, end_ms=end_ms))
+    fps = output_fps(planned[0].source.metadata)
+    if (remove_silences or (captions and captions.preset == "highlight")) and any(
+        segment.source.transcript and segment.source.transcript.model not in WORD_TIMED_MODELS
+        for segment in planned
+    ):
+        raise ValueError(
+            "Removing pauses and highlighting words need exact word times, which this "
+            "deployment's transcription doesn't give. Use bold or clean captions and keep pauses."
+        )
+    if remove_silences:
+        planned = [replace(segment, keep_frames=_kept_frames(segment, fps)) for segment in planned]
+    keep = tuple(
+        (position, first, end)
+        for position, segment in enumerate(planned)
+        for first, end in segment.keep_frames
+    )
+    if len(keep) > MAX_CUT_KEEP_RANGES:
+        raise ValueError("The clip has too many pauses to remove. Cut it shorter or keep pauses.")
+    caption_text = None
+    if captions:
+        words = _timeline_words(planned, fps)
+        if words:
+            caption_text = caption_file(words, size=size, style=captions)
+        else:
+            warnings.append("There's no speech to caption.")
 
     # Each distinct revision is one renderer input, numbered in order of first use.
     inputs: dict[UUID, int] = {}
@@ -179,12 +227,15 @@ def plan_clip(
             ),
             width=size[0],
             height=size[1],
-            fps=output_fps(planned[0].source.metadata),
+            fps=fps,
             fit=framing == "fit",
             reframe=framing == "auto",
             shot_cuts_ms=tuple(sorted(shot_cuts)[:MAX_CUT_SHOT_CUTS]),
+            keep_frames=keep,
+            captions=caption_text is not None,
         ),
         warnings=tuple(warnings),
+        captions=caption_text,
     )
     limit_ms = max_clip_ms()
     if clip.duration_ms > limit_ms:
@@ -195,6 +246,83 @@ def plan_clip(
     return clip
 
 
+def _segment_words(segment: PlannedSegment) -> list[TranscriptWord]:
+    """The transcript words a segment shows, clamped to it."""
+    if segment.source.transcript is None:
+        return []
+    return [
+        word.model_copy(
+            update={
+                "start_ms": max(word.start_ms, segment.start_ms),
+                "end_ms": min(word.end_ms, segment.end_ms),
+            }
+        )
+        for word in segment.source.transcript.words
+        if word.start_ms < segment.end_ms and word.end_ms > segment.start_ms
+    ]
+
+
+def _kept_frames(segment: PlannedSegment, fps: int) -> tuple[tuple[int, int], ...]:
+    """Cuts pauses longer than SILENCE_MIN_MS to SILENCE_PAD_MS beside speech, in frames.
+
+    A segment without words, such as B-roll, keeps every frame.
+    """
+    words = _segment_words(segment)
+    removed = []
+    previous, after = segment.start_ms, 0
+    for word in [*words, None] if words else []:
+        following, before = (segment.end_ms, 0) if word is None else (word.start_ms, SILENCE_PAD_MS)
+        if following - previous > SILENCE_MIN_MS:
+            removed.append((previous + after, following - before))
+        if word is not None:
+            previous, after = max(previous, word.end_ms), SILENCE_PAD_MS
+    if not removed:
+        return ()
+    kept, cursor = [], segment.start_ms
+    for gap_start, gap_end in removed:
+        kept.append((cursor, gap_start))
+        cursor = gap_end
+    kept.append((cursor, segment.end_ms))
+    frames = (
+        (
+            round((start - segment.start_ms) * fps / 1000),
+            round((end - segment.start_ms) * fps / 1000),
+        )
+        for start, end in kept
+    )
+    return tuple((first, end) for first, end in frames if end > first)
+
+
+def _timeline_ms(segment: PlannedSegment, time_ms: int, fps: int) -> int:
+    """Maps a source time inside a segment to its time from the segment's start in the output."""
+    relative = time_ms - segment.start_ms
+    if not segment.keep_frames:
+        return relative
+    frame, kept = relative * fps / 1000, 0
+    for first, end in segment.keep_frames:
+        if frame < end:
+            return round((kept + max(0, frame - first)) * 1000 / fps)
+        kept += end - first
+    return round(kept * 1000 / fps)
+
+
+def _timeline_words(segments: Sequence[PlannedSegment], fps: int) -> list[TranscriptWord]:
+    """Every segment's words on the joined clip's timeline."""
+    words, offset = [], 0
+    for segment in segments:
+        words += [
+            word.model_copy(
+                update={
+                    "start_ms": offset + _timeline_ms(segment, word.start_ms, fps),
+                    "end_ms": offset + _timeline_ms(segment, word.end_ms, fps),
+                }
+            )
+            for word in _segment_words(segment)
+        ]
+        offset += segment.output_ms(fps)
+    return words
+
+
 async def render_clips(
     workspace_id: UUID, clips: Sequence[PlannedClip]
 ) -> list[MediaOperationResult | MediaRendererError]:
@@ -203,11 +331,21 @@ async def render_clips(
 
     async def render(clip: PlannedClip) -> MediaOperationResult | MediaRendererError:
         async with gate:
+            staged = (
+                [await stage_media_input(workspace_id, clip.captions.encode(), extension=".ass")]
+                if clip.captions
+                else []
+            )
             try:
                 return await run_media_operation(
-                    workspace_id=workspace_id, sources=clip.sources, operation=clip.operation
+                    workspace_id=workspace_id,
+                    sources=clip.sources,
+                    operation=clip.operation,
+                    staged_inputs=staged,
                 )
             except MediaRendererError as exc:
                 return exc
+            finally:
+                await discard_staged_outputs(staged)
 
     return list(await asyncio.gather(*(render(clip) for clip in clips)))

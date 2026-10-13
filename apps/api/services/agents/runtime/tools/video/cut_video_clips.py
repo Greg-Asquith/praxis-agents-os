@@ -5,7 +5,7 @@
 from collections.abc import Awaitable, Callable
 from math import ceil
 from pathlib import PurePath
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +37,7 @@ from services.files import create_conversation_file_references
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import format_duration
 from services.media import discard_staged_outputs, save_media_output
+from services.media.captions import CaptionOptions, CaptionPreset, CaptionStyle
 from services.media.clips import (
     RENDER_CONCURRENCY,
     AspectRatio,
@@ -112,8 +113,13 @@ def cut_video_clips_available() -> bool:
         "ranges or whole videos. Pass the start_ms and end_ms that find_video_moments returned "
         "rather than inventing times. aspect_ratio 9:16 suits Reels, Shorts, and TikTok. When "
         "the shape changes, framing 'auto' (the default) crops to follow the speaker's face, "
-        "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill. One "
-        "clip failing doesn't stop the others; the result reports each clip."
+        "'center' crops the middle, and 'fit' shows the whole frame over a blurred fill. "
+        "captions burns in the spoken words: 'bold' for punchy reels, 'clean' for a subtle "
+        "boxed line, 'highlight' to pick out each word as it's spoken; caption_style overrides "
+        "any part of the preset, such as the font or colours, when the person asks. "
+        "remove_silences cuts pauses between words with hard jump cuts; leave it off unless the "
+        "person asks for tighter pacing or no pauses. Both apply to every clip. One clip "
+        "failing doesn't stop the others; the result reports each clip."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -138,6 +144,7 @@ def cut_video_clips_available() -> bool:
         arg_fields=(
             ToolFieldPresentation(key="aspect_ratio", label="Aspect Ratio"),
             ToolFieldPresentation(key="framing", label="Framing", secondary=True),
+            ToolFieldPresentation(key="captions", label="Captions", secondary=True),
         ),
         result_fields=(ToolFieldPresentation(key="saved", label="Clips", format="number"),),
     ),
@@ -161,11 +168,46 @@ async def cut_video_clips(
             )
         ),
     ] = "auto",
+    captions: Annotated[
+        CaptionPreset | Literal["none"],
+        Field(description="Burned-in captions from the transcript, or 'none'."),
+    ] = "none",
+    caption_style: Annotated[
+        CaptionOptions | None,
+        Field(
+            description=(
+                "Optional overrides for the captions preset: font, size, colours, outline, "
+                "box, uppercase, words per caption, lines, and position. Omit to use the "
+                "preset as it is."
+            )
+        ),
+    ] = None,
+    remove_silences: Annotated[
+        bool,
+        Field(
+            description=(
+                "Cut pauses longer than 0.6 s between words. Off unless the person asks; it "
+                "makes jump cuts."
+            )
+        ),
+    ] = False,
 ) -> dict[str, object]:
     """Renders each clip from the caller's own videos and saves it next to its first video."""
     stage = progress(ctx)
     videos = await _workspace_videos(ctx, clips)
-    sources = await _clip_sources(ctx, clips, videos, framing=framing, stage=stage)
+    style = (
+        None
+        if captions == "none"
+        else CaptionStyle(preset=captions, options=caption_style or CaptionOptions())
+    )
+    sources = await _clip_sources(
+        ctx,
+        clips,
+        videos,
+        framing=framing,
+        needs_words=style is not None or remove_silences,
+        stage=stage,
+    )
     planned = []
     for index, clip in enumerate(clips, start=1):
         first = sources[clip.segments[0].file_id.entity_id]
@@ -179,6 +221,8 @@ async def cut_video_clips(
                     size=output_size(aspect_ratio, first.metadata),
                     framing=framing,
                     snap=clip.snap,
+                    captions=style,
+                    remove_silences=remove_silences,
                 )
             )
         except ValueError as exc:
@@ -243,33 +287,40 @@ async def _clip_sources(
     videos: dict[UUID, tuple[File, FileRevision]],
     *,
     framing: Framing,
+    needs_words: bool,
     stage: Callable[[str], Awaitable[None]],
 ) -> dict[UUID, ClipSource]:
-    """Measures each video and loads what its clips need: sentences to snap, shot cuts to
-    snap or follow a face.
+    """Measures each video and loads what its clips need: a transcript to snap, caption, or
+    remove pauses, and shot cuts to snap or follow a face.
     """
+    if needs_words and transcription_provider() is None:
+        raise ToolFailed(
+            "Captions and removing pauses need speech transcription, which isn't set up."
+        )
     snapped = {
         segment.file_id.entity_id for clip in clips if clip.snap for segment in clip.segments
     }
     sources = {}
     for file_id, (file, revision) in videos.items():
         metadata = probed_video(revision)
-        if file_id not in snapped and framing != "auto":
-            sources[file_id] = ClipSource(revision=revision, metadata=metadata)
-            continue
-        sentences = ()
-        if file_id in snapped and metadata.has_audio and transcription_provider() is not None:
+        transcript = None
+        if (
+            (needs_words or file_id in snapped)
+            and metadata.has_audio
+            and transcription_provider() is not None
+        ):
             transcript = await video_transcript(
                 ctx, file, revision, language=None, tool_name="cut_video_clips"
             )
-            sentences = transcript.sentences
-        await stage("Finding Shot Changes")
-        try:
-            shot_cuts_ms = await get_video_shot_cuts(ctx.deps.db, revision=revision)
-        except MediaRendererError as exc:
-            raise ToolFailed(exc.message) from exc
+        shot_cuts_ms: tuple[int, ...] = ()
+        if file_id in snapped or framing == "auto":
+            await stage("Finding Shot Changes")
+            try:
+                shot_cuts_ms = await get_video_shot_cuts(ctx.deps.db, revision=revision)
+            except MediaRendererError as exc:
+                raise ToolFailed(exc.message) from exc
         sources[file_id] = ClipSource(
-            revision=revision, metadata=metadata, sentences=sentences, shot_cuts_ms=shot_cuts_ms
+            revision=revision, metadata=metadata, transcript=transcript, shot_cuts_ms=shot_cuts_ms
         )
     return sources
 

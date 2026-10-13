@@ -12,6 +12,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` burns in captions from the transcript, in a `bold`,
+  `clean`, or word-by-word `highlight` preset, and every part of the style can
+  be changed: 16 bundled fonts, size, colours, outline, shadow, box, capitals,
+  words per caption, lines, and position. Captions keep clear of Reels,
+  Shorts, and TikTok buttons by default. `remove_silences` cuts pauses
+  between words, and captions follow the shortened clip.
 - `cut_video_clips` follows the speaker when it changes a video's shape: the
   new default framing, `auto`, crops to keep the largest face in frame,
   holding still unless the face moves out of the middle of the crop and
@@ -194,6 +200,12 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` burns in captions from the transcript, in a `bold`,
+  `clean`, or word-by-word `highlight` preset, and every part of the style can
+  be changed: 16 bundled fonts, size, colours, outline, shadow, box, capitals,
+  words per caption, lines, and position. Captions keep clear of Reels,
+  Shorts, and TikTok buttons by default. `remove_silences` cuts pauses
+  between words, and captions follow the shortened clip.
 - Password, OAuth, and TOTP authentication; secure sessions; users,
   workspaces, memberships, invitations, and role-based access.
 - A Pydantic AI agent runtime with streamed conversations, typed tools,

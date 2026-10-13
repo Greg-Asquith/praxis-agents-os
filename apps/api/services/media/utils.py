@@ -5,7 +5,7 @@
 import asyncio
 import logging
 import re
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from core.settings import settings
 from services.media.domain import (
@@ -32,6 +32,18 @@ def staging_ref(
         StorageBucket.PLATFORM_PRIVATE,
         f"{MEDIA_STAGING_PREFIX}/{workspace_id}/{request_id}/output-{index}{extension}",
     )
+
+
+async def stage_media_input(workspace_id: UUID, data: bytes, *, extension: str) -> StorageObjectRef:
+    """Writes a file the API built, such as captions, to staging for one renderer request."""
+    ref = make_storage_object_ref(
+        StorageBucket.PLATFORM_PRIVATE,
+        f"{MEDIA_STAGING_PREFIX}/{workspace_id}/{uuid4()}/input{extension}",
+    )
+    await get_storage_provider().put_object(
+        ref, data, content_type="application/octet-stream", overwrite=False
+    )
+    return ref
 
 
 def renderer_transfer_url(url: str) -> str:

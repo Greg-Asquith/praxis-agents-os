@@ -42,10 +42,17 @@ RUN curl -fsSL -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VER
         --enable-encoder=libx264,libopus,aac,mjpeg,wrapped_avframe,rawvideo \
         --enable-parser=h264,hevc,vp8,vp9,aac,opus,vorbis,mpegaudio,ac3,mjpeg \
         --enable-bsf=aac_adtstoasc,h264_mp4toannexb,hevc_mp4toannexb,vp9_superframe \
-        --enable-filter=scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy,silencedetect,ametadata,split,overlay,boxblur,setsar,concat,apad,anullsrc,transpose,hflip,vflip \
+        --enable-filter=scale,format,fps,select,metadata,null,anull,aresample,aformat,trim,atrim,setpts,asetpts,crop,pad,subtitles,ass,copy,acopy,silencedetect,ametadata,split,overlay,boxblur,setsar,concat,apad,anullsrc,transpose,hflip,vflip,aselect,asetnsamples \
     && make -j"$(nproc)" \
     && make install \
     && ! /opt/ffmpeg/bin/ffmpeg -hide_banner -protocols | grep -qE '^\s+(https?|tcp|udp|tls|rtmp|rtp)$'
+
+# Caption fonts, each pinned by hash; after the build so a font change keeps its cache.
+COPY media/fonts.lock /tmp/fonts.lock
+RUN set -eu; mkdir -p /opt/fonts; grep -v '^#' /tmp/fonts.lock | while read -r hash name url; do \
+        curl -fsSL -o "/opt/fonts/${name}" "${url}"; \
+        echo "${hash}  /opt/fonts/${name}" | sha256sum -c -; \
+    done
 
 # --- Runtime: driver, ffmpeg, and OpenCV for face detection; non-root, no application secrets ---
 FROM python:3.12.10-slim AS runtime
@@ -55,13 +62,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libx264-164 libass9 libopus0 fonts-dejavu-core \
+    && apt-get install -y --no-install-recommends libx264-164 libass9 libopus0 fontconfig fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1001 renderer \
     && pip install --no-cache-dir numpy==2.5.3 opencv-python-headless==4.14.0.94
 
 COPY --from=ffmpeg /opt/ffmpeg /opt/ffmpeg
 COPY --from=ffmpeg /opt/yunet /opt/yunet
+COPY --from=ffmpeg /opt/fonts /usr/share/fonts/truetype/captions
+RUN fc-cache -f
 WORKDIR /app
 COPY driver ./driver
 COPY media ./media

@@ -2,8 +2,9 @@
 
 """Typed media renderer operations and results.
 
-Operation fields are numbers only. Nothing a model writes reaches an ffmpeg
-argument, path, or URL; the renderer builds every command line itself.
+Operation fields are numbers and booleans only. Nothing a model writes reaches an
+ffmpeg argument, path, or URL; the renderer builds every command line itself.
+Caption text travels separately, as an escaped ASS file staged as an input.
 """
 
 from typing import Annotated, ClassVar, Literal
@@ -26,6 +27,7 @@ DEFAULT_FRAME_EDGE_PX = 1280
 MAX_AUDIO_CHUNKS = 32
 MAX_CUT_SEGMENTS = 10
 MAX_CUT_SHOT_CUTS = 500
+MAX_CUT_KEEP_RANGES = 500
 MIN_OUTPUT_EDGE_PX = 64
 MAX_OUTPUT_EDGE_PX = 3840
 MIN_OUTPUT_FPS = 24
@@ -82,7 +84,9 @@ class CutOperation(_Operation):
 
     ``fit`` shows each whole frame over a blurred fill. ``reframe`` crops to follow the
     largest face in each shot, jumping only at ``shot_cuts_ms`` (input, time) pairs.
-    Otherwise frames are centre-cropped.
+    Otherwise frames are centre-cropped. ``keep_frames`` lists (segment, first, end) output
+    frames to keep, dropping the rest with their audio. ``captions`` adds a staged ASS
+    file as the last input, burned in on the joined timeline.
     """
 
     name: Literal["cut"] = "cut"
@@ -94,24 +98,36 @@ class CutOperation(_Operation):
     fit: bool = False
     reframe: bool = False
     shot_cuts_ms: tuple[tuple[int, int], ...] = Field(default=(), max_length=MAX_CUT_SHOT_CUTS)
+    keep_frames: tuple[tuple[int, int, int], ...] = Field(
+        default=(), max_length=MAX_CUT_KEEP_RANGES
+    )
+    captions: bool = False
 
     @model_validator(mode="after")
     def require_every_input(self):
-        if {segment.input for segment in self.segments} != set(range(self.input_count())):
+        if {segment.input for segment in self.segments} != set(range(self.video_count())):
             raise ValueError("segments must use every source from 0")
         if self.fit and self.reframe:
             raise ValueError("fit and reframe can't both be set")
         if self.shot_cuts_ms and not self.reframe:
             raise ValueError("shot_cuts_ms need reframe")
         if any(
-            not 0 <= source < self.input_count() or time_ms < 0
+            not 0 <= source < self.video_count() or time_ms < 0
             for source, time_ms in self.shot_cuts_ms
         ):
             raise ValueError("shot_cuts_ms must name a source and a time")
+        if any(
+            not 0 <= position < len(self.segments) or not 0 <= first < end
+            for position, first, end in self.keep_frames
+        ):
+            raise ValueError("keep_frames must name a segment and a frame range")
         return self
 
-    def input_count(self) -> int:
+    def video_count(self) -> int:
         return len({segment.input for segment in self.segments})
+
+    def input_count(self) -> int:
+        return self.video_count() + int(self.captions)
 
     def renderer_arguments(self) -> dict[str, object]:
         return {
@@ -124,6 +140,8 @@ class CutOperation(_Operation):
             "fit": self.fit,
             "reframe": self.reframe,
             "shot_cuts": [list(cut) for cut in self.shot_cuts_ms],
+            "keep": [list(keep) for keep in self.keep_frames],
+            "captions": self.captions,
         }
 
 
