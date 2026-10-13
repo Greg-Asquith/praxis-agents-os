@@ -126,6 +126,18 @@ function ClipTile({ clip }: { clip: VideoClip }) {
           {clip.effects.join(" · ")}
         </p>
       ) : null}
+      {clip.overlays.map((overlay, index) => (
+        <p
+          className="text-muted-foreground truncate text-xs"
+          key={`${String(index)}-${overlay.text}`}
+          title={overlay.text}
+        >
+          <span className="text-foreground">“{overlay.text}”</span>{" "}
+          <span className="tabular-nums">
+            {overlay.start}–{overlay.end}
+          </span>
+        </p>
+      ))}
       {clip.warnings.map((warning) => (
         <p className="text-muted-foreground text-xs wrap-break-word" key={warning}>
           {warning}

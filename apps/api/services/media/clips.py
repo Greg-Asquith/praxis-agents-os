@@ -15,7 +15,7 @@ from models.files import FileRevision
 from services.files.contract import contract_for_content_type, stored_max_size_bytes
 from services.files.domain import VideoMetadata
 from services.files.utils import format_duration
-from services.media.captions import CaptionStyle, caption_file
+from services.media.captions import CaptionStyle, PlacedOverlay, TextOverlay, subtitle_file
 from services.media.domain import (
     MAX_CUT_KEEP_RANGES,
     MAX_CUT_SHOT_CUTS,
@@ -127,14 +127,16 @@ class PlannedSegment:
 @dataclass(frozen=True)
 class PlannedClip:
     """One clip ready to render: its sources in input order, the cut operation, and its
-    captions file.
+    captions and overlays file.
     """
 
     segments: tuple[PlannedSegment, ...]
     sources: tuple[FileRevision, ...]
     operation: CutOperation
     warnings: tuple[str, ...]
+    # The ASS file with the clip's captions and text overlays.
     captions: str | None = None
+    overlays: tuple[PlacedOverlay, ...] = ()
 
     @property
     def duration_ms(self) -> int:
@@ -190,8 +192,10 @@ def plan_clip(
     transitions_in: Sequence[TransitionOptions | None] = (),
     fade_in_ms: int = 0,
     fade_out_ms: int = 0,
+    overlays: Sequence[TextOverlay] = (),
 ) -> PlannedClip:
-    """Bounds, snaps, and numbers a clip's segments, removes pauses, and builds captions.
+    """Bounds, snaps, and numbers a clip's segments, removes pauses, and builds captions and
+    text overlays.
 
     ``transition`` joins every pair of segments unless the later segment's own entry in
     ``transitions_in`` (one per segment, the first unused) says otherwise. Raises ValueError
@@ -253,13 +257,22 @@ def plan_clip(
     if len(keep) > MAX_CUT_KEEP_RANGES:
         raise ValueError("The clip has too many pauses to remove. Cut it shorter or keep pauses.")
     _require_room_for_joins(planned, joins, fps)
+    offsets = _segment_offsets(planned, joins, fps)
+    clip_ms = offsets[-1] + planned[-1].output_ms(fps)
+    words = _timeline_words(planned, joins, offsets, fps) if captions else []
+    if captions and not words:
+        warnings.append("There's no speech to caption.")
+        captions = None
+    placed = tuple(
+        _place_overlay(overlay, number, planned, offsets, fps, clip_ms)
+        for number, overlay in enumerate(overlays, start=1)
+    )
     caption_text = None
-    if captions:
-        words = _timeline_words(planned, joins, fps)
-        if words:
-            caption_text = caption_file(words, size=size, style=captions)
-        else:
-            warnings.append("There's no speech to caption.")
+    if captions or placed:
+        caption_text, moved = subtitle_file(
+            size=size, words=words, captions=captions, overlays=placed
+        )
+        warnings += moved
 
     # Each distinct revision is one renderer input, numbered in order of first use.
     inputs: dict[UUID, int] = {}
@@ -299,6 +312,7 @@ def plan_clip(
         ),
         warnings=tuple(warnings),
         captions=caption_text,
+        overlays=placed,
     )
     limit_ms = max_clip_ms()
     if clip.duration_ms > limit_ms:
@@ -420,28 +434,87 @@ def _timeline_ms(segment: PlannedSegment, time_ms: int, fps: int) -> int:
     return round(kept * 1000 / fps)
 
 
-def _timeline_words(
+def _segment_offsets(
     segments: Sequence[PlannedSegment], joins: Sequence[CutTransition], fps: int
+) -> list[int]:
+    """Where each segment starts on the joined clip's timeline, less each earlier overlap."""
+    offsets, offset = [], 0
+    for position, segment in enumerate(segments):
+        offsets.append(offset)
+        offset += segment.output_ms(fps)
+        if position < len(joins):
+            offset -= joins[position].duration_ms
+    return offsets
+
+
+def _timeline_words(
+    segments: Sequence[PlannedSegment],
+    joins: Sequence[CutTransition],
+    offsets: Sequence[int],
+    fps: int,
 ) -> list[TranscriptWord]:
     """Every segment's words on the joined clip's timeline.
 
     Where a transition overlaps two segments, each keeps its words up to the middle of the
     blend, so captions never show both at once.
     """
-    words, offset = [], 0
+    words = []
     overlaps = [join.duration_ms for join in joins]
-    for position, segment in enumerate(segments):
+    for position, (segment, offset) in enumerate(zip(segments, offsets, strict=True)):
         before = overlaps[position - 1] if position else 0
         after = overlaps[position] if position < len(overlaps) else 0
-        length = segment.output_ms(fps)
-        first, last = offset + before // 2, offset + length - after + after // 2
+        first = offset + before // 2
+        last = offset + segment.output_ms(fps) - after + after // 2
         for word in _segment_words(segment):
             start = max(first, offset + _timeline_ms(segment, word.start_ms, fps))
             end = min(last, offset + _timeline_ms(segment, word.end_ms, fps))
             if start < end:
                 words.append(word.model_copy(update={"start_ms": start, "end_ms": end}))
-        offset += length - after
     return words
+
+
+def _place_overlay(
+    overlay: TextOverlay,
+    number: int,
+    segments: Sequence[PlannedSegment],
+    offsets: Sequence[int],
+    fps: int,
+    duration_ms: int,
+) -> PlacedOverlay:
+    """Puts an overlay on the clip's timeline: clip times as given, or a segment's video times
+    mapped through the same timeline as captions.
+    """
+    if overlay.segment is None:
+        start = 0 if overlay.start_ms is None else overlay.start_ms
+        end = duration_ms if overlay.end_ms is None else overlay.end_ms
+        if end > duration_ms:
+            raise ValueError(
+                f"Text overlay {number} ends after the clip, which is "
+                f"{format_duration(duration_ms)} long."
+            )
+    else:
+        if overlay.segment > len(segments):
+            raise ValueError(
+                f"Text overlay {number} names segment {overlay.segment}, and the clip has "
+                f"{len(segments)}."
+            )
+        segment = segments[overlay.segment - 1]
+        start_ms = segment.start_ms if overlay.start_ms is None else overlay.start_ms
+        end_ms = segment.end_ms if overlay.end_ms is None else overlay.end_ms
+        if start_ms < segment.start_ms or end_ms > segment.end_ms:
+            raise ValueError(
+                f"Text overlay {number}'s times must be inside segment {overlay.segment}, "
+                f"{format_duration(segment.start_ms)} to {format_duration(segment.end_ms)} of "
+                "its video."
+            )
+        offset = offsets[overlay.segment - 1]
+        start = offset + _timeline_ms(segment, start_ms, fps)
+        end = offset + _timeline_ms(segment, end_ms, fps)
+    if end <= start:
+        raise ValueError(f"Text overlay {number} must start before it ends in the clip.")
+    if overlay.fade_in_ms + overlay.fade_out_ms > end - start:
+        raise ValueError(f"Text overlay {number}'s fades are longer than it shows.")
+    return PlacedOverlay(overlay=overlay, start_ms=start, end_ms=end)
 
 
 async def render_clips(

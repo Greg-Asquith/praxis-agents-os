@@ -65,6 +65,7 @@ describe("cut video clips row", () => {
               ],
               fade_in_ms: 500,
               fade_out_ms: 0,
+              text_overlays: [{ text: "3 pricing mistakes", start: "0:00", end: "0:03" }],
               warnings: [],
             },
             {
@@ -105,5 +106,6 @@ describe("cut video clips row", () => {
     expect(html).toContain('href="/files?folder=folder-1"')
     expect(html).toContain("The video couldn&#x27;t be read.")
     expect(html).toContain("Fade In 0.5 s · Wipe Left 0.4 s")
+    expect(html).toContain("“3 pricing mistakes”")
   })
 })

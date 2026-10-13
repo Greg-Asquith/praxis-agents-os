@@ -85,7 +85,8 @@ dropped with their audio. Audio is cut into frames one video frame long, so
 however many pauses go.
 
 With `captions`, the request carries one more input after the videos: an ASS
-subtitle file the API built. The renderer reads only its `[Script Info]`,
+subtitle file the API built, holding the clip's captions, text overlays, or
+both. The renderer reads only its `[Script Info]`,
 `[V4+ Styles]`, and `[Events]` sections, refuses any other section (such as
 embedded fonts or graphics), caps it at 4 MiB, and burns it into the joined
 video with the `ass` filter. libass runs inside the isolated ffmpeg child.
@@ -406,6 +407,7 @@ available, and **Add to chat** in Files offers video then too.
 ## Clips
 
 `cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?, remove_silences?, transition?, folder?)`
+(each clip also takes `transition`, fades, and `text_overlays`)
 renders up to five clips and
 saves each as a new video File in the output folder of the video its first
 segment comes from (see "Output folders"), or in the folder `folder` names,
@@ -447,8 +449,8 @@ code-eligible.
   `box_color`, `box_opacity`, `words_per_caption`, `max_lines`, `position`
   (`top`, `middle`, `lower`), and `margin`. Colours are `#RRGGBB`; every other
   value is a bounded number or a name from a fixed list.
-- Captions are built by the API (`services/media/captions.py`) as one ASS
-  file on the joined clip's timeline, from each segment's transcript words
+- Captions are built by the API (`services/media/captions.py`) into the
+  clip's ASS file on the joined clip's timeline, from each segment's transcript words
   shifted by the segment's offset and by any pauses removed before them.
   Words come from untrusted audio: control characters are dropped, and `\`,
   `{`, and `}` are replaced, so no word can add a style override or line
@@ -458,7 +460,10 @@ code-eligible.
   pause of 700 ms, or its word or line limit. On a vertical frame the
   default margins keep clear of Reels, Shorts, and TikTok's own buttons and
   text: 24% from the foot, 12% from the top, 8% on the left and 16% on the
-  right.
+  right. Overlay text is the agent's, which may be steered by what it read,
+  so it goes through the same escaping and line bounds. When the tool needs
+  approval, the approval card lists the `clips` argument with each overlay's
+  text.
 - `highlight` and `remove_silences` need exact word times, so they're
   refused when a video's transcript came from Gemini (about a second out at
   p95). Captions and pause removal need a transcription provider; a video
@@ -484,6 +489,29 @@ code-eligible.
   longer than the clip. The clip's length is the segments' total less every
   overlap. Captions follow that timeline and switch from one segment's words
   to the next halfway through the blend, so two captions never show at once.
+- Each clip takes up to five `text_overlays`: the agent's own text, such as a
+  hook ("3 pricing mistakes"), a title card, a label, or a call to action.
+  Each has `text` (1 to 200 characters; line breaks are kept and long lines
+  wrap), a `preset` (`bold`, the default; `clean`; or `title`, large Anton
+  capitals for a hook), `style` overrides, timing, and `fade_in_ms` and
+  `fade_out_ms` (0 to 1000, written as ASS `\fad`). `style` takes every
+  caption style option except the caption-only ones (`words_per_caption`,
+  `highlight_color`, `highlight_scale`), plus `align` (`left`, `center`,
+  `right`), and `max_lines` up to 4 (3 by default). Captions and overlays
+  share one resolver, wrapping, and escaping (`TextStyle`).
+- Overlay timing: omitted, an overlay shows for the whole clip. `start_ms`
+  and `end_ms` alone are times from the start of the clip as rendered. With
+  `segment` (numbered from 1), they are times in that segment's video,
+  mapped through the same timeline as captions, so the text stays on its
+  moment after pauses are removed and transitions overlap; omitted, they
+  take the segment's own edges. Times outside the clip or segment, an
+  overlay that ends before it starts after mapping, fades longer than the
+  overlay, or text that needs more lines than `max_lines` fail the call
+  with a reason before anything renders.
+- Each overlay is its own ASS style on a layer above the captions. Overlays
+  sit at the `top` by default, clear of lower captions. An overlay at the
+  same edge as the captions (`top` or `lower`) moves past the caption
+  block's tallest cue, and the clip reports a warning.
 - A clip has no length cap of its own. A clip File can be as large as an
   uploaded video (`MAX_FILE_SIZE_SOURCE_VIDEO`), and never more than
   `MEDIA_RENDERER_MAX_OUTPUT_BYTES`, so the longest clip is the smaller of
@@ -505,7 +533,8 @@ In the conversation, a completed call says how many clips it saved, the
 shape and framing when the shape changed, and the captions and pause
 removal when used, and shows them as a grid of stills
 with their length, name, ranges, and any fades and transitions in the order
-they play (such as "Fade In 0.5 s · Wipe Left 0.4 s"); selecting one opens the player in a
+they play (such as "Fade In 0.5 s · Wipe Left 0.4 s"), and each text overlay
+with its times, so a person sees what was burned in; selecting one opens the player in a
 dialog, and a line under the grid links the folder the clips went to. A
 failed clip's tile shows its reason. The moments card
 has a checkbox per moment and **Cut N Clips**, which sends the person's own

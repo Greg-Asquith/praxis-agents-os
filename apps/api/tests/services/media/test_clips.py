@@ -1,13 +1,13 @@
 # apps/api/tests/services/media/test_clips.py
 
 """Planning clips: bounds, snapping, input numbering, framing, pauses, captions, transitions,
-and size.
+text overlays, and size.
 """
 
 import pytest
 
 from services.files.domain import VideoMetadata
-from services.media.captions import CaptionStyle, caption_file
+from services.media.captions import CaptionStyle, OverlayTextStyle, TextOverlay, subtitle_file
 from services.media.clips import (
     ClipSource,
     TransitionOptions,
@@ -171,7 +171,9 @@ def test_caption_words_cant_style_the_file_and_lines_stay_within_the_bound() -> 
         TranscriptWord(text="world.", start_ms=800, end_ms=1_200),
     )
 
-    document = caption_file(words, size=(1080, 1920), style=CaptionStyle(preset="bold"))
+    document, _ = subtitle_file(
+        size=(1080, 1920), words=words, captions=CaptionStyle(preset="bold")
+    )
 
     texts = [line.split(",", 9)[9] for line in document.splitlines() if line.startswith("Dialogue")]
     lines = [line for text in texts for line in text.split("\\N")]
@@ -268,3 +270,81 @@ def test_captions_switch_segments_halfway_through_a_transition() -> None:
     # The blend runs 2.8 to 3.2 s. "You" is spoken 150 ms into the second segment's extra
     # 200 ms, at 2.95 s, so it waits for the blend's middle.
     assert starts == ["0:00:01.05", "0:00:03.00"]
+
+
+def _dialogue(document: str) -> list[tuple[str, str, str, str]]:
+    """(start, end, style, text) for each event in an ASS file."""
+    events = [line.split(",", 9) for line in document.splitlines() if line.startswith("Dialogue")]
+    return [(event[1], event[2], event[3], event[9]) for event in events]
+
+
+def test_an_overlay_on_a_segment_keeps_to_its_moment_after_pauses_are_removed() -> None:
+    talk = _source(60_000, transcript=_transcript())
+
+    clip = plan_clip(
+        [(talk, 0, 8_000), (talk, 20_000, 25_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        remove_silences=True,
+        overlays=[
+            TextOverlay(text="You pay", segment=1, start_ms=5_050, end_ms=6_000),
+            TextOverlay(text="Next", segment=2, start_ms=21_000, end_ms=22_000),
+        ],
+    )
+
+    # The first segment keeps 1.5 s then 1.1 s, so "You" lands 150 ms into the second part,
+    # and the second segment starts at 2.6 s.
+    assert [event[:3] for event in _dialogue(clip.captions)] == [
+        ("0:00:01.65", "0:00:02.60", "Overlay1"),
+        ("0:00:03.60", "0:00:04.60", "Overlay2"),
+    ]
+    assert clip.operation.captions
+
+
+def test_overlay_text_cant_style_the_file_and_keeps_its_line_breaks() -> None:
+    clip = plan_clip(
+        [(_source(60_000), 0, 10_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        overlays=[TextOverlay(text="{\\fnEvil}3 pricing\nmistakes")],
+    )
+
+    [(start, end, _, text)] = _dialogue(clip.captions)
+    assert (start, end) == ("0:00:00.00", "0:00:10.00")
+    # Bold Montserrat fits 15 characters a line on a 1080 pixel wide frame.
+    assert text == "(\N{SET MINUS}fnEvil)3\\Npricing\\Nmistakes"
+
+
+def test_an_overlay_outside_the_clip_fails_before_rendering() -> None:
+    with pytest.raises(ValueError, match="Text overlay 1 ends after the clip, which is 0:10"):
+        plan_clip(
+            [(_source(60_000), 10_000, 20_000)],
+            size=(1080, 1920),
+            framing="center",
+            snap=False,
+            overlays=[TextOverlay(text="Hook", start_ms=9_000, end_ms=11_000)],
+        )
+
+
+def test_a_lower_overlay_moves_above_lower_captions() -> None:
+    talk = _source(60_000, transcript=_transcript())
+
+    clip = plan_clip(
+        [(talk, 0, 8_000)],
+        size=(1080, 1920),
+        framing="center",
+        snap=False,
+        captions=CaptionStyle(preset="bold"),
+        overlays=[TextOverlay(text="Follow", style=OverlayTextStyle(position="lower"))],
+    )
+
+    margins = {
+        line.split(",")[0]: int(line.split(",")[21])
+        for line in clip.captions.splitlines()
+        if line.startswith("Style: ")
+    }
+    # Clear of two lines of 81 pixel captions above the caption margin.
+    assert margins["Style: Overlay1"] > margins["Style: Caption"] + 2 * 81
+    assert clip.warnings == ("Text overlay 1 moved above the captions.",)

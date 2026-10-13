@@ -183,9 +183,13 @@ export type VideoClip = {
   ranges: string[]
   // Fades and transitions in the order they play, such as "Fade In 0.5 s".
   effects: string[]
+  overlays: ClipOverlay[]
   warnings: string[]
   error: string | null
 }
+
+// Text burned into a clip, with M:SS times on the clip the server formats.
+type ClipOverlay = { text: string; start: string; end: string }
 
 type ClipFolder = { id: string; name: string }
 
@@ -240,6 +244,17 @@ function videoClip(value: unknown): VideoClip | null {
     durationMs: typeof value["duration_ms"] === "number" ? value["duration_ms"] : null,
     ranges: segments.map((segment) => `${String(segment["start"])}–${String(segment["end"])}`),
     effects: clipEffects(value, segments),
+    overlays: Array.isArray(value["text_overlays"])
+      ? value["text_overlays"]
+          .filter(isRecord)
+          .flatMap((overlay) =>
+            typeof overlay["text"] === "string" &&
+            typeof overlay["start"] === "string" &&
+            typeof overlay["end"] === "string"
+              ? [{ text: overlay["text"], start: overlay["start"], end: overlay["end"] }]
+              : []
+          )
+      : [],
     warnings: Array.isArray(value["warnings"])
       ? value["warnings"].filter((warning) => typeof warning === "string")
       : [],

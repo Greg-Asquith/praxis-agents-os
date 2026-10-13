@@ -1,27 +1,30 @@
 # apps/api/services/media/captions.py
 
-"""Burned-in captions: an ASS subtitle file built from transcript words on a clip's timeline.
+"""Burned-in text: one ASS subtitle file per clip, holding captions from transcript words
+and the agent's text overlays on the clip's timeline.
 
-Words come from a provider reading untrusted audio. They reach the renderer only
-inside this file, with every character that could open an override block or
-break a line replaced, and wrapped by us to a bounded line length. Styling is a
-preset with optional overrides; every override is a name from a fixed list, a
-bounded number, or a #RRGGBB colour.
+Words come from a provider reading untrusted audio, and overlay text from an agent that may
+be steered by what it read. Both reach the renderer only inside this file, with every
+character that could open an override block or break a line replaced, and wrapped by us to
+a bounded line length. Styling is a preset with optional overrides; every override is a name
+from a fixed list, a bounded number, or a #RRGGBB colour.
 """
 
 import re
 import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.media.domain import TranscriptWord
+from services.media.domain import MAX_CUT_SEGMENTS, TranscriptWord
 
 CaptionPreset = Literal["bold", "clean", "highlight"]
-CaptionPosition = Literal["top", "middle", "lower"]
-CaptionFont = Literal[
+OverlayPreset = Literal["bold", "clean", "title"]
+TextPosition = Literal["top", "middle", "lower"]
+TextAlign = Literal["left", "center", "right"]
+TextFont = Literal[
     "Anton",
     "Archivo Black",
     "Bangers",
@@ -73,27 +76,25 @@ REFERENCE_EDGE_PX = 1080
 # A caption breaks at a pause this long, and stays up at most this long after its last word.
 CUE_PAUSE_MS = 700
 CUE_HOLD_MS = 500
+# Lines of text sit about this many font sizes apart.
+LINE_HEIGHT = 1.2
+MAX_OVERLAY_CHARS = 200
+MAX_OVERLAY_FADE_MS = 1000
 _SENTENCE_END = re.compile(r"[.?!][\"')\]]*$")
 
 
-class CaptionOptions(BaseModel):
-    """Overrides for a caption preset; anything omitted keeps the preset's value."""
+class TextStyle(BaseModel):
+    """Overrides for a text preset; anything omitted keeps the preset's value."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    font: CaptionFont | None = None
+    font: TextFont | None = None
     size: float | None = Field(
         default=None, ge=2, le=15, description="Font size, percent of the frame's short edge."
     )
     bold: bool | None = Field(default=None, description="Ignored for single-weight fonts.")
     uppercase: bool | None = None
     text_color: Colour | None = None
-    highlight_color: Colour | None = Field(
-        default=None, description="The spoken word's colour, for highlight."
-    )
-    highlight_scale: int | None = Field(
-        default=None, ge=100, le=150, description="The spoken word's size, percent, for highlight."
-    )
     outline_color: Colour | None = None
     outline_width: int | None = Field(
         default=None, ge=0, le=20, description="Pixels at 1080p; the box padding when box is on."
@@ -104,9 +105,8 @@ class CaptionOptions(BaseModel):
     )
     box_color: Colour | None = None
     box_opacity: int | None = Field(default=None, ge=0, le=100, description="Percent.")
-    words_per_caption: int | None = Field(default=None, ge=1, le=12)
-    max_lines: int | None = Field(default=None, ge=1, le=3)
-    position: CaptionPosition | None = None
+    max_lines: int | None = Field(default=None, ge=1, le=4)
+    position: TextPosition | None = None
     margin: float | None = Field(
         default=None,
         ge=0,
@@ -118,20 +118,38 @@ class CaptionOptions(BaseModel):
     )
 
 
+class CaptionTextStyle(TextStyle):
+    highlight_color: Colour | None = Field(
+        default=None, description="The spoken word's colour, for highlight."
+    )
+    highlight_scale: int | None = Field(
+        default=None, ge=100, le=150, description="The spoken word's size, percent, for highlight."
+    )
+    words_per_caption: int | None = Field(default=None, ge=1, le=12)
+    max_lines: int | None = Field(default=None, ge=1, le=3)
+
+
+class OverlayTextStyle(TextStyle):
+    align: TextAlign | None = None
+
+
 _COMMON = {
     "text_color": "#FFFFFF",
-    "highlight_color": "#FFD400",
-    "highlight_scale": 100,
     "outline_color": "#000000",
     "shadow": 0,
     "box_color": "#000000",
     "box_opacity": 60,
+}
+_CAPTION = {
+    **_COMMON,
+    "highlight_color": "#FFD400",
+    "highlight_scale": 100,
     "max_lines": 2,
     "position": "lower",
 }
-PRESETS: dict[str, CaptionOptions] = {
-    "bold": CaptionOptions(
-        **_COMMON,
+CAPTION_PRESETS: dict[str, CaptionTextStyle] = {
+    "bold": CaptionTextStyle(
+        **_CAPTION,
         font="Montserrat",
         size=7.5,
         bold=True,
@@ -140,8 +158,8 @@ PRESETS: dict[str, CaptionOptions] = {
         box=False,
         words_per_caption=4,
     ),
-    "clean": CaptionOptions(
-        **_COMMON,
+    "clean": CaptionTextStyle(
+        **_CAPTION,
         font="Inter",
         size=5.5,
         bold=False,
@@ -150,8 +168,8 @@ PRESETS: dict[str, CaptionOptions] = {
         box=True,
         words_per_caption=10,
     ),
-    "highlight": CaptionOptions(
-        **{**_COMMON, "highlight_scale": 110},
+    "highlight": CaptionTextStyle(
+        **{**_CAPTION, "highlight_scale": 110},
         font="Montserrat",
         size=7.5,
         bold=True,
@@ -161,54 +179,174 @@ PRESETS: dict[str, CaptionOptions] = {
         words_per_caption=3,
     ),
 }
+# Overlays sit at the top by default, clear of lower captions.
+_OVERLAY = {**_COMMON, "max_lines": 3, "position": "top", "align": "center"}
+OVERLAY_PRESETS: dict[str, OverlayTextStyle] = {
+    "bold": OverlayTextStyle(
+        **_OVERLAY,
+        font="Montserrat",
+        size=7.5,
+        bold=True,
+        uppercase=False,
+        outline_width=6,
+        box=False,
+    ),
+    "clean": OverlayTextStyle(
+        **_OVERLAY,
+        font="Inter",
+        size=5.5,
+        bold=False,
+        uppercase=False,
+        outline_width=14,
+        box=True,
+    ),
+    "title": OverlayTextStyle(
+        **_OVERLAY,
+        font="Anton",
+        size=11,
+        bold=False,
+        uppercase=True,
+        outline_width=8,
+        box=False,
+    ),
+}
+
+
+class TextOverlay(BaseModel):
+    """Text the agent burns into a clip, such as a hook, a title, a label, or a call to action."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    text: str = Field(
+        min_length=1,
+        max_length=MAX_OVERLAY_CHARS,
+        description="Line breaks are kept; long lines wrap.",
+    )
+    preset: OverlayPreset = Field(
+        default="bold", description="'title' is large capitals for a hook or a title card."
+    )
+    style: OverlayTextStyle | None = Field(
+        default=None, description="Overrides for the preset, as in caption_style, plus align."
+    )
+    segment: int | None = Field(
+        default=None,
+        ge=1,
+        le=MAX_CUT_SEGMENTS,
+        description=(
+            "A segment number from 1. Times are then in that segment's video, so the text stays "
+            "on its moment. Omit for times from the start of the clip."
+        ),
+    )
+    start_ms: int | None = Field(
+        default=None, ge=0, description="Omit for the start of the clip or segment."
+    )
+    end_ms: int | None = Field(
+        default=None, gt=0, description="Omit for the end of the clip or segment."
+    )
+    fade_in_ms: int = Field(default=0, ge=0, le=MAX_OVERLAY_FADE_MS)
+    fade_out_ms: int = Field(default=0, ge=0, le=MAX_OVERLAY_FADE_MS)
 
 
 @dataclass(frozen=True)
 class CaptionStyle:
     preset: CaptionPreset
-    options: CaptionOptions = field(default_factory=CaptionOptions)
+    options: CaptionTextStyle = field(default_factory=CaptionTextStyle)
+
+
+@dataclass(frozen=True)
+class PlacedOverlay:
+    """An overlay with its times on the clip's timeline."""
+
+    overlay: TextOverlay
+    start_ms: int
+    end_ms: int
 
 
 @dataclass(frozen=True)
 class _Look:
     """A preset with its overrides applied, sized for one clip."""
 
-    options: CaptionOptions
-    highlight: bool
+    options: CaptionTextStyle | OverlayTextStyle
     font_size: int
+    # How much larger the spoken word grows, for highlight.
+    grown: float
     scale: float
     margins: tuple[int, int, int]
     alignment: int
     line_chars: int
 
 
-def caption_file(
-    words: Sequence[TranscriptWord], *, size: tuple[int, int], style: CaptionStyle
-) -> str:
-    """Returns an ASS file showing ``words`` (on the output timeline) in short cues."""
-    look = _look(style, size)
-    events = []
-    cues = _cues(words, look)
-    for index, cue in enumerate(cues):
-        following = cues[index + 1][0].start_ms if index + 1 < len(cues) else None
-        start, end = _cue_times(cue, following)
-        if look.highlight:
-            events += _highlight_events(cue, start, end, look)
-        else:
-            events.append(_dialogue(start, end, _text(cue, look)))
-    return _header(size, look) + "".join(events)
+def subtitle_file(
+    *,
+    size: tuple[int, int],
+    words: Sequence[TranscriptWord] = (),
+    captions: CaptionStyle | None = None,
+    overlays: Sequence[PlacedOverlay] = (),
+) -> tuple[str, tuple[str, ...]]:
+    """Returns an ASS file showing ``words`` (on the output timeline) as captions in short
+    cues and each overlay on a layer above them, with any warnings.
+
+    Raises ValueError with a reason to show when an overlay's text doesn't fit its lines.
+    """
+    styles, events, warnings = [], [], []
+    caption_look = None
+    if captions:
+        caption_look = _caption_look(captions, size)
+        styles.append(_style("Caption", caption_look))
+        events += _caption_events(words, caption_look, highlight=captions.preset == "highlight")
+    for number, placed in enumerate(overlays, start=1):
+        overlay = placed.overlay
+        options = OVERLAY_PRESETS[overlay.preset].model_copy(
+            update=overlay.style.model_dump(exclude_none=True) if overlay.style else {}
+        )
+        look = _look(options, size, align=options.align or "center")
+        position = options.position
+        if caption_look and position != "middle" and position == caption_look.options.position:
+            clear = _past(caption_look) + look.font_size // 2
+            look = replace(look, margins=(*look.margins[:2], max(look.margins[2], clear)))
+            warnings.append(
+                f"Text overlay {number} moved {'above' if position == 'lower' else 'below'} "
+                "the captions."
+            )
+        name = f"Overlay{number}"
+        styles.append(_style(name, look))
+        events.append(
+            _dialogue(
+                placed.start_ms,
+                placed.end_ms,
+                _overlay_text(overlay, look, number),
+                style=name,
+                layer=1,
+            )
+        )
+    return _header(size, styles) + "".join(events), tuple(warnings)
 
 
-def escape_caption_text(text: str) -> str:
-    """Makes a transcript word inert in ASS: no override blocks, escapes, or control characters."""
+def escape_text(text: str) -> str:
+    """Makes text inert in ASS: no override blocks, escapes, line breaks, or control characters."""
     visible = "".join(
-        character for character in text if unicodedata.category(character) not in {"Cc", "Cf"}
+        character
+        for character in text
+        if unicodedata.category(character) not in {"Cc", "Cf", "Zl", "Zp"}
     )
     return visible.replace("\\", "\N{SET MINUS}").replace("{", "(").replace("}", ")")
 
 
-def _look(style: CaptionStyle, size: tuple[int, int]) -> _Look:
-    options = PRESETS[style.preset].model_copy(update=style.options.model_dump(exclude_none=True))
+def _caption_look(style: CaptionStyle, size: tuple[int, int]) -> _Look:
+    options = CAPTION_PRESETS[style.preset].model_copy(
+        update=style.options.model_dump(exclude_none=True)
+    )
+    grown = options.highlight_scale / 100 if style.preset == "highlight" else 1
+    return _look(options, size, grown=grown)
+
+
+def _look(
+    options: CaptionTextStyle | OverlayTextStyle,
+    size: tuple[int, int],
+    *,
+    align: TextAlign = "center",
+    grown: float = 1,
+) -> _Look:
     width, height = size
     font = FONTS[options.font]
     font_size = round(min(width, height) * options.size / 100)
@@ -220,18 +358,37 @@ def _look(style: CaptionStyle, size: tuple[int, int]) -> _Look:
         sides, default_margin = (0.06, 0.06), {"top": 8, "middle": 0, "lower": 8}
     margin = default_margin[options.position] if options.margin is None else options.margin
     margins = (round(width * sides[0]), round(width * sides[1]), round(height * margin / 100))
-    highlight = style.preset == "highlight"
-    grown = options.highlight_scale / 100 if highlight else 1
     usable = width - margins[0] - margins[1]
     return _Look(
         options=options.model_copy(update={"bold": options.bold and font.has_bold}),
-        highlight=highlight,
         font_size=font_size,
+        grown=grown,
         scale=min(width, height) / REFERENCE_EDGE_PX,
         margins=margins,
-        alignment={"top": 8, "middle": 5, "lower": 2}[options.position],
+        # ASS numbers alignments like a keypad: 1 to 3 at the foot, 7 to 9 at the top.
+        alignment={"top": 7, "middle": 4, "lower": 1}[options.position]
+        + {"left": 0, "center": 1, "right": 2}[align],
         line_chars=max(4, int(usable / (font_size * font.width * grown))),
     )
+
+
+def _past(look: _Look) -> int:
+    """The distance from the edge to just past a caption block of the most lines."""
+    lines = look.options.max_lines * look.font_size * look.grown * LINE_HEIGHT
+    return round(look.margins[2] + lines + 2 * look.options.outline_width * look.scale)
+
+
+def _caption_events(words: Sequence[TranscriptWord], look: _Look, *, highlight: bool) -> list[str]:
+    events = []
+    cues = _cues(words, look)
+    for index, cue in enumerate(cues):
+        following = cues[index + 1][0].start_ms if index + 1 < len(cues) else None
+        start, end = _cue_times(cue, following)
+        if highlight:
+            events += _highlight_events(cue, start, end, look)
+        else:
+            events.append(_dialogue(start, end, _text(cue, look)))
+    return events
 
 
 def _cues(words: Sequence[TranscriptWord], look: _Look) -> list[list[TranscriptWord]]:
@@ -239,14 +396,14 @@ def _cues(words: Sequence[TranscriptWord], look: _Look) -> list[list[TranscriptW
     cues: list[list[TranscriptWord]] = []
     current: list[TranscriptWord] = []
     for word in words:
-        if escape_caption_text(word.text).strip() == "":
+        if escape_text(word.text).strip() == "":
             continue
         if current and (
             word.start_ms - current[-1].end_ms >= CUE_PAUSE_MS
             or word.speaker != current[-1].speaker
             or _SENTENCE_END.search(current[-1].text)
             or len(current) == look.options.words_per_caption
-            or len(_lines([*current, word], look)) > look.options.max_lines
+            or len(_lines([item.text for item in [*current, word]], look)) > look.options.max_lines
         ):
             cues.append(current)
             current = []
@@ -256,12 +413,12 @@ def _cues(words: Sequence[TranscriptWord], look: _Look) -> list[list[TranscriptW
     return cues
 
 
-def _lines(cue: Sequence[TranscriptWord], look: _Look) -> list[list[tuple[int, str]]]:
-    """Wraps a cue's words into lines of (word index, piece); a long word is split."""
+def _lines(texts: Sequence[str], look: _Look) -> list[list[tuple[int, str]]]:
+    """Wraps words into lines of (word index, piece); a long word is split."""
     limit = look.line_chars
     lines: list[list[tuple[int, str]]] = [[]]
-    for index, word in enumerate(cue):
-        text = escape_caption_text(word.text).strip()
+    for index, raw in enumerate(texts):
+        text = escape_text(raw).strip()
         if look.options.uppercase:
             text = text.upper()
         for piece in (text[start : start + limit] for start in range(0, len(text), limit)):
@@ -277,8 +434,28 @@ def _text(cue: Sequence[TranscriptWord], look: _Look, active: int | None = None)
     spoken = f"{{\\1c{_colour(look.options.highlight_color)}&\\fscx{grown}\\fscy{grown}}}"
     return "\\N".join(
         " ".join(f"{spoken}{piece}{{\\r}}" if index == active else piece for index, piece in line)
-        for line in _lines(cue, look)
+        for line in _lines([word.text for word in cue], look)
     )
+
+
+def _overlay_text(overlay: TextOverlay, look: _Look, number: int) -> str:
+    """The overlay's lines, keeping its own line breaks, behind its fades."""
+    lines = [
+        " ".join(piece for _, piece in line)
+        for paragraph in overlay.text.splitlines()
+        for line in _lines(paragraph.split(), look)
+        if line
+    ]
+    if not lines:
+        raise ValueError(f"Text overlay {number} has no text to show.")
+    if len(lines) > look.options.max_lines:
+        raise ValueError(
+            f"Text overlay {number} needs {len(lines)} lines and is set to "
+            f"{look.options.max_lines}. Shorten it, make it smaller, or allow more lines."
+        )
+    fades = overlay.fade_in_ms or overlay.fade_out_ms
+    fade = f"{{\\fad({overlay.fade_in_ms},{overlay.fade_out_ms})}}" if fades else ""
+    return fade + "\\N".join(lines)
 
 
 def _highlight_events(
@@ -301,24 +478,27 @@ def _cue_times(cue: Sequence[TranscriptWord], following: int | None) -> tuple[in
     return start, max(end, start + 100)
 
 
-def _header(size: tuple[int, int], look: _Look) -> str:
+def _style(name: str, look: _Look) -> str:
     options = look.options
     text_colour = _colour(options.text_color)
-    # BorderStyle 4 (libass) draws one box behind the whole caption in the back colour,
-    # padded by the outline width, which is then hidden around the text; 3 would box each
-    # line, and the boxes overlap.
+    # BorderStyle 4 (libass) draws one box behind the whole text in the back colour, padded
+    # by the outline width, which is then hidden around the text; 3 would box each line, and
+    # the boxes overlap.
     back_colour = (
         _colour(options.box_color, opacity=options.box_opacity) if options.box else "&H80000000"
     )
-    style = ",".join(
+    return ",".join(
         str(value)
         for value in (
-            "Caption", options.font, look.font_size, text_colour, text_colour,
+            name, options.font, look.font_size, text_colour, text_colour,
             _colour(options.outline_color, opacity=0 if options.box else 100), back_colour, -1 if options.bold else 0, 0, 0, 0,
             100, 100, 0, 0, 4 if options.box else 1, round(options.outline_width * look.scale),
             round(options.shadow * look.scale), look.alignment, *look.margins, 1,
         )
     )  # fmt: skip
+
+
+def _header(size: tuple[int, int], styles: Sequence[str]) -> str:
     return (
         "[Script Info]\n"
         "ScriptType: v4.00+\n"
@@ -331,14 +511,16 @@ def _header(size: tuple[int, int], look: _Look) -> str:
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: {style}\n\n"
-        "[Events]\n"
+        + "".join(f"Style: {style}\n" for style in styles)
+        + "\n[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
 
-def _dialogue(start_ms: int, end_ms: int, text: str) -> str:
-    return f"Dialogue: 0,{_time(start_ms)},{_time(end_ms)},Caption,,0,0,0,,{text}\n"
+def _dialogue(
+    start_ms: int, end_ms: int, text: str, *, style: str = "Caption", layer: int = 0
+) -> str:
+    return f"Dialogue: {layer},{_time(start_ms)},{_time(end_ms)},{style},,0,0,0,,{text}\n"
 
 
 def _time(milliseconds: int) -> str:

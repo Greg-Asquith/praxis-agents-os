@@ -41,7 +41,13 @@ from services.files import (
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import format_duration
 from services.media import discard_staged_outputs, save_media_output
-from services.media.captions import CaptionOptions, CaptionPreset, CaptionStyle
+from services.media.captions import (
+    CaptionPreset,
+    CaptionStyle,
+    CaptionTextStyle,
+    PlacedOverlay,
+    TextOverlay,
+)
 from services.media.clips import (
     RENDER_CONCURRENCY,
     AspectRatio,
@@ -66,6 +72,7 @@ from services.storage.paths import safe_filename
 from utils.validation import normalize_optional_text
 
 MAX_CLIPS = 5
+MAX_TEXT_OVERLAYS = 5
 MAX_CLIP_NAME_CHARS = 120
 RENDERER_CALL_SECONDS = settings.MEDIA_RENDERER_TIMEOUT_SECONDS + REQUEST_ALLOWANCE_SECONDS
 
@@ -121,6 +128,14 @@ class ClipArgument(BaseModel):
         default=0, ge=0, le=MAX_FADE_MS, description="Fade in from black and silence."
     )
     fade_out_ms: int = Field(default=0, ge=0, le=MAX_FADE_MS, description="Fade out to black.")
+    text_overlays: list[TextOverlay] = Field(
+        default_factory=list,
+        max_length=MAX_TEXT_OVERLAYS,
+        description=(
+            "Text burned into the clip, such as a hook, a title, a label, or a call to action. "
+            "Each shows for the whole clip unless given times."
+        ),
+    )
 
 
 def cut_video_clips_available() -> bool:
@@ -146,7 +161,9 @@ def cut_video_clips_available() -> bool:
         "person asks for tighter pacing or no pauses. Both apply to every clip. Segments join "
         "with hard cuts unless transition says otherwise, for every clip, one clip, or one "
         "segment's transition_in; any ffmpeg xfade style, 400 ms by default. Use transitions "
-        "and fade_in_ms or fade_out_ms only when the person asks for them. Clips save in a "
+        "and fade_in_ms or fade_out_ms only when the person asks for them. A clip's "
+        "text_overlays add text such as a hook or a call to action, at the top by default; "
+        "the 'title' preset suits a hook. Clips save in a "
         "folder named after their first video unless folder names another. One clip failing "
         "doesn't stop the others; the result reports each clip."
     ),
@@ -203,7 +220,7 @@ async def cut_video_clips(
         Field(description="Burned-in captions from the transcript, or 'none'."),
     ] = "none",
     caption_style: Annotated[
-        CaptionOptions | None,
+        CaptionTextStyle | None,
         Field(
             description=(
                 "Optional overrides for the captions preset: font, size, colours, outline, "
@@ -246,7 +263,7 @@ async def cut_video_clips(
     style = (
         None
         if captions == "none"
-        else CaptionStyle(preset=captions, options=caption_style or CaptionOptions())
+        else CaptionStyle(preset=captions, options=caption_style or CaptionTextStyle())
     )
     sources = await _clip_sources(
         ctx,
@@ -275,6 +292,7 @@ async def cut_video_clips(
                     transitions_in=[segment.transition_in for segment in clip.segments],
                     fade_in_ms=clip.fade_in_ms,
                     fade_out_ms=clip.fade_out_ms,
+                    overlays=clip.text_overlays,
                 )
             )
         except ValueError as exc:
@@ -436,6 +454,7 @@ async def _save_clip(
         "segments": _segments(request),
         "fade_in_ms": request.operation.fade_in_ms,
         "fade_out_ms": request.operation.fade_out_ms,
+        "text_overlays": _overlays(request.overlays),
         "warnings": list(request.warnings),
     }
 
@@ -473,6 +492,7 @@ def _failed(index: int, name: str, request: PlannedClip, reason: str) -> dict[st
         "segments": _segments(request),
         "fade_in_ms": request.operation.fade_in_ms,
         "fade_out_ms": request.operation.fade_out_ms,
+        "text_overlays": _overlays(request.overlays),
         "warnings": list(request.warnings),
     }
 
@@ -493,6 +513,19 @@ def _segments(request: PlannedClip) -> list[dict[str, object]]:
             ),
         }
         for position, segment in enumerate(request.segments)
+    ]
+
+
+def _overlays(overlays: tuple[PlacedOverlay, ...]) -> list[dict[str, object]]:
+    return [
+        {
+            "text": placed.overlay.text,
+            "start_ms": placed.start_ms,
+            "end_ms": placed.end_ms,
+            "start": format_duration(placed.start_ms),
+            "end": format_duration(placed.end_ms),
+        }
+        for placed in overlays
     ]
 
 

@@ -12,6 +12,14 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
+- `cut_video_clips` burns custom text into a clip, such as a hook, a title
+  card, a label, or a call to action: up to five `text_overlays` per clip,
+  styled like captions, with a new `title` preset, alignment, and fades. An
+  overlay shows for the whole clip, for times on the clip, or for times in
+  one segment's video, so it stays on its moment after pauses are removed
+  and transitions overlap. Overlays sit at the top by default and move clear
+  of captions at the same edge. The clip card lists each overlay's text and
+  times.
 - `cut_video_clips` joins segments with transitions: any of ffmpeg's 58
   `xfade` styles, such as a crossfade, a dip to black, slides, and wipes, with
   an audio crossfade, set for every clip, one clip, or one join. Clips can fade
