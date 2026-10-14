@@ -17,7 +17,7 @@ from services.storage.domain import StorageObjectRef
 
 MEDIA_STAGING_PREFIX = "platform/media-staging"
 INVALID_RESPONSE_MESSAGE = "The media renderer gave an invalid answer."
-# Mirrors the renderer's own limits in apps/renderer/media/operations.py.
+# Mirrors the renderer's own limits in apps/renderer/media/, checked by a contract test.
 MAX_SCENE_CUTS = 2000
 MIN_SCENE_THRESHOLD = 0.05
 MAX_SCENE_THRESHOLD = 0.95

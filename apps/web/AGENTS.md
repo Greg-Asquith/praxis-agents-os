@@ -91,6 +91,7 @@ table are relative to this file:
 | Workflow rows and nested approval replay                                           | [Code Mode](../../docs/implementation/code-mode.md)                                           |
 | Native tool results, generated files, or classifier settings                       | [Native helper tools](../../docs/implementation/native-tools.md)                              |
 | File links and uploads                                                             | [Storage and files](../../docs/implementation/storage-and-files.md)                           |
+| Video rows, players, and video attachments                                         | [Video tools](../../docs/implementation/video-tools.md)                                       |
 | Authentication redirects or audit presentation                                     | [Security](../../docs/implementation/security.md)                                             |
 | Knowledge Base imports or refresh                                                  | [Knowledge sources](../../docs/implementation/knowledge-sources.md)                           |
 | Model transport labels                                                             | [Model providers](../../docs/implementation/model-providers.md)                               |

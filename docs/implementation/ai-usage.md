@@ -66,8 +66,9 @@ The following contracts apply in this area:
   cannot separate their rates. Historical Gemini 3.1 Flash Image output
   estimates remain unchanged.
 - Video helpers record under `video_understanding`, `video_generation`, or
-  `video_transcription`, with tokens as the provider reports them. Veo bills
-  per output second, so a Veo row's details carry `video_model`,
+  `video_transcription`, with tokens as the provider reports them. Video
+  generation tools are pending, so no tool records `video_generation` rows.
+  Veo bills per output second, so a Veo row's details carry `video_model`,
   `video_resolution` (`720p`, `1080p`, or `4k`), `video_audio`, and
   `video_output_seconds`. Reads price those seconds from Google's
   [Veo 3.1 rates](https://ai.google.dev/gemini-api/docs/pricing#veo-3.1),

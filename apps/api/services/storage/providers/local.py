@@ -32,7 +32,11 @@ from services.storage.errors import (
 from services.storage.paths import build_content_disposition, quote_object_key
 from services.storage.platform_buckets import validate_platform_ref
 from services.storage.provider import STORAGE_STREAM_CHUNK_SIZE
-from services.storage.providers._common import require_staged_import
+from services.storage.providers._common import (
+    require_content_type,
+    require_staged_import,
+    string_metadata,
+)
 from services.storage.workspace_buckets import workspace_id_for_ref
 
 
@@ -197,9 +201,6 @@ class LocalStorageProvider:
 
         stat = await asyncio.to_thread(path.stat)
         metadata = await self._read_metadata(ref)
-        app_metadata = (
-            metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}
-        )
         etag = _optional_str(metadata.get("etag")) or _stat_fingerprint(stat)
         updated_at = _parse_datetime(metadata.get("updated_at")) or datetime.fromtimestamp(
             stat.st_mtime, tz=UTC
@@ -210,7 +211,7 @@ class LocalStorageProvider:
             etag=etag,
             content_type=_optional_str(metadata.get("content_type")),
             cache_control=_optional_str(metadata.get("cache_control")),
-            metadata={str(key): str(value) for key, value in app_metadata.items()},
+            metadata=_app_metadata(metadata),
             public_url=self.public_url(ref),
             updated_at=updated_at,
         )
@@ -294,14 +295,7 @@ class LocalStorageProvider:
             {
                 "content_type": _optional_str(metadata.get("content_type")),
                 "cache_control": _optional_str(metadata.get("cache_control")),
-                "metadata": {
-                    str(key): str(value)
-                    for key, value in (
-                        metadata.get("metadata")
-                        if isinstance(metadata.get("metadata"), dict)
-                        else {}
-                    ).items()
-                },
+                "metadata": _app_metadata(metadata),
             },
             operation=operation,
             expected_etag=expected_source_etag,
@@ -388,19 +382,11 @@ class LocalStorageProvider:
         workspace_id = workspace_id_for_ref(ref)
         if workspace_id is not None:
             await self.ensure_workspace_bucket(workspace_id)
-        normalized_content_type = content_type.strip()
-        if not normalized_content_type:
-            raise StorageValidationError(
-                "Signed upload content_type is required",
-                provider_key=self.provider_key,
-                operation="create_signed_upload",
-                bucket=ref.bucket.value,
-                object_key=ref.key,
-            )
-
         return self._signed_upload(
             ref,
-            content_type=normalized_content_type,
+            content_type=require_content_type(
+                content_type, provider_key=self.provider_key, ref=ref
+            ),
             size_bytes=expected_size_bytes,
             expires_in=expires_in,
             bounded=False,
@@ -417,7 +403,9 @@ class LocalStorageProvider:
         validate_platform_ref(ref)
         return self._signed_upload(
             ref,
-            content_type=content_type.strip(),
+            content_type=require_content_type(
+                content_type, provider_key=self.provider_key, ref=ref
+            ),
             size_bytes=max_size_bytes,
             expires_in=expires_in,
             bounded=True,
@@ -715,6 +703,11 @@ def _write_local_object(
 def _stat_fingerprint(stat_result) -> str:
     payload = f"{stat_result.st_size}:{stat_result.st_mtime_ns}".encode()
     return f"local-stat-{hashlib.sha256(payload).hexdigest()}"
+
+
+def _app_metadata(stored_metadata: dict[str, object]) -> dict[str, str]:
+    app_metadata = stored_metadata.get("metadata")
+    return string_metadata(app_metadata if isinstance(app_metadata, dict) else None)
 
 
 def _optional_str(value: object) -> str | None:

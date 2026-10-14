@@ -325,17 +325,17 @@ workspace copy** to keep your own editable version.
 **Files** holds the material agents work with: documents, PDFs,
 spreadsheets, presentations, images, and videos. To add files, click
 **Upload Files**, drag them onto the page, or attach them to a message.
-Documents can be up to 100 MB and images up to 10 MB. Uploaded videos can be
-up to 4 GB on Google Cloud or Amazon S3 storage, otherwise 100 MB. A video
-shows as processing until it's measured, then fails if it can't play or runs
-over 4 hours. Use **New Folder** and **Move to Folder** to organise them.
+Documents can be up to 100 MB, images 10 MB, and videos 4 GB on Google
+Cloud or Amazon S3 storage (otherwise 100 MB) and 4 hours. Use **New
+Folder** and **Move to Folder** to organise them.
 
-Agents can read and change any workspace file, editing text directly. They
-edit and create Excel, PowerPoint, and Word files, keeping their template
-and fonts; an edit saves a new version. **Edit Image** saves a new image.
+Agents can read and change any workspace file. They edit and create Excel,
+PowerPoint, and Word files, keeping their template and fonts; an edit saves a new version. **Edit Image** saves a new image.
 New files go in a conversation folder; a video's clips and transcript go in
-a folder named after it. These tools follow the settings on the **Tools**
-tab.
+a folder named after it. Where video tools are set up, agents can
+transcribe videos, find moments, answer questions, and cut captioned clips;
+tick moments and click **Cut Clips**. These tools follow the settings on
+the **Tools** tab.
 
 You can rename, move, and delete files, but not edit their content
 yourself. Content edits save versions that **Restore Version** brings back;

@@ -349,6 +349,9 @@ machine with `make gcp-deploy ENV_FILE=$ENV_FILE`.
 - [ ] Sign in through `https://app.DOMAIN`, start a conversation, upload a
       file, and approve one tool call. Each of these exercises the API,
       Cloud SQL, the workspace bucket, and signed URLs end to end.
+- [ ] Upload a short video to **Files**. It shows as processing, then as
+      ready with its duration, which confirms the media renderer and its
+      invoker grant work end to end.
 - [ ] Public-assets bucket: a representative object is anonymously readable
       while listing and anonymous writes fail. (The bucket holds only
       application-owned avatars/icons under `users/` and `workspaces/`;
@@ -422,8 +425,10 @@ stable `https://praxis-media-renderer-PROJECT_NUMBER.REGION.run.app` address.
 - **Sizing:** one render per instance (`containerConcurrency: 1`), 4 vCPU and
   16 GiB by default, scaling from zero to `MEDIA_RENDERER_MAX_INSTANCES`
   (default 3). Cloud Run counts the instance's temporary files against its
-  memory, so keep `MAX_FILE_SIZE_SOURCE_VIDEO` (default 4 GiB) well below
-  `MEDIA_RENDERER_MEMORY`. The request timeout is
+  memory, so `MEDIA_RENDERER_MEMORY` must cover `MAX_FILE_SIZE_SOURCE_VIDEO`
+  (4 GiB), `MEDIA_RENDERER_MAX_OUTPUT_BYTES` (2 GiB), and
+  `MEDIA_RENDERER_CHILD_MEMORY_BYTES` (8 GiB) together; the deploy script
+  refuses a smaller value. The request timeout is
   `MEDIA_RENDERER_TIMEOUT_SECONDS` plus 60 seconds (default 960).
 - **Cost:** it bills per request and scales to zero. A three-minute cut at
   4 vCPU and 16 GiB costs about $0.03.

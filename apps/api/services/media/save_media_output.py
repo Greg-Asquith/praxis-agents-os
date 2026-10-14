@@ -9,10 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions.general import AppValidationError
 from models.workspace import Workspace
 from services.files.contract import contract_for_content_type, stored_max_size_bytes
-from services.files.create_file_with_revision import (
-    FileRevisionWriteResult,
-    create_file_from_stored_revision,
-)
+from services.files.create_file_from_stored_revision import create_file_from_stored_revision
+from services.files.create_file_with_revision import FileRevisionWriteResult
 from services.files.reserve_file_revision import reserve_file_revision
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import (

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# deploy/gcp/bootstrap.sh
 
 set -Eeuo pipefail
 

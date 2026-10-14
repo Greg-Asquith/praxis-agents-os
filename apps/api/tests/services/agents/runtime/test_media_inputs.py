@@ -7,7 +7,6 @@ from hashlib import sha256
 from uuid import uuid4
 
 import pytest
-from pydantic import SecretStr
 from pydantic_ai import ModelRetry
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import VideoUrl
@@ -22,7 +21,6 @@ from services.agents.runtime.tools.media_inputs import (
     load_workspace_media_input,
     load_workspace_media_inputs,
     load_workspace_video_input,
-    long_video_input_available,
 )
 from services.files.contract import FileCategory
 from services.files.utils import private_ref_from_key
@@ -284,20 +282,3 @@ async def test_video_input_refuses_an_object_key_outside_the_workspace(
             tool_name="find_video_moments",
             inline_max_bytes=1,
         )
-
-
-def test_long_video_input_needs_google_and_a_readable_store(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", False)
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", None)
-    assert not long_video_input_available()
-
-    monkeypatch.setattr(settings, "GOOGLE_API_KEY", SecretStr("google-test"))
-    assert long_video_input_available()
-
-    # Vertex reads by GCS URI only; other storage stays on the bounded inline path.
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_AI", True)
-    monkeypatch.setattr(settings, "GOOGLE_VERTEX_PROJECT", "video-test")
-    monkeypatch.setattr(settings, "STORAGE_PROVIDER", "local_fs")
-    assert not long_video_input_available()

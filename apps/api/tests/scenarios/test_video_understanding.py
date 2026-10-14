@@ -12,14 +12,10 @@ from sqlalchemy import select
 
 from core.settings import settings
 from models.ai_usage_event import AIUsageEvent
-from models.files import File
-from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.untrusted import UNTRUSTED_CONTENT_START
 from tests.support.google_native import mock_google_native
-from tests.support.media import persist_analysed_video, use_fake_renderer
+from tests.support.media import file_tool_turn, persist_analysed_video, use_fake_renderer
 from tests.support.scenario import (
-    ToolCall,
-    ToolTurn,
     build_scenario_agent,
     run_scenario,
     scripted_model,
@@ -91,11 +87,6 @@ def _moments(*moments: tuple[str, str, str, int]) -> httpx.Response:
     )
 
 
-def _call(tool_name: str, file: File, **arguments) -> ToolTurn:
-    reference = FileReference(entity_id=file.id, label=file.name).model_dump(mode="json")
-    return ToolTurn((ToolCall(tool_name, {"file_id": reference, **arguments}, tool_name),))
-
-
 async def test_moments_from_two_windows_are_snapped_merged_and_framed(
     db_session_factory, monkeypatch: pytest.MonkeyPatch, services: list[dict]
 ) -> None:
@@ -135,7 +126,9 @@ async def test_moments_from_two_windows_are_snapped_merged_and_framed(
             context,
             model=scripted_model(
                 turns=[
-                    _call("find_video_moments", video, brief="Reels about pricing", count=2),
+                    file_tool_turn(
+                        "find_video_moments", video, brief="Reels about pricing", count=2
+                    ),
                     "Done.",
                 ]
             ),
@@ -200,7 +193,7 @@ async def test_ask_video_watches_only_the_asked_range_and_frames_the_answer(
             context,
             model=scripted_model(
                 turns=[
-                    _call(
+                    file_tool_turn(
                         "ask_video",
                         video,
                         question="What does the slide say?",

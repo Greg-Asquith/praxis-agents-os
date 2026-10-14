@@ -1,9 +1,10 @@
 # apps/api/services/media/utils.py
 
-"""Helpers for the media renderer client."""
+"""Helpers for the media services."""
 
 import asyncio
 import logging
+import math
 import re
 from uuid import UUID, uuid4
 
@@ -20,8 +21,9 @@ from services.storage.factory import get_storage_provider
 
 logger = logging.getLogger(__name__)
 
-_SENTENCE_END = re.compile(r"[.?!][\"')\]]*$")
+SENTENCE_END = re.compile(r"[.?!][\"')\]]*$")
 SENTENCE_PAUSE_MS = 2000
+_TIMESTAMP = re.compile(r"^(?:(\d{1,2}):)?(\d{1,3}):([0-5]\d(?:\.\d{1,3})?)$")
 
 
 def staging_ref(
@@ -101,7 +103,7 @@ def sentences_from_words(words: tuple[TranscriptWord, ...]) -> tuple[TranscriptS
         following = words[index + 1] if index + 1 < len(words) else None
         if (
             following is None
-            or _SENTENCE_END.search(word.text)
+            or SENTENCE_END.search(word.text)
             or following.speaker != word.speaker
             or following.start_ms - word.end_ms >= SENTENCE_PAUSE_MS
         ):
@@ -132,3 +134,28 @@ def _srt_time(milliseconds: int) -> str:
     minutes, remainder = divmod(remainder, 60_000)
     seconds, milliseconds = divmod(remainder, 1000)
     return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
+
+
+def parse_timestamp(text: str) -> int | None:
+    """Reads MM:SS or H:MM:SS, with optional fractional seconds, as milliseconds."""
+    match = _TIMESTAMP.match(text.strip())
+    if match is None:
+        return None
+    hours, minutes, seconds = match.groups()
+    return round((int(hours or 0) * 3600 + int(minutes) * 60 + float(seconds)) * 1000)
+
+
+def video_windows(
+    start_ms: int, end_ms: int, *, window_ms: int, overlap_ms: int
+) -> list[tuple[int, int]]:
+    """Splits a range into the fewest equal windows of at most ``window_ms`` that overlap."""
+    span = end_ms - start_ms
+    if span <= window_ms:
+        return [(start_ms, end_ms)]
+    count = math.ceil((span - overlap_ms) / (window_ms - overlap_ms))
+    length = math.ceil((span + (count - 1) * overlap_ms) / count)
+    step = length - overlap_ms
+    return [
+        (start_ms + index * step, min(end_ms, start_ms + index * step + length))
+        for index in range(count)
+    ]

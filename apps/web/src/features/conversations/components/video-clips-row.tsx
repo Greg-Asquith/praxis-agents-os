@@ -1,11 +1,11 @@
 // apps/web/src/features/conversations/components/video-clips-row.tsx
 
 import { Fragment, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { PlayIcon, ScissorsIcon, TriangleAlertIcon, VideoIcon } from "lucide-react"
 
-import { ToolResultCard } from "@/components/tool-ui/result-card"
+import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import {
   Dialog,
   DialogContent,
@@ -15,12 +15,13 @@ import {
 } from "@/components/ui/dialog"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { VideoFileCard } from "@/features/conversations/components/video-file-card"
+import { useVideoPreview } from "@/features/conversations/hooks/use-video-preview"
 import type { ToolActivity } from "@/features/conversations/message-parts"
 import {
+  type CutVideoClipsResult,
   cutVideoClipsResult,
   type VideoClip,
 } from "@/features/conversations/native-tools/video-tools"
-import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { formatDuration, pluralize } from "@/lib/format"
 import { isRecord } from "@/lib/guards"
 
@@ -48,15 +49,6 @@ export function CutVideoClipsRow({
     return null
   }
   const total = result.clips.length
-  const args = isRecord(activity.args) ? activity.args : {}
-  const shape = args["aspect_ratio"]
-  // Framing only matters when the shape changes; the tool defaults to auto.
-  const framing =
-    typeof shape === "string" && shape !== "original"
-      ? FRAMING_LABELS[typeof args["framing"] === "string" ? args["framing"] : "auto"]
-      : undefined
-  const captions =
-    typeof args["captions"] === "string" ? CAPTION_LABELS[args["captions"]] : undefined
   const clips =
     result.saved === total
       ? `${String(total)} ${pluralize(total, "Clip")}`
@@ -65,20 +57,9 @@ export function CutVideoClipsRow({
     <ToolResultCard
       ariaLabel="Cut video clips"
       defaultOpen={defaultOpen}
-      details={[
-        { label: "Clips", value: clips },
-        ...(typeof shape === "string" ? [{ label: "Shape", value: shape }] : []),
-        ...(framing ? [{ label: "Framing", value: framing }] : []),
-        ...(captions ? [{ label: "Captions", value: captions }] : []),
-        ...(args["remove_silences"] === true ? [{ label: "Pauses", value: "Removed" }] : []),
-      ]}
+      details={[{ label: "Clips", value: clips }, ...settingDetails(activity.args)]}
       summary={clips}
-      heading={
-        <span className="inline-flex min-w-0 items-center gap-2">
-          <ScissorsIcon className="text-muted-foreground size-4 shrink-0" />
-          <span>Cut Video Clips</span>
-        </span>
-      }
+      heading={<ToolHeading icon={ScissorsIcon}>Cut Video Clips</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <ol aria-label="Clips" className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3">
@@ -88,63 +69,54 @@ export function CutVideoClipsRow({
           </li>
         ))}
       </ol>
-      {result.folders.length > 0 ? (
-        <p className="text-muted-foreground pt-3 text-xs">
-          Saved in {result.folders.length === 1 ? "the folder" : "the folders"}{" "}
-          {result.folders.map((folder, index) => (
-            <Fragment key={folder.id}>
-              {index > 0 ? ", " : null}
-              <Link
-                className="text-foreground font-medium underline-offset-4 hover:underline"
-                search={{ folder: folder.id }}
-                to="/files"
-              >
-                {folder.name}
-              </Link>
-            </Fragment>
-          ))}
-          .
-        </p>
-      ) : null}
+      {result.folders.length > 0 ? <ClipFolders folders={result.folders} /> : null}
     </ToolResultCard>
+  )
+}
+
+// The settings the call asked for, as card details.
+function settingDetails(args: unknown): ToolResultDetail[] {
+  const settings = isRecord(args) ? args : {}
+  const shape = settings["aspect_ratio"]
+  // Framing only matters when the shape changes; the tool defaults to auto.
+  const framing =
+    typeof shape === "string" && shape !== "original"
+      ? FRAMING_LABELS[typeof settings["framing"] === "string" ? settings["framing"] : "auto"]
+      : undefined
+  const captions =
+    typeof settings["captions"] === "string" ? CAPTION_LABELS[settings["captions"]] : undefined
+  return [
+    ...(typeof shape === "string" ? [{ label: "Shape", value: shape }] : []),
+    ...(framing ? [{ label: "Framing", value: framing }] : []),
+    ...(captions ? [{ label: "Captions", value: captions }] : []),
+    ...(settings["remove_silences"] === true ? [{ label: "Pauses", value: "Removed" }] : []),
+  ]
+}
+
+function ClipFolders({ folders }: { folders: CutVideoClipsResult["folders"] }) {
+  return (
+    <p className="text-muted-foreground pt-3 text-xs">
+      Saved in {folders.length === 1 ? "the folder" : "the folders"}{" "}
+      {folders.map((folder, index) => (
+        <Fragment key={folder.id}>
+          {index > 0 ? ", " : null}
+          <Link
+            className="text-foreground font-medium underline-offset-4 hover:underline"
+            search={{ folder: folder.id }}
+            to="/files"
+          >
+            {folder.name}
+          </Link>
+        </Fragment>
+      ))}
+      .
+    </p>
   )
 }
 
 function ClipTile({ clip }: { clip: VideoClip }) {
   const [open, setOpen] = useState(false)
   const length = clip.durationMs === null ? null : formatDuration(clip.durationMs, "milliseconds")
-  const caption = (
-    <div className="grid min-w-0 gap-0.5 pt-1.5">
-      <p className="truncate text-xs font-medium" title={clip.name}>
-        {clip.name}
-      </p>
-      <p className="text-muted-foreground truncate text-xs tabular-nums">
-        {clip.ranges.join(" + ")}
-      </p>
-      {clip.effects.length > 0 ? (
-        <p className="text-muted-foreground truncate text-xs" title={clip.effects.join(" · ")}>
-          {clip.effects.join(" · ")}
-        </p>
-      ) : null}
-      {clip.overlays.map((overlay, index) => (
-        <p
-          className="text-muted-foreground truncate text-xs"
-          key={`${String(index)}-${overlay.text}`}
-          title={overlay.text}
-        >
-          <span className="text-foreground">“{overlay.text}”</span>{" "}
-          <span className="tabular-nums">
-            {overlay.start}–{overlay.end}
-          </span>
-        </p>
-      ))}
-      {clip.warnings.map((warning) => (
-        <p className="text-muted-foreground text-xs wrap-break-word" key={warning}>
-          {warning}
-        </p>
-      ))}
-    </div>
-  )
   if (!clip.video) {
     return (
       <div className="min-w-0">
@@ -152,7 +124,7 @@ function ClipTile({ clip }: { clip: VideoClip }) {
           <TriangleAlertIcon className="text-destructive size-4" />
           <p className="text-destructive line-clamp-3 text-xs">{clip.error}</p>
         </div>
-        {caption}
+        <ClipCaption clip={clip} />
       </div>
     )
   }
@@ -188,19 +160,49 @@ function ClipTile({ clip }: { clip: VideoClip }) {
           {open ? <VideoFileCard autoPlay className="max-w-none" video={video} /> : null}
         </DialogContent>
       </Dialog>
-      {caption}
+      <ClipCaption clip={clip} />
+    </div>
+  )
+}
+
+function ClipCaption({ clip }: { clip: VideoClip }) {
+  return (
+    <div className="grid min-w-0 gap-0.5 pt-1.5">
+      <p className="truncate text-xs font-medium" title={clip.name}>
+        {clip.name}
+      </p>
+      <p className="text-muted-foreground truncate text-xs tabular-nums">
+        {clip.ranges.join(" + ")}
+      </p>
+      {clip.effects.length > 0 ? (
+        <p className="text-muted-foreground truncate text-xs" title={clip.effects.join(" · ")}>
+          {clip.effects.join(" · ")}
+        </p>
+      ) : null}
+      {clip.overlays.map((overlay, index) => (
+        <p
+          className="text-muted-foreground truncate text-xs"
+          key={`${String(index)}-${overlay.text}`}
+          title={overlay.text}
+        >
+          <span className="text-foreground">“{overlay.text}”</span>{" "}
+          <span className="tabular-nums">
+            {overlay.start}–{overlay.end}
+          </span>
+        </p>
+      ))}
+      {clip.warnings.map((warning) => (
+        <p className="text-muted-foreground text-xs wrap-break-word" key={warning}>
+          {warning}
+        </p>
+      ))}
     </div>
   )
 }
 
 // A still from the clip's signed preview; the player opens in a dialog.
 function ClipPoster({ fileId }: { fileId: string }) {
-  const previewQuery = useQuery({
-    ...filePreviewQueryOptions(fileId),
-    refetchOnReconnect: false,
-    refetchOnWindowFocus: false,
-  })
-  const url = previewQuery.data?.preview.url
+  const url = useVideoPreview(fileId).data?.preview.url
   if (!url) {
     return (
       <span className="text-muted-foreground absolute inset-0 flex items-center justify-center">

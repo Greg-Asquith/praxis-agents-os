@@ -12,57 +12,6 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
-- `cut_video_clips` burns custom text into a clip, such as a hook, a title
-  card, a label, or a call to action: up to five `text_overlays` per clip,
-  styled like captions, with a new `title` preset, alignment, and fades. An
-  overlay shows for the whole clip, for times on the clip, or for times in
-  one segment's video, so it stays on its moment after pauses are removed
-  and transitions overlap. Overlays sit at the top by default and move clear
-  of captions at the same edge. The clip card lists each overlay's text and
-  times.
-- `cut_video_clips` joins segments with transitions: any of ffmpeg's 58
-  `xfade` styles, such as a crossfade, a dip to black, slides, and wipes, with
-  an audio crossfade, set for every clip, one clip, or one join. Clips can fade
-  in from black and out to black. Hard cuts stay the default. Each side of a
-  transition reaches into the footage around the cut, so whole sentences stay
-  whole, and the clip card lists each clip's transitions and fades.
-- Clips and transcripts of a video save in a folder named after that video,
-  created on first use, and clips cut from a clip join the original's folder.
-  `cut_video_clips` takes an optional `folder` name instead, and its card
-  links the folder.
-- `cut_video_clips` burns in captions from the transcript, in a `bold`,
-  `clean`, or word-by-word `highlight` preset, and every part of the style can
-  be changed: 16 bundled fonts, size, colours, outline, shadow, box, capitals,
-  words per caption, lines, and position. Captions keep clear of Reels,
-  Shorts, and TikTok buttons by default. `remove_silences` cuts pauses
-  between words, and captions follow the shortened clip.
-- `cut_video_clips` follows the speaker when it changes a video's shape: the
-  new default framing, `auto`, crops to keep the largest face in frame,
-  holding still unless the face moves out of the middle of the crop and
-  jumping only at shot changes. A shot with no face is centred. Face
-  detection runs inside the media renderer (YuNet), with no network call.
-- `cut_video_clips` cuts up to five clips from workspace videos and saves each
-  as a new video File. A clip joins ranges or whole videos in order, from one
-  video or several, with cuts snapped to whole sentences and shot changes,
-  in the original shape or 9:16, 1:1, 4:5, or 16:9 (cropped to fill or fitted
-  over a blur), at the source frame rate. One failed clip doesn't stop the
-  others. The moments card gains **Cut N Clips**, which asks the agent to cut
-  the chosen moments.
-- `find_video_moments` finds the best moments in a workspace video for a
-  brief, such as five 30 to 60 second clips about pricing, with start and end
-  snapped to whole sentences and shot changes. Long videos are watched in
-  overlapping 40 minute windows. `ask_video` answers a question about a video,
-  or part of one, with timestamps. Both use Gemini 3.8 Flash
-  (`VIDEO_UNDERSTANDING_MODEL`). With them available, chat and **Add to chat**
-  in Files accept video, and the Files detail view shows a video's duration
-  and dimensions.
-- `transcribe_video` transcribes the speech in a workspace video with word
-  timings and saves it as an SRT File next to the video. Each video revision
-  is transcribed once, by Chirp 3 on Vertex deployments, `whisper-1` with
-  an OpenAI key, or otherwise Gemini 3.8 Flash, and the transcript is kept
-  for later video tools. Long videos are split at silences. **AI Usage**
-  prices transcription per audio minute (Gemini by tokens). On GCP,
-  bootstrap enables the Speech-to-Text API when `GOOGLE_VERTEX_AI=true`.
 - An isolated media renderer (`apps/renderer`) runs ffmpeg for video probe,
   scene detection, cuts, audio extraction, and still frames. Each command
   runs under a seccomp filter with no network sockets and bounded memory,
@@ -80,19 +29,60 @@ minor release. Patch releases contain backward-compatible fixes only.
   `GOOGLE_API_KEY`, larger videos are uploaded once per revision to the
   Gemini Files API (up to 2 GB), reused until they expire, audited, and
   deleted when the File is purged. `generate_image_from_video` uses this
-  path.
-- Long tool calls can report their current stage with a `tool.progress`
-  stream event. `generate_image_from_video` reports when it prepares the
-  video and when it generates the image, and gives up after 10 minutes
-  instead of running until the run's own limit.
+  path and gives up after 10 minutes instead of running until the run's own
+  limit.
+- `transcribe_video` transcribes the speech in a workspace video with word
+  timings and saves it as an SRT File in the video's folder. Each video
+  revision is transcribed once, by Chirp 3 on Vertex deployments,
+  `whisper-1` with an OpenAI key, or otherwise Gemini 3.8 Flash, and the
+  transcript is kept for later video tools. Long videos are split at
+  silences. On GCP, bootstrap enables the Speech-to-Text API when
+  `GOOGLE_VERTEX_AI=true`.
+- `find_video_moments` finds the best moments in a workspace video for a
+  brief, such as five 30 to 60 second clips about pricing, with start and end
+  snapped to whole sentences and shot changes. Long videos are watched in
+  overlapping 40 minute windows. `ask_video` answers a question about a video,
+  or part of one, with timestamps. Both use Gemini 3.8 Flash
+  (`VIDEO_UNDERSTANDING_MODEL`). With them available, chat and **Add to chat**
+  in Files accept video, and the Files detail view shows a video's duration
+  and dimensions.
+- `cut_video_clips` cuts up to five clips from workspace videos and saves each
+  as a new video File, up to about 35 minutes long. A clip joins ranges or
+  whole videos in order, from one video or several, with cuts snapped to
+  whole sentences and shot changes, in the original shape or 9:16, 1:1, 4:5,
+  or 16:9, at the source frame rate. When the shape changes, the default
+  `auto` framing follows the largest face and moves only at shot changes;
+  `center` and `fit` (the whole frame over a blur) are the alternatives. One
+  failed clip doesn't stop the others. The moments card gains **Cut N
+  Clips**, which asks the agent to cut the chosen moments.
+- `cut_video_clips` burns in captions from the transcript, in a `bold`,
+  `clean`, or word-by-word `highlight` preset, and every part of the style can
+  be changed: 16 bundled fonts, size, colours, outline, shadow, box, capitals,
+  words per caption, lines, and position. Captions keep clear of Reels,
+  Shorts, and TikTok buttons by default. `remove_silences` cuts pauses
+  between words, and captions follow the shortened clip.
+- `cut_video_clips` joins segments with any of ffmpeg's 58 `xfade`
+  transitions, such as a crossfade, a dip to black, slides, and wipes, with
+  an audio crossfade, set for every clip, one clip, or one join. Clips can
+  fade in from black and out to black. Hard cuts stay the default.
+- `cut_video_clips` burns up to five text overlays into each clip, such as a
+  hook, a title card, or a call to action, styled like captions, with a
+  `title` preset, alignment, and fades. An overlay shows for the whole clip,
+  for times on the clip, or for times in one segment's video.
+- Clips and transcripts of a video save in a folder named after that video,
+  and clips cut from a clip join the original's folder. `cut_video_clips`
+  takes an optional `folder` name instead.
 - Conversations play video. A tool result that saves a video shows a player
-  with its duration, dimensions, and File details, and a sent video shows the
-  same card. Running tool rows show the tool's current stage, and chat
+  with its duration, dimensions, and File details; clip results show a grid
+  with each clip's transitions, fades, and overlays, and link the folder. A
+  sent video shows the same card. Long tool calls report their current stage
+  with a `tool.progress` stream event, shown on the running tool row. Chat
   attachments show their upload percentage, then "Preparing video" until the
   video is measured.
 - The usage ledger accepts video understanding, generation, and
-  transcription usage. **AI Usage** prices Veo 3.1 output per second by
-  resolution and shows unpriced video output as **Incomplete video outputs**.
+  transcription usage. **AI Usage** prices transcription per audio minute
+  (Gemini by tokens) and Veo 3.1 output per second by resolution, and shows
+  unpriced video output as **Incomplete video outputs**.
 - Claude Haiku 5.5 is available directly and through Google Cloud. It is the
   Anthropic **Light** default and the default Claude model for native web
   search, web fetch, and classification, priced from $0.10 input and $0.50
@@ -162,12 +152,8 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
-- Clips from `cut_video_clips` can be about 35 minutes long, up from 1
-  minute 43 seconds. The storage provider copies renderer outputs into Files
-  (GCS rewrite, S3 copy, Azure and local streamed copies), so a clip File can
-  be as large as an uploaded video, and `MEDIA_RENDERER_MAX_OUTPUT_BYTES`
-  defaults to 2 GiB. Local and Azure signed uploads stream to storage instead
-  of buffering in API memory.
+- Local and Azure Files uploads stream to storage instead of buffering in API
+  memory.
 - Files uploads show a floating panel with the file name, a progress bar,
   bytes sent, and a Cancel button, shared by the upload button and drag and
   drop. The panel confirms when uploads finish and keeps errors until
@@ -199,8 +185,7 @@ minor release. Patch releases contain backward-compatible fixes only.
   without a prompt.
 - People can upload videos up to 4 GiB to Files on Google Cloud Storage and
   Amazon S3, set by `MAX_FILE_SIZE_SOURCE_VIDEO`. Azure and local storage keep
-  the 100 MB `MAX_FILE_SIZE_VIDEO` limit, which also bounds every video a tool
-  saves. Files accept WebM, and QuickTime files are stored as
+  the 100 MB `MAX_FILE_SIZE_VIDEO` limit for uploads. Files accept WebM, and QuickTime files are stored as
   `video/quicktime` instead of `video/mov`.
 
 ### Removed
@@ -224,12 +209,6 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Added
 
-- `cut_video_clips` burns in captions from the transcript, in a `bold`,
-  `clean`, or word-by-word `highlight` preset, and every part of the style can
-  be changed: 16 bundled fonts, size, colours, outline, shadow, box, capitals,
-  words per caption, lines, and position. Captions keep clear of Reels,
-  Shorts, and TikTok buttons by default. `remove_silences` cuts pauses
-  between words, and captions follow the shortened clip.
 - Password, OAuth, and TOTP authentication; secure sessions; users,
   workspaces, memberships, invitations, and role-based access.
 - A Pydantic AI agent runtime with streamed conversations, typed tools,

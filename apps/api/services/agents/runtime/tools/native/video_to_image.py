@@ -23,7 +23,6 @@ from core.settings import settings
 from services.agents.models.domain import PROVIDER_GOOGLE, ResolvedModel
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
-from services.agents.runtime.stream_protocol import ToolProgressEvent
 from services.agents.runtime.tools import (
     TOOL_EFFECT_SCOPE_INTERNAL,
     TOOL_EFFECT_WRITE,
@@ -42,6 +41,7 @@ from services.agents.runtime.tools.native.image_generation import (
     run_native_image_generation,
 )
 from services.agents.runtime.tools.registry import runtime_tool
+from services.agents.runtime.tools.video.utils import progress
 from services.files import write_generated_image
 from utils.validation import normalize_optional_text
 
@@ -151,9 +151,8 @@ async def generate_image_from_video(
         raise ModelRetry("generate_image_from_video requires a non-empty prompt.")
 
     model_spec = resolve_video_to_image_model(model=model)
-    await ctx.deps.sink.emit(
-        ToolProgressEvent(tool_call_id=ctx.tool_call_id, stage="Preparing Video")
-    )
+    stage = progress(ctx)
+    await stage("Preparing Video")
     input_media = await load_workspace_video_input(
         ctx,
         file_id,
@@ -161,9 +160,7 @@ async def generate_image_from_video(
         inline_max_bytes=settings.NATIVE_VIDEO_TO_IMAGE_MAX_INPUT_BYTES,
     )
     await ctx.deps.db.commit()
-    await ctx.deps.sink.emit(
-        ToolProgressEvent(tool_call_id=ctx.tool_call_id, stage="Generating Image")
-    )
+    await stage("Generating Image")
     image = await run_native_image_generation(
         deps=ctx.deps,
         prompt=normalized_prompt,

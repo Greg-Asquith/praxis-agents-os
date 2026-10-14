@@ -76,11 +76,7 @@ class StorageProvider(Protocol):
         *,
         expected_source_etag: str,
     ) -> StoredObject:
-        """Copies a platform staging object into a workspace bucket, create-only.
-
-        The copy runs inside the provider where it can, so large objects never pass
-        through API memory. The caller authorises both refs.
-        """
+        """Copies a platform staging object into a workspace bucket inside the provider, create-only."""
         ...
 
     async def put_object_stream(
@@ -112,10 +108,7 @@ class StorageProvider(Protocol):
         max_size_bytes: int,
         expires_in: timedelta,
     ) -> SignedUpload:
-        """Create a create-only platform staging upload of up to ``max_size_bytes``.
-
-        Not every provider enforces the bound, so callers check the stored size before trusting it.
-        """
+        """Create a create-only platform staging upload; callers check the stored size afterwards."""
         ...
 
     async def create_signed_download(

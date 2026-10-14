@@ -160,7 +160,6 @@ class FilesSettingsMixin:
         default="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown",
         description="Allowed document MIME types",
     )
-    ALLOWED_VIDEO_TYPES: str = Field(default="video/mp4", description="Allowed video MIME types")
 
     # File Processing Settings
     ENABLE_IMAGE_PROCESSING: bool = Field(

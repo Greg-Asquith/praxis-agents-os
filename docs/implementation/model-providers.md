@@ -46,8 +46,8 @@ The single-request output limit includes thinking: 65,536 tokens for streaming
 and 32,768 for non-streaming HTTP calls. Long decode up to 1,048,576 tokens is
 pending: it requires Google Gen AI 2.30.1 or later, continuation handling, and
 verification of cumulative usage and context accounting. The installed 2.25.0
-SDK supports the ordinary request path. Provider-native computer use and agentic
-video processing are outside this catalogue addition.
+SDK supports the ordinary request path. Praxis doesn't use Argon's
+provider-native computer use or agentic video processing.
 
 The [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon)
 and [Google Cloud pricing](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing),

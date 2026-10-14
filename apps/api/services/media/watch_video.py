@@ -1,4 +1,4 @@
-# apps/api/services/media/understanding.py
+# apps/api/services/media/watch_video.py
 
 """Calls the video understanding model for find_video_moments and ask_video.
 
@@ -8,7 +8,6 @@ untrusted text from hostile media; callers use only the times they parse.
 """
 
 import asyncio
-import re
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -30,7 +29,6 @@ type VideoPart = BinaryContent | VideoUrl | UploadedFile
 type UnderstandingRequest = Sequence[str | VideoPart]
 
 CONCURRENT_UNDERSTANDING_CALLS = 3
-_TIMESTAMP = re.compile(r"^(?:(\d{1,2}):)?(\d{1,3}):([0-5]\d(?:\.\d{1,3})?)$")
 
 
 async def watch_video[T](
@@ -75,12 +73,3 @@ async def watch_video[T](
     return await run_metered_helper(
         replace(usage, details={**(usage.details or {}), "calls": len(requests)}), call
     )
-
-
-def parse_timestamp(text: str) -> int | None:
-    """Reads MM:SS or H:MM:SS, with optional fractional seconds, as milliseconds."""
-    match = _TIMESTAMP.match(text.strip())
-    if match is None:
-        return None
-    hours, minutes, seconds = match.groups()
-    return round((int(hours or 0) * 3600 + int(minutes) * 60 + float(seconds)) * 1000)

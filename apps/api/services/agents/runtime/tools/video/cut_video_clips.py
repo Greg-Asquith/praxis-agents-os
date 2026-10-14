@@ -2,7 +2,6 @@
 
 """Cuts clips from workspace videos, joining ranges in order, and saves each as a new File."""
 
-from collections.abc import Awaitable, Callable
 from math import ceil
 from pathlib import PurePath
 from typing import Annotated, Literal
@@ -24,12 +23,14 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.agents.runtime.tools.media_inputs import record_media_read_audit
 from services.agents.runtime.tools.registry import runtime_tool
-from services.agents.runtime.tools.video.transcribe_video import TRANSCRIPTION_ALLOWANCE_SECONDS
 from services.agents.runtime.tools.video.utils import (
+    RENDERER_CALL_SECONDS,
+    TRANSCRIPTION_ALLOWANCE_SECONDS,
     probed_video,
     progress,
-    record_video_audit,
+    video_shot_cuts,
     video_transcript,
     workspace_video,
 )
@@ -49,7 +50,6 @@ from services.media.captions import (
     TextOverlay,
 )
 from services.media.clips import (
-    RENDER_CONCURRENCY,
     AspectRatio,
     ClipSource,
     Framing,
@@ -57,7 +57,6 @@ from services.media.clips import (
     TransitionOptions,
     output_size,
     plan_clip,
-    render_clips,
 )
 from services.media.domain import (
     MAX_CUT_SEGMENTS,
@@ -65,8 +64,7 @@ from services.media.domain import (
     MediaOperationResult,
     MediaRendererError,
 )
-from services.media.get_video_shot_cuts import get_video_shot_cuts
-from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS
+from services.media.render_clips import RENDER_CONCURRENCY, render_clips
 from services.media.transcription_providers import transcription_provider
 from services.storage.paths import safe_filename
 from utils.validation import normalize_optional_text
@@ -74,7 +72,6 @@ from utils.validation import normalize_optional_text
 MAX_CLIPS = 5
 MAX_TEXT_OVERLAYS = 5
 MAX_CLIP_NAME_CHARS = 120
-RENDERER_CALL_SECONDS = settings.MEDIA_RENDERER_TIMEOUT_SECONDS + REQUEST_ALLOWANCE_SECONDS
 
 
 class ClipSegmentArgument(BaseModel):
@@ -163,9 +160,9 @@ def cut_video_clips_available() -> bool:
         "segment's transition_in; any ffmpeg xfade style, 400 ms by default. Use transitions "
         "and fade_in_ms or fade_out_ms only when the person asks for them. A clip's "
         "text_overlays add text such as a hook or a call to action, at the top by default; "
-        "the 'title' preset suits a hook. Clips save in a "
-        "folder named after their first video unless folder names another. One clip failing "
-        "doesn't stop the others; the result reports each clip."
+        "the 'title' preset suits a hook. Clips save in a folder named after their first video "
+        "unless folder names another. One clip failing doesn't stop the others; the result "
+        "reports each clip."
     ),
     effect=TOOL_EFFECT_WRITE,
     effect_scope=TOOL_EFFECT_SCOPE_INTERNAL,
@@ -258,7 +255,6 @@ async def cut_video_clips(
     ] = None,
 ) -> dict[str, object]:
     """Renders each clip from the caller's own videos and saves it in its output folder."""
-    stage = progress(ctx)
     videos = await _workspace_videos(ctx, clips)
     style = (
         None
@@ -271,35 +267,19 @@ async def cut_video_clips(
         videos,
         framing=framing,
         needs_words=style is not None or remove_silences,
-        stage=stage,
     )
-    planned = []
-    for index, clip in enumerate(clips, start=1):
-        first = sources[clip.segments[0].file_id.entity_id]
-        try:
-            planned.append(
-                plan_clip(
-                    [
-                        (sources[segment.file_id.entity_id], segment.start_ms, segment.end_ms)
-                        for segment in clip.segments
-                    ],
-                    size=output_size(aspect_ratio, first.metadata),
-                    framing=framing,
-                    snap=clip.snap,
-                    captions=style,
-                    remove_silences=remove_silences,
-                    transition=clip.transition or transition,
-                    transitions_in=[segment.transition_in for segment in clip.segments],
-                    fade_in_ms=clip.fade_in_ms,
-                    fade_out_ms=clip.fade_out_ms,
-                    overlays=clip.text_overlays,
-                )
-            )
-        except ValueError as exc:
-            raise ModelRetry(f"Clip {index}: {exc}") from exc
+    planned = _plan_clips(
+        clips,
+        sources,
+        aspect_ratio=aspect_ratio,
+        framing=framing,
+        captions=style,
+        remove_silences=remove_silences,
+        transition=transition,
+    )
 
     for file, revision in videos.values():
-        await record_video_audit(
+        await record_media_read_audit(
             ctx,
             file.id,
             revision.id,
@@ -310,6 +290,7 @@ async def cut_video_clips(
     # The analysis and the record are kept even if every render fails.
     await ctx.deps.db.commit()
 
+    stage = progress(ctx)
     await stage("Rendering Clips")
     rendered = await render_clips(ctx.deps.workspace.id, planned)
     await stage("Saving Clips")
@@ -353,6 +334,43 @@ async def _workspace_videos(
     return videos
 
 
+def _plan_clips(
+    clips: list[ClipArgument],
+    sources: dict[UUID, ClipSource],
+    *,
+    aspect_ratio: AspectRatio,
+    framing: Framing,
+    captions: CaptionStyle | None,
+    remove_silences: bool,
+    transition: TransitionOptions | None,
+) -> list[PlannedClip]:
+    planned = []
+    for index, clip in enumerate(clips, start=1):
+        first = sources[clip.segments[0].file_id.entity_id]
+        try:
+            planned.append(
+                plan_clip(
+                    [
+                        (sources[segment.file_id.entity_id], segment.start_ms, segment.end_ms)
+                        for segment in clip.segments
+                    ],
+                    size=output_size(aspect_ratio, first.metadata),
+                    framing=framing,
+                    snap=clip.snap,
+                    captions=captions,
+                    remove_silences=remove_silences,
+                    transition=clip.transition or transition,
+                    transitions_in=[segment.transition_in for segment in clip.segments],
+                    fade_in_ms=clip.fade_in_ms,
+                    fade_out_ms=clip.fade_out_ms,
+                    overlays=clip.text_overlays,
+                )
+            )
+        except ValueError as exc:
+            raise ModelRetry(f"Clip {index}: {exc}") from exc
+    return planned
+
+
 async def _clip_sources(
     ctx: RunContext[RuntimeDeps],
     clips: list[ClipArgument],
@@ -360,11 +378,8 @@ async def _clip_sources(
     *,
     framing: Framing,
     needs_words: bool,
-    stage: Callable[[str], Awaitable[None]],
 ) -> dict[UUID, ClipSource]:
-    """Measures each video and loads what its clips need: a transcript to snap, caption, or
-    remove pauses, and shot cuts to snap or follow a face.
-    """
+    """Loads each video's transcript and shot cuts where its clips snap, caption, or crop."""
     if needs_words and transcription_provider() is None:
         raise ToolFailed(
             "Captions and removing pauses need speech transcription, which isn't set up."
@@ -386,11 +401,7 @@ async def _clip_sources(
             )
         shot_cuts_ms: tuple[int, ...] = ()
         if file_id in snapped or framing == "auto":
-            await stage("Finding Shot Changes")
-            try:
-                shot_cuts_ms = await get_video_shot_cuts(ctx.deps.db, revision=revision)
-            except MediaRendererError as exc:
-                raise ToolFailed(exc.message) from exc
+            shot_cuts_ms = await video_shot_cuts(ctx, revision)
         sources[file_id] = ClipSource(
             revision=revision, metadata=metadata, transcript=transcript, shot_cuts_ms=shot_cuts_ms
         )
@@ -451,11 +462,7 @@ async def _save_clip(
         "height": metadata.height,
         "size_bytes": saved.revision.size_bytes,
         "folder": {"id": str(folder.id), "name": folder.name},
-        "segments": _segments(request),
-        "fade_in_ms": request.operation.fade_in_ms,
-        "fade_out_ms": request.operation.fade_out_ms,
-        "text_overlays": _overlays(request.overlays),
-        "warnings": list(request.warnings),
+        **_plan_output(request),
     }
 
 
@@ -489,6 +496,13 @@ def _failed(index: int, name: str, request: PlannedClip, reason: str) -> dict[st
         "status": "failed",
         "name": name,
         "error": reason,
+        **_plan_output(request),
+    }
+
+
+def _plan_output(request: PlannedClip) -> dict[str, object]:
+    """Reports what a clip was planned to show, saved or not."""
+    return {
         "segments": _segments(request),
         "fade_in_ms": request.operation.fade_in_ms,
         "fade_out_ms": request.operation.fade_out_ms,

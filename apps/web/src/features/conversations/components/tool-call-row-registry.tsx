@@ -15,9 +15,10 @@ import { skillDocumentReadPresenter } from "@/features/conversations/components/
 import { skillToolPresenter } from "@/features/conversations/components/skill-tool-presenter"
 import { todoToolPresenters } from "@/features/conversations/components/todo-list-presenter"
 import { toolSearchPresenter } from "@/features/conversations/components/tool-search-presenter"
-import { videoClipsPresenter } from "@/features/conversations/components/video-clips-presenter"
-import { videoResultPresenter } from "@/features/conversations/components/video-tool-presenter"
-import { videoUnderstandingPresenter } from "@/features/conversations/components/video-understanding-presenter"
+import {
+  videoResultPresenter,
+  videoToolPresenters,
+} from "@/features/conversations/components/video-tool-presenter"
 import { webFetchToolPresenter } from "@/features/conversations/components/web-fetch-tool-presenter"
 import { webSearchToolPresenter } from "@/features/conversations/components/web-search-tool-presenter"
 import type { ToolRowPresenter, ToolRowPresenterProps } from "@/integrations/contract"
@@ -48,8 +49,7 @@ const TOOL_ROW_PRESENTERS: ToolRowPresenter[] = [
   documentToolPresenter,
   kbToolPresenter,
   memoryToolPresenter,
-  videoUnderstandingPresenter,
-  videoClipsPresenter,
+  ...videoToolPresenters,
 ]
 
 export function renderCustomToolCallRow(props: ToolRowPresenterProps) {

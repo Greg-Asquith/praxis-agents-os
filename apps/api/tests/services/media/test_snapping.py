@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from itertools import pairwise
 
 from services.media.domain import TranscriptSentence
-from services.media.moments import video_windows
 from services.media.snapping import SnapLimits, drop_overlaps, snap_range
+from services.media.utils import video_windows
 
 # Four sentences with pauses between them, in milliseconds.
 SENTENCES = (

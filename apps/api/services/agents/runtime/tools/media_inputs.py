@@ -15,7 +15,6 @@ from pydantic_ai.messages import BinaryContent, UploadedFile, VideoUrl
 from core.settings import settings
 from models.files import FileRevision
 from services.agents.models.domain import PROVIDER_GOOGLE
-from services.agents.models.utils import is_provider_configured
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.tools.files.utils import current_file_revision
@@ -26,7 +25,6 @@ from services.files.utils import private_ref_from_key
 from services.gemini_files import (
     GEMINI_FILES_MAX_BYTES,
     GEMINI_PROCESSING_TIMEOUT_SECONDS,
-    GeminiFile,
     GeminiFileError,
     delete_gemini_file,
     upload_gemini_file,
@@ -260,13 +258,6 @@ def _validate_aggregate_size(
     )
 
 
-def long_video_input_available() -> bool:
-    """Checks Google can read workspace video past the inline bound on this deployment."""
-    if not is_provider_configured(PROVIDER_GOOGLE):
-        return False
-    return not settings.GOOGLE_VERTEX_AI or settings.STORAGE_PROVIDER == "gcs"
-
-
 async def load_workspace_video_input(
     ctx: RunContext[RuntimeDeps],
     file_reference: FileReference,
@@ -275,12 +266,7 @@ async def load_workspace_video_input(
     inline_max_bytes: int,
     options: VideoInputOptions | None = None,
 ) -> WorkspaceVideoInput:
-    """Prepares a current workspace video for Google without trusting any model-supplied location.
-
-    Vertex with GCS storage reads the revision by `gs://` URI. The Gemini API
-    reads videos over `inline_max_bytes` through a cached Files API upload.
-    Everything else is sent inline, up to `inline_max_bytes`.
-    """
+    """Sends a current workspace video by `gs://` URI, Files API upload, or inline bytes."""
     resolved = await _resolve_workspace_media_input(
         ctx,
         file_reference,
@@ -291,6 +277,7 @@ async def load_workspace_video_input(
         max_bytes=None,
     )
     metadata = (options or VideoInputOptions()).vendor_metadata()
+    # Every location comes from the revision's own object key, never from the model.
     ref = _workspace_object_ref(ctx, resolved)
     content: BinaryContent | VideoUrl | UploadedFile | None = None
     if settings.GOOGLE_VERTEX_AI:
@@ -370,7 +357,18 @@ async def _gemini_file_uri(
     revision.gemini_file_name = uploaded.name
     revision.gemini_file_uri = uploaded.uri
     revision.gemini_file_expires_at = uploaded.expires_at
-    await _record_gemini_upload(ctx, resolved, uploaded, tool_name=tool_name)
+    await record_media_read_audit(
+        ctx,
+        resolved.file_id,
+        resolved.revision_id,
+        operation="gemini_files_upload",
+        tool_name=tool_name,
+        details={
+            "size_bytes": resolved.size_bytes,
+            "gemini_file_name": uploaded.name,
+            "expires_at": uploaded.expires_at.isoformat(),
+        },
+    )
     # Workspace bytes now sit with Google, so the record must survive a failed provider call.
     await ctx.deps.db.commit()
     if stale_name is not None:
@@ -378,30 +376,31 @@ async def _gemini_file_uri(
     return uploaded.uri
 
 
-async def _record_gemini_upload(
+async def record_media_read_audit(
     ctx: RunContext[RuntimeDeps],
-    resolved: _ResolvedWorkspaceMediaInput,
-    uploaded: GeminiFile,
+    file_id: UUID,
+    revision_id: UUID,
     *,
+    operation: str,
     tool_name: str,
+    details: dict[str, object],
 ) -> None:
+    """Records the agent sending a File revision's media to a provider or the renderer."""
     await safe_record_operation_audit_event(
         ctx.deps.db,
         workspace_id=ctx.deps.workspace.id,
         action=AuditAction.READ,
         resource_type=AuditResourceType.FILE,
-        resource_id=resolved.file_id,
+        resource_id=file_id,
         actor_type=AuditActorType.AGENT,
         actor_id=ctx.deps.agent.id,
         actor_display=ctx.deps.agent.name,
         requested_by_user_id=ctx.deps.user.id,
         details={
-            "operation": "gemini_files_upload",
+            "operation": operation,
             "tool_name": tool_name,
             "run_id": str(ctx.deps.run.id),
-            "revision_id": str(resolved.revision_id),
-            "size_bytes": resolved.size_bytes,
-            "gemini_file_name": uploaded.name,
-            "expires_at": uploaded.expires_at.isoformat(),
+            "revision_id": str(revision_id),
+            **details,
         },
     )

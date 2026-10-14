@@ -3,6 +3,7 @@
 import { VideoIcon } from "lucide-react"
 
 import { ToolResultCard } from "@/components/tool-ui/result-card"
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { ActivityStatusBadge } from "@/features/conversations/components/tool-activity-status"
 import { VideoFileCard } from "@/features/conversations/components/video-file-card"
 import type { ToolActivity } from "@/features/conversations/message-parts"
@@ -20,12 +21,7 @@ export function VideoToolRow({ activity, label }: { activity: ToolActivity; labe
       ariaLabel={label}
       defaultOpen
       details={[{ label: "Videos", value: countLabel }]}
-      heading={
-        <span className="inline-flex min-w-0 items-center gap-2">
-          <VideoIcon className="text-muted-foreground size-4 shrink-0" />
-          <span className="truncate">{label}</span>
-        </span>
-      }
+      heading={<ToolHeading icon={VideoIcon}>{label}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-3" role="list">

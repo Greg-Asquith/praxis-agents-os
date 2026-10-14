@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# deploy/gcp/deploy.sh
 
 set -Eeuo pipefail
 
@@ -172,6 +173,11 @@ for memory_variable in API_MEMORY WEB_MEMORY JOB_MEMORY MEDIA_RENDERER_MEMORY; d
   (( memory_mib >= 512 )) \
     || die "$memory_variable must be at least 512Mi for the Cloud Run gen2 execution environment"
 done
+# The renderer's disk is its memory, shared by its inputs, one output, and the isolated child.
+renderer_need_mib=$(( (MEDIA_RENDERER_MAX_INPUT_BYTES + MEDIA_RENDERER_MAX_OUTPUT_BYTES \
+  + MEDIA_RENDERER_CHILD_MEMORY_BYTES) / 1048576 ))
+(( renderer_need_mib <= $(memory_to_mib MEDIA_RENDERER_MEMORY) )) \
+  || die "MEDIA_RENDERER_MEMORY must cover MAX_FILE_SIZE_SOURCE_VIDEO, MEDIA_RENDERER_MAX_OUTPUT_BYTES, and MEDIA_RENDERER_CHILD_MEMORY_BYTES (${renderer_need_mib}Mi)"
 
 API_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${API_IMAGE_NAME}:${GIT_SHA}"
 WEB_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${WEB_IMAGE_NAME}:${GIT_SHA}"

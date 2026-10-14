@@ -19,7 +19,7 @@ from models.files import File, FileRevision
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.tools.contract import ToolFieldPresentation
-from services.agents.runtime.tools.files.utils import current_file_revision
+from services.agents.runtime.tools.files.utils import current_file_revision, revision_source_ref
 from services.documents.inputs import load_input_files
 from services.documents.outputs import (
     EditTarget,
@@ -157,13 +157,8 @@ def read_args(file: File, revision: FileRevision, **args: Any) -> dict[str, Any]
     return {
         **{key: value for key, value in args.items() if value is not None},
         "max_chars": settings.DOCUMENT_TOOLS_READ_MAX_CHARS,
-        "source_ref": source_ref(file, revision),
+        "source_ref": revision_source_ref(file, revision),
     }
-
-
-def source_ref(file: File, revision: FileRevision) -> str:
-    """Returns the provenance attached to text read from a File revision."""
-    return f"file:{file.id}/revision:{revision.id}"
 
 
 def file_result(file: File, revision: FileRevision, value: dict[str, Any]) -> dict[str, Any]:
@@ -172,7 +167,7 @@ def file_result(file: File, revision: FileRevision, value: dict[str, Any]) -> di
     name = {
         "node": "praxis_untrusted",
         "source_kind": "file",
-        "source_ref": source_ref(file, revision),
+        "source_ref": revision_source_ref(file, revision),
         "content": file.name,
     }
     return {"file_id": str(file.id), "revision_id": str(revision.id), "name": name, **value}
@@ -204,7 +199,7 @@ async def edit_office_file(
         document_format=document_format,
         data=data,
         attachments=images,
-        args=_edit_args(ctx, source_ref(file, revision), worker_operations),
+        args=_edit_args(ctx, revision_source_ref(file, revision), worker_operations),
     )
     output = _output(result)
     target = EditTarget(
@@ -249,7 +244,7 @@ async def create_office_file(
             internal_entity_id(template_file_id),
             partial(office_format, expected=document_format),
         )
-        text_source = source_ref(template, revision)
+        text_source = revision_source_ref(template, revision)
         details = {"template_file_id": str(template.id), "template_revision_id": str(revision.id)}
     worker_operations, images = await _worker_operations(ctx, tool_name, operations)
     result = await run_worker(

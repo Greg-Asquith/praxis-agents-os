@@ -65,7 +65,7 @@ class MediaSettingsMixin:
         default=2400,
         ge=300,
         le=3600,
-        description="Longest stretch of video one find_video_moments model call watches.",
+        description="Longest stretch of video one find_video_moments or ask_video call watches.",
     )
     VIDEO_SNAP_SHOT_TOLERANCE_MS: int = Field(
         default=700,

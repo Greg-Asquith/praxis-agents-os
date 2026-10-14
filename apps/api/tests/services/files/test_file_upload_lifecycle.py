@@ -1,3 +1,5 @@
+# apps/api/tests/services/files/test_file_upload_lifecycle.py
+
 """Service tests for workspace file upload and lifecycle operations."""
 
 from collections.abc import Iterator

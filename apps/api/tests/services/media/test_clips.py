@@ -42,6 +42,12 @@ def _transcript(*, model: str = "chirp_3", words=WORDS, sentences=SENTENCES) -> 
     )
 
 
+def _dialogue(document: str) -> list[tuple[str, str, str, str]]:
+    """(start, end, style, text) for each event in an ASS file."""
+    events = [line.split(",", 9) for line in document.splitlines() if line.startswith("Dialogue")]
+    return [(event[1], event[2], event[3], event[9]) for event in events]
+
+
 def _source(duration_ms: int, **analysis) -> ClipSource:
     workspace = build_workspace()
     file = build_file(workspace=workspace, category="video", content_type="video/mp4")
@@ -144,9 +150,7 @@ def test_removed_pauses_shorten_the_clip_and_captions_keep_to_the_words() -> Non
     assert clip.operation.keep_frames == ((0, 27, 72), (0, 147, 180))
     assert clip.duration_ms == 2_600
     assert clip.operation.captions
-    starts = [
-        line.split(",")[1] for line in clip.captions.splitlines() if line.startswith("Dialogue")
-    ]
+    starts = [event[0] for event in _dialogue(clip.captions)]
     # "Pricing" starts 150 ms in; "You" starts 150 ms after the 1.5 s first part.
     assert starts == ["0:00:00.15", "0:00:01.65"]
 
@@ -175,8 +179,7 @@ def test_caption_words_cant_style_the_file_and_lines_stay_within_the_bound() -> 
         size=(1080, 1920), words=words, captions=CaptionStyle(preset="bold")
     )
 
-    texts = [line.split(",", 9)[9] for line in document.splitlines() if line.startswith("Dialogue")]
-    lines = [line for text in texts for line in text.split("\\N")]
+    lines = [line for *_, text in _dialogue(document) for line in text.split("\\N")]
     assert all("{" not in line and "\\" not in line for line in lines)
     # Bold Montserrat on a 1080 pixel wide frame fits 15 characters a line.
     assert max(len(line) for line in lines) <= 15
@@ -264,18 +267,10 @@ def test_captions_switch_segments_halfway_through_a_transition() -> None:
         transition=TransitionOptions(style="fade"),
     )
 
-    starts = [
-        line.split(",")[1] for line in clip.captions.splitlines() if line.startswith("Dialogue")
-    ]
+    starts = [event[0] for event in _dialogue(clip.captions)]
     # The blend runs 2.8 to 3.2 s. "You" is spoken 150 ms into the second segment's extra
     # 200 ms, at 2.95 s, so it waits for the blend's middle.
     assert starts == ["0:00:01.05", "0:00:03.00"]
-
-
-def _dialogue(document: str) -> list[tuple[str, str, str, str]]:
-    """(start, end, style, text) for each event in an ASS file."""
-    events = [line.split(",", 9) for line in document.splitlines() if line.startswith("Dialogue")]
-    return [(event[1], event[2], event[3], event[9]) for event in events]
 
 
 def test_an_overlay_on_a_segment_keeps_to_its_moment_after_pauses_are_removed() -> None:

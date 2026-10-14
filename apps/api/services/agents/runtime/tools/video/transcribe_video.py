@@ -22,8 +22,11 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.agents.runtime.tools.files.utils import revision_source_ref
 from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.tools.video.utils import (
+    RENDERER_CALL_SECONDS,
+    TRANSCRIPTION_ALLOWANCE_SECONDS,
     language_argument,
     video_transcript,
     workspace_video,
@@ -34,14 +37,13 @@ from services.files import (
     ensure_source_file_folder,
     write_agent_file,
 )
+from services.files.create_file_with_revision import FileRevisionWriteResult
 from services.files.utils import format_duration
-from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS
+from services.media.domain import Transcript
 from services.media.transcription_providers import transcription_provider
 from services.media.utils import transcript_srt
 from services.storage.paths import safe_filename
 
-# Extraction waits on the renderer; transcription of a four-hour video takes several minutes more.
-TRANSCRIPTION_ALLOWANCE_SECONDS = 900
 OPENING_SENTENCES = 8
 
 
@@ -84,9 +86,7 @@ def transcription_available() -> bool:
     supports_auto=True,
     supports_approval=True,
     takes_ctx=True,
-    timeout=settings.MEDIA_RENDERER_TIMEOUT_SECONDS
-    + REQUEST_ALLOWANCE_SECONDS
-    + TRANSCRIPTION_ALLOWANCE_SECONDS,
+    timeout=RENDERER_CALL_SECONDS + TRANSCRIPTION_ALLOWANCE_SECONDS,
     output_model=TranscribeVideoOutput,
     availability_check=transcription_available,
     presentation=ToolPresentation(
@@ -133,33 +133,7 @@ async def transcribe_video(
     if not transcript.words:
         raise ToolFailed("No speech was found in the video.")
 
-    name = safe_filename(f"{PurePath(file.name).stem} transcript.srt")
-    folder = await ensure_source_file_folder(ctx.deps, file)
-    # Transcribing again adds a revision to the transcript in the video's folder, not a copy.
-    existing = (
-        await ctx.deps.db.execute(
-            select(File.id, File.current_revision_id).where(
-                File.workspace_id == ctx.deps.workspace.id,
-                File.name == name,
-                File.folder_id == folder.id,
-                File.deleted.is_(False),
-            )
-        )
-    ).first()
-    try:
-        async with ctx.deps.db.begin_nested():
-            saved = await write_agent_file(
-                ctx.deps.db,
-                workspace=ctx.deps.workspace,
-                agent=ctx.deps.agent,
-                name=name,
-                content=transcript_srt(transcript.sentences),
-                file_id=existing.id if existing else None,
-                expected_current_revision_id=existing.current_revision_id if existing else None,
-                folder_id=folder.id,
-            )
-    except AppValidationError as exc:
-        raise ToolFailed(exc.message) from exc
+    saved = await _save_transcript(ctx, file, transcript)
     await create_conversation_file_references(
         ctx.deps.db,
         workspace_id=ctx.deps.workspace.id,
@@ -185,10 +159,42 @@ async def transcribe_video(
         "model": transcript.model,
         "opening": UntrustedContent(
             source_kind="video_transcript",
-            source_ref=f"file:{file.id}/revision:{revision.id}",
+            source_ref=revision_source_ref(file, revision),
             content="\n".join(
                 f"[{format_duration(sentence.start_ms)}] {sentence.text}"
                 for sentence in transcript.sentences[:OPENING_SENTENCES]
             ),
         ),
     }
+
+
+async def _save_transcript(
+    ctx: RunContext[RuntimeDeps], file: File, transcript: Transcript
+) -> FileRevisionWriteResult:
+    """Writes the SRT in the video's folder, adding a revision to an earlier one, not a copy."""
+    name = safe_filename(f"{PurePath(file.name).stem} transcript.srt")
+    folder = await ensure_source_file_folder(ctx.deps, file)
+    existing = (
+        await ctx.deps.db.execute(
+            select(File.id, File.current_revision_id).where(
+                File.workspace_id == ctx.deps.workspace.id,
+                File.name == name,
+                File.folder_id == folder.id,
+                File.deleted.is_(False),
+            )
+        )
+    ).first()
+    try:
+        async with ctx.deps.db.begin_nested():
+            return await write_agent_file(
+                ctx.deps.db,
+                workspace=ctx.deps.workspace,
+                agent=ctx.deps.agent,
+                name=name,
+                content=transcript_srt(transcript.sentences),
+                file_id=existing.id if existing else None,
+                expected_current_revision_id=existing.current_revision_id if existing else None,
+                folder_id=folder.id,
+            )
+    except AppValidationError as exc:
+        raise ToolFailed(exc.message) from exc

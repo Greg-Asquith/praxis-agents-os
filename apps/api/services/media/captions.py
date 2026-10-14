@@ -10,7 +10,6 @@ a bounded line length. Styling is a preset with optional overrides; every overri
 from a fixed list, a bounded number, or a #RRGGBB colour.
 """
 
-import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -19,6 +18,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.media.domain import MAX_CUT_SEGMENTS, TranscriptWord
+from services.media.utils import SENTENCE_END
 
 CaptionPreset = Literal["bold", "clean", "highlight"]
 OverlayPreset = Literal["bold", "clean", "title"]
@@ -80,7 +80,6 @@ CUE_HOLD_MS = 500
 LINE_HEIGHT = 1.2
 MAX_OVERLAY_CHARS = 200
 MAX_OVERLAY_FADE_MS = 1000
-_SENTENCE_END = re.compile(r"[.?!][\"')\]]*$")
 
 
 class TextStyle(BaseModel):
@@ -401,7 +400,7 @@ def _cues(words: Sequence[TranscriptWord], look: _Look) -> list[list[TranscriptW
         if current and (
             word.start_ms - current[-1].end_ms >= CUE_PAUSE_MS
             or word.speaker != current[-1].speaker
-            or _SENTENCE_END.search(current[-1].text)
+            or SENTENCE_END.search(current[-1].text)
             or len(current) == look.options.words_per_caption
             or len(_lines([item.text for item in [*current, word]], look)) > look.options.max_lines
         ):

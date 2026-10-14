@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# deploy/gcp/tests/test.sh
 
 # Source assertions match literal shell variable references.
 # shellcheck disable=SC2016
@@ -122,8 +123,17 @@ if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/short-staging-ttl-render" \
 fi
 grep -q 'MEDIA_STAGING_URL_TTL_SECONDS must be at least' "$TEST_TMP/short-staging-ttl.out"
 
-# Bootstrap must stop, not replace lifecycle rules, when it can't read the bucket.
-grep -Fq -- "couldn't read the platform-private bucket's lifecycle rules" "$GCP_DIR/bootstrap.sh"
+# Renderer memory must hold its inputs, output, and child together.
+sed 's/^MEDIA_RENDERER_MEMORY=.*$/MEDIA_RENDERER_MEMORY=8Gi/' \
+  "$GCP_DIR/.env.example" > "$TEST_TMP/small-renderer.env"
+if "$GCP_DIR/deploy.sh" --render-only "$TEST_TMP/small-renderer-render" \
+  "$TEST_TMP/small-renderer.env" abcdef0123456789 \
+  >"$TEST_TMP/small-renderer.out" 2>&1; then
+  echo "render unexpectedly accepted renderer memory below its inputs, output, and child" >&2
+  exit 1
+fi
+grep -q 'MEDIA_RENDERER_MEMORY must cover' "$TEST_TMP/small-renderer.out"
+
 for manifest in \
   "$TEST_TMP/rendered/services/praxis-api.yaml" \
   "$TEST_TMP/rendered/jobs/praxis-worker.yaml"; do

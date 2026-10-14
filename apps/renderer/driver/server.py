@@ -137,9 +137,9 @@ class OperationContext:
 class Operation:
     """A typed operation a toolchain offers.
 
-    ``validate`` returns the arguments or raises OperationError; it sees only
-    numbers, booleans, and names it checks against fixed lists. ``output_count`` and ``input_count`` say how many
-    signed uploads and downloads the caller must provide. ``run`` writes
+    ``validate`` returns the arguments or raises OperationError; it sees only numbers,
+    booleans, and names it checks against fixed lists. ``input_count`` and ``output_count``
+    say how many signed downloads and uploads the caller must provide. ``run`` writes
     outputs by index and returns the result.
     """
 
@@ -259,12 +259,11 @@ def _parse_inputs(inputs: list[Any], config: DriverConfig) -> list[tuple[SignedT
     """Parses each signed download and its size; together they must fit the input limit."""
     parsed = []
     for source in inputs:
-        if not isinstance(source, dict) or set(source) != {"url", "headers", "size_bytes"}:
-            raise OperationError("invalid_request", "An input has the wrong fields.")
+        transfer = _parse_transfer(source, config, extra_keys={"size_bytes"})
         size = source["size_bytes"]
         if type(size) is not int or size < 1:
             raise OperationError("invalid_request", "An input has the wrong size.")
-        parsed.append((_parse_transfer(source, config, extra_keys={"size_bytes"}), size))
+        parsed.append((transfer, size))
     # Inputs share the instance's in-memory disk, so the limit covers them together.
     if sum(size for _, size in parsed) > config.max_input_bytes:
         raise OperationError("input_too_large", "The input is too large for the renderer.")

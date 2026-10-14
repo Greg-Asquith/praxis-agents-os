@@ -1,10 +1,11 @@
 // apps/web/src/features/conversations/components/video-understanding-row.tsx
 
-import { use, useState, type ReactNode } from "react"
+import { use, useState } from "react"
 import { FilmIcon, ScissorsIcon } from "lucide-react"
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -28,7 +29,7 @@ type RowProps = { activity: ToolActivity; defaultOpen: boolean }
 
 export function FindVideoMomentsRow({ activity, defaultOpen }: RowProps) {
   const [selected, setSelected] = useState(0)
-  // Moments left out of "Cut These", by index; all are in by default.
+  // Moments left out of the cut, by index; all are in by default.
   const [excluded, setExcluded] = useState<ReadonlySet<number>>(() => new Set())
   const result = findVideoMomentsResult(activity.result)
   if (!result) {
@@ -46,14 +47,11 @@ export function FindVideoMomentsRow({ activity, defaultOpen }: RowProps) {
         { label: "Video", value: name },
         { label: "Moments", value: `${String(count)} ${pluralize(count, "Moment")}` },
       ]}
-      heading={<VideoHeading>Find Video Moments</VideoHeading>}
+      heading={<ToolHeading icon={FilmIcon}>Find Video Moments</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-3">
-        <VideoFileCard
-          video={result.video}
-          {...(moment ? { range: { startMs: moment.startMs, endMs: moment.endMs } } : {})}
-        />
+        <VideoFileCard range={moment ?? null} video={result.video} />
         {result.note ? <p className="text-muted-foreground text-xs">{result.note}</p> : null}
         {count > 0 ? (
           <ol aria-label="Moments" className="grid min-w-0 gap-2">
@@ -130,7 +128,7 @@ function CutMomentsAction({ moments, videoName }: { moments: VideoMoment[]; vide
         type="button"
       >
         <ScissorsIcon />
-        {count === 0 ? "Cut These" : `Cut ${String(count)} ${pluralize(count, "Clip")}`}
+        {count === 0 ? "Cut Clips" : `Cut ${String(count)} ${pluralize(count, "Clip")}`}
       </Button>
     </div>
   )
@@ -189,11 +187,11 @@ export function AskVideoRow({ activity, defaultOpen }: RowProps) {
         { label: "Video", value: name },
         { label: "Watched", value: `${result.start}–${result.end}` },
       ]}
-      heading={<VideoHeading>Ask Video</VideoHeading>}
+      heading={<ToolHeading icon={FilmIcon}>Ask Video</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-3">
-        <VideoFileCard video={result.video} {...(result.range ? { range: result.range } : {})} />
+        <VideoFileCard range={result.range} video={result.video} />
         {question ? (
           <div className="grid min-w-0 gap-1">
             <p className="text-muted-foreground text-xs font-medium">Question</p>
@@ -208,14 +206,5 @@ export function AskVideoRow({ activity, defaultOpen }: RowProps) {
         </div>
       </div>
     </ToolResultCard>
-  )
-}
-
-function VideoHeading({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <FilmIcon className="text-muted-foreground size-4 shrink-0" />
-      <span>{children}</span>
-    </span>
   )
 }

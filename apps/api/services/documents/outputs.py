@@ -22,7 +22,7 @@ from services.files.create_conversation_file_references import (
     create_conversation_file_references,
 )
 from services.files.create_file_with_revision import create_file_with_revision
-from services.files.ensure_source_folder import ensure_conversation_folder
+from services.files.ensure_conversation_folder import ensure_conversation_folder
 from services.files.resolve_folder_by_name import resolve_folder_by_name
 from services.files.revision_actor import FileRevisionActor
 from services.files.utils import get_folder_for_workspace

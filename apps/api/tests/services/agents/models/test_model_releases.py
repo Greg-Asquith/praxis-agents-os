@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/models/test_model_releases.py
+
 """Checks release-specific requests through the installed SDKs without network I/O."""
 
 import json

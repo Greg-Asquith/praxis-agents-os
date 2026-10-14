@@ -10,7 +10,9 @@ import cv2
 import numpy as np
 import pytest
 from driver.server import DriverConfig, OperationError, handle_request
-from media.operations import ACROSSFADE_CURVES, FFMPEG, OPERATIONS, XFADE_STYLES
+from media.ffmpeg import FFMPEG
+from media.operations import OPERATIONS
+from media.transitions import ACROSSFADE_CURVES, XFADE_STYLES
 
 from tests.conftest import FakeStorage
 
@@ -346,14 +348,6 @@ def test_malformed_media_fails_with_a_plain_error(
             "fps": 30,
             "fit": False,
             "filter": "movie=http://example.com",
-        },
-        {
-            "segments": [[0, 0, 1000]],
-            "width": 320,
-            "height": 180,
-            "fps": 30,
-            "fit": True,
-            "reframe": True,
         },
         # Input 1 needs a second signed download the request doesn't have.
         {"segments": [[1, 0, 1000]], "width": 320, "height": 180, "fps": 30, "fit": False},

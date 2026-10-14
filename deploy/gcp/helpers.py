@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# deploy/gcp/helpers.py
 """Small, dependency-free helpers used by the GCP deployment scripts."""
 
 from __future__ import annotations

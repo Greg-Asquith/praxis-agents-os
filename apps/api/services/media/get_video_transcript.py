@@ -20,6 +20,7 @@ from services.files.utils import (
     revision_video_metadata,
 )
 from services.media.domain import (
+    INVALID_RESPONSE_MESSAGE,
     MAX_AUDIO_CHUNKS,
     ExtractAudioOperation,
     ExtractAudioResult,
@@ -138,7 +139,7 @@ def _on_source_timeline(
 ) -> tuple[TranscriptWord, ...]:
     """Moves each chunk's words onto the video's timeline and keeps them inside their chunk."""
     if not isinstance(result, ExtractAudioResult) or len(result.chunks_ms) != len(transcribed):
-        raise TranscriptionError("The media renderer gave an invalid answer.")
+        raise TranscriptionError(INVALID_RESPONSE_MESSAGE)
     words: list[TranscriptWord] = []
     for (start_ms, end_ms), chunk in zip(result.chunks_ms, transcribed, strict=True):
         for word in chunk.words:

@@ -1,3 +1,5 @@
+# apps/api/tests/services/files/test_processing_enqueue.py
+
 """Tests for file extraction enqueueing and processing summaries."""
 
 from collections.abc import Iterator

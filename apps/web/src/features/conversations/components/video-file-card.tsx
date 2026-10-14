@@ -1,6 +1,6 @@
 // apps/web/src/features/conversations/components/video-file-card.tsx
 
-import { useRef, useState } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { DownloadIcon, InfoIcon, Loader2Icon, TriangleAlertIcon, VideoIcon } from "lucide-react"
 
@@ -8,24 +8,23 @@ import { Button } from "@/components/ui/button"
 import {
   type VideoFileReference,
   videoFileStatus,
+  type VideoRange,
 } from "@/features/conversations/native-tools/video-tools"
+import { useVideoPreview } from "@/features/conversations/hooks/use-video-preview"
 import { fileQueryOptions } from "@/features/files/api/get-file"
-import { filePreviewQueryOptions } from "@/features/files/api/preview-file"
 import { FileDetailModal } from "@/features/files/components/file-detail-modal"
 import { openWorkspaceFile } from "@/features/files/file-actions"
 import { getErrorMessage } from "@/lib/api/errors"
 import { cn } from "@/lib/utils"
 
-export type VideoRange = { startMs: number; endMs: number }
-
 export function VideoFileCard({
   video,
-  range,
+  range = null,
   autoPlay = false,
   className,
 }: {
   video: VideoFileReference
-  range?: VideoRange
+  range?: VideoRange | null
   autoPlay?: boolean
   className?: string
 }) {
@@ -65,14 +64,14 @@ export function VideoFileCard({
         {status.kind === "ready" ? (
           <VideoPlayer autoPlay={autoPlay} fileId={video.fileId} name={displayName} range={range} />
         ) : (
-          <div className="bg-muted/40 text-muted-foreground flex min-h-36 flex-col items-center justify-center gap-2 px-4 text-center text-xs">
+          <VideoPlaceholder>
             {status.kind === "preparing" ? (
               <Loader2Icon className="size-5 animate-spin motion-reduce:animate-none" />
             ) : (
               <TriangleAlertIcon className="text-destructive size-5" />
             )}
             <span>{status.label}</span>
-          </div>
+          </VideoPlaceholder>
         )}
         <div className="flex min-w-0 items-center justify-between gap-3 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -130,14 +129,9 @@ function VideoPlayer({
   autoPlay: boolean
   fileId: string
   name: string
-  range: VideoRange | undefined
+  range: VideoRange | null
 }) {
-  // A refetch swaps the signed URL and restarts playback, so keep the first one.
-  const previewQuery = useQuery({
-    ...filePreviewQueryOptions(fileId),
-    refetchOnReconnect: false,
-    refetchOnWindowFocus: false,
-  })
+  const previewQuery = useVideoPreview(fileId)
   const previewUrl = previewQuery.data?.preview.url
   if (previewUrl) {
     return (
@@ -160,7 +154,7 @@ function VideoPlayer({
     )
   }
   return (
-    <div className="bg-muted/40 text-muted-foreground flex min-h-36 flex-col items-center justify-center gap-2 px-4 text-center text-xs">
+    <VideoPlaceholder>
       {previewQuery.isError ? (
         <>
           <VideoIcon className="size-5" />
@@ -172,6 +166,14 @@ function VideoPlayer({
           className="size-5 animate-spin motion-reduce:animate-none"
         />
       )}
+    </VideoPlaceholder>
+  )
+}
+
+function VideoPlaceholder({ children }: { children: ReactNode }) {
+  return (
+    <div className="bg-muted/40 text-muted-foreground flex min-h-36 flex-col items-center justify-center gap-2 px-4 text-center text-xs">
+      {children}
     </div>
   )
 }

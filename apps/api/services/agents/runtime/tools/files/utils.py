@@ -111,6 +111,11 @@ def slice_text(
     return result
 
 
+def revision_source_ref(file: File, revision: FileRevision) -> str:
+    """Returns the provenance attached to content read from a File revision."""
+    return f"file:{file.id}/revision:{revision.id}"
+
+
 def file_metadata(file: File, revision: FileRevision, *, source: str) -> dict[str, object]:
     """Return common metadata for file read outputs."""
     video = revision_video_metadata(revision)

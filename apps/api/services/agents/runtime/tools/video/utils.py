@@ -1,11 +1,12 @@
 # apps/api/services/agents/runtime/tools/video/utils.py
 
-"""Steps the video tools share: the caller's own video, progress, transcripts, and audit."""
+"""Steps the video tools share: the caller's own video, progress, transcripts, and shot cuts."""
 
 import re
 from collections.abc import Awaitable, Callable
-from uuid import UUID
+from typing import Annotated
 
+from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ToolFailed
 
@@ -17,23 +18,53 @@ from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference, internal_entity_id
 from services.agents.runtime.stream_protocol import ToolProgressEvent
 from services.agents.runtime.tools.files.utils import current_file_revision
-from services.ai_usage.domain import PURPOSE_VIDEO_TRANSCRIPTION, AIUsageEventData
-from services.audit_events import AuditAction, AuditActorType, AuditResourceType
-from services.audit_events.operations import safe_record_operation_audit_event
+from services.agents.runtime.tools.media_inputs import (
+    VideoInputOptions,
+    WorkspaceVideoInput,
+    load_workspace_video_input,
+    record_media_read_audit,
+)
+from services.ai_usage.domain import (
+    PURPOSE_VIDEO_TRANSCRIPTION,
+    PURPOSE_VIDEO_UNDERSTANDING,
+    AIUsageEventData,
+)
 from services.files.contract import FileCategory
 from services.files.domain import VideoMetadata
 from services.files.utils import format_duration, revision_video_metadata
-from services.media.domain import Transcript, TranscriptionError
+from services.media.domain import MediaRendererError, Transcript, TranscriptionError
+from services.media.get_video_shot_cuts import get_video_shot_cuts
 from services.media.get_video_transcript import get_video_transcript
+from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS
 from services.media.transcription_providers import transcription_provider
-from services.media.understanding import parse_timestamp
+from services.media.utils import parse_timestamp
 
 # Below Gemini's 20 MB inline request ceiling; longer video goes by URI or Files API upload.
 INLINE_VIDEO_MAX_BYTES = 18 * 1024 * 1024
 DEFAULT_VIDEO_FPS = 1.0
 DETAIL_VIDEO_FPS = 5.0
 MAX_TEXT_ARGUMENT_CHARS = 2000
+RENDERER_CALL_SECONDS = settings.MEDIA_RENDERER_TIMEOUT_SECONDS + REQUEST_ALLOWANCE_SECONDS
+# Extraction waits on the renderer; transcription of a four-hour video takes several minutes more.
+TRANSCRIPTION_ALLOWANCE_SECONDS = 900
 _LANGUAGE = re.compile(r"^[a-z]{2,3}(-[A-Z]{2})?$")
+
+VideoStart = Annotated[
+    str | None, Field(description="Optional time to start from, such as 12:30. Omit for the start.")
+]
+VideoEnd = Annotated[
+    str | None, Field(description="Optional time to end at, such as 1:02:05. Omit for the end.")
+]
+VideoDetail = Annotated[
+    bool,
+    Field(
+        description=(
+            "Watch at five frames a second for fast action. Works on up to "
+            f"{int(settings.VIDEO_MOMENTS_WINDOW_SECONDS / DETAIL_VIDEO_FPS) // 60} minutes, "
+            "so pass start and end."
+        )
+    ),
+]
 
 
 def video_understanding_available() -> bool:
@@ -102,6 +133,32 @@ def language_argument(language: str | None) -> str | None:
     return language
 
 
+async def watchable_video(
+    ctx: RunContext[RuntimeDeps],
+    file_id: FileReference,
+    revision: FileRevision,
+    *,
+    tool_name: str,
+    options: VideoInputOptions | None = None,
+) -> WorkspaceVideoInput:
+    """Prepares the resolved revision for Gemini, refusing a video replaced in between."""
+    await progress(ctx)("Preparing Video")
+    video = await load_workspace_video_input(
+        ctx, file_id, tool_name=tool_name, inline_max_bytes=INLINE_VIDEO_MAX_BYTES, options=options
+    )
+    if video.revision_id != revision.id:
+        raise ToolFailed("The video changed while it was being read. Try again.")
+    return video
+
+
+async def video_shot_cuts(ctx: RunContext[RuntimeDeps], revision: FileRevision) -> tuple[int, ...]:
+    await progress(ctx)("Finding Shot Changes")
+    try:
+        return await get_video_shot_cuts(ctx.deps.db, revision=revision)
+    except MediaRendererError as exc:
+        raise ToolFailed(exc.message) from exc
+
+
 def progress(ctx: RunContext[RuntimeDeps]) -> Callable[[str], Awaitable[None]]:
     async def stage(name: str) -> None:
         await ctx.deps.sink.emit(ToolProgressEvent(tool_call_id=ctx.tool_call_id, stage=name))
@@ -122,6 +179,40 @@ def usage_event(
         run_id=ctx.deps.run.id,
         conversation_id=ctx.deps.conversation.id,
     )
+
+
+def understanding_usage(ctx: RunContext[RuntimeDeps]) -> AIUsageEventData:
+    return usage_event(
+        ctx,
+        provider=PROVIDER_GOOGLE,
+        model=settings.VIDEO_UNDERSTANDING_MODEL,
+        purpose=PURPOSE_VIDEO_UNDERSTANDING,
+    )
+
+
+async def record_video_understanding(
+    ctx: RunContext[RuntimeDeps],
+    file: File,
+    revision: FileRevision,
+    *,
+    tool_name: str,
+    start_ms: int,
+    end_ms: int,
+) -> None:
+    """Audits the range the model will watch, committed so it survives a failed call."""
+    await record_media_read_audit(
+        ctx,
+        file.id,
+        revision.id,
+        operation="video_understanding",
+        tool_name=tool_name,
+        details={
+            "model": settings.VIDEO_UNDERSTANDING_MODEL,
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+        },
+    )
+    await ctx.deps.db.commit()
 
 
 async def video_transcript(
@@ -154,7 +245,7 @@ async def video_transcript(
         raise ToolFailed(str(exc)) from exc
     if created:
         # Audio may go to a provider other than the one that reads the video, so record which.
-        await record_video_audit(
+        await record_media_read_audit(
             ctx,
             file.id,
             revision.id,
@@ -169,32 +260,3 @@ async def video_transcript(
         # The audio has reached the provider, so keep the record and the transcript.
         await ctx.deps.db.commit()
     return transcript
-
-
-async def record_video_audit(
-    ctx: RunContext[RuntimeDeps],
-    file_id: UUID,
-    revision_id: UUID,
-    *,
-    operation: str,
-    tool_name: str,
-    details: dict[str, object],
-) -> None:
-    await safe_record_operation_audit_event(
-        ctx.deps.db,
-        workspace_id=ctx.deps.workspace.id,
-        action=AuditAction.READ,
-        resource_type=AuditResourceType.FILE,
-        resource_id=file_id,
-        actor_type=AuditActorType.AGENT,
-        actor_id=ctx.deps.agent.id,
-        actor_display=ctx.deps.agent.name,
-        requested_by_user_id=ctx.deps.user.id,
-        details={
-            "operation": operation,
-            "tool_name": tool_name,
-            "run_id": str(ctx.deps.run.id),
-            "revision_id": str(revision_id),
-            **details,
-        },
-    )

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# deploy/gcp/tests/test_helpers.py
 
 from __future__ import annotations
 
@@ -38,8 +39,14 @@ class GcpDeploymentHelperTests(unittest.TestCase):
         block = source.split('echo "Checking platform-private bucket"', 1)[1].split(
             'echo "Checking dedicated service accounts and IAM"', 1
         )[0]
-        for exists, location in ((False, ""), (True, "EUROPE-WEST4"), (True, "US")):
-            with self.subTest(exists=exists, location=location):
+        cases = (
+            (False, "", True),
+            (True, "EUROPE-WEST4", True),
+            (True, "US", True),
+            (True, "EUROPE-WEST4", False),
+        )
+        for exists, location, readable in cases:
+            with self.subTest(exists=exists, location=location, readable=readable):
                 setup = f"""
 set -Eeuo pipefail
 GCS_PLATFORM_PRIVATE_BUCKET=example-private
@@ -49,9 +56,10 @@ public_assets_cors_file=/tmp/explicit-cors.json
 SCRIPT_DIR={shlex.quote(str(REPO_ROOT / "deploy/gcp"))}
 exists={str(exists).lower()}
 location={shlex.quote(location)}
+readable={str(readable).lower()}
 gcs_value() {{
   if [[ "$*" == *"value(name)"* ]]; then "$exists";
-  elif [[ "$*" == *"--format=json"* ]]; then echo '{{}}';
+  elif [[ "$*" == *"--format=json"* ]]; then "$readable" && echo '{{}}';
   else printf '%s' "$location"; fi
 }}
 plan_gcs() {{ printf 'PLAN %s\\n' "$*"; }}
@@ -67,6 +75,12 @@ die() {{ echo "$*" >&2; exit 1; }}
                 if location == "US":
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("does not match europe-west4", result.stderr)
+                    self.assertNotIn("PLAN", result.stdout)
+                    continue
+                # An unread bucket would lose its other lifecycle rules, so nothing is planned.
+                if not readable:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("couldn't read", result.stderr)
                     self.assertNotIn("PLAN", result.stdout)
                     continue
                 self.assertEqual(result.returncode, 0, result.stderr)

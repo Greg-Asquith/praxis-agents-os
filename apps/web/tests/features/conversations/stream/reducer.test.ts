@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/stream/reducer.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import type { StreamEvent } from "@/features/conversations/stream/protocol"

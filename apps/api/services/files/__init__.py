@@ -16,10 +16,8 @@ from services.files.create_folder import create_folder
 from services.files.delete_file import delete_file
 from services.files.delete_folder import delete_folder
 from services.files.edit_file import edit_file
-from services.files.ensure_source_folder import (
-    ensure_conversation_folder,
-    ensure_source_file_folder,
-)
+from services.files.ensure_conversation_folder import ensure_conversation_folder
+from services.files.ensure_source_file_folder import ensure_source_file_folder
 from services.files.get_file import get_file
 from services.files.get_file_revision_content import get_file_revision_content
 from services.files.get_files_processing_summary import get_files_processing_summary

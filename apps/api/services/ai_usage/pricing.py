@@ -2,9 +2,16 @@
 
 """Effective-dated public API prices for metered models."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Protocol
+
+
+class _EffectivePrice(Protocol):
+    @property
+    def effective_from(self) -> date: ...
 
 
 @dataclass(frozen=True)
@@ -230,14 +237,22 @@ AUDIO_INPUT_PRICES: tuple[AudioInputPrice, ...] = (
 )
 
 
-def find_price(provider: str, model: str, on_date: date) -> ModelPrice | None:
-    """Return the latest price effective on a UTC usage date."""
+def _latest_effective[P: _EffectivePrice](
+    prices: Iterable[P], on_date: date, **fields: object
+) -> P | None:
+    """Returns the latest price effective on a UTC usage date whose fields all match."""
     applicable = (
         price
-        for price in MODEL_PRICES
-        if price.provider == provider and price.model == model and price.effective_from <= on_date
+        for price in prices
+        if price.effective_from <= on_date
+        and all(getattr(price, name) == value for name, value in fields.items())
     )
     return max(applicable, key=lambda price: price.effective_from, default=None)
+
+
+def find_price(provider: str, model: str, on_date: date) -> ModelPrice | None:
+    """Return the latest price effective on a UTC usage date."""
+    return _latest_effective(MODEL_PRICES, on_date, provider=provider, model=model)
 
 
 def find_image_output_price(
@@ -248,16 +263,9 @@ def find_image_output_price(
     on_date: date,
 ) -> ImageOutputPrice | None:
     """Return the latest exact image-output estimate for known output metadata."""
-    applicable = (
-        price
-        for price in IMAGE_OUTPUT_PRICES
-        if price.provider == provider
-        and price.model == model
-        and price.quality == quality
-        and price.size == size
-        and price.effective_from <= on_date
+    return _latest_effective(
+        IMAGE_OUTPUT_PRICES, on_date, provider=provider, model=model, quality=quality, size=size
     )
-    return max(applicable, key=lambda price: price.effective_from, default=None)
 
 
 def find_video_output_price(
@@ -268,23 +276,16 @@ def find_video_output_price(
     on_date: date,
 ) -> VideoOutputPrice | None:
     """Return the latest per-second estimate for known video output metadata."""
-    applicable = (
-        price
-        for price in VIDEO_OUTPUT_PRICES
-        if price.provider == provider
-        and price.model == model
-        and price.resolution == resolution
-        and price.audio == audio
-        and price.effective_from <= on_date
+    return _latest_effective(
+        VIDEO_OUTPUT_PRICES,
+        on_date,
+        provider=provider,
+        model=model,
+        resolution=resolution,
+        audio=audio,
     )
-    return max(applicable, key=lambda price: price.effective_from, default=None)
 
 
 def find_audio_input_price(provider: str, model: str, on_date: date) -> AudioInputPrice | None:
     """Return the latest per-minute estimate for a speech-to-text model."""
-    applicable = (
-        price
-        for price in AUDIO_INPUT_PRICES
-        if price.provider == provider and price.model == model and price.effective_from <= on_date
-    )
-    return max(applicable, key=lambda price: price.effective_from, default=None)
+    return _latest_effective(AUDIO_INPUT_PRICES, on_date, provider=provider, model=model)

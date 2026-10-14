@@ -27,17 +27,15 @@ async def reserve_file_revision(
     content_type: str,
     extension: str,
 ) -> FileUpload:
-    """Commits an isolated reservation and locks it until the caller settles.
-
-    The size is checked against the largest File of its type; the write itself
-    applies the limit for how the bytes arrive.
-    """
+    """Commits an isolated reservation and locks it until the caller settles."""
     contract = require_matching_pair(content_type, extension)
-    if size_bytes > stored_max_size_bytes(contract):
+    # The largest File of its type; the write applies the limit for how its bytes arrive.
+    max_bytes = stored_max_size_bytes(contract)
+    if size_bytes > max_bytes:
         raise AppValidationError(
             "File content is too large",
             field="content",
-            details={"content_bytes": size_bytes, "max_bytes": stored_max_size_bytes(contract)},
+            details={"content_bytes": size_bytes, "max_bytes": max_bytes},
         )
     file_id, revision_id, reservation_id = uuid4(), uuid4(), uuid4()
     async with get_async_db_session_factory()() as reservation_db:

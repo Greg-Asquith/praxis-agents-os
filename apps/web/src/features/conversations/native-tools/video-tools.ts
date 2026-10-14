@@ -13,6 +13,8 @@ export type VideoFileReference = {
   name: string | null
 }
 
+export type VideoRange = { startMs: number; endMs: number }
+
 // Video Files a tool result names, either at the top level or in a list such as `clips`.
 export function videoFileReferences(value: unknown): VideoFileReference[] | null {
   if (!isRecord(value)) {
@@ -32,10 +34,16 @@ export function videoFileReferences(value: unknown): VideoFileReference[] | null
 function videoFileReference(value: unknown): VideoFileReference | null {
   if (
     !isRecord(value) ||
-    typeof value["file_id"] !== "string" ||
     typeof value["media_type"] !== "string" ||
     !isVideoAttachmentMediaType(value["media_type"])
   ) {
+    return null
+  }
+  return fileReference(value)
+}
+
+function fileReference(value: Record<string, unknown>): VideoFileReference | null {
+  if (typeof value["file_id"] !== "string") {
     return null
   }
   return {
@@ -84,7 +92,7 @@ export type FindVideoMomentsResult = {
 export type AskVideoResult = {
   video: VideoFileReference
   // The watched range to play; null plays the whole video.
-  range: { startMs: number; endMs: number } | null
+  range: VideoRange | null
   start: string
   end: string
   answer: string
@@ -94,7 +102,7 @@ export function findVideoMomentsResult(value: unknown): FindVideoMomentsResult |
   if (!isRecord(value) || !Array.isArray(value["moments"])) {
     return null
   }
-  const video = sourceVideo(value)
+  const video = fileReference(value)
   const moments = value["moments"].map(videoMoment)
   if (!video || moments.some((moment) => moment === null)) {
     return null
@@ -107,7 +115,7 @@ export function askVideoResult(value: unknown): AskVideoResult | null {
   if (!isRecord(value)) {
     return null
   }
-  const video = sourceVideo(value)
+  const video = fileReference(value)
   const answer = nodeText(value["answer"])
   if (
     !video ||
@@ -127,16 +135,6 @@ export function askVideoResult(value: unknown): AskVideoResult | null {
     start: value["start"],
     end: value["end"],
     answer,
-  }
-}
-
-function sourceVideo(value: Record<string, unknown>): VideoFileReference | null {
-  if (typeof value["file_id"] !== "string") {
-    return null
-  }
-  return {
-    fileId: value["file_id"],
-    name: typeof value["name"] === "string" ? value["name"] : null,
   }
 }
 
@@ -298,8 +296,7 @@ function seconds(milliseconds: number) {
   return `${String(milliseconds / 1000)} s`
 }
 
-// The turn "Cut These" sends. Moment titles and reasons come from a model watching untrusted
-// video, so only the File name and the server's times go into the person's own message.
+// Titles and reasons are model-written from untrusted video, so only the name and times go in.
 export function cutMomentsInstruction(videoName: string, moments: VideoMoment[]) {
   return [
     `Cut these moments from ${videoName} into separate clips:`,

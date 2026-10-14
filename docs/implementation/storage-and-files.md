@@ -49,8 +49,8 @@ through the API, so their workspace uploads keep `MAX_FILE_SIZE_VIDEO`. The
 relay streams each body to storage instead of buffering it
 (`put_object_stream`, create-only; a refused body leaves no object), and
 renderer staging uploads may use the full `MEDIA_RENDERER_MAX_OUTPUT_BYTES`
-on every provider. Platform uploads keep `MAX_FILE_SIZE_VIDEO`, because publication
-reads the whole revision. Upload confirmation hashes the object by streaming
+on every provider. Platform uploads keep `MAX_FILE_SIZE_VIDEO`, because
+publication reads the whole revision. Upload confirmation hashes the object by streaming
 and doesn't load a source video into memory. A signed upload URL must be used
 within 10 minutes, but a Files upload's confirmation token lasts as long as
 the pending upload (`FILES_UPLOAD_EXPIRY_HOURS`), so a long upload can still
@@ -70,17 +70,14 @@ source outside `platform/` and any destination outside a workspace bucket.
 object at a committed reservation's key, after the caller has checked its
 size and streamed SHA-256.
 
-When the media renderer is available, every new workspace video revision, from
-an upload, a copy, a restore, or a tool write, starts `pending` and queues a
-`video.probe` job. The File becomes `ready` once the probe stores the video's
-duration, dimensions, frame rate, codecs, audio presence, and rotation in the
-revision's set-once `media_metadata`. A file the renderer can't read, one
-without a video stream, and one longer than
-`VIDEO_MAX_SOURCE_DURATION_SECONDS` (default `14400`) fail processing with a
-plain reason. Without the renderer, videos are `ready` with no measurement.
-File responses carry the measurement as `video`, and `list_files`,
-`read_file`, and the chat attachment note describe it to the model, with
-portrait recordings shown upright. See [Video tools](video-tools.md#video-probe).
+When the media renderer is available, every new workspace video revision
+starts `pending` until a background probe stores its duration, dimensions,
+frame rate, codecs, audio presence, and rotation in the revision's set-once
+`media_metadata`; without the renderer, videos are `ready` with no
+measurement. File responses carry the measurement as `video`, and
+`list_files`, `read_file`, and the chat attachment note describe it to the
+model, with portrait recordings shown upright. For the probe's outcomes, see
+[Video tools](video-tools.md#video-probe).
 
 Gemini reads workspace video by `gs://` URI on Vertex with GCS
 (`StorageProvider.model_input_uri`), or through a Gemini Files API upload when
@@ -89,19 +86,17 @@ cached on the revision in `gemini_file_*`, the one revision field that can be
 replaced; purging a File deletes its uploads. See
 [Video tools](video-tools.md#gemini-video-input).
 
-Chat accepts a video attachment only when the deployment has a tool that finds
-moments in video or cuts it (`cut_video_clips` or `find_video_moments`).
-`GET /models/catalog` reports this check as `video_tools_available`.
-`find_video_moments` passes it on deployments with the renderer and Google.
-Otherwise the composer refuses a picked or dropped video
-before uploading it, the API refuses a video attachment on send, and **Add to
-chat** in Files isn't offered for video. The refusals say "Video can't be
-attached to messages yet. Upload it to Files instead." When the check passes,
-the model receives a text
-note with the video's File id, format, size, and measurement (or that it is
-still being prepared), never its bytes. The
-uploader-controlled name sits inside the shared untrusted-content frame with
-File and revision provenance.
+Chat accepts a video attachment only when the deployment has
+`cut_video_clips` or `find_video_moments`, which means the media renderer is
+available. `GET /models/catalog` reports this check as
+`video_tools_available`. Otherwise the composer refuses a picked or dropped
+video before uploading it, the API refuses a video attachment on send, and
+**Add to chat** in Files isn't offered for video. The refusals say "Video
+can't be attached to messages yet. Upload it to Files instead." When the
+check passes, the model receives a text note with the video's File id,
+format, size, and measurement (or that it is still being prepared), never its
+bytes. The uploader-controlled name sits inside the shared untrusted-content
+frame with File and revision provenance.
 
 ## Storage providers and upload lifecycle
 

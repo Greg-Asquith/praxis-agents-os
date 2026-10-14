@@ -106,20 +106,7 @@ async def test_one_failed_clip_leaves_the_others_saved_and_reported(
     result = await run_scenario(
         db_session_factory,
         context,
-        model=scripted_model(
-            turns=[
-                ToolTurn(
-                    (
-                        ToolCall(
-                            "cut_video_clips",
-                            {"clips": clips, "aspect_ratio": "9:16", "captions": "bold"},
-                            "cut_video_clips",
-                        ),
-                    )
-                ),
-                "Done.",
-            ]
-        ),
+        model=cut_once({"clips": clips, "aspect_ratio": "9:16", "captions": "bold"}),
     )
 
     assert result.run.status == "completed"

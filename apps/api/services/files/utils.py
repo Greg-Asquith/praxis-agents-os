@@ -243,6 +243,49 @@ async def get_folder_for_workspace(
     return folder
 
 
+async def target_folder_id(
+    db: AsyncSession,
+    *,
+    workspace: Workspace,
+    folder_id: UUID | None,
+    resolved_folder: FileFolder | None = None,
+) -> UUID | None:
+    """Returns the live workspace folder a new File goes in, locking it when given by id."""
+    if folder_id is not None and resolved_folder is not None:
+        raise ValueError("Provide folder_id or resolved_folder, not both")
+    if resolved_folder is not None:
+        if resolved_folder.workspace_id != workspace.id or resolved_folder.deleted:
+            raise ValueError("Resolved folder must be a live folder in the target workspace")
+        return resolved_folder.id
+    if folder_id is not None:
+        await get_folder_for_workspace(
+            db, workspace=workspace, folder_id=folder_id, for_update=True
+        )
+    return folder_id
+
+
+def require_reservation_match(
+    reservation: FileUpload,
+    *,
+    workspace: Workspace,
+    object_key: str,
+    content_type: str,
+    size_bytes: int,
+    content_hash: str,
+) -> None:
+    """Rejects content that differs from an unconsumed workspace reservation."""
+    if (
+        reservation.workspace_id != workspace.id
+        or reservation.scope != "workspace"
+        or reservation.consumed_at is not None
+        or reservation.object_key != object_key
+        or reservation.content_type != content_type
+        or reservation.declared_size_bytes != size_bytes
+        or reservation.declared_content_hash != content_hash
+    ):
+        raise ValueError("File content must match its workspace reservation")
+
+
 def private_ref_from_key(object_key: str):
     """Return a private storage ref for a workspace file object key."""
     return make_storage_object_ref(StorageBucket.PRIVATE, object_key)

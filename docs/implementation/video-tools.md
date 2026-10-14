@@ -1,10 +1,23 @@
 # Video tools
 
 Read this before changing the media renderer, its API client, or anything that
-decodes, cuts, or measures video. The model-facing video tools are
-`transcribe_video`, `find_video_moments`, and `ask_video`; a tool that cuts
-clips is pending. For upload limits and video in chat,
-see [Storage and files](storage-and-files.md#video-uploads-and-attachments).
+decodes, cuts, or measures video. For upload limits and video in chat, see
+[Storage and files](storage-and-files.md#video-uploads-and-attachments).
+
+The agent has four video tools. Each is hidden when its dependencies are
+missing, rather than failing at call time:
+
+| Tool | Needs | Effect |
+|---|---|---|
+| `transcribe_video` | Renderer and a transcription provider | Saves an SRT File |
+| `find_video_moments` | Renderer and Google | Read only |
+| `ask_video` | Google | Read only |
+| `cut_video_clips` | Renderer | Saves video Files |
+
+The renderer is available (`settings.media_renderer_available`) when
+`MEDIA_RENDERER_URL` is set and storage is `gcs` or `local_fs`. Google means
+`VIDEO_UNDERSTANDING_MODEL` is usable on either Google transport. No video
+tool is code-eligible.
 
 ## Media renderer
 
@@ -13,18 +26,16 @@ It runs in the media renderer, a separate service:
 
 - `apps/renderer/driver/` is the shared driver: a stdlib-only HTTP server,
   signed URL transfers, the child launcher, the seccomp filter, resource
-  limits, and the start-up self-check. A future document renderer reuses it
-  with its own image.
+  limits, and the start-up self-check. Other renderers can reuse it with
+  their own image.
 - `apps/renderer/media/` holds the ffmpeg operations and the image. The image
   builds a pinned ffmpeg from source with only the demuxers, decoders,
   encoders, and filters the operations use, plus `libx264`, `libopus`, AAC,
-  and `libass`.
-  Network protocols are compiled out, and the build fails if any remain. The
-  image also holds OpenCV (headless) and the YuNet face detection model,
-  pinned by hash, for automatic framing, and the caption fonts listed in
-  `media/fonts.lock` (16 Google Fonts families under the SIL Open Font
-  Licence or Apache 2.0, each file pinned by hash), with DejaVu as the
-  fallback for other scripts.
+  and `libass`. Network protocols are compiled out, and the build fails if
+  any remain. The image also holds headless OpenCV with the YuNet face
+  detection model for automatic framing, and the caption fonts in
+  `media/fonts.lock` (16 Google Fonts families, each file pinned by hash),
+  with DejaVu as the fallback for other scripts.
 
 One request runs one typed operation:
 
@@ -32,82 +43,61 @@ One request runs one typed operation:
 |---|---|---|
 | `probe` | none | none; duration, dimensions, frame rate, codecs, audio, rotation |
 | `scene_cuts` | `threshold` (0.05 to 0.95), optional range, `max_cuts` | none; cut times in milliseconds |
-| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500 `[input, time_ms]`), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms`, and `fade_out_ms` (0 to 3000) | one H.264 and AAC MP4 joining the segments in order |
-| `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file (32 kbit/s) per chunk, plus each chunk's range on the source timeline |
+| `cut` | `segments` (1 to 10 `[input, start_ms, end_ms]`), `width` and `height` (even, 64 to 3840), `fps` (24 to 60), `fit`, optional `reframe`, `shot_cuts` (up to 500), `keep` (up to 500 `[segment, first_frame, end_frame]`), `captions`, `transitions` (one `[style, duration_ms, audio_curve]` per join), `fade_in_ms` and `fade_out_ms` (0 to 3000) | one H.264 and AAC MP4 |
+| `extract_audio` | optional range, `chunks` (1 to 32) | one mono 16 kHz Ogg Opus file per chunk, with its range |
 | `frames` | `times_ms` (1 to 20), `max_edge_px` (64 to 1920) | one JPEG per time |
 
-Arguments are numbers, booleans, and names from a fixed list. The only names
-are a transition's style and audio curve, which the driver checks against its
-own lists before building any filter. The driver rejects unknown fields and any
-value of the wrong type, and builds every ffmpeg argument itself. A range must start
-before the end of the video; an end past it is trimmed to the end. A frame time
-must be strictly before the end.
+Arguments are numbers, booleans, and names from fixed lists (transition
+styles and audio curves). The driver rejects unknown fields and wrong types,
+checks every name against its own list, and builds every ffmpeg argument
+itself. A range must start before the end of the video; an end past it is
+trimmed. A frame time must be strictly before the end. Every operation,
+`probe` included, downloads each whole input, because container metadata can
+sit anywhere in the file.
 
-`extract_audio` splits the range into `chunks` near-equal parts. Each split
-moves into the longest silence (quieter than -35 dB for at least 0.3 s) within
-10% of a part's length of the even split, or stays at the even split when
-there's none. Chunks are re-encoded from one extraction, so each starts
-exactly at its reported time.
+`extract_audio` splits the range into near-equal chunks. Each split moves into
+the longest silence (below -35 dB for at least 0.3 s) within 10% of a chunk's
+length of the even split. Chunks are re-encoded from one extraction, so each
+starts exactly at its reported time. Opus is used because Chirp 3 returns
+nothing for AAC.
 
-`cut` takes one signed input per distinct source; segment `input` numbers
-them from 0, and every input must be used. Each segment is scaled to the
-output size (centre-cropped to fill, or with `fit`, the whole frame over a
-blurred, filled copy of itself), resampled to `fps`, and given 48 kHz stereo
-audio, silent for a source without audio, so sources of different sizes,
-frame rates, and audio layouts join cleanly. Rotated phone video is turned
-upright first. Output is `libx264` at CRF 18, capped at 8 Mbit/s, with AAC at
-128 kbit/s: about 61 MB a minute at most. Each segment's decoder uses two
-threads, so ten segments stay inside the child's memory limit.
+`cut` behaves as follows:
 
-With `reframe` (not with `fit`), each segment whose shape differs from the
-output is cropped to follow the speaker:
-
-1. ffmpeg samples the segment at 2 fps, 640 pixels on the long side, as raw
-   BGR frames.
-2. `media/faces.py` runs YuNet on those frames in its own isolated child and
-   prints the faces as JSON. OpenCV reads only raw pixels, never a media
-   file, and the driver checks the shape of what it prints.
-3. `media/reframe.py` plans the crop per shot, with shots split at the
-   segment's `shot_cuts`. The crop starts on the largest face, holds still
-   while that face stays in its middle third, and pans for 400 ms when it
-   leaves. A pan stops at the next cut and the crop jumps there, so it never
-   pans across one. A shot with no face is centred. Frames within 100 ms of a
-   cut are ignored, because they may belong to either shot.
-4. The crop's position becomes an ffmpeg expression of time on the `crop`
-   filter, built by the driver from numbers.
-
-Active-speaker choice when several people are in frame is pending; the
-largest face wins.
-
-`keep` lists, per segment, the output frames to keep, in order; the rest are
-dropped with their audio. Audio is cut into frames one video frame long, so
-`select` and `aselect` pick the same indices and the streams stay in sync
-however many pauses go.
-
-With `captions`, the request carries one more input after the videos: an ASS
-subtitle file the API built, holding the clip's captions, text overlays, or
-both. The renderer reads only its `[Script Info]`,
-`[V4+ Styles]`, and `[Events]` sections, refuses any other section (such as
-embedded fonts or graphics), caps it at 4 MiB, and burns it into the joined
-video with the `ass` filter. libass runs inside the isolated ffmpeg child.
-
-Each segment's video and audio last exactly its frame count (a source that
-ends early repeats its last frame for up to a second), so joins line up.
-`transitions` has one entry per join, or none for hard cuts throughout. A
-style is one of the 58 named `xfade` transitions in the pinned ffmpeg, or
-`none` for a hard cut; `xfade`'s `custom` expression is left out because it
-is code. A curve is one of the 24 `acrossfade` curves. A transition of 100 to
-3000 ms overlaps the end of one segment with the start of the next: `xfade`
-blends the video and `acrossfade` the audio over the same frames, so the clip
-is shorter by each overlap. A transition can't be longer than the segments it
-joins. `fade_in_ms` and `fade_out_ms` fade the finished clip, captions
-included, from and to black and silence. A renderer test checks both lists
-against `ffmpeg -h filter=xfade` and `-h filter=acrossfade`, so an ffmpeg
-upgrade that changes them fails the build.
-
-Every operation, `probe` included, downloads each whole input. Container
-metadata can sit anywhere in the file, so a head-and-tail read can report a
-video without its audio.
+- **Inputs:** one signed input per distinct source, numbered from 0; every
+  input must be used.
+- **Normalising:** each segment is turned upright, scaled to the output size
+  (centre-cropped to fill, or with `fit`, the whole frame over a blurred copy
+  of itself), resampled to `fps`, and given 48 kHz stereo audio (silent when
+  the source has none), so mixed sources join cleanly. Each segment's video
+  and audio last exactly its frame count.
+- **Encoding:** `libx264` at CRF 18, capped at 8 Mbit/s, with AAC at
+  128 kbit/s: about 61 MB a minute at most. Each segment's decoder uses two
+  threads, so ten segments stay inside the child's memory limit.
+- **`reframe`** (not with `fit`): for each segment whose shape differs from
+  the output, ffmpeg samples raw frames at 2 fps, `media/faces.py` runs YuNet
+  on them in its own isolated child, and `media/reframe.py` plans a crop per
+  shot (split at `shot_cuts`). The crop starts on the largest face, holds
+  while that face stays in its middle third, and pans for 400 ms when it
+  leaves, never across a cut. A shot with no face is centred. The driver
+  checks the faces' shape and writes the crop as a `crop` filter expression
+  built from numbers. OpenCV never reads a media file. Choosing the active
+  speaker when several people are in frame is pending.
+- **`keep`:** per segment, the output frames to keep. Audio is cut into
+  frames one video frame long, so `select` and `aselect` pick the same
+  indices and stay in sync.
+- **`captions`:** one extra input after the videos, an ASS file the API
+  built. The renderer accepts only its `[Script Info]`, `[V4+ Styles]`, and
+  `[Events]` sections, caps it at 4 MiB, and burns it in with the `ass`
+  filter inside the isolated child.
+- **`transitions`:** one entry per join, or none for hard cuts. A style is
+  one of the 58 `xfade` transitions in the pinned ffmpeg (not `custom`,
+  which takes an expression) or `none`; a curve is one of the 24
+  `acrossfade` curves. A transition of 100 to 3000 ms overlaps the end of one
+  segment with the start of the next, so the clip is shorter by each overlap,
+  and can't be longer than either segment. A renderer test checks both lists
+  against the pinned ffmpeg's help output.
+- **Fades:** `fade_in_ms` and `fade_out_ms` fade the finished clip, captions
+  included, from and to black and silence.
 
 ### Isolation
 
@@ -118,109 +108,91 @@ Each native command runs as a child of the driver:
   `no_new_privs` and the seccomp filter. The filter kills other architectures
   and x32 calls, allows only `AF_UNIX` sockets, and returns `EPERM` for
   io_uring, ptrace, and `process_vm_readv`/`writev`.
-- **Environment:** only `HOME`, `TMPDIR`, `PATH`, and `LANG`.
-- **Driver memory:** the driver is non-dumpable, so a child can't read its
-  memory or `/proc/<pid>/environ`.
+- **Environment:** only `HOME`, `TMPDIR`, `PATH`, and `LANG`. The driver is
+  non-dumpable, so a child can't read its memory or `/proc/<pid>/environ`.
 - **After each request:** the driver kills the child's process group, then
-  every other process under its user with `kill(-1, SIGKILL)`, which the kernel
-  applies atomically against fork, so a child that keeps forking can't outrun
-  it. It then checks that none is left and deletes the request's directory. If
-  a process survives, the driver exits and Cloud Run starts a clean instance.
+  every other process under its user with `kill(-1, SIGKILL)`, which the
+  kernel applies atomically against fork. It checks that none is left and
+  deletes the request's directory. If a process survives, the driver exits
+  and Cloud Run starts a clean instance.
 - **Fail closed:** on start, the driver refuses to run if an ancestor other
-  than PID 1 shares its user, because `kill(-1)` would reach it. It then runs a
-  probe child under the same limits. If that child can open an inet socket,
-  call io_uring with valid arguments, ptrace its own child, or read the
-  driver's environment, the driver exits and serves nothing. A host's own
-  seccomp profile can also deny io_uring, so tests prove each filter rule by
-  evaluating the BPF program directly.
+  than PID 1 shares its user, because `kill(-1)` would reach it. It then runs
+  a probe child under the same limits and exits if that child can open an
+  inet socket, call io_uring, ptrace its own child, or read the driver's
+  environment. Because a host's own seccomp profile can also deny io_uring,
+  tests prove each filter rule by evaluating the BPF program directly.
 
-A child shares the driver's user, so it could kill the driver. That fails only
-the current request, and Cloud Run replaces the instance.
+A child shares the driver's user, so it could kill the driver. That fails
+only the current request, and Cloud Run replaces the instance.
 
 ### Transfers
 
-The driver is the only part with network access. It downloads and uploads only
-URLs that start with a prefix in `RENDERER_ALLOWED_URL_PREFIXES`
-(`https://storage.googleapis.com/` on GCP), ignores proxy settings, and refuses
-redirects. A request takes 1 to 10 inputs; inputs above
-`RENDERER_MAX_INPUT_BYTES` together are refused, because they share the
-instance's in-memory disk.
+The driver is the only part with network access. It transfers only URLs that
+start with a prefix in `RENDERER_ALLOWED_URL_PREFIXES`
+(`https://storage.googleapis.com/` on GCP), ignores proxy settings, and
+refuses redirects. A request takes 1 to 10 inputs, together at most
+`RENDERER_MAX_INPUT_BYTES`, because they share the instance's in-memory disk.
 
-A request's `timeout_seconds` bounds all of it: the download, every child, and
-the uploads. Transfers check the deadline between chunks and return `timeout`
-when it passes. One blocking read or write waits at most 30 seconds, so a
-stalled transfer ends inside Cloud Run's 60 seconds of request headroom.
+A request's `timeout_seconds` bounds the download, every child, and the
+uploads. Transfers check the deadline between chunks, and one blocking read
+or write waits at most 30 seconds, so a stalled transfer ends inside the
+60 seconds of request headroom.
 
 ## API client
 
-`apps/api/services/media/`:
+`apps/api/services/media/` calls the renderer:
 
 - `run_media_operation(workspace_id, sources, operation, staged_inputs?)`
-  takes the File revisions the caller has already resolved for the workspace,
-  one per video input, then any files the API wrote to staging itself, such
-  as captions (`stage_media_input`). It refuses the whole request if any
-  revision is from another workspace or isn't a video, or any staged file is
-  outside the workspace's staging prefix, signs one download per input and one
-  size-bounded staging upload per output, and posts the request. It validates the result against the operation's schema and trusts
-  an output only when the staged object exists and matches the size the
-  renderer reported. On any failure it deletes the staged objects.
+  takes the File revisions the caller resolved for the workspace, one per
+  video input, then any files the API staged itself, such as captions
+  (`stage_media_input`). It refuses the request if any revision is from
+  another workspace or isn't a video, or any staged file is outside the
+  workspace's staging prefix. It signs one download per input and one
+  size-bounded staging upload per output, validates the result against the
+  operation's schema, and trusts an output only when the staged object
+  exists at the reported size. On any failure it deletes the staged objects.
 - `save_media_output` copies a staged output into a new File inside the
-  caller's transaction. It requires platform-private storage under the
-  workspace's staging prefix and the stored limit for the type
-  (`MAX_FILE_SIZE_SOURCE_VIDEO` for video). It commits a `FileUpload`
-  reservation, has the storage provider copy the object into the
-  reservation's key (`import_staged_object`, pinned to the staged ETag), and
-  checks the copy's size and streamed SHA-256 against what the renderer
-  reported. The bytes never pass through API memory. The reservation owns
-  them until the caller commits, so the upload sweeper removes them if it
-  never does. The staged object stays as
-  the retry source: call `discard_staged_outputs` after commit, or leave it to
-  the one-day staging lifecycle rule.
-- `settings.media_renderer_available` is true when `MEDIA_RENDERER_URL` is
-  set and storage is `gcs` or `local_fs`. Azure and S3 adapters are pending;
-  see [Other clouds](#other-clouds).
+  caller's transaction, without the bytes passing through API memory. It
+  commits a `FileUpload` reservation, has the provider copy the object into
+  the reservation's key (`import_staged_object`, pinned to the staged ETag),
+  and checks the copy's size and streamed SHA-256 against the renderer's
+  report. The reservation owns the bytes until the caller commits, so the
+  upload sweeper removes them if it never does. Call
+  `discard_staged_outputs` after commit, or leave the staged object to the
+  one-day staging lifecycle rule.
 
 Failures raise `MediaRendererError` with a stable code and a plain message.
+The client settings are as follows:
 
 | Setting | Default | Purpose |
 |---|---:|---|
 | `MEDIA_RENDERER_URL` | unset | Renderer base URL. Unset makes the renderer unavailable. |
-| `MEDIA_RENDERER_AUTH` | `google_id_token` | `google_id_token` sends a Google ID token for Cloud Run IAM. `shared_secret` sends `MEDIA_RENDERER_SHARED_SECRET` as a bearer token, for a renderer on a private network. `none` is local only. |
-| `MEDIA_RENDERER_SHARED_SECRET` | empty | At least 32 characters when `MEDIA_RENDERER_AUTH=shared_secret`. The renderer holds the same value as `RENDERER_SHARED_SECRET`. |
-| `MEDIA_RENDERER_TIMEOUT_SECONDS` | `900` | Total time one operation may take, transfers included. The client waits 60 seconds more for cold start and the round trip. |
-| `MEDIA_RENDERER_MAX_OUTPUT_BYTES` | `2147483648` | Largest output a renderer upload may write (2 GiB). On Cloud Run the renderer's disk is memory, so instance memory must cover the inputs (up to `MAX_FILE_SIZE_SOURCE_VIDEO`), this output, and `RENDERER_CHILD_MEMORY_BYTES`: 4 + 2 + 8 GiB within the default 16 GiB. |
-| `MEDIA_STAGING_URL_TTL_SECONDS` | `1800` | Lifetime of the renderer's signed URLs. Must be at least the timeout plus 60 seconds, so uploads can't expire mid-render. |
+| `MEDIA_RENDERER_AUTH` | `google_id_token` | `google_id_token` for Cloud Run IAM, `shared_secret` for a renderer on a private network, or `none` (local only). |
+| `MEDIA_RENDERER_SHARED_SECRET` | empty | At least 32 characters with `shared_secret`. The renderer holds the same value as `RENDERER_SHARED_SECRET`. |
+| `MEDIA_RENDERER_TIMEOUT_SECONDS` | `900` | Total time one operation can take, transfers included. The client waits 60 seconds more (`REQUEST_ALLOWANCE_SECONDS`). |
+| `MEDIA_RENDERER_MAX_OUTPUT_BYTES` | `2147483648` | Largest file one operation can write (2 GiB). |
+| `MEDIA_STAGING_URL_TTL_SECONDS` | `1800` | Lifetime of the renderer's signed URLs; at least the timeout plus 60 seconds. |
 | `MEDIA_RENDERER_LOCAL_STORAGE_URL` | `http://host.docker.internal:8000` | Local only: the API origin as the renderer container reaches it. |
 
 ## Video probe
 
-A workspace video revision is measured once, in the background, by the
-renderer's `probe` operation. `queue_video_probe` (`services/files/`) runs
-wherever a revision becomes a File's current revision (upload confirmation,
-platform copies, restores, `create_file_with_revision`, and
-`append_file_revision`). It marks the File `pending` and enqueues a
-`video.probe` job, unless the File isn't a workspace video or
-`settings.media_renderer_available` is false. It lives in Files because
-`services/media` imports the Files writers that call it.
-
-The `probe_video` job handler stores the result in the revision's
-`media_metadata` (`VideoMetadata` in `services/files/domain.py`). A restore
-copies the measurement from the revision it restores instead of probing again.
-The File's processing status follows its current revision:
+The renderer's `probe` operation measures each workspace video revision once,
+in the background. `queue_video_probe` (`services/files/`) runs wherever a
+revision becomes a File's current revision. Unless the File isn't a workspace
+video or the renderer is unavailable, it marks the File `pending` and
+enqueues a `video.probe` job. The `probe_video` handler stores the result in
+the revision's `media_metadata` (`VideoMetadata` in
+`services/files/domain.py`). A restore copies the measurement from the
+revision it restores.
 
 | Outcome | File | Retried |
 |---|---|---|
-| Measured, with a video stream, within `VIDEO_MAX_SOURCE_DURATION_SECONDS` | `ready` | No |
-| No video stream, longer than the limit, unreadable, or over the renderer's limits | `error`, with a plain reason | No |
+| Measured, with a video stream, within `VIDEO_MAX_SOURCE_DURATION_SECONDS` (default 4 hours) | `ready` | No |
+| No video stream, too long, unreadable, or over the renderer's limits | `error`, with a plain reason | No |
 | Renderer unreachable, timed out, or another renderer failure | `error` until the next attempt | Up to 3 attempts |
 
-The job's timeout is `MEDIA_RENDERER_TIMEOUT_SECONDS` plus 120 seconds, so it
-outlasts the client's own wait. Tools read duration and size from
-`media_metadata` and never probe inline.
-
-| Setting | Default | Purpose |
-|---|---:|---|
-| `VIDEO_MAX_SOURCE_DURATION_SECONDS` | `14400` | Longest video a File may hold. Longer videos fail processing. |
+The job's timeout is `MEDIA_RENDERER_TIMEOUT_SECONDS` plus 120 seconds. Tools
+read duration and size from `media_metadata` and never probe inline.
 
 ## Gemini video input
 
@@ -231,444 +203,331 @@ revision the caller can see, then picks the input by transport:
 | Transport | Input | Limit |
 |---|---|---|
 | Vertex, GCS storage | `VideoUrl` with the revision's `gs://` URI | The model's own limits |
-| Gemini API (`GOOGLE_API_KEY`) | Inline up to the tool's bound, otherwise `UploadedFile` from a Files API upload | 2 GB per file, 20 GB per project, kept 48 hours |
-| Vertex, other storage, or a platform File | Inline `BinaryContent` | The tool's `inline_max_bytes` |
+| Gemini API (`GOOGLE_API_KEY`) | Inline up to the tool's bound, otherwise a Files API upload | 2 GB per file, kept 48 hours |
+| Vertex, other storage, or a platform File | Inline `BinaryContent` | The tool's `inline_max_bytes` (18 MiB for video tools) |
 
-`VideoInputOptions` sets `fps`, a start and end offset, and media resolution;
-Pydantic AI sends them as the part's `video_metadata` and `media_resolution`.
-The server builds every URI from the revision's object key, and refuses a key
-outside the caller's workspace before building one. A model never supplies a
-URI, bucket, or object name.
+`VideoInputOptions` sets the frame rate, start and end offsets, and media
+resolution. The server builds every URI from the revision's object key and
+refuses a key outside the caller's workspace. A model never supplies a URI,
+bucket, or object name.
 
-On Vertex, `StorageProvider.model_input_uri` returns the URI for workspace
-objects on GCS and `None` for every other provider or bucket. GCP bootstrap
-grants the Vertex AI service agent
-(`service-<project number>@gcp-sa-aiplatform.iam.gserviceaccount.com`)
-`roles/storage.objectViewer` on the project, with a condition that limits it to
-buckets named `<WORKSPACE_BUCKET_PREFIX>-…`. Gemini can therefore read any
-workspace bucket in the project; the URI the server builds is the isolation
-boundary.
+On Vertex, `StorageProvider.model_input_uri` returns a URI only for
+workspace objects on GCS. GCP bootstrap grants the Vertex AI service agent
+`roles/storage.objectViewer`, conditioned on bucket names starting with
+`WORKSPACE_BUCKET_PREFIX`, so Gemini can read any workspace bucket in the
+project; the URI the server builds is the isolation boundary.
 
-On the Gemini API, `services/gemini_files` streams the object to the Files API
-in 8 MiB chunks without holding it in memory, waits for the file to become
-`ACTIVE` (up to 5 minutes), and returns its name, URI, and expiry. The caller
-caches them on the revision (`file_revisions.gemini_file_*`) and reuses the
-upload while it has at least an hour left. A replaced or purged revision's
-upload is deleted, best effort; Google deletes anything missed after 48 hours.
-Each upload records a `gemini_files_upload` audit event on the File, because
-workspace bytes leave the deployment, and commits it before the model call.
-Files API uploads aren't scoped to a workspace on Google's side: one API key
-serves the deployment, so the cached name is only read back from the revision
-the tool resolved for the caller. Two concurrent first uploads of one revision
-both succeed; the later one is cached and the other expires unused.
-
-`long_video_input_available()` is true when Google is configured and can read
-past the inline bound: on the Gemini API, or on Vertex with GCS storage. Tools
-that need long video combine it with `settings.media_renderer_available` in
-their `availability_check`, so they're hidden rather than failing at call time.
+On the Gemini API, `services/gemini_files` streams the object to the Files
+API in 8 MiB chunks, waits up to 5 minutes for it to become `ACTIVE`, and
+returns its name, URI, and expiry. The caller caches them on the revision
+(`file_revisions.gemini_file_*`) and reuses the upload while it has at least
+an hour left. A replaced or purged revision's upload is deleted, best effort;
+Google deletes anything missed after 48 hours. One API key serves the
+deployment, so the cached name is read back only from the revision the tool
+resolved for the caller. Each upload records a `gemini_files_upload` audit
+event on the File, committed before the model call. Two concurrent first
+uploads of one revision both succeed; the later one is cached.
 
 ## Transcripts and shot cuts
 
-A video revision's transcript and shot cuts are derived once, on first need,
-and kept with the revision. They aren't Files, so a read can create them.
+A video revision's transcript and shot cuts are derived on first need and
+kept with the revision, set once like `media_metadata`:
 
-- `get_video_transcript` (`services/media/`) returns the stored transcript, or
-  extracts the audio with `extract_audio`, transcribes each chunk (four at a
-  time, 16 for Gemini), moves each chunk's words onto the video's timeline, and stores the
+- `get_video_transcript` extracts the audio with `extract_audio`, transcribes
+  the chunks concurrently (4 at a time, 16 for Gemini), moves each chunk's
+  words onto the video's timeline, clamped to the chunk, and stores the
   result as JSON under the File's key prefix
-  (`file_revisions.transcript_object_key`). A word is clamped to its own
-  chunk, so word times never run backwards. Sentences end at `.`, `?`, or
-  `!`, a change of speaker, or a pause of 2 seconds. A stored transcript is
+  (`file_revisions.transcript_object_key`). Sentences end at `.`, `?`, or
+  `!`, a change of speaker, or a 2-second pause. A stored transcript is
   reused whatever provider or language a later call asks for, so a revision
-  is transcribed and billed once. Two concurrent first transcriptions of one
-  revision both reach the provider, and the later save fails.
-- `get_video_shot_cuts` stores the renderer's `scene_cuts` times on the
-  revision (`file_revisions.shot_cuts_ms`).
+  is transcribed and billed once. Two concurrent first transcriptions both
+  reach the provider, and the later save fails.
+- `get_video_shot_cuts` stores the renderer's `scene_cuts` times
+  (`file_revisions.shot_cuts_ms`).
 
-Both columns are set once, like `media_metadata`. Purging a File deletes the
-transcript object with the revision's other objects, and Files usage counts
-it.
+Purging a File deletes the transcript object, and Files usage counts it.
 
-The provider is the first one the deployment has, in the order measured in
-plan 249 B1:
+The provider is the first one the deployment has, in this order:
 
 | Provider | When | Chunk limit | Notes |
 |---|---|---|---|
-| Chirp 3 (`chirp_3`) | Vertex (`GOOGLE_VERTEX_AI`) with GCS storage | 19 minutes | `BatchRecognize` in `VIDEO_TRANSCRIPTION_SPEECH_LOCATION` (`eu` by default) reads the staged chunk by `gs://` URI, with word timings, punctuation, and speaker labels. Speaker labels restart with each chunk. A language without a region, such as `en`, is sent as `auto`. |
-| `whisper-1` | `OPENAI_API_KEY` | 60 minutes and 25 MB | Receives the chunk bytes. Punctuation comes from the response text, matched back to its words. No speaker labels. |
-| Gemini 3.8 Flash | Google on either transport | 8 minutes | Receives the chunk bytes inline and answers with structured words, times in seconds, and speaker letters. Word starts were about 0.4 s out at the median and 1 s at p95, so it comes last. A chunk takes about half its length to transcribe. |
+| Chirp 3 (`chirp_3`) | Vertex (`GOOGLE_VERTEX_AI`) with GCS storage | 19 minutes | `BatchRecognize` in `VIDEO_TRANSCRIPTION_SPEECH_LOCATION` (`eu` or `us`, default `eu`) reads the staged chunk by `gs://` URI, with word timings, punctuation, and speaker labels that restart with each chunk. A language without a region, such as `en`, is sent as `auto`. |
+| `whisper-1` | `OPENAI_API_KEY` | 60 minutes and 25 MB | Receives the chunk bytes. Punctuation comes from the response text. No speaker labels. |
+| Gemini 3.8 Flash | Google on either transport | 8 minutes | Receives the chunk bytes and answers with structured words and speaker letters. Its word times are about a second out at p95, so it comes last. |
 
-With none of them (a deployment with only Anthropic models), `transcribe_video`
-is hidden. Asked for word times as JSON text rather than structured output,
-Gemini drifted by up to 13 seconds within a minute of speech. Chirp 3 reads Ogg Opus and FLAC but returns nothing for AAC, which is
-why `extract_audio` writes Opus.
+With none of them, `transcribe_video` is hidden. Each transcription records a
+`video_transcription` usage event with the audio length; see
+[AI usage](ai-usage.md) for pricing. On GCP with `GOOGLE_VERTEX_AI=true`,
+bootstrap enables the Speech-to-Text API and grants the API and worker
+service accounts `roles/speech.client`. Speech reads the staged audio as its
+own service agent.
 
-Each transcription records a `video_transcription` usage event with the
-provider's requests (and tokens, for Gemini) and the audio length in
-`details.audio_seconds`. The usage summary prices Chirp 3 ($0.016) and
-`whisper-1` ($0.006) per audio minute from `AUDIO_INPUT_PRICES` in
-`services/ai_usage/pricing.py`, and Gemini by its tokens.
+## Tools
 
-### `transcribe_video`
+### Transcription
 
 `transcribe_video(file_id, language?)` takes the current revision of one of
-the workspace's own videos once its probe has finished. It returns the saved
-transcript File, word count, language, and provider, plus the first eight
-sentences with MM:SS times as an untrusted-content node. It writes the
-transcript as `<video name> transcript.srt` (one SubRip cue per sentence) in
-the video's output folder (see "Output folders"); calling it again adds a revision to that File rather than a
-copy. A new transcription records a `video_transcription` audit event on the
-video File with the provider and model, and commits it before the transcript
-File is written. The tool isn't code-eligible; its timeout is the renderer's
-plus 900 seconds for transcription.
+the workspace's own videos once its probe has finished. It writes
+`<video name> transcript.srt` (one SubRip cue per sentence) in the video's
+[output folder](#output-folders); calling it again adds a revision to that
+File. It returns the File, word count, language, provider, and the first
+eight sentences with `MM:SS` times as an untrusted-content node. A new
+transcription records a `video_transcription` audit event on the video File
+with the provider and model, committed before the transcript File is written.
 
-| Setting | Default | Purpose |
-|---|---:|---|
-| `VIDEO_TRANSCRIPTION_SPEECH_LOCATION` | `eu` | Speech-to-Text multi-region (`eu` or `us`) for Chirp 3. |
+### Moments and questions
 
-On GCP, bootstrap enables the Speech-to-Text API and grants the API and worker
-service accounts `roles/speech.client` when `GOOGLE_VERTEX_AI=true`. Speech
-reads the staged audio as its own service agent.
-
-## Moments and questions
-
-`find_video_moments` and `ask_video` send the video to
-`VIDEO_UNDERSTANDING_MODEL` (Gemini 3.8 Flash by default) through the shared
-Gemini video input, at 1 frame a second and low media resolution.
-`services/media/understanding.py` runs the calls, at most three at a time,
-under one `video_understanding` usage event, and answers with structured
-output or text. Both tools need Google on either transport, and
-`find_video_moments` also needs the renderer. Where Gemini can't read long
-video (Vertex without GCS storage), a video up to 18 MB goes inline and a
-larger one is refused before it is transcribed. Each call records a
+Both send the video to `VIDEO_UNDERSTANDING_MODEL` through the shared
+[Gemini video input](#gemini-video-input) at 1 frame a second.
+`services/media/watch_video.py` runs the calls, at most three at a time,
+under one `video_understanding` usage event. Each call records a
 `video_understanding` audit event on the video File with the model and the
-range, committed before the model call.
+range, committed before the model call. Where Gemini can't read long video,
+a video over 18 MiB is refused before transcription or any model call.
 
 Both take an optional `start` and `end` (`MM:SS` or `H:MM:SS`), sent as the
-part's start and end offsets. With offsets, Gemini still gives times from the
-start of the full video (checked live on a counter video, plan 249 B2), so
-times need no shifting. `detail` raises the frame rate to 5 for fast action and
-covers at most a fifth of a window (8 minutes by default), so a call's frame
-count stays the same.
+part's offsets. Gemini gives times from the start of the full video, so
+times need no shifting. `detail` raises the frame rate to 5 for fast action
+and covers at most a fifth of a window, so a call's frame count stays the
+same.
 
-### `find_video_moments`
+`find_video_moments(file_id, brief, count?, min_seconds?, max_seconds?,
+start?, end?, detail?)` returns up to `count` (default 5, at most 10)
+moments, best first. Each has validated `start_ms`, `end_ms`, `score` (0 to
+100), and `shot_count`, and the model's `title`, `hook`, and `reason`, plus
+the transcript excerpt, each as an untrusted-content node:
 
-`find_video_moments(file_id, brief, count?, min_seconds?, max_seconds?, start?,
-end?, detail?)` returns up to `count` (default 5, at most 10) moments, best
-first. Each has validated `start_ms`, `end_ms`, `score` (0 to 100), and
-`shot_count`, and the model's `title`, `hook`, `reason`, plus the transcript
-excerpt, each as an untrusted-content node with File and revision provenance.
-
-1. It loads the transcript (creating it with `transcribe_video`'s path when
-   missing; a video with no audio has none) and the shot cuts.
-2. Ranges longer than `VIDEO_MOMENTS_WINDOW_SECONDS` are split into the fewest
-   equal windows that overlap by 60 seconds; a 4-hour video is 7 windows. Each
-   window's prompt carries the brief, the length bounds, and that window's
-   transcript lines with times, framed as untrusted content.
-3. The model returns candidate moments with `MM:SS` times. Unreadable times
-   are dropped, and each range is clamped to its window.
-4. `services/media/snapping.py` snaps each range: a start inside a sentence
-   moves back to the sentence start, and a start in a pause moves on to the
-   next sentence; an end inside a sentence moves on to its end, and an end in
-   a pause moves back to the last sentence. A moment shorter than
-   `min_seconds` runs on to the first sentence end that makes it long
-   enough. A moment that then falls outside `min_seconds` to `max_seconds`
-   is dropped. Each cut then moves to a shot change within
-   `VIDEO_SNAP_SHOT_TOLERANCE_MS`, if the range still fits the bounds.
-5. Of two overlapping moments, the higher score is kept, so a moment found in
-   two windows appears once.
+1. It loads the transcript, creating it if missing (a video with no audio has
+   none), and the shot cuts.
+2. A range longer than `VIDEO_MOMENTS_WINDOW_SECONDS` is split into the
+   fewest equal windows that overlap by 60 seconds. Each window's prompt
+   carries the brief, the length bounds, and that window's transcript lines,
+   framed as untrusted content.
+3. Unreadable times are dropped, and each range is clamped to its window.
+4. `services/media/snapping.py` snaps each range to whole sentences: a start
+   inside a sentence moves back to its start, and a start in a pause moves on
+   to the next sentence; ends move the opposite way. A moment shorter than
+   `min_seconds` runs on to the first sentence end that makes it long enough,
+   and a moment outside the bounds is dropped. Each cut then moves to a shot
+   change within `VIDEO_SNAP_SHOT_TOLERANCE_MS` if the range still fits.
+5. Of two overlapping moments, the higher score is kept.
 
 When fewer moments survive than asked for, the result says so in `note`.
-`cut_video_clips` reuses the same snapping.
-
-### `ask_video`
 
 `ask_video(file_id, question, start?, end?, detail?)` answers one question
-with `MM:SS` references, as an untrusted-content node. One call covers at most
-`VIDEO_MOMENTS_WINDOW_SECONDS` (40 minutes), at medium media resolution up to
-10 minutes and low beyond that; for a longer video the agent passes `start`
-and `end`. It doesn't read the transcript.
+with `MM:SS` references, as an untrusted-content node. One call covers at
+most `VIDEO_MOMENTS_WINDOW_SECONDS`, at medium media resolution up to 10
+minutes and low beyond that. It doesn't read the transcript.
 
 | Setting | Default | Purpose |
 |---|---:|---|
-| `VIDEO_UNDERSTANDING_MODEL` | `gemini-3.8-flash` | Google catalog model that watches the video. |
-| `VIDEO_MOMENTS_WINDOW_SECONDS` | 2400 | Longest stretch one call watches (300 to 3600). |
-| `VIDEO_SNAP_SHOT_TOLERANCE_MS` | 700 | How far a snapped cut may move to a shot change (0 to 3000). |
+| `VIDEO_UNDERSTANDING_MODEL` | `gemini-3.8-flash` | Google catalogue model that watches the video. |
+| `VIDEO_MOMENTS_WINDOW_SECONDS` | `2400` | Longest stretch one call watches (300 to 3600). |
+| `VIDEO_SNAP_SHOT_TOLERANCE_MS` | `700` | How far a snapped cut can move to a shot change (0 to 3000). |
 
-In the conversation, a completed `find_video_moments` call shows the source
-video and its moments; selecting one plays just that range, with a
-`#t=start,end` media fragment on the signed URL. A completed `ask_video`
-call plays the range it watched, with the question and answer. Running and
-failed calls keep the default row with its progress stage.
+### Clips
 
-Chat accepts video once `find_video_moments` or `cut_video_clips` is
-available, and **Add to chat** in Files offers video then too.
+`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?,
+remove_silences?, transition?, folder?)` renders up to five clips and saves
+each as a new video File. It is an internal write, `auto` by default. Its
+arguments are as follows:
 
-## Clips
-
-`cut_video_clips(clips, aspect_ratio?, framing?, captions?, caption_style?, remove_silences?, transition?, folder?)`
-(each clip also takes `transition`, fades, and `text_overlays`)
-renders up to five clips and
-saves each as a new video File in the output folder of the video its first
-segment comes from (see "Output folders"), or in the folder `folder` names,
-created in the caller's workspace if needed and resolved once per call. It
-needs only the renderer. Internal write, auto by default, not
-code-eligible.
-
-- Each clip has 1 to 10 `segments`, joined in order. A segment is a
-  `file_id` with optional `start_ms` and `end_ms`; omitting both takes the
-  whole video. Segments can come from several of the workspace's own videos.
-  Optional `name` names the File; otherwise it is named from the first video
+- **Segments:** each clip has 1 to 10 `segments`, joined in order, from one
+  or several of the workspace's own videos. A segment is a `file_id` with
+  optional `start_ms` and `end_ms`; omitting both takes the whole video. An
+  optional `name` names the File; otherwise it is named from the first video
   and range, such as `Talk 0.41-1.10.mp4`.
-- `snap` (default true) moves each segment with `find_video_moments`'
-  snapping, without its length bounds: whole sentences, then shot changes
-  within `VIDEO_SNAP_SHOT_TOLERANCE_MS`. A move of a second or more comes back
-  as a warning on that clip. The first snapping call on a video transcribes it
-  and measures its shots, as `find_video_moments` does; a video with no audio,
-  or no transcription provider, snaps to shots only.
-- `aspect_ratio` is `original` (the first video's upright shape), `9:16`,
-  `1:1`, `4:5`, or `16:9`, at 1080 pixels on the short side. The frame rate is
-  the first video's, rounded, between 24 and 60. `framing` is `auto` (the
-  default: crop to follow the largest face in each shot, centred where there
-  is none), `center` (crop the middle), or `fit` (whole frame over a blur).
-  `auto` measures each video's shots on first use, so the crop jumps only at
-  a cut.
-- `remove_silences` (off by default, and the agent is told to leave it off
-  unless the person asks, since it makes jump cuts) cuts every pause longer
-  than 600 ms between words, at the segment's edges too, leaving 150 ms
-  beside speech. A segment with no
-  words, such as B-roll, keeps every frame. The cut is in output frames, and
-  the clip's length is what remains.
-- `captions` is `none` (the default) or a preset: `bold` (Montserrat bold,
-  outlined, up to four words), `clean` (Inter in one translucent box, up to
-  two lines), or `highlight` (Montserrat bold capitals, three words at a
-  time, the spoken word in yellow at 110%). `caption_style` overrides any
-  part of the preset: `font` (one of the bundled families), `size` (2 to 15%
-  of the short edge), `bold`, `uppercase`, `text_color`, `highlight_color`,
-  `highlight_scale`, `outline_color`, `outline_width`, `shadow`, `box`,
-  `box_color`, `box_opacity`, `words_per_caption`, `max_lines`, `position`
-  (`top`, `middle`, `lower`), and `margin`. Colours are `#RRGGBB`; every other
-  value is a bounded number or a name from a fixed list.
-- Captions are built by the API (`services/media/captions.py`) into the
-  clip's ASS file on the joined clip's timeline, from each segment's transcript words
-  shifted by the segment's offset and by any pauses removed before them.
-  Words come from untrusted audio: control characters are dropped, and `\`,
-  `{`, and `}` are replaced, so no word can add a style override or line
-  break. Lines are wrapped by the API to a bound derived from the frame width
-  and the font's measured glyph width (libass never wraps), and a word longer
-  than a line is split. A cue breaks at a sentence end, a speaker change, a
-  pause of 700 ms, or its word or line limit. On a vertical frame the
-  default margins keep clear of Reels, Shorts, and TikTok's own buttons and
-  text: 24% from the foot, 12% from the top, 8% on the left and 16% on the
-  right. Overlay text is the agent's, which may be steered by what it read,
-  so it goes through the same escaping and line bounds. When the tool needs
-  approval, the approval card lists the `clips` argument with each overlay's
-  text.
-- `highlight` and `remove_silences` need exact word times, so they're
-  refused when a video's transcript came from Gemini (about a second out at
-  p95). Captions and pause removal need a transcription provider; a video
-  without audio is left uncaptioned, and a clip with no speech reports it.
-- Segments join with hard cuts unless a `transition` says otherwise:
-  `{style, duration_ms?, audio_curve?}`. The most specific one wins: a
-  segment's `transition_in` (the join before it), then the clip's
-  `transition`, then the call's, which suits a set of reels that should look
-  alike. `style` is any renderer style or `none`. The duration defaults to
-  400 ms (500 ms for `fadeblack` and `fadewhite`) and is 100 to 3000 ms; the
-  curve defaults to `tri`. Each clip can also `fade_in_ms` from black and
-  `fade_out_ms` to black, 0 to 3000 ms each. The tool description tells the
-  agent to add transitions and fades only when the person asks for them.
-- A transition overlaps the segments either side of it, which would blend
-  away the words snapped to their edges. So after snapping, each side is
-  extended by half the transition into the surrounding footage, putting the
-  blend over the cut. At the start or end of a video there is nothing to
-  extend into, so the blend takes the segment's own edge. The clip reports a
-  warning when the range was asked to end or start at that edge; a whole
-  video (no `start_ms` or `end_ms`) always blends its edges, so it says
-  nothing. A transition longer than half of either segment it joins (after
-  any pauses are removed) fails the call with a reason, and so do fades
-  longer than the clip. The clip's length is the segments' total less every
-  overlap. Captions follow that timeline and switch from one segment's words
-  to the next halfway through the blend, so two captions never show at once.
-- Each clip takes up to five `text_overlays`: the agent's own text, such as a
-  hook ("3 pricing mistakes"), a title card, a label, or a call to action.
-  Each has `text` (1 to 200 characters; line breaks are kept and long lines
-  wrap), a `preset` (`bold`, the default; `clean`; or `title`, large Anton
-  capitals for a hook), `style` overrides, timing, and `fade_in_ms` and
-  `fade_out_ms` (0 to 1000, written as ASS `\fad`). `style` takes every
-  caption style option except the caption-only ones (`words_per_caption`,
-  `highlight_color`, `highlight_scale`), plus `align` (`left`, `center`,
-  `right`), and `max_lines` up to 4 (3 by default). Captions and overlays
-  share one resolver, wrapping, and escaping (`TextStyle`).
-- Overlay timing: omitted, an overlay shows for the whole clip. `start_ms`
-  and `end_ms` alone are times from the start of the clip as rendered. With
-  `segment` (numbered from 1), they are times in that segment's video,
-  mapped through the same timeline as captions, so the text stays on its
-  moment after pauses are removed and transitions overlap; omitted, they
-  take the segment's own edges. Times outside the clip or segment, an
-  overlay that ends before it starts after mapping, fades longer than the
-  overlay, or text that needs more lines than `max_lines` fail the call
-  with a reason before anything renders.
-- Each overlay is its own ASS style on a layer above the captions. Overlays
-  sit at the `top` by default, clear of lower captions. An overlay at the
-  same edge as the captions (`top` or `lower`) moves past the caption
-  block's tallest cue, and the clip reports a warning.
-- A clip has no length cap of its own. A clip File can be as large as an
-  uploaded video (`MAX_FILE_SIZE_SOURCE_VIDEO`), and never more than
-  `MEDIA_RENDERER_MAX_OUTPUT_BYTES`, so the longest clip is the smaller of
-  those at the renderer's bitrate caps: about 35 minutes by default, on any
-  storage provider the renderer supports. A segment outside its video, or a
-  clip over that length, fails the call with a reason before anything
-  renders. A long clip must also render within `MEDIA_RENDERER_TIMEOUT_SECONDS`
-  and the run within `AGENT_RUN_MAX_DURATION_SECONDS`; a 2-minute 1080p
-  screen recording renders to 9:16 in about 18 seconds on 4 CPUs.
+- **Snapping:** `snap` (default true) applies `find_video_moments`' snapping
+  without its length bounds. A move of a second or more comes back as a
+  warning. The first snap on a video transcribes it and measures its shots; a
+  video with no audio, or no transcription provider, snaps to shots only.
+- **Shape:** `aspect_ratio` is `original` (the first video's upright shape),
+  `9:16`, `1:1`, `4:5`, or `16:9`, at 1080 pixels on the short side, at the
+  first video's frame rate rounded into 24 to 60. `framing` is `auto` (the
+  default, renderer `reframe`), `center`, or `fit`.
+- **`remove_silences`:** off by default, and the agent is told to leave it
+  off unless asked, because it makes jump cuts. It cuts every pause longer
+  than 600 ms between words, leaving 150 ms beside speech. A segment with no
+  words keeps every frame.
+- **Captions:** `captions` is `none` (the default), `bold`, `clean`, or
+  `highlight` (the spoken word coloured and enlarged). `caption_style`
+  overrides any part of the preset: font (one of the bundled families), size,
+  weight, capitals, colours (`#RRGGBB`), outline, shadow, box, words per
+  caption, lines, `position` (`top`, `middle`, `lower`), and margin. On a
+  vertical frame the default margins keep clear of Reels, Shorts, and TikTok
+  controls.
+- **Transitions:** a `transition` is `{style, duration_ms?, audio_curve?}`.
+  The most specific wins: a segment's `transition_in`, then the clip's
+  `transition`, then the call's. The duration defaults to 400 ms (500 ms for
+  `fadeblack` and `fadewhite`), and the curve to `tri`. Each clip can also
+  take `fade_in_ms` and `fade_out_ms` (0 to 3000). The agent is told to add
+  them only when asked.
+- **Text overlays:** each clip takes up to five `text_overlays`: `text` (1 to
+  200 characters), a `preset` (`bold`, `clean`, or `title`), `style`
+  overrides (caption options plus `align` and up to 4 lines), timing, and
+  `fade_in_ms` and `fade_out_ms` (0 to 1000). With no times, an overlay
+  shows for the whole clip. `start_ms` and `end_ms` alone are clip times;
+  with `segment` (numbered from 1), they are times in that segment's video,
+  mapped through the same timeline as captions. Overlays sit at the `top` by
+  default, on a layer above the captions, and one at the captions' edge moves
+  past the tallest cue with a warning.
+- **`folder`:** names the output folder, created in the caller's workspace if
+  needed. Otherwise clips go in the first segment's video's
+  [output folder](#output-folders).
 
-Clips render three at a time (the renderer's default maximum instances). One
-clip failing doesn't stop the others: each saved clip is a File with the
-renderer's probe stored on the revision, so it is ready at once, and the result
-reports every clip with its status, ranges, warnings, and a failure reason.
-When no clip is saved, the call fails. Each call records a `video_clips` audit
-event on every source video.
+The API builds the clip's ASS file (`services/media/captions.py`) on the
+clip's timeline from each segment's transcript words, shifted by the
+segment's offset and any pauses removed before them. Captions and overlays
+share one resolver, wrapping, and escaping (`TextStyle`). Words come from
+untrusted audio and overlay text from the agent, so control characters are
+dropped and `\`, `{`, and `}` are replaced; no text can add an override tag
+or line break. The API wraps lines to a bound derived from the frame width
+and the font's measured glyph width, because libass never wraps. A cue breaks
+at a sentence end, a speaker change, a 700 ms pause, or its word or line
+limit.
 
-In the conversation, a completed call says how many clips it saved, the
-shape and framing when the shape changed, and the captions and pause
-removal when used, and shows them as a grid of stills
-with their length, name, ranges, and any fades and transitions in the order
-they play (such as "Fade In 0.5 s · Wipe Left 0.4 s"), and each text overlay
-with its times, so a person sees what was burned in; selecting one opens the player in a
-dialog, and a line under the grid links the folder the clips went to. A
-failed clip's tile shows its reason. The moments card
-has a checkbox per moment and **Cut N Clips**, which sends the person's own
-turn: "Cut these moments from `<video>` into separate clips", then each
-chosen moment's times. Titles and reasons come from a model watching
-untrusted video, so they never go into that message. The button is disabled
-while the conversation can't take a turn. Tool rows send turns through
-`ConversationActionsContext`, which the conversation route provides.
+Exact word times matter for some options. `highlight` and `remove_silences`
+are refused when a video's transcript came from Gemini. A video without
+audio is left uncaptioned, and a clip with no speech reports it.
+
+Each side of a transition extends by half its duration into the surrounding
+footage, so the blend sits over the cut and doesn't eat snapped words. At a
+video's start or end there is nothing to extend into, so the blend takes the
+segment's own edge, with a warning unless the segment is a whole video.
+Captions switch to the next segment's words halfway through a blend.
+
+The call fails with a reason before anything renders when:
+
+- A segment lies outside its video.
+- A transition is longer than half of either segment it joins (after
+  removing pauses), or a fade is longer than the clip.
+- An overlay's times fall outside its clip or segment, it ends before it
+  starts, its fades exceed it, or its text needs more lines than allowed.
+- A clip would exceed `MEDIA_RENDERER_MAX_OUTPUT_BYTES` or
+  `MAX_FILE_SIZE_SOURCE_VIDEO` at the renderer's bitrate caps (about 35
+  minutes by default).
+
+Clips render three at a time. One clip failing doesn't stop the others. Each
+saved clip stores the renderer's probe on its revision, so it is ready at
+once. The result reports every clip with its status, ranges, warnings, and
+any failure reason, and the call fails only when no clip is saved. Each call
+records a `video_clips` audit event on every source video.
 
 ### Output folders
 
-Files made from a video go in one folder per original video, as `run_code`
-and document outputs go in one folder per conversation. The folder is named
-after the video without its extension (`Talk` for `Talk.mp4`, with a
-numeric suffix when a live folder already has that name) and linked to it by
-`file_folders.source_file_id`. `ensure_source_file_folder` resolves it:
+Files made from a video go in one folder per original video, named after the
+video without its extension (`Talk` for `Talk.mp4`, with a numeric suffix on
+a name clash) and linked by `file_folders.source_file_id`.
+`ensure_source_file_folder` resolves it:
 
-- A video already inside another video's folder, such as an earlier clip, is
-  itself derived, so its outputs join that folder. Clips of clips stay with
-  the original.
+- A video inside another video's folder, such as an earlier clip, is itself
+  derived, so its outputs join that folder.
 - Otherwise the live folder linked to the video is reused, or created and
   audited as a `file_folder` create by the agent. A partial unique index
-  keeps one live folder per video; renaming the folder keeps the link, and
+  keeps one live folder per video. Renaming the folder keeps the link;
   deleting it means the next output creates a new one.
-
-`transcribe_video` and `cut_video_clips` use it. A stitched clip goes in its
-first video's folder.
 
 ## Long media calls
 
-Video calls run inside the tool call, under an explicit tool `timeout`. The
+Video calls run inside the tool call under an explicit tool `timeout`. The
 run's lease heartbeat continues during the call, and
 `AGENT_RUN_MAX_DURATION_SECONDS` bounds the whole continuation:
 
-| Work | Tool timeout |
+| Tool | Timeout |
 |---|---|
-| A Google model call over video (generation, edits, understanding) | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` (600 s): 300 s for the model call plus the Files API's 300 s processing wait |
-| A renderer operation | `MEDIA_RENDERER_TIMEOUT_SECONDS` plus the client's 60 second allowance (`REQUEST_ALLOWANCE_SECONDS`) |
-| `transcribe_video` | The renderer operation's timeout plus 900 seconds for transcription |
-| `find_video_moments` | `transcribe_video`'s timeout plus `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS`, because a first call transcribes too |
-| `ask_video` | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` |
+| `generate_image_from_video`, `ask_video` | `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` (600 s): 300 s for the model call plus the Files API's 300 s processing wait |
+| `transcribe_video` | One renderer operation (`MEDIA_RENDERER_TIMEOUT_SECONDS` plus 60 s) plus 900 s for transcription |
+| `find_video_moments` | `transcribe_video`'s timeout plus `VIDEO_MODEL_TOOL_TIMEOUT_SECONDS` |
+| `cut_video_clips` | `transcribe_video`'s timeout, plus one renderer operation for shot cuts, plus one per round of three clips |
 
-When a timeout passes, Pydantic AI cancels the call and returns a retry to the
-model. Nothing is saved, because tools write their output File only after the
-provider returns. Cancelling the outbound request doesn't stop Google billing a
-generation that was already running.
+When a timeout passes, Pydantic AI cancels the call and returns a retry to
+the model. Tools write their output File only after the provider returns, so
+nothing is saved. Cancelling the request doesn't stop a provider billing work
+already running.
 
-Video tools that call the renderer or a generation model are
-`code_eligible=False`. `run_code`'s 60 second budget counts time spent in
-nested calls, so they would always time out there. A tool that needs several
-outputs does the work concurrently inside one call instead.
+`run_code` counts time spent in nested calls against its 60-second budget,
+so video tools aren't code-eligible. A tool that needs several outputs does
+the work concurrently inside one call.
 
 A long call reports its stage with a `tool.progress` stream event, emitted
 through `ctx.deps.sink` with the call's `tool_call_id` and a short Title Case
 `stage` (at most 80 characters), such as `Preparing Video`. The event is live
-only and isn't saved; the client keeps the latest stage on a running call and
-shows it under the tool row's heading, next to the elapsed time.
+only; the client shows the latest stage on the running tool row.
 
-The runtime never runs a tool call twice. An interrupted call gets an
-interrupted return, approval continuations aren't replayed after a process
-failure, and recovery evidence lists uncertain actions. A completed paid call
-therefore isn't repeated on resume. A per-call idempotency record, and
-reserving cleanup of the output before the call, are pending with the first
-provider that writes output straight into workspace storage (Veo).
+The runtime never runs a tool call twice: an interrupted call gets an
+interrupted return, and recovery evidence lists uncertain actions, so a
+completed paid call isn't repeated on resume.
 
 ## Video in the conversation
 
-Any completed tool result that names a video File gets a video row, unless a
-more specific presenter claims the result first (`video-tool-presenter.tsx`,
-registered after integration presenters). A result names a video when it has
-`file_id` and a `video/*` `media_type`, either at the top level or in a list
-such as `clips`. A video tool that returns that shape needs no presenter of
-its own to show its videos.
+Any completed tool result that names a video File (`file_id` and a
+`video/*` `media_type`, at the top level or in a list such as `clips`) gets a
+video row, unless a more specific presenter claims it first
+(`video-tool-presenter.tsx`). Each video plays from a signed preview URL with
+its duration, upright dimensions, details, and download. The row reads the
+File itself, so it shows "Preparing video" during the probe and the
+processing error if it fails. The player keeps its first signed URL, which
+lasts 10 minutes, because a refetch would restart playback.
 
-Each video plays from a signed preview URL, with the File's duration and
-upright dimensions, a details button that opens the File, and a download
-button. The row reads the File itself, so it shows "Preparing video" while the
-probe runs and the processing error if it fails. The player keeps its first
-signed URL, because a refetch would restart playback; the URL lasts 10
-minutes, so a long pause can need the row reopened.
+The tool rows add the following:
 
-In the composer, a chat attachment shows its upload percentage, then
-"Preparing video" while the probe runs, then the duration and dimensions. The
-person can send once the upload is confirmed, before the probe finishes. A
-sent video shows the same card as a tool result.
+- **`find_video_moments`:** the source video and its moments; selecting one
+  plays that range with a `#t=start,end` fragment. **Cut N Clips** sends the
+  person's own turn naming the video and the chosen moments' times, never
+  the model's titles or reasons. Tool rows send turns through
+  `ConversationActionsContext`, and the button is unavailable while the
+  conversation can't take a turn.
+- **`ask_video`:** the range it watched, with the question and answer.
+- **`cut_video_clips`:** a grid of stills with each clip's length, name,
+  ranges, fades and transitions in play order, and overlay text and times,
+  plus a link to the output folder. Selecting a clip opens a player; a failed
+  clip shows its reason.
+
+In the composer, a video attachment shows its upload percentage, then
+"Preparing video", then its duration and dimensions. The person can send once
+the upload is confirmed.
 
 ## Deployment
 
 On GCP, `deploy/gcp/deploy.sh` deploys `praxis-media-renderer` as a gen2
-Cloud Run service with one request per instance. It scales to zero, and its
-request timeout is 60 seconds above `MEDIA_RENDERER_TIMEOUT_SECONDS`. The
-deployment has no VPC, so ingress is `all`; Cloud Run IAM is the caller check,
-and only the API and worker service accounts hold `roles/run.invoker`. The
-renderer's own service account has no roles. For sizing, cost, and staging
-expiry, see the
-[GCP deployment guide](../../deploy/gcp/README.md#media-renderer).
+Cloud Run service with one request per instance, scaling to zero, behind
+Cloud Run IAM. For identity, access, sizing, cost, and staging expiry, see
+the [GCP deployment guide](../../deploy/gcp/README.md#media-renderer).
 
-Cloud Run's file system is memory, so a 4 GiB source uses 4 GiB of the
-instance before ffmpeg starts. `MAX_FILE_SIZE_SOURCE_VIDEO` sets one limit for
-uploads, the worker, and renderer input; raise the instance memory with it.
-`deploy.sh` rejects media settings the API would refuse at startup, and signed
-URL lifetimes shorter than the renderer's request timeout.
+Cloud Run's file system is memory, so the instance must hold the inputs (up
+to `MAX_FILE_SIZE_SOURCE_VIDEO`, which also bounds uploads and worker reads),
+one output, and `RENDERER_CHILD_MEMORY_BYTES`. The deploy script checks this,
+and rejects media settings the API would refuse at startup.
 
 ### Other clouds
 
 The renderer image, its request protocol, and the API client don't depend on
-GCP: the renderer is an ordinary container that talks only to signed URLs under
-`RENDERER_ALLOWED_URL_PREFIXES`. What each deployment supplies is storage that
-can stage outputs, a way to authenticate the API to the renderer, and an expiry
-rule for staging.
+GCP. Each deployment supplies the following:
 
 | Need | GCP | Azure and AWS |
 |---|---|---|
-| Staging uploads (`create_signed_staging_upload`) | GCS signs a size range | Pending. Azure SAS and S3 presigned `PUT` can't sign a range, so their adapters can rely on the API's stored-size check (see [Storage and files](storage-and-files.md)). |
-| Caller authentication | Cloud Run IAM with `google_id_token` | `shared_secret` on private ingress (Container Apps internal ingress, or a private ECS or App Runner service). The renderer refuses operation requests without the secret. |
-| Staging expiry | GCP bootstrap's one-day lifecycle rule on `platform/media-staging/` | Pending: a Blob lifecycle management policy or an S3 lifecycle rule on the same prefix. |
-| Large source uploads | Signed direct upload, up to `MAX_FILE_SIZE_SOURCE_VIDEO` | S3 signs direct uploads but caps a single `PUT` at 5 GiB. Azure relays uploads through the API, so person uploads keep `MAX_FILE_SIZE_VIDEO` (100 MB) until it signs direct uploads. The relay streams, so renderer outputs and clip Files aren't held to that. |
-| Isolation self-check | Verified locally in Docker and on Cloud Run gen2 | Unverified. The runtime must let an unprivileged process set `no_new_privs` and install a seccomp filter, and run the renderer as its container's first process. |
+| Staging uploads (`create_signed_staging_upload`) | GCS signs a size range | Pending. Azure SAS and S3 presigned `PUT` can't sign a range, so their adapters can rely on the API's stored-size check. |
+| Caller authentication | Cloud Run IAM with `google_id_token` | `shared_secret` on private ingress, such as Container Apps internal ingress or a private ECS or App Runner service. |
+| Staging expiry | Bootstrap's one-day lifecycle rule on `platform/media-staging/` | Pending: a lifecycle rule on the same prefix. |
+| Large source uploads | Signed direct upload, up to `MAX_FILE_SIZE_SOURCE_VIDEO` | S3 caps a single `PUT` at 5 GiB. Azure relays person uploads through the API, so they keep `MAX_FILE_SIZE_VIDEO`; renderer outputs aren't held to that. |
+| Isolation self-check | Verified in Docker and on Cloud Run gen2 | Unverified. The runtime must let an unprivileged process set `no_new_privs` and install a seccomp filter, and run the renderer as its container's first process. |
 
-The repository has no Azure or AWS deployment tooling. Until a deployment has
-a staging adapter, `settings.media_renderer_available` is false and video
-stays refused in chat.
+The repository has no Azure or AWS deployment tooling. Without a staging
+adapter, the renderer is unavailable and video stays refused in chat.
 
-Locally, set `MEDIA_RENDERER_URL=http://127.0.0.1:8090` and
-`MEDIA_RENDERER_AUTH=none` in `apps/api/.env`, and `make dev` starts the
-renderer on `127.0.0.1:8090`. See [Local development](local-development.md).
-Uploading a video to **Files** runs the probe, so the File moving from
-**Processing** to ready confirms the renderer works end to end. With an
-`OPENAI_API_KEY`, `transcribe_video` then transcribes it through `whisper-1`,
-because local storage can't give Chirp 3 a `gs://` URI.
+### Local development
+
+Set `MEDIA_RENDERER_URL=http://127.0.0.1:8090` and `MEDIA_RENDERER_AUTH=none`
+in `apps/api/.env`; `make dev` then starts the renderer. See
+[Local development](local-development.md#media-renderer). Uploading a video
+to **Files** runs the probe, so the File moving from **Processing** to ready
+confirms the renderer works. With an `OPENAI_API_KEY`, `transcribe_video`
+uses `whisper-1`, because local storage can't give Chirp 3 a `gs://` URI.
 
 ## Verification
 
-`make media-renderer-check` builds the renderer's test image and runs its tests
-on Linux in Docker. They kill processes, so they refuse to run outside that
-container. CI runs the same target, with the renderer's lint and a production
-image build. API client tests are in `apps/api/tests/services/media/`.
+`make media-renderer-check` builds the renderer's test image and runs its
+tests on Linux in Docker. They kill processes, so they refuse to run outside
+that container. CI runs the same target, with the renderer's lint and a
+production image build. API client tests are in
+`apps/api/tests/services/media/`.

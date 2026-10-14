@@ -1,3 +1,4 @@
+# deploy/gcp/tests/validate_manifests.py
 from __future__ import annotations
 
 import sys

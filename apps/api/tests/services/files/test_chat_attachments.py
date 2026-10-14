@@ -1,3 +1,5 @@
+# apps/api/tests/services/files/test_chat_attachments.py
+
 """Tests for chat attachment file validation and content assembly."""
 
 import asyncio

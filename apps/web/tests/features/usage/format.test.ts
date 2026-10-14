@@ -1,3 +1,5 @@
+// apps/web/tests/features/usage/format.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { formatShare, formatUsd, groupPurposeBreakdownRows } from "@/features/usage/format"

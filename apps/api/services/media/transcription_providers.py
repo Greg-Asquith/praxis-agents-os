@@ -96,7 +96,7 @@ class GeminiTranscript(BaseModel):
 
 
 def transcription_provider() -> TranscriptionProvider | None:
-    """Returns the most accurate provider this deployment has (plan 249 B1 measurements)."""
+    """Returns the most accurate provider this deployment has."""
     if settings.GOOGLE_VERTEX_AI and settings.STORAGE_PROVIDER == "gcs" and vertex_project():
         return TranscriptionProvider(PROVIDER_GOOGLE, "chirp_3", CHIRP_MAX_CHUNK_MS, _chirp)
     if has_provider_api_key(PROVIDER_OPENAI):

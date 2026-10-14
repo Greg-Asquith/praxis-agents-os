@@ -40,7 +40,9 @@ async def stored_video(tmp_path, monkeypatch: pytest.MonkeyPatch):
         reset_storage_provider_cache()
 
 
-def _mock_google(monkeypatch: pytest.MonkeyPatch, poll_state: str) -> list[httpx.Request]:
+def _mock_google(
+    monkeypatch: pytest.MonkeyPatch, poll_state: str, *, finalize_html: bool = False
+) -> list[httpx.Request]:
     requests: list[httpx.Request] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -48,6 +50,8 @@ def _mock_google(monkeypatch: pytest.MonkeyPatch, poll_state: str) -> list[httpx
         if request.headers.get("x-goog-upload-command") == "start":
             return httpx.Response(200, headers={"x-goog-upload-url": UPLOAD_URL})
         if request.headers.get("x-goog-upload-command") == "upload, finalize":
+            if finalize_html:
+                return httpx.Response(200, text="<html>Bad gateway</html>")
             return httpx.Response(200, json={"file": {"name": "files/abc", "state": "PROCESSING"}})
         if request.method == "GET":
             return httpx.Response(
@@ -101,3 +105,12 @@ async def test_upload_that_google_cannot_process_is_deleted(stored_video, monkey
         )
 
     assert (requests[-1].method, str(requests[-1].url)) == ("DELETE", f"{BASE}/v1beta/files/abc")
+
+
+async def test_an_unreadable_google_answer_fails_as_an_upload_error(stored_video, monkeypatch):
+    _mock_google(monkeypatch, poll_state="ACTIVE", finalize_html=True)
+
+    with pytest.raises(GeminiFileError, match="couldn't receive"):
+        await upload_gemini_file(
+            stored_video, size_bytes=10, media_type="video/mp4", display_name="revision"
+        )

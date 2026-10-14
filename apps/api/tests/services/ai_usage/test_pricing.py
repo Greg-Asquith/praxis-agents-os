@@ -1,3 +1,5 @@
+# apps/api/tests/services/ai_usage/test_pricing.py
+
 """Public model-price registry contracts."""
 
 from datetime import date

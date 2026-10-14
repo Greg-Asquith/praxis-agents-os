@@ -14,6 +14,7 @@ import type { ReactNode } from "react"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -142,7 +143,7 @@ export function FileToolRow({
     const state = filePendingState(activity.name)
     return state ? (
       <FanOutSkeleton
-        heading={<FileToolHeading icon={state.icon}>{state.heading}</FileToolHeading>}
+        heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
         {...(activity.progressStage ? { summary: activity.progressStage } : {})}
         {...(live && activity.status === "running"
@@ -191,7 +192,7 @@ function ListFilesRow({
       ariaLabel="Workspace files"
       defaultOpen={defaultOpen}
       details={[{ label: "Files", value: countLabel }]}
-      heading={<FileToolHeading icon={FilesIcon}>Workspace Files</FileToolHeading>}
+      heading={<ToolHeading icon={FilesIcon}>Workspace Files</ToolHeading>}
       trailing={<Badge variant="success">{countLabel}</Badge>}
     >
       <div className="grid min-w-0 gap-4">
@@ -231,7 +232,7 @@ function WriteFileRow({
         { label: "File", value: result.name },
         { label: "Size", value: formatBytes(result.bytes_written) },
       ]}
-      heading={<FileToolHeading icon={FilePlus2Icon}>Save File</FileToolHeading>}
+      heading={<ToolHeading icon={FilePlus2Icon}>Save File</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <FileEntityRow file={file} />
@@ -256,7 +257,7 @@ function TranscribeVideoRow({
         { label: "Length", value: formatDuration(result.duration_ms, "milliseconds") },
         { label: "Words", value: result.word_count.toLocaleString() },
       ]}
-      heading={<FileToolHeading icon={CaptionsIcon}>Transcribe Video</FileToolHeading>}
+      heading={<ToolHeading icon={CaptionsIcon}>Transcribe Video</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <FileEntityRow file={{ fileId: result.file_id, name: result.name }} />
@@ -278,9 +279,7 @@ function GenerateImageRow({ activity }: Pick<FileToolRowProps, "activity">) {
         { label: "Dimensions", value: `${String(result.width)} x ${String(result.height)}` },
         { label: "Size", value: formatBytes(result.size_bytes) },
       ]}
-      heading={
-        <FileToolHeading icon={ImageIcon}>{imageToolHeading(activity.name)}</FileToolHeading>
-      }
+      heading={<ToolHeading icon={ImageIcon}>{imageToolHeading(activity.name)}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <MessageAttachmentCard
@@ -450,7 +449,7 @@ function ReadFileCard({
       ariaLabel={heading}
       defaultOpen={defaultOpen}
       details={details}
-      heading={<FileToolHeading icon={icon}>{heading}</FileToolHeading>}
+      heading={<ToolHeading icon={icon}>{heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       {children}
@@ -472,7 +471,7 @@ function FileFailureRow({ activity }: Pick<FileToolRowProps, "activity">) {
       ariaLabel={`${state.heading} ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
-      heading={<FileToolHeading icon={state.icon}>{state.heading}</FileToolHeading>}
+      heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       {activity.status === "denied" ? (
@@ -504,15 +503,6 @@ function FileContentBlock({
       <p className="bg-muted/25 border-b px-3 py-2 text-xs font-medium">Content</p>
       <FileContentView content={value} mediaType={mediaType ?? null} name={name ?? null} />
     </div>
-  )
-}
-
-function FileToolHeading({ children, icon: Icon }: { children: string; icon: LucideIcon }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <Icon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">{children}</span>
-    </span>
   )
 }
 

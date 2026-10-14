@@ -1,3 +1,5 @@
+# apps/api/tests/services/ai_usage/test_usage_reads.py
+
 """Workspace usage aggregation and exact pricing tests."""
 
 from datetime import UTC, datetime

@@ -49,7 +49,7 @@ async def upload_gemini_file(
             )
             uploaded = await _send_chunks(client, upload_url, ref, size_bytes=size_bytes)
             name = require_file_name(uploaded.get("name"))
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ValueError) as exc:
             raise GeminiFileError(_upload_failure(exc)) from exc
         try:
             return await _wait_until_active(client, headers, uploaded, name=name)
@@ -108,7 +108,8 @@ async def _send_chunks(
         response.raise_for_status()
         offset += len(chunk)
         if final:
-            file = response.json().get("file")
+            body = response.json()
+            file = body.get("file") if isinstance(body, dict) else None
             if not isinstance(file, dict):
                 raise GeminiFileError("Google didn't confirm the upload.")
             return file
@@ -141,9 +142,11 @@ async def _wait_until_active(
         try:
             response = await client.get(f"{GEMINI_API_BASE_URL}/v1beta/{name}", headers=headers)
             response.raise_for_status()
-        except httpx.HTTPError as exc:
+            file = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
             raise GeminiFileError(_upload_failure(exc)) from exc
-        file = response.json()
+        if not isinstance(file, dict):
+            raise GeminiFileError("Google couldn't process this video.")
     if file.get("state") != "ACTIVE":
         raise GeminiFileError("Google couldn't process this video.")
     uri = file.get("uri")
@@ -152,7 +155,7 @@ async def _wait_until_active(
     return GeminiFile(name=name, uri=uri, expires_at=parse_expiry(file.get("expirationTime")))
 
 
-def _upload_failure(exc: httpx.HTTPError) -> str:
+def _upload_failure(exc: Exception) -> str:
     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
         return "Google's video storage for this deployment is full or busy. Try again later."
     return "Google couldn't receive the video. Try again later."

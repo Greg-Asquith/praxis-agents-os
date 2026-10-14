@@ -9,7 +9,6 @@ from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.exceptions import ToolFailed
 
 from core.settings import settings
-from services.agents.models.domain import PROVIDER_GOOGLE
 from services.agents.runtime.context import RuntimeDeps
 from services.agents.runtime.entity_references.domain import FileReference
 from services.agents.runtime.tools.contract import (
@@ -19,35 +18,31 @@ from services.agents.runtime.tools.contract import (
     ToolFieldPresentation,
     ToolPresentation,
 )
-from services.agents.runtime.tools.media_inputs import (
-    VIDEO_MODEL_TOOL_TIMEOUT_SECONDS,
-    load_workspace_video_input,
-)
+from services.agents.runtime.tools.files.utils import revision_source_ref
+from services.agents.runtime.tools.media_inputs import VIDEO_MODEL_TOOL_TIMEOUT_SECONDS
 from services.agents.runtime.tools.registry import runtime_tool
-from services.agents.runtime.tools.video.transcribe_video import TRANSCRIPTION_ALLOWANCE_SECONDS
 from services.agents.runtime.tools.video.utils import (
-    INLINE_VIDEO_MAX_BYTES,
+    RENDERER_CALL_SECONDS,
+    TRANSCRIPTION_ALLOWANCE_SECONDS,
+    VideoDetail,
+    VideoEnd,
+    VideoStart,
     probed_video,
     progress,
-    record_video_audit,
+    record_video_understanding,
     text_argument,
-    usage_event,
+    understanding_usage,
     video_range,
+    video_shot_cuts,
     video_transcript,
     video_understanding_available,
+    watchable_video,
     workspace_video,
 )
 from services.agents.runtime.untrusted import UntrustedContent
-from services.ai_usage.domain import PURPOSE_VIDEO_UNDERSTANDING
 from services.files.utils import format_duration
-from services.media.domain import (
-    MediaRendererError,
-    Transcript,
-    VideoUnderstandingError,
-)
-from services.media.get_video_shot_cuts import get_video_shot_cuts
-from services.media.moments import MomentRequest, VideoMoment, find_moments
-from services.media.run_media_operation import REQUEST_ALLOWANCE_SECONDS
+from services.media.domain import Transcript, VideoUnderstandingError
+from services.media.find_moments import MomentRequest, VideoMoment, find_moments
 from services.media.snapping import SnapLimits
 
 MAX_MOMENTS = 10
@@ -81,8 +76,7 @@ def find_video_moments_available() -> bool:
     supports_approval=True,
     takes_ctx=True,
     # The first call on a video also transcribes it and measures its shots.
-    timeout=settings.MEDIA_RENDERER_TIMEOUT_SECONDS
-    + REQUEST_ALLOWANCE_SECONDS
+    timeout=RENDERER_CALL_SECONDS
     + TRANSCRIPTION_ALLOWANCE_SECONDS
     + VIDEO_MODEL_TOOL_TIMEOUT_SECONDS,
     availability_check=find_video_moments_available,
@@ -119,23 +113,9 @@ async def find_video_moments(
     max_seconds: Annotated[
         int, Field(ge=1, le=MAX_MOMENT_SECONDS, description="Longest moment in seconds.")
     ] = 90,
-    start: Annotated[
-        str | None,
-        Field(description="Optional time to search from, such as 12:30. Omit for the start."),
-    ] = None,
-    end: Annotated[
-        str | None,
-        Field(description="Optional time to search to, such as 1:02:05. Omit for the end."),
-    ] = None,
-    detail: Annotated[
-        bool,
-        Field(
-            description=(
-                "Watch at five frames a second for fast action. Works on up to 8 minutes, so "
-                "pass start and end."
-            )
-        ),
-    ] = False,
+    start: VideoStart = None,
+    end: VideoEnd = None,
+    detail: VideoDetail = False,
 ) -> dict[str, object]:
     """Finds, snaps, and ranks moments in the current revision of a workspace video."""
     brief = text_argument(brief, name="brief")
@@ -151,14 +131,8 @@ async def find_video_moments(
         detail=detail,
     )
 
-    stage = progress(ctx)
     # Load first: a video too long to send inline is refused before anything is transcribed.
-    await stage("Preparing Video")
-    video = await load_workspace_video_input(
-        ctx, file_id, tool_name="find_video_moments", inline_max_bytes=INLINE_VIDEO_MAX_BYTES
-    )
-    if video.revision_id != revision.id:
-        raise ToolFailed("The video changed while it was being read. Try again.")
+    video = await watchable_video(ctx, file_id, revision, tool_name="find_video_moments")
     transcript = (
         await video_transcript(ctx, file, revision, language=None, tool_name="find_video_moments")
         if metadata.has_audio
@@ -166,28 +140,14 @@ async def find_video_moments(
             provider="none", model="none", duration_ms=metadata.duration_ms, words=(), sentences=()
         )
     )
-    await stage("Finding Shot Changes")
-    try:
-        shot_cuts_ms = await get_video_shot_cuts(ctx.deps.db, revision=revision)
-    except MediaRendererError as exc:
-        raise ToolFailed(exc.message) from exc
-    source_ref = f"file:{file.id}/revision:{revision.id}"
-    await record_video_audit(
-        ctx,
-        file.id,
-        revision.id,
-        operation="video_understanding",
-        tool_name="find_video_moments",
-        details={
-            "model": settings.VIDEO_UNDERSTANDING_MODEL,
-            "start_ms": start_ms,
-            "end_ms": end_ms,
-        },
+    shot_cuts_ms = await video_shot_cuts(ctx, revision)
+    # The shot cuts are kept even if the model call fails.
+    await record_video_understanding(
+        ctx, file, revision, tool_name="find_video_moments", start_ms=start_ms, end_ms=end_ms
     )
-    # The shot cuts and the record are kept even if the model call fails.
-    await ctx.deps.db.commit()
 
-    await stage("Watching Video")
+    await progress(ctx)("Watching Video")
+    source_ref = revision_source_ref(file, revision)
     try:
         moments = await find_moments(
             video.content,
@@ -206,12 +166,7 @@ async def find_video_moments(
             transcript=transcript,
             shot_cuts_ms=shot_cuts_ms,
             source_ref=source_ref,
-            usage=usage_event(
-                ctx,
-                provider=PROVIDER_GOOGLE,
-                model=settings.VIDEO_UNDERSTANDING_MODEL,
-                purpose=PURPOSE_VIDEO_UNDERSTANDING,
-            ),
+            usage=understanding_usage(ctx),
         )
     except VideoUnderstandingError as exc:
         raise ToolFailed(str(exc)) from exc

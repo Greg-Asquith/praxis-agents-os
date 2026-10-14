@@ -2,7 +2,6 @@
 
 """Plans and renders video clips: segments of workspace videos joined into one MP4 each."""
 
-import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Literal
@@ -28,16 +27,12 @@ from services.media.domain import (
     CutOperation,
     CutSegment,
     CutTransition,
-    MediaOperationResult,
-    MediaRendererError,
     Transcript,
     TranscriptWord,
     TransitionStyle,
 )
-from services.media.run_media_operation import run_media_operation
 from services.media.snapping import SnapLimits, snap_range
 from services.media.transcription_providers import WORD_TIMED_MODELS
-from services.media.utils import discard_staged_outputs, stage_media_input
 
 AspectRatio = Literal["original", "9:16", "1:1", "4:5", "16:9"]
 # auto follows the largest face per shot; center crops the middle; fit shows the whole frame.
@@ -52,8 +47,6 @@ OUTPUT_SHORT_EDGE_PX = 1080
 # The renderer caps clips at 8 Mbit/s video and 128 kbit/s audio.
 MAX_OUTPUT_BITS_PER_SECOND = 8_128_000
 DEFAULT_OUTPUT_FPS = 30
-# The renderer's default maximum instances.
-RENDER_CONCURRENCY = 3
 # A snap that moves a cut by this much is worth telling the agent about.
 SNAP_NOTICE_MS = 1000
 # Pauses between words longer than this are cut, leaving this much either side of speech.
@@ -207,54 +200,17 @@ def plan_clip(
     ]
     planned, warnings = [], []
     for position, (source, start_ms, end_ms) in enumerate(segments, start=1):
-        duration_ms = source.metadata.duration_ms
-        start_ms = 0 if start_ms is None else start_ms
-        end_ms = duration_ms if end_ms is None else end_ms
-        if start_ms >= duration_ms or end_ms <= start_ms:
-            raise ValueError(
-                f"Segment {position} must start before it ends, inside the video's "
-                f"{format_duration(duration_ms)}."
-            )
-        end_ms = min(end_ms, duration_ms)
-        if snap:
-            snapped = snap_range(
-                start_ms,
-                end_ms,
-                sentences=source.transcript.sentences if source.transcript else (),
-                shot_cuts_ms=source.shot_cuts_ms,
-                duration_ms=duration_ms,
-                limits=SnapLimits(
-                    min_ms=1,
-                    max_ms=duration_ms,
-                    shot_tolerance_ms=settings.VIDEO_SNAP_SHOT_TOLERANCE_MS,
-                ),
-            )
-            if snapped is not None:
-                if max(abs(snapped[0] - start_ms), abs(snapped[1] - end_ms)) >= SNAP_NOTICE_MS:
-                    warnings.append(
-                        f"Segment {position} moved to {format_duration(snapped[0])} to "
-                        f"{format_duration(snapped[1])} to keep whole sentences and shots."
-                    )
-                start_ms, end_ms = snapped
-        planned.append(PlannedSegment(source=source, start_ms=start_ms, end_ms=end_ms))
+        segment, warning = _bounded_segment(position, source, start_ms, end_ms, snap=snap)
+        planned.append(segment)
+        if warning:
+            warnings.append(warning)
     planned = _overlap_joins(planned, joins, [edges[1:] for edges in segments], warnings)
     fps = output_fps(planned[0].source.metadata)
-    if (remove_silences or (captions and captions.preset == "highlight")) and any(
-        segment.source.transcript and segment.source.transcript.model not in WORD_TIMED_MODELS
-        for segment in planned
-    ):
-        raise ValueError(
-            "Removing pauses and highlighting words need exact word times, which this "
-            "deployment's transcription doesn't give. Use bold or clean captions and keep pauses."
-        )
+    if remove_silences or (captions and captions.preset == "highlight"):
+        _require_word_times(planned)
     if remove_silences:
         planned = [replace(segment, keep_frames=_kept_frames(segment, fps)) for segment in planned]
-    keep = tuple(
-        (position, first, end)
-        for position, segment in enumerate(planned)
-        for first, end in segment.keep_frames
-    )
-    if len(keep) > MAX_CUT_KEEP_RANGES:
+    if sum(len(segment.keep_frames) for segment in planned) > MAX_CUT_KEEP_RANGES:
         raise ValueError("The clip has too many pauses to remove. Cut it shorter or keep pauses.")
     _require_room_for_joins(planned, joins, fps)
     offsets = _segment_offsets(planned, joins, fps)
@@ -273,43 +229,20 @@ def plan_clip(
             size=size, words=words, captions=captions, overlays=placed
         )
         warnings += moved
-
-    # Each distinct revision is one renderer input, numbered in order of first use.
-    inputs: dict[UUID, int] = {}
-    for segment in planned:
-        inputs.setdefault(segment.source.revision.id, len(inputs))
-    revisions = {segment.source.revision.id: segment.source.revision for segment in planned}
-    # Automatic framing jumps only at shot cuts, so it needs those inside each segment.
-    shot_cuts = {
-        (inputs[segment.source.revision.id], cut)
-        for segment in planned
-        for cut in segment.source.shot_cuts_ms
-        if framing == "auto" and segment.start_ms < cut < segment.end_ms
-    }
+    operation, sources = _cut_operation(
+        planned,
+        joins,
+        size=size,
+        fps=fps,
+        framing=framing,
+        captions=caption_text is not None,
+        fade_in_ms=fade_in_ms,
+        fade_out_ms=fade_out_ms,
+    )
     clip = PlannedClip(
         segments=tuple(planned),
-        sources=tuple(revisions[revision_id] for revision_id in inputs),
-        operation=CutOperation(
-            segments=tuple(
-                CutSegment(
-                    input=inputs[segment.source.revision.id],
-                    start_ms=segment.start_ms,
-                    end_ms=segment.end_ms,
-                )
-                for segment in planned
-            ),
-            width=size[0],
-            height=size[1],
-            fps=fps,
-            fit=framing == "fit",
-            reframe=framing == "auto",
-            shot_cuts_ms=tuple(sorted(shot_cuts)[:MAX_CUT_SHOT_CUTS]),
-            keep_frames=keep,
-            captions=caption_text is not None,
-            transitions=tuple(joins) if any(join.duration_ms for join in joins) else (),
-            fade_in_ms=fade_in_ms,
-            fade_out_ms=fade_out_ms,
-        ),
+        sources=sources,
+        operation=operation,
         warnings=tuple(warnings),
         captions=caption_text,
         overlays=placed,
@@ -323,6 +256,108 @@ def plan_clip(
     if fade_in_ms + fade_out_ms > clip.duration_ms:
         raise ValueError("The fades are longer than the clip.")
     return clip
+
+
+def _bounded_segment(
+    position: int, source: ClipSource, start_ms: int | None, end_ms: int | None, *, snap: bool
+) -> tuple[PlannedSegment, str | None]:
+    """Bounds a requested range by its video and snaps it, with a warning for a large move."""
+    duration_ms = source.metadata.duration_ms
+    start_ms = 0 if start_ms is None else start_ms
+    end_ms = duration_ms if end_ms is None else end_ms
+    if start_ms >= duration_ms or end_ms <= start_ms:
+        raise ValueError(
+            f"Segment {position} must start before it ends, inside the video's "
+            f"{format_duration(duration_ms)}."
+        )
+    end_ms = min(end_ms, duration_ms)
+    snapped = None
+    if snap:
+        snapped = snap_range(
+            start_ms,
+            end_ms,
+            sentences=source.transcript.sentences if source.transcript else (),
+            shot_cuts_ms=source.shot_cuts_ms,
+            duration_ms=duration_ms,
+            limits=SnapLimits(
+                min_ms=1,
+                max_ms=duration_ms,
+                shot_tolerance_ms=settings.VIDEO_SNAP_SHOT_TOLERANCE_MS,
+            ),
+        )
+    if snapped is None:
+        return PlannedSegment(source=source, start_ms=start_ms, end_ms=end_ms), None
+    warning = None
+    if max(abs(snapped[0] - start_ms), abs(snapped[1] - end_ms)) >= SNAP_NOTICE_MS:
+        warning = (
+            f"Segment {position} moved to {format_duration(snapped[0])} to "
+            f"{format_duration(snapped[1])} to keep whole sentences and shots."
+        )
+    return PlannedSegment(source=source, start_ms=snapped[0], end_ms=snapped[1]), warning
+
+
+def _require_word_times(segments: Sequence[PlannedSegment]) -> None:
+    if any(
+        segment.source.transcript and segment.source.transcript.model not in WORD_TIMED_MODELS
+        for segment in segments
+    ):
+        raise ValueError(
+            "Removing pauses and highlighting words need exact word times, which this "
+            "deployment's transcription doesn't give. Use bold or clean captions and keep pauses."
+        )
+
+
+def _cut_operation(
+    segments: Sequence[PlannedSegment],
+    joins: Sequence[CutTransition],
+    *,
+    size: tuple[int, int],
+    fps: int,
+    framing: Framing,
+    captions: bool,
+    fade_in_ms: int,
+    fade_out_ms: int,
+) -> tuple[CutOperation, tuple[FileRevision, ...]]:
+    """Returns the renderer operation and its sources, one input per distinct revision."""
+    keep = tuple(
+        (position, first, end)
+        for position, segment in enumerate(segments)
+        for first, end in segment.keep_frames
+    )
+    # Inputs are numbered in order of first use.
+    revisions: dict[UUID, FileRevision] = {}
+    for segment in segments:
+        revisions.setdefault(segment.source.revision.id, segment.source.revision)
+    inputs = {revision_id: index for index, revision_id in enumerate(revisions)}
+    # Automatic framing jumps only at shot cuts, so it needs those inside each segment.
+    shot_cuts = {
+        (inputs[segment.source.revision.id], cut)
+        for segment in segments
+        for cut in segment.source.shot_cuts_ms
+        if framing == "auto" and segment.start_ms < cut < segment.end_ms
+    }
+    operation = CutOperation(
+        segments=tuple(
+            CutSegment(
+                input=inputs[segment.source.revision.id],
+                start_ms=segment.start_ms,
+                end_ms=segment.end_ms,
+            )
+            for segment in segments
+        ),
+        width=size[0],
+        height=size[1],
+        fps=fps,
+        fit=framing == "fit",
+        reframe=framing == "auto",
+        shot_cuts_ms=tuple(sorted(shot_cuts)[:MAX_CUT_SHOT_CUTS]),
+        keep_frames=keep,
+        captions=captions,
+        transitions=tuple(joins) if any(join.duration_ms for join in joins) else (),
+        fade_in_ms=fade_in_ms,
+        fade_out_ms=fade_out_ms,
+    )
+    return operation, tuple(revisions.values())
 
 
 def _overlap_joins(
@@ -515,31 +550,3 @@ def _place_overlay(
     if overlay.fade_in_ms + overlay.fade_out_ms > end - start:
         raise ValueError(f"Text overlay {number}'s fades are longer than it shows.")
     return PlacedOverlay(overlay=overlay, start_ms=start, end_ms=end)
-
-
-async def render_clips(
-    workspace_id: UUID, clips: Sequence[PlannedClip]
-) -> list[MediaOperationResult | MediaRendererError]:
-    """Renders clips a few at a time; one clip's failure doesn't stop the others."""
-    gate = asyncio.Semaphore(RENDER_CONCURRENCY)
-
-    async def render(clip: PlannedClip) -> MediaOperationResult | MediaRendererError:
-        async with gate:
-            staged = (
-                [await stage_media_input(workspace_id, clip.captions.encode(), extension=".ass")]
-                if clip.captions
-                else []
-            )
-            try:
-                return await run_media_operation(
-                    workspace_id=workspace_id,
-                    sources=clip.sources,
-                    operation=clip.operation,
-                    staged_inputs=staged,
-                )
-            except MediaRendererError as exc:
-                return exc
-            finally:
-                await discard_staged_outputs(staged)
-
-    return list(await asyncio.gather(*(render(clip) for clip in clips)))
