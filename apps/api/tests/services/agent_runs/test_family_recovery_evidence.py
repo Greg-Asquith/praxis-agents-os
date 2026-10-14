@@ -2,6 +2,7 @@
 
 """Checks truthful action evidence across denial and terminal family settlement."""
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -248,3 +249,56 @@ async def test_interruption_after_confirmed_effects_still_requires_recovery(reco
     assert root.error_code == "agent_run_resume_requires_recovery"
     assert root.outcome == "blocked"
     assert root.completion_json["recovery"]["reason"] == "execution_interrupted"
+
+
+def _integration_row(
+    run: AgentRun, write_id: str, status: str, references: dict, minute: int
+) -> AuditEvent:
+    return AuditEvent(
+        workspace_id=run.workspace_id,
+        occurred_at=datetime(2026, 10, 14, tzinfo=UTC) + timedelta(minutes=minute),
+        action="execute",
+        resource_type="integration_resource",
+        resource_id=str(uuid4()),
+        status=status,
+        summary="upload_media",
+        tool_name="meta_ads_upload_media",
+        tool_provider="meta_ads",
+        actor_type="agent",
+        actor_id=str(run.agent_id),
+        requested_by_user_id=run.user_id,
+        details={
+            "run_id": str(run.id),
+            "tool_call_id": f"upload-{write_id}",
+            "related_event_id": write_id,
+            "checkpoints": [
+                {"group_key": "media:upload", "intent_index": 0, "references": references}
+            ],
+        },
+    )
+
+
+async def test_recovery_names_checkpointed_ids_and_flags_unsettled_writes(recovery_family):
+    db, root, child = recovery_family
+    db.add_all(
+        [
+            _integration_row(root, "open", "pending", {"video_id": "101"}, 1),
+            _integration_row(root, "open", "pending", {"video_id": "102"}, 2),
+            _integration_row(child, "settled", "pending", {"video_id": "201"}, 1),
+            _integration_row(child, "settled", "failure", {"video_id": "201"}, 2),
+        ]
+    )
+    await db.flush()
+
+    evidence = await build_family_recovery_evidence(db, family=[root, child])
+
+    uploads = {
+        action["tool_call_id"]: action
+        for action in evidence["recovery"]["actions"]
+        if action["tool_call_id"].startswith("upload-")
+    }
+    assert set(uploads) == {"upload-open"}
+    assert uploads["upload-open"]["status"] == "uncertain"
+    assert uploads["upload-open"]["checkpoints"] == [
+        {"group_key": "media:upload", "intent_index": 0, "references": {"video_id": "102"}}
+    ]

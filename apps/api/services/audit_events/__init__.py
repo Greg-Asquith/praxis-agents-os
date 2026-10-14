@@ -16,6 +16,7 @@ from services.audit_events.enums import (
 from services.audit_events.get_event import get_audit_event_for_workspace
 from services.audit_events.integration_events import record_integration_operation_audit_event
 from services.audit_events.integration_operation_detail import (
+    IntegrationOperationCheckpoint,
     IntegrationOperationCounts,
     IntegrationOperationDetail,
     IntegrationOperationEffect,
@@ -27,6 +28,7 @@ from services.audit_events.integration_operation_detail import (
     PendingIntegrationOperationDetail,
     TerminalIntegrationOperationDetail,
     terminal_applied_operation_detail,
+    validate_checkpoint_bounds,
 )
 from services.audit_events.list_events import list_audit_events_for_workspace
 from services.audit_events.operations import safe_record_operation_audit_event
@@ -48,6 +50,7 @@ __all__ = [
     "AuditActorType",
     "AuditResourceType",
     "AuditStatus",
+    "IntegrationOperationCheckpoint",
     "IntegrationOperationCounts",
     "IntegrationOperationDetail",
     "IntegrationOperationEffect",
@@ -71,4 +74,5 @@ __all__ = [
     "safe_record_independent_operation_audit_event",
     "safe_record_operation_audit_event",
     "terminal_applied_operation_detail",
+    "validate_checkpoint_bounds",
 ]

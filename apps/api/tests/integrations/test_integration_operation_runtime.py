@@ -32,6 +32,7 @@ from services.agents.runtime.tools.registry import (
 )
 from services.audit_events import (
     AuditStatus,
+    IntegrationOperationCheckpoint,
     IntegrationOperationCounts,
     IntegrationOperationEffect,
     IntegrationOperationIntent,
@@ -51,6 +52,7 @@ from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.manifest import PROVIDER_MANIFESTS, IntegrationProviderManifest
 from services.integrations.operations import (
     IntegrationAuditOutcome,
+    checkpoint_integration_operation,
     run_audited_integration_operation,
 )
 
@@ -499,6 +501,94 @@ async def test_ambiguous_exception_retains_terminal_evidence(
     assert terminal["error_code"] == "unverified_mutation"
     assert terminal["operation_detail"] is error.operation_detail
     assert terminal["related_event_id"] == pending_event_id
+
+
+def _checkpoint(session: str) -> IntegrationOperationCheckpoint:
+    return IntegrationOperationCheckpoint(
+        group_key="records:create", intent_index=0, references={"session_id": session}
+    )
+
+
+async def test_checkpoint_is_linked_to_pending_and_latest_reaches_terminal(
+    synthetic_provider, monkeypatch
+) -> None:
+    pending_event_id = uuid4()
+    audit = AsyncMock(return_value=pending_event_id)
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    entry = _entry()
+
+    async def execute():
+        await checkpoint_integration_operation(_checkpoint("101"))
+        await checkpoint_integration_operation(_checkpoint("102"))
+        raise ValueError("response lost")
+
+    with pytest.raises(ValueError):
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    _pending, first, second, terminal = (call.kwargs for call in audit.await_args_list)
+    assert first["status"] is AuditStatus.PENDING
+    assert first["related_event_id"] == pending_event_id
+    assert first["checkpoints"] == (_checkpoint("101"),)
+    assert second["checkpoints"] == (_checkpoint("102"),)
+    assert terminal["related_event_id"] == pending_event_id
+    assert terminal["checkpoints"] == [_checkpoint("102")]
+
+
+async def test_unrecorded_checkpoint_stops_before_the_next_request(
+    synthetic_provider, monkeypatch
+) -> None:
+    audit = AsyncMock(side_effect=[uuid4(), RuntimeError("database unavailable"), uuid4()])
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    entry = _entry()
+    sent: list[str] = []
+
+    async def execute():
+        await checkpoint_integration_operation(_checkpoint("101"))
+        sent.append("transfer")
+        return IntegrationAuditOutcome(None)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await run_audited_integration_operation(
+            _ctx(entry, WRITE_TOOL),
+            entry,
+            tool_name=WRITE_TOOL,
+            operation="write",
+            execute=execute,
+            pending_operation_detail=_pending_detail(entry),
+        )
+
+    assert sent == []
+    terminal = audit.await_args_list[-1].kwargs
+    assert terminal["status"] is AuditStatus.FAILURE
+    assert terminal["checkpoints"] == [_checkpoint("101")]
+
+
+async def test_read_operation_cannot_checkpoint(synthetic_provider, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event",
+        AsyncMock(return_value=uuid4()),
+    )
+    entry = _entry()
+
+    async def execute():
+        await checkpoint_integration_operation(_checkpoint("101"))
+        return IntegrationAuditOutcome(None)
+
+    with pytest.raises(RuntimeError, match="Only external integration writes"):
+        await run_audited_integration_operation(
+            _ctx(entry, READ_TOOL), entry, tool_name=READ_TOOL, operation="read", execute=execute
+        )
 
 
 async def test_operation_rejects_provider_binding_mismatch(synthetic_provider) -> None:

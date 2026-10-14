@@ -16,11 +16,14 @@ from services.agent_runs.continuation_state import denied_approval_calls
 from services.agents.runtime.approval_state import load_suspended_run_state
 from services.agents.runtime.code_mode.approval import code_mode_nested_call
 from services.agents.runtime.execution_control import InterruptionReason
+from services.audit_events import AuditResourceType, AuditStatus
 
 RECOVERY_ERROR_CODE = "agent_run_resume_requires_recovery"
 RecoveryReason = Literal["execution_interrupted", "child_unavailable", "workflow_state_unavailable"]
 MAX_RECOVERY_ACTIONS = 25
 MAX_RECOVERY_CHILDREN = 128
+MAX_RECOVERY_CHECKPOINTS = 25
+MAX_RECOVERY_CHECKPOINT_ROWS = 100
 # Failure codes that stop execution before the model can observe approved results.
 INTERRUPTION_ERROR_CODES = frozenset(
     {
@@ -133,6 +136,19 @@ async def build_family_recovery_evidence(
                     "status": "uncertain",
                 },
             )
+    checkpoints, open_operations, checkpoints_truncated = await _checkpoint_evidence(
+        db, root=root, family=family
+    )
+    for key, name in open_operations.items():
+        actions.setdefault(
+            key,
+            {
+                "owner_run_id": key[0],
+                "tool_call_id": key[1],
+                "tool_name": name,
+                "status": "uncertain",
+            },
+        )
     rows = await db.execute(
         select(
             AuditEvent.details["run_id"].astext,
@@ -162,6 +178,10 @@ async def build_family_recovery_evidence(
             "tool_name": name[:100],
             "status": "completed" if outcome == "completed" else "uncertain",
         }
+    for key, action in actions.items():
+        if key in checkpoints:
+            action["checkpoints"] = checkpoints[key][:MAX_RECOVERY_CHECKPOINTS]
+            checkpoints_truncated |= len(checkpoints[key]) > MAX_RECOVERY_CHECKPOINTS
     ordered = sorted(
         actions.values(),
         key=lambda action: (
@@ -185,6 +205,7 @@ async def build_family_recovery_evidence(
             "unavailable_child_run_ids": unavailable_children[:MAX_RECOVERY_CHILDREN],
             "truncated": (
                 saved_evidence_truncated
+                or checkpoints_truncated
                 or len(ordered) > MAX_RECOVERY_ACTIONS
                 or len(audit_rows) > MAX_RECOVERY_ACTIONS
                 or len(family) - 1 > MAX_RECOVERY_CHILDREN
@@ -192,3 +213,57 @@ async def build_family_recovery_evidence(
             ),
         },
     }
+
+
+async def _checkpoint_evidence(
+    db: AsyncSession, *, root: AgentRun, family: list[AgentRun]
+) -> tuple[dict[tuple[str, str], list[dict[str, Any]]], dict[tuple[str, str], str], bool]:
+    """Returns the latest external IDs per item, and calls whose writes never settled.
+
+    Checkpoint rows stay pending; the terminal row of the same write repeats them,
+    so a write with only pending rows stopped mid-way and its effect is in doubt.
+    """
+    rows = await db.execute(
+        select(
+            AuditEvent.details["run_id"].astext,
+            AuditEvent.details["tool_call_id"].astext,
+            AuditEvent.details["related_event_id"].astext,
+            AuditEvent.tool_name,
+            AuditEvent.status,
+            AuditEvent.details["checkpoints"],
+        )
+        .where(
+            AuditEvent.workspace_id == root.workspace_id,
+            AuditEvent.requested_by_user_id == root.user_id,
+            AuditEvent.resource_type == AuditResourceType.INTEGRATION_RESOURCE,
+            AuditEvent.details["run_id"].astext.in_([str(run.id) for run in family]),
+            AuditEvent.details.has_key("checkpoints"),
+        )
+        .order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc())
+        .limit(MAX_RECOVERY_CHECKPOINT_ROWS + 1)
+    )
+    audit_rows = list(rows)
+    latest: dict[tuple[str, str], dict[tuple[str, str, int], dict[str, Any]]] = {}
+    writes: dict[str, tuple[tuple[str, str], str]] = {}
+    settled: set[str] = set()
+    # Oldest first, so a later checkpoint for the same item replaces an earlier one.
+    for owner, call_id, write_id, name, status, saved in reversed(
+        audit_rows[:MAX_RECOVERY_CHECKPOINT_ROWS]
+    ):
+        if not owner or not call_id or not name or not write_id or not isinstance(saved, list):
+            continue
+        key = (owner, call_id[:256])
+        writes[write_id] = (key, name[:100])
+        if status != AuditStatus.PENDING:
+            settled.add(write_id)
+        for item in saved:
+            item_key = (write_id, item["group_key"], item["intent_index"])
+            latest.setdefault(key, {})[item_key] = item
+    open_operations = {
+        key: name for write_id, (key, name) in writes.items() if write_id not in settled
+    }
+    return (
+        {key: list(items.values()) for key, items in latest.items()},
+        open_operations,
+        len(audit_rows) > MAX_RECOVERY_CHECKPOINT_ROWS,
+    )

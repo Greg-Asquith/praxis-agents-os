@@ -183,6 +183,15 @@ references and specialist transcript links before removing executable state.
 Operators review that evidence before giving another instruction. The system
 does not automatically replay accepted effects after a crash.
 
+An external integration write records its requested intent before the first
+provider request. When a multi-step write learns an external identity, such
+as the video ID of an upload session, it records that ID as a checkpoint
+before sending the request that depends on it, and stops if the checkpoint
+can't be recorded. A write with checkpoints but no terminal record stopped
+mid-way, so recovery lists it as uncertain with the IDs it learned. Operators
+reconcile from those IDs in the provider's own tools; nothing resumes or
+resends the write. _(enforced: `services/integrations/operations.py`)_
+
 ## 3. Retention and deletion
 
 Two rules govern deletion:

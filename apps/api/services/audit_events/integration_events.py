@@ -3,6 +3,7 @@
 """Committed per-resource audit records for integration operations."""
 
 import logging
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +18,10 @@ from services.audit_events.enums import (
     AuditResourceType,
     AuditStatus,
 )
-from services.audit_events.integration_operation_detail import IntegrationOperationDetail
+from services.audit_events.integration_operation_detail import (
+    IntegrationOperationCheckpoint,
+    IntegrationOperationDetail,
+)
 from utils.json_safe import json_safe_details
 
 logger = logging.getLogger(__name__)
@@ -39,6 +43,7 @@ async def record_integration_operation_audit_event(
     external_ref: str | None,
     error_code: str | None,
     operation_detail: IntegrationOperationDetail | None = None,
+    checkpoints: Sequence[IntegrationOperationCheckpoint] = (),
     related_event_id: UUID | None = None,
     latency_ms: int | None = None,
     http_requests: int | None = None,
@@ -68,6 +73,8 @@ async def record_integration_operation_audit_event(
         }
         if operation_detail is not None:
             details["operation_detail"] = operation_detail.model_dump(mode="json")
+        if checkpoints:
+            details["checkpoints"] = [item.model_dump(mode="json") for item in checkpoints]
         event = AuditEvent(
             workspace_id=workspace_id,
             action=AuditAction.EXECUTE,

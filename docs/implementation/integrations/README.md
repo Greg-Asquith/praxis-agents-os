@@ -78,6 +78,14 @@ The following contracts apply in this area:
   preparation callback so their latency, retries, and failures remain part of
   the same audited operation. The pending row is written after preparation and
   immediately before the external mutation.
+  A multi-step external write that learns a provider ID it later depends on,
+  such as an upload session, calls `checkpoint_integration_operation` with an
+  `IntegrationOperationCheckpoint` naming the requested item (`group_key` and
+  `intent_index`) and up to eight provider IDs. The runner commits a pending
+  row linked to the pending event and raises if it can't, so the dependent
+  request is never sent. Only external writes can checkpoint. Terminal rows
+  repeat the latest checkpoint per item under `checkpoints`, and run recovery
+  lists a checkpointed write with no terminal row as uncertain, with its IDs.
   Do not add provider-local audit runners, durability booleans, denial
   callbacks, fan-out serialisers, or copied outer result fields. A genuine
   one-request/many-context topology may retain a narrowly named adapter that

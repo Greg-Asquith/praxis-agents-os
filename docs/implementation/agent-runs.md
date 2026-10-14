@@ -396,7 +396,9 @@ still stops the family. `agent_run_resume_requires_recovery` maps to the
 existing blocked outcome and retains safe recovery evidence before cleanup.
 This includes at most 25 completed or uncertain actions, a truncation marker,
 and specialist conversation references. It contains no executable snapshots,
-raw arguments, or provider payloads. Accepted continuations are not replayed
+raw arguments, or provider payloads. An action whose integration write
+recorded checkpoints carries the latest provider IDs per item (at most 25),
+and a checkpointed write with no terminal audit row counts as uncertain. Accepted continuations are not replayed
 automatically after a process failure.
 
 The reservation stays on the root until the run settles, so every failure in

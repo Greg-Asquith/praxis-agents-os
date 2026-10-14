@@ -3,9 +3,10 @@
 """Provider-neutral audit orchestration for integration operations."""
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
-from dataclasses import dataclass
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from time import monotonic
 from typing import Literal
 from uuid import UUID
@@ -28,10 +29,12 @@ from services.agents.runtime.tools.contract import (
 )
 from services.audit_events import (
     AuditStatus,
+    IntegrationOperationCheckpoint,
     IntegrationOperationDetail,
     PendingIntegrationOperationDetail,
     TerminalIntegrationOperationDetail,
     record_integration_operation_audit_event,
+    validate_checkpoint_bounds,
 )
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.http import TransportAttemptCounter, track_transport_attempts
@@ -61,6 +64,22 @@ class IntegrationAuditOutcome[T]:
     unverified_result: object | None = None
 
 
+@dataclass
+class _CheckpointScope:
+    ctx: RunContext[RuntimeDeps]
+    entry: ResolvedContextEntry
+    tool_name: str
+    operation: str
+    pending_detail: PendingIntegrationOperationDetail
+    pending_event_id: UUID
+    latest: dict[tuple[str, int], IntegrationOperationCheckpoint] = field(default_factory=dict)
+
+
+_checkpoint_scope: ContextVar[_CheckpointScope | None] = ContextVar(
+    "integration_operation_checkpoints", default=None
+)
+
+
 async def run_audited_integration_operation[T](
     ctx: RunContext[RuntimeDeps],
     entry: ResolvedContextEntry,
@@ -79,6 +98,7 @@ async def run_audited_integration_operation[T](
 
     resolved_pending_detail = pending_operation_detail
     pending_event_id = None
+    scope: _CheckpointScope | None = None
     started = monotonic()
     with track_transport_attempts() as transport:
         try:
@@ -100,7 +120,15 @@ async def run_audited_integration_operation[T](
                     operation_detail=resolved_pending_detail,
                     raise_on_error=True,
                 )
-            outcome = await execute()
+                scope = _CheckpointScope(
+                    ctx, entry, tool_name, operation, resolved_pending_detail, pending_event_id
+                )
+            # Always set, so a read nested in a write can't checkpoint against the write.
+            token = _checkpoint_scope.set(scope)
+            try:
+                outcome = await execute()
+            finally:
+                _checkpoint_scope.reset(token)
             validate_integration_audit_outcome(outcome, durable)
         except asyncio.CancelledError as exc:
             status, exception_detail = integration_exception_evidence(
@@ -115,6 +143,7 @@ async def run_audited_integration_operation[T](
                     status=status,
                     error_code=integration_failure_code(exc),
                     operation_detail=exception_detail,
+                    checkpoints=_latest_checkpoints(scope),
                     related_event_id=pending_event_id,
                     latency_ms=_elapsed_ms(started),
                     transport=transport,
@@ -133,6 +162,7 @@ async def run_audited_integration_operation[T](
                 status=status,
                 error_code=integration_failure_code(exc),
                 operation_detail=exception_detail,
+                checkpoints=_latest_checkpoints(scope),
                 related_event_id=pending_event_id,
                 latency_ms=_elapsed_ms(started),
                 transport=transport,
@@ -154,6 +184,7 @@ async def run_audited_integration_operation[T](
             status=outcome.status,
             external_ref=outcome.external_ref,
             operation_detail=outcome.operation_detail,
+            checkpoints=_latest_checkpoints(scope),
             related_event_id=pending_event_id,
             latency_ms=_elapsed_ms(started),
             transport=transport,
@@ -171,6 +202,40 @@ async def run_audited_integration_operation[T](
     return outcome.value
 
 
+async def checkpoint_integration_operation(checkpoint: IntegrationOperationCheckpoint) -> None:
+    """Records identities learned mid-write before the request that depends on them is sent.
+
+    Raises when no external write is running or the record isn't committed, so the
+    caller stops before the effect the checkpoint guards.
+    """
+    scope = _checkpoint_scope.get()
+    if scope is None:
+        raise RuntimeError("Only external integration writes can record checkpoints")
+    group = next(
+        (item for item in scope.pending_detail.intent_groups if item.key == checkpoint.group_key),
+        None,
+    )
+    if group is None or checkpoint.intent_index >= len(group.items):
+        raise ValueError("A checkpoint must name a requested item")
+    latest = {**scope.latest, (checkpoint.group_key, checkpoint.intent_index): checkpoint}
+    validate_checkpoint_bounds(list(latest.values()))
+    scope.latest = latest
+    await _record_operation(
+        scope.ctx,
+        scope.entry,
+        tool_name=scope.tool_name,
+        operation=scope.operation,
+        status=AuditStatus.PENDING,
+        checkpoints=(checkpoint,),
+        related_event_id=scope.pending_event_id,
+        raise_on_error=True,
+    )
+
+
+def _latest_checkpoints(scope: _CheckpointScope | None) -> list[IntegrationOperationCheckpoint]:
+    return list(scope.latest.values()) if scope is not None else []
+
+
 def _elapsed_ms(started: float) -> int:
     return max(1, int((monotonic() - started) * 1000))
 
@@ -185,6 +250,7 @@ async def _record_terminal_operation(
     external_ref: str | None = None,
     error_code: str | None = None,
     operation_detail: IntegrationOperationDetail | None,
+    checkpoints: Sequence[IntegrationOperationCheckpoint],
     related_event_id: UUID | None,
     latency_ms: int | None = None,
     transport: TransportAttemptCounter | None = None,
@@ -201,6 +267,7 @@ async def _record_terminal_operation(
             external_ref=external_ref,
             error_code=error_code,
             operation_detail=operation_detail,
+            checkpoints=checkpoints,
             related_event_id=related_event_id,
             latency_ms=latency_ms,
             transport=transport,
@@ -221,6 +288,7 @@ async def _record_terminal_operation(
                     external_ref=external_ref,
                     error_code=error_code,
                     operation_detail=operation_detail,
+                    checkpoints=checkpoints,
                     related_event_id=related_event_id,
                     latency_ms=latency_ms,
                     transport=transport,
@@ -348,6 +416,7 @@ async def _record_operation(
     external_ref: str | None = None,
     error_code: str | None = None,
     operation_detail: IntegrationOperationDetail | None = None,
+    checkpoints: Sequence[IntegrationOperationCheckpoint] = (),
     related_event_id: UUID | None = None,
     latency_ms: int | None = None,
     transport: TransportAttemptCounter | None = None,
@@ -370,6 +439,7 @@ async def _record_operation(
         external_ref=external_ref,
         error_code=error_code,
         operation_detail=operation_detail,
+        checkpoints=checkpoints,
         related_event_id=related_event_id,
         latency_ms=latency_ms,
         http_requests=transport.requests if observed_transport else None,

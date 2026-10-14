@@ -3,9 +3,10 @@
 """Bounded, provider-neutral evidence for audited integration operations."""
 
 import json
+from collections.abc import Sequence
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 type AuditDetailValue = (
     str | int | float | bool | list["AuditDetailValue"] | dict[str, "AuditDetailValue"] | None
@@ -16,6 +17,12 @@ type IntegrationOperationEffectStatus = Literal["applied", "failed", "unverified
 MAX_INTEGRATION_OPERATION_DETAIL_BYTES = 1_000_000
 MAX_INTEGRATION_OPERATION_GROUPS = 500
 MAX_INTEGRATION_OPERATION_ITEMS = 2_500
+
+type CheckpointReferenceKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
+# Provider IDs only, so a checkpoint can't carry names or provider text.
+type CheckpointReferenceValue = Annotated[
+    str, StringConstraints(pattern=r"^[A-Za-z0-9_.:-]{1,256}$")
+]
 
 
 class IntegrationOperationTarget(BaseModel):
@@ -156,6 +163,18 @@ class PendingIntegrationOperationDetail(_IntegrationOperationDetailBase):
     phase: Literal["pending"] = "pending"
 
 
+class IntegrationOperationCheckpoint(BaseModel):
+    """External identities one requested item learned before the effect they guard."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    group_key: str = Field(min_length=1, max_length=500)
+    intent_index: int = Field(ge=0, lt=MAX_INTEGRATION_OPERATION_ITEMS)
+    references: dict[CheckpointReferenceKey, CheckpointReferenceValue] = Field(
+        min_length=1, max_length=8
+    )
+
+
 class TerminalIntegrationOperationDetail(_IntegrationOperationDetailBase):
     """Requested intent plus exact observed terminal outcomes and effects."""
 
@@ -245,6 +264,11 @@ def terminal_applied_operation_detail(
     )
 
 
+def validate_checkpoint_bounds(checkpoints: Sequence[IntegrationOperationCheckpoint]) -> None:
+    """Rejects checkpoints whose combined evidence exceeds the operation detail byte limit."""
+    _enforce_serialized_size([checkpoint.model_dump(mode="json") for checkpoint in checkpoints])
+
+
 def _counts_for(statuses) -> IntegrationOperationCounts:
     values = tuple(statuses)
     return IntegrationOperationCounts(
@@ -255,9 +279,9 @@ def _counts_for(statuses) -> IntegrationOperationCounts:
     )
 
 
-def _enforce_serialized_size(detail: BaseModel) -> None:
+def _enforce_serialized_size(detail: BaseModel | list[dict[str, object]]) -> None:
     serialized = json.dumps(
-        detail.model_dump(mode="json"),
+        detail.model_dump(mode="json") if isinstance(detail, BaseModel) else detail,
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode()
