@@ -19,6 +19,7 @@ from .models import (
     MetaAdsPlacements,
     MetaAdsPostSource,
     MetaAdsPromotedObject,
+    MetaAdsStoreUrl,
     MetaAdsText,
 )
 
@@ -213,6 +214,60 @@ class MetaAdsPostReference(_MetaAdsAccountReference):
     @property
     def key(self) -> str:
         return f"{self.source}:{self.post_id}"
+
+
+class MetaAdsPixelReference(_MetaAdsAccountReference):
+    """Meta pixel (dataset) the ad account can use to measure website conversions."""
+
+    entity_kind: Literal["meta_ads_pixel"] = "meta_ads_pixel"
+    pixel_id: MetaAdsId = Field(description="Meta pixel (dataset) ID.")
+
+    identity_fields: ClassVar[tuple[str, ...]] = (
+        *_MetaAdsAccountReference.identity_fields,
+        "pixel_id",
+    )
+
+    @property
+    def provider_entity_id(self) -> str:
+        return self.pixel_id
+
+
+class MetaAdsApplicationReference(_MetaAdsAccountReference):
+    """App the ad account can advertise, with its App Store and Google Play pages."""
+
+    entity_kind: Literal["meta_ads_application"] = "meta_ads_application"
+    application_id: MetaAdsId = Field(description="Meta app ID.")
+    store_urls: list[MetaAdsStoreUrl] = Field(default_factory=list, max_length=4)
+
+    identity_fields: ClassVar[tuple[str, ...]] = (
+        *_MetaAdsAccountReference.identity_fields,
+        "application_id",
+    )
+
+    @property
+    def provider_entity_id(self) -> str:
+        return self.application_id
+
+
+class MetaAdsAudienceReference(_MetaAdsAccountReference):
+    """Custom or lookalike audience the ad account can target or exclude."""
+
+    entity_kind: Literal["meta_ads_audience"] = "meta_ads_audience"
+    audience_id: MetaAdsId = Field(description="Meta custom audience ID.")
+    # Meta's subtype in lower case, for example custom, website, or lookalike.
+    subtype: str | None = Field(default=None, pattern=r"^[a-z_]{1,64}$")
+    # Meta's approximate size range; null when Meta has no estimate.
+    size_lower_bound: int | None = Field(default=None, ge=0)
+    size_upper_bound: int | None = Field(default=None, ge=0)
+
+    identity_fields: ClassVar[tuple[str, ...]] = (
+        *_MetaAdsAccountReference.identity_fields,
+        "audience_id",
+    )
+
+    @property
+    def provider_entity_id(self) -> str:
+        return self.audience_id
 
 
 type MetaAdsObjectReference = MetaAdsCampaignReference | MetaAdsAdSetReference | MetaAdsAdReference

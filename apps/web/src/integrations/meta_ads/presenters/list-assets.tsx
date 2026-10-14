@@ -1,7 +1,7 @@
 // apps/web/src/integrations/meta_ads/presenters/list-assets.tsx
 
 import { EmptyResult } from "@/components/tool-ui/empty-result"
-import { AssetSection } from "@/integrations/meta_ads/components/asset-section"
+import { AssetSection, DsaSuggestions } from "@/integrations/meta_ads/components/asset-section"
 import {
   ASSET_SECTIONS,
   emptyAssetsMessage,
@@ -30,15 +30,19 @@ export const metaAdsListAssetsPresenter = defineIntegrationReadPresenter(metaAds
           ))}
         </ul>
       ) : null}
-      {ASSET_SECTIONS.some((section) => result[section.kind].length > 0) ? (
-        ASSET_SECTIONS.map((section) => (
-          <AssetSection
-            key={section.kind}
-            exportFilename={`meta-ads-${entry.externalId}-${section.kind}.csv`}
-            result={result}
-            section={section}
-          />
-        ))
+      {result.dsaSuggestions.length > 0 ||
+      ASSET_SECTIONS.some((section) => result[section.kind].length > 0) ? (
+        <>
+          {ASSET_SECTIONS.map((section) => (
+            <AssetSection
+              key={section.kind}
+              exportFilename={`meta-ads-${entry.externalId}-${section.kind}.csv`}
+              result={result}
+              section={section}
+            />
+          ))}
+          <DsaSuggestions names={result.dsaSuggestions} />
+        </>
       ) : (
         <EmptyResult>{emptyAssetsMessage(result, args)}</EmptyResult>
       )}

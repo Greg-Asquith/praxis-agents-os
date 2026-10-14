@@ -153,6 +153,10 @@ minor release. Patch releases contain backward-compatible fixes only.
   text reaches the agent as untrusted content. The card shows each post's
   text, picture, and a link to it from Meta's own read, and refuses an
   Instagram post Meta won't boost. The setup now asks for `instagram_basic`.
+- Meta Ads asset listing can return an ad account's pixels, apps with their
+  App Store and Google Play pages, custom and lookalike audiences with
+  Meta's approximate sizes, and Meta's suggested advertiser names for ads
+  shown in the EU, which the agent proposes for the operator to confirm.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

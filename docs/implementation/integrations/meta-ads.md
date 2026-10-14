@@ -339,10 +339,10 @@ conversion lists use the same internal retained-result Files and preview
 expansion as Insights. Audits include counts, object type, and status filters;
 they exclude provider names, amounts, name filters, and conversion metadata.
 
-## Pages, Instagram accounts, media, and posts
+## Pages, Instagram accounts, media, posts, and targeting assets
 
-`meta_ads_list_assets` lists, for every selected account, what new ads can
-use. It reads each kind separately, so a refusal on one kind doesn't hide
+`meta_ads_list_assets` lists, for every selected account, what new ads and
+ad sets can use. It reads each kind separately, so a refusal on one kind doesn't hide
 the others:
 
 | Kind | Meta edge | Returned |
@@ -352,10 +352,15 @@ the others:
 | `images` | `act_{id}/adimages` | Up to 50 active images, as `MetaAdsMediaReference` with `image_hash` |
 | `videos` | `act_{id}/advideos` | Up to 50 videos, as `MetaAdsMediaReference` with `video_id` and `media_status` |
 | `posts` | `{page_id}/published_posts` and `{ig_user_id}/media` | The 25 most recent posts of each of the first 5 Pages and 5 Instagram accounts, as `MetaAdsPostReference` (`meta_ads_post`) beside each post's text |
+| `pixels` | `act_{id}/adspixels` | Up to 200 pixels (datasets), as `MetaAdsPixelReference` (`meta_ads_pixel`) |
+| `apps` | `act_{id}/advertisable_applications` | Up to 200 apps, as `MetaAdsApplicationReference` (`meta_ads_application`) with `store_urls` |
+| `audiences` | `act_{id}/customaudiences` | Up to 200 custom and lookalike audiences, as `MetaAdsAudienceReference` (`meta_ads_audience`) with `subtype` and an approximate size range |
+| `dsa_suggestions` | `act_{id}/dsa_recommendations` | Up to 20 names Meta suggests as the payer and beneficiary of ads shown in the EU, as plain text |
 
 The tool reads automatically, supports Code Mode, and uses retained results.
-`kinds` limits the read; without it, every kind but `posts` is read,
-because posts take a read per Page and Instagram account. Each kind follows up to 5 pages of results, and
+`kinds` limits the read; without it, only `pages`, `instagram_accounts`,
+`images`, and `videos` are read, because ad creation needs only those, and
+posts take a read per Page and Instagram account. Each kind follows up to 5 pages of results, and
 deleted or internal images don't count towards the 50, so they can't hide
 active images behind them. `truncated` names kinds with more items than were
 returned. A Graph permission error on a kind becomes a note naming what to
@@ -401,6 +406,22 @@ account can use. The video edge has no ID filter, and reading a video or an
 Instagram post directly doesn't prove which account owns it, so an older
 video or post isn't found. Resolved posts carry `excerpt` for the approval
 card.
+
+Pixels, apps, and audiences are read 100 at a time. An app's `store_urls`
+keeps only HTTPS pages on `apps.apple.com`, `itunes.apple.com`, and
+`play.google.com` from Meta's `object_store_urls`. An audience's `subtype`
+is Meta's subtype in lower case, such as `custom`, `website`, or
+`lookalike`, and its description names it in plain words.
+`size_lower_bound` and `size_upper_bound` come from Meta's
+`approximate_count_lower_bound` and `approximate_count_upper_bound`; Meta
+reports `-1` when it has no estimate, and the reference holds null. DSA
+suggestions are trimmed, deduplicated, and at most 200 characters each. The
+tool description tells the agent to propose one to the operator and use it
+only once they confirm it; nothing applies a suggestion automatically. A
+Graph permission error on any of these kinds becomes a note, like the other
+kinds. These references have no search or resolve lookups: the engine
+registers a lookup only for a reference kind some tool takes as input, so
+the lookups arrive with the tools that take them.
 
 ## Writes
 
@@ -1149,6 +1170,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
 | Ad creation | `validate_only` on `/ads` with an inline creative, and whether one design in two ad sets shares a creative; every `creative_features_spec` key and explicit value per format read back off, and each offered change read back on; the empty description; placement rules for an image and a video; `/thumbnails` URIs as `image_url`; `ACTIVE` ads entering review then delivering and `PAUSED` staying off; `preview_shareable_link` and its host; `ad_review_feedback` shape; 50 ads with 20 inline images within the timeout |
 | Existing post ads | `published_posts` and Instagram `media` fields with a system user token, for an owned and a partner-shared Page; `boost_eligibility_info` shape; `validate_only` on `/ads` with `object_story_id` and with `source_instagram_media_id`; which automatic-change keys and explicit values Meta accepts on a post, read back off |
+| Targeting assets | `adspixels`, `advertisable_applications` (whether the edge exists and returns `object_store_urls`), `customaudiences` (the approximate size fields and `-1`), and `dsa_recommendations` reply shapes and permission errors with a system user token |
 | Ad copies | `/copies` reply shape (`copied_ad_id`), `NO_RENAME` keeping the source name, `status_option` read back, whether `/copies` accepts `validate_only`, whether a copy shares its source's creative, and whether Meta turns on automatic changes the source didn't have |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 

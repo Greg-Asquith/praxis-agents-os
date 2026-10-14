@@ -12,6 +12,8 @@ type MetaAdsText = Annotated[str, Field(max_length=512)]
 type MetaAdsImageHash = Annotated[str, Field(pattern=r"^[A-Za-z0-9]{1,64}$")]
 # Meta CDN address, checked against Meta's hosts when parsed; signed, so it expires.
 type MetaAdsMediaUrl = Annotated[str, Field(max_length=2048, pattern=r"^https://")]
+# App Store or Google Play page, checked against those hosts when parsed.
+type MetaAdsStoreUrl = Annotated[str, Field(max_length=2048, pattern=r"^https://")]
 type MetaAdsMediaType = Literal["image", "video"]
 # Whether Meta can use the media in an ad yet; videos are processed after upload.
 type MetaAdsMediaStatus = Literal["ready", "processing", "failed"]

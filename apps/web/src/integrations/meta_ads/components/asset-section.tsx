@@ -34,3 +34,21 @@ export function AssetSection({
     </section>
   )
 }
+
+export function DsaSuggestions({ names }: { names: string[] }) {
+  if (names.length === 0) return null
+  return (
+    <section aria-label="Suggested EU Advertiser Names" className="grid min-w-0 gap-2">
+      <h4 className="text-sm font-medium">Suggested EU Advertiser Names</h4>
+      <p className="text-muted-foreground text-xs">
+        Meta suggests these as who pays for and benefits from ads shown in the EU. Confirm one
+        before it&apos;s used.
+      </p>
+      <ul className="grid gap-1 text-sm">
+        {names.map((name) => (
+          <li key={name}>{name}</li>
+        ))}
+      </ul>
+    </section>
+  )
+}

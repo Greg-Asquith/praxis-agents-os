@@ -683,7 +683,8 @@ bounded read tools and presenters through the shared fan-out and audit seams.
 Insights, objects, conversions, and change history use retained results.
 Insights resolves custom conversion names within each account's report budget
 and names custom events from their action types. `meta_ads_list_assets`
-lists Pages, Instagram accounts, media, and posts as scoped references.
+lists Pages, Instagram accounts, media, posts, pixels, apps, and audiences
+as scoped references, and Meta's suggested EU advertiser names as text.
 Approval-gated `meta_ads_update_status`, `meta_ads_update_budgets`,
 `meta_ads_upload_media`, `meta_ads_create_ads`, and `meta_ads_copy_ads` write
 through the shared write presenter and the provider's mutation ledger. Ad creation edits its

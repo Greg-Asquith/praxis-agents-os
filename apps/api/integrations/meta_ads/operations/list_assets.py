@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/operations/list_assets.py
 
-"""Read the Pages, Instagram accounts, media, and posts an ad account can use in ads."""
+"""Read the Pages, Instagram accounts, media, posts, and targeting assets an ad account can use."""
 
 import json
 from collections.abc import Awaitable, Callable, Sequence
@@ -19,9 +19,12 @@ from ..client import MetaAdsClient, ad_account_path
 from ..models import MetaAdsMediaStatus
 from ..references import (
     MAX_POST_EXCERPT,
+    MetaAdsApplicationReference,
+    MetaAdsAudienceReference,
     MetaAdsInstagramAccountReference,
     MetaAdsMediaReference,
     MetaAdsPageReference,
+    MetaAdsPixelReference,
     MetaAdsPostReference,
 )
 from ..throttle import ensure_account_available
@@ -32,6 +35,10 @@ from .values import bounded_string, invalid_response
 _OPERATION = "list_assets"
 _MEDIA_LIMIT = 50
 _IDENTITY_LIMIT = 100
+# Pixels, apps, and audiences returned per kind, read in pages Meta answers quickly.
+_TARGETING_ASSET_LIMIT = 200
+_TARGETING_PAGE_SIZE = 100
+_MAX_DSA_SUGGESTIONS = 20
 # Pages read per kind, so inactive or short pages can't hide assets behind them.
 _MAX_PAGES = 5
 _VIDEO_SCAN_PAGE_SIZE = 100
@@ -40,6 +47,7 @@ VIDEO_SCAN_LIMIT = _VIDEO_SCAN_PAGE_SIZE * _MAX_PAGES
 _MAX_URL_LENGTH = 2048
 _MEDIA_HOSTS = ("fbcdn.net", "facebook.com", "cdninstagram.com")
 _POST_HOSTS = ("facebook.com", "instagram.com")
+_STORE_HOSTS = ("apps.apple.com", "itunes.apple.com", "play.google.com")
 _POST_LIMIT = 25
 # Pages and Instagram accounts whose posts are read, each.
 _MAX_POST_SOURCES = 5
@@ -56,8 +64,12 @@ ASSET_KINDS: tuple[MetaAdsAssetKind, ...] = (
     "images",
     "videos",
     "posts",
+    "pixels",
+    "apps",
+    "audiences",
+    "dsa_suggestions",
 )
-# Posts take a read per Page and Instagram account, so they're listed only when asked for.
+# Ad creation needs only these; posts and targeting assets are listed when asked for.
 DEFAULT_ASSET_KINDS: tuple[MetaAdsAssetKind, ...] = ASSET_KINDS[:4]
 _PERMISSION_NOTES: dict[MetaAdsAssetKind, str] = {
     "pages": (
@@ -75,6 +87,27 @@ _PERMISSION_NOTES: dict[MetaAdsAssetKind, str] = {
         "Meta didn't allow reading posts. Check the token has pages_read_engagement and "
         "instagram_basic, and the system user has access to the Page and Instagram account."
     ),
+    "pixels": (
+        "Meta didn't allow reading this account's pixels. In Business Settings, assign the "
+        "pixel (dataset) to the system user and connect it to the ad account."
+    ),
+    "apps": (
+        "Meta didn't allow reading this account's apps. In Business Settings, assign the app "
+        "to the system user and connect it to the ad account."
+    ),
+    "audiences": (
+        "Meta didn't allow reading this account's audiences. Check the token has ads_management "
+        "and the system user can manage the ad account."
+    ),
+    "dsa_suggestions": "Meta didn't allow reading suggested advertiser names for the EU.",
+}
+_AUDIENCE_NOUNS = {
+    "lookalike": "Lookalike audience",
+    "website": "Website audience",
+    "app": "App activity audience",
+    "engagement": "Engagement audience",
+    "video": "Video viewers audience",
+    "custom": "Customer list audience",
 }
 _VIDEO_STATUSES: dict[str, MetaAdsMediaStatus] = {
     "ready": "ready",
@@ -83,7 +116,7 @@ _VIDEO_STATUSES: dict[str, MetaAdsMediaStatus] = {
     "expired": "failed",
 }
 
-type _Reader = Callable[..., Awaitable[tuple[Sequence[BaseModel], bool]]]
+type _Reader = Callable[..., Awaitable[tuple[Sequence[BaseModel | str], bool]]]
 
 
 async def list_assets(
@@ -98,7 +131,7 @@ async def list_assets(
     if max_response_bytes is None:
         max_response_bytes = report_result_max_bytes()
     budget = ReportResultBudget("meta_ads", _OPERATION, maximum=max_response_bytes)
-    found: dict[MetaAdsAssetKind, Sequence[BaseModel]] = {kind: [] for kind in ASSET_KINDS}
+    found: dict[MetaAdsAssetKind, Sequence[BaseModel | str]] = {kind: [] for kind in ASSET_KINDS}
     truncated: list[MetaAdsAssetKind] = []
     notes: list[str] = []
     for kind in (kind for kind in ASSET_KINDS if kind in kinds):
@@ -521,16 +554,150 @@ def _timestamp(value: Any) -> datetime | None:
 
 def _post_url(value: Any) -> str | None:
     """Keeps only HTTPS links to the post on facebook.com or instagram.com."""
-    if not isinstance(value, str) or len(value) > _MAX_URL_LENGTH:
+    return _https_url(value, _POST_HOSTS)
+
+
+async def read_pixel_references(
+    client: MetaAdsClient,
+    *,
+    account_id: str,
+    scope_label: str,
+    budget: ReportResultBudget,
+) -> tuple[list[MetaAdsPixelReference], bool]:
+    rows, more = await _read_targeting_assets(client, account_id, "adspixels", "id,name", budget)
+    pixels = [
+        _reference(
+            MetaAdsPixelReference,
+            "pixel",
+            account_id=account_id,
+            pixel_id=row.get("id"),
+            label=_label(row.get("name"), f"Pixel {row.get('id')}"),
+            description="Meta pixel",
+            scope_label=scope_label,
+        )
+        for row in rows
+    ]
+    return pixels, more
+
+
+async def read_application_references(
+    client: MetaAdsClient,
+    *,
+    account_id: str,
+    scope_label: str,
+    budget: ReportResultBudget,
+) -> tuple[list[MetaAdsApplicationReference], bool]:
+    rows, more = await _read_targeting_assets(
+        client, account_id, "advertisable_applications", "id,name,object_store_urls", budget
+    )
+    apps = [
+        _reference(
+            MetaAdsApplicationReference,
+            "app",
+            account_id=account_id,
+            application_id=row.get("id"),
+            label=_label(row.get("name"), f"App {row.get('id')}"),
+            description="App",
+            scope_label=scope_label,
+            store_urls=_store_urls(row.get("object_store_urls")),
+        )
+        for row in rows
+    ]
+    return apps, more
+
+
+async def read_audience_references(
+    client: MetaAdsClient,
+    *,
+    account_id: str,
+    scope_label: str,
+    budget: ReportResultBudget,
+) -> tuple[list[MetaAdsAudienceReference], bool]:
+    """Reads custom and lookalike audiences with Meta's approximate size range."""
+    rows, more = await _read_targeting_assets(
+        client,
+        account_id,
+        "customaudiences",
+        "id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound",
+        budget,
+    )
+    audiences = []
+    for row in rows:
+        subtype = _audience_subtype(row.get("subtype"))
+        audiences.append(
+            _reference(
+                MetaAdsAudienceReference,
+                "audience",
+                account_id=account_id,
+                audience_id=row.get("id"),
+                label=_label(row.get("name"), f"Audience {row.get('id')}"),
+                description=_AUDIENCE_NOUNS.get(subtype or "", "Custom audience"),
+                scope_label=scope_label,
+                subtype=subtype,
+                size_lower_bound=_audience_size(row.get("approximate_count_lower_bound")),
+                size_upper_bound=_audience_size(row.get("approximate_count_upper_bound")),
+            )
+        )
+    return audiences, more
+
+
+async def read_dsa_suggestions(
+    client: MetaAdsClient, *, account_id: str, scope_label: str, budget: ReportResultBudget
+) -> tuple[list[str], bool]:
+    """Reads Meta's suggested payer and beneficiary names for ads shown in the EU."""
+    rows, _more = await _read(
+        client, account_id, "dsa_recommendations", "recommendations", 5, budget
+    )
+    names: list[str] = []
+    for row in rows:
+        values = row.get("recommendations")
+        for value in values if isinstance(values, list) else ():
+            name = " ".join(value.split())[:200] if isinstance(value, str) else ""
+            if name and name not in names:
+                names.append(name)
+    return names[:_MAX_DSA_SUGGESTIONS], len(names) > _MAX_DSA_SUGGESTIONS
+
+
+async def _read_targeting_assets(
+    client: MetaAdsClient,
+    account_id: str,
+    edge: str,
+    fields: str,
+    budget: ReportResultBudget,
+) -> tuple[list[dict[str, Any]], bool]:
+    return await _read(
+        client,
+        account_id,
+        edge,
+        fields,
+        _TARGETING_ASSET_LIMIT,
+        budget,
+        page_size=_TARGETING_PAGE_SIZE,
+    )
+
+
+def _store_urls(value: Any) -> list[str]:
+    """Keeps App Store and Google Play pages from Meta's store URLs for the app."""
+    if not isinstance(value, dict):
+        return []
+    urls = (_https_url(item, _STORE_HOSTS) for item in value.values())
+    return list(dict.fromkeys(url for url in urls if url))[:4]
+
+
+def _audience_subtype(value: Any) -> str | None:
+    if not isinstance(value, str) or not value or len(value) > 64:
         return None
-    try:
-        parts = urlsplit(value)
-    except ValueError:
-        return None
-    host = (parts.hostname or "").lower()
-    on_post_host = any(host == item or host.endswith(f".{item}") for item in _POST_HOSTS)
-    has_userinfo = parts.username is not None or parts.password is not None
-    return value if parts.scheme == "https" and on_post_host and not has_userinfo else None
+    subtype = value.lower()
+    return (
+        subtype
+        if all(char.isascii() and (char.isalpha() or char == "_") for char in subtype)
+        else None
+    )
+
+
+def _audience_size(value: Any) -> int | None:
+    # Meta reports -1 when it has no estimate, for example for a small or new audience.
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 _READERS: dict[MetaAdsAssetKind, _Reader] = {
@@ -539,6 +706,10 @@ _READERS: dict[MetaAdsAssetKind, _Reader] = {
     "images": read_image_references,
     "videos": read_video_references,
     "posts": read_post_references,
+    "pixels": read_pixel_references,
+    "apps": read_application_references,
+    "audiences": read_audience_references,
+    "dsa_suggestions": read_dsa_suggestions,
 }
 
 
@@ -552,6 +723,7 @@ async def _read(
     *,
     params: dict[str, Any] | None = None,
     include: Callable[[dict[str, Any]], bool] | None = None,
+    page_size: int | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     return await read_pages(
         client,
@@ -561,7 +733,7 @@ async def _read(
         limit=limit,
         budget=budget,
         operation=_OPERATION,
-        page_size=limit,
+        page_size=page_size or limit,
         max_pages=_MAX_PAGES,
         include=include,
     )
@@ -590,6 +762,11 @@ def _picture_url(value: Any) -> Any:
 
 def media_url(value: Any) -> str | None:
     """Keeps only HTTPS addresses on Meta's own hosts; anything else is dropped."""
+    return _https_url(value, _MEDIA_HOSTS)
+
+
+def _https_url(value: Any, hosts: tuple[str, ...]) -> str | None:
+    """Keeps an HTTPS address without credentials on one of the hosts or their subdomains."""
     if not isinstance(value, str) or len(value) > _MAX_URL_LENGTH:
         return None
     try:
@@ -597,9 +774,9 @@ def media_url(value: Any) -> str | None:
     except ValueError:
         return None
     host = (parts.hostname or "").lower()
-    on_meta_host = any(host == item or host.endswith(f".{item}") for item in _MEDIA_HOSTS)
+    on_host = any(host == item or host.endswith(f".{item}") for item in hosts)
     has_userinfo = parts.username is not None or parts.password is not None
-    return value if parts.scheme == "https" and on_meta_host and not has_userinfo else None
+    return value if parts.scheme == "https" and on_host and not has_userinfo else None
 
 
 def _dimension(value: Any) -> int | None:
