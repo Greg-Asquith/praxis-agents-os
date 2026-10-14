@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/tools/create_ads.py
 
-"""Approval-only tool that creates image, video, and carousel ads in existing ad sets."""
+"""Approval-only tool that creates new ads, or ads from existing posts, in existing ad sets."""
 
 import asyncio
 from collections.abc import Mapping
@@ -45,6 +45,7 @@ from ..references import (
     MetaAdsInstagramAccountReference,
     MetaAdsMediaReference,
     MetaAdsPageReference,
+    MetaAdsPostReference,
 )
 from ..throttle import ensure_account_available
 from .schemas.ads import (
@@ -329,7 +330,7 @@ def _pending_operation_detail(
 
 
 async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dict[str, Any]:
-    """Hydrates the Page, accounts, ad sets, and media, and pins the account and Files."""
+    """Hydrates the Page, accounts, ad sets, media, and posts, and pins the account and Files."""
     request = MetaAdsCreateAdsRequest.model_validate(args)
     entry = _account_entry(deps, request.account_id)
     # Ads follow the shared settings they copy, so a later shared edit reaches them.
@@ -349,6 +350,8 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     hydrated_media = (
         await hydrate_references(deps, "meta_ads_media", "ads", library) if library else []
     )
+    posts = list({d.post.key: d.post for d in request.ads if d.post is not None}.values())
+    hydrated_posts = await hydrate_references(deps, "meta_ads_post", "ads", posts) if posts else []
     sources = await resolve_sources(deps, request)
     return {
         **display,
@@ -360,6 +363,8 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
             ":".join(media_key(MetaAdsMediaReference.model_validate(item))): item
             for item in hydrated_media
         },
+        # Meta's own excerpt and picture for each post, never the agent's copy.
+        "_posts": {MetaAdsPostReference.model_validate(item).key: item for item in hydrated_posts},
         "_files": [source.approval_details() for source in sources],
         "_automatic_change_catalogue": offered_catalogue(),
         "_buttons": {"website": list(WEBSITE_BUTTONS), "app": list(APP_BUTTONS)},
@@ -370,14 +375,19 @@ DEFINITION = RuntimeToolDefinition(
     name="meta_ads_create_ads",
     function=meta_ads_create_ads,
     description=(
-        "Create up to 50 image, video, or carousel ads in existing ad sets of one Meta ad "
-        "account, in one approval. Each item in ads is one design, created once in each of "
-        "its ad_sets (at most 10 ad sets in all), named after the design and the ad set when "
-        "it goes in several. Order: upload videos with meta_ads_upload_media and wait until "
-        "they're ready; list the Pages, Instagram accounts, and media with "
+        "Create up to 50 image, video, carousel, or existing post ads in existing ad sets of "
+        "one Meta ad account, in one approval. Each item in ads is one design, created once in "
+        "each of its ad_sets (at most 10 ad sets in all), named after the design and the ad "
+        "set when it goes in several. Order: upload videos with meta_ads_upload_media and "
+        "wait until they're ready; list the Pages, Instagram accounts, and media with "
         "meta_ads_list_assets; then create the ads. Workspace image Files can be passed as "
         "media directly and are uploaded with the ads. vertical_media adds a 9:16 version "
-        "for Stories and Reels. page, instagram_account, link, call_to_action, url_tags, and "
+        "for Stories and Reels. Use format existing_post when the operator wants to promote a "
+        "post that is already published, such as one that did well organically: pass post "
+        'from meta_ads_list_assets(kinds=["posts"]) with only name, ad_sets, and status. '
+        "The post runs unchanged, with its own text and media, as the Page or Instagram "
+        "account that published it; an Instagram post can also take link and call_to_action. "
+        "page, instagram_account, link, call_to_action, url_tags, and "
         "status apply to every ad unless an ad sets its own. Ads are created paused unless "
         "status is active; active ads run and spend once Meta approves them. Every Meta "
         "automatic change, such as rewritten text, music, or AI-generated images, is sent "

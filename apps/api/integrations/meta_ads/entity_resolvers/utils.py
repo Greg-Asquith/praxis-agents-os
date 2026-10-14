@@ -151,7 +151,7 @@ async def search_assets(
     cursor: str | None,
     read: AssetSearchFn,
 ) -> EntityResolverPage:
-    """Searches one kind of asset by label across the selected ad accounts."""
+    """Searches one kind of asset by label, and posts by text, across the selected ad accounts."""
     start = _offset(cursor)
     needle = search.strip().casefold()
     choices: list[EntityChoice] = []
@@ -167,7 +167,7 @@ async def search_assets(
         choices.extend(
             EntityChoice.from_reference(reference, icon="meta_ads")
             for reference in found
-            if needle in reference.label.casefold()
+            if needle in _search_text(reference)
         )
     choices = choices[:MAX_SEARCH_CHOICES]
     return EntityResolverPage(
@@ -214,6 +214,12 @@ async def resolve_assets[T: ScopedEntityReference](
             if reference.identity() in wanted
         )
     return tuple(choices)
+
+
+def _search_text(reference: ScopedEntityReference) -> str:
+    # Posts are found by their text as well as their label.
+    excerpt = getattr(reference, "excerpt", None) or ""
+    return f"{reference.label}\n{excerpt}".casefold()
 
 
 def _choices(

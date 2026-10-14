@@ -36,6 +36,22 @@ export type PreviewMedia = {
 export type MediaValue = Record<string, unknown>
 export type MediaSlot = "media" | "vertical_media"
 
+export type PostPreview = {
+  // The server's key, facebook:ID or instagram:ID.
+  key: string
+  source: "facebook" | "instagram"
+  label: string
+  // Meta's own text and link for the post, from the server's re-read; never the agent's copy.
+  excerpt: string | null
+  permalink: string | null
+  // Instagram only: whether Meta allows the post to run as an ad.
+  boostable: boolean | null
+  // False when the server couldn't find the post through this ad account.
+  found: boolean
+  // The post's picture, shown through the same frame as library media.
+  picture: PreviewMedia
+}
+
 export type Card = {
   media: PreviewMedia
   headline: string
@@ -56,6 +72,7 @@ export type AdDraft = {
   verticalMedia: PreviewMedia | null
   cards: Card[]
   disclaimer: { type: string; text: string; url: string | null } | null
+  post: PostPreview | null
   // Values this ad sets for itself; null uses the shared value.
   overrides: {
     link: string | null
@@ -101,7 +118,12 @@ export type CreateAdsArgs = {
   rawAds: Record<string, unknown>[]
 }
 
-export const FORMAT_LABELS = { image: "Image", video: "Video", carousel: "Carousel" } as const
+export const FORMAT_LABELS = {
+  image: "Image",
+  video: "Video",
+  carousel: "Carousel",
+  existing_post: "Existing Post",
+} as const
 
 // Meta's recommended lengths; longer text is cut off with "See more".
 export const RECOMMENDED_LENGTHS = {
@@ -131,10 +153,11 @@ export function parseCreateAdsArgs(value: unknown): CreateAdsArgs | null {
   const page = value["page"]
   if (!catalogue || !buttons || !isRecord(page) || !isNonEmptyString(page["label"])) return null
   const media = mediaLookup(value["_media"], value["_files"])
+  const posts = isRecord(value["_posts"]) ? value["_posts"] : {}
   const rawAds: Record<string, unknown>[] = []
   const ads: AdDraft[] = []
   for (const [index, item] of value["ads"].entries()) {
-    const ad = isRecord(item) ? parseAd(item, index, media) : null
+    const ad = isRecord(item) ? parseAd(item, index, media, posts) : null
     if (!ad || !isRecord(item)) return null
     rawAds.push(item)
     ads.push(ad)
@@ -168,14 +191,16 @@ export function parseCreateAdsArgs(value: unknown): CreateAdsArgs | null {
 function parseAd(
   item: Record<string, unknown>,
   index: number,
-  media: Map<string, PreviewMedia>
+  media: Map<string, PreviewMedia>,
+  posts: Record<string, unknown>
 ): AdDraft | null {
   const format = item["format"]
   const adSets = item["ad_sets"]
+  const post = format === "existing_post" ? parsePost(item["post"], posts) : null
   if (
     !isOneOf(AD_FORMATS, format) ||
     typeof item["name"] !== "string" ||
-    typeof item["primary_text"] !== "string" ||
+    (format === "existing_post" ? !post : typeof item["primary_text"] !== "string") ||
     !Array.isArray(adSets)
   )
     return null
@@ -202,7 +227,7 @@ function parseAd(
     name: item["name"],
     format,
     adSetIds,
-    primaryText: item["primary_text"],
+    primaryText: stringValue(item["primary_text"]) ?? "",
     headline: stringValue(item["headline"]),
     description: stringValue(item["description"]),
     media: previewMedia(item["media"], media),
@@ -218,12 +243,64 @@ function parseAd(
             url: stringValue(disclaimer["url"]),
           }
         : null,
+    post,
     overrides: {
       link: stringValue(item["link"]),
       callToAction: stringValue(item["call_to_action"]),
       urlTags: stringValue(item["url_tags"]),
       status: isOneOf(STATUSES, status) ? status : null,
     },
+  }
+}
+
+const POST_HOSTS = ["facebook.com", "instagram.com"]
+const POST_SOURCES: ReadonlySet<"facebook" | "instagram"> = new Set(["facebook", "instagram"])
+
+/** Reads an ad's post, with Meta's own details when the server found it for this account. */
+function parsePost(value: unknown, posts: Record<string, unknown>): PostPreview | null {
+  if (!isRecord(value) || !isOneOf(POST_SOURCES, value["source"])) return null
+  const postId = value["post_id"]
+  const owner = value["source"] === "facebook" ? value["page_id"] : value["instagram_user_id"]
+  if (!isNonEmptyString(postId) || !isNonEmptyString(owner)) return null
+  const key = `${value["source"]}:${postId}`
+  const live = posts[key]
+  const known = isRecord(live) ? live : null
+  const label = stringValue(known?.["label"] ?? value["label"]) ?? "Post"
+  const boostable = known?.["boostable"]
+  return {
+    key,
+    source: value["source"],
+    label,
+    excerpt: stringValue(known?.["excerpt"]),
+    permalink: postLink(known?.["permalink_url"]),
+    boostable: typeof boostable === "boolean" ? boostable : null,
+    found: known !== null,
+    picture: {
+      // The preview route takes post_{page}_{post} or igpost_{account}_{media}.
+      key: value["source"] === "facebook" ? `post:${postId}` : `igpost:${owner}_${postId}`,
+      mediaType: "image",
+      label,
+      width: null,
+      height: null,
+      ready: true,
+      fileId: null,
+      revisionId: null,
+    },
+  }
+}
+
+/** Keeps only an https link to the post on facebook.com or instagram.com. */
+function postLink(value: unknown): string | null {
+  if (!isNonEmptyString(value)) return null
+  try {
+    const url = new URL(value)
+    const host = url.hostname.toLowerCase()
+    const onPostHost = POST_HOSTS.some((item) => host === item || host.endsWith(`.${item}`))
+    return url.protocol === "https:" && onPostHost && !url.username && !url.password
+      ? url.href
+      : null
+  } catch {
+    return null
   }
 }
 

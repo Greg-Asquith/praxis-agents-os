@@ -13,6 +13,7 @@ from .entity_resolvers import (
     META_ADS_INSTAGRAM_ACCOUNT_RESOLVER,
     META_ADS_MEDIA_RESOLVER,
     META_ADS_PAGE_RESOLVER,
+    META_ADS_POST_RESOLVER,
 )
 from .preview import META_ADS_MEDIA_PREVIEW
 from .tools import TOOL_DEFINITIONS
@@ -42,6 +43,7 @@ PROVIDER = IntegrationProviderPlugin(
         META_ADS_INSTAGRAM_ACCOUNT_RESOLVER,
         META_ADS_MEDIA_RESOLVER,
         META_ADS_PAGE_RESOLVER,
+        META_ADS_POST_RESOLVER,
     ),
     preview_definitions=(META_ADS_MEDIA_PREVIEW,),
 )

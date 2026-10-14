@@ -21,6 +21,7 @@ from .creatives import (
     CreativeImage,
     CreativeInput,
     CreativeMedia,
+    CreativePost,
     CreativeVideo,
     conversion_domain,
     creative_spec,
@@ -66,7 +67,7 @@ def ad_body(
         ),
     }
     # Meta requires the destination's domain when the campaign shares data with a pixel.
-    if promoted_object is not None and promoted_object.pixel_id:
+    if promoted_object is not None and promoted_object.pixel_id and ad.link:
         body["conversion_domain"] = conversion_domain(ad.link)
     return body
 
@@ -95,7 +96,7 @@ def _creative_input(
         format=design.format,
         page_id=page_id,
         instagram_user_id=instagram_user_id,
-        primary_text=design.primary_text,
+        primary_text=design.primary_text or "",
         headline=design.headline,
         description=design.description,
         link=ad.link,
@@ -109,6 +110,7 @@ def _creative_input(
         disclaimer=CreativeDisclaimer(disclaimer.type, disclaimer.text, disclaimer.url)
         if disclaimer
         else None,
+        post=CreativePost(design.post.source, design.post.post_id) if design.post else None,
     )
 
 

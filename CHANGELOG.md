@@ -147,6 +147,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   renamed. The card shows each source ad's picture, a text excerpt, and the
   automatic changes it carries. Lost replies are settled by finding the copy
   by name, never by copying again.
+- Meta Ads ads from existing posts: asset listing can return the 25 most
+  recent posts of each Page and Instagram account, and ad creation can run a
+  published Facebook or Instagram post unchanged in existing ad sets. Post
+  text reaches the agent as untrusted content. The card shows each post's
+  text, picture, and a link to it from Meta's own read, and refuses an
+  Instagram post Meta won't boost. The setup now asks for `instagram_basic`.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

@@ -8,6 +8,7 @@ from integrations.meta_ads.operations.creatives import (
     CreativeCard,
     CreativeImage,
     CreativeInput,
+    CreativePost,
     CreativeVideo,
     conversion_domain,
     creative_spec,
@@ -118,6 +119,42 @@ def test_a_vertical_version_shows_only_in_stories_and_reels():
     # Music stays explicit in the same feed.
     assert feed["audios"] == [{"type": "OPTED_OUT"}]
     assert feed["bodies"][0]["automation_status"] == "OPT_OUT"
+
+
+def post_creative(post: CreativePost, link: str | None) -> CreativeInput:
+    return creative(
+        format="existing_post",
+        primary_text="",
+        headline=None,
+        link=link or "",
+        url_tags=None,
+        media=None,
+        post=post,
+    )
+
+
+def test_a_facebook_post_runs_by_its_story_id_with_changes_off():
+    spec = creative_spec(post_creative(CreativePost("facebook", "11_500"), None))
+
+    assert spec["object_story_id"] == "11_500"
+    # The post is the creative, so nothing else describes it.
+    assert "object_story_spec" not in spec and "call_to_action" not in spec
+    features = spec["degrees_of_freedom_spec"]["creative_features_spec"]
+    assert {detail["enroll_status"] for detail in features.values()} == {"OPT_OUT"}
+    assert spec["contextual_multi_ads"] == {"enroll_status": "OPT_OUT"}
+
+
+def test_an_instagram_post_runs_as_the_page_with_its_button_and_link():
+    link = "https://shop.example.com/sale"
+    spec = creative_spec(post_creative(CreativePost("instagram", "700"), link))
+
+    assert (spec["source_instagram_media_id"], spec["instagram_user_id"], spec["object_id"]) == (
+        "700",
+        "22",
+        "11",
+    )
+    assert spec["call_to_action"] == {"type": "SHOP_NOW", "value": {"link": link}}
+    assert "object_story_spec" not in spec
 
 
 def test_conversion_domain_keeps_the_registrable_domain():

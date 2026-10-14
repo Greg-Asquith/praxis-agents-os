@@ -4,11 +4,13 @@ import { GlobeIcon } from "lucide-react"
 
 import { fieldOptionLabel } from "@/components/tool-ui/field-options"
 import { MediaFrame } from "@/integrations/meta_ads/components/media-frame"
+import type { AdFormat } from "@/integrations/meta_ads/lib/automatic-changes"
 import { useMetaPicture } from "@/integrations/meta_ads/lib/meta-pictures"
 import {
   cardKeys,
   cutOff,
   RECOMMENDED_LENGTHS,
+  type PostPreview,
   type PreviewMedia,
 } from "@/integrations/meta_ads/lib/create-ads-args"
 import { initials } from "@/lib/format"
@@ -27,7 +29,7 @@ export type AdPreviewProps = {
   placement: AdPlacement
   pageName: string
   pageId: string | null
-  format: "image" | "video" | "carousel"
+  format: AdFormat
   primaryText: string
   headline: string | null
   description: string | null
@@ -105,6 +107,54 @@ function FeedPreview({
   )
 }
 
+/** An existing post as it runs: Meta's own text and picture, as plain text, with a link to it. */
+export function PostAdPreview({
+  identityName,
+  pageId,
+  post,
+  callToAction,
+  domain,
+}: {
+  identityName: string
+  pageId: string | null
+  post: PostPreview
+  callToAction: string
+  // Set only for an Instagram post with a link, which shows a button.
+  domain: string | null
+}) {
+  const text = post.excerpt ? cutOff(post.excerpt, RECOMMENDED_LENGTHS.primaryText) : null
+  return (
+    <figure
+      aria-label="Post preview"
+      className="bg-card grid w-full min-w-0 overflow-hidden rounded-xl border shadow-xs"
+    >
+      <div className="grid gap-2 px-3 pt-3 pb-2">
+        <PreviewHeader pageId={pageId} pageName={identityName} />
+        {text ? (
+          <p className="text-sm leading-snug wrap-anywhere whitespace-pre-line">
+            {text.shown}
+            {text.hidden ? <span className="text-muted-foreground">… See more</span> : null}
+          </p>
+        ) : null}
+      </div>
+      <MediaFrame media={post.picture} shape="square" />
+      {domain ? (
+        <LinkBar callToAction={callToAction} description={null} domain={domain} headline={null} />
+      ) : null}
+      {post.permalink ? (
+        <a
+          className="text-primary px-3 py-2 text-xs underline-offset-2 hover:underline"
+          href={post.permalink}
+          rel="noreferrer"
+          target="_blank"
+        >
+          View the Post on {post.source === "facebook" ? "Facebook" : "Instagram"}
+        </a>
+      ) : null}
+    </figure>
+  )
+}
+
 function LinkBar({
   callToAction,
   description,
@@ -152,7 +202,7 @@ function StoriesPreview({
   return (
     <figure
       aria-label="Stories and Reels preview"
-      className="relative mx-auto grid aspect-[9/16] w-full max-w-60 min-w-0 overflow-hidden rounded-xl bg-neutral-900"
+      className="relative mx-auto grid aspect-9/16 w-full max-w-60 min-w-0 overflow-hidden rounded-xl bg-neutral-900"
     >
       {/* Without a vertical version, Meta centres the main media on a plain background. */}
       <div className="absolute inset-0 flex items-center justify-center">
@@ -162,10 +212,10 @@ function StoriesPreview({
           shape={verticalMedia && format !== "carousel" ? "fill" : "feed"}
         />
       </div>
-      <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/50 to-transparent p-3">
+      <div className="absolute inset-x-0 top-0 bg-linear-to-b from-black/50 to-transparent p-3">
         <PreviewHeader inverted pageId={pageId} pageName={pageName} />
       </div>
-      <div className="absolute inset-x-0 bottom-0 grid gap-2 bg-gradient-to-t from-black/60 to-transparent p-3 pt-8">
+      <div className="absolute inset-x-0 bottom-0 grid gap-2 bg-linear-to-t from-black/60 to-transparent p-3 pt-8">
         <p className="line-clamp-2 text-xs wrap-anywhere text-white">{primaryText}</p>
         <PreviewButton callToAction={callToAction} wide />
       </div>

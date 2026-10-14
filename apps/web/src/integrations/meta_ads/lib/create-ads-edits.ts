@@ -32,8 +32,16 @@ export function blankToNull(value: string): string | null {
 
 // The ad keys that override a shared setting, keyed by the shared value each overrides.
 const SHARED_KEYS = ["link", "call_to_action", "url_tags", "status"] as const
+type SharedKey = (typeof SHARED_KEYS)[number]
 
-function sharedValue(args: CreateAdsArgs, key: (typeof SHARED_KEYS)[number]): string | null {
+/** The shared settings an ad can hold its own copy of; a post keeps its own URLs. */
+export function overrideKeys(ad: AdDraft): readonly SharedKey[] {
+  if (ad.post?.source === "facebook") return ["status"]
+  if (ad.post) return ["link", "call_to_action", "status"]
+  return SHARED_KEYS
+}
+
+function sharedValue(args: CreateAdsArgs, key: SharedKey): string | null {
   if (key === "link") return args.shared.link
   if (key === "call_to_action") return args.shared.callToAction ?? DEFAULT_BUTTON
   if (key === "url_tags") return args.shared.urlTags
@@ -53,8 +61,9 @@ export function setFollowsShared(args: CreateAdsArgs, index: number, on: boolean
       Object.entries(ad).filter(([key]) => !(SHARED_KEYS as readonly string[]).includes(key))
     )
     if (on) return rest
+    const draft = args.ads[index]
     const own = Object.fromEntries(
-      SHARED_KEYS.flatMap((key) => {
+      (draft ? overrideKeys(draft) : SHARED_KEYS).flatMap((key) => {
         const value = sharedValue(args, key)
         return value === null ? [] : [[key, value]]
       })

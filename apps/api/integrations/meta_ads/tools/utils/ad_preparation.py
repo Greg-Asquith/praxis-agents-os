@@ -22,7 +22,9 @@ from ...entity_resolvers.utils import MAX_EXACT_REFERENCES, account_currency, as
 from ...operations.create_ads import ad_body, dry_run_ads
 from ...operations.creatives import CreativeImage, CreativeMedia, CreativeVideo
 from ...operations.list_assets import (
+    POST_SCAN_LIMIT,
     VIDEO_SCAN_LIMIT,
+    find_post_references,
     find_video_references,
     preferred_thumbnail,
     read_image_references,
@@ -134,6 +136,7 @@ async def prepare(
     live = await _live_ad_sets(client, entry, request)
     check_designs(request, live)
     await _check_identities(client, entry, request)
+    await _check_posts(client, entry, request)
     media = await _library_media(client, entry, request)
     sources = await resolve_sources(deps, request)
     pinned = {
@@ -216,6 +219,30 @@ async def _check_identities(
         raise ModelRetry(
             f"The Instagram account {account.label} isn't connected to this ad account. "
             "Choose one from meta_ads_list_assets."
+        )
+
+
+async def _check_posts(
+    client: MetaAdsClient, entry: ResolvedContextEntry, request: MetaAdsCreateAdsRequest
+) -> None:
+    """Re-reads each post through its Page or Instagram account, and its boost eligibility."""
+    posts = {design.post.key: design.post for design in request.ads if design.post is not None}
+    if not posts:
+        return
+    read_args = asset_read_args(entry, ReportResultBudget("meta_ads", _OPERATION))
+    live = {
+        post.key: post
+        for post in await find_post_references(client, **read_args, references=list(posts.values()))
+    }
+    if set(posts) - set(live):
+        raise ModelRetry(
+            f"A post isn't among the {POST_SCAN_LIMIT} most recent posts of a Page or Instagram "
+            "account this ad account can use. List posts with meta_ads_list_assets and choose "
+            "again."
+        )
+    if any(post.boostable is False for post in live.values()):
+        raise ModelRetry(
+            "Meta no longer allows an Instagram post to run as an ad. Choose another post."
         )
 
 

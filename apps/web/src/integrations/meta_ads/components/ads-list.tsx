@@ -112,7 +112,7 @@ export function AdsList({
       <ul className="divide-y overflow-hidden rounded-lg border">
         {page.items.map((row) => {
           const current = row.ad.index === selected
-          const media = row.ad.media ?? row.ad.cards[0]?.media ?? null
+          const media = row.ad.media ?? row.ad.cards[0]?.media ?? row.ad.post?.picture ?? null
           const adSets = row.ad.adSetIds.map((id) => adSetName(args, id))
           return (
             <li key={row.ad.index}>

@@ -49,8 +49,9 @@ export function MediaFrame({
 }
 
 function LibraryPicture({ media }: { media: PreviewMedia }) {
-  // Library media is keyed image:HASH or video:ID; the preview route takes image_HASH or video_ID.
-  const groups = /^(?<type>image|video):(?<id>[A-Za-z0-9]+)$/.exec(media.key)?.groups
+  // Library media is keyed image:HASH or video:ID, and posts post:ID or igpost:ACCOUNT_ID; the
+  // preview route takes the same with an underscore, such as image_HASH.
+  const groups = /^(?<type>image|video|post|igpost):(?<id>[A-Za-z0-9_]+)$/.exec(media.key)?.groups
   const { loading, src: content } = useMetaPicture(
     groups ? `${String(groups["type"])}_${String(groups["id"])}` : null
   )

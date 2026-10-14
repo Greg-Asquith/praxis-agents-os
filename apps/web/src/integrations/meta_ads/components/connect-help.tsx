@@ -22,11 +22,11 @@ export function MetaAdsConnectHelp() {
           body: (
             <>
               Choose your agency&apos;s Meta app, set expiry to Never, and select ads_read,
-              ads_management, business_management, pages_show_list, pages_manage_ads, and
-              pages_read_engagement. Use a System User token, not a personal user token. After
-              assigning more accounts, click <strong>Look for New Resources</strong> without
-              replacing the token. To revoke it, use Business Settings &gt; Users &gt; System users
-              in Meta.
+              ads_management, business_management, pages_show_list, pages_manage_ads,
+              pages_read_engagement, and instagram_basic. Use a System User token, not a personal
+              user token. After assigning more accounts, click{" "}
+              <strong>Look for New Resources</strong> without replacing the token. To revoke it, use
+              Business Settings &gt; Users &gt; System users in Meta.
             </>
           ),
           icon: KeyRoundIcon,

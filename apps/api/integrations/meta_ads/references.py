@@ -2,6 +2,7 @@
 
 """Scoped references to objects, media, and identities in one selected ad account."""
 
+from datetime import datetime
 from typing import ClassVar, Literal, Self
 
 from pydantic import Field, model_validator
@@ -16,9 +17,12 @@ from .models import (
     MetaAdsMediaUrl,
     MetaAdsObjectBudget,
     MetaAdsPlacements,
+    MetaAdsPostSource,
     MetaAdsPromotedObject,
     MetaAdsText,
 )
+
+MAX_POST_EXCERPT = 300
 
 
 class _MetaAdsAccountReference(ScopedEntityReference):
@@ -165,6 +169,50 @@ class MetaAdsInstagramAccountReference(_MetaAdsAccountReference):
     @property
     def provider_entity_id(self) -> str:
         return self.instagram_user_id
+
+
+class MetaAdsPostReference(_MetaAdsAccountReference):
+    """Published Facebook Page post or Instagram post that can run as an ad unchanged."""
+
+    entity_kind: Literal["meta_ads_post"] = "meta_ads_post"
+    source: MetaAdsPostSource
+    # Facebook posts are {page_id}_{post_id}; Instagram posts are the media ID.
+    post_id: str = Field(pattern=r"^[0-9]{1,64}(?:_[0-9]{1,64})?$")
+    page_id: MetaAdsId | None = Field(default=None, description="Set for Facebook posts.")
+    instagram_user_id: MetaAdsId | None = Field(
+        default=None, description="Set for Instagram posts."
+    )
+    # The post's opening text, which other people may have written. Only resolvers fill it,
+    # for the approval card; asset lists return it beside the reference as untrusted content.
+    excerpt: str | None = Field(default=None, max_length=MAX_POST_EXCERPT)
+    thumbnail_url: MetaAdsMediaUrl | None = None
+    permalink_url: MetaAdsMediaUrl | None = None
+    created_time: datetime | None = None
+    # Instagram only: whether Meta allows the post to run as an ad.
+    boostable: bool | None = None
+
+    identity_fields: ClassVar[tuple[str, ...]] = (
+        *_MetaAdsAccountReference.identity_fields,
+        "source",
+        "post_id",
+    )
+
+    @model_validator(mode="after")
+    def _one_owner(self) -> Self:
+        if self.source == "facebook":
+            if self.page_id is None or not self.post_id.startswith(f"{self.page_id}_"):
+                raise ValueError("Facebook posts need their Page's ID.")
+        elif self.instagram_user_id is None or "_" in self.post_id:
+            raise ValueError("Instagram posts need their account's ID.")
+        return self
+
+    @property
+    def provider_entity_id(self) -> str:
+        return self.post_id
+
+    @property
+    def key(self) -> str:
+        return f"{self.source}:{self.post_id}"
 
 
 type MetaAdsObjectReference = MetaAdsCampaignReference | MetaAdsAdSetReference | MetaAdsAdReference

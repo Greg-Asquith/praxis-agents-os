@@ -1,5 +1,6 @@
 // apps/web/src/integrations/meta_ads/lib/assets.ts
 
+import { nodeText } from "@/components/tool-ui/untrusted-node"
 import { isNonEmptyString, isOneOf, isRecord, isStringArray } from "@/lib/guards"
 
 export const ASSET_SECTIONS = [
@@ -12,6 +13,7 @@ export const ASSET_SECTIONS = [
   },
   { kind: "images", title: "Images", noun: "images", detail: "Size" },
   { kind: "videos", title: "Videos", noun: "videos", detail: "Status" },
+  { kind: "posts", title: "Posts", noun: "posts", detail: "Text" },
 ] as const
 
 export type AssetSectionConfig = (typeof ASSET_SECTIONS)[number]
@@ -31,6 +33,8 @@ export type MetaAdsAssets = Record<AssetKind, MetaAdsAsset[]> & {
 
 const KINDS: readonly AssetKind[] = ASSET_SECTIONS.map((section) => section.kind)
 const KIND_SET: ReadonlySet<AssetKind> = new Set(KINDS)
+// Posts are listed only when asked for.
+const DEFAULT_KINDS: readonly AssetKind[] = KINDS.filter((kind) => kind !== "posts")
 const NOUN_LIST = new Intl.ListFormat("en", { type: "disjunction" })
 const STATUS_LABELS: Record<string, string> = {
   ready: "Ready",
@@ -47,6 +51,7 @@ export function parseMetaAdsAssets(value: unknown): MetaAdsAssets | null {
     instagram_accounts: [],
     images: [],
     videos: [],
+    posts: [],
     truncated,
     notes: value["notes"],
   }
@@ -66,13 +71,14 @@ export function parseMetaAdsAssets(value: unknown): MetaAdsAssets | null {
 export function emptyAssetsMessage(result: MetaAdsAssets, args: unknown): string {
   if (result.notes.length > 0) return "Meta Ads returned nothing else for this ad account."
   const requested: readonly string[] =
-    isRecord(args) && isStringArray(args["kinds"]) ? args["kinds"] : KINDS
+    isRecord(args) && isStringArray(args["kinds"]) ? args["kinds"] : DEFAULT_KINDS
   const names = ASSET_SECTIONS.filter((section) => requested.includes(section.kind))
   if (names.length === 0) return "Meta Ads returned nothing for this ad account."
   return `No ${NOUN_LIST.format(names.map((section) => section.noun))} found in this ad account.`
 }
 
 function parseAsset(value: unknown, kind: AssetKind): MetaAdsAsset | null {
+  if (kind === "posts") return isRecord(value) ? parsePost(value) : null
   if (!isRecord(value) || !isNonEmptyString(value["label"])) return null
   const id = {
     pages: value["page_id"],
@@ -82,6 +88,16 @@ function parseAsset(value: unknown, kind: AssetKind): MetaAdsAsset | null {
   }[kind]
   if (!isNonEmptyString(id)) return null
   return { id, label: value["label"], detail: assetDetail(value, kind) }
+}
+
+// A post's text is untrusted: it renders as plain text, like every other table cell.
+function parsePost(value: Record<string, unknown>): MetaAdsAsset | null {
+  const post = value["post"]
+  if (!isRecord(post) || !isNonEmptyString(post["label"]) || !isNonEmptyString(post["post_id"]))
+    return null
+  const label =
+    post["boostable"] === false ? `${post["label"]} (can't run as an ad)` : post["label"]
+  return { id: post["post_id"], label, detail: nodeText(value["text"]) }
 }
 
 function assetDetail(value: Record<string, unknown>, kind: AssetKind): string | null {

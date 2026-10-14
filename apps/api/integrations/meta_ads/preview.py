@@ -20,13 +20,15 @@ from .tools.utils.client import meta_ads_client_for_connection
 PREVIEW_OPERATION = "preview_meta_ads_media"
 _REF = re.compile(
     r"image_(?P<image>[A-Za-z0-9]{1,64})|video_(?P<video>[0-9]{1,128})|page_(?P<page>[0-9]{1,128})"
+    # A Facebook post is {page_id}_{post_id}; an Instagram post is {instagram_user_id}_{media_id}.
+    r"|post_(?P<post>[0-9]{1,64}_[0-9]{1,64})|igpost_(?P<igpost>[0-9]{1,64}_[0-9]{1,64})"
 )
 
 
 async def fetch_media_preview(
     db: AsyncSession, connection: IntegrationConnection, request: IntegrationPreviewRequest
 ) -> IntegrationPreviewPayload:
-    """Returns a library image, video thumbnail, or Page picture for the conversation's ad account."""
+    """Returns a picture of library media, a Page, or a post for the conversation's ad account."""
     # Resolve at call time so tests can replace the operation without rebuilding the plugin.
     from .operations.preview_media import MetaAdsPreviewType, preview_media
 

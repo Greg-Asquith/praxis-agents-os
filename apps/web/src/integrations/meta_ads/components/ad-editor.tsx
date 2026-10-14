@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { AdPreview, type AdPlacement } from "@/integrations/meta_ads/components/ad-preview"
+import {
+  AdPreview,
+  PostAdPreview,
+  type AdPlacement,
+} from "@/integrations/meta_ads/components/ad-preview"
 import { CarouselCards } from "@/integrations/meta_ads/components/carousel-cards"
 import { DeliveryOverrides } from "@/integrations/meta_ads/components/delivery-overrides"
 import { EditorField, LabelledInput } from "@/integrations/meta_ads/components/editor-fields"
@@ -23,6 +27,7 @@ import {
   FORMAT_LABELS,
   RECOMMENDED_LENGTHS,
   type CreateAdsArgs,
+  type PostPreview,
 } from "@/integrations/meta_ads/lib/create-ads-args"
 import {
   checksFor,
@@ -72,19 +77,37 @@ export function AdEditor({
   ])
   // A check for a field this format doesn't show still needs to be seen.
   const unplaced = row.checks.filter((check) => !shownFields.has(check.field))
+  const heading = (
+    <AdHeading
+      args={args}
+      checks={checksFor(row, "name")}
+      count={count}
+      disabled={disabled}
+      id={`${id}-name`}
+      onRename={(value) => {
+        edit("name", value)
+      }}
+      row={row}
+    />
+  )
+  if (ad.post) {
+    return (
+      <div className="@container grid min-w-0 gap-3">
+        {heading}
+        <PostAdBody
+          args={args}
+          disabled={disabled}
+          id={id}
+          onEdit={onEdit}
+          post={ad.post}
+          row={row}
+        />
+      </div>
+    )
+  }
   return (
     <div className="@container grid min-w-0 gap-3">
-      <AdHeading
-        args={args}
-        checks={checksFor(row, "name")}
-        count={count}
-        disabled={disabled}
-        id={`${id}-name`}
-        onRename={(value) => {
-          edit("name", value)
-        }}
-        row={row}
-      />
+      {heading}
       <div className="grid min-w-0 gap-4 @xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="grid min-w-0 content-start gap-2">
           <Tabs
@@ -217,6 +240,44 @@ export function AdEditor({
   )
 }
 
+/** An existing post: shown as it runs, with only the settings a post takes. */
+function PostAdBody({
+  args,
+  disabled,
+  id,
+  onEdit,
+  post,
+  row,
+}: {
+  args: CreateAdsArgs
+  disabled: boolean
+  id: string
+  onEdit: (ads: EditedAds) => void
+  post: PostPreview
+  row: AdRow
+}) {
+  const instagram = post.source === "instagram"
+  return (
+    <div className="grid min-w-0 gap-4 @xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+      <PostAdPreview
+        callToAction={row.callToAction}
+        domain={instagram ? urlDomain(row.link) : null}
+        identityName={(instagram ? args.instagramName : null) ?? args.pageName}
+        pageId={instagram ? null : args.pageId}
+        post={post}
+      />
+      <div className="grid min-w-0 content-start gap-3">
+        <CheckMessages checks={checksFor(row, "post")} />
+        <p className="text-muted-foreground text-sm">
+          This post runs as it is, with its own text and media. To change them, ask the agent for a
+          new ad instead.
+        </p>
+        <DeliveryOverrides args={args} disabled={disabled} id={id} onEdit={onEdit} row={row} />
+      </div>
+    </div>
+  )
+}
+
 /** Changes an image or video ad's media, and adds, changes, or removes its vertical version. */
 function MediaActions({
   args,
@@ -326,7 +387,9 @@ function AdHeading({
         <CheckMark check={row.check} checks={row.checks} />
       </div>
       <p className="text-muted-foreground text-xs wrap-anywhere">
-        {FORMAT_LABELS[row.ad.format]}
+        {row.ad.post
+          ? `${row.ad.post.source === "facebook" ? "Facebook" : "Instagram"} post`
+          : FORMAT_LABELS[row.ad.format]}
         {row.ad.verticalMedia ? " with a vertical version" : ""} in {adSets.join(", ")}
       </p>
       <CheckMessages checks={checks} />

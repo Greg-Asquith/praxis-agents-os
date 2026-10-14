@@ -13,10 +13,13 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
-type MetaAdsAdFormat = Literal["image", "video", "carousel"]
+type MetaAdsAdFormat = Literal["image", "video", "carousel", "existing_post"]
 type MetaAdsChangeGroup = Literal["media", "text", "added"]
 
+# Formats that build a new creative. An existing post runs unchanged, so of the offered
+# changes it takes only those that leave the post as it is.
 _ALL: frozenset[MetaAdsAdFormat] = frozenset({"image", "video", "carousel"})
+_WITH_POSTS: frozenset[MetaAdsAdFormat] = _ALL | {"existing_post"}
 _IMAGE: frozenset[MetaAdsAdFormat] = frozenset({"image"})
 _VIDEO: frozenset[MetaAdsAdFormat] = frozenset({"video"})
 _CAROUSEL: frozenset[MetaAdsAdFormat] = frozenset({"carousel"})
@@ -199,7 +202,7 @@ AUTOMATIC_CHANGES: tuple[MetaAdsAutomaticChange, ...] = (
         "Multi-advertiser ads",
         "Shows your ad next to ads from other businesses.",
         "added",
-        _ALL,
+        _WITH_POSTS,
         offered=True,
     ),
     MetaAdsAutomaticChange(

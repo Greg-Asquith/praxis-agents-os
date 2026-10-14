@@ -134,6 +134,7 @@ export function assetsData(overrides: Record<string, unknown> = {}) {
       },
     ],
     videos: [],
+    posts: [],
     truncated: [],
     notes: [],
     ...overrides,

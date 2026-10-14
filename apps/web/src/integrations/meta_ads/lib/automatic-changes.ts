@@ -2,7 +2,7 @@
 
 import { isNonEmptyString, isOneOf, isRecord, isStringArray } from "@/lib/guards"
 
-export type AdFormat = "image" | "video" | "carousel"
+export type AdFormat = "image" | "video" | "carousel" | "existing_post"
 type ChangeGroup = "media" | "text" | "added"
 
 export type AutomaticChange = {
@@ -14,13 +14,19 @@ export type AutomaticChange = {
   formats: AdFormat[]
 }
 
-export const AD_FORMATS: ReadonlySet<AdFormat> = new Set(["image", "video", "carousel"])
+export const AD_FORMATS: ReadonlySet<AdFormat> = new Set([
+  "image",
+  "video",
+  "carousel",
+  "existing_post",
+])
 export const CHANGE_GROUPS: readonly ChangeGroup[] = ["media", "text", "added"]
 const GROUPS: ReadonlySet<ChangeGroup> = new Set(CHANGE_GROUPS)
 const FORMAT_NAMES: Record<AdFormat, string> = {
   image: "image ads",
   video: "video ads",
   carousel: "carousels",
+  existing_post: "existing posts",
 }
 
 export const CHANGE_GROUP_TITLES: Record<ChangeGroup, string> = {

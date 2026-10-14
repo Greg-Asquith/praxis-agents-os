@@ -20,6 +20,7 @@ from ...references import (
     MetaAdsInstagramAccountReference,
     MetaAdsMediaReference,
     MetaAdsPageReference,
+    MetaAdsPostReference,
 )
 from .media import MetaAdsMediaUpload
 from .objects import MetaAdsReviewState
@@ -56,6 +57,18 @@ _SHARED_DEFAULTS: dict[str, str | None] = {
     "status": "paused",
 }
 _MAX_HASHTAGS = 30
+# What an existing post fixes, because the post is the creative.
+_FIXED_BY_POST = (
+    "primary_text",
+    "headline",
+    "description",
+    "media",
+    "vertical_media",
+    "thumbnail",
+    "cards",
+    "disclaimer",
+    "url_tags",
+)
 UPLOAD_VIDEOS_FIRST = (
     "Upload videos with meta_ads_upload_media first, then use the media reference it returns."
 )
@@ -154,7 +167,12 @@ class MetaAdsAdDesign(MetaAdsStrictModel):
     name: Annotated[str, Field(max_length=MAX_NAME_LENGTH), AfterValidator(_ad_text)]
     ad_sets: list[MetaAdsAdSetReference] = Field(min_length=1, max_length=MAX_AD_SETS)
     format: MetaAdsAdFormat
-    primary_text: Annotated[str, Field(max_length=2200), AfterValidator(_primary_text)]
+    primary_text: Annotated[str, Field(max_length=2200), AfterValidator(_primary_text)] | None = (
+        Field(default=None, description="Required for every format but existing_post.")
+    )
+    post: MetaAdsPostReference | None = Field(
+        default=None, description="For existing_post: the post from meta_ads_list_assets."
+    )
     headline: MetaAdsHeadline | None = Field(
         default=None, description="Required for image and video ads."
     )
@@ -187,6 +205,12 @@ class MetaAdsAdDesign(MetaAdsStrictModel):
 
     @model_validator(mode="after")
     def _fits_format(self) -> Self:
+        if self.format == "existing_post":
+            return self._fits_post()
+        if self.post is not None:
+            raise ValueError("Only existing_post ads take a post.")
+        if self.primary_text is None:
+            raise ValueError("Write the primary text.")
         if self.format == "carousel":
             if self.cards is None or self.media or self.vertical_media or self.thumbnail:
                 raise ValueError(
@@ -213,6 +237,21 @@ class MetaAdsAdDesign(MetaAdsStrictModel):
             self.format != "video" or media_kind(self.thumbnail) != "image"
         ):
             raise ValueError("Only video ads take a thumbnail, and it must be an image.")
+        return self
+
+    def _fits_post(self) -> Self:
+        if self.post is None:
+            raise ValueError("Existing post ads need a post from meta_ads_list_assets.")
+        if fixed := [name for name in _FIXED_BY_POST if getattr(self, name) is not None]:
+            raise ValueError(
+                f"An existing post runs as it is, so leave out {', '.join(fixed)}. To change "
+                "its text or media, create an image, video, or carousel ad instead."
+            )
+        if self.post.source == "facebook" and (self.link or self.call_to_action):
+            raise ValueError(
+                "A Facebook post keeps its own link and button; only Instagram posts take "
+                "link and call_to_action."
+            )
         return self
 
 
@@ -249,13 +288,15 @@ class MetaAdsCreateAdsRequest(MetaAdsStrictModel):
             total += len(ids)
             ad_sets.update(ids)
             accounts.update(ad_set.account_id for ad_set in design.ad_sets)
+            if design.post is not None:
+                accounts.add(design.post.account_id)
             for item in design_media(design):
                 if isinstance(item, FileReference):
                     files.add(str(item.entity_id))
                 else:
                     accounts.add(item.account_id)
         if len(accounts) != 1:
-            raise ValueError("Use one ad account for the Page, ad sets, and media.")
+            raise ValueError("Use one ad account for the Page, ad sets, media, and posts.")
         if total > MAX_ADS:
             raise ValueError(f"Create at most {MAX_ADS} ads, counting each ad set an ad goes in.")
         if len(ad_sets) > MAX_AD_SETS:

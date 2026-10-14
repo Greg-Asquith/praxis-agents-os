@@ -86,6 +86,12 @@ class CreativeDisclaimer:
 
 
 @dataclass(frozen=True, slots=True)
+class CreativePost:
+    source: Literal["facebook", "instagram"]
+    post_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class CreativeInput:
     """Everything one creative needs, with shared values and overrides already applied."""
 
@@ -103,10 +109,13 @@ class CreativeInput:
     cards: tuple[CreativeCard, ...]
     enabled: frozenset[str]
     disclaimer: CreativeDisclaimer | None = None
+    post: CreativePost | None = None
 
 
 def creative_spec(item: CreativeInput) -> dict[str, Any]:
     """Builds the inline creative for `POST /act_{id}/ads`."""
+    if item.post is not None:
+        return _post_spec(item, item.post)
     story: dict[str, Any] = {"page_id": item.page_id}
     if item.instagram_user_id:
         story["instagram_user_id"] = item.instagram_user_id
@@ -127,6 +136,24 @@ def creative_spec(item: CreativeInput) -> dict[str, Any]:
         if item.disclaimer.url:
             disclaimer["url"] = item.disclaimer.url
         spec["ad_disclaimer_spec"] = disclaimer
+    return spec
+
+
+def _post_spec(item: CreativeInput, post: CreativePost) -> dict[str, Any]:
+    """Runs a published post as it is; only an Instagram post takes a button and link.
+
+    Unverified: no live account has confirmed which automatic-change values Meta accepts here.
+    """
+    spec = _automatic_change_values(item)
+    if post.source == "facebook":
+        return {"object_story_id": post.post_id, **spec}
+    spec.update(
+        source_instagram_media_id=post.post_id,
+        instagram_user_id=item.instagram_user_id,
+        object_id=item.page_id,
+    )
+    if item.link:
+        spec["call_to_action"] = _call_to_action(item.call_to_action, item.link)
     return spec
 
 

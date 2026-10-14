@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from ..creative_features import enabled_for, has_ai_generated
 from ..models import MetaAdsPlacements, MetaAdsPromotedObject
+from ..references import MetaAdsPostReference
 from ..tools.schemas.ads import (
     APP_BUTTONS,
     DEFAULT_BUTTON,
@@ -101,11 +102,16 @@ def ad_set_problem(ad_set: AdSetFacts) -> str | None:
 def design_problem(
     design: MetaAdsAdDesign, request: MetaAdsCreateAdsRequest, ad_sets: Mapping[str, AdSetFacts]
 ) -> str | None:
-    """Checks one design against its ad sets: buttons, links, and vertical versions."""
-    if design.link is None and request.link is None:
+    """Checks one design against its ad sets: posts, buttons, links, and vertical versions."""
+    if design.post is not None:
+        if problem := _post_problem(design.post, request):
+            return problem
+    elif design.link is None and request.link is None:
         return "Add a link, for every ad or for this ad."
     buttons = [design.call_to_action or request.call_to_action or DEFAULT_BUTTON]
     buttons.extend(card.call_to_action for card in design.cards or () if card.call_to_action)
+    if not _takes_button(design, request):
+        buttons = []
     for reference in design.ad_sets:
         ad_set = ad_sets.get(reference.adset_id)
         if ad_set is None:
@@ -121,6 +127,34 @@ def design_problem(
                 "has no effect. Remove it or choose another ad set."
             )
     return None
+
+
+def _post_problem(post: MetaAdsPostReference, request: MetaAdsCreateAdsRequest) -> str | None:
+    """Checks the post runs as the call's Page or Instagram account, and can run as an ad."""
+    if post.source == "facebook":
+        if post.page_id != request.page.page_id:
+            return (
+                f"This post is from another Page. Choose a post from {request.page.label}, or "
+                "set the Page to the one that published it."
+            )
+        return None
+    if request.instagram_account is None:
+        return "Add the Instagram account that published this post."
+    if post.instagram_user_id != request.instagram_account.instagram_user_id:
+        return (
+            f"This post is from another Instagram account. Choose a post from "
+            f"{request.instagram_account.label}, or change the Instagram account."
+        )
+    if post.boostable is False:
+        return "Meta doesn't allow this Instagram post to run as an ad. Choose another post."
+    return None
+
+
+def _takes_button(design: MetaAdsAdDesign, request: MetaAdsCreateAdsRequest) -> bool:
+    """A Facebook post keeps its own button; an Instagram post takes one only with a link."""
+    if design.post is None:
+        return True
+    return design.post.source == "instagram" and bool(design.link or request.link)
 
 
 def plan_ads(
@@ -140,6 +174,9 @@ def plan_ads(
             name = design.name.strip()
             if len(design.ad_sets) > 1:
                 name = f"{name} | {adset_name}"
+            post = design.post
+            # A Facebook post keeps its own link, and no post takes URL tags.
+            facebook_post = post is not None and post.source == "facebook"
             planned.append(
                 PlannedAd(
                     index=len(planned),
@@ -149,11 +186,11 @@ def plan_ads(
                     adset_name=adset_name,
                     name=name[:_MAX_AD_NAME],
                     status="paused" if forced_off else (design.status or request.status),
-                    link=design.link or request.link or "",
+                    link="" if facebook_post else design.link or request.link or "",
                     call_to_action=design.call_to_action
                     or request.call_to_action
                     or DEFAULT_BUTTON,
-                    url_tags=design.url_tags or request.url_tags,
+                    url_tags=None if post else design.url_tags or request.url_tags,
                     enabled=enabled_for(design.format, enabled),
                 )
             )
@@ -177,7 +214,7 @@ def duplicate_name(planned: Sequence[PlannedAd], existing: Mapping[str, set[str]
 def _text_fingerprints(design: MetaAdsAdDesign) -> dict[str, str]:
     """Returns SHA-256 hashes of the ad's public text, so evidence never holds the text."""
     values = {
-        "primary_text": design.primary_text,
+        "primary_text": design.primary_text or None,
         "headline": design.headline,
         "description": design.description,
         "cards": json.dumps(
@@ -203,7 +240,8 @@ def intent_fields(ad: PlannedAd) -> dict[str, str]:
         "adset_id": ad.adset_id,
         "format": ad.design.format,
         "status": ad.status,
-        "call_to_action": ad.call_to_action,
+        # Only a post without a link goes without a button.
+        "call_to_action": ad.call_to_action if ad.link else "none",
         "link_domain": (urlsplit(ad.link).hostname or "").lower(),
         "media": media[:1000],
         "automatic_changes": ",".join(sorted(ad.enabled)) or "none",
@@ -211,7 +249,10 @@ def intent_fields(ad: PlannedAd) -> dict[str, str]:
     }
     if ad.design.vertical_media is not None:
         fields["vertical"] = "true"
-    return fields
+    if ad.design.post is not None:
+        fields["post"] = ad.design.post.key
+    # A post ad has no media, and a Facebook post no link.
+    return {key: value for key, value in fields.items() if value}
 
 
 def _shows_stories(placements: MetaAdsPlacements | None) -> bool:

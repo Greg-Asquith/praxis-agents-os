@@ -28,8 +28,10 @@ from integrations.meta_ads.operations.plan_ads import design_problem, plan_ads
 from integrations.meta_ads.operations.upload_media import MediaUpload
 from integrations.meta_ads.references import (
     MetaAdsAdSetReference,
+    MetaAdsInstagramAccountReference,
     MetaAdsMediaReference,
     MetaAdsPageReference,
+    MetaAdsPostReference,
 )
 from integrations.meta_ads.tools import create_ads as tool_module
 from integrations.meta_ads.tools.create_ads import meta_ads_create_ads
@@ -46,6 +48,20 @@ from tests.integrations.meta_ads.support import FakeGraph, context_entry, obj, s
 PAGE = MetaAdsPageReference(account_id="123", page_id="11", label="Acme")
 IMAGE = MetaAdsMediaReference(
     account_id="123", media_type="image", image_hash="abc", label="hero.jpg", media_status="ready"
+)
+INSTAGRAM = MetaAdsInstagramAccountReference(
+    account_id="123", instagram_user_id="22", label="@acme"
+)
+FACEBOOK_POST = MetaAdsPostReference(
+    account_id="123", source="facebook", post_id="11_500", page_id="11", label="Facebook post"
+)
+INSTAGRAM_POST = MetaAdsPostReference(
+    account_id="123",
+    source="instagram",
+    post_id="700",
+    instagram_user_id="22",
+    label="Instagram post",
+    boostable=True,
 )
 
 
@@ -76,8 +92,9 @@ def request(*designs: MetaAdsAdDesign, **values) -> MetaAdsCreateAdsRequest:
 class AdsGraph(FakeGraph):
     """Serves the account's assets and ads edge, and creates ads from posted creatives."""
 
-    def __init__(self, objects, *, behaviour=None, turn_on=None):
+    def __init__(self, objects, *, behaviour=None, turn_on=None, boostable=True):
         super().__init__(objects)
+        self.boostable = boostable
         self.behaviour = behaviour or {}
         self.turn_on = turn_on or {}
         self.creates: list[dict[str, str]] = []
@@ -94,6 +111,15 @@ class AdsGraph(FakeGraph):
             "connected_instagram_accounts": [{"id": "22", "username": "acme"}],
             "adimages": [{"hash": "abc", "name": "hero.jpg", "status": "ACTIVE"}],
             "advideos": [],
+            "published_posts": [{"id": "11_500", "message": "Our best day"}],
+            "media": [
+                {
+                    "id": "700",
+                    "caption": "Summer drop",
+                    "media_type": "IMAGE",
+                    "boost_eligibility_info": {"eligible_to_boost": self.boostable},
+                }
+            ],
         }.get(edge)
         if rows is not None:
             return httpx2.Response(200, json={"data": rows}, request=request)
@@ -401,6 +427,53 @@ def test_a_vertical_version_needs_an_ad_set_that_shows_stories_or_reels():
 
     assert "Stories or Reels" in design_problem(call.ads[0], call, {"8": feed_only})
     assert design_problem(call.ads[0], call, {"8": stories}) is None
+
+
+def post_design(post: MetaAdsPostReference, **values) -> MetaAdsAdDesign:
+    return MetaAdsAdDesign(
+        name="Best post", ad_sets=[ad_set("8")], format="existing_post", post=post, **values
+    )
+
+
+async def test_a_facebook_post_is_checked_then_created_as_it_is(monkeypatch):
+    graph = AdsGraph(live_ad_sets("8"))
+
+    entry, _audit = await run_tool(monkeypatch, graph, request(post_design(FACEBOOK_POST)))
+
+    assert entry["status"] == "success"
+    assert graph.dry_run_names == ["Best post"]
+    (form,) = graph.creates
+    assert json.loads(form["creative"])["object_story_id"] == "11_500"
+
+
+async def test_an_instagram_post_meta_wont_boost_is_refused_before_any_create(monkeypatch):
+    graph = AdsGraph(live_ad_sets("8"), boostable=False)
+    call = request(post_design(INSTAGRAM_POST), instagram_account=INSTAGRAM)
+
+    entry, _audit = await run_tool(monkeypatch, graph, call)
+
+    assert entry["status"] == "error"
+    assert "no longer allows" in entry["error_message"]
+    assert graph.creates == [] and graph.dry_run_names == []
+
+
+async def test_a_post_its_page_didnt_publish_is_refused(monkeypatch):
+    graph = AdsGraph(live_ad_sets("8"))
+    # The Page is the account's own, but this post isn't among its posts.
+    elsewhere = FACEBOOK_POST.model_copy(update={"post_id": "11_999"})
+
+    entry, _audit = await run_tool(monkeypatch, graph, request(post_design(elsewhere)))
+
+    assert entry["status"] == "error"
+    assert "isn't among the 100 most recent posts" in entry["error_message"]
+    assert graph.creates == [] and graph.dry_run_names == []
+
+
+def test_an_existing_post_refuses_text_and_media():
+    with pytest.raises(ValidationError, match="runs as it is"):
+        post_design(FACEBOOK_POST, primary_text="New words", media=IMAGE)
+    with pytest.raises(ValidationError, match="keeps its own link"):
+        post_design(FACEBOOK_POST, link="https://shop.example.com/")
 
 
 def test_links_must_be_https_without_credentials():

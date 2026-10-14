@@ -43,7 +43,8 @@ The setup requests these permissions:
 | `business_management` | Business asset access |
 | `pages_show_list` | Listing the Pages an ad account can advertise as |
 | `pages_manage_ads` | Advertising as a Page |
-| `pages_read_engagement` | Page data for ads |
+| `pages_read_engagement` | Page data for ads, and Page posts to run as ads |
+| `instagram_basic` | Instagram posts to run as ads |
 
 Pages are read per ad account by `meta_ads_list_assets`; they aren't
 connection resources. An empty discovery result
@@ -338,7 +339,7 @@ conversion lists use the same internal retained-result Files and preview
 expansion as Insights. Audits include counts, object type, and status filters;
 they exclude provider names, amounts, name filters, and conversion metadata.
 
-## Pages, Instagram accounts, and media
+## Pages, Instagram accounts, media, and posts
 
 `meta_ads_list_assets` lists, for every selected account, what new ads can
 use. It reads each kind separately, so a refusal on one kind doesn't hide
@@ -350,9 +351,11 @@ the others:
 | `instagram_accounts` | `act_{id}/connected_instagram_accounts` | Up to 100 accounts, as `MetaAdsInstagramAccountReference` (`meta_ads_instagram_account`) with `instagram_user_id` |
 | `images` | `act_{id}/adimages` | Up to 50 active images, as `MetaAdsMediaReference` with `image_hash` |
 | `videos` | `act_{id}/advideos` | Up to 50 videos, as `MetaAdsMediaReference` with `video_id` and `media_status` |
+| `posts` | `{page_id}/published_posts` and `{ig_user_id}/media` | The 25 most recent posts of each of the first 5 Pages and 5 Instagram accounts, as `MetaAdsPostReference` (`meta_ads_post`) beside each post's text |
 
 The tool reads automatically, supports Code Mode, and uses retained results.
-`kinds` limits the read. Each kind follows up to 5 pages of results, and
+`kinds` limits the read; without it, every kind but `posts` is read,
+because posts take a read per Page and Instagram account. Each kind follows up to 5 pages of results, and
 deleted or internal images don't count towards the 50, so they can't hide
 active images behind them. `truncated` names kinds with more items than were
 returned. A Graph permission error on a kind becomes a note naming what to
@@ -375,12 +378,29 @@ shows names, sizes, and IDs without thumbnails. Instagram usernames outside
 Instagram's rules are shown by ID. Names are typed, bounded text, like other
 Meta names.
 
-Ad creation registers search and resolve lookups for all three references.
-Search matches labels across the selected accounts' assets. Resolve re-reads
-each reference through its own account: Pages and Instagram accounts from the
-same edges, images by hash, and videos by scanning the account's 500 most
-recent videos, because the video edge has no ID filter and reading a video
-directly doesn't prove which account owns it. An older video isn't found.
+A post reference holds its `source` (`facebook` or `instagram`), its
+`post_id` (`{page_id}_{post_id}` for Facebook, the media ID for Instagram),
+the Page or Instagram account that published it, its created time, a
+thumbnail on Meta's hosts, a `permalink_url` kept only when it is HTTPS on
+`facebook.com` or `instagram.com`, and, for Instagram, `boostable` from
+`boost_eligibility_info.eligible_to_boost`. The post's text is written by
+whoever posted it, so the list returns it beside the reference as an
+untrusted-content node (`text`), at most 300 characters, and leaves the
+reference's `excerpt` empty. A Graph permission error on posts becomes a note
+naming `pages_read_engagement` and `instagram_basic`. Reading Page posts with
+a system user token, and partner-shared Pages in particular, hasn't been
+checked against a live account.
+
+Ad creation registers search and resolve lookups for all four references.
+Search matches labels across the selected accounts' assets, and posts by
+their text as well. Resolve re-reads each reference through its own account:
+Pages and Instagram accounts from the same edges, images by hash, videos by
+scanning the account's 500 most recent videos, and posts by scanning the 100
+most recent posts of their Page or Instagram account, which must be one the
+account can use. The video edge has no ID filter, and reading a video or an
+Instagram post directly doesn't prove which account owns it, so an older
+video or post isn't found. Resolved posts carry `excerpt` for the approval
+card.
 
 ## Writes
 
@@ -662,10 +682,10 @@ that hasn't been checked against a live account; see
 
 ### Creating ads
 
-`meta_ads_create_ads` creates up to 50 image, video, or carousel ads in
-existing ad sets of one ad account, in one approval. It is approval-only,
-supports Code Mode, and has a 300-second timeout. Ads from existing posts are
-pending. To reuse an existing ad's creative, see [Copying ads](#copying-ads).
+`meta_ads_create_ads` creates up to 50 image, video, carousel, or existing
+post ads in existing ad sets of one ad account, in one approval. It is
+approval-only, supports Code Mode, and has a 300-second timeout. To reuse an
+existing ad's creative, see [Copying ads](#copying-ads).
 
 #### Arguments
 
@@ -680,9 +700,10 @@ each ad set, because a lost create is found again by its name.
 | `image` | `media` (library image or workspace image File), `headline`, optional `vertical_media` |
 | `video` | `media` (ready library video), `headline`, optional `vertical_media` and `thumbnail` image |
 | `carousel` | 2-10 `cards`, each with different media, a `headline`, and optional description, link, button, and video thumbnail |
+| `existing_post` | `post` from `meta_ads_list_assets(kinds=["posts"])`; an Instagram post can also take `link` and `call_to_action` |
 
-Every design has `primary_text` (1-2,200 characters, at most 30 hashtags)
-and an optional `disclaimer` (terms and conditions, offer details, or
+Every design but `existing_post` has `primary_text` (1-2,200 characters, at
+most 30 hashtags) and an optional `disclaimer` (terms and conditions, offer details, or
 disclaimer). Image and video designs also take an optional `description`;
 a carousel takes its headline and description on each card. `page`,
 `instagram_account`,
@@ -690,6 +711,15 @@ a carousel takes its headline and description on each card. `page`,
 a design sets its own; the Page and Instagram account apply to the whole
 call. Links are `https` without credentials, at most 1,000 characters. URL
 tags are ASCII `key=value` pairs joined by `&`, at most 512 characters.
+
+An existing post runs unchanged: the post is the creative, so primary text,
+headline, description, media, vertical version, thumbnail, cards,
+disclaimer, and URL tags are rejected before approval. A Facebook post keeps
+its own link and button and ignores the shared ones. An Instagram post uses
+its own or the shared link, with the button, when there is one, and runs
+without a button otherwise. A Facebook post must come from the call's Page;
+an Instagram post needs the call's Instagram account to be the one that
+published it.
 
 Up to 20 distinct workspace image Files can be used as media directly; they
 follow the [media upload](#uploading-media) policy and are uploaded with the
@@ -713,7 +743,9 @@ The tool rejects, so the agent can correct the call:
 - a vertical version in an ad set whose manual placements include neither
   Stories nor Reels;
 - videos that aren't ready, and Files that are videos or fail the media
-  policy.
+  policy;
+- a post from another Page or Instagram account than the call's, and an
+  Instagram post whose reference says Meta won't boost it.
 
 #### Automatic changes
 
@@ -733,6 +765,16 @@ it on, along with these explicit values:
   scrapes nothing from the landing page and adds no default button. An empty
   description is sent as a single space, as Meta's asset feed guide
   documents.
+
+An existing post sends `object_story_id` for a Facebook post, or
+`source_instagram_media_id` with `instagram_user_id` and the Page as
+`object_id` for an Instagram post, plus a top-level `call_to_action` when an
+Instagram post has a link. It sends the full feature list,
+`contextual_multi_ads`, `destination_spec`, and `format_transformation_spec`,
+all off, and nothing image- or carousel-specific. Of the offered changes,
+only multi-advertiser ads applies to posts, because it leaves the post as it
+is. Placement customisation doesn't work with existing posts, so a post has
+no vertical version.
 
 Single images keep `use_flexible_image_aspect_ratio` true, so they show at
 their own shape. Catalogue features, site links, catalogue items, and keys
@@ -755,8 +797,10 @@ button are the same in both.
 #### Approval display
 
 Approval display hydrates the Page, Instagram account, every ad set (status,
-delivery status, goal, budget, and placements), and library media through
-their resolvers, and pins each workspace File's revision. It also records the
+delivery status, goal, budget, and placements), library media, and posts
+through their resolvers, and pins each workspace File's revision. Posts are
+keyed `{source}:{post_id}` under `_posts`, so the card shows Meta's own text,
+picture, and link rather than the agent's copy of the reference. It also records the
 offered automatic changes and the button lists.
 
 The card shows the shared settings (Page, Instagram account, link, CTA
@@ -785,7 +829,12 @@ to the revision shown; one chosen on the card is uploaded as it is when the
 operator approves. Errors that Meta would reject block approval, as do
 repeated card media, fewer than 2 or more than 10 cards, and an unready video;
 recommended lengths, narrow images, a vertical version that isn't 9:16, and
-more than 5 cards are warnings. Meta's automatic changes sit in a collapsed
+more than 5 cards are warnings. An existing post shows as it runs: its text as plain text, its
+picture, a link to the post on Facebook or Instagram, and, for an Instagram
+post with a link, the button. It has no text or media fields, and offers only
+the shared settings a post takes: status, and for an Instagram post the link
+and button. A post the server couldn't find for the account, or an Instagram
+post Meta won't boost, blocks approval. Meta's automatic changes sit in a collapsed
 advanced section with a switch each. Library media and the Page picture show
 through the media preview below; workspace Files show their pinned revision,
 or their current one when chosen on the card.
@@ -800,15 +849,18 @@ card look them up.
 #### Media previews
 
 The `meta_ads_media` preview kind shows a library image or video picture, or
-a Page's picture, in the browser, which the content security policy otherwise blocks. The web
+a Page's or a post's picture, in the browser, which the content security policy otherwise blocks. The web
 client asks the conversation preview route
 (`/integrations/conversations/{id}/previews/meta_ads_media`) with the ad
-account ID as `scope_id` and a `ref` of `image_<hash>`, `video_<id>`, or `page_<id>`; the
+account ID as `scope_id` and a `ref` of `image_<hash>`, `video_<id>`, `page_<id>`,
+`post_<page_id>_<post_id>`, or `igpost_<instagram_user_id>_<media_id>`; the
 connection route is refused, because a preview needs the conversation's ad
 account. An image is read by hash from the account's `adimages` edge. A video
 must be among the account's 500 most recent videos, so a video from another
 account can't be shown through this one, and its preferred thumbnail is used.
 A Page must be one the account can promote, and its 128-pixel picture is used.
+A post must be among the 100 most recent posts of a Page or Instagram account
+the account can use, and its picture is used.
 
 The API downloads the picture only from Meta's HTTPS hosts, without
 following redirects or sending the token, up to 8 MB; an image over that
@@ -829,8 +881,9 @@ After approval, the tool:
 2. Re-reads the ad sets and applies the checks above to their live state,
    confirms the account can still advertise as the Page and Instagram
    account, confirms library images exist in this account and videos are
-   among its recent videos and ready, reads video thumbnails, and checks
-   each File is in the workspace. A File the agent proposed must still match
+   among its recent videos and ready, re-reads each post through its Page or
+   Instagram account and refuses an Instagram post Meta won't boost, reads
+   video thumbnails, and checks each File is in the workspace. A File the agent proposed must still match
    its pin.
 3. Keeps each ad set within Meta's 50 ads, counting every ad that isn't
    deleted, and refuses a name already used in the ad set.
@@ -839,14 +892,14 @@ After approval, the tool:
    stops the call before anything is created and names each rejected ad
    with Meta's reason.
 5. Records pending evidence: per ad, its ad set, format, status, button,
-   link domain, media IDs, automatic changes turned on, and a SHA-256 of
-   each text field. Ad text and full links aren't recorded.
+   link domain, media IDs or post, automatic changes turned on, and a
+   SHA-256 of each text field. Ad text and full links aren't recorded.
 6. Uploads workspace Files as in [media upload](#uploading-media). An ad
    whose image didn't upload fails without being sent. Ads with uploaded
    images are then checked with a dry run; a rejection stops every ad.
 7. Creates each ad with `POST /act_{id}/ads`, the creative inline, status
    always explicit, and `conversion_domain` when the ad set's promoted
-   object has a pixel. Four run at a time, and later ads continue after a
+   object has a pixel and the ad has a link. Four run at a time, and later ads continue after a
    failure. A create is sent once. A lost or unclear reply is settled by one
    lookup for the name in the ad set, created since the attempt: one match
    counts as created with `recovered=true`; otherwise the ad is unverified.
@@ -877,7 +930,8 @@ ad to Meta's preview and Ads Manager, and closes with the next step, such as
 turning ads on once Meta approves them.
 
 The dry-run and create replies, the feature keys and explicit values Meta
-accepts per format, the empty description, the placement rules, preferred
+accepts per format, including for existing posts, reading posts and their
+boost eligibility, the empty description, the placement rules, preferred
 thumbnails as `image_url`, the preview link field and host, review feedback
 shapes, and timing for 50 ads are documented or expected behaviour that
 hasn't been checked against a live account; see
@@ -1094,6 +1148,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
 | Ad creation | `validate_only` on `/ads` with an inline creative, and whether one design in two ad sets shares a creative; every `creative_features_spec` key and explicit value per format read back off, and each offered change read back on; the empty description; placement rules for an image and a video; `/thumbnails` URIs as `image_url`; `ACTIVE` ads entering review then delivering and `PAUSED` staying off; `preview_shareable_link` and its host; `ad_review_feedback` shape; 50 ads with 20 inline images within the timeout |
+| Existing post ads | `published_posts` and Instagram `media` fields with a system user token, for an owned and a partner-shared Page; `boost_eligibility_info` shape; `validate_only` on `/ads` with `object_story_id` and with `source_instagram_media_id`; which automatic-change keys and explicit values Meta accepts on a post, read back off |
 | Ad copies | `/copies` reply shape (`copied_ad_id`), `NO_RENAME` keeping the source name, `status_option` read back, whether `/copies` accepts `validate_only`, whether a copy shares its source's creative, and whether Meta turns on automatic changes the source didn't have |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 

@@ -13,6 +13,7 @@ import {
   type AdStatus,
   type Card,
   type CreateAdsArgs,
+  type PostPreview,
   type PreviewMedia,
 } from "@/integrations/meta_ads/lib/create-ads-args"
 import { formatCurrencyAmount, pluralize } from "@/lib/format"
@@ -29,6 +30,7 @@ export type CheckField =
   | "call_to_action"
   | "media"
   | "cards"
+  | "post"
 export type AdCheck = { level: CheckLevel; message: string; field: CheckField }
 export type RowCheck = "ready" | "warning" | "error"
 
@@ -67,14 +69,18 @@ export function adRows(args: CreateAdsArgs): AdRow[] {
     const objectives = ad.adSetIds.map((id) => args.adSets.get(id)?.objective ?? null)
     const buttons = allowedButtons(args.buttons, objectives)
     const callToAction = ad.overrides.callToAction ?? args.shared.callToAction ?? DEFAULT_BUTTON
-    const link = ad.overrides.link ?? args.shared.link
-    const urlTags = ad.overrides.urlTags ?? args.shared.urlTags
-    const checks = [
-      ...textChecks(ad),
-      ...linkChecks(ad, link, urlTags),
-      ...buttonChecks(ad, callToAction, buttons),
-      ...mediaChecks(ad),
-    ]
+    // A Facebook post keeps its own link, and no post takes URL tags.
+    const link = ad.post?.source === "facebook" ? null : (ad.overrides.link ?? args.shared.link)
+    const urlTags = ad.post ? null : (ad.overrides.urlTags ?? args.shared.urlTags)
+    const checks = ad.post
+      ? [...nameChecks(ad), ...postChecks(ad.post, link, callToAction, buttons)]
+      : [
+          ...nameChecks(ad),
+          ...textChecks(ad),
+          ...linkChecks(ad, link, urlTags),
+          ...buttonChecks(ad, callToAction, buttons),
+          ...mediaChecks(ad),
+        ]
     if ((names.get(ad.name.trim().toLocaleLowerCase()) ?? 0) > 1) {
       checks.unshift({ level: "error", message: "Another ad has the same name.", field: "name" })
     }
@@ -92,14 +98,50 @@ export function adRows(args: CreateAdsArgs): AdRow[] {
   })
 }
 
+function nameChecks(ad: AdDraft): AdCheck[] {
+  const error = (message: string): AdCheck => ({ level: "error", message, field: "name" })
+  if (!ad.name.trim()) return [error("Give the ad a name.")]
+  return ad.name.length > NAME_LIMIT
+    ? [error(`Names can be at most ${String(NAME_LIMIT)} characters.`)]
+    : []
+}
+
+/** A post runs as it is; only an Instagram post with a link takes a button. */
+function postChecks(
+  post: PostPreview,
+  link: string | null,
+  callToAction: string,
+  buttons: readonly string[]
+): AdCheck[] {
+  const error = (message: string, field: CheckField = "post"): AdCheck => ({
+    level: "error",
+    message,
+    field,
+  })
+  if (!post.found) {
+    return [
+      error("Meta didn't return this post for this ad account. Ask the agent to choose it again."),
+    ]
+  }
+  if (post.boostable === false) {
+    return [error("Meta doesn't allow this Instagram post to run as an ad.")]
+  }
+  if (!link) return []
+  if (!isHttpsLink(link)) return [error("Use a full https:// link.", "link")]
+  return buttons.includes(callToAction)
+    ? []
+    : [
+        error(
+          `${fieldOptionLabel(callToAction)} isn't available for this ad's goal.`,
+          "call_to_action"
+        ),
+      ]
+}
+
 function textChecks(ad: AdDraft): AdCheck[] {
   const checks: AdCheck[] = []
   const error = (field: CheckField, message: string) => {
     checks.push({ level: "error", message, field })
-  }
-  if (!ad.name.trim()) error("name", "Give the ad a name.")
-  if (ad.name.length > NAME_LIMIT) {
-    error("name", `Names can be at most ${String(NAME_LIMIT)} characters.`)
   }
   if (!ad.primaryText.trim()) error("primary_text", "Write the primary text.")
   if (ad.primaryText.length > PRIMARY_TEXT_LIMIT) {

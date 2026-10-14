@@ -255,6 +255,27 @@ describe("Meta Ads create ads model", () => {
     expect(broken).toMatch(/<input[^>]*aria-invalid="true"[^>]*value="not a link"/)
   })
 
+  it("renders an existing post from Meta's own read as plain text, and blocks one it lost", () => {
+    const post = {
+      version: 1,
+      entity_kind: "meta_ads_post",
+      account_id: "123",
+      source: "facebook",
+      post_id: "11_500",
+      page_id: "11",
+      label: "Facebook post",
+    }
+    const postAd = { name: "Best post", ad_sets: [adSet], format: "existing_post", post }
+    const found = {
+      "facebook:11_500": { ...post, excerpt: "<b>Our best day</b>", boostable: null },
+    }
+
+    const html = render(approval(display({ ads: [postAd], _posts: found })))
+    expect(html).toContain("&lt;b&gt;Our best day&lt;/b&gt;")
+    expect(html).not.toMatch(APPROVE_DISABLED)
+    expect(render(approval(display({ ads: [postAd], _posts: {} })))).toMatch(APPROVE_DISABLED)
+  })
+
   it("shows each ad's outcome when only some were created", () => {
     const html = render(
       metaAdsCreateAdsPresenter.render(

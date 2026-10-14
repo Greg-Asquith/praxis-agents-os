@@ -15,6 +15,7 @@ type MetaAdsMediaUrl = Annotated[str, Field(max_length=2048, pattern=r"^https://
 type MetaAdsMediaType = Literal["image", "video"]
 # Whether Meta can use the media in an ad yet; videos are processed after upload.
 type MetaAdsMediaStatus = Literal["ready", "processing", "failed"]
+type MetaAdsPostSource = Literal["facebook", "instagram"]
 
 
 class MetaAdsStrictModel(BaseModel):

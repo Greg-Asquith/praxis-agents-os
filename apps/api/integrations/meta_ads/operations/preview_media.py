@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/operations/preview_media.py
 
-"""Read one library image, video thumbnail, or Page picture from Meta's CDN as a small JPEG."""
+"""Read one library image, video thumbnail, or Page or post picture from Meta's CDN as a JPEG."""
 
 import asyncio
 import base64
@@ -16,16 +16,19 @@ from services.integrations.http import IntegrationRequestPolicy, consume_stream_
 from services.integrations.report_results import ReportResultBudget
 
 from ..client import MetaAdsClient, ad_account_path
+from ..references import MetaAdsPostReference
 from ..throttle import ensure_account_available
 from .list_assets import (
+    POST_SCAN_LIMIT,
     VIDEO_SCAN_LIMIT,
+    find_post_references,
     find_video_references,
     media_url,
     preferred_thumbnail,
     read_page_references,
 )
 
-type MetaAdsPreviewType = Literal["image", "video", "page"]
+type MetaAdsPreviewType = Literal["image", "video", "page", "post", "igpost"]
 
 _OPERATION = "preview_media"
 _MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024
@@ -57,6 +60,8 @@ async def preview_media(
             urls = await _page_urls(client, account_id=account_id, page_id=media_id)
         case "video":
             urls = await _video_urls(client, account_id=account_id, video_id=media_id)
+        case "post" | "igpost":
+            urls = await _post_urls(client, account_id=account_id, ref=media_id, kind=media_type)
     for url in urls:
         try:
             data = await _download(url, download_client)
@@ -124,6 +129,37 @@ async def _page_urls(client: MetaAdsClient, *, account_id: str, page_id: str) ->
     if page.picture_url is None:
         raise _invalid("Meta has no picture for this Page.")
     return [page.picture_url]
+
+
+async def _post_urls(
+    client: MetaAdsClient, *, account_id: str, ref: str, kind: Literal["post", "igpost"]
+) -> list[str]:
+    # Only a post of a Page or Instagram account the ad account can use.
+    owner, post_id = ref.split("_", 1)
+    facebook = kind == "post"
+    reference = MetaAdsPostReference(
+        account_id=account_id,
+        label="Post",
+        source="facebook" if facebook else "instagram",
+        post_id=ref if facebook else post_id,
+        page_id=owner if facebook else None,
+        instagram_user_id=None if facebook else owner,
+    )
+    found = await find_post_references(
+        client,
+        account_id=account_id,
+        scope_label="",
+        budget=ReportResultBudget("meta_ads", _OPERATION),
+        references=[reference],
+    )
+    if not found:
+        raise _invalid(
+            f"This post isn't among the {POST_SCAN_LIMIT} most recent posts of a Page or "
+            "Instagram account this ad account can use."
+        )
+    if found[0].thumbnail_url is None:
+        raise _invalid("Meta has no picture for this post.")
+    return [found[0].thumbnail_url]
 
 
 async def _download(url: str, client: httpx2.AsyncClient | None) -> bytes:
