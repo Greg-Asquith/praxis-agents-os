@@ -1,3 +1,5 @@
+# apps/api/services/jobs/handlers/sweep_platform_file_uploads.py
+
 """Removes expired platform staging objects and interrupted promotions."""
 
 from datetime import UTC, datetime, timedelta

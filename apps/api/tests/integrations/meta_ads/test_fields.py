@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_fields.py
+
 """Checks stable Insights field categories before and after provider reads."""
 
 import importlib

@@ -1,3 +1,5 @@
+// apps/web/tests/features/tools/api/update-tool-setting.test.ts
+
 import { afterEach, expect, it, vi } from "vitest"
 
 import { updateToolSetting } from "@/features/tools/api/update-tool-setting"

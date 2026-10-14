@@ -1,3 +1,5 @@
+# apps/api/tests/services/memories/test_memory_jobs.py
+
 """Memory embedding and expiry jobs."""
 
 import importlib

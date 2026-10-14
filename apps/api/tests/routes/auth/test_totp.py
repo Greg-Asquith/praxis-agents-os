@@ -1,3 +1,5 @@
+# apps/api/tests/routes/auth/test_totp.py
+
 """Route tests for TOTP authentication."""
 
 # ruff: noqa: S106 - inert test passwords exercise password verification

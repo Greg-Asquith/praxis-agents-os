@@ -1,3 +1,5 @@
+// apps/web/tests/lib/open-signed-resource.test.ts
+
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { SignedResourceOpenError, openSignedResource } from "@/lib/open-signed-resource"

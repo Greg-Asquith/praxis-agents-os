@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0039_add_ai_usage_occurred_index.py
+
 """Add the platform AI usage time-range index.
 
 Revision ID: core_0039

@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_client_and_discovery.py
+
 """Google Ads client routing and resource discovery contracts."""
 
 import httpx2

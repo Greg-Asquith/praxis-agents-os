@@ -1,3 +1,5 @@
+# apps/api/tests/routes/conversations/test_sharing_route.py
+
 """Cookie authentication for conversation sharing."""
 
 import pytest

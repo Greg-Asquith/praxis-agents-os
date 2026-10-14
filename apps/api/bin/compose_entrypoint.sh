@@ -1,4 +1,6 @@
 #!/bin/sh
+# apps/api/bin/compose_entrypoint.sh
+
 set -eu
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"

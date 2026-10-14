@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_credentials.py
+
 """Google Ads service-account credential contracts."""
 
 import json

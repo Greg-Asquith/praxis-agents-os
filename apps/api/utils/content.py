@@ -1,3 +1,5 @@
+# apps/api/utils/content.py
+
 """Shared ownership contracts for Skills, Knowledge, Files, and Artifacts."""
 
 from __future__ import annotations

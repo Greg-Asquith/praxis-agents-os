@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0045_index_file_folder_foreign_keys.py
+
 """Index file-folder foreign keys used by delete operations.
 
 Revision ID: core_0045

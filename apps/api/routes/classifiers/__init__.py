@@ -1,4 +1,4 @@
-# apps/api/route/classifiers/__init__.py
+# apps/api/routes/classifiers/__init__.py
 
 """Workspace classifier routes."""
 

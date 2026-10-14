@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_http_retries.py
+
 """Retry-After handling and typed provider HTTP failures."""
 
 import asyncio

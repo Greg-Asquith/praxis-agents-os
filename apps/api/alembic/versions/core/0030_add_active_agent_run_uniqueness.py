@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0030_add_active_agent_run_uniqueness.py
+
 """enforce one active agent run per conversation
 
 Revision ID: core_0030

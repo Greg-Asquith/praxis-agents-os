@@ -1,3 +1,5 @@
+# apps/api/tests/workers/test_drain_mode.py
+
 """Run-to-completion worker lifecycle tests."""
 
 import asyncio

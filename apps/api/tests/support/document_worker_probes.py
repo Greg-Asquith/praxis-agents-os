@@ -1,3 +1,5 @@
+# apps/api/tests/support/document_worker_probes.py
+
 """Document worker handlers that probe process limits and full loads. Loaded only by tests."""
 
 import os

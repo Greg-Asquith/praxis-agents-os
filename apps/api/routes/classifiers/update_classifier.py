@@ -1,4 +1,4 @@
-# apps/api/route/classifiers/update_classifier.py
+# apps/api/routes/classifiers/update_classifier.py
 
 """Route for updating a workspace classifier."""
 

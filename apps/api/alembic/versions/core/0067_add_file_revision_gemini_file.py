@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0067_add_file_revision_gemini_file.py
+
 """Caches a revision's Gemini Files API upload.
 
 Revision ID: core_0067

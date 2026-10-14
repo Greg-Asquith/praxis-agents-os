@@ -1,3 +1,5 @@
+// apps/web/tests/components/shell/workspace-switch-navigation.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { shouldRedirectHomeForWorkspaceSwitch } from "@/components/shell/workspace-switch-navigation"

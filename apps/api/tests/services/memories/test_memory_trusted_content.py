@@ -1,3 +1,5 @@
+# apps/api/tests/services/memories/test_memory_trusted_content.py
+
 """Internal memory content remains plain trusted tool data."""
 
 from types import SimpleNamespace

@@ -1,3 +1,5 @@
+# apps/api/tests/services/platform_content/test_contracts.py
+
 """Ownership input rejection and server-derived platform management authority."""
 
 from datetime import UTC, datetime

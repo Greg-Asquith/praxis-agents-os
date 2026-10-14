@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_usage_ledger.py
+
 """End-to-end AI usage ledger scenarios across terminal run paths."""
 
 import asyncio

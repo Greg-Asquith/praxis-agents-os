@@ -1,3 +1,5 @@
+# apps/api/tests/utils/test_quickxorhash.py
+
 """QuickXorHash vectors and an independent bit-level reference."""
 
 import base64

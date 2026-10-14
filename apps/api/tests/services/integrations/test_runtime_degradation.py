@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_runtime_degradation.py
+
 """Disabled integration tools degrade saved agents without bricking runs."""
 
 import logging

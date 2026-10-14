@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/api/update-sharing.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query"

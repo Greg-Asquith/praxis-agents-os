@@ -1,3 +1,5 @@
+// apps/web/tests/components/tool-ui/approval-args.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { mergeApprovalArgs } from "@/components/tool-ui/approval-args"

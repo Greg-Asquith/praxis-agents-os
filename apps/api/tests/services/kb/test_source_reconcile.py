@@ -1,3 +1,5 @@
+# apps/api/tests/services/kb/test_source_reconcile.py
+
 """Knowledge Base refreshable-source reconciliation tests."""
 
 from datetime import UTC, datetime, timedelta

@@ -1,3 +1,5 @@
+# apps/api/tests/support/openai_images.py
+
 """Offline Images API transport shared by helper and governed scenario tests."""
 
 import base64

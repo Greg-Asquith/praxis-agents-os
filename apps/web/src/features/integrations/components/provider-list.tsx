@@ -1,3 +1,5 @@
+// apps/web/src/features/integrations/components/provider-list.tsx
+
 import { useEffect } from "react"
 import { Link } from "@tanstack/react-router"
 import { ChevronRightIcon, PlugZapIcon } from "lucide-react"

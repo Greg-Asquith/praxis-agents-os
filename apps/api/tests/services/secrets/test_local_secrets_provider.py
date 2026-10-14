@@ -1,3 +1,5 @@
+# apps/api/tests/services/secrets/test_local_secrets_provider.py
+
 """Encrypted local secrets provider behavior."""
 
 import asyncio

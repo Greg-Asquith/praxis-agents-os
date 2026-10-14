@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/google-ads/budget-assignment-refresh.test.ts
+
 import type * as ReactQuery from "@tanstack/react-query"
 import type * as EntityQueries from "@/components/tool-ui/entity-reference-queries"
 import { createElement, isValidElement, type ComponentProps } from "react"

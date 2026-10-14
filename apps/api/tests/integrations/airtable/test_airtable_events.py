@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/airtable/test_airtable_events.py
+
 """Airtable webhook verification and payload cursor behavior."""
 
 # ruff: noqa: S106 - inert secret-reference metadata in test models

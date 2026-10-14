@@ -1,3 +1,5 @@
+# apps/api/tests/services/platform_content/test_audit.py
+
 """Platform audit authority, global visibility, and rollback contracts."""
 
 from unittest.mock import AsyncMock

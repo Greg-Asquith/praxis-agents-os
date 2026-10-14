@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_link_recovery_metadata.py
+
 """Library selection recovery for optional provider URL metadata."""
 
 from unittest.mock import AsyncMock

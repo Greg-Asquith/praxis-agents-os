@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/outlook_mail/message-recovery.test.ts
+
 import { createElement, type ReactNode } from "react"
 import type * as ReactModule from "react"
 import { renderToStaticMarkup } from "react-dom/server"

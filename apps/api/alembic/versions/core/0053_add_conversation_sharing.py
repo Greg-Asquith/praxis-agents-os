@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0053_add_conversation_sharing.py
+
 """Adds deliberate workspace conversation sharing.
 
 Revision ID: core_0053

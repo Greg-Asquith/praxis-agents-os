@@ -1,3 +1,5 @@
+# .github/scripts/dependency_audit.py
+
 """Run production dependency audits with validated, expiring exceptions."""
 
 from __future__ import annotations

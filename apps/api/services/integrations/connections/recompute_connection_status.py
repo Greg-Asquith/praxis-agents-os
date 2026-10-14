@@ -1,3 +1,5 @@
+# apps/api/services/integrations/connections/recompute_connection_status.py
+
 """Derive resource-selection connection states from persisted discovery data.
 
 This is the only service that promotes a connection to active or assigns

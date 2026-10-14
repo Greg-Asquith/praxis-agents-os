@@ -1,3 +1,5 @@
+# apps/api/tests/services/audit_events/test_rollup_query_plan.py
+
 """Measured query-plan coverage for selective audit roll-up ranking."""
 
 import json

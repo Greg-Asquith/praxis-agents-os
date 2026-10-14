@@ -1,3 +1,5 @@
+# apps/api/tests/routes/meta/test_meta_routes.py
+
 """HTTP-boundary tests for authenticated metadata routes."""
 
 from httpx2 import AsyncClient

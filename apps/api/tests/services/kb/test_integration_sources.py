@@ -1,3 +1,5 @@
+# apps/api/tests/services/kb/test_integration_sources.py
+
 """Knowledge Base integration import and refresh service tests."""
 
 from collections.abc import Awaitable, Callable

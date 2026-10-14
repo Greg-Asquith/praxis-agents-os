@@ -1,4 +1,4 @@
-# apps/api/services/agent/runtime/execute/settle_interruption.py
+# apps/api/services/agents/runtime/execute/settle_interruption.py
 
 """Settles usage and human stops after execution or failure is interrupted."""
 

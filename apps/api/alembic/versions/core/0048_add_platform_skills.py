@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0048_add_platform_skills.py
+
 """Add super-admin-managed platform skills.
 
 Revision ID: core_0048

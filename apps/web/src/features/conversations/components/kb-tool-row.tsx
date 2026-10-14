@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import { Link } from "@tanstack/react-router"
-import { BookOpenIcon, LibraryIcon, LockIcon, type LucideIcon } from "lucide-react"
+import { BookOpenIcon, LibraryIcon, LockIcon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
@@ -37,7 +38,7 @@ export function KbToolRow({ activity, defaultOpen }: KbToolRowProps) {
     const state = kbPendingState(activity)
     return state ? (
       <FanOutSkeleton
-        heading={<KbToolHeading icon={state.icon}>{state.heading}</KbToolHeading>}
+        heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
         {...(state.summary ? { summary: state.summary } : {})}
       />
@@ -82,7 +83,7 @@ function SearchKnowledgeRow({ activity, defaultOpen }: KbToolRowProps) {
           ? [{ label: "Mode", summary: false, value: "Keyword matches only" }]
           : []),
       ]}
-      heading={<KbToolHeading icon={LibraryIcon}>Search Knowledge</KbToolHeading>}
+      heading={<ToolHeading icon={LibraryIcon}>Search Knowledge</ToolHeading>}
       trailing={<Badge variant="success">{countLabel}</Badge>}
     >
       <div className="grid min-w-0 gap-2">
@@ -172,7 +173,7 @@ function ReadDocumentRow({ activity, defaultOpen }: KbToolRowProps) {
           value: `${charsRead.toLocaleString()} of ${result.total_chars.toLocaleString()} characters`,
         },
       ]}
-      heading={<KbToolHeading icon={BookOpenIcon}>Read Knowledge Document</KbToolHeading>}
+      heading={<ToolHeading icon={BookOpenIcon}>Read Knowledge Document</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-3">
@@ -216,7 +217,7 @@ function KbFailureRow({ activity }: Pick<KbToolRowProps, "activity">) {
       ariaLabel={`${state.heading} ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
-      heading={<KbToolHeading icon={state.icon}>{state.heading}</KbToolHeading>}
+      heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       {activity.status === "denied" ? (
@@ -251,15 +252,6 @@ function PrivateTag() {
     <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
       <LockIcon className="size-3" />
       Private
-    </span>
-  )
-}
-
-function KbToolHeading({ children, icon: Icon }: { children: string; icon: LucideIcon }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <Icon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">{children}</span>
     </span>
   )
 }

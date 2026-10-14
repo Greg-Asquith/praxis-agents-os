@@ -1,3 +1,5 @@
+# apps/api/tests/security/test_conversation_default_sharing.py
+
 """Database-backed defaults, listing, and authority for workspace chat sharing."""
 
 from datetime import UTC, datetime, timedelta

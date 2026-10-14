@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_discovery.py
+
 """Checks account discovery and conservative write permissions."""
 
 from pathlib import Path

@@ -1,3 +1,5 @@
+# apps/api/tests/services/audit_events/test_user_events.py
+
 """User audit events retain their explicit global or workspace scope."""
 
 from fastapi import Request

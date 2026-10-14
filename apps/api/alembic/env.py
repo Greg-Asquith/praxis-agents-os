@@ -1,3 +1,5 @@
+# apps/api/alembic/env.py
+
 """Alembic environment for async SQLAlchemy migrations."""
 
 import asyncio

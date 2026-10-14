@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/outlook_mail/write-references.test.ts
+
 import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"

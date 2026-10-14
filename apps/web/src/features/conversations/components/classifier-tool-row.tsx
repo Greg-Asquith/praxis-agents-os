@@ -2,6 +2,7 @@
 
 import { SparklesIcon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
@@ -37,7 +38,7 @@ export function ClassifierToolRow({
     const count = classifierItems(activity.args)?.length ?? 0
     return (
       <FanOutSkeleton
-        heading={<ClassifierHeading label={label} />}
+        heading={<ToolHeading icon={SparklesIcon}>{label}</ToolHeading>}
         label={count > 0 ? `Classifying ${String(count)} items…` : "Classifying items…"}
         {...(args ? { summary: labelSummary(args.labels) } : {})}
       />
@@ -74,7 +75,7 @@ export function ClassifierToolRow({
           ? [{ label: "Instructions", summary: false, value: args.instructions }]
           : []),
       ]}
-      heading={<ClassifierHeading label={label} />}
+      heading={<ToolHeading icon={SparklesIcon}>{label}</ToolHeading>}
       trailing={<Badge variant="success">{String(count)} Classified</Badge>}
     >
       <DataTable
@@ -98,7 +99,7 @@ function ClassifierFailureRow({ activity, label }: { activity: ToolActivity; lab
       ariaLabel={`Classification ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[]}
-      heading={<ClassifierHeading label={label} />}
+      heading={<ToolHeading icon={SparklesIcon}>{label}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       {activity.status === "denied" ? (
@@ -129,15 +130,6 @@ function LabelDistribution({ labels, rows }: { labels: string[]; rows: { label: 
         </Badge>
       ))}
     </div>
-  )
-}
-
-function ClassifierHeading({ label }: { label: string }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <SparklesIcon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">{label}</span>
-    </span>
   )
 }
 

@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/api/get-shared-chat.test.ts
+
 import { InfiniteQueryObserver, QueryClient, QueryObserver } from "@tanstack/react-query"
 import { afterEach, expect, it, vi } from "vitest"
 

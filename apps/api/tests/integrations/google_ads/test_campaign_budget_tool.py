@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_campaign_budget_tool.py
+
 """Google Ads campaign budget action contracts."""
 
 from types import SimpleNamespace

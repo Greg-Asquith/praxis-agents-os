@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_find_in_file.py
+
 """Literal file search, byte offsets, and selected-library boundaries."""
 
 from unittest.mock import AsyncMock

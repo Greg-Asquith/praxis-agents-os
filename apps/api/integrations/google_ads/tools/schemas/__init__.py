@@ -1,3 +1,5 @@
+# apps/api/integrations/google_ads/tools/schemas/__init__.py
+
 """Operation-specific Google Ads tool-result contracts."""
 
 from .campaign_budgets import (

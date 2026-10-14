@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_native_web_search.py
+
 """Search approval edits and grounded results reach the continuing agent."""
 
 import json

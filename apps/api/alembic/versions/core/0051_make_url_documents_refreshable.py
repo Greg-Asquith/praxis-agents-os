@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0051_make_url_documents_refreshable.py
+
 """Make URL Knowledge Base documents refreshable.
 
 Revision ID: core_0051

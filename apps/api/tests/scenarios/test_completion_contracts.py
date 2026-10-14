@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_completion_contracts.py
+
 """Completion-report verdicts through the real scheduled runtime pipeline."""
 
 import pytest

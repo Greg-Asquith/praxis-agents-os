@@ -1,4 +1,4 @@
-# apps/api/services/storage/enqueue_worksapce_bucket_provisioning.py
+# apps/api/services/storage/enqueue_workspace_bucket_provisioning.py
 
 """Enqueue private storage provisioning for a newly created workspace."""
 

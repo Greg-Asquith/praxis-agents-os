@@ -1,4 +1,4 @@
-# apps/api/integraions/sharepoint/operations/write_utils.py
+# apps/api/integrations/sharepoint/operations/write_utils.py
 
 """Validation and effect evidence for SharePoint writes."""
 

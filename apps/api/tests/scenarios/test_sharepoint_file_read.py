@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_sharepoint_file_read.py
+
 """SharePoint file content crosses direct and Code Mode dispatch with provenance."""
 
 import json

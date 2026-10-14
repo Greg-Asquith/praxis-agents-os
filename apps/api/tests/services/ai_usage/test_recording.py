@@ -1,3 +1,5 @@
+# apps/api/tests/services/ai_usage/test_recording.py
+
 """Database durability, isolation, and append-only recording tests."""
 
 import asyncio

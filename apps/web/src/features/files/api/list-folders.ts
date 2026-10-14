@@ -1,4 +1,4 @@
-// apps/web/src/features/files/api/lis-folders.ts
+// apps/web/src/features/files/api/list-folders.ts
 
 import { queryOptions } from "@tanstack/react-query"
 

@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0056_add_maintenance_access_policies.py
+
 """Adds explicit maintenance access without requiring database superuser privileges.
 
 Revision ID: core_0056

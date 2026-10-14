@@ -1,3 +1,5 @@
+// apps/web/tests/features/workspaces/components/settings-tables.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"

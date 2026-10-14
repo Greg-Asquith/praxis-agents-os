@@ -1,3 +1,5 @@
+# apps/api/tests/services/classifiers/test_classifier_schemas.py
+
 """Validation tests for workspace classifier contracts."""
 
 import pytest

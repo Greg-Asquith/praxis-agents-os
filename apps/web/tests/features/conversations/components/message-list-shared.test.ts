@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/components/message-list-shared.test.ts
+
 import { SharedTranscriptContext } from "@/components/tool-ui/tool-conversation-context"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"

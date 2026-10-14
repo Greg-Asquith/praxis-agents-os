@@ -1,3 +1,5 @@
+// apps/web/eslint.config.js
+
 import js from "@eslint/js"
 import globals from "globals"
 import query from "@tanstack/eslint-plugin-query"

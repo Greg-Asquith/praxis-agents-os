@@ -1,3 +1,5 @@
+# apps/api/tests/services/kb/test_kb_models.py
+
 """Database-enforced Knowledge Base model invariants."""
 
 from datetime import UTC, datetime

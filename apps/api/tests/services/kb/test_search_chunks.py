@@ -1,3 +1,5 @@
+# apps/api/tests/services/kb/test_search_chunks.py
+
 """Knowledge-base hybrid search service tests."""
 
 from uuid import uuid4

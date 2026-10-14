@@ -1,3 +1,5 @@
+# apps/api/tests/services/ai_usage/test_domain.py
+
 """Closed AI usage domain and model alignment tests."""
 
 import re

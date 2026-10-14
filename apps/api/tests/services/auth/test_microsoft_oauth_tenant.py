@@ -1,3 +1,5 @@
+# apps/api/tests/services/auth/test_microsoft_oauth_tenant.py
+
 """Microsoft login uses the configured tenant throughout the OAuth flow."""
 
 from urllib.parse import parse_qs, urlsplit

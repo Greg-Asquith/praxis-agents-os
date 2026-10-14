@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_scoped_negative_keyword_tools.py
+
 """Google Ads campaign and ad-group negative-keyword tool contracts."""
 
 from types import SimpleNamespace

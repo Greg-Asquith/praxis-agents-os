@@ -1,4 +1,4 @@
-// apps/web/src/features/api/cope-file.ts
+// apps/web/src/features/files/api/copy-file.ts
 
 import {
   mutationOptions,

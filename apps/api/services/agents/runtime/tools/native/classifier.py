@@ -15,7 +15,6 @@ from typing import Annotated, Literal, cast
 
 from pydantic import BaseModel, Field, create_model
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
-from pydantic_ai.usage import RunUsage, UsageLimits
 
 from core.settings import settings
 from services.agents.models import build_model
@@ -47,9 +46,9 @@ from services.agents.runtime.tools.native.classifier_contract import (
     SUPPORTED_CLASSIFIER_PROVIDERS,
     ClassifierProvider,
 )
+from services.agents.runtime.tools.native.run_native_helper import run_native_helper
 from services.agents.runtime.tools.registry import runtime_tool
-from services.ai_usage.domain import PURPOSE_CLASSIFICATION, AIUsageEventData
-from services.ai_usage.run_metered_helper import run_metered_helper
+from services.ai_usage.domain import PURPOSE_CLASSIFICATION
 from utils.validation import normalize_optional_text
 
 DEFAULT_CLASSIFIER_MODELS = {
@@ -325,30 +324,13 @@ async def _run_classification_batch(
     )
     prompt = _classification_prompt(items=items, labels=labels, instructions=instructions)
 
-    async def call(usage: RunUsage):
-        return await helper.run(
-            prompt,
-            usage_limits=UsageLimits(request_limit=model_spec.max_steps),
-            usage=usage,
-        )
-
-    result = await run_metered_helper(
-        AIUsageEventData(
-            workspace_id=deps.workspace.id,
-            provider=model_spec.provider,
-            model=model_spec.model,
-            purpose=PURPOSE_CLASSIFICATION,
-            agent_id=deps.agent.id,
-            user_id=deps.user.id,
-            run_id=deps.run.id,
-            conversation_id=deps.conversation.id,
-            details={
-                **event_details,
-                "item_count": len(items),
-                "label_count": len(labels),
-            },
-        ),
-        call,
+    result = await run_native_helper(
+        deps,
+        helper,
+        prompt,
+        model_spec=model_spec,
+        purpose=PURPOSE_CLASSIFICATION,
+        details={**event_details, "item_count": len(items), "label_count": len(labels)},
     )
     raw_results = getattr(result.output, "results", None)
     return _validate_classification_results(raw_results, items=items, labels=labels)

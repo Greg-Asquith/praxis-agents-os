@@ -1,3 +1,5 @@
+# apps/api/tests/support/documents.py
+
 """Small dependency-free document fixtures for conversion tests."""
 
 import io

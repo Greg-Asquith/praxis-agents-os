@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/models/test_provider_terminal_streams.py
+
 """Qualifies provider terminal responses through the configured adapters."""
 
 import json

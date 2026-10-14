@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_interrupted_history.py
+
 """Durable transcripts after budget exhaustion, cancellation, and approval failure."""
 
 import asyncio

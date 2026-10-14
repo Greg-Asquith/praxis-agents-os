@@ -1,3 +1,5 @@
+# apps/api/tests/contract/test_entrypoint_imports.py
+
 """Clean-process import smoke test for deployed API and worker entrypoints."""
 
 import subprocess

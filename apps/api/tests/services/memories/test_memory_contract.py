@@ -1,3 +1,5 @@
+# apps/api/tests/services/memories/test_memory_contract.py
+
 """Registry schema and prompt-policy contracts."""
 
 from uuid import uuid4

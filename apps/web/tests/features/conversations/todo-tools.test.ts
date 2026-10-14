@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/todo-tools.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import type { ToolActivity } from "@/features/conversations/message-parts"

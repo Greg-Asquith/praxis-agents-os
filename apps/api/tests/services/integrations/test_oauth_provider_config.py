@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_oauth_provider_config.py
+
 """Provider-owned OAuth credentials stay isolated across Google services."""
 
 from base64 import b64encode

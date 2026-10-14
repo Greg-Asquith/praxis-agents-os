@@ -1,3 +1,5 @@
+# apps/api/tests/routes/integrations/test_credential_replacement.py
+
 """Credential replacement lifecycle, authorization, and redaction tests."""
 
 import json

@@ -1,3 +1,5 @@
+# apps/api/services/scratch/__init__.py
+
 """Agent scratch service operations."""
 
 from services.scratch.delete_scratch_entry import delete_scratch_entry

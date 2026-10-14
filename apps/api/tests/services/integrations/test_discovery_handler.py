@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_discovery_handler.py
+
 """Discovery job enqueue and terminal notification behavior."""
 
 from dataclasses import replace

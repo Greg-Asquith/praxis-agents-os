@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/hooks/approval-review-interactions.test.ts
+
 import type * as ReactModule from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { useInlineApprovals } from "@/features/conversations/hooks/use-inline-approvals"

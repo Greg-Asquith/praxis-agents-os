@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_read_operations.py
+
 """Google Ads report and provider read-operation contracts."""
 
 from types import SimpleNamespace

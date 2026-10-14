@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0022_add_agent_memories.py
+
 """add agent memories
 
 Revision ID: core_0022

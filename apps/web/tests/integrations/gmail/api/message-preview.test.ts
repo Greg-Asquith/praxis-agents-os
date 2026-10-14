@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/gmail/api/message-preview.test.ts
+
 import { afterEach, describe, expect, it } from "vitest"
 
 import { gmailMessagePreviewQueryOptions } from "@/integrations/gmail/api/message-preview"

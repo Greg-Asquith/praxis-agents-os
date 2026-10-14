@@ -1,3 +1,5 @@
+# apps/api/tests/services/documents/test_document_worker.py
+
 """Document worker process isolation, limits, and XML entity handling."""
 
 import asyncio

@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_analytics/support.py
+
 """Shared builders for Google Analytics integration tests."""
 
 from uuid import uuid4

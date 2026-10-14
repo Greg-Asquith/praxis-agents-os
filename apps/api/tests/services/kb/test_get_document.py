@@ -1,3 +1,5 @@
+# apps/api/tests/services/kb/test_get_document.py
+
 """Knowledge-base document read tests."""
 
 from uuid import uuid4

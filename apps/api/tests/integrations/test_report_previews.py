@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/test_report_previews.py
+
 """Provider report contracts preserve metadata and errors in bounded previews."""
 
 from copy import deepcopy

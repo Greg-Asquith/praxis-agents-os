@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_analytics/test_realtime_and_compatibility.py
+
 """Google Analytics realtime and compatibility tool contracts."""
 
 from types import SimpleNamespace

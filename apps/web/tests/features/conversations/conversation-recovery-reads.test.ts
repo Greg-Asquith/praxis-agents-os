@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/conversation-recovery-reads.test.ts
+
 import { environmentManager, QueryObserver } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 

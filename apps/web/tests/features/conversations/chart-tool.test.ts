@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/chart-tool.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { chartSpec } from "@/features/conversations/native-tools/chart-tool"

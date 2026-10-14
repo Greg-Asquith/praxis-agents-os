@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_microsoft_graph.py
+
 """Contract coverage for the shared Microsoft Graph engine seam."""
 
 import asyncio

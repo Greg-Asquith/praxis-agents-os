@@ -1,3 +1,5 @@
+# apps/api/tests/support/office_documents.py
+
 """Real and hostile Office files built in the test process."""
 
 import io

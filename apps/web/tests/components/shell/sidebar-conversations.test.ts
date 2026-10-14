@@ -1,3 +1,5 @@
+// apps/web/tests/components/shell/sidebar-conversations.test.ts
+
 import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { expect, it, vi } from "vitest"

@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_transcript_checkpoints.py
+
 """Completed model and tool steps survive without terminal transcript writes."""
 
 import asyncio

@@ -1,4 +1,4 @@
-# apps/api/route/classifiers/get_classifier.py
+# apps/api/routes/classifiers/get_classifier.py
 
 """Route for reading a workspace classifier."""
 

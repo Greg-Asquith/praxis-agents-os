@@ -1,3 +1,5 @@
+# apps/api/services/secrets/delete_secret.py
+
 """Delete a secret reference and audit only its reference identity."""
 
 from uuid import UUID

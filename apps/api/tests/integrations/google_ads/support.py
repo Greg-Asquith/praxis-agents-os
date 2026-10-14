@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/support.py
+
 """Shared fakes and builders for Google Ads integration tests."""
 
 from typing import Any

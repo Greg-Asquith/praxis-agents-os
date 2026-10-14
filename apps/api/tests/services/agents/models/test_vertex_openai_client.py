@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/models/test_vertex_openai_client.py
+
 """Partner transport authentication, request construction, and lifecycle."""
 
 import asyncio

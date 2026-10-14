@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_credentials.py
+
 """Checks secret resolution and credential revocation before requests."""
 
 import hashlib

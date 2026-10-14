@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0043_add_ai_usage_code_execution_purpose.py
+
 """Add code execution to the AI usage purpose vocabulary.
 
 Revision ID: core_0043

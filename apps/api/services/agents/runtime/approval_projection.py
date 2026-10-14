@@ -1,3 +1,5 @@
+# apps/api/services/agents/runtime/approval_projection.py
+
 """Project validated direct and delegated saved proposals into reviewable leaves."""
 
 from collections.abc import Mapping

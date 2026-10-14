@@ -1,3 +1,5 @@
+# apps/api/tests/services/memories/test_memory_lifecycle.py
+
 """Memory updates and archival preserve lifecycle invariants."""
 
 from datetime import UTC, datetime, timedelta

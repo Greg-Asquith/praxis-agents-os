@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0068_add_ai_usage_video_purposes.py
+
 """Add video understanding, generation, and transcription usage purposes.
 
 Revision ID: core_0068

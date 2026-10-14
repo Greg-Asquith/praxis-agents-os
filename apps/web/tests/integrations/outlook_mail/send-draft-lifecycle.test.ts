@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/outlook_mail/send-draft-lifecycle.test.ts
+
 import { createElement, type MouseEvent } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeAll, describe, expect, it, vi } from "vitest"

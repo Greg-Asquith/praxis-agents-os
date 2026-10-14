@@ -1,3 +1,5 @@
+# apps/api/services/agents/runtime/approval_identity.py
+
 """Derives approval identities from saved suspensions without changing native IDs."""
 
 import hashlib

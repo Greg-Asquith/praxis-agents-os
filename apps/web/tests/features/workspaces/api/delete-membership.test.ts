@@ -1,3 +1,5 @@
+// apps/web/tests/features/workspaces/api/delete-membership.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 

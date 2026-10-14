@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0064_add_agent_subagents.py
+
 """Adds the per-agent sub-agents setting, on for built-in agents.
 
 Revision ID: core_0064

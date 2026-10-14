@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/components/web-fetch-results.ts
+// apps/web/src/features/conversations/components/web-fetch-result.ts
 
 import { safeHttpUrl } from "@/components/tool-ui/field-resolution"
 import { nodeText } from "@/components/tool-ui/untrusted-node"

@@ -1,3 +1,5 @@
+# apps/api/tests/routes/integrations/conftest.py
+
 """Integration-route fixtures with suite-local provider registration."""
 
 from collections.abc import AsyncIterator, Iterator

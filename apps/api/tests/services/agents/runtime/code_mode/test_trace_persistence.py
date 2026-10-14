@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/code_mode/test_trace_persistence.py
+
 """Persistence contract for settled code-mode nested traces."""
 
 from types import SimpleNamespace

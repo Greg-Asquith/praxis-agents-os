@@ -1,3 +1,5 @@
+// apps/web/tests/features/knowledge/components/platform-knowledge-upload-state.test.ts
+
 import { afterEach, expect, it, vi } from "vitest"
 
 import { waitForPlatformKnowledgeUpload } from "@/features/knowledge/components/platform-knowledge-upload-state"

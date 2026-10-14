@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0062_drop_agent_code_mode_flag.py
+
 """Drops the per-agent Code Mode flag; every agent can run workflows.
 
 Revision ID: core_0062

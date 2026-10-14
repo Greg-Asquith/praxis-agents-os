@@ -1,3 +1,5 @@
+# apps/api/tests/integration/retrieval_eval/test_retrieval_eval.py
+
 """Gate G4 retrieval harness over one real-pipeline corpus.
 
 Tests share one seeded corpus and run in file order; corpus-mutating tests come last.

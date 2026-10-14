@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/meta-ads/ad-preview.test.ts
+
 import { createElement } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { renderToStaticMarkup } from "react-dom/server"

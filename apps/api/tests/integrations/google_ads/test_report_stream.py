@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_report_stream.py
+
 """Complete report streams preserve errors and reject oversized partial results."""
 
 import json

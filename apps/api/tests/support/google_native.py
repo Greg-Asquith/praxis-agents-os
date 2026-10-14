@@ -1,3 +1,5 @@
+# apps/api/tests/support/google_native.py
+
 """Offline Google transport with real SDK clients and model adapters."""
 
 import base64

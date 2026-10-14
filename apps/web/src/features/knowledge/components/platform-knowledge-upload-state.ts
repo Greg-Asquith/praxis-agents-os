@@ -1,3 +1,5 @@
+// apps/web/src/features/knowledge/components/platform-knowledge-upload-state.ts
+
 import type { WorkspaceFile } from "@/features/files/types"
 import { isFileProcessing } from "@/features/files/processing"
 

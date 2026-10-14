@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/live-activity-visibility.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { shouldShowLiveActivity } from "@/features/conversations/live-activity-visibility"

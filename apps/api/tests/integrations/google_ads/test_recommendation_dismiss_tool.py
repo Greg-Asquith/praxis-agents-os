@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_recommendation_dismiss_tool.py
+
 """Google Ads recommendation dismissal contracts and exact mutation evidence."""
 
 from types import SimpleNamespace

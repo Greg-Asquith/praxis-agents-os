@@ -1,3 +1,5 @@
+// apps/web/tests/features/integrations/api-key-connect-form-model.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { validateApiKeyConnectForm } from "@/features/integrations/components/api-key-connect-form-model"

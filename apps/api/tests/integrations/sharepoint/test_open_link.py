@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_open_link.py
+
 """Link resolution, library boundaries, and connection-level request limits."""
 
 from dataclasses import replace

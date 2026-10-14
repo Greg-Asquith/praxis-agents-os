@@ -1,4 +1,4 @@
-# apps/api/settings/code_mode.py
+# apps/api/core/settings/code_mode.py
 
 """Sandboxed code-mode execution settings."""
 

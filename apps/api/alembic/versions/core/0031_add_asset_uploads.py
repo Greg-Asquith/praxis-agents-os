@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0031_add_asset_uploads.py
+
 """add replay-safe asset upload grants
 
 Revision ID: core_0031

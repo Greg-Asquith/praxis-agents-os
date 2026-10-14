@@ -1,4 +1,4 @@
-# apps/api/route/classifiers/create_classifier.py
+# apps/api/routes/classifiers/create_classifier.py
 
 """Route for creating a workspace classifier."""
 

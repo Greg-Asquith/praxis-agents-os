@@ -1,3 +1,5 @@
+# apps/api/tests/services/conversations/test_conversation_chat_attachments.py
+
 """Tests for chat attachment plumbing in conversation send paths."""
 
 import importlib

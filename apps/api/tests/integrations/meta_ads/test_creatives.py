@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_creatives.py
+
 """Meta creative specs: every automatic change explicit, and each format mapped as Meta expects."""
 
 from integrations.meta_ads.creative_features import AUTOMATIC_CHANGES

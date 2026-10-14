@@ -1,3 +1,5 @@
+# apps/api/tests/routes/integrations/test_table_scope_routes.py
+
 """Integration table row-scope management route coverage."""
 
 import pytest

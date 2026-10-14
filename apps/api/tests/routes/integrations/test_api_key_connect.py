@@ -1,3 +1,5 @@
+# apps/api/tests/routes/integrations/test_api_key_connect.py
+
 """Security and RBAC tests for API-key connection intake."""
 
 import json

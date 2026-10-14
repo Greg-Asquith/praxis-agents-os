@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_list_assets.py
+
 """Meta asset reads: per-kind permission notes, paging, and untrusted provider values."""
 
 import httpx2

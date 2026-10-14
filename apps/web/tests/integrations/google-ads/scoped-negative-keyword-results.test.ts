@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/google-ads/scoped-negative-keyword-results.test.ts
+
 import { describe, expect, it } from "vitest"
 import {
   campaignNegativeKeywordResult,

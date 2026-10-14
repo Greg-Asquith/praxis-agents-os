@@ -1,3 +1,5 @@
+# apps/api/tests/services/ai_usage/test_platform_metering.py
+
 """Platform ingestion admission, ownership, and durable metering tests."""
 
 import asyncio

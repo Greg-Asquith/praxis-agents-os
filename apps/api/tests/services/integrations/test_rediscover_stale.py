@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_rediscover_stale.py
+
 """Periodic stale resource re-discovery."""
 
 from datetime import UTC, datetime, timedelta

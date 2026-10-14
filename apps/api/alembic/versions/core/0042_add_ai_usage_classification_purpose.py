@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0042_add_ai_usage_classification_purpose.py
+
 """Add classification to the AI usage purpose vocabulary.
 
 Revision ID: core_0042

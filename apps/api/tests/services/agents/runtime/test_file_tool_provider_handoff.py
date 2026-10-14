@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/test_file_tool_provider_handoff.py
+
 """Offline provider-mapping coverage for rich file tool results."""
 
 from io import BytesIO

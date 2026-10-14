@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/message-parts/parse.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { runInterruptionOutcome } from "@/features/conversations/run-error-copy"

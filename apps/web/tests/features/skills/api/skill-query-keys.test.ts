@@ -1,3 +1,5 @@
+// apps/web/tests/features/skills/api/skill-query-keys.test.ts
+
 import { afterEach, describe, expect, it } from "vitest"
 
 import { skillMutationQueryKey, skillsQueryKeys } from "@/features/skills/api/list-skills"

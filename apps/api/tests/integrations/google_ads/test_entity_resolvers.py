@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_entity_resolvers.py
+
 """Google Ads entity resolver, ordering, cursor, and scope contracts."""
 
 from dataclasses import replace

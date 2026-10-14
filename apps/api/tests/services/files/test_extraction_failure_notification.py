@@ -1,3 +1,5 @@
+# apps/api/tests/services/files/test_extraction_failure_notification.py
+
 """Tests for extraction failure notifications through the job harness."""
 
 from collections.abc import Iterator

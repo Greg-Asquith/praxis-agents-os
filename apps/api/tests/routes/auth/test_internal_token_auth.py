@@ -1,3 +1,5 @@
+# apps/api/tests/routes/auth/test_internal_token_auth.py
+
 """Route tests for internal JWT bearer-token workspace confinement."""
 
 from datetime import UTC, datetime, timedelta

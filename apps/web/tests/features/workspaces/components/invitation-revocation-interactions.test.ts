@@ -1,3 +1,5 @@
+// apps/web/tests/features/workspaces/components/invitation-revocation-interactions.test.ts
+
 import type * as ReactModule from "react"
 import { isValidElement, type ReactElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"

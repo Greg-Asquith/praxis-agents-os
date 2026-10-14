@@ -5,6 +5,7 @@ import { approvalActivityIdentity } from "@/lib/tool-activity-identity"
 import { use, useEffect, useMemo, useRef, useState } from "react"
 import { Workflow } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Badge } from "@/components/ui/badge"
@@ -79,7 +80,13 @@ export function CodeModeRow({
       ? formatWorkflowModelResult(activity.result)
       : null
   if (activity.status === "running") {
-    return <FanOutSkeleton heading={<CodeModeHeading />} label="Running script…" summary={reason} />
+    return (
+      <FanOutSkeleton
+        heading={<ToolHeading icon={Workflow}>Script</ToolHeading>}
+        label="Running script…"
+        summary={reason}
+      />
+    )
   }
 
   const hiddenCount = Math.max(0, childCount - visibleChildren.length)
@@ -95,7 +102,7 @@ export function CodeModeRow({
           : []),
         { label: "Summary", value: reason },
       ]}
-      heading={<CodeModeHeading />}
+      heading={<ToolHeading icon={Workflow}>Script</ToolHeading>}
       key={pendingChildId ?? `settled:${activity.status}`}
       trailing={<WorkflowStatus activity={activity} pending={Boolean(pendingChild)} />}
     >
@@ -163,15 +170,6 @@ function formatWorkflowModelResult(value: unknown): string {
   } catch {
     return String(value)
   }
-}
-
-function CodeModeHeading() {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <Workflow className="text-muted-foreground size-4 shrink-0" />
-      <span>Script</span>
-    </span>
-  )
 }
 
 function WorkflowStatus({ activity, pending }: { activity: ToolActivity; pending: boolean }) {

@@ -1,4 +1,4 @@
-# apps/api/integrations/google_ads/entity_resolves/keyword.py
+# apps/api/integrations/google_ads/entity_resolvers/keyword.py
 
 """Google Ads positive-keyword lookup for shared runtime entity selectors."""
 

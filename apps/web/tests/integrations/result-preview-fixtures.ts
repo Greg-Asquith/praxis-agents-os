@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/result-preview-fixtures.ts
+
 import { googleAdsReportPresenter } from "@/integrations/google_ads/presenters/report"
 import { googleAnalyticsReportPresenter } from "@/integrations/google_analytics/presenters/report"
 import { googleAnalyticsRealtimePresenter } from "@/integrations/google_analytics/presenters/realtime"

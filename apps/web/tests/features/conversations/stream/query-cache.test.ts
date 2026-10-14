@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/stream/query-cache.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { expect, it } from "vitest"
 

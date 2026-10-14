@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_file_sources.py
+
 """Workspace source revision checks before approved SharePoint uploads."""
 
 import importlib

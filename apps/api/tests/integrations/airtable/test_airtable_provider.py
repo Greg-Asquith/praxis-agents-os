@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/airtable/test_airtable_provider.py
+
 """Airtable discovery and REST operation contracts."""
 
 from types import SimpleNamespace

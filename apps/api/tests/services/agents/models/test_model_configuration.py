@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/models/test_model_configuration.py
+
 """Transport-aware model settings and credential configuration."""
 
 import pytest

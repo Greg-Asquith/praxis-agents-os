@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { BrainIcon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { approvalFallbackFields } from "@/components/tool-ui/approval-fallback-fields"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
@@ -83,7 +84,7 @@ export function MemoryToolRow({
     const state = memoryPendingState(activity)
     return state ? (
       <FanOutSkeleton
-        heading={<MemoryToolHeading>{state.heading}</MemoryToolHeading>}
+        heading={<ToolHeading icon={BrainIcon}>{state.heading}</ToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
         {...(state.summary ? { summary: state.summary } : {})}
       />
@@ -128,7 +129,7 @@ function SaveMemoryRow({ activity, defaultOpen }: MemoryToolRowProps) {
           ...(result.existing_memory ? memoryDetailEntries(result.existing_memory) : []),
           { label: "Similarity", summary: false, value: formatMemoryConfidence(result.similarity) },
         ]}
-        heading={<MemoryToolHeading>Save Memory</MemoryToolHeading>}
+        heading={<ToolHeading icon={BrainIcon}>Save Memory</ToolHeading>}
         trailing={<Badge variant="warning">Not Saved</Badge>}
       >
         <div className="grid min-w-0 gap-2">
@@ -158,7 +159,7 @@ function SaveMemoryRow({ activity, defaultOpen }: MemoryToolRowProps) {
             ]
           : []),
       ]}
-      heading={<MemoryToolHeading>Save Memory</MemoryToolHeading>}
+      heading={<ToolHeading icon={BrainIcon}>Save Memory</ToolHeading>}
       trailing={
         <Badge variant="success">{result.status === "reinforced" ? "Reinforced" : "Saved"}</Badge>
       }
@@ -196,7 +197,7 @@ function SearchMemoryRow({ activity, defaultOpen }: MemoryToolRowProps) {
           ? [{ label: "Mode", summary: false, value: "Keyword matches only" }]
           : []),
       ]}
-      heading={<MemoryToolHeading>Search Memory</MemoryToolHeading>}
+      heading={<ToolHeading icon={BrainIcon}>Search Memory</ToolHeading>}
       trailing={<Badge variant="success">{countLabel}</Badge>}
     >
       <div className="grid min-w-0 gap-2">
@@ -277,7 +278,7 @@ function UpdateMemoryRow({ activity, defaultOpen }: MemoryToolRowProps) {
       ariaLabel={`Updated memory ${result.memory.title}`}
       defaultOpen={defaultOpen}
       details={memoryDetailEntries(result.memory)}
-      heading={<MemoryToolHeading>Update Memory</MemoryToolHeading>}
+      heading={<ToolHeading icon={BrainIcon}>Update Memory</ToolHeading>}
       trailing={<Badge variant="success">Updated</Badge>}
     >
       <div className="grid min-w-0 gap-2">
@@ -303,7 +304,7 @@ function ForgetMemoryRow({ activity, defaultOpen }: MemoryToolRowProps) {
       ariaLabel={`Archived memory ${result.memory.title}`}
       defaultOpen={defaultOpen}
       details={memoryDetailEntries(result.memory)}
-      heading={<MemoryToolHeading>Forget Memory</MemoryToolHeading>}
+      heading={<ToolHeading icon={BrainIcon}>Forget Memory</ToolHeading>}
       trailing={<Badge variant="secondary">Archived</Badge>}
     >
       <div className="grid min-w-0 gap-2">
@@ -332,7 +333,7 @@ function MemoryFailureRow({ activity }: Pick<MemoryToolRowProps, "activity">) {
       ariaLabel={`${state.heading} ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
-      heading={<MemoryToolHeading>{state.heading}</MemoryToolHeading>}
+      heading={<ToolHeading icon={BrainIcon}>{state.heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       {activity.status === "denied" ? (
@@ -372,15 +373,6 @@ function MemoryKindBadge({ kind }: { kind: MemoryToolSummary["kind"] }) {
     <Badge variant={kind === "core" ? "warning" : "secondary"}>
       {titleCaseToken(kind, "Memory")}
     </Badge>
-  )
-}
-
-function MemoryToolHeading({ children }: { children: string }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <BrainIcon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">{children}</span>
-    </span>
   )
 }
 

@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/sharepoint/write-locations.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeAll, describe, expect, it } from "vitest"

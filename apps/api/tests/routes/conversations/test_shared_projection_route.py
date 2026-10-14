@@ -1,3 +1,5 @@
+# apps/api/tests/routes/conversations/test_shared_projection_route.py
+
 """Verifies shared transcript HTTP bodies against persisted model messages."""
 
 from base64 import b64encode

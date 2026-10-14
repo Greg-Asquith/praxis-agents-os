@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_label_tools.py
+
 """Google Ads label reference, lookup, and action contracts."""
 
 from types import SimpleNamespace

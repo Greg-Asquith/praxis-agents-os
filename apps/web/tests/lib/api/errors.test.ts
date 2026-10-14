@@ -1,3 +1,5 @@
+// apps/web/tests/lib/api/errors.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { parseApiError } from "@/lib/api/errors"

@@ -1,3 +1,5 @@
+# apps/api/tests/services/auth/test_oauth_account_linking.py
+
 """Account-boundary invariants for OAuth login and linking."""
 
 from datetime import UTC, datetime, timedelta

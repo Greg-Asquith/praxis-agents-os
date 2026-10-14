@@ -1,4 +1,6 @@
 #!/bin/sh
+# apps/api/bin/replace_env_value.sh
+
 set -eu
 
 if [ "$#" -ne 2 ]; then

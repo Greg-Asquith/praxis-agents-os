@@ -1,3 +1,5 @@
+# apps/api/tests/services/documents/test_document_precheck.py
+
 """Zip-directory rejections that run before any Office library opens a file."""
 
 import io

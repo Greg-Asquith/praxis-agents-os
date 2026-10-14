@@ -1,3 +1,5 @@
+# apps/api/tests/security/test_workspace_default_sharing_migration.py
+
 """Verifies the workspace audience migration against PostgreSQL."""
 
 from pathlib import Path

@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_preview_media.py
+
 """Meta library media previews: account ownership, Meta-only hosts, and re-encoded images."""
 
 import base64

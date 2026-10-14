@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/test_entity_reference_fields.py
+
 """Which entity kinds a tool field lets the browser look up."""
 
 from services.agents.runtime.entity_references.service import _field_entity_kind

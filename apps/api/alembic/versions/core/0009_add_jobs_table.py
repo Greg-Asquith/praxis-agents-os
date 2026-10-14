@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0009_add_jobs_table.py
+
 """add jobs table
 
 Revision ID: core_0009

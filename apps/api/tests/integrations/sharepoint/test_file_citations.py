@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_file_citations.py
+
 """Required file citations and optional listing metadata."""
 
 import logging

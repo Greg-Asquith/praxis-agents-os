@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/bigquery/test_scope_rewrite.py
+
 """BigQuery table row-scope adapter behavior."""
 
 import pytest

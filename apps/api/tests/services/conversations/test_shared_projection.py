@@ -1,3 +1,5 @@
+# apps/api/tests/services/conversations/test_shared_projection.py
+
 """Checks ordinary shared transcript rendering and approval boundaries."""
 
 from datetime import UTC, datetime

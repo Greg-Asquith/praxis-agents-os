@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0065_replace_retired_gemini_flash_models.py
+
 """Moves saved Gemini 3.6 and 3.7 Flash selections to 3.8 Flash.
 
 Revision ID: core_0065

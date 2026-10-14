@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_insights.py
+
 """Validate report bounds, numeric rows, paging, and background recovery."""
 
 import importlib

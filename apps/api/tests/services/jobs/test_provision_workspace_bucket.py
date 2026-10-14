@@ -1,3 +1,5 @@
+# apps/api/tests/services/jobs/test_provision_workspace_bucket.py
+
 """Workspace bucket provisioning job tests."""
 
 from unittest.mock import AsyncMock

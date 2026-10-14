@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_analytics/test_client_and_discovery.py
+
 """Google Analytics REST client and property discovery contracts."""
 
 import json

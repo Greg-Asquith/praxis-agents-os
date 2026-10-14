@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0026_add_integration_table_schemas.py
+
 """add integration table schema cache
 
 Revision ID: core_0026

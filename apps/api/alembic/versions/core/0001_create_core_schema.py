@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0001_create_core_schema.py
+
 """create core schema
 
 Revision ID: core_0001

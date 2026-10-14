@@ -3,6 +3,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef } from "react"
 import { BarChart3Icon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Badge } from "@/components/ui/badge"
@@ -39,7 +40,7 @@ export function ChartToolRow({ activity }: { activity: ToolActivity }) {
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
-        heading={<ChartHeading />}
+        heading={<ToolHeading icon={BarChart3Icon}>Build Chart</ToolHeading>}
         label="Building chart…"
         summary="Preparing the chart"
       />
@@ -66,7 +67,7 @@ export function ChartToolRow({ activity }: { activity: ToolActivity }) {
           value: `${String(pointCount)} ${pluralize(pointCount, "Point")} · ${String(seriesCount)} ${pluralize(seriesCount, "Series", "Series")}`,
         },
       ]}
-      heading={<ChartHeading />}
+      heading={<ToolHeading icon={BarChart3Icon}>Build Chart</ToolHeading>}
       trailing={<Badge variant="success">Ready</Badge>}
     >
       <Suspense
@@ -83,15 +84,6 @@ export function ChartToolRow({ activity }: { activity: ToolActivity }) {
         <DataChart spec={spec} />
       </Suspense>
     </ToolResultCard>
-  )
-}
-
-function ChartHeading() {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <BarChart3Icon className="text-muted-foreground size-4 shrink-0" />
-      <span>Build Chart</span>
-    </span>
   )
 }
 

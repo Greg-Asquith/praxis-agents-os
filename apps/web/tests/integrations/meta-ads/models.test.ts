@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/meta-ads/models.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { formatDataCell } from "@/components/ui/data-table-model"

@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0047_add_hot_path_indexes.py
+
 """Add indexes for recurring worker queries and foreign keys.
 
 Revision ID: core_0047

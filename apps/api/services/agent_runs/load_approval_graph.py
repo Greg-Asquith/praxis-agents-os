@@ -1,3 +1,5 @@
+# apps/api/services/agent_runs/load_approval_graph.py
+
 """Loads the actor-scoped approval graph without changing suspended state."""
 
 from uuid import UUID

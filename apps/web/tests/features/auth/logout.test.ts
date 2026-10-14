@@ -1,3 +1,5 @@
+// apps/web/tests/features/auth/logout.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 

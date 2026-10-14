@@ -1,3 +1,5 @@
+// apps/web/tests/components/tool-ui/result-preview-query.test.ts
+
 import type * as ApiClient from "@/lib/api/client"
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"

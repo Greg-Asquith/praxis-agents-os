@@ -1,3 +1,5 @@
+// apps/web/tests/lib/full-document-redirect.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { fullDocumentRedirect } from "@/lib/full-document-redirect"

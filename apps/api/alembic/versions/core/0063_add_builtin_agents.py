@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0063_add_builtin_agents.py
+
 """Adds the built-in agent and provisions it in every existing workspace.
 
 Each provisioned agent gets a system-actor creation audit event. Downgrade keeps

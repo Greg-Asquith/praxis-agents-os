@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/models/test_partner_routing.py
+
 """Model-specific Vertex routing and publisher API behavior."""
 
 import asyncio

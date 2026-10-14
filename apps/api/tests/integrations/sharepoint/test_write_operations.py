@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_write_operations.py
+
 """SharePoint conflict handling, upload recovery, verification, and cancellation."""
 
 import asyncio

@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_accounts.py
+
 """Check live account overview fields, status labels and exact currency values."""
 
 from unittest.mock import AsyncMock

@@ -1,3 +1,5 @@
+# apps/api/tests/services/rate_limiting/test_rate_limiter.py
+
 """Tests for the PostgreSQL-backed rate limiter."""
 
 from datetime import UTC, datetime, timedelta

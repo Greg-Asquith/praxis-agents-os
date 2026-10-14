@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0012_add_scratch_entries_table.py
+
 """add scratch entries table
 
 Revision ID: core_0012

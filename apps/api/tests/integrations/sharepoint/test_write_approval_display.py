@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_write_approval_display.py
+
 """SharePoint approval destinations and private display metadata."""
 
 from dataclasses import replace

@@ -1,3 +1,5 @@
+# apps/api/services/integrations/discovery/enqueue_discovery.py
+
 """Enqueue resource discovery for an integration connection."""
 
 from sqlalchemy.ext.asyncio import AsyncSession

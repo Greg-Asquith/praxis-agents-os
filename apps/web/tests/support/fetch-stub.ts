@@ -1,3 +1,5 @@
+// apps/web/tests/support/fetch-stub.ts
+
 import { vi } from "vitest"
 
 type FetchResponder = (

@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/bigquery/test_sync_table_schemas.py
+
 """BigQuery schema-cache synchronization behavior."""
 
 from datetime import UTC, datetime, timedelta

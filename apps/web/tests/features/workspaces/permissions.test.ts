@@ -1,3 +1,5 @@
+// apps/web/tests/features/workspaces/permissions.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { canRemoveWorkspaceMembers } from "@/features/workspaces/permissions"

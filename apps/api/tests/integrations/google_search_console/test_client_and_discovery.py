@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_search_console/test_client_and_discovery.py
+
 """Google Search Console REST client and site discovery contracts."""
 
 import httpx2

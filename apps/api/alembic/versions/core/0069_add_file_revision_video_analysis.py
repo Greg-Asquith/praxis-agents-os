@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0069_add_file_revision_video_analysis.py
+
 """Stores a video revision's transcript and shot cuts.
 
 Revision ID: core_0069

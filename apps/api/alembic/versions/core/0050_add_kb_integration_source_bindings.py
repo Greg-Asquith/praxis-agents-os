@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0050_add_kb_integration_source_bindings.py
+
 """Add Knowledge Base integration source bindings.
 
 Revision ID: core_0050

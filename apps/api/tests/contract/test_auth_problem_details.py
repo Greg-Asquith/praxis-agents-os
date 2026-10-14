@@ -1,3 +1,5 @@
+# apps/api/tests/contract/test_auth_problem_details.py
+
 """Problem-details contracts for auth exceptions."""
 
 from core.exceptions.auth import AuthorizationError

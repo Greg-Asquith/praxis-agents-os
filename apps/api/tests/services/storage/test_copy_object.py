@@ -1,3 +1,5 @@
+# apps/api/tests/services/storage/test_copy_object.py
+
 """Private copy integrity, authorisation, and interruption contracts."""
 
 import asyncio

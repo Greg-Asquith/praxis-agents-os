@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/conversation-recovery-observer.test.ts
+
 import {
   environmentManager,
   focusManager,

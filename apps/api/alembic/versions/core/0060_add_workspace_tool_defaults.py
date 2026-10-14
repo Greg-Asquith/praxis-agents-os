@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0060_add_workspace_tool_defaults.py
+
 """Adds workspace tool policies and the workspace default model.
 
 Revision ID: core_0060

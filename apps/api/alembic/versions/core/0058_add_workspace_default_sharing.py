@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0058_add_workspace_default_sharing.py
+
 """Adds the workspace default audience for conversations.
 
 Revision ID: core_0058

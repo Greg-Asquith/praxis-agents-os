@@ -1,3 +1,5 @@
+# apps/api/tests/support/document_conversion_worker.py
+
 """An observable slow converter for process cancellation tests."""
 
 import os

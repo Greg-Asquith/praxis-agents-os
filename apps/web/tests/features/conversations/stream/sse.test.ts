@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/stream/sse.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { parseSseStream } from "@/features/conversations/stream/sse"

@@ -1,3 +1,5 @@
+// apps/web/src/vite-env.d.ts
+
 /* eslint-disable @typescript-eslint/consistent-type-definitions */
 /// <reference types="vite/client" />
 

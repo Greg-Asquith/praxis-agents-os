@@ -1,3 +1,5 @@
+// apps/web/tests/features/files/components/file-content-view.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"

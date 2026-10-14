@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/google-ads/negative-keyword-outcome.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"

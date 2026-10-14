@@ -1,3 +1,5 @@
+// apps/web/tests/features/auth/oauth-login.test.ts
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { startOauthLogin } from "@/features/auth/api/oauth-login"

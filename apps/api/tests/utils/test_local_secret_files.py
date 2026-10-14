@@ -1,3 +1,5 @@
+# apps/api/tests/utils/test_local_secret_files.py
+
 """Safety tests for local environment-file shell tooling."""
 
 from __future__ import annotations

@@ -9,13 +9,13 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import type { ToolApprovalDecisionControls } from "@/components/tool-ui/approval-card"
 import { ApprovalDecisionBlock } from "@/features/conversations/components/approval-decision-block"
 import {
-  DocumentHeading,
   ImageCard,
   ReadCard,
   SaveCard,
@@ -75,7 +75,7 @@ export function DocumentToolRow({
     const heading = `${RUNNING_VERBS[kind]} ${callTarget(activity, kind) ?? neutralTarget(kind)}`
     return (
       <FanOutSkeleton
-        heading={<DocumentHeading icon={KIND_ICONS[kind]}>{heading}</DocumentHeading>}
+        heading={<ToolHeading icon={KIND_ICONS[kind]}>{heading}</ToolHeading>}
         label={activity.status === "running" ? `${heading}…` : "Waiting to start…"}
       />
     )
@@ -112,7 +112,7 @@ function DeclinedRow({ activity, kind }: { activity: ToolActivity; kind: Documen
       ariaLabel={heading}
       defaultOpen
       details={target ? [{ label: "File", value: target }] : []}
-      heading={<DocumentHeading icon={KIND_ICONS[kind]}>{heading}</DocumentHeading>}
+      heading={<ToolHeading icon={KIND_ICONS[kind]}>{heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-3">

@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_models.py
+
 """Database-enforced integration model invariants."""
 
 from uuid import uuid4

@@ -1,3 +1,5 @@
+// apps/web/tests/features/files/api/platform-upload-file.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, expect, it, vi } from "vitest"
 

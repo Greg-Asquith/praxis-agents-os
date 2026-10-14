@@ -1,3 +1,5 @@
+# apps/api/tests/routes/integrations/test_connection_lifecycle_routes.py
+
 """Connection read, rename, and revoke lifecycle tests."""
 
 from importlib import import_module

@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_recompute_status.py
+
 """Selection-driven connection status recomputation."""
 
 from sqlalchemy.ext.asyncio import AsyncSession

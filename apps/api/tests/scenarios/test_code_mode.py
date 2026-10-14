@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_code_mode.py
+
 """End-to-end code-mode composition and defense-in-depth scenarios."""
 
 import asyncio

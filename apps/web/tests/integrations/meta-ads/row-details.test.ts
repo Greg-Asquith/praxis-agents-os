@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/meta-ads/row-details.test.ts
+
 import { createElement, useState, type ReactNode } from "react"
 import type * as ReactModule from "react"
 import { renderToStaticMarkup } from "react-dom/server"

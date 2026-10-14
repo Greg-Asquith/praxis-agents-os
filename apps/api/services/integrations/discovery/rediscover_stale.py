@@ -1,3 +1,5 @@
+# apps/api/services/integrations/discovery/rediscover_stale.py
+
 """Periodically refresh provider resources and permission metadata."""
 
 from datetime import UTC, datetime, timedelta

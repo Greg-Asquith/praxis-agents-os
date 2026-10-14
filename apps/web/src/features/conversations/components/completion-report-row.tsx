@@ -2,6 +2,7 @@
 
 import { ClipboardCheckIcon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +19,7 @@ export function CompletionReportRow({ activity, defaultOpen = false }: Completio
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
-        heading={<CompletionReportHeading />}
+        heading={<ToolHeading icon={ClipboardCheckIcon}>Completion Check</ToolHeading>}
         label="Checking completion…"
         summary="Preparing the completion verdict"
       />
@@ -46,7 +47,7 @@ export function CompletionReportRow({ activity, defaultOpen = false }: Completio
           value: `${String(evidenceCount)} ${pluralize(evidenceCount, "Item")}`,
         },
       ]}
-      heading={<CompletionReportHeading />}
+      heading={<ToolHeading icon={ClipboardCheckIcon}>Completion Check</ToolHeading>}
       trailing={
         <Badge variant={passed ? "success" : "destructive"}>{passed ? "Passed" : "Failed"}</Badge>
       }
@@ -69,14 +70,5 @@ export function CompletionReportRow({ activity, defaultOpen = false }: Completio
         <p className="text-muted-foreground text-sm">No supporting evidence was provided.</p>
       )}
     </ToolResultCard>
-  )
-}
-
-function CompletionReportHeading() {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <ClipboardCheckIcon className="text-muted-foreground size-4 shrink-0" />
-      <span>Completion Check</span>
-    </span>
   )
 }

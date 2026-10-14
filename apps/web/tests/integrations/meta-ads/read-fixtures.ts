@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/meta-ads/read-fixtures.ts
+
 export function accountData(overrides: Record<string, unknown> = {}) {
   return {
     name: "Shop account",

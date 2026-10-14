@@ -1,3 +1,5 @@
+# apps/api/tests/routes/integrations/test_event_receipt.py
+
 """Verification-first inbound integration event route."""
 
 # ruff: noqa: S106 - inert secret-reference metadata in test models

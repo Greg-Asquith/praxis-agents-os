@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_refresh_locking.py
+
 """Real-Postgres serialization test for rotating OAuth refresh tokens."""
 
 import asyncio

@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_native_image_generation.py
+
 """Governed native image-generation scenarios through the production runtime."""
 
 import base64

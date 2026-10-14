@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/models/test_native_image_transports.py
+
 """Image-only Vertex model construction stays outside the chat catalogue."""
 
 import base64

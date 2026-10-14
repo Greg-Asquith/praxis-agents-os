@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0021_add_conversation_summaries.py
+
 """add conversation summaries
 
 Revision ID: core_0021

@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0059_remove_skill_assignment.py
+
 """Removes per-agent skill assignment and skill favourites.
 
 Revision ID: core_0059

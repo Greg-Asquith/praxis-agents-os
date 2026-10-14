@@ -1,3 +1,5 @@
+// apps/web/tests/features/workspaces/accept-invitation-loader.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 

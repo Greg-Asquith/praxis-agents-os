@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_credential_service.py
+
 """Credential encryption, deduplication, refresh failure, and crypto-shred tests."""
 
 from dataclasses import replace

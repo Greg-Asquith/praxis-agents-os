@@ -1,4 +1,4 @@
-# apps/api/services/agent/runtime/execute/settle_failure.py
+# apps/api/services/agents/runtime/execute/settle_failure.py
 
 """Bounds ordinary failure persistence and records incomplete accounting."""
 

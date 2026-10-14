@@ -1,3 +1,5 @@
+// apps/web/tests/features/artifacts/api/platform-list-artifacts.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"

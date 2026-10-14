@@ -1,3 +1,5 @@
+// apps/web/tests/features/agents/components/agent-tool-catalog-utils.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { planBulkToolModes } from "@/features/agents/components/agent-tool-catalog-utils"

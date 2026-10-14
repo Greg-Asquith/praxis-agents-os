@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0054_add_platform_content.py
+
 """Adds platform content ownership and publication boundaries.
 
 Revision ID: core_0054

@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/components/message-list-code-mode.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { buildLiveToolActivities } from "@/features/conversations/live-tool-activities"

@@ -1,3 +1,5 @@
+# apps/api/tests/services/documents/test_document_reads.py
+
 """Document reads: structure per format, paging, streaming bounds, and table records."""
 
 import json

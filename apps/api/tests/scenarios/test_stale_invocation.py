@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_stale_invocation.py
+
 """Fences late finalisers after a separately committed continuation claim."""
 
 from types import SimpleNamespace

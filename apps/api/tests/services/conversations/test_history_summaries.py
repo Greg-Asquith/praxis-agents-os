@@ -1,3 +1,5 @@
+# apps/api/tests/services/conversations/test_history_summaries.py
+
 """Out-of-band conversation history-summary safety and lifecycle tests."""
 
 from pathlib import Path

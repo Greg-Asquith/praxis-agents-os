@@ -1,3 +1,5 @@
+# apps/api/tests/services/skills/test_platform_skill_permissions.py
+
 """Workspace editors can share skills with every workspace."""
 
 from uuid import uuid4

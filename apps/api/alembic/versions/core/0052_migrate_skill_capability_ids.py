@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0052_migrate_skill_capability_ids.py
+
 """Migrate persisted skill capability IDs.
 
 Revision ID: core_0052

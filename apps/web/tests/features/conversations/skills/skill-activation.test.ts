@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/skills/skill-activation.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import {

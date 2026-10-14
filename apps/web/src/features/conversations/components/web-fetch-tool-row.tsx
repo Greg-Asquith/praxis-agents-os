@@ -3,6 +3,7 @@
 import { LinkIcon } from "lucide-react"
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { SourceListRow } from "@/components/tool-ui/source"
@@ -22,7 +23,7 @@ export function WebFetchToolRow({
     const url = webFetchUrl(activity.args)
     return url ? (
       <FanOutSkeleton
-        heading={<WebFetchHeading />}
+        heading={<ToolHeading icon={LinkIcon}>Web Fetch</ToolHeading>}
         label={`Fetching ${url}…`}
         summary={`URL: ${url}`}
       />
@@ -49,7 +50,7 @@ export function WebFetchToolRow({
       ariaLabel={`Fetched page content from ${result.url}`}
       defaultOpen={defaultOpen}
       details={details}
-      heading={<WebFetchHeading />}
+      heading={<ToolHeading icon={LinkIcon}>Web Fetch</ToolHeading>}
       trailing={<Badge variant="success">Done</Badge>}
     >
       <div className="grid min-w-0 gap-4">
@@ -76,14 +77,5 @@ export function WebFetchToolRow({
         ) : null}
       </div>
     </ToolResultCard>
-  )
-}
-
-function WebFetchHeading() {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <LinkIcon className="text-muted-foreground size-4 shrink-0" />
-      <span>Web Fetch</span>
-    </span>
   )
 }

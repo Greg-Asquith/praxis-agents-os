@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/meta_ads/test_client.py
+
 """Checks Meta transport boundaries, retry policy, and safe errors."""
 
 import hashlib

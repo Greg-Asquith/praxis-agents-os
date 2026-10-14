@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_search.py
+
 """Search paging, selected-drive boundaries, and audited tool contracts."""
 
 from dataclasses import replace

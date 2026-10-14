@@ -1,3 +1,5 @@
+// apps/web/src/features/conversations/live-activity-visibility.ts
+
 type LiveActivityVisibility = {
   hasRunningTranscriptTool: boolean
   isStreaming: boolean

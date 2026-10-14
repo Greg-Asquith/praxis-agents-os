@@ -1,3 +1,5 @@
+# apps/api/tests/services/tools/test_tool_availability.py
+
 """Database-backed tests for workspace runtime tool availability."""
 
 from uuid import uuid4

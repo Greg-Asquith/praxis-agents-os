@@ -1,4 +1,4 @@
-# apps/api/services/agents/runtime/structure_results.py
+# apps/api/services/agents/runtime/structured_results.py
 
 """Builds bounded previews without changing retained tool data or past messages."""
 

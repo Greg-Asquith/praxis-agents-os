@@ -1,3 +1,5 @@
+# apps/api/tests/services/files/test_attachment_text.py
+
 """Tests for shared attachment text conversion and provenance framing."""
 
 import importlib

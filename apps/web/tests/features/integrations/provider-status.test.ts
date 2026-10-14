@@ -1,3 +1,5 @@
+// apps/web/tests/features/integrations/provider-status.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { providerSummaryStatus } from "@/features/integrations/components/provider-status"

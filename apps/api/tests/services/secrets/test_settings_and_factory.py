@@ -1,3 +1,5 @@
+# apps/api/tests/services/secrets/test_settings_and_factory.py
+
 """Secrets-provider selection and production gating."""
 
 import pytest

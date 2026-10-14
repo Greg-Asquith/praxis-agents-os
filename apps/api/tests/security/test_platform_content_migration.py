@@ -1,3 +1,5 @@
+# apps/api/tests/security/test_platform_content_migration.py
+
 """Check populated platform-content migration upgrades and guarded downgrades."""
 
 from pathlib import Path

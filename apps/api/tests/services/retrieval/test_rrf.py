@@ -1,3 +1,5 @@
+# apps/api/tests/services/retrieval/test_rrf.py
+
 """Weighted reciprocal-rank fusion tests."""
 
 from uuid import UUID

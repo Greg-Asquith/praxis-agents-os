@@ -1,3 +1,5 @@
+// apps/web/src/features/files/file-type.ts
+
 export type FileVisualType =
   | "audio"
   | "csv"

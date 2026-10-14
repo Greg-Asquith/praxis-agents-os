@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/test_encryption_rotation.py
+
 """Credential root-key rotation convergence tests."""
 
 import asyncio

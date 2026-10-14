@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_analytics/test_credentials.py
+
 """Google Analytics runtime credential construction contracts."""
 
 from types import SimpleNamespace

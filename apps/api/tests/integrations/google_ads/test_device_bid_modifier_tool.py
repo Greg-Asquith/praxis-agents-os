@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_ads/test_device_bid_modifier_tool.py
+
 """Google Ads device bid modifier tool contracts and audit evidence."""
 
 from types import SimpleNamespace

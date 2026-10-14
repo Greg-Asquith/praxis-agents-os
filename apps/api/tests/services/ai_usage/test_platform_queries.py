@@ -1,3 +1,5 @@
+# apps/api/tests/services/ai_usage/test_platform_queries.py
+
 """Cross-workspace AI usage aggregation and read-only boundary tests."""
 
 import json

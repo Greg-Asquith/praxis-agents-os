@@ -1,3 +1,5 @@
+// apps/web/tests/features/workspaces/components/member-removal-interactions.test.ts
+
 import type * as ReactModule from "react"
 import type * as ReactQueryModule from "@tanstack/react-query"
 import { isValidElement, type ReactElement, type ReactNode } from "react"

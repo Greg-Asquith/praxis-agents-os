@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0049_add_integration_table_scope_rules.py
+
 """Add integration table row-scope rules.
 
 Revision ID: core_0049

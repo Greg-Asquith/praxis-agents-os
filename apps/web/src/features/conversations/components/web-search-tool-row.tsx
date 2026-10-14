@@ -1,6 +1,7 @@
 // apps/web/src/features/conversations/components/web-search-tool-row.tsx
 import { GlobeIcon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { SourceListRow } from "@/components/tool-ui/source"
@@ -23,7 +24,7 @@ export function WebSearchToolRow({
     const query = webSearchQuery(activity.args)
     return query ? (
       <FanOutSkeleton
-        heading={<WebSearchHeading />}
+        heading={<ToolHeading icon={GlobeIcon}>Web Search</ToolHeading>}
         label={`Searching ${query}…`}
         summary={`Search: ${query}`}
       />
@@ -51,7 +52,7 @@ export function WebSearchToolRow({
       ariaLabel={`Web search results for ${result.query}`}
       defaultOpen={defaultOpen}
       details={details}
-      heading={<WebSearchHeading />}
+      heading={<ToolHeading icon={GlobeIcon}>Web Search</ToolHeading>}
       trailing={<Badge variant="success">Done</Badge>}
     >
       {resultCount > 0 ? (
@@ -72,14 +73,5 @@ export function WebSearchToolRow({
         </p>
       )}
     </ToolResultCard>
-  )
-}
-
-function WebSearchHeading() {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <GlobeIcon className="text-muted-foreground size-4 shrink-0" />
-      <span>Web Search</span>
-    </span>
   )
 }

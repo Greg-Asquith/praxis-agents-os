@@ -1,3 +1,5 @@
+# apps/api/tests/services/auth/test_oauth_provider_requests.py
+
 """OAuth provider request diagnostics must not expose credentials or bodies."""
 
 import logging

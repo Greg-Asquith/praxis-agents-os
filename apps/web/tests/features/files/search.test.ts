@@ -1,3 +1,5 @@
+// apps/web/tests/features/files/search.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { validateFilesSearch } from "@/features/files/search"

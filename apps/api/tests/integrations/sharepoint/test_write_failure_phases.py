@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/sharepoint/test_write_failure_phases.py
+
 """Audited writes distinguish preparation failures from uncertain commits."""
 
 import asyncio

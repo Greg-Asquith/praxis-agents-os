@@ -1,3 +1,5 @@
+# apps/api/tests/services/audit_events/test_integration_operation_detail.py
+
 """Contracts for provider-neutral integration-operation evidence."""
 
 import pytest

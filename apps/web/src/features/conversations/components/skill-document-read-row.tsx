@@ -2,6 +2,7 @@
 
 import { FileTextIcon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -17,7 +18,7 @@ type SkillDocumentReadRowProps = {
 
 export function SkillDocumentReadRow({ activity, defaultOpen = false }: SkillDocumentReadRowProps) {
   const { document, skill } = skillDocumentReadArgs(activity.args)
-  const heading = <SkillDocumentHeading />
+  const heading = <ToolHeading icon={FileTextIcon}>Read Skill Document</ToolHeading>
   if (activity.status === "running") {
     return (
       <FanOutSkeleton
@@ -55,15 +56,6 @@ export function SkillDocumentReadRow({ activity, defaultOpen = false }: SkillDoc
         </Alert>
       )}
     </ToolResultCard>
-  )
-}
-
-function SkillDocumentHeading() {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
-      <span>Read Skill Document</span>
-    </span>
   )
 }
 

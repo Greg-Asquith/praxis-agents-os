@@ -1,3 +1,5 @@
+# apps/api/tests/routes/classifiers/test_classifier_routes.py
+
 """HTTP-boundary tests for workspace classifier management and discovery."""
 
 import asyncio

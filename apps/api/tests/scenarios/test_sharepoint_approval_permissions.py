@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_sharepoint_approval_permissions.py
+
 """SharePoint approval hydration enforces current write access before Graph I/O."""
 
 from dataclasses import replace

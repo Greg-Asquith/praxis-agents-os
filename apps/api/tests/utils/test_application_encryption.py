@@ -1,3 +1,5 @@
+# apps/api/tests/utils/test_application_encryption.py
+
 """Application encryption key-ring behavior and settings validation."""
 
 from importlib import import_module

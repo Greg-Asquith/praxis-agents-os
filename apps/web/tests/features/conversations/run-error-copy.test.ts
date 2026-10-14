@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/run-error-copy.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import {

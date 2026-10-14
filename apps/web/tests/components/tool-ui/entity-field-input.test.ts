@@ -1,3 +1,5 @@
+// apps/web/tests/components/tool-ui/entity-field-input.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, describe, expect, it, vi } from "vitest"
 

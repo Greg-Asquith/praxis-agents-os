@@ -1,4 +1,4 @@
-// apps/web/sec/routes/home.tsx
+// apps/web/src/routes/home.tsx
 
 import { useMemo } from "react"
 import { useSuspenseQueries } from "@tanstack/react-query"

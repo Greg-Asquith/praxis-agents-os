@@ -1,3 +1,5 @@
+# apps/api/tests/security/test_conversation_sharing.py
+
 """Database-backed audience and ownership boundaries for shared conversations."""
 
 from dataclasses import dataclass

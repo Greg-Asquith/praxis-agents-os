@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0061_add_agent_all_tools.py
+
 """Adds the all-tools selection mode to agents.
 
 Revision ID: core_0061

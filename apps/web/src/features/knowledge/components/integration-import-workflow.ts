@@ -1,4 +1,4 @@
-// apps/web/src/features/knowledge/components/integration-import-workflows.ts
+// apps/web/src/features/knowledge/components/integration-import-workflow.ts
 
 import type { KbIntegrationSourcePreview } from "@/features/knowledge/types"
 

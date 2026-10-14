@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/bigquery/test_bigquery_provider.py
+
 """BigQuery manifest, REST client, and dataset-discovery contracts."""
 
 from typing import Any

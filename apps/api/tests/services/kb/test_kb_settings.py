@@ -1,3 +1,5 @@
+# apps/api/tests/services/kb/test_kb_settings.py
+
 """Knowledge-base settings tests."""
 
 import pytest

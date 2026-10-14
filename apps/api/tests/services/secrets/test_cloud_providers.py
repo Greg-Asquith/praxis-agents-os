@@ -1,3 +1,5 @@
+# apps/api/tests/services/secrets/test_cloud_providers.py
+
 """Cloud secret providers honor the common versioned-reference contract."""
 
 from types import SimpleNamespace

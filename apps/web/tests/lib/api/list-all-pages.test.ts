@@ -1,3 +1,5 @@
+// apps/web/tests/lib/api/list-all-pages.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { listAllPages } from "@/lib/api/list-all-pages"

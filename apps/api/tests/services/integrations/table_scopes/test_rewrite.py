@@ -1,3 +1,5 @@
+# apps/api/tests/services/integrations/table_scopes/test_rewrite.py
+
 """Provider-neutral table row-scope rewrite behavior."""
 
 import pytest

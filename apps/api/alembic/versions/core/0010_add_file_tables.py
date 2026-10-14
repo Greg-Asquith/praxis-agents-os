@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0010_add_file_tables.py
+
 """add file tables
 
 Revision ID: core_0010

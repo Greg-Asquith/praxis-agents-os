@@ -1,3 +1,5 @@
+// apps/web/tests/features/integrations/context-group-resource-model.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { eligibleContextGroupResources } from "@/features/integrations/components/context-group-resource-model"

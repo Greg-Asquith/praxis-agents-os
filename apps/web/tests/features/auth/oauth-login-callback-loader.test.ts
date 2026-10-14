@@ -1,3 +1,5 @@
+// apps/web/tests/features/auth/oauth-login-callback-loader.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 

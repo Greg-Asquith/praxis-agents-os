@@ -1,3 +1,5 @@
+# apps/api/tests/scenarios/test_provider_errors.py
+
 """Provider rate limits retain the same safe failure in storage and the stream."""
 
 import httpx2 as httpx

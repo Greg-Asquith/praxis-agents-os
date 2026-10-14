@@ -1,3 +1,5 @@
+# apps/api/tests/services/documents/conftest.py
+
 """Document worker pools for tests, with the probe handlers loaded."""
 
 from collections.abc import AsyncIterator, Callable

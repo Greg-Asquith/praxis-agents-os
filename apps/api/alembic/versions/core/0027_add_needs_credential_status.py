@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0027_add_needs_credential_status.py
+
 """add auth-mode-specific integration credential status
 
 Revision ID: core_0027

@@ -28,7 +28,6 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent as PydanticAgent, ModelRetry, RunContext
 from pydantic_ai.capabilities import WebFetch
 from pydantic_ai.messages import ModelMessage, ModelResponse, NativeToolReturnPart, TextPart
-from pydantic_ai.usage import RunUsage, UsageLimits
 
 from core.settings import settings
 from models.agent import Agent as AgentModel
@@ -55,10 +54,10 @@ from services.agents.runtime.tools import (
     ToolFieldPresentation,
     ToolPresentation,
 )
+from services.agents.runtime.tools.native.run_native_helper import run_native_helper
 from services.agents.runtime.tools.registry import runtime_tool
 from services.agents.runtime.untrusted import UntrustedContent, UntrustedNode
-from services.ai_usage.domain import PURPOSE_WEB_FETCH, AIUsageEventData
-from services.ai_usage.run_metered_helper import run_metered_helper
+from services.ai_usage.domain import PURPOSE_WEB_FETCH
 from utils.validation import normalize_optional_text
 
 NativeWebFetchProvider = Literal["anthropic", "google"]
@@ -322,26 +321,13 @@ async def run_native_web_fetch(
         ],
     )
 
-    async def call(usage: RunUsage):
-        return await helper.run(
-            f"Fetch this exact URL and return its page content:\n\n{url}",
-            usage_limits=UsageLimits(request_limit=model_spec.max_steps),
-            usage=usage,
-        )
-
-    result = await run_metered_helper(
-        AIUsageEventData(
-            workspace_id=deps.workspace.id,
-            provider=model_spec.provider,
-            model=model_spec.model,
-            purpose=PURPOSE_WEB_FETCH,
-            agent_id=deps.agent.id,
-            user_id=deps.user.id,
-            run_id=deps.run.id,
-            conversation_id=deps.conversation.id,
-            details={"url": url[:2048]},
-        ),
-        call,
+    result = await run_native_helper(
+        deps,
+        helper,
+        f"Fetch this exact URL and return its page content:\n\n{url}",
+        model_spec=model_spec,
+        purpose=PURPOSE_WEB_FETCH,
+        details={"url": url[:2048]},
     )
     messages = result.all_messages()
     failure = _web_fetch_failure(messages)

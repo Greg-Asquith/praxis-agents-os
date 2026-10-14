@@ -1,3 +1,5 @@
+# apps/api/tests/services/storage/test_workspace_bucket_resolution.py
+
 """Cross-provider workspace bucket isolation contract tests."""
 
 from pathlib import Path

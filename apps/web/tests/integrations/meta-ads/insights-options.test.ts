@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/meta-ads/insights-options.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { parseInsightsOptions } from "@/integrations/meta_ads/lib/insights-options"

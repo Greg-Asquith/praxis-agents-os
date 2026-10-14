@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/google-ads/shared-helpers.test.ts
+
 import { describe, expect, it } from "vitest"
 import {
   parseGoogleAdsMoney,

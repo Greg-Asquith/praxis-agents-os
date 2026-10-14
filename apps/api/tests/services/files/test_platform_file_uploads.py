@@ -1,3 +1,5 @@
+# apps/api/tests/services/files/test_platform_file_uploads.py
+
 """Platform upload authority, capability binding, and atomic confirmation."""
 
 import importlib

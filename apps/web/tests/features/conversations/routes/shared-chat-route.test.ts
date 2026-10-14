@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/routes/shared-chat-route.test.ts
+
 import type * as ReactQuery from "@tanstack/react-query"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"

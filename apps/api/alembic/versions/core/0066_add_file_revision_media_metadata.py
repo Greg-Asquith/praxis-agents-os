@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0066_add_file_revision_media_metadata.py
+
 """Adds measured media metadata to file revisions.
 
 Revision ID: core_0066

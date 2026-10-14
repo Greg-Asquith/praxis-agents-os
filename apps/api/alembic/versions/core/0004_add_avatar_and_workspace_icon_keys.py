@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0004_add_avatar_and_workspace_icon_keys.py
+
 """add avatar and workspace icon object keys
 
 Revision ID: core_0004

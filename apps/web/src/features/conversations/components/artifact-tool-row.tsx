@@ -14,6 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { DeclinedResult } from "@/components/tool-ui/declined-result"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
@@ -61,7 +62,7 @@ export function ArtifactToolRow({ activity, defaultOpen }: ArtifactToolRowProps)
     const summary = artifactPendingSummary(activity)
     return (
       <FanOutSkeleton
-        heading={<ArtifactHeading icon={state.icon}>{state.heading}</ArtifactHeading>}
+        heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
         label={activity.status === "running" ? state.runningLabel : state.waitingLabel}
         {...(summary ? { summary } : {})}
       />
@@ -111,7 +112,7 @@ function ArtifactListRow({ activity, defaultOpen }: ArtifactToolRowProps) {
           ? [{ label: "Showing", summary: false, value: String(result.returned) }]
           : []),
       ]}
-      heading={<ArtifactHeading icon={FilesIcon}>Artifacts</ArtifactHeading>}
+      heading={<ToolHeading icon={FilesIcon}>Artifacts</ToolHeading>}
       trailing={<Badge variant="success">{resultLabel}</Badge>}
     >
       {result.items.length > 0 ? (
@@ -162,7 +163,7 @@ function ArtifactReadRow({ activity, defaultOpen }: ArtifactToolRowProps) {
         { label: "Size", value: formatBytes(result.size_bytes) },
         { label: "Updated", summary: false, value: formatCompactDate(result.updated_at) },
       ]}
-      heading={<ArtifactHeading icon={FileTextIcon}>Read Artifact</ArtifactHeading>}
+      heading={<ToolHeading icon={FileTextIcon}>Read Artifact</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-3">
@@ -269,7 +270,7 @@ function CompletedArtifactRow({
         { label: "Type", value: artifactTypeLabel(result.artifact_type) },
         { label: "Action", value: state.pastTense },
       ]}
-      heading={<ArtifactHeading icon={state.icon}>{state.heading}</ArtifactHeading>}
+      heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-2">
@@ -383,7 +384,7 @@ function ArtifactFailureRow({ activity, state }: { activity: ToolActivity; state
       ariaLabel={`${state.heading} ${activity.status === "denied" ? "declined" : "failed"}`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
-      heading={<ArtifactHeading icon={state.icon}>{state.heading}</ArtifactHeading>}
+      heading={<ToolHeading icon={state.icon}>{state.heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       {activity.status === "denied" ? (
@@ -469,15 +470,6 @@ function ArtifactEntityLink({ artifactId, title }: { artifactId: string; title: 
     >
       {title}
     </a>
-  )
-}
-
-function ArtifactHeading({ children, icon: Icon }: { children: string; icon: LucideIcon }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <Icon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">{children}</span>
-    </span>
   )
 }
 

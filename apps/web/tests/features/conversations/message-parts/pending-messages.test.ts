@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/message-parts/pending-messages.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { pendingMessagesForConversation } from "@/features/conversations/message-parts"

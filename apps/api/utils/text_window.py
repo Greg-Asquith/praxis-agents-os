@@ -1,3 +1,5 @@
+# apps/api/utils/text_window.py
+
 """UTF-8 byte windows shared by workspace and integration file reads."""
 
 from dataclasses import dataclass

@@ -1,4 +1,4 @@
-# apps/api/services/file/visibility.py
+# apps/api/services/files/visibility.py
 
 """Read predicates for local and published platform Files."""
 

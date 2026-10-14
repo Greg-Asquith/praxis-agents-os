@@ -1,3 +1,5 @@
+// apps/web/tests/features/files/list-entries.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { fileWindow, mergeListEntries } from "@/features/files/list-entries"

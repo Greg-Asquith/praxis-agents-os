@@ -1,4 +1,4 @@
-# apps/api/route/classifiers/delete_classifier.py
+# apps/api/routes/classifiers/delete_classifier.py
 
 """Route for deleting a workspace classifier."""
 

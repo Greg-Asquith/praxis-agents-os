@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0040_add_agent_code_mode_flag.py
+
 """Add the per-agent code-mode enablement flag.
 
 Revision ID: core_0040

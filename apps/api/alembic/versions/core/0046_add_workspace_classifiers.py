@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0046_add_workspace_classifiers.py
+
 """Add workspace classifier definitions.
 
 Revision ID: core_0046

@@ -1,3 +1,5 @@
+// apps/web/vitest.config.ts
+
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "vitest/config"
 

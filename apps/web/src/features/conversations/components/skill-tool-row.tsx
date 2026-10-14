@@ -1,10 +1,11 @@
 // apps/web/src/features/conversations/components/skill-tool-row.tsx
 
-import { useState, type ReactNode } from "react"
+import { useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { FileTextIcon, SparklesIcon } from "lucide-react"
 
 import { MarkdownContent } from "@/components/markdown/markdown-content"
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -82,7 +83,7 @@ function SearchSkillsRow({ activity, defaultOpen }: SkillToolRowProps) {
         { label: "Search", value: query ?? "All skills" },
         { label: "Found", value: String(result.total) },
       ]}
-      heading={<SkillHeading>Search Skills</SkillHeading>}
+      heading={<ToolHeading icon={SparklesIcon}>Search Skills</ToolHeading>}
       trailing={
         <Badge variant={result.total > 0 ? "success" : "outline"}>
           {`${String(result.total)} ${pluralize(result.total, "Skill")}`}
@@ -150,7 +151,7 @@ function LoadSkillRow({
           ? [{ label: "Documents", value: String(skill.documents.length) }]
           : []),
       ]}
-      heading={<SkillHeading>{`Activated Skill: ${label}`}</SkillHeading>}
+      heading={<ToolHeading icon={SparklesIcon}>{`Activated Skill: ${label}`}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-3">
@@ -191,7 +192,7 @@ function SavedSkillRow({
       ariaLabel={`${verb} skill: ${label}`}
       defaultOpen={defaultOpen}
       details={[{ label: "Skill", value: label }]}
-      heading={<SkillHeading>{`${verb} Skill: ${label}`}</SkillHeading>}
+      heading={<ToolHeading icon={SparklesIcon}>{`${verb} Skill: ${label}`}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <div className="grid min-w-0 gap-2">
@@ -233,7 +234,7 @@ function SkillPendingRow({ activity }: Pick<SkillToolRowProps, "activity">) {
   const state = skillPendingState(activity)
   return (
     <FanOutSkeleton
-      heading={<SkillHeading>{state.heading}</SkillHeading>}
+      heading={<ToolHeading icon={SparklesIcon}>{state.heading}</ToolHeading>}
       label={state.runningLabel}
       {...(state.summary ? { summary: state.summary } : {})}
     />
@@ -251,7 +252,7 @@ function SkillFailureRow({ activity }: Pick<SkillToolRowProps, "activity">) {
       ariaLabel={`${state.heading} failed`}
       defaultOpen
       details={[{ label: "Action", value: state.heading }]}
-      heading={<SkillHeading>{state.heading}</SkillHeading>}
+      heading={<ToolHeading icon={SparklesIcon}>{state.heading}</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <Alert variant="destructive">
@@ -278,13 +279,4 @@ function skillPendingState(activity: ToolActivity) {
     runningLabel: "Loading skill instructions…",
     summary: label,
   }
-}
-
-function SkillHeading({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <SparklesIcon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">{children}</span>
-    </span>
-  )
 }

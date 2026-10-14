@@ -2,6 +2,7 @@
 
 import { SearchIcon } from "lucide-react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { FanOutSkeleton } from "@/components/tool-ui/fan-out-shell"
 import { ToolResultCard } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -34,7 +35,7 @@ export function ToolSearchRow({ activity, defaultOpen }: ToolSearchRowProps) {
   if (activity.status === "running" || activity.status === "awaiting_approval") {
     return (
       <FanOutSkeleton
-        heading={<ToolSearchHeading />}
+        heading={<ToolHeading icon={SearchIcon}>Find Tools</ToolHeading>}
         label={query ? `Finding tools for ${query}…` : "Finding tools…"}
         {...(query ? { summary: `Search: ${query}` } : {})}
       />
@@ -66,7 +67,7 @@ function FoundToolsCard({
         ...(query ? [{ label: "Search", value: query }] : []),
         { label: "Found", value: countLabel },
       ]}
-      heading={<ToolSearchHeading />}
+      heading={<ToolHeading icon={SearchIcon}>Find Tools</ToolHeading>}
       trailing={<Badge variant={toolNames.length > 0 ? "success" : "outline"}>{countLabel}</Badge>}
     >
       {toolNames.length > 0 ? (
@@ -122,7 +123,7 @@ function ToolSearchFailureRow({
       ariaLabel="Tool search failed"
       defaultOpen
       details={query ? [{ label: "Search", value: query }] : []}
-      heading={<ToolSearchHeading />}
+      heading={<ToolHeading icon={SearchIcon}>Find Tools</ToolHeading>}
       trailing={<ActivityStatusBadge status={activity.status} />}
     >
       <Alert variant="destructive">
@@ -130,14 +131,5 @@ function ToolSearchFailureRow({
         <AlertDescription className="whitespace-pre-wrap">{message}</AlertDescription>
       </Alert>
     </ToolResultCard>
-  )
-}
-
-function ToolSearchHeading() {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <SearchIcon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">Find Tools</span>
-    </span>
   )
 }

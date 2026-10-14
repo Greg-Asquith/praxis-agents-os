@@ -1,3 +1,5 @@
+// apps/web/tests/features/conversations/components/tool-call-row-registry.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, it, vi } from "vitest"

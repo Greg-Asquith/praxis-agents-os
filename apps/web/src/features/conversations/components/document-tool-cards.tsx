@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import type { ReactNode } from "react"
 
+import { ToolHeading } from "@/components/tool-ui/tool-heading"
 import { ToolResultCard, type ToolResultDetail } from "@/components/tool-ui/result-card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -293,7 +294,7 @@ function DocumentCard({
       ariaLabel={heading}
       defaultOpen={defaultOpen}
       details={details}
-      heading={<DocumentHeading icon={icon}>{heading}</DocumentHeading>}
+      heading={<ToolHeading icon={icon}>{heading}</ToolHeading>}
       trailing={
         badge ? (
           <Badge className="shrink-0" variant={warning ? "warning" : "success"}>
@@ -346,14 +347,5 @@ export function TextList({ items, title }: { items: string[]; title: string }) {
         ))}
       </ul>
     </section>
-  )
-}
-
-export function DocumentHeading({ children, icon: Icon }: { children: string; icon: LucideIcon }) {
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2">
-      <Icon className="text-muted-foreground size-4 shrink-0" />
-      <span className="truncate">{children}</span>
-    </span>
   )
 }

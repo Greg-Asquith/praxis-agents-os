@@ -1,3 +1,5 @@
+# apps/api/tests/integration/retrieval_eval/conftest.py
+
 """Real-pipeline corpus fixtures for the Gate G4 retrieval harness."""
 
 from collections.abc import AsyncIterator, Iterator

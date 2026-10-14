@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/test_entity_authorization.py
+
 """Run authority is checked before entity tools or providers are resolved."""
 
 from types import SimpleNamespace

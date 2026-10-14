@@ -1,4 +1,4 @@
-# apps/api/route/classifiers/list_classifier.py
+# apps/api/routes/classifiers/list_classifiers.py
 
 """Route for listing workspace classifiers."""
 

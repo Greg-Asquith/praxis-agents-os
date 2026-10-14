@@ -1,3 +1,5 @@
+# apps/api/tests/security/test_conversation_sharing_migration.py
+
 """Qualify sharing migration transitions without modifying application schemas."""
 
 from pathlib import Path

@@ -1,3 +1,5 @@
+# apps/api/tests/integrations/google_analytics/test_read_operations.py
+
 """Google Analytics report request compilation and response shaping."""
 
 from typing import Any

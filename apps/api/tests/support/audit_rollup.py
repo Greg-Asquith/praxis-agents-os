@@ -1,3 +1,5 @@
+# apps/api/tests/support/audit_rollup.py
+
 """Deterministic audit roll-up fixtures shared by query-plan tests."""
 
 from datetime import UTC, datetime, timedelta

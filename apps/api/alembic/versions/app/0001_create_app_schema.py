@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/app/0001_create_app_schema.py
+
 """create app schema
 
 Revision ID: app_0001

@@ -1,4 +1,4 @@
-// apps/web/src/features/conversations/components/conversation-stating-notice.tsx
+// apps/web/src/features/conversations/components/conversation-starting-notice.tsx
 
 import { CircleDashedIcon, MessageSquarePlusIcon } from "lucide-react"
 

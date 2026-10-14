@@ -1,3 +1,5 @@
+// apps/web/src/features/workspaces/permissions.ts
+
 import type { Workspace, WorkspaceRole } from "./types"
 
 export function canEditWorkspace(role: WorkspaceRole | null) {

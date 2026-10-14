@@ -1,3 +1,5 @@
+# apps/api/tests/services/agents/runtime/test_stream_history.py
+
 """In-flight SDK history survives failed and cancelled stream consumption."""
 
 import asyncio

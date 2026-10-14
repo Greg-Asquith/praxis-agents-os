@@ -1,3 +1,5 @@
+// apps/web/tests/lib/workspace.test.ts
+
 import { QueryClient } from "@tanstack/react-query"
 import { artifactQueryOptions } from "@/features/artifacts/api/get-artifact"
 import { platformArtifactQueryKeys } from "@/features/artifacts/api/platform-list-artifacts"

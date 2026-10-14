@@ -1,4 +1,6 @@
 #!/bin/sh
+# apps/api/bin/validate_sourceable_env.sh
+
 set -eu
 
 if [ "$#" -ne 1 ]; then

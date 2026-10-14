@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/meta-ads/upload-media.test.ts
+
 import { createElement, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { renderToStaticMarkup } from "react-dom/server"

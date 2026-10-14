@@ -1,3 +1,5 @@
+// apps/web/tests/features/integrations/connection-status-badge.test.ts
+
 import { describe, expect, it } from "vitest"
 
 import { connectionStatusPresentation } from "@/features/integrations/components/connection-status"

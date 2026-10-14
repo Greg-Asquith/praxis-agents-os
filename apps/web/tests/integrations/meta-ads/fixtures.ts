@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/meta-ads/fixtures.ts
+
 export function insightsData(overrides: Record<string, unknown> = {}) {
   return {
     rows: [insightsRow()],

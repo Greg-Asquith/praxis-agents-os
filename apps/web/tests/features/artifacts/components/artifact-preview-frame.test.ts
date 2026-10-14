@@ -1,3 +1,5 @@
+// apps/web/tests/features/artifacts/components/artifact-preview-frame.test.ts
+
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"

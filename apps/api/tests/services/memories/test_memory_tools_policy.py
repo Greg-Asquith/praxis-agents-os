@@ -1,3 +1,5 @@
+# apps/api/tests/services/memories/test_memory_tools_policy.py
+
 """Memory tools inherit dispatch audit and enforce conditional core approval."""
 
 from types import SimpleNamespace

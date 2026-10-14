@@ -1,3 +1,5 @@
+# apps/api/alembic/versions/core/0055_add_platform_usage_ownership.py
+
 """Adds platform-owned usage and bounded ingestion admission counters.
 
 Revision ID: core_0055

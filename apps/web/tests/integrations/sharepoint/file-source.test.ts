@@ -1,3 +1,5 @@
+// apps/web/tests/integrations/sharepoint/file-source.test.ts
+
 import { createElement, type ReactNode, type MouseEvent } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
