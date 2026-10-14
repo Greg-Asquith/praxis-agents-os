@@ -8,6 +8,8 @@ import { metaAdsCopyAdsPresenter } from "@/integrations/meta_ads/presenters/copy
 import { metaAdsCreateAdsPresenter } from "@/integrations/meta_ads/presenters/create-ads"
 import { metaAdsActivitiesPresenter } from "@/integrations/meta_ads/presenters/activities"
 import { metaAdsListAssetsPresenter } from "@/integrations/meta_ads/presenters/list-assets"
+import { metaAdsSearchTargetingPresenter } from "@/integrations/meta_ads/presenters/search-targeting"
+import { metaAdsEstimateAudiencePresenter } from "@/integrations/meta_ads/presenters/estimate-audience"
 import { metaAdsObjectsPresenter } from "@/integrations/meta_ads/presenters/objects"
 import { metaAdsConversionsPresenter } from "@/integrations/meta_ads/presenters/conversions"
 import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/insights"
@@ -17,7 +19,7 @@ import { metaAdsUploadMediaPresenter } from "@/integrations/meta_ads/presenters/
 
 export default {
   catalogDescription:
-    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, and, with your approval, upload images and videos, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, copy existing ads into other ad sets, turn campaigns, ad sets, and ads on or off, and change budgets.",
+    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, find targeting options and estimate audience sizes, and, with your approval, upload images and videos, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, copy existing ads into other ad sets, turn campaigns, ad sets, and ads on or off, and change budgets.",
   ConnectHelp: MetaAdsConnectHelp,
   credentialLabel: "Access token",
   Logo: MetaAdsLogo,
@@ -29,6 +31,8 @@ export default {
     metaAdsConversionsPresenter,
     metaAdsActivitiesPresenter,
     metaAdsListAssetsPresenter,
+    metaAdsSearchTargetingPresenter,
+    metaAdsEstimateAudiencePresenter,
     metaAdsUpdateStatusPresenter,
     metaAdsUpdateBudgetsPresenter,
     metaAdsUploadMediaPresenter,

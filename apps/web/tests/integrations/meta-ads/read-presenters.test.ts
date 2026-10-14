@@ -11,6 +11,8 @@ import { metaAdsObjectsPresenter } from "@/integrations/meta_ads/presenters/obje
 import { metaAdsConversionsPresenter } from "@/integrations/meta_ads/presenters/conversions"
 import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/insights"
 import { metaAdsListAssetsPresenter } from "@/integrations/meta_ads/presenters/list-assets"
+import { metaAdsSearchTargetingPresenter } from "@/integrations/meta_ads/presenters/search-targeting"
+import { metaAdsEstimateAudiencePresenter } from "@/integrations/meta_ads/presenters/estimate-audience"
 import { emptyAssetsMessage, parseMetaAdsAssets } from "@/integrations/meta_ads/lib/assets"
 import { envelope } from "../result-preview-fixtures"
 import { accountEntry, insightsData, insightsRow } from "./fixtures"
@@ -25,6 +27,8 @@ import {
   activitiesData,
   activityRow,
   assetsData,
+  targetingSearchData,
+  audienceEstimateData,
 } from "./read-fixtures"
 
 const cases = [
@@ -52,6 +56,16 @@ const cases = [
     presenter: metaAdsListAssetsPresenter,
     data: assetsData(),
     populated: "Spring hero",
+  },
+  {
+    presenter: metaAdsSearchTargetingPresenter,
+    data: targetingSearchData(),
+    populated: "Running",
+  },
+  {
+    presenter: metaAdsEstimateAudiencePresenter,
+    data: audienceEstimateData(),
+    populated: "1.2M to 1.4M people",
   },
 ]
 

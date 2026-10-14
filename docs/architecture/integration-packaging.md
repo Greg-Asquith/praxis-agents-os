@@ -685,6 +685,9 @@ Insights resolves custom conversion names within each account's report budget
 and names custom events from their action types. `meta_ads_list_assets`
 lists Pages, Instagram accounts, media, posts, pixels, apps, and audiences
 as scoped references, and Meta's suggested EU advertiser names as text.
+`meta_ads_search_targeting` and `meta_ads_estimate_audience` read targeting
+keys and audience estimates, with an audience resolver for the draft's
+audiences.
 Approval-gated `meta_ads_update_status`, `meta_ads_update_budgets`,
 `meta_ads_upload_media`, `meta_ads_create_ads`, and `meta_ads_copy_ads` write
 through the shared write presenter and the provider's mutation ledger. Ad creation edits its

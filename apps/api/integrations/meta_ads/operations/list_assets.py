@@ -612,14 +612,18 @@ async def read_audience_references(
     account_id: str,
     scope_label: str,
     budget: ReportResultBudget,
+    audience_ids: Sequence[str] = (),
 ) -> tuple[list[MetaAdsAudienceReference], bool]:
-    """Reads custom and lookalike audiences with Meta's approximate size range."""
+    """Reads custom and lookalike audiences, or exactly the given IDs, with their size range."""
+    wanted = set(audience_ids)
     rows, more = await _read_targeting_assets(
         client,
         account_id,
         "customaudiences",
         "id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound",
         budget,
+        include=(lambda row: row.get("id") in wanted) if wanted else None,
+        limit=len(wanted) or _TARGETING_ASSET_LIMIT,
     )
     audiences = []
     for row in rows:
@@ -664,14 +668,18 @@ async def _read_targeting_assets(
     edge: str,
     fields: str,
     budget: ReportResultBudget,
+    *,
+    include: Callable[[dict[str, Any]], bool] | None = None,
+    limit: int = _TARGETING_ASSET_LIMIT,
 ) -> tuple[list[dict[str, Any]], bool]:
     return await _read(
         client,
         account_id,
         edge,
         fields,
-        _TARGETING_ASSET_LIMIT,
+        limit,
         budget,
+        include=include,
         page_size=_TARGETING_PAGE_SIZE,
     )
 

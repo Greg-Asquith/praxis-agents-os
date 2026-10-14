@@ -155,3 +155,26 @@ export function assetsData(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+export function targetingSearchData(overrides: Record<string, unknown> = {}) {
+  return {
+    options: [
+      {
+        kind: "interest",
+        key: "6003",
+        name: "Running",
+        description: "Interests > Fitness and wellness",
+        audience_size_range: { lower: 410000000, upper: 482000000 },
+        country_code: null,
+        region: null,
+        category: null,
+      },
+    ],
+    truncated: false,
+    ...overrides,
+  }
+}
+
+export function audienceEstimateData(overrides: Record<string, unknown> = {}) {
+  return { users_lower_bound: 1200000, users_upper_bound: 1400000, notes: [], ...overrides }
+}

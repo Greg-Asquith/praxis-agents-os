@@ -1,6 +1,7 @@
 // apps/web/src/integrations/meta_ads/lib/assets.ts
 
 import { nodeText } from "@/components/tool-ui/untrusted-node"
+import { formatAudienceRange } from "@/integrations/meta_ads/lib/targeting"
 import { urlDomain } from "@/lib/format"
 import { isNonEmptyString, isOneOf, isRecord, isStringArray } from "@/lib/guards"
 
@@ -48,7 +49,6 @@ const STATUS_LABELS: Record<string, string> = {
   processing: "Processing",
   failed: "Couldn't process",
 }
-const AUDIENCE_SIZE = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
 const STORES: Record<string, string> = {
   "apps.apple.com": "App Store",
   "itunes.apple.com": "App Store",
@@ -152,11 +152,8 @@ function appStores(value: unknown): string {
   return stores.size > 0 ? [...stores].join(", ") : "No store page"
 }
 
-// Meta's range is approximate, and null when Meta has no estimate.
 function audienceSize(value: Record<string, unknown>): string {
   const kind = typeof value["description"] === "string" ? `${value["description"]}, ` : ""
-  const { size_lower_bound: lower, size_upper_bound: upper } = value
-  if (typeof lower !== "number" || typeof upper !== "number") return `${kind}size unknown`
-  if (lower === upper) return `${kind}about ${AUDIENCE_SIZE.format(lower)} people`
-  return `${kind}${AUDIENCE_SIZE.format(lower)} to ${AUDIENCE_SIZE.format(upper)} people`
+  const range = formatAudienceRange(value["size_lower_bound"], value["size_upper_bound"])
+  return `${kind}${range ?? "size unknown"}`
 }

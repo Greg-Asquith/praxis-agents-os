@@ -5,7 +5,8 @@ system user. Discovered accounts can join active context and Context Groups.
 Agents can run bounded Insights reports, read account totals, list advertising
 objects, discover custom conversions and custom events, and read change
 history on selected accounts. Agents can list the Pages, Instagram accounts,
-and media an account can advertise with. With approval, agents can upload
+and media an account can advertise with, find targeting options by name, and
+estimate how many people a targeting draft reaches. With approval, agents can upload
 workspace images and videos to an account's media library, create image,
 video, and carousel ads in existing ad sets, turn campaigns, ad sets, and ads
 on or off, and change campaign and ad set budget amounts. Ads from existing
@@ -419,9 +420,89 @@ suggestions are trimmed, deduplicated, and at most 200 characters each. The
 tool description tells the agent to propose one to the operator and use it
 only once they confirm it; nothing applies a suggestion automatically. A
 Graph permission error on any of these kinds becomes a note, like the other
-kinds. These references have no search or resolve lookups: the engine
+kinds. Audiences have search and resolve lookups, because
+`meta_ads_estimate_audience` takes them: resolve scans up to 500 of the
+account's own `customaudiences` for the referenced IDs, so an audience from
+another account isn't found. Pixels and apps have no lookups yet: the engine
 registers a lookup only for a reference kind some tool takes as input, so
-the lookups arrive with the tools that take them.
+they arrive with ad set creation.
+
+## Targeting
+
+`meta_ads_search_targeting` and `meta_ads_estimate_audience` read
+automatically and support Code Mode. The typed draft, its local rules, and
+its mapping to Meta's spec live in `operations/targeting.py`, for ad set
+creation to reuse.
+
+### Searching for targeting options
+
+`meta_ads_search_targeting(kind, query, country_code=None, limit=20)` reads
+Meta's `/search` edge once, through the first selected account, because
+targeting keys don't depend on the ad account. `limit` is at most 45.
+
+| `kind` | Meta search | Key |
+| --- | --- | --- |
+| `country`, `region`, `city`, `postcode` | `type=adgeolocation` with one `location_types` value (`zip` for postcodes) and an optional `country_code` | Country code, region or city number, or `CC:postcode` |
+| `interest` | `type=adinterest` | Interest ID |
+| `behavior`, `demographic` | `type=adTargetingCategory` with `class=behaviors` or `demographics`, matched by name here | Category ID |
+| `language` | `type=adlocale` | Locale number |
+
+Each option has `kind`, `key`, `name`, `description` (the place's country or
+the interest's path), `audience_size_range` from Meta's
+`audience_size_lower_bound` and `audience_size_upper_bound`, `country_code`,
+`region`, and, for demographics, `category`: Meta's targeting type. Only
+demographics in `family_statuses`, `industries`, `income`, and `life_events`
+are returned, because those take `{id}` items in `flexible_spec`. Geography
+rows of another type are dropped. Names are Meta's own taxonomy, typed and
+bounded like other Meta names. Audit records the kind and option count, never
+the search text. The presenter shows a table of name, kind, audience size,
+details, and key.
+
+### The targeting draft
+
+`MetaAdsTargeting` is a typed draft, not Meta's raw spec:
+
+- `locations` (at least one) and `excluded_locations`, each
+  `{kind, key, name?, country_code?, radius?, radius_unit?}`. Keys must match
+  their kind's format, and only cities take a radius: 10 to 50 miles or 17 to
+  80 km.
+- `location_types`: `home_or_recent` (default) or `home`.
+- `age_min` (13 to 65, default 18) and `age_max` (null for 65+).
+- `genders`: `all` (default), `men`, or `women`.
+- `languages`: locale keys.
+- `detailed`: up to 5 groups of up to 25 `{kind, key, name?, category?}`
+  items. Groups are combined with AND and items within a group with OR. A
+  demographic needs the `category` search returned.
+- `audiences` and `excluded_audiences`: `MetaAdsAudienceReference` values.
+- `advantage_audience`: on by default.
+
+`targeting_spec` maps the draft to Meta's spec and always sends
+`targeting_automation.advantage_audience` as 0 or 1, because Meta refuses
+non-default targeting without it. Detailed items go into `flexible_spec` as
+`{id}` under `interests`, `behaviors`, or the demographic's category.
+Locations go into `geo_locations` as `countries`, `regions`, `cities` (with
+`radius` and `distance_unit`), and `zips`.
+
+`targeting_problems` runs before any request. With Advantage+ audience on,
+`age_min` must be 18 to 25 and `age_max` empty. For special ad categories
+(housing, employment, financial products), it also refuses ages other than
+18 to 65+, gender targeting, postcodes, location exclusions, behaviours,
+demographics, lookalike audiences, and, in the US and Canada, a city radius
+under 15 miles or 25 km. Meta validates the rest.
+
+### Estimating an audience
+
+`meta_ads_estimate_audience(targeting)` reads
+`act_{id}/reachestimate?targeting_spec=…` for each selected account. A draft
+with audiences runs only in their account, and audiences from two accounts
+are refused. The result has `users_lower_bound` and `users_upper_bound`;
+Meta's `-1` becomes null with a note, and `estimate_ready: false` adds a note
+that the range may change. `delivery_estimate` isn't used, because it loses
+fields on 27 October 2026. The tool description tells the agent to estimate
+before proposing an ad set and to quote the range as Meta's estimate. Audit
+records counts of locations, detailed groups, and audiences, and whether
+Meta returned an estimate. The presenter describes the draft in plain words
+(`lib/targeting-sentence.ts`) and shows one line per account.
 
 ## Writes
 
@@ -1171,6 +1252,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Ad creation | `validate_only` on `/ads` with an inline creative, and whether one design in two ad sets shares a creative; every `creative_features_spec` key and explicit value per format read back off, and each offered change read back on; the empty description; placement rules for an image and a video; `/thumbnails` URIs as `image_url`; `ACTIVE` ads entering review then delivering and `PAUSED` staying off; `preview_shareable_link` and its host; `ad_review_feedback` shape; 50 ads with 20 inline images within the timeout |
 | Existing post ads | `published_posts` and Instagram `media` fields with a system user token, for an owned and a partner-shared Page; `boost_eligibility_info` shape; `validate_only` on `/ads` with `object_story_id` and with `source_instagram_media_id`; which automatic-change keys and explicit values Meta accepts on a post, read back off |
 | Targeting assets | `adspixels`, `advertisable_applications` (whether the edge exists and returns `object_store_urls`), `customaudiences` (the approximate size fields and `-1`), and `dsa_recommendations` reply shapes and permission errors with a system user token |
+| Targeting | `/search` reply shapes for each kind, including demographic `type` values and whether `relationship_statuses` or `education_statuses` take `{id}` items; `reachestimate` reply shape (`data` as an object), `-1`, and `estimate_ready`; a narrower estimate for two `flexible_spec` groups than for one (AND between groups) |
 | Ad copies | `/copies` reply shape (`copied_ad_id`), `NO_RENAME` keeping the source name, `status_option` read back, whether `/copies` accepts `validate_only`, whether a copy shares its source's creative, and whether Meta turns on automatic changes the source didn't have |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 

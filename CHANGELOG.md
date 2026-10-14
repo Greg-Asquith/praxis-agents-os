@@ -157,6 +157,12 @@ minor release. Patch releases contain backward-compatible fixes only.
   App Store and Google Play pages, custom and lookalike audiences with
   Meta's approximate sizes, and Meta's suggested advertiser names for ads
   shown in the EU, which the agent proposes for the operator to confirm.
+- Meta Ads targeting: `meta_ads_search_targeting` finds countries, regions,
+  cities, postcodes, interests, behaviours, demographics, and languages by
+  name and returns the keys a targeting draft needs, with Meta's audience
+  sizes. `meta_ads_estimate_audience` returns Meta's estimated audience for a
+  typed targeting draft in each selected ad account, after checking
+  Advantage+ audience age rules locally.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

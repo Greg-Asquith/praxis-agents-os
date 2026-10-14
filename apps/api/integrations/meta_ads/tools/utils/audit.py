@@ -13,11 +13,17 @@ from services.audit_events import (
     terminal_applied_operation_detail,
 )
 
+from ...operations.targeting import MetaAdsTargeting
 from ..schemas.activities import MetaAdsActivitiesData, MetaAdsActivitiesInput
 from ..schemas.assets import MetaAdsAssetKind, MetaAdsAssetsData
 from ..schemas.conversions import MetaAdsConversionsData
 from ..schemas.insights import MetaAdsInsightsData, MetaAdsInsightsInput
 from ..schemas.objects import DEFAULT_STATUSES, MetaAdsObjectsData, MetaAdsObjectsInput
+from ..schemas.targeting import (
+    MetaAdsAudienceEstimateData,
+    MetaAdsTargetingKind,
+    MetaAdsTargetingSearchData,
+)
 
 
 def _read_audit_detail(
@@ -65,6 +71,31 @@ def assets_audit_detail(
     for kind in kinds:
         fields[f"{kind}_count"] = len(getattr(result, kind))
     return _read_audit_detail(account_id, "assets", fields)
+
+
+def targeting_search_audit_detail(
+    account_id: str, kind: MetaAdsTargetingKind, result: MetaAdsTargetingSearchData
+) -> TerminalIntegrationOperationDetail:
+    """Returns the kind and count without the agent's search text."""
+    return _read_audit_detail(
+        account_id, "targeting_search", {"kind": kind, "option_count": len(result.options)}
+    )
+
+
+def audience_estimate_audit_detail(
+    account_id: str, targeting: MetaAdsTargeting, result: MetaAdsAudienceEstimateData
+) -> TerminalIntegrationOperationDetail:
+    return _read_audit_detail(
+        account_id,
+        "audience_estimate",
+        {
+            "location_count": len(targeting.locations),
+            "detailed_group_count": len(targeting.detailed),
+            "audience_count": len(targeting.audiences) + len(targeting.excluded_audiences),
+            "advantage_audience": targeting.advantage_audience,
+            "estimated": result.users_upper_bound is not None,
+        },
+    )
 
 
 def conversions_audit_detail(
