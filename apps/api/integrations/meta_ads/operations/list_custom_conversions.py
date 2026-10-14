@@ -38,7 +38,7 @@ async def list_custom_conversions(
         client,
         path=f"{ad_account_path(account_id)}/customconversions",
         account_id=account_id,
-        params={"fields": "id,name,description,is_archived,is_unavailable"},
+        params={"fields": "id,name,description,is_archived,is_unavailable,pixel{id}"},
         limit=limit,
         budget=budget or ReportResultBudget("meta_ads", _OPERATION),
         operation=_OPERATION,
@@ -53,6 +53,7 @@ async def list_custom_conversions(
                 description=bounded_string(row.get("description"), operation=_OPERATION),
                 is_archived=row.get("is_archived"),
                 is_unavailable=row.get("is_unavailable"),
+                pixel_id=pixel.get("id") if isinstance(pixel := row.get("pixel"), dict) else None,
             )
             for row in rows
         ]

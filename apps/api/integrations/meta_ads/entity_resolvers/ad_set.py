@@ -4,6 +4,7 @@
 
 from services.integrations.entity_references import EntityChoice, EntityResolverDefinition
 
+from ..goals import goal_for
 from ..references import MetaAdsAdSetReference
 from ..tools.schemas.objects import MetaAdsObject
 from .utils import object_label, resolve_objects, search_objects, status_description
@@ -22,6 +23,7 @@ def ad_set_reference(entry, item: MetaAdsObject, currency: str) -> MetaAdsAdSetR
         status=item.status,
         effective_status=item.effective_status,
         objective=item.objective,
+        goal=goal_for(item.objective, item.optimization_goal, item.destination_type),
         optimization_goal=item.optimization_goal,
         destination_type=item.destination_type,
         promoted_object=item.promoted_object,
@@ -29,6 +31,7 @@ def ad_set_reference(entry, item: MetaAdsObject, currency: str) -> MetaAdsAdSetR
         is_dynamic_creative=item.is_dynamic_creative,
         budget=item.budget,
         currency=currency or None,
+        special_ad_categories=item.special_ad_categories,
     )
 
 

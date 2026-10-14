@@ -32,8 +32,8 @@ from .values import bounded_string, invalid_response, iso_datetime, money_value,
 
 _OPERATION = "list_objects"
 _FIELDS = {
-    "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time",
-    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,daily_budget,lifetime_budget,budget_remaining,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,targeting{publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget}",
+    "campaign": "id,name,status,effective_status,objective,daily_budget,lifetime_budget,budget_remaining,bid_strategy,start_time,stop_time,special_ad_categories,is_adset_budget_sharing_enabled",
+    "adset": "id,name,status,effective_status,campaign_id,optimization_goal,bid_amount,bid_strategy,daily_budget,lifetime_budget,budget_remaining,start_time,end_time,destination_type,promoted_object,is_dynamic_creative,targeting{publisher_platforms,facebook_positions,instagram_positions,audience_network_positions,messenger_positions,threads_positions},campaign{objective,daily_budget,lifetime_budget,special_ad_categories}",
     "ad": "id,name,status,effective_status,campaign_id,adset_id,ad_review_feedback,issues_info",
 }
 _EDGES = {"campaign": "campaigns", "adset": "adsets", "ad": "ads"}
@@ -154,6 +154,14 @@ def _object(raw: dict[str, Any], object_type: MetaAdsObjectType, currency: str) 
         promoted_object=_promoted_object(raw.get("promoted_object")),
         placements=_placements(raw.get("targeting")) if object_type == "adset" else None,
         is_dynamic_creative=raw.get("is_dynamic_creative"),
+        special_ad_categories=_categories(
+            (campaign if object_type == "adset" else raw).get("special_ad_categories")
+        )
+        if object_type != "ad"
+        else None,
+        share_between_ad_sets=raw.get("is_adset_budget_sharing_enabled")
+        if object_type == "campaign"
+        else None,
         review_reasons=review_reasons(raw) if object_type == "ad" else None,
         issues=issue_summaries(raw) if object_type == "ad" else None,
     )
@@ -217,6 +225,14 @@ def _placements(targeting: Any) -> MetaAdsPlacements | None:
             raise invalid_response("Meta Ads returned invalid placements.", operation=_OPERATION)
         positions.extend([f"{platform}:{item}" for item in named] or [platform])
     return MetaAdsPlacements(mode="manual", positions=positions)
+
+
+def _categories(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise invalid_response("Meta Ads returned invalid ad categories.", operation=_OPERATION)
+    return value[:8]
 
 
 def _mapping(value: Any) -> dict[str, Any]:

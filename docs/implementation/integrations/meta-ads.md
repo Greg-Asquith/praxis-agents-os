@@ -309,7 +309,8 @@ account. Truncated results retain the returned rows with `truncated=true`.
 
 Objects include names, configured and effective status, objective or
 optimisation goal, bid strategy, budgets, bids, schedules, and parent IDs when
-available. Ads also carry up to five `review_reasons` from Meta's
+available. Campaigns also carry `special_ad_categories` and
+`share_between_ad_sets`. Ads also carry up to five `review_reasons` from Meta's
 `ad_review_feedback`, as `Policy: reason`, and up to five delivery `issues`
 from `issues_info`, so the agent can say whether new ads passed review. Schedule times are normalised to ISO 8601 and keep any offset Meta
 returns, for example `2026-09-01T00:00:00+01:00`. Ads have no separate budget.
@@ -324,6 +325,8 @@ Ad sets also carry what ad creation validates before approval:
   platform) or `instagram:story`. Null when Meta returns no targeting, because
   the placements are then unknown. Malformed targeting fails the read.
 - `is_dynamic_creative`.
+- `goal`, when the settings match a row of the [goal table](#goals), and the
+  campaign's `special_ad_categories`.
 - A budget of kind `campaign` when the campaign shows a budget, with the
   campaign amount and its `period` (daily or lifetime). An ad set with neither
   its own nor a campaign budget has a null budget, because ownership is
@@ -1097,6 +1100,128 @@ enhancement forced it paused, `copied`, `failed`, or `unverified`,
 preview link, and any automatic change Meta shows on the copy that its source
 doesn't have.
 
+### Creating ad sets
+
+`meta_ads_create_ad_set` creates one ad set in an existing campaign, always
+paused, in one approval. It's approval-only, supports Code Mode, has a
+120-second timeout, and is listed in `test_spend_policy.py`. Ads can then be
+created in it with `meta_ads_create_ads`, and nothing runs until it's turned
+on with `meta_ads_update_status`.
+
+#### Goals
+
+`goal` is a plain key from the goal table in `goals.py`. Each key maps to one
+objective, optimisation goal, destination, promoted asset, and minimum-budget
+kind. The table holds only the combinations Meta's mapping table confirms:
+
+| Goal | Campaign objective | Meta settings | Needs |
+| --- | --- | --- | --- |
+| `reach`, `impressions`, `ad_recall_lift` | Awareness | `REACH`, `IMPRESSIONS`, `AD_RECALL_LIFT` | `page` |
+| `link_clicks`, `landing_page_views` | Traffic | `LINK_CLICKS`, `LANDING_PAGE_VIEWS` to a website | nothing |
+| `post_engagement` | Engagement | `POST_ENGAGEMENT`, `ON_POST` | nothing |
+| `page_likes` | Engagement | `PAGE_LIKES`, `ON_PAGE` | `page` |
+| `app_installs` | App promotion | `APP_INSTALLS` | `app` and `app_store` |
+| `website_conversions` | Sales | `OFFSITE_CONVERSIONS`, `WEBSITE` | `pixel` with `conversion_event` or `custom_conversion_id` |
+
+Messenger and WhatsApp traffic, lead, and conversation goals are left out,
+because ad creation can't fill those ad sets. Rows reported by third parties
+are added once a step 0 dry run confirms them. Every ad set bills on
+impressions, except `link_clicks` with `pay_per_click`, which bills on link
+clicks. `apps/web/src/integrations/meta_ads/lib/goals.ts` holds the card's copy,
+keyed identically. Ad set references carry `goal` when an ad set's settings
+match a row.
+
+#### Arguments and checks before approval
+
+Besides `campaign`, `name` (up to 400 characters), `goal`, and `targeting`
+(the [targeting draft](#the-targeting-draft)), the tool takes:
+
+- The promoted asset the goal needs, and no other: `page`, `pixel` with
+  `conversion_event` (such as `PURCHASE`) or `custom_conversion_id`, or
+  `app` with `app_store` (`google_play` or `app_store`).
+- `placements`: automatic by default (no placement fields sent), or manual
+  with positions from a closed list and `devices`. The list leaves out
+  Facebook video feeds, Instagram Explore, and Messenger Stories.
+- `budget` (`daily` or `lifetime` with an amount) only when the campaign has
+  no budget of its own. A lifetime budget needs `end_date`, and a campaign
+  whose ad sets share budgets needs a daily one. Under a campaign budget,
+  `min_daily_spend` and `max_daily_spend` are optional.
+- Bids follow the campaign's strategy. `bid_strategy` is accepted only when
+  the campaign sets none; it's then sent on the ad set, defaulting to
+  `highest_volume`. `bid_cap` and `cost_per_result_goal` need `bid_amount`;
+  `roas_goal` needs `min_roas`, sent as `bid_constraints.roas_average_floor`
+  (the ratio times 10,000, a step 0 check); `highest_volume` takes neither.
+- `start_date` and `end_date` as `YYYY-MM-DD` in the account's time zone.
+  `tools/utils/schedule.py` turns them into the start of the first day and
+  the last second of the last day. A start today or earlier isn't sent, so
+  the ad set starts when it's turned on.
+- `eu_payer` and `eu_beneficiary`, up to 512 characters each.
+
+The validator checks the request against the campaign reference: the goal
+against the campaign's objective, budget ownership, bids, the targeting rules
+for special ad categories (from the campaign's `special_ad_categories`), and
+the dates. Places other than countries and postcodes must keep the
+`country_code` search returned.
+
+Campaign references carry `bid_strategy`, `special_ad_categories`, and
+`share_between_ad_sets` (`is_adset_budget_sharing_enabled`), and ad set
+references carry their campaign's categories.
+
+#### Approval display
+
+The card hydrates the campaign, Page, pixel, and app, and reads the account's
+currency, time zone, the goal's daily minimum, and its default EU names. It
+states the ad set as sentences: the goal, the budget or the campaign's, any
+bid, the schedule, who it reaches (`lib/targeting-sentence.ts`), where, and,
+for EU places, who pays and benefits. It edits the name, Page, pixel, app,
+budget amount, dates, ages, and, under **More settings**, the bid, spend
+limits, pay per click, and EU names. A custom conversion is shown by its
+name. Approval is blocked when an EU ad set has no names and no account
+defaults, a daily budget is under the minimum, or the custom conversion
+counts events from a pixel other than the one chosen.
+Changing the campaign, goal, places, or detailed targeting needs the agent:
+the tool refuses an approval where they differ from the proposal.
+
+#### Preparation and execution
+
+After approval, the tool:
+
+1. Requires the approved account, and the proposed campaign, goal, places,
+   and detailed targeting.
+2. Re-reads the campaign through the account's edge, and the Page, pixel,
+   app, custom conversion, and audiences through the account. A Page, pixel,
+   or app the account can't use is refused, as is an app without a page in
+   the chosen store, and a custom conversion that counts another pixel's
+   events. Rules such as no lookalikes for special ad categories
+   use Meta's own audience subtypes.
+3. Re-checks every campaign rule against the live campaign.
+4. Reads the account's time zone and EU defaults, and the goal's minimum
+   from `minimum_budgets` (`min_daily_budget_imp`, `_high_freq`, or
+   `_low_freq`, a step 0 check), falling back to the account's
+   `min_daily_budget`. A lifetime budget must cover the minimum for each day.
+5. Decides EU transparency. A country, region, city, or postcode in the EU or
+   an associated territory needs both names, given or from the account's
+   defaults; otherwise the call fails before anything is sent, naming what to
+   ask the operator for. Given names are sent as `dsa_payor` and
+   `dsa_beneficiary`; defaults are inherited and not sent.
+6. Refuses a name already used by an ad set in the campaign, because a lost
+   reply is found by name.
+7. Builds the body: `status=PAUSED`, the goal's settings, the targeting spec
+   with placements, the promoted object, budgets and bids in minor units,
+   and the schedule. `attribution_spec` isn't sent.
+8. Asks Meta to check it with `validate_only`; a rejection creates nothing.
+9. Records pending evidence: the goal, campaign, promoted object, money in
+   minor units, schedule, placements mode, EU transparency, location keys,
+   and counts of detailed items and excluded locations. Names of places,
+   interests, and audiences aren't recorded.
+10. Sends `POST /act_{id}/adsets` once. A lost or unclear reply is settled by
+    one lookup for the name under the campaign, created since the attempt.
+11. Reads the ad set back through the account's edge.
+
+The result has the ad set's outcome (`created`, `failed`, or `unverified`),
+`recovered`, `verified`, its ID, effective status, how EU transparency was
+given, and the read-back ad set reference, ready for `meta_ads_create_ads`.
+
 ## Custom conversions and custom events
 
 Advertisers track results either as custom conversions, which are rules defined
@@ -1109,8 +1234,8 @@ are supported.
 `recent_since` and `recent_until` give that window.
 
 - Custom conversions come from the selected account's `customconversions`
-  edge with `id`, `name`, `description`, `is_archived`, and `is_unavailable`.
-  Text is bounded to 512 characters and missing metadata remains null.
+  edge with `id`, `name`, `description`, `is_archived`, `is_unavailable`,
+  and `pixel_id`, the pixel whose events the conversion counts. Text is bounded to 512 characters and missing metadata remains null.
   Discovery defaults to 100 conversions, with a maximum of 500 and 10 pages.
   Its notes identify a row or pagination limit.
 - Custom events have no definitions edge. The tool reads one account-level
@@ -1253,6 +1378,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Existing post ads | `published_posts` and Instagram `media` fields with a system user token, for an owned and a partner-shared Page; `boost_eligibility_info` shape; `validate_only` on `/ads` with `object_story_id` and with `source_instagram_media_id`; which automatic-change keys and explicit values Meta accepts on a post, read back off |
 | Targeting assets | `adspixels`, `advertisable_applications` (whether the edge exists and returns `object_store_urls`), `customaudiences` (the approximate size fields and `-1`), and `dsa_recommendations` reply shapes and permission errors with a system user token |
 | Targeting | `/search` reply shapes for each kind, including demographic `type` values and whether `relationship_statuses` or `education_statuses` take `{id}` items; `reachestimate` reply shape (`data` as an object), `-1`, and `estimate_ready`; a narrower estimate for two `flexible_spec` groups than for one (AND between groups) |
+| Ad set creation | `validate_only` on `/adsets` for each goal row, and the unconfirmed rows (Sales `VALUE`, `LANDING_PAGE_VIEWS`, `LINK_CLICKS`; Leads; Engagement `THRUPLAY` and `CONVERSATIONS`; Awareness `THRUPLAY`); the `bid_constraints` shape for a minimum return on ad spend; the promoted object for a custom conversion; `minimum_budgets` field names per goal; `default_dsa_payor` and `default_dsa_beneficiary` on the account; whether Instagram `explore_home` survives v26; the default attribution setting; destination types read back for website traffic |
 | Ad copies | `/copies` reply shape (`copied_ad_id`), `NO_RENAME` keeping the source name, `status_option` read back, whether `/copies` accepts `validate_only`, whether a copy shares its source's creative, and whether Meta turns on automatic changes the source didn't have |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 

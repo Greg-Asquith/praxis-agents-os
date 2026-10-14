@@ -24,6 +24,8 @@ class MetaAdsConversion(MetaAdsStrictModel):
     description: MetaAdsText | None = None
     is_archived: bool | None = Field(default=None, strict=True)
     is_unavailable: bool | None = Field(default=None, strict=True)
+    # Custom conversions only: the pixel whose events the rule counts.
+    pixel_id: MetaAdsId | None = None
     recent_conversions: float | None = None
 
     @model_validator(mode="after")

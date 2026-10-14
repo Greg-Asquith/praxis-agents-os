@@ -21,6 +21,9 @@ def campaign_reference(entry, item: MetaAdsObject, currency: str) -> MetaAdsCamp
         objective=item.objective,
         budget=item.budget,
         currency=currency or None,
+        bid_strategy=item.bid_strategy,
+        special_ad_categories=item.special_ad_categories,
+        share_between_ad_sets=item.share_between_ad_sets,
     )
 
 

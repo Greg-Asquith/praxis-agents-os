@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 
 from services.integrations.entity_references import ScopedEntityReference
 
+from .goals import MetaAdsGoal
 from .models import (
     MetaAdsId,
     MetaAdsImageHash,
@@ -51,6 +52,10 @@ class MetaAdsCampaignReference(_MetaAdsObjectReference):
     # Null when each ad set holds its own budget.
     budget: MetaAdsObjectBudget | None = None
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    bid_strategy: MetaAdsText | None = None
+    special_ad_categories: list[MetaAdsText] | None = Field(default=None, max_length=8)
+    # Whether ad sets may share up to 20% of their own budgets.
+    share_between_ad_sets: bool | None = None
 
     identity_fields: ClassVar[tuple[str, ...]] = (
         *_MetaAdsObjectReference.identity_fields,
@@ -69,6 +74,8 @@ class MetaAdsAdSetReference(_MetaAdsObjectReference):
     campaign_id: MetaAdsId = Field(description="Meta parent campaign ID.")
     adset_id: MetaAdsId = Field(description="Meta ad set ID.")
     objective: MetaAdsText | None = None
+    # The plain goal key when the ad set's settings match one; null otherwise.
+    goal: MetaAdsGoal | None = None
     optimization_goal: MetaAdsText | None = None
     destination_type: MetaAdsText | None = None
     promoted_object: MetaAdsPromotedObject | None = None
@@ -77,6 +84,8 @@ class MetaAdsAdSetReference(_MetaAdsObjectReference):
     # Kind `campaign` means the parent campaign holds the budget.
     budget: MetaAdsObjectBudget | None = None
     currency: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+    # The parent campaign's categories, which limit the ad set's targeting.
+    special_ad_categories: list[MetaAdsText] | None = Field(default=None, max_length=8)
 
     identity_fields: ClassVar[tuple[str, ...]] = (
         *_MetaAdsObjectReference.identity_fields,

@@ -163,6 +163,16 @@ minor release. Patch releases contain backward-compatible fixes only.
   sizes. `meta_ads_estimate_audience` returns Meta's estimated audience for a
   typed targeting draft in each selected ad account, after checking
   Advantage+ audience age rules locally.
+- Meta Ads ad set creation: `meta_ads_create_ad_set` creates one paused ad
+  set in an existing campaign from a plain goal such as `website_conversions`
+  or `reach`, with typed targeting, automatic or manual placements, a budget
+  or the campaign's, bids that follow the campaign's strategy, a schedule in
+  the account's time zone, and EU payer and beneficiary names or the
+  account's defaults. Goals outside the campaign's objective, budgets under
+  campaign budgets, and missing bids are refused before approval. Meta
+  checks the ad set in a dry run, a lost reply is settled by name, and the
+  read-back reference is ready for ad creation. The card states the goal,
+  budget, schedule, who, where, and EU names as sentences.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

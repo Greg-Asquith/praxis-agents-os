@@ -96,6 +96,10 @@ class MetaAdsObject(MetaAdsStrictModel):
     promoted_object: MetaAdsPromotedObject | None = None
     placements: MetaAdsPlacements | None = None
     is_dynamic_creative: bool | None = None
+    # Campaigns, and ad sets from their campaign: categories such as HOUSING, or NONE.
+    special_ad_categories: list[MetaAdsText] | None = Field(default=None, max_length=8)
+    # Campaigns only: whether ad sets may share up to 20% of their own budgets.
+    share_between_ad_sets: bool | None = None
     # Ads only: why Meta's review rejected the ad, and what stops it delivering.
     review_reasons: list[MetaAdsText] | None = Field(default=None, max_length=5)
     issues: list[MetaAdsText] | None = Field(default=None, max_length=5)
