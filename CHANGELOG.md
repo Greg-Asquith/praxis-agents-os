@@ -152,6 +152,10 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Integration writes can record provider IDs as audit checkpoints between
+  their pending and final records. Meta Ads video uploads record the video ID
+  from Meta's `start` reply before sending any bytes, so an upload interrupted
+  by a stopped worker appears in run recovery with that ID.
 - Local and Azure Files uploads stream to storage instead of buffering in API
   memory.
 - Files uploads show a floating panel with the file name, a progress bar,

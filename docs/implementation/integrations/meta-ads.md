@@ -599,10 +599,15 @@ The tool works as follows:
    account fails the same way. Auto runs have no pin and use each File's
    current revision.
 4. Pending evidence records each File's ID, revision, content type, size,
-   SHA-256, and media type. File names aren't recorded. The video ID from
-   Meta's `start` reply reaches only terminal evidence, because the shared
-   audit runner has no checkpoint between pending and terminal evidence. A
-   worker that stops mid-upload leaves no video ID.
+   SHA-256, and media type. File names aren't recorded. Once Meta's `start`
+   reply names a video, its `video_id` and `upload_session_id` are recorded
+   as a checkpoint against that File's `media:upload` intent before any bytes
+   are sent (see [operation checkpoints](README.md)). If the checkpoint can't
+   be recorded, the session is cancelled and nothing is sent. A worker that
+   stops mid-upload leaves the video ID in the audit trail, and run recovery
+   lists the upload as uncertain with that ID, so the operator can check it
+   in Ads Manager rather than uploading again. Ad creation's own uploads
+   record the same checkpoint.
 5. Files upload in order, one ledger parent each.
    - An image is read whole, its size and SHA-256 checked, and sent in one
      multipart `POST /act_{id}/adimages`. If the reply is lost or unclear,

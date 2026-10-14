@@ -1,3 +1,5 @@
+# apps/web/.prettierignore
+
 coverage
 dist
 node_modules

@@ -1,3 +1,5 @@
+# apps/web/.dockerignore
+
 node_modules
 dist
 .git

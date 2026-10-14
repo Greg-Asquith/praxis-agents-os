@@ -26,10 +26,17 @@ from integrations.meta_ads.tools.schemas.media import MetaAdsMediaUploadOutput
 from integrations.meta_ads.tools.upload_media import meta_ads_upload_media, upload_entry
 from services.integrations.context.domain import ResolvedActiveContext
 from services.integrations.files import FileReference
+from services.integrations.operations import checkpoint_integration_operation
 from tests.integrations.meta_ads.support import context_entry, static_token
 
 IMAGE = b"\x89PNG image bytes"
 VIDEO = b"0123456789" * 3
+
+
+@pytest.fixture(autouse=True)
+def checkpoints(monkeypatch):
+    """Accepts checkpoints for operation tests, which run outside an audited write."""
+    monkeypatch.setattr(upload_module, "checkpoint_integration_operation", AsyncMock())
 
 
 def source(content: bytes, content_type: str, extension: str, *, name="spring") -> MediaSource:
@@ -143,6 +150,8 @@ class MediaGraph:
                 usage = json.dumps({"acc_id_util_pct": 100, "reset_time_duration": 60})
                 headers = {"x-ad-account-usage": usage}
                 return httpx2.Response(200, json=reply, headers=headers, request=request)
+        elif phase == "transfer" and self.transfer_reply == "cancel":
+            raise asyncio.CancelledError
         elif phase == "transfer" and self.transfer_reply == "reject":
             error = {"code": 100, "error_user_msg": "The chunk is invalid.", "fbtrace_id": "t"}
             return httpx2.Response(400, json={"error": error}, request=request)
@@ -416,6 +425,60 @@ def test_upload_needs_exactly_one_writable_account():
 
     with pytest.raises(ModelRetry):
         upload_entry(deps)
+
+
+async def test_worker_stopped_mid_upload_leaves_the_video_id_in_audit_evidence(monkeypatch):
+    store(monkeypatch, VIDEO)
+    video = source(VIDEO, "video/mp4", ".mp4")
+    graph = MediaGraph(transfer_reply="cancel")
+    recorded: list[tuple[dict, list[str]]] = []
+
+    async def audit(*_args, **kwargs):
+        recorded.append((kwargs, list(graph.phases)))
+        return uuid4()
+
+    monkeypatch.setattr(
+        upload_module, "checkpoint_integration_operation", checkpoint_integration_operation
+    )
+    monkeypatch.setattr(
+        "services.integrations.operations.record_integration_operation_audit_event", audit
+    )
+    module = "integrations.meta_ads.tools.upload_media"
+    monkeypatch.setattr(f"{module}.resolve_media_source", AsyncMock(return_value=video))
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle))
+
+    async def client(_ctx, _entry):
+        return MetaAdsClient(static_token, client=http)
+
+    monkeypatch.setattr(f"{module}.meta_ads_client", client)
+    entry = replace(context_entry("123"), write_allowed=True)
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(
+            active_context=ResolvedActiveContext(entries=(entry,)),
+            db=None,
+            workspace=SimpleNamespace(id=uuid4()),
+            agent=SimpleNamespace(id=uuid4(), name="Ads agent"),
+            run=SimpleNamespace(id=uuid4(), user_id=uuid4()),
+        ),
+        tool_call_approved=False,
+        tool_name="meta_ads_upload_media",
+        tool_call_id="call-meta-upload",
+    )
+
+    async with http:
+        with pytest.raises(asyncio.CancelledError):
+            await meta_ads_upload_media(
+                ctx, files=[FileReference(entity_id=video.file.id, label="spring.mp4")]
+            )
+
+    checkpointed = [(kwargs, phases) for kwargs, phases in recorded if kwargs.get("checkpoints")]
+    first, terminal = checkpointed[0], checkpointed[-1]
+    # Recorded once Meta named the video, before any bytes were sent.
+    assert first[1] == ["start"]
+    assert first[0]["status"].value == "pending"
+    assert first[0]["checkpoints"][0].references == {"video_id": "77", "upload_session_id": "5"}
+    assert terminal[0]["status"].value != "pending"
+    assert terminal[0]["checkpoints"][0].references["video_id"] == "77"
 
 
 async def test_approved_upload_fails_when_the_file_changed_after_review(monkeypatch):

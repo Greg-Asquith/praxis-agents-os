@@ -1,3 +1,5 @@
+# apps/web/.gcloudignore
+
 node_modules
 dist
 .git

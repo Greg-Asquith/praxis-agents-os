@@ -10,7 +10,9 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from core.exceptions.integration import IntegrationError, IntegrationFailureDisposition
+from services.audit_events import IntegrationOperationCheckpoint
 from services.integrations.http import IntegrationRequestPolicy
+from services.integrations.operations import checkpoint_integration_operation
 from services.integrations.report_results import ReportResultBudget
 
 from ..client import MetaAdsClient, ad_account_path
@@ -99,8 +101,9 @@ async def upload_media(
 ) -> tuple[list[MediaUpload], MetaAdsMutationLedger]:
     """Uploads in order, then reads every upload back and waits for videos to process.
 
-    A cancellation or unexpected error raises with a `ledger` attribute holding what was
-    proved so far.
+    `sources` are in the order of the pending `media:upload` intents, so a video's ID is
+    checkpointed against its File's intent before any bytes are sent. A cancellation or
+    unexpected error raises with a `ledger` attribute holding what was proved so far.
     """
     uploads = [MediaUpload(source, fields={"media_type": source.media_type}) for source in sources]
     for index, upload in enumerate(uploads):
@@ -108,7 +111,7 @@ async def upload_media(
             if upload.source.media_type == "image":
                 await _upload_image(client, account_id, scope_label, upload)
             else:
-                await _upload_video(client, account_id, upload)
+                await _upload_video(client, account_id, upload, index)
         except (asyncio.CancelledError, Exception) as exc:
             upload.effect = _interrupted_effect(upload, exc)
             for pending in uploads[index + 1 :]:
@@ -221,10 +224,12 @@ async def _find_image(
     return image_hash if any(item.image_hash == image_hash for item in found) else None
 
 
-async def _upload_video(client: MetaAdsClient, account_id: str, upload: MediaUpload) -> None:
+async def _upload_video(
+    client: MetaAdsClient, account_id: str, upload: MediaUpload, intent_index: int
+) -> None:
     path = f"{ad_account_path(account_id)}/advideos"
     async with RevisionStream(upload.source.revision) as stream:
-        session_id = await _transfer_video(client, account_id, path, stream, upload)
+        session_id = await _transfer_video(client, account_id, path, stream, upload, intent_index)
     if session_id is None:
         return
     upload.publishing = True
@@ -256,8 +261,13 @@ async def _transfer_video(
     path: str,
     stream: RevisionStream,
     upload: MediaUpload,
+    intent_index: int,
 ) -> str | None:
-    """Sends and verifies every byte; returns the session to finish, or None after a failure."""
+    """Sends and verifies every byte; returns the session to finish, or None after a failure.
+
+    The video ID is checkpointed before the first chunk, so a worker that stops mid-upload
+    leaves it in the audit trail. A checkpoint that can't be recorded stops the upload.
+    """
     session_id: str | None = None
     try:
         start = await _post(
@@ -268,13 +278,20 @@ async def _transfer_video(
         video_id = _digits(start, "video_id")
         upload.media_id = video_id
         upload.fields["video_id"] = video_id
+        await checkpoint_integration_operation(
+            IntegrationOperationCheckpoint(
+                group_key="media:upload",
+                intent_index=intent_index,
+                references={"video_id": video_id, "upload_session_id": session_id},
+            )
+        )
         await _send_chunks(client, account_id, path, stream, session_id, start, upload.source)
         await stream.verify()
-    except (IntegrationError, asyncio.CancelledError) as exc:
+    except (Exception, asyncio.CancelledError) as exc:
         # Nothing is published before finish, so a failure here leaves no usable video.
         if session_id is not None:
             await _cancel(client, account_id, path, session_id)
-        if isinstance(exc, asyncio.CancelledError):
+        if not isinstance(exc, IntegrationError):
             raise
         upload.effect = _failed(upload, exc)
         return None
