@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 from ..creative_features import applied_changes, change_labels
@@ -25,6 +25,22 @@ _UNEXPECTED_CHANGES = (
 )
 
 
+class CreateRun(Protocol):
+    """What one new or copied ad proved, as its ledger effect reads it."""
+
+    fields: dict[str, str]
+    outcome: MetaCreateResult | None
+    sending: bool
+    skip_code: str | None
+    skip_message: str | None
+    read: dict[str, Any] | None
+
+    @property
+    def enabled(self) -> frozenset[str]:
+        """Automatic changes the ad was meant to have on."""
+        ...
+
+
 @dataclass
 class AdRun:
     """What one planned ad proved."""
@@ -42,6 +58,10 @@ class AdRun:
     def created_id(self) -> str | None:
         return self.outcome.object_id if self.outcome and self.outcome.status == "applied" else None
 
+    @property
+    def enabled(self) -> frozenset[str]:
+        return self.ad.enabled
+
 
 def _effect(
     fields: Mapping[str, str], outcome: str, error_code: str, message: str
@@ -51,7 +71,7 @@ def _effect(
     )
 
 
-def ad_effect(run: AdRun) -> MetaAdsMutationEffect:
+def ad_effect(run: CreateRun) -> MetaAdsMutationEffect:
     """Projects one ad's outcome into the ledger; created ads carry what Meta shows."""
     fields = dict(run.fields)
     if run.skip_code is not None:
@@ -78,7 +98,7 @@ def ad_effect(run: AdRun) -> MetaAdsMutationEffect:
     )
 
 
-def _interrupted_effect(run: AdRun, fields: Mapping[str, str]) -> MetaAdsMutationEffect:
+def _interrupted_effect(run: CreateRun, fields: Mapping[str, str]) -> MetaAdsMutationEffect:
     # A create already handed to Meta might exist; one never sent doesn't.
     if run.sending:
         return _effect(
@@ -90,7 +110,7 @@ def _interrupted_effect(run: AdRun, fields: Mapping[str, str]) -> MetaAdsMutatio
     return _effect(fields, "failed", NOT_DISPATCHED_CODE, NOT_DISPATCHED_MESSAGE)
 
 
-def _observed_fields(run: AdRun) -> dict[str, str]:
+def _observed_fields(run: CreateRun) -> dict[str, str]:
     row = run.read or {}
     observed: dict[str, str] = {}
     creative = row.get("creative")
@@ -104,12 +124,12 @@ def _observed_fields(run: AdRun) -> dict[str, str]:
     return observed
 
 
-def unexpected_changes(run: AdRun) -> frozenset[str]:
+def unexpected_changes(run: CreateRun) -> frozenset[str]:
     """Returns automatic changes Meta shows on that the approval left off for this ad."""
     creative = (run.read or {}).get("creative")
     if not isinstance(creative, Mapping):
         return frozenset()
-    return applied_changes(creative) - run.ad.enabled
+    return applied_changes(creative) - run.enabled
 
 
 def ad_row(run: AdRun) -> dict[str, Any]:

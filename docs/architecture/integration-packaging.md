@@ -685,11 +685,11 @@ Insights resolves custom conversion names within each account's report budget
 and names custom events from their action types. `meta_ads_list_assets`
 lists Pages, Instagram accounts, and media as scoped references.
 Approval-gated `meta_ads_update_status`, `meta_ads_update_budgets`,
-`meta_ads_upload_media`, and `meta_ads_create_ads` write through the shared
-write presenter and the provider's mutation ledger. Ad creation edits its
+`meta_ads_upload_media`, `meta_ads_create_ads`, and `meta_ads_copy_ads` write
+through the shared write presenter and the provider's mutation ledger. Ad creation edits its
 nested ads through a `structured` approval field and adds Page, Instagram
-account, and media resolvers. Ads from existing posts, ad copies, OAuth, and
-event delivery remain pending. Live agency qualification remains
+account, and media resolvers. Ads from existing posts, OAuth, and event
+delivery remain pending. Live agency qualification remains
 unverified after the maintainer accepted its assumptions for implementation.
 
 Outlook Mail, Outlook Calendar, and SharePoint share the engine-owned Microsoft

@@ -35,6 +35,14 @@ export type CreateAdsResult = {
   createdOffForAi: boolean
 }
 
+export const REVIEW_LABELS = {
+  in_review: "In Review",
+  approved: "Approved",
+  rejected: "Rejected",
+  with_issues: "Has Issues",
+  unknown: "Not Shown Yet",
+} as const
+
 const OUTCOMES: ReadonlySet<CreateOutcome> = new Set(["created", "failed", "unverified"])
 const REVIEW_STATES: ReadonlySet<ReviewState> = new Set([
   "in_review",
@@ -102,7 +110,7 @@ function parseCreatedAd(value: unknown): CreatedAd | null {
 }
 
 // Meta's preview link opens only on Facebook's own hosts.
-function previewUrl(value: unknown): string | null {
+export function previewUrl(value: unknown): string | null {
   if (typeof value !== "string") return null
   try {
     const url = new URL(value)

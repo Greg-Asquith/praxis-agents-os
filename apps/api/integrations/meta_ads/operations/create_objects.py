@@ -1,10 +1,10 @@
 # apps/api/integrations/meta_ads/operations/create_objects.py
 
-"""Creation rules for Meta ads.
+"""Creation rules for Meta ads, new or copied.
 
-Every create is checked with a dry run first, sent once, and settled by a name lookup
-when Meta's reply is lost; it's never sent again. Creates are read back afterwards,
-in batches, by the caller.
+Every create is sent once and settled by a name lookup when Meta's reply is lost; it's
+never sent again. New ads are checked with a dry run first. Creates are read back
+afterwards, in batches, by the caller.
 """
 
 import json
@@ -98,16 +98,20 @@ async def create_object(
     data: Mapping[str, str],
     operation: str,
     lookup: MetaCreateLookup,
+    path: str | None = None,
+    id_field: str = "id",
 ) -> MetaCreateResult:
     """Sends one create once; an unclear reply is settled by one bounded lookup.
 
-    A rejection is a failure. A lost or unreadable reply counts as created only when
-    exactly one object with the name exists under the parent; otherwise it's unverified.
+    `path` replaces the account's edge as the target, as for `{ad_id}/copies`; the lookup
+    still reads the account's edge. A rejection is a failure. A lost or unreadable reply
+    counts as created only when exactly one object with the name exists under the parent;
+    otherwise it's unverified.
     """
     try:
         ensure_account_available(account_id, operation=operation)
         payload = await client.graph_post(
-            f"{ad_account_path(account_id)}/{edge}",
+            path or f"{ad_account_path(account_id)}/{edge}",
             data=dict(data),
             operation=operation,
             policy=IntegrationRequestPolicy.MUTATION,
@@ -124,7 +128,7 @@ async def create_object(
                 message=" ".join(exc.user_message.split())[:1000] or _UNCONFIRMED,
             )
         return await _reconcile(client, account_id, edge, operation, lookup)
-    object_id = payload.get("id")
+    object_id = payload.get(id_field)
     if not _digits(object_id):
         return await _reconcile(client, account_id, edge, operation, lookup)
     return MetaCreateResult("applied", object_id)

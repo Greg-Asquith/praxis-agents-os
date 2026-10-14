@@ -3,7 +3,7 @@
 import { Checkbox } from "@/components/ui/checkbox"
 import { ButtonSelect } from "@/integrations/meta_ads/components/button-select"
 import { LabelledInput, LabelledSelect } from "@/integrations/meta_ads/components/editor-fields"
-import type { CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
+import { STATUS_OPTIONS, type CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
 import { checksFor, type AdRow } from "@/integrations/meta_ads/lib/create-ads-checks"
 import {
   blankToNull,
@@ -13,11 +13,6 @@ import {
   type EditableAdKey,
   type EditedAds,
 } from "@/integrations/meta_ads/lib/create-ads-edits"
-
-const STATUS_OPTIONS = [
-  { value: "paused", label: "Paused" },
-  { value: "active", label: "Active" },
-] as const
 
 /** This ad's link, CTA button, URL tags, and status: the shared ones exactly, or its own. */
 export function DeliveryOverrides({

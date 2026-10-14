@@ -142,6 +142,11 @@ minor release. Patch releases contain backward-compatible fixes only.
   links, buttons, status, and carousel card order. Option pickers now show
   provider values such as `LEARN_MORE` as "Learn More". Ad listings include Meta's
   review reasons.
+- Meta Ads ad copies: copy up to 50 existing ads into other ad sets of the
+  same account in one approval, each paused or active and optionally
+  renamed. The card shows each source ad's picture, a text excerpt, and the
+  automatic changes it carries. Lost replies are settled by finding the copy
+  by name, never by copying again.
 - Meta Ads library images and video thumbnails show on the ad creation card.
   The API reads them from Meta's hosts and returns a re-encoded JPEG through
   the conversation preview route, so the browser never loads Meta's image

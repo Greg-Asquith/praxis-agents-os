@@ -12,12 +12,13 @@ from pydantic_ai import ModelRetry
 from core.exceptions.integration import IntegrationError
 from services.agents.runtime.context import RuntimeDeps
 from services.integrations.context.domain import ResolvedContextEntry
+from services.integrations.entity_references import resolve_runtime_references
 from services.integrations.files import FileReference
 from services.integrations.report_results import ReportResultBudget
 
 from ...client import MetaAdsClient
 from ...creative_features import has_ai_generated
-from ...entity_resolvers.utils import account_currency, asset_read_args
+from ...entity_resolvers.utils import MAX_EXACT_REFERENCES, account_currency, asset_read_args
 from ...operations.create_ads import ad_body, dry_run_ads
 from ...operations.creatives import CreativeImage, CreativeMedia, CreativeVideo
 from ...operations.list_assets import (
@@ -49,7 +50,7 @@ from ..schemas.ads import (
 from ..schemas.objects import UNDELETED_AD_STATUSES, MetaAdsObject
 
 _OPERATION = "create_ads"
-_MAX_ADS_PER_AD_SET = 50
+MAX_ADS_PER_AD_SET = 50
 _MAX_LISTED_PROBLEMS = 5
 
 
@@ -63,6 +64,27 @@ class Prepared:
     intent_fields: dict[int, dict[str, str]] = field(default_factory=dict)
     # Ads Meta already checked with a dry run; the rest are checked after their Files upload.
     checked: frozenset[int] = frozenset()
+
+
+async def hydrate_references(
+    deps: RuntimeDeps, entity_kind: str, field_key: str, references: Sequence[Any]
+) -> list[dict[str, Any]]:
+    """Re-reads references through their resolver for the approval card, 50 at a time."""
+    # A resolver takes at most 50 references at once; one call can use more media than that.
+    hydrated: list[dict[str, Any]] = []
+    for start in range(0, len(references), MAX_EXACT_REFERENCES):
+        hydrated.extend(
+            await resolve_runtime_references(
+                deps,
+                entity_kind=entity_kind,
+                field_key=field_key,
+                values=[
+                    reference.model_dump(mode="json")
+                    for reference in references[start : start + MAX_EXACT_REFERENCES]
+                ],
+            )
+        )
+    return hydrated
 
 
 def required_currency(entry: ResolvedContextEntry) -> str:
@@ -287,18 +309,17 @@ def _require_video_thumbnails(
             raise ModelRetry(f"{design.name}: add a thumbnail image for the video.")
 
 
-async def _check_capacity(
-    client: MetaAdsClient, entry: ResolvedContextEntry, planned: Sequence[PlannedAd]
-) -> None:
-    """Keeps each ad set within Meta's 50 ads, and each new name unique in its ad set."""
-    adset_ids = sorted({ad.adset_id for ad in planned})
+async def existing_ads(
+    client: MetaAdsClient, entry: ResolvedContextEntry, adset_ids: Sequence[str]
+) -> tuple[dict[str, int], dict[str, set[str]]]:
+    """Counts the undeleted ads in each ad set and collects their names, casefolded."""
     existing = await list_objects(
         client,
         account_id=entry.external_id,
         object_type="ad",
         statuses=UNDELETED_AD_STATUSES,
-        adset_ids=adset_ids,
-        limit=_MAX_ADS_PER_AD_SET * len(adset_ids),
+        adset_ids=list(adset_ids),
+        limit=MAX_ADS_PER_AD_SET * len(adset_ids),
         currency=required_currency(entry),
     )
     if existing.truncated:
@@ -312,13 +333,26 @@ async def _check_capacity(
         if item.adset_id:
             counts[item.adset_id] += 1
             names[item.adset_id].add((item.name or "").casefold())
+    return counts, names
+
+
+def over_capacity(counts: Mapping[str, int], labels: Mapping[str, str]) -> None:
+    """Refuses the call when any ad set would hold more than Meta's 50 ads."""
+    if full := [adset_id for adset_id, count in counts.items() if count > MAX_ADS_PER_AD_SET]:
+        raise ModelRetry(
+            f"Meta allows {MAX_ADS_PER_AD_SET} ads per ad set, and {labels[full[0]]} would "
+            "go over. Add fewer ads there, or delete ads it no longer needs."
+        )
+
+
+async def _check_capacity(
+    client: MetaAdsClient, entry: ResolvedContextEntry, planned: Sequence[PlannedAd]
+) -> None:
+    """Keeps each ad set within Meta's 50 ads, and each new name unique in its ad set."""
+    adset_ids = sorted({ad.adset_id for ad in planned})
+    counts, names = await existing_ads(client, entry, adset_ids)
     for ad in planned:
         counts[ad.adset_id] += 1
-    if full := [adset_id for adset_id in adset_ids if counts[adset_id] > _MAX_ADS_PER_AD_SET]:
-        labels = {ad.adset_id: ad.adset_name or ad.adset_id for ad in planned}
-        raise ModelRetry(
-            f"Meta allows {_MAX_ADS_PER_AD_SET} ads per ad set, and {labels[full[0]]} would "
-            "go over. Create fewer ads there, or delete ads it no longer needs."
-        )
+    over_capacity(counts, {ad.adset_id: ad.adset_name or ad.adset_id for ad in planned})
     if name := duplicate_name(planned, names):
         raise ModelRetry(f"An ad called {name} is already in its ad set. Choose another name.")

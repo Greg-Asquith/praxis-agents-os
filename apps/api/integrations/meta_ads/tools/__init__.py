@@ -2,6 +2,7 @@
 
 """Meta Ads tool contributions."""
 
+from .copy_ads import DEFINITION as COPY_ADS
 from .create_ads import DEFINITION as CREATE_ADS
 from .get_accounts import DEFINITION as GET_ACCOUNTS
 from .list_activities import DEFINITION as LIST_ACTIVITIES
@@ -24,4 +25,5 @@ TOOL_DEFINITIONS = (
     UPDATE_BUDGETS,
     UPLOAD_MEDIA,
     CREATE_ADS,
+    COPY_ADS,
 )

@@ -36,7 +36,8 @@ from .upload_media import MediaUpload, upload_media
 
 _OPERATION = "create_ads"
 _CONCURRENCY = 4
-_READ_FIELDS = (
+# New and copied ads are read back with their review, preview, and automatic changes.
+READ_FIELDS = (
     "id,name,status,effective_status,ad_review_feedback,issues_info,preview_shareable_link,"
     "creative{id,degrees_of_freedom_spec,contextual_multi_ads,asset_feed_spec,object_story_spec}"
 )
@@ -294,7 +295,7 @@ async def _read_back(client: MetaAdsClient, account_id: str, run: CreateAdsRun) 
             account_id=account_id,
             edge="ads",
             object_ids=list(created),
-            fields=_READ_FIELDS,
+            fields=READ_FIELDS,
             operation=_OPERATION,
         )
     except IntegrationError:

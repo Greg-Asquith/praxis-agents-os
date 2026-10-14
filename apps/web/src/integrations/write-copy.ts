@@ -6,6 +6,7 @@ const PROGRESS = {
   Add: "Adding",
   Apply: "Applying",
   Assign: "Assigning",
+  Copy: "Copying",
   Create: "Creating",
   Delete: "Deleting",
   Dismiss: "Dismissing",

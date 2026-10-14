@@ -664,8 +664,8 @@ that hasn't been checked against a live account; see
 
 `meta_ads_create_ads` creates up to 50 image, video, or carousel ads in
 existing ad sets of one ad account, in one approval. It is approval-only,
-supports Code Mode, and has a 300-second timeout. Ads from existing posts and ad
-copies are pending.
+supports Code Mode, and has a 300-second timeout. Ads from existing posts are
+pending. To reuse an existing ad's creative, see [Copying ads](#copying-ads).
 
 #### Arguments
 
@@ -860,6 +860,8 @@ suffix list, so Meta's dry run checks the result.
 
 `operations/create_objects.py` holds the creation rules: `validate_create`
 (dry run), `create_object` (one send with reconciliation), and `read_created`.
+`create_object` posts to the account's edge, or to another path such as
+`{ad_id}/copies`; the name lookup always reads the account's edge.
 
 #### Results
 
@@ -880,6 +882,64 @@ thumbnails as `image_url`, the preview link field and host, review feedback
 shapes, and timing for 50 ads are documented or expected behaviour that
 hasn't been checked against a live account; see
 [Live qualification record](#live-qualification-record).
+
+### Copying ads
+
+`meta_ads_copy_ads` copies up to 50 existing ads into other ad sets of the
+same ad account, in one approval, with at most 10 target ad sets. A copy
+keeps its source ad's creative: media, text, link, button, and automatic
+changes. To change any of those, create new ads instead. The tool is
+approval-only, supports Code Mode, has a 300-second timeout, and is listed in
+`test_spend_policy.py`.
+
+Each item in `copies` names a source ad, a target ad set, an optional `name`,
+and `status` (`paused` by default, or `active`). All references must be in one
+ad account; an ad can't be copied into its own ad set, or into one ad set
+twice in a call.
+
+The approval card reads each source ad through the account's ads edge and
+shows its picture through the `meta_ads_media` preview kind, a primary-text
+excerpt of up to 125 characters, its format, and the automatic changes its
+creative has on. The excerpt is approval display data only: it isn't returned
+to the agent or recorded in audit evidence. The card edits each copy's name
+and status, and states what `active` means for each target ad set, as the
+ad creation card does. A source with an AI-generated change on is always
+copied paused.
+
+After approval, the tool:
+
+1. Requires the approved account and the source ad and target ad set of each
+   copy as proposed; only names and statuses may change on the card.
+2. Re-reads the source ads and target ad sets through the account's edges,
+   and refuses archived, deleted, dynamic creative, lead, and messaging ad
+   sets, as ad creation does.
+3. Keeps each target ad set within Meta's 50 ads, and refuses a copy whose
+   source name or new name is already used there, by an existing ad or by
+   another copy in the call. A copy keeps the source's name until it is
+   renamed, so both names must be free for a lost reply to be found.
+4. Records pending evidence: per copy, the source ad ID, target ad set,
+   status, the automatic changes the source has on, and whether it is
+   renamed. Ad text isn't recorded.
+5. Sends `POST /{ad_id}/copies` with `adset_id`, an explicit
+   `status_option` (`ACTIVE` or `PAUSED`), and
+   `rename_options={"rename_strategy":"NO_RENAME"}`, four at a time. Later
+   copies continue after a failure. A copy is sent once; a lost or unclear
+   reply is settled by one lookup for the source's name in the target ad
+   set, created since the attempt.
+6. For a copy with a new name, records the copied ad ID as an audit
+   checkpoint, then sends `POST /{copied_ad_id}` with the name. A checkpoint
+   that can't be recorded stops the run before the rename. A rename that
+   fails leaves the copy in place under the source's name.
+7. Reads every copy back through the account's ads edge, as new ads are
+   read back.
+
+There's no dry run: Meta doesn't document `execution_options` on `/copies`,
+and a dry run Meta ignored would make a real copy. Each result row has the
+copy's name, source, target ad set, requested status, whether an AI
+enhancement forced it paused, `copied`, `failed`, or `unverified`,
+`recovered`, `verified`, the new ad ID, review state, review reasons, the
+preview link, and any automatic change Meta shows on the copy that its source
+doesn't have.
 
 ## Custom conversions and custom events
 
@@ -1034,6 +1094,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Pages and media | `promote_pages`, `connected_instagram_accounts` (whether its IDs work as `instagram_user_id` for a system user and a partner-shared Page), `adimages`, and `advideos` fields and permission errors |
 | Media upload | `adimages` multipart reply and whether the hash is the MD5 of the bytes across re-uploads; `advideos` phase replies, chunk sizes, `title` on `finish`, `cancel`, `status.video_status` values, and processing time for a 50 MB video |
 | Ad creation | `validate_only` on `/ads` with an inline creative, and whether one design in two ad sets shares a creative; every `creative_features_spec` key and explicit value per format read back off, and each offered change read back on; the empty description; placement rules for an image and a video; `/thumbnails` URIs as `image_url`; `ACTIVE` ads entering review then delivering and `PAUSED` staying off; `preview_shareable_link` and its host; `ad_review_feedback` shape; 50 ads with 20 inline images within the timeout |
+| Ad copies | `/copies` reply shape (`copied_ad_id`), `NO_RENAME` keeping the source name, `status_option` read back, whether `/copies` accepts `validate_only`, whether a copy shares its source's creative, and whether Meta turns on automatic changes the source didn't have |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 
 Keep tokens, secrets, proofs, identifying asset values, and echoed URLs out of

@@ -3,7 +3,7 @@
 """Approval-only tool that creates image, video, and carousel ads in existing ad sets."""
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Annotated, Any
 
 from pydantic import Field, ValidationError
@@ -30,7 +30,6 @@ from services.integrations.approved_display_args import approved_display_args, p
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_scope
-from services.integrations.entity_references import resolve_runtime_references
 from services.integrations.operations import (
     IntegrationAuditOutcome,
     run_audited_integration_operation,
@@ -38,7 +37,6 @@ from services.integrations.operations import (
 
 from ..client import MetaAdsClient
 from ..creative_features import offered_catalogue
-from ..entity_resolvers.utils import MAX_EXACT_REFERENCES
 from ..operations.ad_rows import ad_row
 from ..operations.create_ads import create_ads
 from ..operations.plan_ads import duplicate_name, plan_ads
@@ -70,6 +68,7 @@ from .utils.ad_preparation import (
     check_designs,
     distinct_ad_sets,
     distinct_media,
+    hydrate_references,
     prepare,
     required_currency,
     resolve_sources,
@@ -335,19 +334,21 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
     entry = _account_entry(deps, request.account_id)
     # Ads follow the shared settings they copy, so a later shared edit reaches them.
     display: dict[str, Any] = {**args, "ads": follow_shared(args)}
-    display["page"] = (await _hydrate(deps, "meta_ads_page", "page", [request.page]))[0]
+    display["page"] = (await hydrate_references(deps, "meta_ads_page", "page", [request.page]))[0]
     if request.instagram_account is not None:
         display["instagram_account"] = (
-            await _hydrate(
+            await hydrate_references(
                 deps, "meta_ads_instagram_account", "instagram_account", [request.instagram_account]
             )
         )[0]
     ad_sets = list(distinct_ad_sets(request).values())
-    hydrated_sets = await _hydrate(deps, "meta_ads_ad_set", "ads", ad_sets)
+    hydrated_sets = await hydrate_references(deps, "meta_ads_ad_set", "ads", ad_sets)
     library = [
         item for item in distinct_media(request).values() if isinstance(item, MetaAdsMediaReference)
     ]
-    hydrated_media = await _hydrate(deps, "meta_ads_media", "ads", library) if library else []
+    hydrated_media = (
+        await hydrate_references(deps, "meta_ads_media", "ads", library) if library else []
+    )
     sources = await resolve_sources(deps, request)
     return {
         **display,
@@ -363,26 +364,6 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
         "_automatic_change_catalogue": offered_catalogue(),
         "_buttons": {"website": list(WEBSITE_BUTTONS), "app": list(APP_BUTTONS)},
     }
-
-
-async def _hydrate(
-    deps: RuntimeDeps, entity_kind: str, field_key: str, references: Sequence[Any]
-) -> list[dict[str, Any]]:
-    # A resolver takes at most 50 references at once; one call can use more media than that.
-    hydrated: list[dict[str, Any]] = []
-    for start in range(0, len(references), MAX_EXACT_REFERENCES):
-        hydrated.extend(
-            await resolve_runtime_references(
-                deps,
-                entity_kind=entity_kind,
-                field_key=field_key,
-                values=[
-                    reference.model_dump(mode="json")
-                    for reference in references[start : start + MAX_EXACT_REFERENCES]
-                ],
-            )
-        )
-    return hydrated
 
 
 DEFINITION = RuntimeToolDefinition(

@@ -113,6 +113,10 @@ export const RECOMMENDED_LENGTHS = {
 } as const
 export const MIN_CARDS = 2
 export const MAX_CARDS = 10
+export const STATUS_OPTIONS = [
+  { value: "paused", label: "Paused" },
+  { value: "active", label: "Active" },
+] as const
 export const STATUSES: ReadonlySet<AdStatus> = new Set(["paused", "active"])
 const BUDGET_KINDS: ReadonlySet<"daily" | "lifetime" | "campaign"> = new Set([
   "daily",
@@ -153,7 +157,7 @@ export function parseCreateAdsArgs(value: unknown): CreateAdsArgs | null {
       status,
     },
     ads,
-    adSets: adSetLookup(value["_ad_sets"]),
+    adSets: parseAdSets(value["_ad_sets"]),
     enabledChanges: isStringArray(value["automatic_changes"]) ? value["automatic_changes"] : [],
     catalogue,
     buttons,
@@ -293,11 +297,12 @@ function mediaLookup(library: unknown, files: unknown): Map<string, PreviewMedia
   return media
 }
 
-export function adSetName(args: CreateAdsArgs, adSetId: string): string {
+export function adSetName(args: Pick<CreateAdsArgs, "adSets">, adSetId: string): string {
   return args.adSets.get(adSetId)?.name ?? `Ad set ${adSetId}`
 }
 
-function adSetLookup(value: unknown): Map<string, AdSetInfo> {
+/** Reads the ad sets the card hydrated, keyed by ID. */
+export function parseAdSets(value: unknown): Map<string, AdSetInfo> {
   const adSets = new Map<string, AdSetInfo>()
   if (!isRecord(value)) return adSets
   for (const [id, item] of Object.entries(value)) {

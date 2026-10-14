@@ -4,6 +4,7 @@ import type { IntegrationUiModule } from "@/integrations/contract"
 import { MetaAdsConnectHelp } from "@/integrations/meta_ads/components/connect-help"
 import { MetaAdsLogo } from "@/integrations/meta_ads/components/logo"
 import { metaAdsAccountsPresenter } from "@/integrations/meta_ads/presenters/accounts"
+import { metaAdsCopyAdsPresenter } from "@/integrations/meta_ads/presenters/copy-ads"
 import { metaAdsCreateAdsPresenter } from "@/integrations/meta_ads/presenters/create-ads"
 import { metaAdsActivitiesPresenter } from "@/integrations/meta_ads/presenters/activities"
 import { metaAdsListAssetsPresenter } from "@/integrations/meta_ads/presenters/list-assets"
@@ -16,7 +17,7 @@ import { metaAdsUploadMediaPresenter } from "@/integrations/meta_ads/presenters/
 
 export default {
   catalogDescription:
-    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, and, with your approval, upload images and videos, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, turn campaigns, ad sets, and ads on or off, and change budgets.",
+    "Read performance, account status, budgets, custom conversions, custom events, and change history for your Facebook and Instagram ads, see the Pages, Instagram accounts, and media you can advertise with, and, with your approval, upload images and videos, create image, video, and carousel ads in existing ad sets with every Meta advanced setting and AI enhancement off unless you turn it on, copy existing ads into other ad sets, turn campaigns, ad sets, and ads on or off, and change budgets.",
   ConnectHelp: MetaAdsConnectHelp,
   credentialLabel: "Access token",
   Logo: MetaAdsLogo,
@@ -32,5 +33,6 @@ export default {
     metaAdsUpdateBudgetsPresenter,
     metaAdsUploadMediaPresenter,
     metaAdsCreateAdsPresenter,
+    metaAdsCopyAdsPresenter,
   ],
 } satisfies IntegrationUiModule

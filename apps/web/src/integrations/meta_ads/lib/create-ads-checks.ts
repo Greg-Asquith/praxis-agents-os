@@ -277,8 +277,14 @@ export function createAdsProblem(args: CreateAdsArgs | null): string | null {
 
 // What creating the ads means for each ad set they go into.
 export type Delivery = "paused" | "ad_set_off" | "campaign_off" | "runs"
+// The ad sets a new or copied ad goes into, and the status it starts with.
+type DeliveryArgs = Pick<CreateAdsArgs, "adSets" | "currency">
+type DeliveryRow = { ad: { adSetIds: readonly string[] }; status: AdStatus }
 
-export function adSetDelivery(args: CreateAdsArgs, rows: readonly AdRow[]): Map<string, Delivery> {
+export function adSetDelivery(
+  args: DeliveryArgs,
+  rows: readonly DeliveryRow[]
+): Map<string, Delivery> {
   const delivery = new Map<string, Delivery>()
   for (const adSetId of new Set(rows.flatMap((row) => row.ad.adSetIds))) {
     const adSet = args.adSets.get(adSetId)
@@ -298,7 +304,7 @@ export function adSetDelivery(args: CreateAdsArgs, rows: readonly AdRow[]): Map<
 }
 
 /** Says, per ad set, what creating these ads means for delivery and spend. */
-export function statusLines(args: CreateAdsArgs, rows: readonly AdRow[]): string[] {
+export function statusLines(args: DeliveryArgs, rows: readonly DeliveryRow[]): string[] {
   const lines = new Map<string, string[]>()
   for (const [adSetId, delivery] of adSetDelivery(args, rows)) {
     const adSet = args.adSets.get(adSetId)

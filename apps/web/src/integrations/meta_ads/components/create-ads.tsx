@@ -18,16 +18,12 @@ import {
   statusLines,
   type AdRow,
 } from "@/integrations/meta_ads/lib/create-ads-checks"
-import { nextStep, type CreateAdsResult } from "@/integrations/meta_ads/lib/create-ads-result"
+import {
+  nextStep,
+  REVIEW_LABELS,
+  type CreateAdsResult,
+} from "@/integrations/meta_ads/lib/create-ads-result"
 import { cn } from "@/lib/utils"
-
-const REVIEW_LABELS = {
-  in_review: "In Review",
-  approved: "Approved",
-  rejected: "Rejected",
-  with_issues: "Has Issues",
-  unknown: "Not Shown Yet",
-} as const
 
 export function CreateAdsApproval({
   args,
@@ -47,31 +43,7 @@ export function CreateAdsApproval({
   return (
     <MediaAccountContext value={args.accountId}>
       <div className="grid min-w-0 gap-4">
-        <div
-          className={cn(
-            "flex items-start gap-2 text-sm",
-            runs
-              ? "border-warning/40 bg-warning/10 rounded-lg border px-3 py-2"
-              : "text-muted-foreground"
-          )}
-          role="note"
-        >
-          {runs ? (
-            <CirclePlayIcon
-              aria-hidden="true"
-              className="text-warning-foreground mt-0.5 size-4 shrink-0"
-            />
-          ) : (
-            <CirclePauseIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          )}
-          <ul className="grid gap-0.5">
-            {statusLines(args, rows).map((line) => (
-              <li key={line} className="wrap-anywhere">
-                {line}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <DeliveryNote lines={statusLines(args, rows)} runs={runs} />
         {rows.length > 1 ? (
           <AdsList args={args} onSelect={setSelected} rows={rows} selected={row?.ad.index ?? 0} />
         ) : null}
@@ -98,6 +70,37 @@ export function CreateAdsApproval({
         />
       </div>
     </MediaAccountContext>
+  )
+}
+
+/** Says what approving means for delivery, highlighted when anything would start spending. */
+export function DeliveryNote({ lines, runs }: { lines: readonly string[]; runs: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 text-sm",
+        runs
+          ? "border-warning/40 bg-warning/10 rounded-lg border px-3 py-2"
+          : "text-muted-foreground"
+      )}
+      role="note"
+    >
+      {runs ? (
+        <CirclePlayIcon
+          aria-hidden="true"
+          className="text-warning-foreground mt-0.5 size-4 shrink-0"
+        />
+      ) : (
+        <CirclePauseIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+      )}
+      <ul className="grid gap-0.5">
+        {lines.map((line) => (
+          <li key={line} className="wrap-anywhere">
+            {line}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -171,7 +174,7 @@ export function CreateAdsOutcome({ result }: { result: CreateAdsResult }) {
   )
 }
 
-function OutcomeLink({ href, children }: { href: string; children: string }) {
+export function OutcomeLink({ href, children }: { href: string; children: string }) {
   return (
     <a
       className="text-primary w-fit text-xs underline-offset-2 hover:underline"
