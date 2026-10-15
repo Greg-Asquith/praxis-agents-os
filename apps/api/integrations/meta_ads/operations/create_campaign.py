@@ -1,0 +1,251 @@
+# apps/api/integrations/meta_ads/operations/create_campaign.py
+
+"""Create one paused campaign: account checks, the request body, one send, then a read-back."""
+
+import asyncio
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any
+
+from core.exceptions.integration import IntegrationError
+from services.integrations.http import IntegrationRequestPolicy
+
+from ..client import MetaAdsClient, ad_account_path
+from ..money import amount_to_minor
+from ..throttle import ensure_account_available
+from ..tools.schemas.budgets import BID_STRATEGIES
+from ..tools.schemas.campaigns import OBJECTIVES, MetaAdsCreateCampaignRequest
+from ..tools.schemas.objects import MetaAdsObject
+from .ad_rows import ad_effect
+from .create_objects import MetaCreateLookup, MetaCreateResult, create_object
+from .list_objects import read_objects_by_id
+from .mutations import MetaAdsMutationLedger, MetaAdsMutationParent
+from .values import bounded_string, money_value, numeric_value, require_currency
+
+OPERATION = "create_campaign"
+CAMPAIGN_GROUP = "campaigns:create"
+CAMPAIGN_KEY = "campaign"
+_ACCOUNT_FIELDS = (
+    "currency,timezone_name,account_status,min_daily_budget,min_campaign_group_spend_cap"
+)
+# Disabled, pending closure, and closed accounts can't take new campaigns.
+_CLOSED_ACCOUNT_STATUSES = frozenset({2, 100, 101})
+_READBACK_FAILED = "Meta Ads created this campaign, but it couldn't be read back."
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignAccount:
+    """What the ad account says about money, time, and status at preparation."""
+
+    currency: str
+    timezone_name: str | None
+    closed: bool
+    # Daily budget minimum in the account currency, when Meta reports one.
+    minimum: str | None
+    # Smallest spending limit a campaign can have, when Meta reports one.
+    minimum_spend_limit: str | None
+
+
+async def read_campaign_account(client: MetaAdsClient, *, account_id: str) -> CampaignAccount:
+    ensure_account_available(account_id, operation=OPERATION)
+    raw = await client.graph_get(
+        ad_account_path(account_id),
+        params={"fields": _ACCOUNT_FIELDS},
+        operation=OPERATION,
+        policy=IntegrationRequestPolicy.READ,
+        usage_account_id=account_id,
+    )
+    currency = require_currency(raw.get("currency"), operation=OPERATION)
+    status = numeric_value(raw.get("account_status"), count=True, operation=OPERATION)
+    return CampaignAccount(
+        currency=currency,
+        timezone_name=bounded_string(raw.get("timezone_name"), operation=OPERATION),
+        closed=status in _CLOSED_ACCOUNT_STATUSES,
+        minimum=money_value(raw.get("min_daily_budget"), currency, operation=OPERATION),
+        minimum_spend_limit=money_value(
+            raw.get("min_campaign_group_spend_cap"), currency, operation=OPERATION
+        ),
+    )
+
+
+def account_problems(
+    request: MetaAdsCreateCampaignRequest, account: CampaignAccount, days: int | None
+) -> list[str]:
+    """Checks the account is open and the amounts meet its minimums."""
+    if account.closed:
+        return ["This ad account is disabled or closed, so Meta can't create campaigns in it."]
+    problems: list[str] = []
+    budget = request.budget
+    if budget.amount is not None and account.minimum is not None:
+        minimum = Decimal(account.minimum)
+        if budget.mode == "campaign_daily" and Decimal(budget.amount) < minimum:
+            problems.append(
+                f"The minimum daily budget for this ad account is {account.minimum} "
+                f"{account.currency}."
+            )
+        if budget.mode == "campaign_lifetime" and days and Decimal(budget.amount) < minimum * days:
+            problems.append(
+                f"Over {days} days, the minimum lifetime budget for this ad account is "
+                f"{format(minimum * days, 'f')} {account.currency}."
+            )
+    if (
+        request.spend_limit is not None
+        and account.minimum_spend_limit is not None
+        and Decimal(request.spend_limit) < Decimal(account.minimum_spend_limit)
+    ):
+        problems.append(
+            f"The smallest spending limit for this ad account is {account.minimum_spend_limit} "
+            f"{account.currency}."
+        )
+    return problems
+
+
+@dataclass(frozen=True, slots=True)
+class CampaignPlan:
+    """The approved campaign as Meta will receive it."""
+
+    body: dict[str, str]
+    intent_fields: dict[str, str]
+
+
+def plan_campaign(
+    request: MetaAdsCreateCampaignRequest,
+    *,
+    currency: str,
+    start_time: str | None,
+    end_time: str | None,
+) -> CampaignPlan:
+    """Builds the body and its evidence; created paused and by auction, always."""
+    categories = [item.category.upper() for item in request.special_ad_categories]
+    countries = sorted({code for item in request.special_ad_categories for code in item.countries})
+    body = {
+        "name": request.name,
+        "objective": OBJECTIVES[request.objective],
+        "status": "PAUSED",
+        "buying_type": "AUCTION",
+        "special_ad_categories": json.dumps(categories),
+        # Meta's default strategy needs a bid on every ad set, so the strategy is always sent.
+        "bid_strategy": BID_STRATEGIES[request.bid_strategy],
+    }
+    if countries:
+        body["special_ad_category_country"] = json.dumps(countries)
+    budget = request.budget
+    if budget.mode == "ad_set":
+        # Meta requires this without a campaign budget and refuses it with one.
+        body["is_adset_budget_sharing_enabled"] = (
+            "true" if budget.share_between_ad_sets else "false"
+        )
+    elif budget.amount is not None:
+        kind = "daily" if budget.mode == "campaign_daily" else "lifetime"
+        body[f"{kind}_budget"] = str(amount_to_minor(budget.amount, currency))
+    if request.spend_limit is not None:
+        body["spend_cap"] = str(amount_to_minor(request.spend_limit, currency))
+    if start_time:
+        body["start_time"] = start_time
+    if end_time:
+        body["stop_time"] = end_time
+    fields = {
+        "key": CAMPAIGN_KEY,
+        "objective": request.objective,
+        "budget_mode": budget.mode,
+        "currency": currency,
+        "special_ad_categories": ",".join(categories) or "none",
+    }
+    for key in (
+        "status",
+        "bid_strategy",
+        "daily_budget",
+        "lifetime_budget",
+        "is_adset_budget_sharing_enabled",
+        "spend_cap",
+        "start_time",
+        "stop_time",
+    ):
+        if body.get(key):
+            fields[key] = body[key]
+    if countries:
+        fields["special_ad_category_country"] = ",".join(countries)
+    return CampaignPlan(body=body, intent_fields=fields)
+
+
+@dataclass
+class CampaignRun:
+    """What the one create proved."""
+
+    fields: dict[str, str]
+    outcome: MetaCreateResult | None = None
+    # Set once the create has been handed to Meta, so an interruption is unverified.
+    sending: bool = False
+    skip_code: str | None = None
+    skip_message: str | None = None
+    read: dict[str, Any] | None = None
+    created: MetaAdsObject | None = None
+
+    @property
+    def enabled(self) -> frozenset[str]:
+        return frozenset()
+
+    def ledger(self) -> MetaAdsMutationLedger:
+        return MetaAdsMutationLedger(
+            action="create_campaign",
+            parents=(
+                MetaAdsMutationParent(
+                    identity=(("key", CAMPAIGN_KEY),), decision="submit", effects=(ad_effect(self),)
+                ),
+            ),
+        )
+
+
+async def create_campaign(
+    client: MetaAdsClient, *, account_id: str, currency: str, plan: CampaignPlan
+) -> CampaignRun:
+    """Sends the create once, settles a lost reply by name, then reads the campaign back.
+
+    Raises:
+        asyncio.CancelledError: With a `ledger` attribute: unverified once the create was sent.
+    """
+    run = CampaignRun(dict(plan.intent_fields))
+    try:
+        lookup = MetaCreateLookup(name=plan.body["name"], since=datetime.now(UTC))
+        run.sending = True
+        run.outcome = await create_object(
+            client,
+            account_id=account_id,
+            edge="campaigns",
+            data=plan.body,
+            operation=OPERATION,
+            lookup=lookup,
+        )
+        if (created_id := run.outcome.object_id) and run.outcome.status == "applied":
+            await _read_back(client, account_id, currency, created_id, run)
+    except (asyncio.CancelledError, Exception) as exc:
+        exc.ledger = run.ledger()
+        raise
+    return run
+
+
+async def _read_back(
+    client: MetaAdsClient, account_id: str, currency: str, campaign_id: str, run: CampaignRun
+) -> None:
+    try:
+        found = await read_objects_by_id(
+            client,
+            account_id=account_id,
+            object_type="campaign",
+            object_ids=[campaign_id],
+            currency=currency,
+        )
+    except IntegrationError:
+        return
+    if item := found.get(campaign_id):
+        run.created = item
+        run.read = {"effective_status": item.effective_status}
+
+
+def readback_message(run: CampaignRun) -> str | None:
+    effect = ad_effect(run)
+    if effect.outcome == "applied" and run.read is None:
+        return _READBACK_FAILED
+    return effect.message

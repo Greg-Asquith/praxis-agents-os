@@ -20,18 +20,11 @@ from ...references import (
     MetaAdsPageReference,
     MetaAdsPixelReference,
 )
-from .budgets import MetaAdsBudgetAmount
+from .budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
 
 MAX_AD_SET_NAME = 400
 MAX_EU_NAME = 512
 
-type MetaAdsBidStrategy = Literal["highest_volume", "cost_per_result_goal", "bid_cap", "roas_goal"]
-BID_STRATEGIES: dict[MetaAdsBidStrategy, str] = {
-    "highest_volume": "LOWEST_COST_WITHOUT_CAP",
-    "cost_per_result_goal": "COST_CAP",
-    "bid_cap": "LOWEST_COST_WITH_BID_CAP",
-    "roas_goal": "LOWEST_COST_WITH_MIN_ROAS",
-}
 # Positions Meta still offers in v26: no Facebook video feeds, Instagram Explore, or Messenger story.
 type MetaAdsPosition = Literal[
     "facebook:feed",

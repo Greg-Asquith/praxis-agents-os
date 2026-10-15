@@ -77,11 +77,10 @@ from ..throttle import ensure_account_available
 from .schemas.ad_sets import (
     MetaAdsAdSetBudget,
     MetaAdsAdSetPlacements,
-    MetaAdsBidStrategy,
     MetaAdsCreateAdSetOutput,
     MetaAdsCreateAdSetRequest,
 )
-from .schemas.budgets import MetaAdsBudgetAmount
+from .schemas.budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
 from .schemas.conversions import CUSTOM_CONVERSIONS_MAX_ROWS, MetaAdsConversion
 from .schemas.objects import OBJECT_STATUSES
 from .utils.ad_preparation import hydrate_references, required_currency

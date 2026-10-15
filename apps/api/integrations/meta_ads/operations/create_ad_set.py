@@ -21,11 +21,11 @@ from ..money import amount_to_minor
 from ..references import MetaAdsApplicationReference
 from ..throttle import ensure_account_available
 from ..tools.schemas.ad_sets import (
-    BID_STRATEGIES,
     MetaAdsAdSetPlacements,
     MetaAdsCreateAdSetRequest,
     MetaAdsEuTransparency,
 )
+from ..tools.schemas.budgets import BID_STRATEGIES
 from ..tools.schemas.objects import CLOSED_STATUSES, MetaAdsObject
 from .ad_rows import ad_effect
 from .create_objects import MetaCreateLookup, MetaCreateResult, create_object

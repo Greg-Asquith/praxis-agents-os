@@ -5,6 +5,7 @@
 from .copy_ads import DEFINITION as COPY_ADS
 from .create_ad_set import DEFINITION as CREATE_AD_SET
 from .create_ads import DEFINITION as CREATE_ADS
+from .create_campaign import DEFINITION as CREATE_CAMPAIGN
 from .estimate_audience import DEFINITION as ESTIMATE_AUDIENCE
 from .get_accounts import DEFINITION as GET_ACCOUNTS
 from .list_activities import DEFINITION as LIST_ACTIVITIES
@@ -29,6 +30,7 @@ TOOL_DEFINITIONS = (
     UPDATE_STATUS,
     UPDATE_BUDGETS,
     UPLOAD_MEDIA,
+    CREATE_CAMPAIGN,
     CREATE_AD_SET,
     CREATE_ADS,
     COPY_ADS,

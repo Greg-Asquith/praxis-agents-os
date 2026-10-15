@@ -7,11 +7,11 @@ objects, discover custom conversions and custom events, and read change
 history on selected accounts. Agents can list the Pages, Instagram accounts,
 and media an account can advertise with, find targeting options by name, and
 estimate how many people a targeting draft reaches. With approval, agents can upload
-workspace images and videos to an account's media library, create image,
-video, and carousel ads in existing ad sets, turn campaigns, ad sets, and ads
-on or off, and change campaign and ad set budget amounts. Ads from existing
-posts, ad copies, campaign and ad set creation, Facebook sign-in, and event
-delivery are pending.
+workspace images and videos to an account's media library, create paused
+campaigns and paused ad sets, create image, video, carousel, and existing
+post ads in existing ad sets, copy ads, turn campaigns, ad sets, and ads on
+or off, and change campaign and ad set budget amounts. Facebook sign-in and
+event delivery are pending.
 
 Backend code lives in `apps/api/integrations/meta_ads/`; the web module lives in
 `apps/web/src/integrations/meta_ads/`. The provider uses the shared API-key
@@ -1100,6 +1100,83 @@ enhancement forced it paused, `copied`, `failed`, or `unverified`,
 preview link, and any automatic change Meta shows on the copy that its source
 doesn't have.
 
+### Creating campaigns
+
+`meta_ads_create_campaign` creates one campaign, always paused, in one
+approval. It's approval-only, supports Code Mode, has a 120-second timeout,
+and is listed in `test_spend_policy.py`. It takes no account argument: the
+campaign goes in the one writable ad account selected in Active Context, and
+the tool asks for exactly one when more are selected. Ad sets are then
+created in it with `meta_ads_create_ad_set`, and nothing runs until it's
+turned on with `meta_ads_update_status`.
+
+#### Arguments and checks before approval
+
+- `name`, up to 400 characters.
+- `objective`: `sales`, `leads`, `traffic`, `engagement`, `awareness`, or
+  `app_promotion`, sent as Meta's `OUTCOME_*` objective. `buying_type` is
+  always `AUCTION`.
+- `budget.mode`: `campaign_daily` (the default) or `campaign_lifetime` with
+  an `amount`, which gives the campaign a shared budget; or `ad_set`, which
+  leaves budgets to each ad set and needs `share_between_ad_sets`, sent as
+  `is_adset_budget_sharing_enabled`. Meta requires that field without a
+  campaign budget and refuses it with one, so it's sent only in `ad_set`
+  mode. A lifetime budget needs `end_date`.
+- `bid_strategy`: `highest_volume` (`LOWEST_COST_WITHOUT_CAP`, the default),
+  `cost_per_result_goal` (`COST_CAP`), `bid_cap`
+  (`LOWEST_COST_WITH_BID_CAP`), or `roas_goal` (`LOWEST_COST_WITH_MIN_ROAS`).
+  It's always sent, because Meta's own default needs a bid on every ad set.
+  `roas_goal` needs a sales campaign with a campaign budget. The map lives in
+  `tools/schemas/budgets.py`, shared with ad sets.
+- `special_ad_categories`: `housing`, `employment`,
+  `financial_products_services`, or `online_gambling_and_gaming`, each with
+  ISO-2 countries, sent as `special_ad_categories` and the union of countries
+  as `special_ad_category_country`. Political, election, and social issue
+  campaigns are refused, because they need a Page authorisation Praxis
+  doesn't manage. The tool description tells the agent to ask the operator
+  rather than infer a category.
+- `start_date` and `end_date` in the account's time zone, through
+  `tools/utils/schedule.py`, sent as `start_time` and `stop_time`.
+- `spend_limit`, the most the campaign can ever spend, sent as `spend_cap`.
+
+#### Approval display
+
+The card reads the account's currency, time zone, `min_daily_budget`, and
+`min_campaign_group_spend_cap`, and states the campaign as sentences: the
+objective in plain words (`lib/objectives.ts`), the budget with Meta's
+daily flexibility note and the account minimum, the bid strategy and what
+each ad set will need, any special category, and the schedule. It edits the
+name, budget amount, dates, and, under **More settings**, the spending limit.
+Approval is blocked when a daily budget or spending limit is under the
+account's minimum. Changing the objective, budget mode, budget sharing, bid
+strategy, or categories needs the agent: the tool refuses an approval where
+they differ from the proposal.
+
+#### Preparation and execution
+
+After approval, the tool requires the approved account and the proposed
+fixed settings, then:
+
+1. Re-reads the account. A disabled or closed account is refused, as is a
+   daily budget under `min_daily_budget`, a lifetime budget under the
+   minimum for each day, and a spending limit under
+   `min_campaign_group_spend_cap`.
+2. Refuses a name already used by an undeleted campaign in the account,
+   because a lost reply is found by name.
+3. Builds the body with `status=PAUSED` and asks Meta to check it with
+   `validate_only`; a rejection creates nothing.
+4. Records pending evidence: objective, budget mode, money in minor units,
+   currency, bid strategy, category keys and countries, and schedule.
+5. Sends `POST /act_{id}/campaigns` once. A lost or unclear reply is settled
+   by one lookup for the name across the account, created since the attempt.
+6. Reads the campaign back through the account's edge.
+
+The result has the campaign's outcome (`created`, `failed`, or
+`unverified`), `recovered`, `verified`, its ID, effective status, and the
+read-back campaign reference, ready for `meta_ads_create_ad_set`.
+`advantage_state_info` isn't read back yet; a new campaign has no ad sets to
+qualify it.
+
 ### Creating ad sets
 
 `meta_ads_create_ad_set` creates one ad set in an existing campaign, always
@@ -1379,6 +1456,7 @@ permission access levels, and anonymised asset aliases for these checks:
 | Targeting assets | `adspixels`, `advertisable_applications` (whether the edge exists and returns `object_store_urls`), `customaudiences` (the approximate size fields and `-1`), and `dsa_recommendations` reply shapes and permission errors with a system user token |
 | Targeting | `/search` reply shapes for each kind, including demographic `type` values and whether `relationship_statuses` or `education_statuses` take `{id}` items; `reachestimate` reply shape (`data` as an object), `-1`, and `estimate_ready`; a narrower estimate for two `flexible_spec` groups than for one (AND between groups) |
 | Ad set creation | `validate_only` on `/adsets` for each goal row, and the unconfirmed rows (Sales `VALUE`, `LANDING_PAGE_VIEWS`, `LINK_CLICKS`; Leads; Engagement `THRUPLAY` and `CONVERSATIONS`; Awareness `THRUPLAY`); the `bid_constraints` shape for a minimum return on ad spend; the promoted object for a custom conversion; `minimum_budgets` field names per goal; `default_dsa_payor` and `default_dsa_beneficiary` on the account; whether Instagram `explore_home` survives v26; the default attribution setting; destination types read back for website traffic |
+| Campaign creation | `validate_only` on `/campaigns` for each budget mode, and error 4834011 without `is_adset_budget_sharing_enabled`; that object creation still has no idempotency key; `min_daily_budget` against `minimum_budgets` in the test account currency; `min_campaign_group_spend_cap` units; the Ads Manager campaign link; `advantage_state_info` on a campaign with an Advantage+ ad set |
 | Ad copies | `/copies` reply shape (`copied_ad_id`), `NO_RENAME` keeping the source name, `status_option` read back, whether `/copies` accepts `validate_only`, whether a copy shares its source's creative, and whether Meta turns on automatic changes the source didn't have |
 | Recovery and secrecy | Invalid-token and wrong-app guidance, with no token or proof in logs or audit evidence |
 

@@ -163,6 +163,16 @@ minor release. Patch releases contain backward-compatible fixes only.
   sizes. `meta_ads_estimate_audience` returns Meta's estimated audience for a
   typed targeting draft in each selected ad account, after checking
   Advantage+ audience age rules locally.
+- Meta Ads campaign creation: `meta_ads_create_campaign` creates one paused
+  campaign in the selected ad account from a plain objective such as
+  `sales`, with a daily, lifetime, or per-ad-set budget, a bid strategy, any
+  declared special ad category, a schedule in the account's time zone, and
+  an optional spending limit. Political campaigns, return on ad spend goals
+  without a sales campaign budget, and amounts under the account's minimums
+  are refused before anything is sent. Meta checks the campaign in a dry
+  run, a lost reply is settled by name, and the read-back reference is ready
+  for ad set creation. The card states the objective, budget, bidding,
+  category, and schedule as sentences.
 - Meta Ads ad set creation: `meta_ads_create_ad_set` creates one paused ad
   set in an existing campaign from a plain goal such as `website_conversions`
   or `reach`, with typed targeting, automatic or manual placements, a budget

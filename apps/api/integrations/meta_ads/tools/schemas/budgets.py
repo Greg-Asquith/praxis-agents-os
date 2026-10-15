@@ -32,6 +32,14 @@ type MetaAdsBudgetAmount = Annotated[
     ),
 ]
 
+type MetaAdsBidStrategy = Literal["highest_volume", "cost_per_result_goal", "bid_cap", "roas_goal"]
+BID_STRATEGIES: dict[MetaAdsBidStrategy, str] = {
+    "highest_volume": "LOWEST_COST_WITHOUT_CAP",
+    "cost_per_result_goal": "COST_CAP",
+    "bid_cap": "LOWEST_COST_WITH_BID_CAP",
+    "roas_goal": "LOWEST_COST_WITH_MIN_ROAS",
+}
+
 
 class MetaAdsBudgetUpdate(MetaAdsStrictModel):
     """One new budget amount for either a campaign or an ad set."""

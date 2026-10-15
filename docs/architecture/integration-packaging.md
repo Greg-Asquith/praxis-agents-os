@@ -689,12 +689,14 @@ as scoped references, and Meta's suggested EU advertiser names as text.
 keys and audience estimates, with an audience resolver for the draft's
 audiences.
 Approval-gated `meta_ads_update_status`, `meta_ads_update_budgets`,
-`meta_ads_upload_media`, `meta_ads_create_ads`, `meta_ads_copy_ads`, and
-`meta_ads_create_ad_set` write through the shared write presenter and the
+`meta_ads_upload_media`, `meta_ads_create_ads`, `meta_ads_copy_ads`,
+`meta_ads_create_ad_set`, and `meta_ads_create_campaign` write through the shared write presenter and the
 provider's mutation ledger. Ad creation edits its nested ads through a
 `structured` approval field and adds Page, Instagram account, media, and post
 resolvers. Ad set creation adds pixel and app resolvers and edits its budget
-and targeting through `structured` fields. OAuth and event delivery remain
+and targeting through `structured` fields. Campaign creation takes its
+account from the one writable selected account and edits its budget through
+a `structured` field. OAuth and event delivery remain
 pending. Live agency qualification remains
 unverified after the maintainer accepted its assumptions for implementation.
 

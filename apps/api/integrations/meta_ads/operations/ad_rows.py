@@ -26,7 +26,7 @@ _UNEXPECTED_CHANGES = (
 
 
 class CreateRun(Protocol):
-    """What one new or copied ad, or new ad set, proved, as its ledger effect reads it."""
+    """What one new or copied ad, or new ad set or campaign, proved, as its ledger effect reads it."""
 
     fields: dict[str, str]
     outcome: MetaCreateResult | None

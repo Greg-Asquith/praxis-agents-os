@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/operations/create_objects.py
 
-"""Creation rules for Meta ads and ad sets, new or copied.
+"""Creation rules for Meta campaigns, ad sets, and ads, new or copied.
 
 Every create is sent once and settled by a name lookup when Meta's reply is lost; it's
 never sent again. New objects are checked with a dry run first. Creates are read back
@@ -26,7 +26,7 @@ from ..throttle import ensure_account_available
 from ..tools.schemas.objects import OBJECT_STATUSES
 from .paging import read_pages
 
-type MetaAdsCreateEdge = Literal["ads", "adsets"]
+type MetaAdsCreateEdge = Literal["ads", "adsets", "campaigns"]
 type MetaCreateStatus = Literal["applied", "failed", "unverified"]
 
 # Allows for clock differences between this server and Meta when matching a lost create.
@@ -39,7 +39,7 @@ _UNDELETED_FILTERS = {
         "operator": "IN",
         "value": [status for status in OBJECT_STATUSES[object_type] if status != "DELETED"],
     }
-    for edge, object_type in (("ads", "ad"), ("adsets", "adset"))
+    for edge, object_type in (("ads", "ad"), ("adsets", "adset"), ("campaigns", "campaign"))
 }
 _DRY_RUN_UNCONFIRMED = "Meta Ads didn't confirm this could be created."
 _UNCONFIRMED = (
@@ -61,12 +61,15 @@ class MetaCreateResult:
 
 @dataclass(frozen=True, slots=True)
 class MetaCreateLookup:
-    """How to find a create whose reply was lost: same name, same parent, made since `since`."""
+    """How to find a create whose reply was lost: same name, same parent, made since `since`.
+
+    A campaign has no parent but the account, so its lookup leaves both parent fields out.
+    """
 
     name: str
-    parent_field: Literal["campaign.id", "adset.id"]
-    parent_id: str
     since: datetime
+    parent_field: Literal["campaign.id", "adset.id"] | None = None
+    parent_id: str | None = None
 
 
 async def validate_create(
@@ -154,8 +157,11 @@ async def _find_created(
     filters = [
         _UNDELETED_FILTERS[edge],
         {"field": "name", "operator": "CONTAIN", "value": lookup.name},
-        {"field": lookup.parent_field, "operator": "IN", "value": [lookup.parent_id]},
     ]
+    if lookup.parent_field is not None:
+        filters.append(
+            {"field": lookup.parent_field, "operator": "IN", "value": [lookup.parent_id]}
+        )
     rows, _more = await read_pages(
         client,
         path=f"{ad_account_path(account_id)}/{edge}",
