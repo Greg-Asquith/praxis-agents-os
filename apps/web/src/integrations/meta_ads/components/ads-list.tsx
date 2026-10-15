@@ -83,11 +83,13 @@ export function AdsList({
                     <SelectItem label="All ad sets" value={ALL_AD_SETS}>
                       All ad sets
                     </SelectItem>
-                    {[...args.adSets.values()].map((adSet) => (
-                      <SelectItem key={adSet.id} label={adSet.name} value={adSet.id}>
-                        {adSet.name}
-                      </SelectItem>
-                    ))}
+                    {[...args.adSets.values()]
+                      .filter((adSet) => rows.some((row) => row.ad.adSetIds.includes(adSet.id)))
+                      .map((adSet) => (
+                        <SelectItem key={adSet.id} label={adSet.name} value={adSet.id}>
+                          {adSet.name}
+                        </SelectItem>
+                      ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
@@ -120,7 +122,7 @@ export function AdsList({
                 aria-current={current ? "true" : undefined}
                 className={cn(
                   "hover:bg-muted/50 focus-visible:ring-ring/50 flex w-full min-w-0 cursor-pointer items-center gap-3 px-3 py-2 text-left outline-none focus-visible:ring-3 focus-visible:ring-inset",
-                  current && "bg-muted/70 hover:bg-muted/70"
+                  current && "bg-muted/70 hover:bg-muted/70 shadow-[inset_3px_0_0_var(--primary)]"
                 )}
                 onClick={() => {
                   onSelect(row.ad.index)
@@ -132,7 +134,7 @@ export function AdsList({
                   <span className="truncate text-sm font-medium">
                     {row.ad.name || "Unnamed ad"}
                   </span>
-                  <span className="text-muted-foreground truncate text-xs">
+                  <span className="text-muted-foreground truncate text-sm">
                     {[
                       FORMAT_LABELS[row.ad.format],
                       row.ad.format === "carousel" ? `${String(row.ad.cards.length)} cards` : null,

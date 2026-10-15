@@ -1,8 +1,12 @@
 // apps/web/src/integrations/meta_ads/components/media-upload.tsx
 
+import { PlusIcon } from "lucide-react"
+import { useState } from "react"
+
+import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { WorkspaceFileThumbnail } from "@/components/tool-ui/workspace-file-thumbnail"
 import { Button } from "@/components/ui/button"
-import { MetaAdsApprovalSection } from "@/integrations/meta_ads/components/approval-section"
+import { EntitySearch } from "@/integrations/meta_ads/components/entity-search"
 import { MetaAdsOutcomeTable } from "@/integrations/meta_ads/components/outcome-table"
 import {
   uploadCountLine,
@@ -15,67 +19,108 @@ const TYPE_LABELS = { image: "Image", video: "Video" } as const
 
 export function MediaUploadApprovalSummary({
   args,
-  disabled = false,
+  disabled,
+  onFieldEdit,
   onReview,
 }: {
   args: MediaUploadArgs
-  disabled?: boolean
+  disabled: boolean
+  onFieldEdit: (key: string, value: EditedValue) => void
   onReview?: (() => void) | undefined
 }) {
+  const [adding, setAdding] = useState(false)
   const reviewed = args.files.flatMap((file) => (file.reviewed ? [file.reviewed] : []))
   const destination = args.accountName ?? "the selected ad account"
   return (
-    <div className="grid gap-3">
+    <div className="grid min-w-0 gap-3">
       {args.needsReview ? (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <p className="text-muted-foreground text-sm">
             Check the changed Files to confirm Meta accepts them.
           </p>
           <Button
             disabled={disabled || !onReview}
             onClick={onReview}
-            size="sm"
             type="button"
             variant="outline"
           >
             Check Files
           </Button>
         </div>
-      ) : null}
-      <MetaAdsApprovalSection
-        ariaLabel="Files to upload"
-        countLine={
-          args.needsReview
-            ? null
-            : `${uploadCountLine(reviewed)} to ${destination}. This doesn't create ads or spend money.`
-        }
-      >
-        <ul className="grid gap-2">
-          {args.files.map((file) => (
-            <li key={file.id} className="flex min-w-0 items-center gap-3">
-              <WorkspaceFileThumbnail
-                fileId={file.id}
-                kind={file.reviewed?.mediaType ?? "image"}
-                label={file.label}
-                revisionId={file.reviewed?.revisionId ?? null}
-              />
-              <span className="grid min-w-0 gap-0.5">
-                <span className="text-sm font-medium wrap-anywhere">
-                  {file.reviewed?.name ?? file.label}
-                </span>
-                {file.reviewed ? (
-                  <span className="text-muted-foreground text-xs">
-                    {TYPE_LABELS[file.reviewed.mediaType]} · {formatBytes(file.reviewed.sizeBytes)}
-                  </span>
-                ) : null}
+      ) : (
+        <p className="text-sm">
+          {uploadCountLine(reviewed)} to {destination}.{" "}
+          <span className="text-muted-foreground">
+            This doesn&apos;t create ads or spend money.
+          </span>
+        </p>
+      )}
+      <ul aria-label="Files to upload" className="divide-y overflow-hidden rounded-lg border">
+        {args.files.map((file) => (
+          <li key={file.id} className="flex min-w-0 items-center gap-3 p-3">
+            <WorkspaceFileThumbnail
+              fileId={file.id}
+              kind={file.reviewed?.mediaType ?? "image"}
+              label={file.label}
+              revisionId={file.reviewed?.revisionId ?? null}
+            />
+            <span className="grid min-w-0 flex-1 gap-0.5">
+              <span className="text-sm font-medium wrap-anywhere">
+                {file.reviewed?.name ?? file.label}
               </span>
-            </li>
-          ))}
-        </ul>
-        <p className="text-muted-foreground text-xs">
+              {file.reviewed ? (
+                <span className="text-muted-foreground text-sm">
+                  {TYPE_LABELS[file.reviewed.mediaType]} · {formatBytes(file.reviewed.sizeBytes)}
+                </span>
+              ) : null}
+            </span>
+            <Button
+              aria-label={`Remove ${file.reviewed?.name ?? file.label}`}
+              disabled={disabled || args.files.length === 1}
+              onClick={() => {
+                onFieldEdit(
+                  "files",
+                  args.files.filter((other) => other.id !== file.id).map((other) => other.raw)
+                )
+              }}
+              type="button"
+              variant="ghost"
+            >
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {adding ? (
+        <EntitySearch
+          fieldKey="files"
+          isTaken={(choice) =>
+            args.files.some((file) => file.id === String(choice.value["entity_id"]))
+          }
+          label="Search Files"
+          onChoose={(choice) => {
+            onFieldEdit("files", [...args.files.map((file) => file.raw), choice.value])
+            setAdding(false)
+          }}
+          toolName="meta_ads_upload_media"
+        />
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          disabled={disabled}
+          onClick={() => {
+            setAdding(!adding)
+          }}
+          type="button"
+          variant="outline"
+        >
+          <PlusIcon />
+          {adding ? "Cancel" : "Add Files"}
+        </Button>
+        <p className="text-muted-foreground text-sm">
           Approval uses these versions. If a File changes before the upload runs, it stops.
         </p>
-      </MetaAdsApprovalSection>
+      </div>
     </div>
   )
 }

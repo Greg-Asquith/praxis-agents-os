@@ -10,6 +10,7 @@ import {
   type CreateAdSetArgs,
 } from "@/integrations/meta_ads/lib/create-ad-set"
 import {
+  editFields,
   parseCreatedObject,
   type CreatedObjectResult,
 } from "@/integrations/meta_ads/lib/create-summary"
@@ -35,15 +36,18 @@ export const metaAdsCreateAdSetPresenter = createIntegrationWritePresenter({
           prompt: adSetPrompt,
           validateArgs: (value) => createAdSetProblem(parseCreateAdSetArgs(value)),
           renderInvalidDraft: true,
-          renderSummary: (value, fallback, onFieldEdit, disabled) => (
+          renderFields: false,
+          renderSummary: (value, fallback, _onFieldEdit, disabled, controls) => (
             <CreateAdSetApproval
               args={parseCreateAdSetArgs(value) ?? fallback}
               disabled={disabled}
-              onFieldEdit={onFieldEdit}
+              onEdit={(edits) => {
+                editFields(controls, disabled, edits)
+              }}
             />
           ),
         },
-        details: (args) => (args ? [{ label: "Campaign", value: args.campaignName }] : []),
+        details: (args) => (args ? [{ label: "Campaign", value: args.campaign.name }] : []),
         parseResult: (value) => parseCreatedObject(value, "ad_set", "adset_id"),
         settledUnverified: (result) => result.outcome === "unverified",
         settledFailure: (result) =>

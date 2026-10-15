@@ -26,6 +26,8 @@ type CopySource = {
 export type CopyDraft = {
   index: number
   adId: string
+  // The ad set the source ad is in, which a copy can't go into.
+  sourceAdSetId: string | null
   adSetId: string
   // The source's name as the agent's reference labels it, until the server's read is known.
   sourceLabel: string
@@ -45,8 +47,7 @@ export type CopyAdsArgs = {
 }
 
 export function parseCopyAdsArgs(value: unknown): CopyAdsArgs | null {
-  if (!isRecord(value) || !Array.isArray(value["copies"]) || value["copies"].length === 0)
-    return null
+  if (!isRecord(value) || !Array.isArray(value["copies"])) return null
   const sources = isRecord(value["_sources"]) ? value["_sources"] : {}
   const copies: CopyDraft[] = []
   const rawCopies: Record<string, unknown>[] = []
@@ -61,7 +62,11 @@ export function parseCopyAdsArgs(value: unknown): CopyAdsArgs | null {
     accountId: isRecord(account) ? stringValue(account["account_id"]) : null,
     accountName: stringValue(value["_account_name"]),
     currency: stringValue(value["_currency"]),
-    adSets: parseAdSets(value["_ad_sets"]),
+    // An ad set picked on the card isn't hydrated yet, so its own reference stands in.
+    adSets: parseAdSets(
+      value["_ad_sets"],
+      rawCopies.map((copy) => ({ ad_sets: [copy["ad_set"]] }))
+    ),
     copies,
     rawCopies,
   }
@@ -86,6 +91,7 @@ function parseCopy(
   return {
     index,
     adId: ad["ad_id"],
+    sourceAdSetId: stringValue(ad["adset_id"]),
     adSetId: adSet["adset_id"],
     sourceLabel: stringValue(ad["label"]) ?? `Ad ${ad["ad_id"]}`,
     name: stringValue(item["name"]),
@@ -132,29 +138,46 @@ export function copyRows(args: CopyAdsArgs) {
   }))
 }
 
-/** Sets one copy's name or status; a blank name goes back to the source's name. */
+type CopyEdit =
+  | { name: string }
+  | { status: AdStatus }
+  | { adSet: Record<string, unknown> }
+  | { remove: true }
+  // Adds a copy of the same source ad into another ad set, paused.
+  | { copyInto: Record<string, unknown> }
+
+/** The `copies` argument after one edit; a blank name goes back to the source's name. */
 export function editCopy(
   args: CopyAdsArgs,
   index: number,
-  key: "name" | "status",
-  value: string
+  edit: CopyEdit
 ): Record<string, unknown>[] {
-  return args.rawCopies.map((raw, position) => {
-    if (position !== index) return raw
-    const { [key]: _previous, ...rest } = raw
-    const trimmed = value.trim()
-    return trimmed ? { ...rest, [key]: key === "name" ? value : trimmed } : rest
+  return args.rawCopies.flatMap((raw, position) => {
+    if (position !== index) return [raw]
+    if ("remove" in edit) return []
+    if ("copyInto" in edit) return [raw, { ad: raw["ad"], ad_set: edit.copyInto, status: "paused" }]
+    if ("adSet" in edit) return [{ ...raw, ad_set: edit.adSet }]
+    if ("status" in edit) return [{ ...raw, status: edit.status }]
+    const { name: _previous, ...rest } = raw
+    return [edit.name.trim() ? { ...rest, name: edit.name } : rest]
   })
 }
 
-/** Blocks approval when two copies would share a name in one ad set. */
+/** Blocks approval when a copy has no valid place or two copies would clash. */
 export function copyAdsProblem(args: CopyAdsArgs | null): string | null {
   if (!args) return null
-  const seen = new Set<string>()
+  if (args.copies.length === 0) return "Keep at least one copy, or decline this request."
+  const places = new Set<string>()
+  const names = new Set<string>()
   for (const copy of args.copies) {
-    const key = `${copy.adSetId}:${(copy.name ?? sourceName(copy)).trim().toLowerCase()}`
-    if (seen.has(key)) return "Give copies in the same ad set different names before approving."
-    seen.add(key)
+    if (copy.adSetId === copy.sourceAdSetId)
+      return "Copy each ad into a different ad set from the one it's already in."
+    const place = `${copy.adId}:${copy.adSetId}`
+    if (places.has(place)) return "Copy each ad into each ad set only once."
+    places.add(place)
+    const name = `${copy.adSetId}:${(copy.name ?? sourceName(copy)).trim().toLowerCase()}`
+    if (names.has(name)) return "Give copies in the same ad set different names before approving."
+    names.add(name)
   }
   return null
 }

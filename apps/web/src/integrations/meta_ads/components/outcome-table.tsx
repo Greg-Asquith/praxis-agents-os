@@ -70,6 +70,11 @@ export function MetaAdsOutcomeTable({
           const kind = row["outcomeKind"] as OutcomeKind
           return <Badge variant={BADGE_VARIANTS[kind]}>{String(row["outcome"])}</Badge>
         }
+        if (column.key === "details") {
+          return typeof row["details"] === "string" && row["details"] ? (
+            <span className="block text-sm wrap-anywhere whitespace-normal">{row["details"]}</span>
+          ) : null
+        }
         if (column.key === "errorCode") {
           return typeof row["errorCode"] === "string" && row["errorCode"] ? (
             <Badge variant="outline">{row["errorCode"]}</Badge>
@@ -104,10 +109,10 @@ export function MetaAdsFailureTargets({
   )
 }
 
-export function OutcomeLink({ href, children }: { href: string; children: string }) {
+function OutcomeLink({ href, children }: { href: string; children: string }) {
   return (
     <a
-      className="text-primary w-fit text-xs underline-offset-2 hover:underline"
+      className="text-primary w-fit text-sm underline-offset-2 hover:underline"
       href={href}
       rel="noreferrer"
       target="_blank"

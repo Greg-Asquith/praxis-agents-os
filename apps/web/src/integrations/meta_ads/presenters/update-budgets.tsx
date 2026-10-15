@@ -7,7 +7,7 @@ import {
 import { MetaAdsFailureTargets } from "@/integrations/meta_ads/components/outcome-table"
 import {
   budgetChangeDetails,
-  hasBudgetProblem,
+  budgetProblem,
   parseBudgetChangeArgs,
   parseBudgetChangeResult,
   type BudgetChangeArgs,
@@ -33,14 +33,16 @@ export const metaAdsUpdateBudgetsPresenter = createIntegrationWritePresenter({
         approval: {
           parseArgs: parseBudgetChangeArgs,
           prompt: "Review each new amount before changing how much these ads can spend.",
-          // A change that breaks a budget rule or that Meta's dry run rejected can't be approved.
-          validateArgs: (value) =>
-            hasBudgetProblem(parseBudgetChangeArgs(value))
-              ? "Decline this request, then ask the agent to change only budgets Meta allows."
-              : null,
+          // A bad amount or a change Meta's dry run rejected can't be approved.
+          validateArgs: (value) => budgetProblem(parseBudgetChangeArgs(value)),
           renderInvalidDraft: true,
-          renderSummary: (value, fallback) => (
-            <BudgetApprovalSummary args={parseBudgetChangeArgs(value) ?? fallback} />
+          renderSummary: (value, fallback, onFieldEdit, disabled) => (
+            <BudgetApprovalSummary
+              args={parseBudgetChangeArgs(value) ?? fallback}
+              disabled={disabled}
+              onFieldEdit={onFieldEdit}
+              proposed={fallback}
+            />
           ),
         },
         details: budgetChangeDetails,

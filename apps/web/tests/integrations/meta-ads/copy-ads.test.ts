@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest"
 
+import { editCopy, parseCopyAdsArgs } from "@/integrations/meta_ads/lib/copy-ads"
 import { metaAdsCopyAdsPresenter } from "@/integrations/meta_ads/presenters/copy-ads"
 import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
@@ -57,6 +58,27 @@ describe("Meta Ads copy ads presenter", () => {
       approval(display([copy("7"), copy("7", { ad: { ...copy("7").ad, ad_id: "501" } })]))
     )
     expect(clash).toMatch(APPROVE_DISABLED)
+  })
+
+  it("blocks a copy into the source's own ad set or a repeat of the same place", () => {
+    for (const copies of [[copy("8")], [copy("7"), copy("7", { name: "Other" })]]) {
+      expect(render(approval(display(copies)))).toMatch(APPROVE_DISABLED)
+    }
+  })
+
+  it("changes, adds, and removes copies without touching the others", () => {
+    const args = parseCopyAdsArgs(display([copy("7"), copy("6")]))
+    if (!args) throw new Error("expected copy args")
+    const target = { entity_kind: "meta_ads_ad_set", adset_id: "5", label: "Ad set 5" }
+
+    expect(editCopy(args, 0, { adSet: target })[0]).toMatchObject({ ad_set: target })
+    expect(editCopy(args, 0, { remove: true })).toEqual([args.rawCopies[1]])
+    expect(editCopy(args, 1, { copyInto: target })[2]).toEqual({
+      ad: args.rawCopies[1]?.["ad"],
+      ad_set: target,
+      status: "paused",
+    })
+    expect(editCopy(args, 0, { name: "  " })[0]).not.toHaveProperty("name")
   })
 
   it("shows each copy's outcome when only some were made", () => {

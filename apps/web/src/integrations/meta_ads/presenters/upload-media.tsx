@@ -36,10 +36,13 @@ export const metaAdsUploadMediaPresenter = createIntegrationWritePresenter({
           validateArgs: (value) =>
             parseMediaUploadArgs(value)?.needsReview ? "Check the Files before approving." : null,
           renderInvalidDraft: true,
-          renderSummary: (value, fallback, _onFieldEdit, disabled, controls) => (
+          // The card draws its own File list, so the generic field stays off.
+          renderFields: false,
+          renderSummary: (value, fallback, onFieldEdit, disabled, controls) => (
             <MediaUploadApprovalSummary
               args={parseMediaUploadArgs(value) ?? fallback}
               disabled={disabled}
+              onFieldEdit={onFieldEdit}
               onReview={controls.onReview}
             />
           ),

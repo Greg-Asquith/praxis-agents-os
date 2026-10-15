@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest"
 
 import { parseCreateAdsArgs, type CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
-import { unappliedFormatsNote } from "@/integrations/meta_ads/lib/automatic-changes"
+import { formatTag } from "@/integrations/meta_ads/lib/automatic-changes"
 import { allowedButtons } from "@/integrations/meta_ads/lib/call-to-action"
 import {
   adRows,
@@ -11,10 +11,14 @@ import {
   createAdsProblem,
 } from "@/integrations/meta_ads/lib/create-ads-checks"
 import {
+  clearAdStatuses,
   editAd,
+  editSetting,
   moveCard,
+  setAdSets,
   setCardMedia,
   setFollowsShared,
+  toggleChange,
 } from "@/integrations/meta_ads/lib/create-ads-edits"
 import { metaAdsCreateAdsPresenter } from "@/integrations/meta_ads/presenters/create-ads"
 import { APPROVE_DISABLED, props, render } from "./presenter-harness"
@@ -233,12 +237,55 @@ describe("Meta Ads create ads model", () => {
     expect(allowedButtons(lists, ["OUTCOME_SALES", "OUTCOME_APP_PROMOTION"])).toEqual(["DOWNLOAD"])
   })
 
-  it("names the formats in this request an automatic change can't apply to", () => {
+  it("tags a setting that applies to only some formats, and leaves universal ones untagged", () => {
     const [imageOnly] = parsed().catalogue
     if (!imageOnly) throw new Error("fixture has no change")
 
-    expect(unappliedFormatsNote(imageOnly, new Set(["image"]))).toBeNull()
-    expect(unappliedFormatsNote(imageOnly, new Set(["image", "carousel"]))).not.toBeNull()
+    expect(formatTag(imageOnly)).toBe("Image Ads")
+    expect(formatTag({ ...imageOnly, formats: ["image", "video", "carousel"] })).toBeNull()
+  })
+
+  it("clears every ad's own status so the one shared status decides, and only when one is set", () => {
+    const args = parsed({ ads: [design("Spring", { status: "active" }), design("Autumn")] })
+    const cleared = clearAdStatuses(args)
+
+    expect(cleared?.every((ad) => !("status" in ad))).toBe(true)
+    expect(adRows(parsed({ ads: cleared, status: "paused" })).map((row) => row.status)).toEqual([
+      "paused",
+      "paused",
+    ])
+    expect(clearAdStatuses(parsed())).toBeNull()
+  })
+
+  it("moves an ad to other ad sets, never to none", () => {
+    const other = { ...adSet, adset_id: "9", label: "Retargeting" }
+    const args = parsed()
+    const edited = setAdSets(args, 0, [adSet, other])
+
+    const rows = adRows(parsed({ ads: edited }))
+    expect(rows[0]?.ad.adSetIds).toEqual(["8", "9"])
+    expect(rows[1]?.ad.adSetIds).toEqual(["8"])
+    expect(parsed({ ads: edited }).adSets.get("9")?.name).toBe("Retargeting")
+    expect(setAdSets(args, 0, [])).toEqual(args.rawAds)
+  })
+
+  it("edits the shared link while an ad follows it, and the ad's own once it has one", () => {
+    const args = parsed()
+
+    expect(editSetting(args, 0, "link", "https://example.com/new")).toEqual({
+      field: "link",
+      value: "https://example.com/new",
+    })
+    expect(editSetting(args, 1, "link", "https://example.com/new").field).toBe("ads")
+  })
+
+  it("turns the last advanced setting off by clearing the list", () => {
+    const args = parsed({ automatic_changes: ["image_touchups", "image_uncrop"] })
+
+    expect(toggleChange(args, "image_touchups", false)).toEqual(["image_uncrop"])
+    expect(
+      toggleChange(parsed({ automatic_changes: ["image_uncrop"] }), "image_uncrop", false)
+    ).toBeNull()
   })
 
   it("renders the approval card and shows a hidden field's error while blocking approval", () => {

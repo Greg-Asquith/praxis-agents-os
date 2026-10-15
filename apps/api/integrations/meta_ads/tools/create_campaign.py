@@ -1,11 +1,10 @@
 # apps/api/integrations/meta_ads/tools/create_campaign.py
 
-"""Approval-only tool that creates one paused campaign in a selected ad account."""
+"""Approval-only tool that creates one campaign in a selected ad account."""
 
-from collections.abc import Mapping
 from typing import Annotated, Any
 
-from pydantic import Field, ValidationError
+from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agents.runtime.context import RuntimeDeps
@@ -41,11 +40,13 @@ from ..operations.create_campaign import (
 )
 from ..operations.create_objects import validate_create
 from ..operations.object_run import readback_message
-from .schemas.budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
+from .schemas.budgets import BID_STRATEGIES, MetaAdsBidStrategy, MetaAdsBudgetAmount
 from .schemas.campaigns import (
+    OBJECTIVES,
     MetaAdsCampaignBudget,
     MetaAdsCreateCampaignOutput,
     MetaAdsCreateCampaignRequest,
+    MetaAdsNewObjectStatus,
     MetaAdsObjective,
     MetaAdsSpecialAdCategory,
 )
@@ -58,11 +59,6 @@ from .utils.mutation_evidence import (
 )
 from .utils.schedule import account_schedule
 
-_FIXED_CHANGED = (
-    "The objective, budget type, bid strategy, or special ad categories changed after "
-    "approval. Ask the agent to prepare the campaign again."
-)
-
 
 async def meta_ads_create_campaign(
     ctx: RunContext[RuntimeDeps],
@@ -72,6 +68,10 @@ async def meta_ads_create_campaign(
         MetaAdsCampaignBudget,
         Field(description="Who holds the budget: the campaign, daily or lifetime, or ad sets."),
     ],
+    status: Annotated[
+        MetaAdsNewObjectStatus,
+        Field(description="paused unless the operator asks for the campaign to be active."),
+    ] = "paused",
     bid_strategy: Annotated[
         MetaAdsBidStrategy, Field(description="How Meta bids; highest_volume unless asked.")
     ] = "highest_volume",
@@ -99,8 +99,6 @@ async def meta_ads_create_campaign(
         _account_entry(ctx.deps),
         tool_name="meta_ads_create_campaign",
         operation=OPERATION,
-        proposal_changed=lambda proposed: _fixed(proposed) != _fixed(request),
-        changed_message=_FIXED_CHANGED,
         prepare=lambda client, entry: _prepare(client, entry, request),
         pending_detail=lambda entry, prepared: _pending_detail(entry, prepared[0]),
         run=lambda client, entry, prepared: create_campaign(
@@ -141,22 +139,6 @@ def _account_entry(deps: RuntimeDeps) -> ResolvedContextEntry:
             "Meta ad account in Active Context."
         )
     return candidates[0]
-
-
-def _fixed(values: Mapping[str, Any] | MetaAdsCreateCampaignRequest) -> list[Any] | None:
-    """Reads the settings the card can't change, because later steps depend on them."""
-    if not isinstance(values, MetaAdsCreateCampaignRequest):
-        try:
-            values = MetaAdsCreateCampaignRequest.model_validate(given(values))
-        except ValidationError:
-            return None
-    return [
-        values.objective,
-        values.budget.mode,
-        values.budget.share_between_ad_sets,
-        values.bid_strategy,
-        values.special_ad_categories,
-    ]
 
 
 async def _prepare(
@@ -250,8 +232,11 @@ DEFINITION = RuntimeToolDefinition(
     name="meta_ads_create_campaign",
     function=meta_ads_create_campaign,
     description=(
-        "Create one campaign, paused, in the one writable Meta ad account selected in Active "
-        "Context, in one approval. This is "
+        "Create one campaign in the one writable Meta ad account selected in Active "
+        "Context, in one approval. It is created paused unless status is active; use active "
+        "only when the operator asks for it to run as soon as it exists, and say so. The "
+        "operator can change any setting on the approval card, and every rule is checked "
+        "again against the edited campaign. This is "
         "the first step of a new campaign: then create each ad set in it with "
         "meta_ads_create_ad_set, create ads with meta_ads_create_ads, and turn it on with "
         "meta_ads_update_status. Propose it in plain words first, for example 'a sales "
@@ -293,7 +278,28 @@ DEFINITION = RuntimeToolDefinition(
         approve_label="Approve & Create",
         arg_fields=(
             ToolFieldPresentation(key="name", label="Name", editable=True),
+            ToolFieldPresentation(
+                key="status",
+                label="Status",
+                editable=True,
+                options=("paused", "active"),
+            ),
+            ToolFieldPresentation(
+                key="objective", label="Objective", editable=True, options=tuple(OBJECTIVES)
+            ),
             ToolFieldPresentation(key="budget", label="Budget", editable=True, format="structured"),
+            ToolFieldPresentation(
+                key="bid_strategy",
+                label="Bid Strategy",
+                editable=True,
+                options=tuple(BID_STRATEGIES),
+            ),
+            ToolFieldPresentation(
+                key="special_ad_categories",
+                label="Special Ad Categories",
+                editable=True,
+                format="structured",
+            ),
             ToolFieldPresentation(key="start_date", label="Start Date", editable=True),
             ToolFieldPresentation(key="end_date", label="End Date", editable=True),
             ToolFieldPresentation(

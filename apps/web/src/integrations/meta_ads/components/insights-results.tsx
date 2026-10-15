@@ -13,13 +13,13 @@ export function MetaAdsInsightsResults({
 }) {
   return (
     <div className="grid min-w-0 gap-3">
-      <p className="text-muted-foreground text-xs">
+      <p className="text-muted-foreground text-sm">
         {report.currency || "Currency unavailable"} ·{" "}
         {report.timezone || "Account time zone unavailable"}
         {report.mode === "background" ? " · Prepared as a background report" : null}
       </p>
       {report.notes.length > 0 ? (
-        <ul className="text-muted-foreground grid gap-1 text-xs">
+        <ul className="text-muted-foreground grid gap-1 text-sm">
           {report.notes.map((note) => (
             <li key={note}>{note}</li>
           ))}
@@ -30,6 +30,7 @@ export function MetaAdsInsightsResults({
           pageSize={25}
           columns={report.columns}
           rows={report.rows}
+          showTotals={report.rows.length > 1 && !report.truncationNote}
           exportFilename={`meta-ads-${externalId}-insights.csv`}
           truncationNote={report.truncationNote}
         />

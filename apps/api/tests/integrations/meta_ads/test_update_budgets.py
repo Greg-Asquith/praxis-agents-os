@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import httpx2
 import pytest
+from pydantic_ai import ModelRetry
 
 from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.models import MetaAdsObjectBudget
@@ -195,7 +196,9 @@ async def test_truncated_history_leaves_recent_changes_incomplete(monkeypatch):
     assert not counts.complete
 
 
-def tool_context(monkeypatch, graph: FakeGraph, http: httpx2.AsyncClient):
+def tool_context(
+    monkeypatch, graph: FakeGraph, http: httpx2.AsyncClient, proposed: dict | None = None
+):
     pending_event_id = uuid4()
     audit = AsyncMock(return_value=pending_event_id)
     monkeypatch.setattr(
@@ -206,6 +209,15 @@ def tool_context(monkeypatch, graph: FakeGraph, http: httpx2.AsyncClient):
         return MetaAdsClient(static_token, client=http)
 
     monkeypatch.setattr("integrations.meta_ads.tools.update_budgets.meta_ads_client", client)
+    both = {
+        "updates": [
+            {"campaign": CAMPAIGN.model_dump(mode="json"), "amount": "1"},
+            {"ad_set": AD_SET.model_dump(mode="json"), "amount": "1"},
+        ]
+    }
+    monkeypatch.setattr(
+        "integrations.meta_ads.tools.update_budgets.proposed_args", lambda _ctx: proposed or both
+    )
     entry = replace(context_entry("123"), write_allowed=True)
     ctx = SimpleNamespace(
         deps=SimpleNamespace(
@@ -265,6 +277,25 @@ async def test_tool_checks_every_change_with_meta_then_sends_minor_units(monkeyp
         "currency": "EUR",
     }
     assert terminal["status"] == "success"
+
+
+async def test_an_edited_budget_change_for_an_object_that_was_not_proposed_is_refused(monkeypatch):
+    graph = FakeGraph([obj("9", "campaign", daily_budget="5000")])
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle))
+    proposed = {"updates": [{"ad_set": AD_SET.model_dump(mode="json"), "amount": "20"}]}
+    ctx, _audit = tool_context(monkeypatch, graph, http, proposed)
+
+    async with http:
+        with pytest.raises(ModelRetry, match="added after approval"):
+            await meta_ads_update_budgets(
+                ctx,
+                updates=[
+                    MetaAdsBudgetUpdate(ad_set=AD_SET, amount="30"),
+                    MetaAdsBudgetUpdate(campaign=CAMPAIGN, amount="60"),
+                ],
+            )
+
+    assert graph.dry_runs == [] and graph.posts == []
 
 
 async def test_meta_dry_run_rejection_sends_nothing_and_keeps_metas_reason(monkeypatch):
@@ -334,4 +365,6 @@ async def test_approval_checks_show_precision_and_dry_run_problems_before_approv
     # The fractional yen amount never reaches Meta; the other change is checked without being made.
     assert graph.dry_runs == ["7"] and graph.posts == []
     assert checks["8"]["problem"] is not None
+    # Each check names the amount it judged, so the card can tell when an edit made it stale.
+    assert (checks["8"]["amount"], checks["7"]["amount"]) == ("1000.5", "1000")
     assert "The budget is too low." in checks["7"]["problem"]

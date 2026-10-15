@@ -2,7 +2,6 @@
 
 """Approval-only tool that creates new ads, or ads from existing posts, in existing ad sets."""
 
-from collections.abc import Mapping
 from typing import Annotated, Any
 
 from pydantic import Field
@@ -73,7 +72,6 @@ from .utils.mutation_evidence import (
 )
 
 _OPERATION = "create_ads"
-_AD_SETS_CHANGED = "The ads' ad sets changed after approval. Ask the agent to prepare them again."
 
 type AdDesigns = Annotated[
     list[MetaAdsAdDesign],
@@ -116,17 +114,13 @@ async def meta_ads_create_ads(
         "automatic_changes": automatic_changes,
     }
     request = validated(MetaAdsCreateAdsRequest, {**values, "ads": _ads_as_reviewed(ctx, ads)})
-    ad_sets = [sorted(ref.adset_id for ref in design.ad_sets) for design in request.ads]
     # References nested in `ads` aren't re-resolved when an approval is edited, so preparation
-    # re-reads every one through this account and the workspace.
+    # re-reads every ad set, Page, post, and media item through this account and the workspace.
     return await run_create_tool(
         ctx,
         _account_entry(ctx.deps, request.account_id),
         tool_name="meta_ads_create_ads",
         operation=_OPERATION,
-        # The card can't change ad sets; media is re-read in preparation instead.
-        proposal_changed=lambda proposed: _proposed_ad_sets(proposed) != ad_sets,
-        changed_message=_AD_SETS_CHANGED,
         prepare=lambda client, entry: prepare(
             ctx.deps, client, entry, request, approved_display_args(ctx)
         ),
@@ -172,20 +166,6 @@ def _account_entry(deps: RuntimeDeps, account_id: str) -> ResolvedContextEntry:
         "The Page, ad sets, and media must belong to one Meta ad account selected in "
         "Active Context. Ask the user to select it.",
     )
-
-
-def _proposed_ad_sets(values: Mapping[str, Any]) -> list[list[str]]:
-    """Reads only the ad set IDs from the proposal; the card may have fixed the rest of it."""
-    ads = values.get("ads")
-    return [
-        sorted(
-            str(reference.get("adset_id"))
-            for reference in design.get("ad_sets") or ()
-            if isinstance(reference, Mapping)
-        )
-        for design in (ads if isinstance(ads, list) else ())
-        if isinstance(design, Mapping)
-    ]
 
 
 async def _validate_args(ctx: RunContext[RuntimeDeps], **values: Any) -> None:
@@ -341,7 +321,7 @@ DEFINITION = RuntimeToolDefinition(
                 label="Ads",
                 editable=True,
                 format="structured",
-                entity_kinds=("meta_ads_media", "file"),
+                entity_kinds=("meta_ads_media", "file", "meta_ads_ad_set"),
             ),
             ToolFieldPresentation(
                 key="page",

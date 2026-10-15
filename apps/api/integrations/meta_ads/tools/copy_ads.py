@@ -57,9 +57,7 @@ from .utils.mutation_evidence import (
     meta_ads_account_target,
 )
 
-_COPIES_CHANGED = (
-    "The ads or ad sets changed after approval. Ask the agent to prepare the copies again."
-)
+_SOURCE_ADDED = "A copy of an ad that wasn't proposed was added. Ask the agent to prepare it again."
 
 type AdCopies = Annotated[
     list[MetaAdsAdCopy],
@@ -73,15 +71,13 @@ type AdCopies = Annotated[
 
 async def meta_ads_copy_ads(ctx: RunContext[RuntimeDeps], copies: AdCopies) -> dict[str, Any]:
     request = validated(MetaAdsCopyAdsRequest, {"copies": copies})
-    keys = [item.key for item in request.copies]
     return await run_create_tool(
         ctx,
         _account_entry(ctx.deps, request.account_id),
         tool_name="meta_ads_copy_ads",
         operation=OPERATION,
-        # The card edits names and statuses only; sources and targets stay as proposed.
-        proposal_changed=lambda proposed: _proposed_keys(proposed) != keys,
-        changed_message=_COPIES_CHANGED,
+        # The card can change targets, and drop or add copies, but only of proposed ads.
+        check_edits=lambda proposed: _check_sources_proposed(proposed, request),
         prepare=lambda client, entry: _prepare(client, entry, request),
         pending_detail=_pending_operation_detail,
         run=lambda client, entry, planned: copy_ads(
@@ -106,18 +102,16 @@ def _account_entry(deps: RuntimeDeps, account_id: str) -> ResolvedContextEntry:
     )
 
 
-def _proposed_keys(values: Mapping[str, Any]) -> list[str]:
-    """Reads only the source ad and target ad set IDs from the proposal."""
-    copies = values.get("copies")
-    return [
-        f"{_mapping(item.get('ad')).get('ad_id')}:{_mapping(item.get('ad_set')).get('adset_id')}"
+def _check_sources_proposed(proposed: Mapping[str, Any], request: MetaAdsCopyAdsRequest) -> None:
+    """Refuses a copy whose source ad the agent didn't propose; targets are re-read live."""
+    copies = proposed.get("copies")
+    proposed_ads = {
+        str(item["ad"].get("ad_id"))
         for item in (copies if isinstance(copies, list) else ())
-        if isinstance(item, Mapping)
-    ]
-
-
-def _mapping(value: Any) -> Mapping[str, Any]:
-    return value if isinstance(value, Mapping) else {}
+        if isinstance(item, Mapping) and isinstance(item.get("ad"), Mapping)
+    }
+    if {item.ad.ad_id for item in request.copies} - proposed_ads:
+        raise ModelRetry(_SOURCE_ADDED)
 
 
 async def _prepare(
@@ -283,7 +277,8 @@ DEFINITION = RuntimeToolDefinition(
         "approval, for example to roll a winning ad out to more audiences (at most 10 target "
         "ad sets). A copy keeps its source ad's creative exactly: media, text, link, button, "
         "and automatic changes. To change any of those, create new ads with "
-        "meta_ads_create_ads instead. Find ads and ad sets with meta_ads_list_objects. Each "
+        "meta_ads_create_ads instead. The operator can change each copy's target ad set, name, "
+        "and status on the approval card, drop copies, and add copies of the same ads. Find ads and ad sets with meta_ads_list_objects. Each "
         "copy keeps the source's name unless name is set, and must have a name not already "
         "used in its ad set. Copies are paused unless status is active; active copies run and "
         "spend once Meta approves them. A source with an AI-generated change on is always "
@@ -315,7 +310,13 @@ DEFINITION = RuntimeToolDefinition(
         approval_prompt="The agent wants to copy these ads in {_account_name}.",
         approve_label="Approve & Copy",
         arg_fields=(
-            ToolFieldPresentation(key="copies", label="Copies", editable=True, format="structured"),
+            ToolFieldPresentation(
+                key="copies",
+                label="Copies",
+                editable=True,
+                format="structured",
+                entity_kinds=("meta_ads_ad_set",),
+            ),
         ),
         result_fields=RESULTS_FIELD,
     ),

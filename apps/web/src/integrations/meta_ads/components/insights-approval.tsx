@@ -1,24 +1,38 @@
 // apps/web/src/integrations/meta_ads/components/insights-approval.tsx
 
+import { useState } from "react"
+
 import {
   ToolApprovalDecisionCard,
   type ToolApprovalDecisionControls,
 } from "@/components/tool-ui/approval-card"
 import { mergeApprovalArgs } from "@/components/tool-ui/approval-args"
 import type { EditedValue } from "@/components/tool-ui/edited-values"
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldSet } from "@/components/ui/field"
+import { Button } from "@/components/ui/button"
+import { FieldSet } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import type { ToolActivity } from "@/integrations/contract"
 import { MetaAdsLogo } from "@/integrations/meta_ads/components/logo"
 import { InsightsFilters } from "@/integrations/meta_ads/components/insights-filters"
 import { ReportChoice, ReportMultiChoice } from "@/integrations/meta_ads/components/report-choice"
+import { SettingRow, SettingRows } from "@/integrations/meta_ads/components/setting-rows"
 import {
   insightsApprovalError,
+  insightsDatePresets,
   parseInsightsApproval,
 } from "@/integrations/meta_ads/lib/insights-approval"
 import { titleCaseToken } from "@/lib/format"
 
 import { parseInsightsOptions } from "@/integrations/meta_ads/lib/insights-options"
+
+function intervalLabel(value: string | number): string {
+  if (typeof value === "number") return value === 1 ? "Daily" : `Every ${String(value)} days`
+  return value === "all_days" ? "Whole period" : titleCaseToken(value, value)
+}
+
+function listSummary(values: string[]): string {
+  return values.length > 0 ? values.map((value) => titleCaseToken(value, value)).join(", ") : "None"
+}
 
 export function MetaAdsInsightsApproval({
   activity,
@@ -37,6 +51,15 @@ export function MetaAdsInsightsApproval({
     ? insightsApprovalError(args, options)
     : "Report options are unavailable. Reload this page to try again, or decline the request."
   const disabled = Boolean(controls.disabled) || controls.decision.decision !== "pending"
+  const [presets] = useState(() => insightsDatePresets(new Date()))
+  const activePreset = args
+    ? (presets.find((preset) => preset.since === args.since && preset.until === args.until)
+        ?.label ?? "Custom")
+    : "Custom"
+  const levelOptions = (options?.levels ?? []).map((value) => ({
+    value,
+    label: value === "adset" ? "Ad Set" : titleCaseToken(value, value),
+  }))
   const edit = (key: string, value: EditedValue) => {
     controls.onDecisionChange({
       decision: "pending",
@@ -59,143 +82,211 @@ export function MetaAdsInsightsApproval({
     >
       {args && options ? (
         <FieldSet disabled={disabled}>
-          <FieldGroup>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor={`${activity.id}-since`}>Start date</FieldLabel>
+          <div className="grid gap-3">
+            <div className="grid gap-2">
+              <div aria-label="Date range" className="flex flex-wrap gap-1.5" role="radiogroup">
+                {[...presets, { label: "Custom", since: "", until: "" }].map((preset) => {
+                  const checked = preset.label === activePreset
+                  return (
+                    <Button
+                      key={preset.label}
+                      aria-checked={checked}
+                      className="h-8 rounded-full"
+                      disabled={disabled}
+                      onClick={() => {
+                        if (preset.since)
+                          controls.onDecisionChange({
+                            decision: "pending",
+                            edits: {
+                              ...controls.decision.edits,
+                              since: preset.since,
+                              until: preset.until,
+                            },
+                            message: "",
+                          })
+                        else document.getElementById(`${activity.id}-since`)?.focus()
+                      }}
+                      role="radio"
+                      size="sm"
+                      type="button"
+                      variant={checked ? "secondary" : "outline"}
+                    >
+                      {preset.label}
+                    </Button>
+                  )
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
+                  aria-label="Start date"
+                  className="h-8 w-40"
                   id={`${activity.id}-since`}
-                  type="date"
-                  required
-                  value={args.since}
                   max={args.until || undefined}
                   onChange={(event) => {
                     edit("since", event.currentTarget.value)
                   }}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor={`${activity.id}-until`}>End date</FieldLabel>
-                <Input
-                  id={`${activity.id}-until`}
-                  type="date"
                   required
-                  value={args.until}
+                  type="date"
+                  value={args.since}
+                />
+                <span className="text-sm">to</span>
+                <Input
+                  aria-label="End date"
+                  className="h-8 w-40"
+                  id={`${activity.id}-until`}
                   min={args.since || undefined}
                   onChange={(event) => {
                     edit("until", event.currentTarget.value)
                   }}
+                  required
+                  type="date"
+                  value={args.until}
                 />
-              </Field>
+                <span className="text-muted-foreground text-sm">
+                  Each Account&rsquo;s Time Zone
+                </span>
+              </div>
             </div>
-            <FieldDescription>Dates use each ad account’s time zone.</FieldDescription>
-            <ReportChoice
-              id={`${activity.id}-level`}
-              label="Report by"
-              value={args.level}
-              options={options.levels.map((value) => ({
-                value,
-                label: value === "adset" ? "Ad set" : titleCaseToken(value, value),
-              }))}
-              disabled={disabled}
-              onChange={(value) => {
-                edit("level", value)
-              }}
-            />
-            <ReportMultiChoice
-              id={`${activity.id}-fields`}
-              label="Report fields"
-              value={args.fields}
-              options={options.fields.values}
-              disabled={disabled}
-              onChange={(value) => {
-                edit("fields", value)
-              }}
-              allowCustom
-            />
-            <FieldDescription>
-              Search common measures, or enter another Meta field name. Campaign and account
-              identifiers are included automatically.
-            </FieldDescription>
-            <details className="rounded-md border">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-medium">
-                Advanced options
-              </summary>
-              <FieldGroup className="border-t p-3">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <ReportChoice
-                    id={`${activity.id}-interval`}
-                    label="Report interval"
-                    value={String(args.time_increment)}
-                    options={options.intervals.map((value) => ({
-                      value: String(value),
-                      label:
-                        typeof value === "number"
-                          ? value === 1
-                            ? "Daily"
-                            : `Every ${String(value)} days`
-                          : value === "all_days"
-                            ? "Whole period"
-                            : titleCaseToken(value, value),
-                    }))}
-                    disabled={disabled}
-                    onChange={(value) => {
-                      const interval = options.intervals.find((item) => String(item) === value)
-                      if (interval !== undefined) edit("time_increment", interval)
-                    }}
-                  />
-                  <Field>
-                    <FieldLabel htmlFor={`${activity.id}-limit`}>Maximum rows</FieldLabel>
-                    <Input
-                      id={`${activity.id}-limit`}
-                      type="number"
-                      min={options.rows.min}
-                      max={options.rows.max}
-                      step={1}
-                      value={Number.isFinite(args.limit) ? args.limit : ""}
-                      onChange={(event) => {
-                        edit("limit", Number(event.currentTarget.value))
+            <SettingRows ariaLabel="Report settings" defaultOpen="fields">
+              <SettingRow
+                rowKey="level"
+                summary={
+                  levelOptions.find((item) => item.value === args.level)?.label ?? args.level
+                }
+                title="Report By"
+              >
+                <div
+                  aria-label="Report By"
+                  className="bg-muted flex w-fit flex-wrap rounded-lg p-0.5"
+                  role="radiogroup"
+                >
+                  {levelOptions.map((item) => (
+                    <Button
+                      key={item.value}
+                      aria-checked={item.value === args.level}
+                      className="h-8"
+                      disabled={disabled}
+                      onClick={() => {
+                        edit("level", item.value)
                       }}
-                    />
-                  </Field>
+                      role="radio"
+                      size="sm"
+                      type="button"
+                      variant={item.value === args.level ? "outline" : "ghost"}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
                 </div>
+              </SettingRow>
+              <SettingRow rowKey="fields" summary={listSummary(args.fields)} title="Measures">
                 <ReportMultiChoice
+                  allowCustom
+                  disabled={disabled}
+                  hideLabel
+                  id={`${activity.id}-fields`}
+                  label="Measures"
+                  onChange={(value) => {
+                    edit("fields", value)
+                  }}
+                  options={options.fields.values}
+                  value={args.fields}
+                />
+                <p className="text-muted-foreground text-sm">
+                  Search common measures, or enter another Meta field name. Campaign and account
+                  names are always included.
+                </p>
+              </SettingRow>
+              <SettingRow
+                rowKey="interval"
+                summary={intervalLabel(args.time_increment)}
+                title="Interval"
+              >
+                <ReportChoice
+                  disabled={disabled}
+                  hideLabel
+                  id={`${activity.id}-interval`}
+                  label="Interval"
+                  onChange={(value) => {
+                    const interval = options.intervals.find((item) => String(item) === value)
+                    if (interval !== undefined) edit("time_increment", interval)
+                  }}
+                  options={options.intervals.map((value) => ({
+                    value: String(value),
+                    label: intervalLabel(value),
+                  }))}
+                  value={String(args.time_increment)}
+                />
+                <p className="text-muted-foreground text-sm">
+                  Daily splits each row into one per day.
+                </p>
+              </SettingRow>
+              <SettingRow
+                rowKey="breakdowns"
+                summary={listSummary([...args.breakdowns, ...args.action_breakdowns])}
+                title="Breakdowns"
+              >
+                <ReportMultiChoice
+                  disabled={disabled}
                   id={`${activity.id}-breakdowns`}
                   label="Breakdowns"
-                  value={args.breakdowns}
-                  options={options.breakdowns.values}
-                  disabled={disabled}
                   onChange={(value) => {
                     edit("breakdowns", value)
                   }}
+                  options={options.breakdowns.values}
+                  value={args.breakdowns}
                 />
                 <ReportMultiChoice
-                  id={`${activity.id}-actions`}
-                  label="Action breakdowns"
-                  value={args.action_breakdowns}
-                  options={options.actionBreakdowns.values}
                   disabled={disabled}
+                  id={`${activity.id}-actions`}
+                  label="Action Breakdowns"
                   onChange={(value) => {
                     edit("action_breakdowns", value)
                   }}
+                  options={options.actionBreakdowns.values}
+                  value={args.action_breakdowns}
                 />
+              </SettingRow>
+              <SettingRow
+                rowKey="attribution"
+                summary={
+                  args.attribution_windows.length > 0
+                    ? listSummary(args.attribution_windows)
+                    : "Default: each ad set\u2019s own setting"
+                }
+                title="Attribution"
+              >
                 <ReportMultiChoice
-                  id={`${activity.id}-attribution`}
-                  label="Attribution windows"
-                  value={args.attribution_windows}
-                  options={options.attributionWindows.values}
                   disabled={disabled}
+                  hideLabel
+                  id={`${activity.id}-attribution`}
+                  label="Attribution Windows"
                   onChange={(value) => {
                     edit("attribution_windows", value.length ? value : null)
                   }}
+                  options={options.attributionWindows.values}
+                  value={args.attribution_windows}
                 />
-                <FieldDescription>
-                  Leave attribution windows empty to use each ad set’s settings.
-                </FieldDescription>
+                <p className="text-muted-foreground text-sm">
+                  Leave this empty to use each ad set&rsquo;s settings.
+                </p>
+              </SettingRow>
+              <SettingRow
+                rowKey="sort"
+                summary={`${args.sort ? titleCaseToken(args.sort, args.sort) : "Default order"} \u00b7 ${
+                  args.filters.length > 0
+                    ? `${String(args.filters.length)} ${args.filters.length === 1 ? "filter" : "filters"}`
+                    : "no filters"
+                }`}
+                title="Sort and Filter"
+              >
                 <ReportChoice
+                  disabled={disabled}
                   id={`${activity.id}-sort`}
-                  label="Sort order"
-                  value={args.sort}
+                  label="Sort Order"
+                  onChange={(value) => {
+                    edit("sort", value)
+                  }}
                   options={[
                     { value: "", label: "Default order" },
                     ...args.fields.flatMap((field) =>
@@ -205,24 +296,39 @@ export function MetaAdsInsightsApproval({
                       }))
                     ),
                   ]}
-                  disabled={disabled}
-                  onChange={(value) => {
-                    edit("sort", value)
-                  }}
+                  value={args.sort}
                 />
                 <InsightsFilters
-                  id={`${activity.id}-filters`}
-                  value={args.filters}
-                  fields={args.fields}
-                  options={options}
                   disabled={disabled}
+                  fields={args.fields}
+                  id={`${activity.id}-filters`}
                   onChange={(value) => {
                     edit("filters", value)
                   }}
+                  options={options}
+                  value={args.filters}
                 />
-              </FieldGroup>
-            </details>
-          </FieldGroup>
+              </SettingRow>
+              <SettingRow rowKey="rows" summary={String(args.limit)} title="Maximum Rows">
+                <Input
+                  aria-label="Maximum Rows"
+                  className="h-8 w-40"
+                  id={`${activity.id}-limit`}
+                  max={options.rows.max}
+                  min={options.rows.min}
+                  onChange={(event) => {
+                    edit("limit", Number(event.currentTarget.value))
+                  }}
+                  step={1}
+                  type="number"
+                  value={Number.isFinite(args.limit) ? args.limit : ""}
+                />
+                <p className="text-muted-foreground text-sm">
+                  {options.rows.min.toLocaleString()} to {options.rows.max.toLocaleString()}.
+                </p>
+              </SettingRow>
+            </SettingRows>
+          </div>
         </FieldSet>
       ) : null}
     </ToolApprovalDecisionCard>

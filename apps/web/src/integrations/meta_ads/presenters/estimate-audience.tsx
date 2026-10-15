@@ -12,19 +12,21 @@ export const metaAdsEstimateAudiencePresenter = defineIntegrationReadPresenter(m
   heading: "Estimate Meta Ads Audience",
   progressLabel: "Estimating Meta Ads audience…",
   tool: "meta_ads_estimate_audience",
-  details: (args) => {
-    const sentences = targetingSentences(isRecord(args) ? args["targeting"] : null)
-    return sentences.length > 0 ? [{ label: "Targeting", value: sentences.join(" ") }] : []
-  },
   parseResult: parseMetaAdsAudienceEstimate,
-  render: (result) => (
-    <div className="grid min-w-0 gap-1">
-      <p className="text-sm font-medium">{result.range ?? "No estimate from Meta"}</p>
-      {result.notes.map((note) => (
-        <p key={note} className="text-muted-foreground text-xs">
-          {note}
+  render: (result, _entry, args) => {
+    const sentences = targetingSentences(isRecord(args) ? args["targeting"] : null)
+    return (
+      <div className="grid min-w-0 gap-2">
+        <p className="text-2xl font-semibold tabular-nums">
+          {result.range ?? "No estimate from Meta"}
         </p>
-      ))}
-    </div>
-  ),
+        {sentences.length > 0 ? <p className="text-sm">{sentences.join(" ")}</p> : null}
+        {result.notes.map((note) => (
+          <p key={note} className="text-muted-foreground text-sm">
+            {note}
+          </p>
+        ))}
+      </div>
+    )
+  },
 })

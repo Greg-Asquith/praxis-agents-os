@@ -199,7 +199,9 @@ DEFINITION = RuntimeToolDefinition(
     function=bigquery_run_query,
     description=(
         "Run exactly one GoogleSQL SELECT query and retrieve every result page. Active BigQuery datasets define which "
-        "tables that query may reference; the query is not repeated for each dataset. "
+        "tables and views that query may reference; the query is not repeated for each dataset. "
+        "A view in an active dataset can be queried even when it reads tables in other datasets, "
+        "but name only the view, not those tables. "
         "Use fully qualified backticked `project.dataset.table` names. Some tables may have "
         "operator-defined row filters, so results can contain a subset of the table's rows. "
         "Add SQL LIMIT only for a requested top-N or limited result."

@@ -24,7 +24,12 @@ export type StatusTarget = {
   effectiveStatus: string | null
   budget: Budget | null
   currency: string | null
+  // The reference as sent, so edits keep it whole.
+  raw: Record<string, unknown>
 }
+
+/** A proposed object, kept in the list when the operator drops it so it can come back. */
+export type StatusRow = { target: StatusTarget; included: boolean }
 
 export type DeliveryImpact = {
   blockedBy: Parent[]
@@ -45,7 +50,7 @@ export type StatusChangeArgs = {
   needsReview: boolean
 }
 
-const LISTS = [
+export const STATUS_LISTS = [
   { key: "campaigns", type: "campaign", idKey: "campaign_id" },
   { key: "ad_sets", type: "adset", idKey: "adset_id" },
   { key: "ads", type: "ad", idKey: "ad_id" },
@@ -63,7 +68,7 @@ export function parseStatusChangeArgs(value: unknown): StatusChangeArgs | null {
   if (!isRecord(value) || (value["status"] !== "ACTIVE" && value["status"] !== "PAUSED"))
     return null
   const targets: StatusTarget[] = []
-  for (const list of LISTS) {
+  for (const list of STATUS_LISTS) {
     const items = value[list.key]
     if (items === undefined || items === null) continue
     if (!Array.isArray(items)) return null
@@ -73,7 +78,6 @@ export function parseStatusChangeArgs(value: unknown): StatusChangeArgs | null {
       targets.push(target)
     }
   }
-  if (targets.length === 0) return null
   return {
     status: value["status"],
     targets,
@@ -110,6 +114,7 @@ function parseTarget(value: unknown, type: MetaAdsObjectType, idKey: string): St
       typeof value["effective_status"] === "string" ? value["effective_status"] : null,
     budget: parseBudget(value["budget"]),
     currency: isNonEmptyString(value["currency"]) ? value["currency"] : null,
+    raw: value,
   }
 }
 
@@ -144,6 +149,86 @@ function parseDelivery(value: unknown): Record<string, DeliveryImpact> {
     }
   }
   return impacts
+}
+
+export function targetKey(target: StatusTarget): string {
+  return `${target.type}:${target.id}`
+}
+
+/** The proposed objects with the ones the operator dropped, then any the operator added. */
+export function statusRows(proposed: StatusChangeArgs, current: StatusChangeArgs): StatusRow[] {
+  const kept = new Map(current.targets.map((target) => [targetKey(target), target]))
+  const proposedKeys = new Set(proposed.targets.map(targetKey))
+  return [
+    ...proposed.targets.map((target) => {
+      const edited = kept.get(targetKey(target))
+      return { target: edited ?? target, included: edited !== undefined }
+    }),
+    ...current.targets
+      .filter((target) => !proposedKeys.has(targetKey(target)))
+      .map((target) => ({ target, included: true })),
+  ]
+}
+
+/** One list argument after including or dropping an object, or adding a reference; empty is null. */
+export function statusListEdit(
+  rows: readonly StatusRow[],
+  type: MetaAdsObjectType,
+  change: { key: string; included: boolean } | { added: Record<string, unknown> }
+): { field: string; value: Record<string, unknown>[] | null } {
+  const list = STATUS_LISTS.find((item) => item.type === type)
+  const kept = rows
+    .filter((row) => row.target.type === type)
+    .filter((row) =>
+      "key" in change && targetKey(row.target) === change.key ? change.included : row.included
+    )
+    .map((row) => row.target.raw)
+  const value = "added" in change ? [...kept, change.added] : kept
+  return { field: list?.key ?? type, value: value.length > 0 ? value : null }
+}
+
+export function statusProblem(args: StatusChangeArgs | null): string | null {
+  if (args === null) return null
+  if (args.targets.length === 0) return "Choose at least one object, or decline this request."
+  return args.needsReview ? "Check the changes before approving." : null
+}
+
+/** True when the object can't deliver after the change, or the check couldn't tell. */
+export function deliveryBlocked(target: StatusTarget, impact: DeliveryImpact | undefined): boolean {
+  if (impact === undefined) return false
+  return impact.unavailable || staysOffNote(target.type, impact.blockedBy) !== null
+}
+
+type StartingSpend = { amount: number; currency: string; atLeast: boolean }
+
+/** Daily budgets the included objects start spending, counting an ad set's budget once. */
+export function startingSpend(
+  rows: readonly StatusRow[],
+  delivery: Record<string, DeliveryImpact>
+): StartingSpend | null {
+  const included = rows.filter((row) => row.included).map((row) => row.target)
+  const campaigns = new Set(
+    included.filter((target) => target.type === "campaign").map((target) => target.id)
+  )
+  let cents = 0
+  let currency: string | null = null
+  let atLeast = false
+  for (const target of included) {
+    const impact = delivery[target.id]
+    if (!impact || impact.alreadyOn || deliveryBlocked(target, impact)) continue
+    const covered = target.type === "adset" && campaigns.has(String(target.raw["campaign_id"]))
+    const daily =
+      target.type === "campaign"
+        ? impact.dailyBudget
+        : target.budget?.kind === "daily" && !covered
+          ? target.budget.amount
+          : null
+    if (impact.budgetsIncomplete || impact.childrenTruncated) atLeast = true
+    if (daily === null || target.currency === null) continue
+    currency ??= target.currency
+    if (target.currency === currency) cents += Math.round(Number(daily) * 100)
+  }
+  return currency === null ? null : { amount: cents / 100, currency, atLeast }
 }
 
 // A parent that stays off keeps this object from delivering even when it is on.
@@ -236,12 +321,12 @@ export function deliveryLabel(
   return titleCaseToken(effectiveStatus.toLowerCase(), effectiveStatus)
 }
 
-export function requestedStatusLabel(status: MetaAdsRequestedStatus): string {
+function requestedStatusLabel(status: MetaAdsRequestedStatus): string {
   return status === "ACTIVE" ? "Turn On" : "Pause"
 }
 
-export function targetCounts(targets: readonly StatusTarget[]): string {
-  return LISTS.map(({ type }) => {
+function targetCounts(targets: readonly StatusTarget[]): string {
+  return STATUS_LISTS.map(({ type }) => {
     const count = targets.filter((target) => target.type === type).length
     return count === 0 ? null : `${String(count)} ${OBJECT_NOUNS[type][count === 1 ? 0 : 1]}`
   })

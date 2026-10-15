@@ -68,6 +68,8 @@ class MetaAdsLaunchCampaignRequest(MetaAdsStrictModel):
             raise ValueError(f"No ad set has the key {unknown[0]}.")
         if empty := [ad_set.name for ad_set in self.ad_sets if ad_set.key not in used]:
             raise ValueError(f"The ad set {empty[0]} needs at least one ad.")
+        if self.campaign.status != "paused":
+            raise ValueError("Go Live turns the campaign on, so leave its status paused.")
         if any(ad.status is not None for ad in self.ads):
             raise ValueError("Go Live sets every ad's status, so leave status off each ad.")
         accounts = {account for ad_set in self.ad_sets for account in ad_set.asset_accounts}

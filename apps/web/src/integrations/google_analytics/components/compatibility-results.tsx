@@ -19,7 +19,7 @@ export function GoogleAnalyticsCompatibilityResults({
         {result.compatible ? (
           <CheckCircle2Icon aria-hidden="true" className="text-success size-4" />
         ) : (
-          <AlertTriangleIcon aria-hidden="true" className="text-warning-foreground size-4" />
+          <AlertTriangleIcon aria-hidden="true" className="text-warning-text size-4" />
         )}
         {result.compatible
           ? "These can be reported together."

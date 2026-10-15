@@ -36,6 +36,7 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-warning-foreground: var(--warning-foreground);
+  --color-warning-text: var(--warning-text);
   --color-warning: var(--warning);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
@@ -86,6 +87,7 @@
   --success-foreground: #fff;
   --warning: #f59e0b;
   --warning-foreground: #111318;
+  --warning-text: #8a5300;
   --border: #eae7e0;
   --input: #dcd8ce;
   --ring: #92400e;
@@ -135,6 +137,7 @@
   --success-foreground: #0b0d12;
   --warning: #f59e0b;
   --warning-foreground: #0b0d12;
+  --warning-text: #fbbf24;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: #b45309;

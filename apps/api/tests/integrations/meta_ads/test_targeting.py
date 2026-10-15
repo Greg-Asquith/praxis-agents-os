@@ -9,6 +9,12 @@ import httpx2
 
 from integrations.meta_ads.client import MetaAdsClient
 from integrations.meta_ads.entity_resolvers.audience import resolve_meta_ads_audiences
+from integrations.meta_ads.entity_resolvers.targeting import (
+    MetaAdsInterestOption,
+    resolve_interests,
+    search_interests,
+    search_locations,
+)
 from integrations.meta_ads.operations.estimate_audience import estimate_audience
 from integrations.meta_ads.operations.search_targeting import search_targeting
 from integrations.meta_ads.operations.targeting import (
@@ -202,3 +208,49 @@ async def test_audience_resolver_refuses_an_audience_the_account_does_not_list(m
 
     assert choices == ()
     assert paths and all(path.split("/")[2] == "act_123" for path in paths)
+
+
+async def test_place_and_interest_lookups_give_values_a_card_can_add_to_targeting(monkeypatch):
+    def graph(request: httpx2.Request) -> httpx2.Response:
+        params = request.url.params
+        if params["type"] == "adinterest":
+            rows = [{"id": "600", "name": "Running", "audience_size_lower_bound": 1}]
+        elif "city" in params["location_types"]:
+            row = {"type": "city", "key": "2420379", "name": "London", "country_code": "GB"}
+            rows = [row, {"type": "region", "key": "9", "name": "London"}]
+        else:
+            rows = []
+        return httpx2.Response(200, json={"data": rows}, request=request)
+
+    http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph))
+
+    async def client(*_args, **_kwargs):
+        return MetaAdsClient(static_token, client=http)
+
+    monkeypatch.setattr(
+        "integrations.meta_ads.entity_resolvers.targeting.meta_ads_client_for_principal", client
+    )
+    ctx = SimpleNamespace(
+        active_context=ResolvedActiveContext(entries=(context_entry("123"),)),
+        db=None,
+        actor=None,
+        workspace=None,
+    )
+
+    async with http:
+        places = await search_locations(ctx, "London", {}, 25, None)
+        interests = await search_interests(ctx, "Running", {}, 25, None)
+        stale = MetaAdsInterestOption(account_id="123", key="601", label="Running", name="Running")
+        confirmed = await resolve_interests(ctx, [stale.model_dump(mode="json")], {})
+
+    (city,) = [choice.value for choice in places.choices if choice.value["kind"] == "city"]
+    (interest,) = [choice.value for choice in interests.choices]
+    item = ("kind", "key", "name", "country_code")
+    targeting = draft(
+        locations=[{k: city[k] for k in item}],
+        detailed=[[{k: interest[k] for k in ("kind", "key", "name")}]],
+    )
+    assert targeting.locations[0].key == "2420379"
+    assert targeting.detailed[0][0].key == "600"
+    # Meta didn't return key 601 for that name, so the reference doesn't hydrate.
+    assert confirmed == ()

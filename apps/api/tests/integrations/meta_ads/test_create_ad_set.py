@@ -216,6 +216,41 @@ async def test_a_custom_conversion_on_another_pixel_is_refused_before_anything_i
     assert graph.creates == graph.dry_runs == []
 
 
+async def test_a_card_edit_of_status_and_targeting_is_sent_after_the_live_checks(monkeypatch):
+    graph = AdSetGraph([campaign()])
+    edited = {
+        "locations": [
+            {"kind": "country", "key": "GB"},
+            {"kind": "city", "key": "2420379", "country_code": "GB"},
+        ],
+        "detailed": [[{"kind": "interest", "key": "600"}, {"kind": "interest", "key": "601"}]],
+    }
+
+    await run_tool(
+        monkeypatch,
+        graph,
+        args(status="active", targeting=edited, goal="website_conversions"),
+        proposed=args(),
+    )
+
+    (sent,) = graph.creates
+    spec = json.loads(sent["targeting"])
+    assert sent["status"] == "ACTIVE"
+    assert spec["geo_locations"]["cities"] == [{"key": "2420379"}]
+    assert spec["flexible_spec"] == [{"interests": [{"id": "600"}, {"id": "601"}]}]
+
+
+async def test_a_goal_edited_outside_the_campaigns_objective_is_refused_live(monkeypatch):
+    graph = AdSetGraph([campaign()])
+    edited = args(goal="link_clicks", pixel=None, conversion_event=None)
+
+    entry, _audit = await run_tool(monkeypatch, graph, edited, proposed=args())
+
+    assert entry["status"] == "error"
+    assert "needs a traffic campaign" in entry["error_message"]
+    assert graph.creates == graph.dry_runs == []
+
+
 async def test_a_campaign_changed_after_approval_is_refused(monkeypatch):
     graph = AdSetGraph([campaign(), obj("10", "campaign", objective="OUTCOME_SALES")])
     other = {**args()["campaign"], "campaign_id": "10"}

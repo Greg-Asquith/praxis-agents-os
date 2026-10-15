@@ -27,7 +27,7 @@ from .models import (
 MAX_POST_EXCERPT = 300
 
 
-class _MetaAdsAccountReference(ScopedEntityReference):
+class MetaAdsAccountReference(ScopedEntityReference):
     account_id: MetaAdsId = Field(description="Meta ad account ID, digits only.")
 
     identity_fields: ClassVar[tuple[str, ...]] = (
@@ -40,7 +40,7 @@ class _MetaAdsAccountReference(ScopedEntityReference):
         return self.account_id
 
 
-class _MetaAdsObjectReference(_MetaAdsAccountReference):
+class _MetaAdsObjectReference(MetaAdsAccountReference):
     status: MetaAdsText | None = None
     effective_status: MetaAdsText | None = None
 
@@ -113,7 +113,7 @@ class MetaAdsAdReference(_MetaAdsObjectReference):
         return self.ad_id
 
 
-class MetaAdsMediaReference(_MetaAdsAccountReference):
+class MetaAdsMediaReference(MetaAdsAccountReference):
     """Image or video in one ad account's media library."""
 
     entity_kind: Literal["meta_ads_media"] = "meta_ads_media"
@@ -126,7 +126,7 @@ class MetaAdsMediaReference(_MetaAdsAccountReference):
     thumbnail_url: MetaAdsMediaUrl | None = None
 
     identity_fields: ClassVar[tuple[str, ...]] = (
-        *_MetaAdsAccountReference.identity_fields,
+        *MetaAdsAccountReference.identity_fields,
         "media_type",
         "image_hash",
         "video_id",
@@ -144,7 +144,7 @@ class MetaAdsMediaReference(_MetaAdsAccountReference):
         return self.image_hash or self.video_id or ""
 
 
-class MetaAdsPageReference(_MetaAdsAccountReference):
+class MetaAdsPageReference(MetaAdsAccountReference):
     """Facebook Page that the ad account can advertise as."""
 
     entity_kind: Literal["meta_ads_page"] = "meta_ads_page"
@@ -152,7 +152,7 @@ class MetaAdsPageReference(_MetaAdsAccountReference):
     picture_url: MetaAdsMediaUrl | None = None
 
     identity_fields: ClassVar[tuple[str, ...]] = (
-        *_MetaAdsAccountReference.identity_fields,
+        *MetaAdsAccountReference.identity_fields,
         "page_id",
     )
 
@@ -161,7 +161,7 @@ class MetaAdsPageReference(_MetaAdsAccountReference):
         return self.page_id
 
 
-class MetaAdsInstagramAccountReference(_MetaAdsAccountReference):
+class MetaAdsInstagramAccountReference(MetaAdsAccountReference):
     """Instagram account connected to the ad account."""
 
     entity_kind: Literal["meta_ads_instagram_account"] = "meta_ads_instagram_account"
@@ -172,7 +172,7 @@ class MetaAdsInstagramAccountReference(_MetaAdsAccountReference):
     page_id: MetaAdsId | None = None
 
     identity_fields: ClassVar[tuple[str, ...]] = (
-        *_MetaAdsAccountReference.identity_fields,
+        *MetaAdsAccountReference.identity_fields,
         "instagram_user_id",
     )
 
@@ -181,7 +181,7 @@ class MetaAdsInstagramAccountReference(_MetaAdsAccountReference):
         return self.instagram_user_id
 
 
-class MetaAdsPostReference(_MetaAdsAccountReference):
+class MetaAdsPostReference(MetaAdsAccountReference):
     """Published Facebook Page post or Instagram post that can run as an ad unchanged."""
 
     entity_kind: Literal["meta_ads_post"] = "meta_ads_post"
@@ -202,7 +202,7 @@ class MetaAdsPostReference(_MetaAdsAccountReference):
     boostable: bool | None = None
 
     identity_fields: ClassVar[tuple[str, ...]] = (
-        *_MetaAdsAccountReference.identity_fields,
+        *MetaAdsAccountReference.identity_fields,
         "source",
         "post_id",
     )
@@ -225,14 +225,14 @@ class MetaAdsPostReference(_MetaAdsAccountReference):
         return f"{self.source}:{self.post_id}"
 
 
-class MetaAdsPixelReference(_MetaAdsAccountReference):
+class MetaAdsPixelReference(MetaAdsAccountReference):
     """Meta pixel (dataset) the ad account can use to measure website conversions."""
 
     entity_kind: Literal["meta_ads_pixel"] = "meta_ads_pixel"
     pixel_id: MetaAdsId = Field(description="Meta pixel (dataset) ID.")
 
     identity_fields: ClassVar[tuple[str, ...]] = (
-        *_MetaAdsAccountReference.identity_fields,
+        *MetaAdsAccountReference.identity_fields,
         "pixel_id",
     )
 
@@ -241,7 +241,7 @@ class MetaAdsPixelReference(_MetaAdsAccountReference):
         return self.pixel_id
 
 
-class MetaAdsApplicationReference(_MetaAdsAccountReference):
+class MetaAdsApplicationReference(MetaAdsAccountReference):
     """App the ad account can advertise, with its App Store and Google Play pages."""
 
     entity_kind: Literal["meta_ads_application"] = "meta_ads_application"
@@ -249,7 +249,7 @@ class MetaAdsApplicationReference(_MetaAdsAccountReference):
     store_urls: list[MetaAdsStoreUrl] = Field(default_factory=list, max_length=4)
 
     identity_fields: ClassVar[tuple[str, ...]] = (
-        *_MetaAdsAccountReference.identity_fields,
+        *MetaAdsAccountReference.identity_fields,
         "application_id",
     )
 
@@ -258,7 +258,7 @@ class MetaAdsApplicationReference(_MetaAdsAccountReference):
         return self.application_id
 
 
-class MetaAdsAudienceReference(_MetaAdsAccountReference):
+class MetaAdsAudienceReference(MetaAdsAccountReference):
     """Custom or lookalike audience the ad account can target or exclude."""
 
     entity_kind: Literal["meta_ads_audience"] = "meta_ads_audience"
@@ -270,7 +270,7 @@ class MetaAdsAudienceReference(_MetaAdsAccountReference):
     size_upper_bound: int | None = Field(default=None, ge=0)
 
     identity_fields: ClassVar[tuple[str, ...]] = (
-        *_MetaAdsAccountReference.identity_fields,
+        *MetaAdsAccountReference.identity_fields,
         "audience_id",
     )
 

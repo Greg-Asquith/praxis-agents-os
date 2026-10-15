@@ -152,3 +152,37 @@ export function insightsApprovalError(
   }
   return null
 }
+
+export type InsightsDatePreset = { label: string; since: string; until: string }
+
+function isoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${String(date.getFullYear())}-${month}-${day}`
+}
+
+/** Date ranges that end yesterday, because today's figures are still moving. */
+export function insightsDatePresets(today: Date): InsightsDatePreset[] {
+  const year = today.getFullYear()
+  const month = today.getMonth()
+  const yesterday = new Date(year, month, today.getDate() - 1)
+  const lastDays = (count: number): InsightsDatePreset => ({
+    label: `Last ${String(count)} Days`,
+    since: isoDate(new Date(year, month, today.getDate() - count)),
+    until: isoDate(yesterday),
+  })
+  return [
+    lastDays(7),
+    lastDays(30),
+    {
+      label: "This Month",
+      since: isoDate(new Date(year, month, 1)),
+      until: isoDate(today.getDate() === 1 ? today : yesterday),
+    },
+    {
+      label: "Last Month",
+      since: isoDate(new Date(year, month - 1, 1)),
+      until: isoDate(new Date(year, month, 0)),
+    },
+  ]
+}

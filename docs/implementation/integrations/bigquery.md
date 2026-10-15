@@ -23,6 +23,17 @@ cache-unknown references, and sends the same rewritten query and parameters
 through the dry-run and execution requests. The zero-rule request bodies
 remain unchanged.
 
+The query tool authorises the tables and views the SQL names, parsed with
+sqlglot before any provider request: each must sit in an active dataset, and
+every table needs its dataset in the name. A view in an active dataset is
+allowed whatever it reads. BigQuery's dry run lists the tables a view reads
+instead of the view itself, so dry-run tables from other datasets pass only
+when the query names something the dry run expanded, which only happens to a
+view. Naming another dataset's table directly is still refused. Region-level
+`INFORMATION_SCHEMA` views are outside every dataset and are refused. The
+schema cache stores views with their descriptions and column descriptions, as
+it does tables. Row filters still reject views.
+
 The query tool executes once, then reads every result page from that same job.
 Pagination keeps the billing project and location fixed, rejects repeated page
 tokens or inconsistent job metadata, and verifies the final row count.

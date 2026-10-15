@@ -2,7 +2,14 @@
 
 import { describe, expect, it } from "vitest"
 
-import { budgetNotes, parseBudgetChangeArgs } from "@/integrations/meta_ads/lib/budget-change"
+import {
+  budgetNotes,
+  budgetProblem,
+  budgetRows,
+  dailyTotal,
+  editBudgets,
+  parseBudgetChangeArgs,
+} from "@/integrations/meta_ads/lib/budget-change"
 import { metaAdsUpdateBudgetsPresenter } from "@/integrations/meta_ads/presenters/update-budgets"
 import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
@@ -58,6 +65,66 @@ describe("Meta Ads budget notes", () => {
     expect(
       parseBudgetChangeArgs({ updates: [{ ad_set: adSet, campaign, amount: "10" }] })
     ).toBeNull()
+  })
+})
+
+describe("Meta Ads budget edits", () => {
+  const proposed = parseBudgetChangeArgs({
+    updates: [
+      { ad_set: adSet, amount: "20" },
+      { campaign, amount: "1200" },
+    ],
+    _budget_checks: { "8": { problem: "Too low.", amount: "20" } },
+  })
+
+  it("drops a row and brings it back with the amount it was proposed with", () => {
+    if (!proposed) throw new Error("expected proposed budgets")
+    const dropped = editBudgets(budgetRows(proposed, proposed), "adset:8", { included: false })
+    expect(dropped).toEqual([{ campaign, amount: "1200" }])
+
+    const current = parseBudgetChangeArgs({ updates: dropped })
+    if (!current) throw new Error("expected current budgets")
+    const rows = budgetRows(proposed, current)
+    expect(rows.map((row) => row.included)).toEqual([false, true])
+    expect(editBudgets(rows, "adset:8", { included: true })).toEqual([
+      { ad_set: adSet, amount: "20" },
+      { campaign, amount: "1200" },
+    ])
+  })
+
+  it("ignores a dry-run problem for an amount that has since been edited", () => {
+    const edited = parseBudgetChangeArgs({
+      updates: [{ ad_set: adSet, amount: "30" }],
+      _budget_checks: { "8": { problem: "Too low.", amount: "20" } },
+    })
+    expect(budgetProblem(proposed)).toContain("won't accept")
+    expect(budgetProblem(edited)).toBeNull()
+  })
+
+  it("blocks an empty list and amounts Meta would refuse", () => {
+    expect(budgetProblem(parseBudgetChangeArgs({ updates: [] }))).toContain("at least one")
+    for (const amount of ["", "0", "12.345", "abc"]) {
+      const args = parseBudgetChangeArgs({ updates: [{ ad_set: adSet, amount }] })
+      expect(budgetProblem(args)).toContain("amount")
+    }
+  })
+
+  it("totals only the kept daily budgets, in whole cents", () => {
+    if (!proposed) throw new Error("expected proposed budgets")
+    const extra = { ...adSet, adset_id: "9", budget: { kind: "daily", amount: "0.10" } }
+    const args = parseBudgetChangeArgs({
+      updates: [
+        { ad_set: adSet, amount: "20.20" },
+        { ad_set: extra, amount: "0.20" },
+        { campaign, amount: "1200" },
+      ],
+    })
+    if (!args) throw new Error("expected budgets")
+    expect(dailyTotal(budgetRows(args, args))).toEqual({
+      before: 15.1,
+      after: 20.4,
+      currency: "EUR",
+    })
   })
 })
 

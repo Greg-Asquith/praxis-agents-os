@@ -98,9 +98,7 @@ export function renderCreateBudgetOutcome(result: CreateBudgetResult) {
       ) : (
         <p
           className={
-            result.outcome === "failed"
-              ? "text-destructive text-sm"
-              : "text-warning-foreground text-sm"
+            result.outcome === "failed" ? "text-destructive text-sm" : "text-warning-text text-sm"
           }
         >
           {result.message ??

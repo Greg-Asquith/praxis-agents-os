@@ -21,6 +21,7 @@ from ...references import (
     MetaAdsPixelReference,
 )
 from .budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
+from .campaigns import MetaAdsNewObjectStatus
 from .text import tidy_text
 
 MAX_AD_SET_NAME = 400
@@ -116,6 +117,7 @@ class MetaAdsAdSetSettings(MetaAdsStrictModel):
 
 class MetaAdsCreateAdSetRequest(MetaAdsAdSetSettings):
     campaign: MetaAdsCampaignReference
+    status: MetaAdsNewObjectStatus = "paused"
 
     @model_validator(mode="after")
     def _check_account(self) -> Self:

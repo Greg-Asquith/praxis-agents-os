@@ -227,7 +227,7 @@ function renderSettledWrite<Args, Result>(
           ) {
             return (
               <div className="grid gap-3">
-                <p className="text-warning-foreground bg-warning/10 rounded-md px-2.5 py-2 text-sm">
+                <p className="text-warning-text bg-warning/10 rounded-md px-2.5 py-2 text-sm">
                   {entry.errorMessage ?? variant.unverifiedDescription}
                 </p>
                 {variant.renderUnverifiedOutcome(result, args)}

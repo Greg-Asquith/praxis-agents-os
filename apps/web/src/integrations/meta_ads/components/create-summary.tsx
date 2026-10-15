@@ -1,47 +1,25 @@
 // apps/web/src/integrations/meta_ads/components/create-summary.tsx
 
-import { MetaAdsApprovalSection } from "@/integrations/meta_ads/components/approval-section"
-import { MetaAdsOutcomeTable, OutcomeLink } from "@/integrations/meta_ads/components/outcome-table"
-import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
-import {
-  PAUSED_NOTE,
-  type CreatedObjectResult,
-  type SummaryLine,
-} from "@/integrations/meta_ads/lib/create-summary"
+import { CircleAlertIcon, CircleCheckIcon, CircleXIcon } from "lucide-react"
 
-/** A new campaign or ad set in labelled sentences, under the created-paused note. */
-export function CreateSummary({ ariaLabel, lines }: { ariaLabel: string; lines: SummaryLine[] }) {
-  return (
-    <MetaAdsApprovalSection ariaLabel={ariaLabel} warning={PAUSED_NOTE}>
-      <dl className="grid min-w-0 gap-2 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
-        {lines.map((line) => (
-          <div className="contents" key={line.label}>
-            <dt className="text-muted-foreground font-medium">{line.label}</dt>
-            <dd className="grid min-w-0 gap-0.5 wrap-anywhere">
-              {line.sentences.map((sentence) => (
-                <p key={sentence}>{sentence}</p>
-              ))}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </MetaAdsApprovalSection>
-  )
-}
+import { adsManagerObjectUrl } from "@/integrations/meta_ads/lib/ads-manager-link"
+import type { CreatedObjectResult } from "@/integrations/meta_ads/lib/create-summary"
+import { cn } from "@/lib/utils"
 
 const OBJECTS = {
   campaign: {
-    title: "Campaign",
     noun: "campaign",
-    next: "The campaign is paused. Ask the agent to create ad sets and ads in it, then turn it on.",
+    paused: "Next, ask the agent to create ad sets and ads in it, then turn it on.",
+    active: "Next, ask the agent to create ad sets and ads in it. It spends once they are active.",
   },
   adset: {
-    title: "Ad Set",
     noun: "ad set",
-    next: "The ad set is paused. Ask the agent to create ads in it, then turn it on.",
+    paused: "Next, ask the agent to create ads in it, then turn it on.",
+    active: "Next, ask the agent to create ads in it. It spends once they are approved.",
   },
 } as const
 
+/** One created campaign or ad set as a single line, then what to do next. */
 export function CreatedObjectOutcome({
   result,
   type,
@@ -49,39 +27,65 @@ export function CreatedObjectOutcome({
   result: CreatedObjectResult
   type: keyof typeof OBJECTS
 }) {
-  const { title, noun, next } = OBJECTS[type]
+  const { noun, paused, active } = OBJECTS[type]
   const manager = result.id ? adsManagerObjectUrl(type, result.accountId, result.id) : null
+  const link = manager ? (
+    <a
+      className="text-primary text-sm underline-offset-2 hover:underline"
+      href={manager}
+      rel="noreferrer"
+      target="_blank"
+    >
+      Open in Ads Manager
+    </a>
+  ) : null
+  if (result.outcome === "created") {
+    const status =
+      result.effectiveStatus === "PAUSED" ? ", paused" : result.effectiveStatus ? ", active" : ""
+    return (
+      <div className="grid min-w-0 gap-1.5">
+        <p className="flex min-w-0 items-start gap-2 text-sm">
+          <CircleCheckIcon aria-hidden="true" className="text-success mt-0.5 size-4 shrink-0" />
+          <span className="min-w-0 wrap-anywhere">
+            <span className="font-medium">{result.name}</span> was created{status}
+          </span>
+        </p>
+        <p className="text-sm">
+          {status === ", active" ? active : paused} {link}
+        </p>
+        {result.recovered ? (
+          <p className="text-foreground/75 text-sm">
+            Meta&apos;s reply was lost, so the {noun} was found by its name.
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+  const failed = result.outcome === "failed"
+  const Icon = failed ? CircleXIcon : CircleAlertIcon
   return (
-    <div className="grid gap-3">
-      <MetaAdsOutcomeTable
-        columns={[
-          { key: "name", kind: "text", label: title },
-          { key: "links", kind: "text", label: "Links" },
-        ]}
-        exportFilename={`meta-ads-created-${noun.replace(" ", "-")}.csv`}
-        renderCell={(column) =>
-          column.key === "links" && manager ? (
-            <OutcomeLink href={manager}>Open in Ads Manager</OutcomeLink>
-          ) : null
-        }
-        rows={[
-          {
-            name: result.name,
-            links: "",
-            outcome: result.outcome,
-            details: [
-              result.message,
-              result.recovered
-                ? `Meta's reply was lost, so the ${noun} was found by its name.`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(" "),
-            errorCode: result.errorCode,
-          },
-        ]}
-      />
-      {result.outcome === "created" ? <p className="text-sm">{next}</p> : null}
+    <div className="grid min-w-0 gap-1.5">
+      <p
+        className={cn(
+          "flex min-w-0 items-start gap-2 text-sm",
+          failed ? "text-destructive" : "text-warning-text"
+        )}
+      >
+        <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <span className="min-w-0 wrap-anywhere">
+          <span className="font-medium">{result.name}</span>{" "}
+          {failed
+            ? "wasn't created."
+            : "may not have been created. Check Ads Manager before creating it again."}
+        </span>
+      </p>
+      {result.message || result.errorCode ? (
+        <p className="text-foreground/75 text-sm wrap-anywhere">
+          {result.message}
+          {result.errorCode ? ` (Error code: ${result.errorCode})` : ""}
+        </p>
+      ) : null}
+      {link ? <p className="text-sm">{link}</p> : null}
     </div>
   )
 }

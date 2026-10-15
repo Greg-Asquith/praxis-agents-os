@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/tools/schemas/campaigns.py
 
-"""Input and result contracts for creating one paused campaign in an ad account."""
+"""Input and result contracts for creating one campaign in an ad account."""
 
 from typing import Annotated, Literal, Self
 
@@ -35,6 +35,7 @@ type MetaAdsSpecialCategory = Literal[
     "online_gambling_and_gaming",
     "issues_elections_politics",
 ]
+type MetaAdsNewObjectStatus = Literal["paused", "active"]
 type MetaAdsCampaignBudgetMode = Literal["campaign_daily", "campaign_lifetime", "ad_set"]
 _POLITICS_REFUSED = (
     "Praxis can't create political, election, or social issue campaigns, because Meta needs a "
@@ -70,6 +71,7 @@ class MetaAdsSpecialAdCategory(MetaAdsStrictModel):
 
 class MetaAdsCreateCampaignRequest(MetaAdsStrictModel):
     name: Annotated[str, Field(max_length=MAX_CAMPAIGN_NAME), AfterValidator(tidy_text)]
+    status: MetaAdsNewObjectStatus = "paused"
     objective: MetaAdsObjective
     budget: MetaAdsCampaignBudget
     bid_strategy: MetaAdsBidStrategy = "highest_volume"

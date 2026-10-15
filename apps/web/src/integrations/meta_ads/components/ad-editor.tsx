@@ -1,26 +1,23 @@
 // apps/web/src/integrations/meta_ads/components/ad-editor.tsx
 
-import { ImageUpIcon, PencilIcon, PlusIcon, XIcon } from "lucide-react"
+import { ChevronLeftIcon, ChevronRightIcon, ImageUpIcon, PlusIcon, XIcon } from "lucide-react"
 import { useId, useState } from "react"
 
-import { fieldLabelClass, fieldWellClass } from "@/components/tool-ui/field-styles"
+import { fieldLabelClass } from "@/components/tool-ui/field-styles"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  AdPreview,
-  PostAdPreview,
-  type AdPlacement,
-} from "@/integrations/meta_ads/components/ad-preview"
+import { AdPreview, PostAdPreview } from "@/integrations/meta_ads/components/ad-preview"
+import { AdSetPicker } from "@/integrations/meta_ads/components/ad-set-picker"
+import { ButtonSelect } from "@/integrations/meta_ads/components/button-select"
 import { CarouselCards } from "@/integrations/meta_ads/components/carousel-cards"
-import { DeliveryOverrides } from "@/integrations/meta_ads/components/delivery-overrides"
 import { EditorField, LabelledInput } from "@/integrations/meta_ads/components/editor-fields"
 import {
   CheckMark,
   CheckMessages,
   LengthCounter,
 } from "@/integrations/meta_ads/components/field-notes"
+import { MediaFrame } from "@/integrations/meta_ads/components/media-frame"
 import { MediaPicker } from "@/integrations/meta_ads/components/media-picker"
 import {
   adSetName,
@@ -32,40 +29,126 @@ import {
 import {
   checksFor,
   hasError,
-  type AdCheck,
   type AdRow,
   type CheckField,
 } from "@/integrations/meta_ads/lib/create-ads-checks"
 import {
   blankToNull,
   editAd,
+  followsShared,
   setAdMedia,
+  setAdSets,
   type EditableAdKey,
   type EditedAds,
 } from "@/integrations/meta_ads/lib/create-ads-edits"
 import { titleCaseToken, urlDomain } from "@/lib/format"
-import { cn } from "@/lib/utils"
 
-/** One ad: a Praxis preview beside the text it sends, with checks shown where they apply. */
+type SettingKey = "link" | "call_to_action" | "url_tags"
+type Edits = {
+  args: CreateAdsArgs
+  disabled: boolean
+  id: string
+  onEdit: (ads: EditedAds) => void
+  onEditSetting: (key: SettingKey, value: string | null) => void
+  row: AdRow
+}
+
+/** One ad in one column: its text and settings on Edit, and how it looks on Preview. */
 export function AdEditor({
   args,
   count,
   row,
   disabled,
   onEdit,
+  onEditSetting,
+  onSelect,
 }: {
   args: CreateAdsArgs
   count: number
   row: AdRow
   disabled: boolean
   onEdit: (ads: EditedAds) => void
+  onEditSetting: (key: SettingKey, value: string | null) => void
+  onSelect: (index: number) => void
 }) {
   const id = useId()
-  const [placement, setPlacement] = useState<AdPlacement>("feed")
+  const [tab, setTab] = useState<"edit" | "preview">("edit")
+  const { ad } = row
+  const edits: Edits = { args, disabled, id, onEdit, onEditSetting, row }
+  const adSets = ad.adSetIds.map((adSetId) => adSetName(args, adSetId))
+  const kind = ad.post
+    ? `${ad.post.source === "facebook" ? "Facebook" : "Instagram"} post`
+    : `${FORMAT_LABELS[ad.format]} ad${ad.format === "carousel" ? ` with ${String(ad.cards.length)} cards` : ""}`
+  return (
+    <div className="@container grid min-w-0 gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {count > 1 ? (
+          <div className="flex items-center gap-1">
+            <Button
+              aria-label="Previous ad"
+              disabled={ad.index === 0}
+              onClick={() => {
+                onSelect(ad.index - 1)
+              }}
+              size="icon"
+              type="button"
+              variant="outline"
+            >
+              <ChevronLeftIcon />
+            </Button>
+            <p className="px-1 text-sm font-medium tabular-nums">
+              Ad {String(ad.index + 1)} of {String(count)}
+            </p>
+            <Button
+              aria-label="Next ad"
+              disabled={ad.index === count - 1}
+              onClick={() => {
+                onSelect(ad.index + 1)
+              }}
+              size="icon"
+              type="button"
+              variant="outline"
+            >
+              <ChevronRightIcon />
+            </Button>
+          </div>
+        ) : null}
+        <CheckMark check={row.check} checks={row.checks} />
+        {ad.post ? null : (
+          <Tabs
+            className="ml-auto"
+            onValueChange={(value) => {
+              setTab(value === "preview" ? "preview" : "edit")
+            }}
+            value={tab}
+          >
+            <TabsList aria-label={`Edit or preview ${ad.name}`}>
+              <TabsTrigger value="edit">Edit</TabsTrigger>
+              <TabsTrigger value="preview">Preview</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+      </div>
+      <p className="text-muted-foreground text-sm wrap-anywhere">
+        {kind} · {adSets.join(", ")}
+      </p>
+      {ad.post ? (
+        <PostAdBody {...edits} post={ad.post} />
+      ) : tab === "preview" ? (
+        <PreviewPanel {...edits} />
+      ) : (
+        <EditPanel {...edits} />
+      )}
+    </div>
+  )
+}
+
+function EditPanel({ args, disabled, id, onEdit, onEditSetting, row }: Edits) {
   const { ad } = row
   const edit = (key: EditableAdKey, value: string | null) => {
     onEdit(editAd(args, ad.index, key, value))
   }
+  const carousel = ad.format === "carousel"
   const shownFields = new Set<CheckField>([
     "name",
     "primary_text",
@@ -73,169 +156,209 @@ export function AdEditor({
     "call_to_action",
     "url_tags",
     "media",
-    ...(ad.format === "carousel" ? (["cards"] as const) : (["headline", "description"] as const)),
+    ...(carousel ? (["cards"] as const) : (["headline", "description"] as const)),
   ])
   // A check for a field this format doesn't show still needs to be seen.
   const unplaced = row.checks.filter((check) => !shownFields.has(check.field))
-  const heading = (
-    <AdHeading
-      args={args}
-      checks={checksFor(row, "name")}
-      count={count}
-      disabled={disabled}
-      id={`${id}-name`}
-      onRename={(value) => {
-        edit("name", value)
-      }}
-      row={row}
-    />
-  )
-  if (ad.post) {
-    return (
-      <div className="@container grid min-w-0 gap-3">
-        {heading}
-        <PostAdBody
-          args={args}
-          disabled={disabled}
-          id={id}
-          onEdit={onEdit}
-          post={ad.post}
-          row={row}
-        />
-      </div>
-    )
-  }
   return (
-    <div className="@container grid min-w-0 gap-3">
-      {heading}
-      <div className="grid min-w-0 gap-4 @xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <div className="grid min-w-0 content-start gap-2">
-          <Tabs
-            onValueChange={(value) => {
-              setPlacement(value === "stories" ? "stories" : "feed")
-            }}
-            value={placement}
-          >
-            <TabsList aria-label={`Preview placement for ${ad.name}`} className="w-full">
-              <TabsTrigger value="feed">Feed</TabsTrigger>
-              <TabsTrigger value="stories">Stories and Reels</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <AdPreview
-            callToAction={row.callToAction}
-            cards={ad.cards.map((card) => ({
-              media: card.media,
-              headline: card.headline,
-              description: card.description,
-              callToAction: card.callToAction ?? row.callToAction,
-            }))}
-            description={ad.description}
-            domain={urlDomain(row.link)}
-            format={ad.format}
-            headline={ad.headline}
-            media={ad.media}
-            pageId={args.pageId}
-            pageName={args.pageName}
-            placement={placement}
-            primaryText={ad.primaryText}
-            verticalMedia={ad.verticalMedia}
-          />
-          {placement === "stories" && ad.format !== "carousel" && !ad.verticalMedia ? (
-            <p className="text-muted-foreground text-xs">
-              No vertical version, so Meta fits the main {ad.format} into Stories and Reels like
-              this.
-            </p>
-          ) : null}
-          {ad.format !== "carousel" ? (
-            <MediaActions args={args} disabled={disabled} onEdit={onEdit} row={row} />
-          ) : null}
-          <CheckMessages checks={checksFor(row, "media")} />
-          <p className="text-muted-foreground text-xs">
-            A close preview. Meta&apos;s own may differ slightly by placement.
-          </p>
-        </div>
-        <div className="grid min-w-0 content-start gap-3">
-          <CheckMessages checks={unplaced} />
-          <EditorField
-            checks={checksFor(row, "primary_text")}
-            counter={
-              <LengthCounter
-                length={ad.primaryText.length}
-                limit={RECOMMENDED_LENGTHS.primaryText}
-              />
-            }
-            id={`${id}-primary`}
-            label="Primary Text"
-          >
-            <Textarea
-              aria-invalid={hasError(checksFor(row, "primary_text"))}
-              className="min-h-16 text-sm"
-              disabled={disabled}
-              id={`${id}-primary`}
-              onChange={(event) => {
-                edit("primary_text", event.currentTarget.value)
-              }}
-              value={ad.primaryText}
-            />
-          </EditorField>
-          {ad.format !== "carousel" ? (
-            <>
-              <LabelledInput
-                checks={checksFor(row, "headline")}
-                counter={
-                  <LengthCounter
-                    length={ad.headline?.length ?? 0}
-                    limit={RECOMMENDED_LENGTHS.headline}
-                  />
-                }
-                disabled={disabled}
-                id={`${id}-headline`}
-                label="Headline"
-                onChange={(value) => {
-                  edit("headline", value)
-                }}
-                value={ad.headline ?? ""}
-              />
-              <LabelledInput
-                checks={checksFor(row, "description")}
-                counter={
-                  <LengthCounter
-                    length={ad.description?.length ?? 0}
-                    limit={RECOMMENDED_LENGTHS.description}
-                  />
-                }
-                disabled={disabled}
-                id={`${id}-description`}
-                label="Description"
-                onChange={(value) => {
-                  edit("description", blankToNull(value))
-                }}
-                placeholder="Optional"
-                value={ad.description ?? ""}
-              />
-            </>
-          ) : null}
-          {ad.disclaimer ? (
-            <div className="grid gap-0.5 text-sm">
-              <p className={fieldLabelClass}>{titleCaseToken(ad.disclaimer.type, "Disclaimer")}</p>
-              <p className="wrap-anywhere whitespace-pre-line">{ad.disclaimer.text}</p>
-              {ad.disclaimer.url ? (
-                <p className="text-muted-foreground text-xs wrap-anywhere">{ad.disclaimer.url}</p>
-              ) : null}
-            </div>
-          ) : null}
-          <DeliveryOverrides args={args} disabled={disabled} id={id} onEdit={onEdit} row={row} />
-        </div>
-      </div>
-      {ad.format === "carousel" ? (
+    <div className="grid min-w-0 gap-4">
+      <CheckMessages checks={unplaced} />
+      <NameAndAdSet args={args} disabled={disabled} id={id} onEdit={onEdit} row={row} />
+      {carousel ? null : <MediaRow args={args} disabled={disabled} onEdit={onEdit} row={row} />}
+      <EditorField
+        checks={checksFor(row, "primary_text")}
+        counter={
+          <LengthCounter length={ad.primaryText.length} limit={RECOMMENDED_LENGTHS.primaryText} />
+        }
+        id={`${id}-primary`}
+        label="Primary Text"
+      >
+        <Textarea
+          aria-invalid={hasError(checksFor(row, "primary_text"))}
+          className="min-h-16 text-sm"
+          disabled={disabled}
+          id={`${id}-primary`}
+          onChange={(event) => {
+            edit("primary_text", event.currentTarget.value)
+          }}
+          value={ad.primaryText}
+        />
+      </EditorField>
+      {carousel ? (
         <CarouselCards
           args={args}
-          checks={checksFor(row, "cards")}
+          checks={[...checksFor(row, "cards"), ...checksFor(row, "media")]}
           disabled={disabled}
           onEdit={onEdit}
           row={row}
         />
+      ) : (
+        <div className="grid gap-4 @2xl:grid-cols-2">
+          <LabelledInput
+            checks={checksFor(row, "headline")}
+            counter={
+              <LengthCounter
+                length={ad.headline?.length ?? 0}
+                limit={RECOMMENDED_LENGTHS.headline}
+              />
+            }
+            disabled={disabled}
+            id={`${id}-headline`}
+            label="Headline"
+            onChange={(value) => {
+              edit("headline", value)
+            }}
+            value={ad.headline ?? ""}
+          />
+          <LabelledInput
+            checks={checksFor(row, "description")}
+            counter={
+              <LengthCounter
+                length={ad.description?.length ?? 0}
+                limit={RECOMMENDED_LENGTHS.description}
+              />
+            }
+            disabled={disabled}
+            id={`${id}-description`}
+            label="Description"
+            onChange={(value) => {
+              edit("description", blankToNull(value))
+            }}
+            placeholder="Optional"
+            value={ad.description ?? ""}
+          />
+        </div>
+      )}
+      {ad.disclaimer ? (
+        <div className="grid gap-0.5 text-sm">
+          <p className={fieldLabelClass}>{titleCaseToken(ad.disclaimer.type, "Disclaimer")}</p>
+          <p className="wrap-anywhere whitespace-pre-line">{ad.disclaimer.text}</p>
+          {ad.disclaimer.url ? (
+            <p className="text-muted-foreground text-sm wrap-anywhere">{ad.disclaimer.url}</p>
+          ) : null}
+        </div>
       ) : null}
+      <LinkAndButton
+        args={args}
+        disabled={disabled}
+        id={id}
+        onEditSetting={onEditSetting}
+        row={row}
+      />
+    </div>
+  )
+}
+
+/** The ad's name, and the ad sets it is created in. */
+function NameAndAdSet({ args, disabled, id, onEdit, row }: Omit<Edits, "onEditSetting">) {
+  const { ad } = row
+  return (
+    <div className="grid gap-4 @2xl:grid-cols-2">
+      <LabelledInput
+        checks={checksFor(row, "name")}
+        disabled={disabled}
+        hint="only in Ads Manager"
+        id={`${id}-name`}
+        label="Ad Name"
+        onChange={(value) => {
+          onEdit(editAd(args, ad.index, "name", value))
+        }}
+        value={ad.name}
+      />
+      <EditorField hint="where the ad is created" id={`${id}-adset`} label="Ad Set">
+        <AdSetPicker
+          args={args}
+          disabled={disabled}
+          id={`${id}-adset`}
+          index={ad.index}
+          onChange={(adSets) => {
+            onEdit(setAdSets(args, ad.index, adSets))
+          }}
+        />
+      </EditorField>
+    </div>
+  )
+}
+
+/** The ad's website link and button, shared by every ad until one is given its own. */
+function LinkAndButton({
+  args,
+  disabled,
+  id,
+  onEditSetting,
+  row,
+}: Pick<Edits, "args" | "disabled" | "id" | "onEditSetting" | "row">) {
+  const { ad } = row
+  const shared = !ad.post && args.ads.length > 1 && followsShared(ad)
+  return (
+    <div className="grid gap-4 @2xl:grid-cols-2">
+      <LabelledInput
+        checks={checksFor(row, "link")}
+        disabled={disabled}
+        hint={shared ? `shared by all ${String(args.ads.length)} ads` : undefined}
+        id={`${id}-link`}
+        inputMode="url"
+        label="Website Link"
+        onChange={(value) => {
+          onEditSetting("link", blankToNull(value))
+        }}
+        value={row.link ?? ""}
+      />
+      <ButtonSelect
+        allowed={row.allowedButtons}
+        checks={checksFor(row, "call_to_action")}
+        disabled={disabled}
+        id={`${id}-button`}
+        label={`Button for ${ad.name}`}
+        onChange={(value) => {
+          if (value) onEditSetting("call_to_action", value)
+        }}
+        value={row.callToAction}
+      />
+    </div>
+  )
+}
+
+/** Feed and Stories side by side at the same width, with one note under both. */
+function PreviewPanel({ args, row }: Pick<Edits, "args" | "row">) {
+  const { ad } = row
+  const carousel = ad.format === "carousel"
+  const props = {
+    callToAction: row.callToAction,
+    cards: ad.cards.map((card) => ({
+      media: card.media,
+      headline: card.headline,
+      description: card.description,
+      callToAction: card.callToAction ?? row.callToAction,
+    })),
+    description: ad.description,
+    domain: urlDomain(row.link),
+    format: ad.format,
+    headline: ad.headline,
+    media: ad.media,
+    pageId: args.pageId,
+    pageName: args.pageName,
+    primaryText: ad.primaryText,
+    verticalMedia: ad.verticalMedia,
+  }
+  return (
+    <div className="grid justify-items-center gap-3">
+      <div className="flex flex-wrap items-start justify-center gap-4">
+        <div className="grid w-60 gap-1.5">
+          <p className="text-center text-sm font-medium">Feed</p>
+          <AdPreview {...props} placement="feed" />
+        </div>
+        <div className="grid w-60 gap-1.5">
+          <p className="text-center text-sm font-medium">Stories and Reels</p>
+          <AdPreview {...props} placement="stories" />
+        </div>
+      </div>
+      <p className="text-muted-foreground max-w-prose text-center text-sm">
+        A close preview. Meta&apos;s own may differ slightly by placement.
+        {carousel || ad.verticalMedia
+          ? ""
+          : ` With no vertical version, Meta fits the main ${ad.format} into Stories and Reels as shown.`}
+      </p>
     </div>
   )
 }
@@ -246,153 +369,105 @@ function PostAdBody({
   disabled,
   id,
   onEdit,
+  onEditSetting,
   post,
   row,
-}: {
-  args: CreateAdsArgs
-  disabled: boolean
-  id: string
-  onEdit: (ads: EditedAds) => void
-  post: PostPreview
-  row: AdRow
-}) {
+}: Edits & { post: PostPreview }) {
   const instagram = post.source === "instagram"
   return (
-    <div className="grid min-w-0 gap-4 @xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-      <PostAdPreview
-        callToAction={row.callToAction}
-        domain={instagram ? urlDomain(row.link) : null}
-        identityName={(instagram ? args.instagramName : null) ?? args.pageName}
-        pageId={instagram ? null : args.pageId}
-        post={post}
-      />
-      <div className="grid min-w-0 content-start gap-3">
-        <CheckMessages checks={checksFor(row, "post")} />
-        <p className="text-muted-foreground text-sm">
-          This post runs as it is, with its own text and media. To change them, ask the agent for a
-          new ad instead.
-        </p>
-        <DeliveryOverrides args={args} disabled={disabled} id={id} onEdit={onEdit} row={row} />
+    <div className="grid min-w-0 gap-4">
+      <CheckMessages checks={checksFor(row, "post")} />
+      <NameAndAdSet args={args} disabled={disabled} id={id} onEdit={onEdit} row={row} />
+      <div className="w-full max-w-sm justify-self-center">
+        <PostAdPreview
+          callToAction={row.callToAction}
+          domain={instagram ? urlDomain(row.link) : null}
+          identityName={(instagram ? args.instagramName : null) ?? args.pageName}
+          pageId={instagram ? null : args.pageId}
+          post={post}
+        />
       </div>
-    </div>
-  )
-}
-
-/** Changes an image or video ad's media, and adds, changes, or removes its vertical version. */
-function MediaActions({
-  args,
-  disabled,
-  onEdit,
-  row,
-}: {
-  args: CreateAdsArgs
-  disabled: boolean
-  onEdit: (ads: EditedAds) => void
-  row: AdRow
-}) {
-  const { ad } = row
-  const kind = ad.format === "video" ? "video" : "image"
-  const noun = FORMAT_LABELS[ad.format]
-  const accept = [kind] as const
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <MediaPicker
-        accept={accept}
-        description="Shown in Feed, and in Stories and Reels unless the ad has a vertical version."
-        disabled={disabled}
-        onChoose={(value) => {
-          onEdit(setAdMedia(args, ad.index, "media", value))
-        }}
-        title={`Change the ${noun}`}
-      >
-        <ImageUpIcon />
-        Change {noun}
-      </MediaPicker>
-      <MediaPicker
-        accept={accept}
-        description="A 9:16 version for Stories and Reels, so Meta doesn't crop the main one."
-        disabled={disabled}
-        onChoose={(value) => {
-          onEdit(setAdMedia(args, ad.index, "vertical_media", value))
-        }}
-        title={ad.verticalMedia ? "Change the Vertical Version" : "Add a Vertical Version"}
-      >
-        {ad.verticalMedia ? <ImageUpIcon /> : <PlusIcon />}
-        {ad.verticalMedia ? "Change Vertical Version" : "Add Vertical Version"}
-      </MediaPicker>
-      {ad.verticalMedia ? (
-        <Button
+      <p className="text-muted-foreground text-sm">
+        This post runs as it is, with its own text and media. To change them, ask the agent for a
+        new ad instead.
+      </p>
+      {instagram ? (
+        <LinkAndButton
+          args={args}
           disabled={disabled}
-          onClick={() => {
-            onEdit(setAdMedia(args, ad.index, "vertical_media", null))
-          }}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          <XIcon />
-          Remove Vertical Version
-        </Button>
+          id={id}
+          onEditSetting={onEditSetting}
+          row={row}
+        />
       ) : null}
     </div>
   )
 }
 
-/** The ad's name, edited in place, with where it goes and how it checks out. */
-function AdHeading({
+/** The ad's media with Change, and its 9:16 vertical version to add, change, or remove. */
+function MediaRow({
   args,
-  checks,
-  count,
   disabled,
-  id,
-  onRename,
+  onEdit,
   row,
-}: {
-  args: CreateAdsArgs
-  checks: AdCheck[]
-  count: number
-  disabled: boolean
-  id: string
-  onRename: (value: string) => void
-  row: AdRow
-}) {
-  const adSets = row.ad.adSetIds.map((adSetId) => adSetName(args, adSetId))
+}: Pick<Edits, "args" | "disabled" | "onEdit" | "row">) {
+  const { ad } = row
+  const kind = ad.format === "video" ? "video" : "image"
+  const accept = [kind] as const
   return (
-    <div className="grid min-w-0 gap-1">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {count > 1 ? (
-            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {String(row.ad.index + 1)}/{String(count)}
+    <div className="grid min-w-0 gap-1.5">
+      <span className={fieldLabelClass}>Media</span>
+      <div className="flex flex-wrap items-center gap-3">
+        <MediaFrame className="size-16 shrink-0 rounded-md" media={ad.media} shape="square" />
+        <div className="grid min-w-0 flex-1 gap-0.5 text-sm">
+          <span className="truncate">{ad.media?.label}</span>
+          {ad.verticalMedia ? (
+            <span className="text-muted-foreground truncate">
+              9:16 version: {ad.verticalMedia.label}
             </span>
           ) : null}
-          <div className="relative min-w-0 flex-1">
-            <Input
-              aria-invalid={hasError(checks)}
-              aria-label="Ad name, shown only in Ads Manager"
-              className={cn(fieldWellClass, "h-8 pr-8 font-medium")}
-              disabled={disabled}
-              id={id}
-              onChange={(event) => {
-                onRename(event.currentTarget.value)
-              }}
-              value={row.ad.name}
-            />
-            <PencilIcon
-              aria-hidden="true"
-              className="text-muted-foreground pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2"
-            />
-          </div>
         </div>
-        <CheckMark check={row.check} checks={row.checks} />
+        <div className="flex flex-wrap items-center gap-2">
+          <MediaPicker
+            accept={accept}
+            description="Shown in Feed, and in Stories and Reels unless the ad has a vertical version."
+            disabled={disabled}
+            onChoose={(value) => {
+              onEdit(setAdMedia(args, ad.index, "media", value))
+            }}
+            title={`Change the ${FORMAT_LABELS[ad.format]}`}
+          >
+            <ImageUpIcon />
+            Change
+          </MediaPicker>
+          <MediaPicker
+            accept={accept}
+            description="A 9:16 version for Stories and Reels, so Meta doesn't crop the main one."
+            disabled={disabled}
+            onChoose={(value) => {
+              onEdit(setAdMedia(args, ad.index, "vertical_media", value))
+            }}
+            title={ad.verticalMedia ? "Change the 9:16 Version" : "Add a 9:16 Version"}
+          >
+            {ad.verticalMedia ? <ImageUpIcon /> : <PlusIcon />}
+            {ad.verticalMedia ? "Change 9:16 Version" : "Add 9:16 Version"}
+          </MediaPicker>
+          {ad.verticalMedia ? (
+            <Button
+              disabled={disabled}
+              onClick={() => {
+                onEdit(setAdMedia(args, ad.index, "vertical_media", null))
+              }}
+              type="button"
+              variant="ghost"
+            >
+              <XIcon />
+              Remove 9:16 Version
+            </Button>
+          ) : null}
+        </div>
       </div>
-      <p className="text-muted-foreground text-xs wrap-anywhere">
-        {row.ad.post
-          ? `${row.ad.post.source === "facebook" ? "Facebook" : "Instagram"} post`
-          : FORMAT_LABELS[row.ad.format]}
-        {row.ad.verticalMedia ? " with a vertical version" : ""} in {adSets.join(", ")}
-      </p>
-      <CheckMessages checks={checks} />
+      <CheckMessages checks={checksFor(row, "media")} />
     </div>
   )
 }

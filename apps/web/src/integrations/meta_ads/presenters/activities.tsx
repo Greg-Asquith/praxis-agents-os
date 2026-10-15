@@ -12,11 +12,10 @@ const columns: DataColumn[] = [
   { key: "event_time", label: "Time", kind: "datetime" },
   { key: "change", label: "Change", kind: "text" },
   { key: "object_name", label: "Object", kind: "text" },
-  { key: "object_type", label: "Object type", kind: "text" },
-  { key: "actor_name", label: "Changed by", kind: "text" },
-  { key: "old_value", label: "Old value", kind: "text" },
-  { key: "new_value", label: "New value", kind: "text" },
-  { key: "object_id", label: "Object ID", kind: "id" },
+  { key: "values", label: "From → To", kind: "text" },
+  { key: "actor_name", label: "Changed By", kind: "text" },
+  { key: "object_type", label: "Object Type", kind: "text", hidden: true },
+  { key: "object_id", label: "Object ID", kind: "id", hidden: true },
 ]
 
 export const metaAdsActivitiesPresenter = defineIntegrationReadPresenter(metaAdsProvider, {
@@ -36,7 +35,7 @@ export const metaAdsActivitiesPresenter = defineIntegrationReadPresenter(metaAds
   parseResult: parseMetaAdsActivities,
   render: (result, entry) => (
     <div className="grid min-w-0 gap-3">
-      <ul className="text-muted-foreground grid gap-1 text-xs">
+      <ul className="text-muted-foreground grid gap-1 text-sm">
         <li>Dates use the {result.timezone_name} time zone.</li>
         {result.events.some((event) => event.old_value !== null || event.new_value !== null) ? (
           <li>
@@ -51,6 +50,10 @@ export const metaAdsActivitiesPresenter = defineIntegrationReadPresenter(metaAds
           columns={columns}
           rows={result.events.map((event) => ({
             ...event,
+            values:
+              event.old_value === null && event.new_value === null
+                ? null
+                : `${event.old_value ?? "—"} → ${event.new_value ?? "—"}`,
             change:
               event.translated_event_type ??
               (event.event_type ? titleCaseToken(event.event_type, event.event_type) : null),

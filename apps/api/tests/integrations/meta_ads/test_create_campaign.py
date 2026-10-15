@@ -77,10 +77,10 @@ class CampaignGraph(FakeGraph):
         return httpx2.Response(200, json={"id": campaign_id}, request=request)
 
 
-async def run_tool(monkeypatch, graph: CampaignGraph, values: dict):
+async def run_tool(monkeypatch, graph: CampaignGraph, values: dict, proposed: dict | None = None):
     http = httpx2.AsyncClient(transport=httpx2.MockTransport(graph.handle))
     ctx, audit = write_tool_context(
-        monkeypatch, http, tool_name="meta_ads_create_campaign", proposed=values
+        monkeypatch, http, tool_name="meta_ads_create_campaign", proposed=proposed or values
     )
     request = MetaAdsCreateCampaignRequest.model_validate(values)
     async with http:
@@ -116,6 +116,40 @@ async def test_a_campaign_is_dry_run_created_paused_once_and_read_back(monkeypat
     pending = audit.await_args_list[0].kwargs["operation_detail"]
     fields = pending.intent_groups[0].items[0].fields
     assert (fields["daily_budget"], fields["budget_mode"]) == ("15000", "campaign_daily")
+
+
+async def test_a_card_edit_of_status_objective_and_budget_is_sent_as_edited(monkeypatch):
+    graph = CampaignGraph()
+    edited = args(
+        status="active",
+        objective="traffic",
+        budget={"mode": "ad_set", "share_between_ad_sets": True},
+        special_ad_categories=[{"category": "housing", "countries": ["GB"]}],
+    )
+
+    await run_tool(monkeypatch, graph, edited, proposed=args())
+
+    (sent,) = graph.creates
+    assert (sent["status"], sent["objective"], sent["is_adset_budget_sharing_enabled"]) == (
+        "ACTIVE",
+        "OUTCOME_TRAFFIC",
+        "true",
+    )
+    assert sent["special_ad_categories"] == '["HOUSING"]'
+
+
+async def test_an_edited_budget_below_the_account_minimum_is_refused_live(monkeypatch):
+    graph = CampaignGraph()
+
+    entry, _audit = await run_tool(
+        monkeypatch,
+        graph,
+        args(budget={"mode": "campaign_daily", "amount": "0.5"}),
+        proposed=args(),
+    )
+
+    assert entry["status"] == "error"
+    assert graph.creates == graph.dry_runs == []
 
 
 async def test_ad_set_budgets_send_the_sharing_choice_and_no_amount(monkeypatch):

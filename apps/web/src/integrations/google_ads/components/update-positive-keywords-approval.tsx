@@ -313,7 +313,7 @@ function PatchFieldEditor({
         editor
       )}
       {changed && field !== "status" ? (
-        <p className="text-warning-foreground flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs">
+        <p className="text-warning-text flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs">
           <span className="sr-only">Changed. </span>
           <span className="wrap-anywhere">
             <span className="sr-only">Before: </span>

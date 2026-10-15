@@ -122,7 +122,7 @@ describe("Meta Ads account and discovery display", () => {
         ],
       },
     })
-    expect(account).toContain(`${amount} spent of`)
+    expect(account).toContain(amount)
     const objects = render(metaAdsObjectsPresenter, {
       result: {
         results: [

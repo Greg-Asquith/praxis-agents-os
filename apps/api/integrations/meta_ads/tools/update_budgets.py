@@ -29,6 +29,7 @@ from services.audit_events import (
     IntegrationOperationIntentGroup,
     PendingIntegrationOperationDetail,
 )
+from services.integrations.approved_display_args import proposed_args
 from services.integrations.context.domain import ResolvedContextEntry
 from services.integrations.context.results import serialize_fan_out_results
 from services.integrations.context.targeted import run_context_targets
@@ -60,7 +61,7 @@ from ..operations.update_budgets import (
 from ..operations.values import require_currency
 from ..references import MetaAdsAdSetReference, MetaAdsCampaignReference
 from ..throttle import ensure_account_available
-from .schemas.budgets import MetaAdsBudgetOutput, MetaAdsBudgetUpdate
+from .schemas.budgets import MetaAdsBudgetOutput, MetaAdsBudgetUpdate, MetaAdsUpdateBudgetsRequest
 from .utils.bindings import META_ADS_BINDING, META_ADS_WRITE_BINDING, RESULTS_FIELD
 from .utils.client import meta_ads_available, meta_ads_client, meta_ads_client_for_principal
 from .utils.mutation_evidence import (
@@ -91,6 +92,7 @@ async def meta_ads_update_budgets(
     ],
 ) -> dict[str, Any]:
     requested = _requested_amounts(updates)
+    _require_proposed_objects(proposed_args(ctx), requested)
 
     async def operation(entry: ResolvedContextEntry, selected: Sequence[_Reference]) -> Any:
         client: MetaAdsClient | None = None
@@ -156,6 +158,20 @@ def _requested_amounts(updates: Sequence[MetaAdsBudgetUpdate]) -> dict[_Key, Dec
             raise ModelRetry("Choose each Meta Ads campaign or ad set only once.")
         requested[key] = Decimal(update.amount)
     return requested
+
+
+def _require_proposed_objects(
+    proposed: Mapping[str, Any], requested: Mapping[_Key, Decimal]
+) -> None:
+    """The card can change amounts and drop rows, but never add a campaign or ad set."""
+    try:
+        original = MetaAdsUpdateBudgetsRequest.model_validate(proposed).updates
+    except ValidationError:
+        original = []
+    if set(requested) - {_key(update.reference) for update in original}:
+        raise ModelRetry(
+            "A budget change was added after approval. Ask the agent to prepare it again."
+        )
 
 
 def _key(reference: _Reference) -> _Key:
@@ -384,6 +400,7 @@ async def _account_checks(
             client, entry, object_type, reference, budget, Decimal(amount), minimum
         )
         checks[object_id] = {
+            "amount": amount,
             "problem": problem,
             "unavailable": unavailable,
             "min_daily_budget": minimum,
@@ -486,6 +503,8 @@ DEFINITION = RuntimeToolDefinition(
     integration_binding=META_ADS_WRITE_BINDING,
     availability_check=meta_ads_available,
     approval_display_args=_approval_display_args,
+    # Edited rows are checked whole, and again by the tool before anything is sent.
+    approval_input_model=MetaAdsUpdateBudgetsRequest,
     presentation=ToolPresentation(
         icon="meta_ads",
         running_label="Updating Meta Ads Budgets",
@@ -494,7 +513,11 @@ DEFINITION = RuntimeToolDefinition(
         approval_title="Change Meta Ads Budgets",
         approval_prompt="The agent wants to change these Meta Ads budgets.",
         approve_label="Approve & Update",
-        arg_fields=(ToolFieldPresentation(key="updates", label="Budget Changes"),),
+        arg_fields=(
+            ToolFieldPresentation(
+                key="updates", label="Budget Changes", editable=True, format="structured"
+            ),
+        ),
         result_fields=RESULTS_FIELD,
     ),
 )

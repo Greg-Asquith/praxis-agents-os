@@ -12,11 +12,11 @@ export const OBJECTIVE_KEYS = [
 
 export type Objective = (typeof OBJECTIVE_KEYS)[number]
 
-export const OBJECTIVE_SENTENCES: Record<Objective, string> = {
-  sales: "Sales: get purchases on your website or app.",
-  leads: "Leads: get contact details from people interested in your business.",
-  traffic: "Traffic: send people to your website or app.",
-  engagement: "Engagement: get more likes, comments, shares, and messages.",
-  awareness: "Awareness: show your ads to as many people as possible.",
-  app_promotion: "App promotion: get people to install your app.",
+export const OBJECTIVES: Record<Objective, { label: string; description: string }> = {
+  sales: { label: "Sales", description: "Get purchases on your website or app." },
+  leads: { label: "Leads", description: "Get contact details from interested people." },
+  traffic: { label: "Traffic", description: "Send people to your website or app." },
+  engagement: { label: "Engagement", description: "Get likes, comments, shares, and messages." },
+  awareness: { label: "Awareness", description: "Show your ads to as many people as possible." },
+  app_promotion: { label: "App Promotion", description: "Get people to install your app." },
 }

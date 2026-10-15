@@ -2,7 +2,15 @@
 
 import { describe, expect, it } from "vitest"
 
+import {
+  campaignBudgetValue,
+  createCampaignProblem,
+  parseCreateCampaignArgs,
+} from "@/integrations/meta_ads/lib/create-campaign"
+import { editFields } from "@/integrations/meta_ads/lib/create-summary"
 import { metaAdsCreateCampaignPresenter } from "@/integrations/meta_ads/presenters/create-campaign"
+import { vi } from "vitest"
+
 import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
 function display(extra: Record<string, unknown> = {}) {
@@ -25,6 +33,48 @@ describe("Meta Ads create campaign presenter", () => {
   it("blocks a budget under the account minimum", () => {
     expect(render(approval(display()))).not.toMatch(APPROVE_DISABLED)
     expect(render(approval(display({ _minimum: "200" })))).toMatch(APPROVE_DISABLED)
+  })
+
+  it("sends only the budget fields the chosen mode takes", () => {
+    const budget = { mode: "ad_set" as const, amount: "150", shareBetweenAdSets: null }
+    expect(campaignBudgetValue(budget)).toEqual({
+      mode: "ad_set",
+      share_between_ad_sets: false,
+    })
+    expect(
+      campaignBudgetValue({ mode: "campaign_daily", amount: "150", shareBetweenAdSets: true })
+    ).toEqual({ mode: "campaign_daily", amount: "150" })
+  })
+
+  it("blocks a cleared amount and a category with no country", () => {
+    const problem = (extra: Record<string, unknown>) =>
+      createCampaignProblem(parseCreateCampaignArgs(display(extra)))
+    expect(problem({})).toBeNull()
+    expect(problem({ budget: { mode: "campaign_daily" } })).toMatch(/budget amount/)
+    expect(problem({ special_ad_categories: [{ category: "housing", countries: [] }] })).toMatch(
+      /country/
+    )
+  })
+
+  it("applies several edits in one decision change", () => {
+    const onDecisionChange = vi.fn()
+    const controls = {
+      decision: { decision: "pending" as const, edits: { name: "Kept" }, message: "" as const },
+      error: null,
+      onDecisionChange,
+      onRetry: vi.fn(),
+      pendingCount: 1,
+      submitting: false,
+    }
+    editFields(controls, false, { objective: "traffic", bid_strategy: "highest_volume" })
+    editFields(controls, true, { name: "Ignored" })
+
+    expect(onDecisionChange).toHaveBeenCalledTimes(1)
+    expect(onDecisionChange).toHaveBeenCalledWith({
+      decision: "pending",
+      edits: { name: "Kept", objective: "traffic", bid_strategy: "highest_volume" },
+      message: "",
+    })
   })
 
   it("links a created campaign to Ads Manager", () => {

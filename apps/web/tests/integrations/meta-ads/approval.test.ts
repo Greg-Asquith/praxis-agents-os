@@ -10,6 +10,7 @@ import { buildResumeDecisions } from "@/features/conversations/approval-decision
 import { MetaAdsInsightsApproval } from "@/integrations/meta_ads/components/insights-approval"
 import {
   insightsApprovalError,
+  insightsDatePresets,
   parseInsightsApproval,
 } from "@/integrations/meta_ads/lib/insights-approval"
 import { metaAdsInsightsPresenter } from "@/integrations/meta_ads/presenters/insights"
@@ -156,8 +157,15 @@ describe("Meta Insights approval", () => {
     expect(
       insightsApprovalError(parseInsightsApproval({ ...args, limit: 51 }, received), received)
     ).toContain("50")
-    const html = render({}, {}, changed)
-    expect(html).toContain('max="50"')
+    expect(render({}, {}, changed)).toContain("New Level")
+  })
+
+  it("ends date presets yesterday and keeps month edges correct", () => {
+    const [week, thirty, month, last] = insightsDatePresets(new Date(2026, 2, 1))
+    expect(week).toMatchObject({ since: "2026-02-22", until: "2026-02-28" })
+    expect(thirty).toMatchObject({ since: "2026-01-30", until: "2026-02-28" })
+    expect(month).toMatchObject({ since: "2026-03-01", until: "2026-03-01" })
+    expect(last).toMatchObject({ since: "2026-02-01", until: "2026-02-28" })
   })
 
   it("shows a reason for invalid dates and blocks approval", () => {

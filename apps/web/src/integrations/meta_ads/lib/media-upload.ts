@@ -17,6 +17,8 @@ type UploadFile = {
   label: string
   // The server's check and pin of this File; null until the edited list is checked.
   reviewed: ReviewedFile | null
+  // The reference as sent, so edits keep it whole.
+  raw: Record<string, unknown>
 }
 
 export type MediaUploadArgs = {
@@ -66,6 +68,7 @@ export function parseMediaUploadArgs(value: unknown): MediaUploadArgs | null {
       id,
       label: isNonEmptyString(item["label"]) ? item["label"] : "Workspace File",
       reviewed: reviewed?.get(id) ?? null,
+      raw: item,
     })
   }
   return {

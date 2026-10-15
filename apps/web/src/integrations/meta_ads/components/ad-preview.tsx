@@ -16,7 +16,7 @@ import {
 import { initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export type AdPlacement = "feed" | "stories"
+type AdPlacement = "feed" | "stories"
 
 type PreviewCard = {
   media: PreviewMedia
@@ -143,7 +143,7 @@ export function PostAdPreview({
       ) : null}
       {post.permalink ? (
         <a
-          className="text-primary px-3 py-2 text-xs underline-offset-2 hover:underline"
+          className="text-primary px-3 py-2 text-sm underline-offset-2 hover:underline"
           href={post.permalink}
           rel="noreferrer"
           target="_blank"

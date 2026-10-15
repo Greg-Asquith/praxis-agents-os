@@ -95,14 +95,17 @@ async def run_create_tool[P, R: _Run](
     *,
     tool_name: str,
     operation: str,
-    proposal_changed: Callable[[Mapping[str, Any]], bool],
-    changed_message: str,
     prepare: Callable[[MetaAdsClient, ResolvedContextEntry], Awaitable[P]],
     pending_detail: Callable[[ResolvedContextEntry, P], PendingIntegrationOperationDetail],
     run: Callable[[MetaAdsClient, ResolvedContextEntry, P], Awaitable[R]],
     result: Callable[[R, ResolvedContextEntry, P], dict[str, Any]],
+    check_edits: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Pins the approved account, prepares and dry-runs the write, then runs and audits it."""
+    """Pins the approved account, prepares and dry-runs the write, then runs and audits it.
+
+    `check_edits` gets the arguments the agent proposed and raises ModelRetry on an edit
+    that goes beyond what was proposed.
+    """
     reviewed = approved_display_args(ctx)
 
     async def scoped(selected: ResolvedContextEntry) -> Any:
@@ -114,8 +117,8 @@ async def run_create_tool[P, R: _Run](
             nonlocal client, prepared, pending
             if reviewed.get("_account") != account_pin(selected):
                 raise ModelRetry(ACCOUNT_CHANGED)
-            if proposal_changed(proposed_args(ctx)):
-                raise ModelRetry(changed_message)
+            if check_edits is not None:
+                check_edits(proposed_args(ctx))
             ensure_account_available(selected.external_id, operation=operation)
             client = await meta_ads_client(ctx, selected)
             prepared = await prepare(client, selected)

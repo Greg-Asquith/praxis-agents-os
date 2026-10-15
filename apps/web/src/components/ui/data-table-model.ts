@@ -19,6 +19,8 @@ export type DataColumnKind =
 export type DataColumn = {
   align?: "left" | "right"
   currencyCode?: string
+  // Starts hidden; still available from the Columns menu and the row details.
+  hidden?: boolean
   isMetric?: boolean
   key: string
   kind: DataColumnKind

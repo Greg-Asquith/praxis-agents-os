@@ -367,7 +367,8 @@ It resolves direct and Code Mode approvals and never accepts replay arguments
 as evidence. Outlook send-draft uses this to check that the reviewed draft
 still matches the provider before sending. Its `proposed_args` returns the
 arguments the agent proposed for that call, before any edit or review; Meta
-ad creation uses them to keep each ad's ad sets as proposed.
+tools use them to hold an edit to what was proposed, such as the campaign of a
+new ad set, the source ads of copies, and the objects of budget changes.
 
 ## Retained approval reviews
 

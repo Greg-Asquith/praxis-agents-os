@@ -254,8 +254,20 @@ async def test_a_change_meta_turned_on_that_was_left_off_marks_the_ad(monkeypatc
     assert "Meta turned on automatic changes" in row["message"]
 
 
-async def test_ads_whose_ad_sets_changed_after_approval_are_refused(monkeypatch):
+async def test_an_ad_set_changed_on_the_card_is_re_read_and_used(monkeypatch):
     graph = AdsGraph(live_ad_sets("8", "7"))
+    approved = request(design(ad_sets=("8",)))
+
+    entry, _audit = await run_tool(
+        monkeypatch, graph, request(design(ad_sets=("7",))), proposed=approved
+    )
+
+    assert entry["data"]["ads"][0]["outcome"] == "created"
+    assert [form["adset_id"] for form in graph.creates] == ["7"]
+
+
+async def test_an_ad_set_outside_the_account_is_refused_after_a_card_edit(monkeypatch):
+    graph = AdsGraph(live_ad_sets("8"))
     approved = request(design(ad_sets=("8",)))
 
     entry, _audit = await run_tool(

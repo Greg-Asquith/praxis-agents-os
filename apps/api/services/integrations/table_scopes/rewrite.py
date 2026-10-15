@@ -97,6 +97,32 @@ def rewrite_table_scopes(
     )
 
 
+def named_tables(
+    query: str,
+    *,
+    default_namespace: TableNamespace,
+    dialect: str,
+) -> frozenset[TableCoordinate]:
+    """Returns the tables and views one statement names, leaving out its CTEs."""
+    try:
+        statements = sqlglot.parse(query, read=dialect)
+    except (SqlglotError, ValueError) as exc:
+        raise TableScopeRewriteError("The query could not be parsed. Revise the query.") from exc
+    if len(statements) != 1 or statements[0] is None:
+        raise TableScopeRewriteError("Send exactly one SQL statement.")
+    named: set[TableCoordinate] = set()
+    for table in _physical_tables(statements[0]):
+        table_name = table.name.strip()
+        schema = table.db.strip() or (default_namespace.schema or "").strip()
+        catalog = table.catalog.strip() or default_namespace.catalog.strip()
+        if not table_name or not schema or not catalog:
+            raise TableScopeRewriteError(
+                "Name every table with its dataset, as `project.dataset.table`."
+            )
+        named.add(TableCoordinate(catalog=catalog, schema=schema, table=table_name))
+    return frozenset(named)
+
+
 def _physical_tables(statement: exp.Expression) -> list[exp.Table]:
     tables: list[exp.Table] = []
     seen: set[int] = set()

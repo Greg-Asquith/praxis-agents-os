@@ -1,6 +1,6 @@
 # apps/api/integrations/meta_ads/operations/create_ad_set.py
 
-"""Create one paused ad set: campaign rules, the request body, one send, then a read-back."""
+"""Create one ad set, paused unless asked: campaign rules, the request body, one send, then a read-back."""
 
 import json
 from collections.abc import Mapping
@@ -280,8 +280,9 @@ def plan_ad_set(
     eu: MetaAdsEuTransparency,
     object_store_url: str | None = None,
     key: str = AD_SET_KEY,
+    status: Literal["paused", "active"] = "paused",
 ) -> AdSetPlan:
-    """Builds the body and its text-free evidence; created paused, always.
+    """Builds the body and its text-free evidence; created paused unless status is active.
 
     A launch plans its ad sets before the campaign exists, so `campaign_id` is None and
     the body gains it from `with_campaign` once the campaign is created.
@@ -291,7 +292,7 @@ def plan_ad_set(
     targeting.update(_placements(request.placements))
     body = {
         "name": request.name,
-        "status": "PAUSED",
+        "status": status.upper(),
         "optimization_goal": row.optimization_goal,
         "billing_event": "LINK_CLICKS" if request.pay_per_click else "IMPRESSIONS",
         "targeting": json.dumps(targeting),
@@ -404,7 +405,7 @@ def _intent_fields(
     fields = {
         "key": key,
         "goal": request.goal,
-        "status": "PAUSED",
+        "status": body["status"],
         "locations": ",".join(f"{item.kind}:{item.key}" for item in targeting.locations),
         "excluded_locations": str(len(targeting.excluded_locations)),
         "ages": f"{targeting.age_min}-{targeting.age_max or '65+'}",

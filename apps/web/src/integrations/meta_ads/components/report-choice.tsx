@@ -32,6 +32,7 @@ export function ReportChoice({
   value,
   options,
   disabled,
+  hideLabel = false,
   onChange,
 }: {
   id: string
@@ -39,11 +40,14 @@ export function ReportChoice({
   value: string
   options: { value: string; label: string }[]
   disabled: boolean
+  hideLabel?: boolean
   onChange: (value: string) => void
 }) {
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <FieldLabel className={hideLabel ? "sr-only" : undefined} htmlFor={id}>
+        {label}
+      </FieldLabel>
       <Select
         items={options}
         value={value}
@@ -75,6 +79,7 @@ export function ReportMultiChoice({
   value,
   options,
   disabled,
+  hideLabel = false,
   onChange,
   allowCustom = false,
 }: {
@@ -83,6 +88,7 @@ export function ReportMultiChoice({
   value: string[]
   options: string[]
   disabled: boolean
+  hideLabel?: boolean
   onChange: (value: string[]) => void
   allowCustom?: boolean
 }) {
@@ -97,7 +103,9 @@ export function ReportMultiChoice({
   ]
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <FieldLabel className={hideLabel ? "sr-only" : undefined} htmlFor={id}>
+        {label}
+      </FieldLabel>
       <Combobox<string, true>
         multiple
         items={items}

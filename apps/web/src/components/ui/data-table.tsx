@@ -101,6 +101,9 @@ export function DataTable({
     data: tableRows,
     enableMultiSort: false,
     initialState: {
+      columnVisibility: Object.fromEntries(
+        columns.filter((column) => column.hidden).map((column) => [column.key, false])
+      ),
       pagination: { pageIndex: 0, pageSize: resolvedPageSize ?? (rows.length || 1) },
     },
     manualPagination: resolvedPageSize === null,
@@ -189,7 +192,7 @@ export function DataTable({
             </span>
             {summary}
             {truncationNote ? (
-              <span className="text-warning-foreground max-w-xl">{truncationNote}</span>
+              <span className="text-warning-text max-w-xl">{truncationNote}</span>
             ) : null}
             <div className="ml-auto flex shrink-0 items-center gap-1">
               <table.ViewOptions />

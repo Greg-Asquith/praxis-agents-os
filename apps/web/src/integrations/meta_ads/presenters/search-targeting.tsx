@@ -13,9 +13,9 @@ import { compactDetails, stringArg, stringDetail } from "@/integrations/tool-det
 const columns: DataColumn[] = [
   { key: "name", label: "Name", kind: "text" },
   { key: "kind", label: "Kind", kind: "text" },
-  { key: "size", label: "Audience Size", kind: "text" },
+  { key: "size", label: "Audience Size", kind: "text", align: "right" },
   { key: "description", label: "Details", kind: "text" },
-  { key: "key", label: "Key", kind: "id" },
+  { key: "key", label: "Key", kind: "id", hidden: true },
 ]
 
 export const metaAdsSearchTargetingPresenter = defineIntegrationReadPresenter(metaAdsProvider, {
@@ -37,7 +37,10 @@ export const metaAdsSearchTargetingPresenter = defineIntegrationReadPresenter(me
     result.options.length > 0 ? (
       <DataTable
         columns={columns}
-        rows={result.options}
+        rows={result.options.map((option) => ({
+          ...option,
+          kind: TARGETING_KIND_LABELS[option.kind] ?? option.kind,
+        }))}
         pageSize={25}
         exportFilename={`meta-ads-${entry.externalId}-targeting.csv`}
         truncationNote={result.truncated ? "Meta has more matches. Search more precisely." : null}

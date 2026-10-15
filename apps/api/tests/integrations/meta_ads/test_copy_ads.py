@@ -225,11 +225,33 @@ async def test_a_copy_into_another_accounts_ad_set_is_refused(monkeypatch):
     assert graph.copies == []
 
 
-async def test_copies_whose_targets_changed_after_approval_are_refused(monkeypatch):
+async def test_a_target_ad_set_changed_on_the_card_is_re_read_and_used(monkeypatch):
     graph = CopyGraph([source(), *live_ad_sets("8", "7", "6")])
 
     entry, _audit = await run_tool(
         monkeypatch, graph, [copy(adset_id="6")], proposed=[copy(adset_id="7")]
+    )
+
+    assert entry["data"]["copies"][0]["outcome"] == "copied"
+    assert [sent["adset_id"] for sent in graph.copies] == ["6"]
+
+
+async def test_a_target_missing_from_the_account_is_refused_after_a_card_edit(monkeypatch):
+    graph = CopyGraph([source(), *live_ad_sets("8", "7")])
+
+    entry, _audit = await run_tool(
+        monkeypatch, graph, [copy(adset_id="6")], proposed=[copy(adset_id="7")]
+    )
+
+    assert entry["status"] == "error"
+    assert graph.copies == []
+
+
+async def test_a_copy_of_an_ad_the_agent_did_not_propose_is_refused(monkeypatch):
+    graph = CopyGraph([source(), source("501", "Other"), *live_ad_sets("8", "7")])
+
+    entry, _audit = await run_tool(
+        monkeypatch, graph, [copy("500"), copy("501")], proposed=[copy("500")]
     )
 
     assert entry["status"] == "error"

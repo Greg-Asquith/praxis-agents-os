@@ -1,12 +1,17 @@
 // apps/web/src/integrations/meta_ads/components/create-ads.tsx
 
-import { useState } from "react"
+import { useId, useState } from "react"
 import { CirclePauseIcon, CirclePlayIcon } from "lucide-react"
 
 import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { AdEditor } from "@/integrations/meta_ads/components/ad-editor"
 import { AdsList } from "@/integrations/meta_ads/components/ads-list"
 import { AutomaticChanges } from "@/integrations/meta_ads/components/automatic-changes"
+import { SettingRows } from "@/integrations/meta_ads/components/setting-rows"
+import { StatusChoice } from "@/integrations/meta_ads/components/status-choice"
+import { UrlTagsRow } from "@/integrations/meta_ads/components/url-tags-row"
+import { hasAiGeneratedChange } from "@/integrations/meta_ads/lib/automatic-changes"
+import { clearAdStatuses, editSetting } from "@/integrations/meta_ads/lib/create-ads-edits"
 import { MediaAccountContext } from "@/integrations/meta_ads/lib/meta-pictures"
 import { MediaUploadOutcome } from "@/integrations/meta_ads/components/media-upload"
 import {
@@ -14,12 +19,7 @@ import {
   MetaAdsOutcomeTable,
 } from "@/integrations/meta_ads/components/outcome-table"
 import { FORMAT_LABELS, type CreateAdsArgs } from "@/integrations/meta_ads/lib/create-ads-args"
-import {
-  adRows,
-  adSetDelivery,
-  statusLines,
-  type AdRow,
-} from "@/integrations/meta_ads/lib/create-ads-checks"
+import { adRows, statusLines, type AdRow } from "@/integrations/meta_ads/lib/create-ads-checks"
 import { REVIEW_LABELS } from "@/integrations/meta_ads/lib/ad-outcome"
 import { nextStep, type CreateAdsResult } from "@/integrations/meta_ads/lib/create-ads-result"
 import { cn } from "@/lib/utils"
@@ -33,17 +33,41 @@ export function CreateAdsApproval({
   disabled: boolean
   onFieldEdit: (key: string, value: EditedValue) => void
 }) {
+  const id = useId()
   const rows = adRows(args)
   // Opens the first ad that needs attention, so a problem is on screen before approving.
   const [selected, setSelected] = useState(() => firstToOpen(rows))
   const row = rows.find((item) => item.ad.index === selected) ?? rows[0]
-  // True when any ad would start spending once Meta approves it.
-  const runs = [...adSetDelivery(args, rows).values()].includes("runs")
+  const aiOn = hasAiGeneratedChange(args.catalogue, args.enabledChanges)
+  const delivery = statusLines(args, rows).join(" ")
+  const count = rows.length
+  const changeSetting = (key: "link" | "call_to_action" | "url_tags", value: string | null) => {
+    if (!row) return
+    const edit = editSetting(args, row.ad.index, key, value)
+    onFieldEdit(edit.field, edit.value)
+  }
   return (
     <MediaAccountContext value={args.accountId}>
       <div className="grid min-w-0 gap-4">
-        <DeliveryNote lines={statusLines(args, rows)} runs={runs} />
-        {rows.length > 1 ? (
+        <StatusChoice
+          activeNote={delivery}
+          disabled={disabled}
+          label={count === 1 ? "Status for This Ad" : `Status for All ${String(count)} Ads`}
+          lockedNote={
+            aiOn
+              ? "An AI-generated setting is on, so every ad is created paused. Check Meta's preview before turning them on."
+              : null
+          }
+          onChange={(status) => {
+            onFieldEdit("status", status)
+            // Each ad follows the one status chosen here.
+            const cleared = clearAdStatuses(args)
+            if (cleared) onFieldEdit("ads", cleared)
+          }}
+          pausedNote={delivery}
+          value={rows.some((item) => item.status === "active") ? "active" : "paused"}
+        />
+        {count > 1 ? (
           <AdsList args={args} onSelect={setSelected} rows={rows} selected={row?.ad.index ?? 0} />
         ) : null}
         {row ? (
@@ -51,22 +75,38 @@ export function CreateAdsApproval({
             <AdEditor
               key={row.ad.index}
               args={args}
-              count={rows.length}
+              count={count}
               disabled={disabled}
               onEdit={(ads) => {
                 onFieldEdit("ads", ads)
               }}
+              onEditSetting={changeSetting}
+              onSelect={setSelected}
               row={row}
             />
           </section>
         ) : null}
-        <AutomaticChanges
-          args={args}
-          disabled={disabled}
-          onChange={(value) => {
-            onFieldEdit("automatic_changes", value)
-          }}
-        />
+        <SettingRows ariaLabel="Settings for all ads">
+          {row && !row.ad.post ? (
+            <UrlTagsRow
+              args={args}
+              disabled={disabled}
+              id={id}
+              onEdit={(ads) => {
+                onFieldEdit("ads", ads)
+              }}
+              onEditSetting={changeSetting}
+              row={row}
+            />
+          ) : null}
+          <AutomaticChanges
+            args={args}
+            disabled={disabled}
+            onChange={(value) => {
+              onFieldEdit("automatic_changes", value)
+            }}
+          />
+        </SettingRows>
       </div>
     </MediaAccountContext>
   )
@@ -85,10 +125,7 @@ export function DeliveryNote({ lines, runs }: { lines: readonly string[]; runs: 
       role="note"
     >
       {runs ? (
-        <CirclePlayIcon
-          aria-hidden="true"
-          className="text-warning-foreground mt-0.5 size-4 shrink-0"
-        />
+        <CirclePlayIcon aria-hidden="true" className="text-warning-text mt-0.5 size-4 shrink-0" />
       ) : (
         <CirclePauseIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
       )}

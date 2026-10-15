@@ -13,6 +13,10 @@ import {
   activationNotes,
   parseStatusChangeArgs,
   parseStatusChangeResult,
+  startingSpend,
+  statusListEdit,
+  statusProblem,
+  statusRows,
 } from "@/integrations/meta_ads/lib/status-change"
 import { metaAdsUpdateStatusPresenter } from "@/integrations/meta_ads/presenters/update-status"
 
@@ -82,9 +86,73 @@ describe("Meta Ads status links and cascade", () => {
 
   it("rejects malformed arguments and results", () => {
     expect(parseStatusChangeArgs({ status: "ARCHIVED", ads: [adReference] })).toBeNull()
-    expect(parseStatusChangeArgs({ status: "PAUSED" })).toBeNull()
     expect(parseStatusChangeArgs({ status: "PAUSED", ads: [{ label: "x" }] })).toBeNull()
     expect(parseStatusChangeResult(resultData([{ ...object(), outcome: "weird" }]))).toBeNull()
+  })
+})
+
+describe("Meta Ads status edits", () => {
+  const proposed = parseStatusChangeArgs({
+    status: "ACTIVE",
+    campaigns: [campaignReference],
+    ads: [adReference],
+  })
+  if (!proposed) throw new Error("expected proposed status change")
+
+  it("drops and restores an object, clearing an emptied list to null", () => {
+    const rows = statusRows(proposed, proposed)
+    expect(statusListEdit(rows, "ad", { key: "ad:333", included: false })).toEqual({
+      field: "ads",
+      value: null,
+    })
+
+    const current = parseStatusChangeArgs({ status: "ACTIVE", campaigns: [campaignReference] })
+    if (!current) throw new Error("expected current status change")
+    const dropped = statusRows(proposed, current)
+    expect(dropped.map((row) => row.included)).toEqual([true, false])
+    expect(statusListEdit(dropped, "ad", { key: "ad:333", included: true }).value).toEqual([
+      adReference,
+    ])
+  })
+
+  it("appends an added object after the kept ones and keeps it when the list is edited", () => {
+    const added = { ...campaignReference, campaign_id: "2" }
+    const current = parseStatusChangeArgs({
+      status: "ACTIVE",
+      campaigns: [campaignReference, added],
+      ads: [adReference],
+    })
+    if (!current) throw new Error("expected current status change")
+    const rows = statusRows(proposed, current)
+    expect(rows.map((row) => row.target.id)).toEqual(["1", "333", "2"])
+    expect(statusListEdit(rows, "campaign", { key: "campaign:1", included: false }).value).toEqual([
+      added,
+    ])
+  })
+
+  it("blocks an empty selection", () => {
+    expect(statusProblem(parseStatusChangeArgs({ status: "PAUSED" }))).toContain("at least one")
+  })
+
+  it("adds up daily budgets once when a campaign and its ad set are both turned on", () => {
+    const adSetReference = {
+      ...campaignReference,
+      campaign_id: undefined,
+      adset_id: "5",
+      entity_kind: "meta_ads_ad_set",
+    }
+    const args = parseStatusChangeArgs({
+      status: "ACTIVE",
+      campaigns: [campaignReference],
+      ad_sets: [{ ...adSetReference, campaign_id: "1", budget: { kind: "daily", amount: "25" } }],
+      _delivery: { "1": { starting_children: 1, daily_budget: "25.10" }, "5": {} },
+    })
+    if (!args) throw new Error("expected status change")
+    expect(startingSpend(statusRows(args, args), args.delivery)).toEqual({
+      amount: 25.1,
+      currency: "EUR",
+      atLeast: false,
+    })
   })
 })
 

@@ -51,7 +51,6 @@ export function MediaPicker({
   disabled,
   excluded = NONE,
   onChoose,
-  size = "sm",
   title,
   triggerClassName,
   triggerLabel,
@@ -63,7 +62,6 @@ export function MediaPicker({
   // Media keys already used where this choice goes, such as the other carousel cards.
   excluded?: readonly string[]
   onChoose: (value: MediaValue) => void
-  size?: "sm" | "icon-xs"
   title: string
   triggerClassName?: string
   triggerLabel?: string
@@ -83,7 +81,6 @@ export function MediaPicker({
         onClick={() => {
           setOpen(true)
         }}
-        size={size}
         type="button"
         variant="outline"
       >
@@ -215,7 +212,6 @@ function ChoiceGrid({
             onClick={() => {
               void results.fetchNextPage()
             }}
-            size="sm"
             type="button"
             variant="ghost"
           >
@@ -252,7 +248,7 @@ function ChoiceButton({
         media={preview}
         shape="square"
       />
-      <span className="text-muted-foreground truncate text-xs">{note ?? label}</span>
+      <span className="text-muted-foreground truncate text-sm">{note ?? label}</span>
     </button>
   )
 }
@@ -294,14 +290,13 @@ function UploadImage({ onChoose }: { onChoose: (value: MediaValue) => void }) {
       <Button
         disabled={uploading}
         onClick={() => input.current?.click()}
-        size="sm"
         type="button"
         variant="outline"
       >
         {uploading ? <Loader2Icon className="animate-spin" /> : <UploadIcon />}
         {uploading ? "Uploading" : "Upload from Computer"}
       </Button>
-      <p className="text-muted-foreground text-xs">
+      <p className="text-muted-foreground text-sm">
         JPEG or PNG. It&apos;s saved to workspace Files.
       </p>
       {error ? <p className="text-destructive w-full text-sm">{error}</p> : null}

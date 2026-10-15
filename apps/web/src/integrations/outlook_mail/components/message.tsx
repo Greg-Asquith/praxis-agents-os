@@ -76,7 +76,7 @@ export function OutlookMessageBody({ message }: { message: OutlookMessageDetail 
     <div className="grid min-w-0 gap-2">
       <ExternalContent label="Email body" showSource={false} value={message.body} />
       {message.truncated ? (
-        <p className="text-warning-foreground bg-warning/10 rounded-md px-2.5 py-2 text-xs">
+        <p className="text-warning-text bg-warning/10 rounded-md px-2.5 py-2 text-xs">
           This message was shortened to fit the tool result limit.
         </p>
       ) : null}

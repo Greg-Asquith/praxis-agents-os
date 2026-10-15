@@ -17,11 +17,11 @@ export function CheckMessages({ checks }: { checks: readonly AdCheck[] }) {
           <li
             key={`${check.level}:${check.message}`}
             className={cn(
-              "flex items-start gap-1.5 text-xs",
-              check.level === "error" ? "text-destructive" : "text-warning-foreground"
+              "flex items-start gap-1.5 text-sm",
+              check.level === "error" ? "text-destructive" : "text-warning-text"
             )}
           >
-            <Icon aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+            <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>
               <span className="sr-only">{check.level === "error" ? "Error: " : "Warning: "}</span>
               {check.message}
@@ -41,7 +41,7 @@ export function LengthCounter({ length, limit }: { length: number; limit: number
       className="text-muted-foreground text-xs whitespace-nowrap tabular-nums"
       title={`Meta shows about ${String(limit)} characters before cutting the text off. Longer text is allowed.`}
     >
-      <span className={cn(over && "text-warning-foreground font-medium")}>
+      <span className={cn(over && "text-warning-text font-medium")}>
         {String(length)} {pluralize(length, "character")}
       </span>
       {" · "}
@@ -54,8 +54,8 @@ export function LengthCounter({ length, limit }: { length: number; limit: number
 export function CheckMark({ check, checks }: { check: RowCheck; checks: readonly AdCheck[] }) {
   if (check === "ready") {
     return (
-      <span className="text-success flex shrink-0 items-center gap-1 text-xs">
-        <CheckIcon aria-hidden="true" className="size-3.5" />
+      <span className="text-success flex shrink-0 items-center gap-1 text-sm font-medium">
+        <CheckIcon aria-hidden="true" className="size-4" />
         Ready
       </span>
     )
@@ -66,11 +66,11 @@ export function CheckMark({ check, checks }: { check: RowCheck; checks: readonly
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center gap-1 text-xs font-medium",
-        check === "error" ? "text-destructive" : "text-warning-foreground"
+        "flex shrink-0 items-center gap-1 text-sm font-medium",
+        check === "error" ? "text-destructive" : "text-warning-text"
       )}
     >
-      <Icon aria-hidden="true" className="size-3.5" />
+      <Icon aria-hidden="true" className="size-4" />
       {String(count)} {pluralize(count, noun)}
     </span>
   )

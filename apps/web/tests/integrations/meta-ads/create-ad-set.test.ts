@@ -2,6 +2,16 @@
 
 import { describe, expect, it } from "vitest"
 
+import {
+  createAdSetProblem,
+  goalEdits,
+  parseCreateAdSetArgs,
+} from "@/integrations/meta_ads/lib/create-ad-set"
+import {
+  addInterest,
+  addLocation,
+  removeDetailed,
+} from "@/integrations/meta_ads/lib/targeting-edit"
 import { metaAdsCreateAdSetPresenter } from "@/integrations/meta_ads/presenters/create-ad-set"
 import { APPROVE_DISABLED, props, render } from "./presenter-harness"
 
@@ -51,6 +61,46 @@ describe("Meta Ads create ad set presenter", () => {
       _custom_conversion: { name: "Big basket", pixel_id: "99" },
     })
     expect(render(approval(otherPixel))).toMatch(APPROVE_DISABLED)
+  })
+
+  it("drops what the new goal doesn't use and ignores a stale minimum", () => {
+    const args = parseCreateAdSetArgs(
+      display({ _minimum: "50", _minimum_goal: "website_conversions" })
+    )
+    if (!args) throw new Error("expected args")
+    expect(createAdSetProblem(args)).toMatch(/minimum daily budget/)
+    expect(createAdSetProblem({ ...args, goal: "link_clicks" })).toBeNull()
+    expect(goalEdits(args, "link_clicks")).toEqual({
+      goal: "link_clicks",
+      pixel: null,
+      conversion_event: null,
+    })
+  })
+
+  it("blocks Advantage+ audience with a maximum age, and manual placements with no place", () => {
+    const problem = (extra: Record<string, unknown>) =>
+      createAdSetProblem(parseCreateAdSetArgs(display(extra)))
+    const targeting = { locations: [{ kind: "country", key: "GB", name: "United Kingdom" }] }
+    expect(problem({ targeting: { ...targeting, age_max: 54 } })).toMatch(/Advantage\+/)
+    expect(
+      problem({ targeting: { ...targeting, age_max: 54, advantage_audience: false } })
+    ).toBeNull()
+    expect(problem({ placements: { mode: "manual", positions: [] } })).toMatch(/at least one place/)
+  })
+
+  it("edits targeting lists without duplicates or empty groups", () => {
+    const place = { entity_kind: "x", kind: "city", key: "1", name: "Leeds", country_code: "GB" }
+    const added = addLocation({ locations: [] }, "locations", place)
+    expect(added).toEqual({
+      locations: [{ kind: "city", key: "1", name: "Leeds", country_code: "GB" }],
+    })
+    expect(addLocation(added, "locations", place)).toBe(added)
+
+    const interest = { kind: "interest", key: "6", name: "Running", label: "Running" }
+    const withInterest = addInterest({}, interest)
+    expect(withInterest).toEqual({ detailed: [[{ kind: "interest", key: "6", name: "Running" }]] })
+    expect(addInterest(withInterest, interest)).toBe(withInterest)
+    expect(removeDetailed(withInterest, 0, 0)).toEqual({ detailed: [] })
   })
 
   it("links a created ad set to Ads Manager", () => {

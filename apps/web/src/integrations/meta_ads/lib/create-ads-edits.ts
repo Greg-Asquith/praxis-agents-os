@@ -9,20 +9,14 @@ import {
   type MediaSlot,
   type MediaValue,
 } from "@/integrations/meta_ads/lib/create-ads-args"
+import type { EditedValue } from "@/components/tool-ui/edited-values"
 import { isRecord } from "@/lib/guards"
 
 // The whole ads argument after an edit, which the server checks against the tool's model.
 export type EditedAds = Record<string, unknown>[]
 
 export type EditableAdKey =
-  | "name"
-  | "primary_text"
-  | "headline"
-  | "description"
-  | "link"
-  | "call_to_action"
-  | "url_tags"
-  | "status"
+  "name" | "primary_text" | "headline" | "description" | "link" | "call_to_action" | "url_tags"
 export type EditableCardKey = "headline" | "description" | "link" | "call_to_action"
 
 /** Clears an optional field the operator emptied, keeping their spaces while they type. */
@@ -31,26 +25,49 @@ export function blankToNull(value: string): string | null {
 }
 
 // The ad keys that override a shared setting, keyed by the shared value each overrides.
-const SHARED_KEYS = ["link", "call_to_action", "url_tags", "status"] as const
+const SHARED_KEYS = ["link", "call_to_action", "url_tags"] as const
 type SharedKey = (typeof SHARED_KEYS)[number]
-
-/** The shared settings an ad can hold its own copy of; a post keeps its own URLs. */
-export function overrideKeys(ad: AdDraft): readonly SharedKey[] {
-  if (ad.post?.source === "facebook") return ["status"]
-  if (ad.post) return ["link", "call_to_action", "status"]
-  return SHARED_KEYS
-}
 
 function sharedValue(args: CreateAdsArgs, key: SharedKey): string | null {
   if (key === "link") return args.shared.link
   if (key === "call_to_action") return args.shared.callToAction ?? DEFAULT_BUTTON
-  if (key === "url_tags") return args.shared.urlTags
-  return args.shared.status
+  return args.shared.urlTags
 }
 
 /** True when the ad sets none of the shared settings itself, so it follows them exactly. */
 export function followsShared(ad: AdDraft): boolean {
-  return Object.values(ad.overrides).every((value) => value === null)
+  const { link, callToAction, urlTags } = ad.overrides
+  return link === null && callToAction === null && urlTags === null
+}
+
+/** Edits a link, button, or URL tags: the shared value while the ad follows it, else the ad's own. */
+export function editSetting(
+  args: CreateAdsArgs,
+  index: number,
+  key: "link" | "call_to_action" | "url_tags",
+  value: string | null
+): { field: string; value: EditedValue } {
+  const ad = args.ads[index]
+  // A post keeps its own link and button, so it never follows the shared ones.
+  if (ad && !ad.post && followsShared(ad)) return { field: key, value }
+  return { field: "ads", value: editAd(args, index, key, value) }
+}
+
+/** Clears every ad's own status, so the one shared status decides; null when none set one. */
+export function clearAdStatuses(args: CreateAdsArgs): EditedAds | null {
+  if (!args.rawAds.some((ad) => Object.hasOwn(ad, "status"))) return null
+  return args.rawAds.map((ad) => withValue(ad, "status", null))
+}
+
+/** Replaces where an ad is created, keeping at least one ad set. */
+export function setAdSets(
+  args: CreateAdsArgs,
+  index: number,
+  adSets: Record<string, unknown>[]
+): EditedAds {
+  return args.rawAds.map((ad, position) =>
+    position === index && adSets.length > 0 ? { ...ad, ad_sets: adSets } : ad
+  )
 }
 
 /** Makes an ad follow the shared settings, or starts its own from a copy of them. */
@@ -61,9 +78,8 @@ export function setFollowsShared(args: CreateAdsArgs, index: number, on: boolean
       Object.entries(ad).filter(([key]) => !(SHARED_KEYS as readonly string[]).includes(key))
     )
     if (on) return rest
-    const draft = args.ads[index]
     const own = Object.fromEntries(
-      (draft ? overrideKeys(draft) : SHARED_KEYS).flatMap((key) => {
+      SHARED_KEYS.flatMap((key) => {
         const value = sharedValue(args, key)
         return value === null ? [] : [[key, value]]
       })

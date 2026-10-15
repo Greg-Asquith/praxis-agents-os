@@ -22,12 +22,11 @@ export const AD_FORMATS: ReadonlySet<AdFormat> = new Set([
 ])
 export const CHANGE_GROUPS: readonly ChangeGroup[] = ["media", "text", "added"]
 const GROUPS: ReadonlySet<ChangeGroup> = new Set(CHANGE_GROUPS)
-const FORMAT_NAMES: Record<AdFormat, string> = {
-  image: "image ads",
-  video: "video ads",
-  carousel: "carousels",
-  existing_post: "existing posts",
-}
+const TAGGED_FORMATS = [
+  ["image", "Image"],
+  ["video", "Video"],
+  ["carousel", "Carousel"],
+] as const
 
 export const CHANGE_GROUP_TITLES: Record<ChangeGroup, string> = {
   media: "Changes to Images and Video",
@@ -62,15 +61,12 @@ export function parseAutomaticChanges(value: unknown): AutomaticChange[] | null 
   return changes
 }
 
-/** Names the formats in the call that a change can't apply to, for example "Doesn't apply to carousels". */
-export function unappliedFormatsNote(
-  change: AutomaticChange,
-  used: ReadonlySet<AdFormat>
-): string | null {
-  const missing = [...used].filter((format) => !change.formats.includes(format))
-  if (missing.length === 0) return null
-  if (missing.length === used.size) return "Doesn't apply to any of these ads."
-  return `Doesn't apply to ${missing.map((format) => FORMAT_NAMES[format]).join(" or ")}.`
+/** Names the formats a change applies to, for example "Video Ads"; null when it applies to all. */
+export function formatTag(change: AutomaticChange): string | null {
+  const names = TAGGED_FORMATS.filter(([format]) => change.formats.includes(format))
+  return names.length === 0 || names.length === TAGGED_FORMATS.length
+    ? null
+    : `${names.map(([, name]) => name).join(", ")} Ads`
 }
 
 export function hasAiGeneratedChange(

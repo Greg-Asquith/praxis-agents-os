@@ -66,6 +66,12 @@ class MetaAdsBudgetUpdate(MetaAdsStrictModel):
         return reference
 
 
+class MetaAdsUpdateBudgetsRequest(MetaAdsStrictModel):
+    """Every argument of a budget change, so an edited approval is checked whole."""
+
+    updates: list[MetaAdsBudgetUpdate] = Field(min_length=1, max_length=50)
+
+
 class MetaAdsBudgetOutcome(MetaAdsStrictModel):
     object_type: Literal["campaign", "adset"]
     object_id: MetaAdsId

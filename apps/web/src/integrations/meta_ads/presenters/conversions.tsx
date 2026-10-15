@@ -13,10 +13,10 @@ import { defineIntegrationReadPresenter } from "@/integrations/read-presenter"
 const columns: DataColumn[] = [
   { key: "name", label: "Name", kind: "text" },
   { key: "type", label: "Type", kind: "text" },
-  { key: "recent_conversions", label: "Recent conversions", kind: "number" },
+  { key: "recent_conversions", label: "Recent Conversions", kind: "number" },
   { key: "availability", label: "Availability", kind: "status" },
-  { key: "description", label: "Description", kind: "text" },
-  { key: "id", label: "Conversion ID", kind: "id" },
+  { key: "description", label: "Description", kind: "text", hidden: true },
+  { key: "id", label: "Conversion ID", kind: "id", hidden: true },
 ]
 
 export const metaAdsConversionsPresenter = defineIntegrationReadPresenter(metaAdsProvider, {
@@ -28,7 +28,7 @@ export const metaAdsConversionsPresenter = defineIntegrationReadPresenter(metaAd
   parseResult: parseMetaAdsConversions,
   render: (result, entry) => (
     <div className="grid min-w-0 gap-3">
-      <ul className="text-muted-foreground grid gap-1 text-xs">
+      <ul className="text-muted-foreground grid gap-1 text-sm">
         {result.recent_since && result.recent_until ? (
           <li>
             Recent conversions run from {result.recent_since} to {result.recent_until}. Custom

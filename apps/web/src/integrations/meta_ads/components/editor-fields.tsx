@@ -24,6 +24,7 @@ export function EditorField({
   children,
   counter,
   counterBelow = false,
+  hint,
   id,
   label,
 }: {
@@ -31,6 +32,8 @@ export function EditorField({
   children: ReactNode
   counter?: ReactNode
   counterBelow?: boolean | undefined
+  // Says more about the field beside its label, such as who it applies to.
+  hint?: string | undefined
   id: string
   label: string
 }) {
@@ -39,6 +42,7 @@ export function EditorField({
       <div className="flex items-baseline justify-between gap-2">
         <label className={fieldLabelClass} htmlFor={id}>
           {label}
+          {hint ? <span className="text-muted-foreground font-normal"> · {hint}</span> : null}
         </label>
         {counterBelow ? null : counter}
       </div>
@@ -56,6 +60,7 @@ export function LabelledInput({
   counter,
   counterBelow,
   disabled,
+  hint,
   id,
   inputMode,
   label,
@@ -69,6 +74,7 @@ export function LabelledInput({
   counter?: ReactNode
   counterBelow?: boolean | undefined
   disabled: boolean
+  hint?: string | undefined
   id: string
   inputMode?: "url" | undefined
   label: string
@@ -81,6 +87,7 @@ export function LabelledInput({
       checks={checks}
       counter={counter}
       counterBelow={counterBelow}
+      hint={hint}
       id={id}
       label={label}
     >
@@ -149,7 +156,7 @@ export function LabelledSelect({
           </SelectGroup>
         </SelectContent>
       </Select>
-      {note ? <p className="text-muted-foreground text-xs">{note}</p> : null}
+      {note ? <p className="text-muted-foreground text-sm">{note}</p> : null}
     </EditorField>
   )
 }

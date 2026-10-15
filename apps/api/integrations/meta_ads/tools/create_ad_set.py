@@ -1,11 +1,11 @@
 # apps/api/integrations/meta_ads/tools/create_ad_set.py
 
-"""Approval-only tool that creates one paused ad set in an existing campaign."""
+"""Approval-only tool that creates one ad set in an existing campaign."""
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args
 
-from pydantic import Field, ValidationError
+from pydantic import Field
 from pydantic_ai import ModelRetry, RunContext
 
 from services.agents.runtime.context import RuntimeDeps
@@ -30,7 +30,7 @@ from utils.metadata import metadata_str
 from ..client import MetaAdsClient
 from ..entity_resolvers.ad_set import ad_set_reference
 from ..entity_resolvers.utils import asset_read_args
-from ..goals import MetaAdsConversionEvent, MetaAdsGoal
+from ..goals import GOAL_KEYS, MetaAdsConversionEvent, MetaAdsGoal
 from ..models import MetaAdsId
 from ..operations.ad_rows import ad_effect
 from ..operations.create_ad_set import (
@@ -70,7 +70,8 @@ from .schemas.ad_sets import (
     MetaAdsCreateAdSetOutput,
     MetaAdsCreateAdSetRequest,
 )
-from .schemas.budgets import MetaAdsBidStrategy, MetaAdsBudgetAmount
+from .schemas.budgets import BID_STRATEGIES, MetaAdsBidStrategy, MetaAdsBudgetAmount
+from .schemas.campaigns import MetaAdsNewObjectStatus
 from .schemas.conversions import CUSTOM_CONVERSIONS_MAX_ROWS, MetaAdsConversion
 from .utils.ad_preparation import hydrate_references, required_currency
 from .utils.bindings import META_ADS_WRITE_BINDING, RESULTS_FIELD
@@ -88,12 +89,9 @@ from .utils.mutation_evidence import (
 )
 from .utils.schedule import account_schedule
 
-_FIXED_CHANGED = (
-    "The campaign, goal, locations, or detailed targeting changed after approval. Ask the "
-    "agent to prepare the ad set again."
+_CAMPAIGN_CHANGED = (
+    "The campaign changed after approval. Ask the agent to prepare the ad set again."
 )
-# Card edits can't change these; they change what the ad set is for and who it can reach.
-_FIXED_TARGETING = ("locations", "excluded_locations", "detailed")
 
 type Amount = Annotated[MetaAdsBudgetAmount | None, Field(description="In the account currency.")]
 
@@ -106,6 +104,10 @@ async def meta_ads_create_ad_set(
     name: Annotated[str, Field(description="Ad set name, up to 400 characters.")],
     goal: Annotated[MetaAdsGoal, Field(description="What the ad set optimises for.")],
     targeting: Annotated[MetaAdsTargeting, Field(description="Who the ad set reaches.")],
+    status: Annotated[
+        MetaAdsNewObjectStatus,
+        Field(description="paused unless the operator asks for the ad set to be active."),
+    ] = "paused",
     page: Annotated[
         MetaAdsPageReference | None, Field(description="Page for awareness and Page likes goals.")
     ] = None,
@@ -170,8 +172,7 @@ async def meta_ads_create_ad_set(
         _account_entry(ctx.deps, request.account_id),
         tool_name="meta_ads_create_ad_set",
         operation=OPERATION,
-        proposal_changed=lambda proposed: _fixed(proposed) != _fixed(request),
-        changed_message=_FIXED_CHANGED,
+        check_edits=lambda proposed: _check_campaign_kept(proposed, request),
         prepare=lambda client, entry: _prepare(client, entry, request),
         pending_detail=lambda entry, prepared: _pending_detail(entry, prepared[0]),
         run=lambda client, entry, prepared: create_ad_set(
@@ -210,19 +211,14 @@ def _account_entry(deps: RuntimeDeps, account_id: str) -> ResolvedContextEntry:
     )
 
 
-def _fixed(values: Mapping[str, Any] | MetaAdsCreateAdSetRequest) -> list[Any] | None:
-    """Reads the campaign, goal, and where and whom the ad set targets."""
-    if not isinstance(values, MetaAdsCreateAdSetRequest):
-        try:
-            values = MetaAdsCreateAdSetRequest.model_validate(given(values))
-        except ValidationError:
-            return None
-    targeting = values.targeting
-    return [
-        values.campaign.campaign_id,
-        values.goal,
-        *(getattr(targeting, key) for key in _FIXED_TARGETING),
-    ]
+def _check_campaign_kept(proposed: Mapping[str, Any], request: MetaAdsCreateAdSetRequest) -> None:
+    """The campaign is the one thing the card can't change; everything else is checked live."""
+    campaign = proposed.get("campaign")
+    if (
+        not isinstance(campaign, Mapping)
+        or campaign.get("campaign_id") != request.campaign.campaign_id
+    ):
+        raise ModelRetry(_CAMPAIGN_CHANGED)
 
 
 async def _prepare(
@@ -270,6 +266,7 @@ async def _prepare(
         end_time=schedule.end_time,
         eu=eu,
         object_store_url=store,
+        status=request.status,
     )
     if reason := await validate_create(
         client, account_id=account_id, edge="adsets", data=plan.body, operation=OPERATION
@@ -440,6 +437,8 @@ async def _approval_display_args(deps: RuntimeDeps, args: dict[str, Any]) -> dic
         "_currency": account.currency,
         "_timezone": account.timezone_name,
         "_minimum": account.minimum,
+        # The minimum depends on the goal, so the card checks it only while the goal is unchanged.
+        "_minimum_goal": request.goal,
         "_eu": {
             "applies": reaches_eu(request),
             "default_payer": account.dsa_payor,
@@ -452,8 +451,11 @@ DEFINITION = RuntimeToolDefinition(
     name="meta_ads_create_ad_set",
     function=meta_ads_create_ad_set,
     description=(
-        "Create one ad set, paused, in an existing campaign of a Meta ad account, in one "
-        "approval. Build order: find the campaign with meta_ads_list_objects; list the Pages, "
+        "Create one ad set in an existing campaign of a Meta ad account, in one approval. "
+        "It is created paused unless status is active; use active only when the operator asks "
+        "for it to run as soon as it exists, and say so. The operator can change every "
+        "setting but the campaign on the approval card, and every rule is checked again "
+        "against the edited ad set. Build order: find the campaign with meta_ads_list_objects; list the Pages, "
         "pixels, apps, and audiences with meta_ads_list_assets; find places, interests, and "
         "languages with meta_ads_search_targeting and never invent keys; estimate the "
         "audience with meta_ads_estimate_audience and quote Meta's range to the operator; "
@@ -469,7 +471,7 @@ DEFINITION = RuntimeToolDefinition(
         "automatic unless the operator asks otherwise. For places in the EU, Meta needs who "
         "pays and who benefits; ask the operator for eu_payer and eu_beneficiary unless the "
         "account has defaults. Housing, employment, and financial campaigns can't target by "
-        "age, gender, or postcode. The ad set is created paused; then create ads in it with "
+        "age, gender, or postcode. Then create ads in it with "
         "meta_ads_create_ads and turn it on with meta_ads_update_status."
     ),
     provider="meta_ads",
@@ -500,6 +502,10 @@ DEFINITION = RuntimeToolDefinition(
         arg_fields=(
             ToolFieldPresentation(key="name", label="Name", editable=True),
             ToolFieldPresentation(
+                key="status", label="Status", editable=True, options=("paused", "active")
+            ),
+            ToolFieldPresentation(key="goal", label="Goal", editable=True, options=GOAL_KEYS),
+            ToolFieldPresentation(
                 key="page",
                 label="Facebook Page",
                 editable=True,
@@ -523,7 +529,35 @@ DEFINITION = RuntimeToolDefinition(
                 entity_kind="meta_ads_application",
                 width="half",
             ),
+            ToolFieldPresentation(
+                key="conversion_event",
+                label="Conversion Event",
+                editable=True,
+                options=get_args(MetaAdsConversionEvent.__value__),
+                width="half",
+            ),
+            ToolFieldPresentation(
+                key="custom_conversion_id",
+                label="Custom Conversion",
+                editable=True,
+                width="half",
+            ),
+            ToolFieldPresentation(
+                key="app_store",
+                label="App Store",
+                editable=True,
+                options=("google_play", "app_store"),
+            ),
             ToolFieldPresentation(key="budget", label="Budget", editable=True, format="structured"),
+            ToolFieldPresentation(
+                key="placements", label="Placements", editable=True, format="structured"
+            ),
+            ToolFieldPresentation(
+                key="bid_strategy",
+                label="Bid Strategy",
+                editable=True,
+                options=tuple(BID_STRATEGIES),
+            ),
             ToolFieldPresentation(key="start_date", label="Start Date", editable=True),
             ToolFieldPresentation(key="end_date", label="End Date", editable=True),
             ToolFieldPresentation(
@@ -534,7 +568,14 @@ DEFINITION = RuntimeToolDefinition(
                 label="Targeting",
                 editable=True,
                 format="structured",
-                entity_kinds=("meta_ads_audience",),
+                entity_kinds=(
+                    "meta_ads_audience",
+                    "meta_ads_targeting_location",
+                    "meta_ads_targeting_interest",
+                ),
+            ),
+            ToolFieldPresentation(
+                key="min_roas", label="Minimum Return", editable=True, secondary=True
             ),
             ToolFieldPresentation(
                 key="min_daily_spend", label="Min Daily Spend", editable=True, secondary=True

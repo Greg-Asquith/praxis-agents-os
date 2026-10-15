@@ -155,7 +155,7 @@ export function ConnectionRow({
                 : ""}
             </p>
             {connection.duplicate_of_connection_ids.length > 0 ? (
-              <p className="text-warning-foreground flex items-center gap-1 text-xs">
+              <p className="text-warning-text flex items-center gap-1 text-xs">
                 <ShieldAlertIcon className="size-3.5" aria-hidden="true" />
                 This account is also connected elsewhere in this workspace.
               </p>

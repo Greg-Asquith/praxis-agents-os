@@ -174,15 +174,15 @@ def _validate_plugin(
     from services.agents.runtime.entity_references.registry import get_entity_resolver
 
     file_resolver = get_entity_resolver("file")
+    # A structured field's card also searches its `entity_kinds`, which its arguments don't nest.
     declared_entity_kinds = {
-        field.entity_kind
+        kind
         for definition in plugin.tool_definitions
         for field in definition.presentation.arg_fields
-        if field.entity_kind is not None
+        for kind in (field.entity_kind, *field.entity_kinds)
+        if kind is not None
         and not (
-            field.entity_kind == "file"
-            and file_resolver is not None
-            and file_resolver.provider_key is None
+            kind == "file" and file_resolver is not None and file_resolver.provider_key is None
         )
     }
     from services.agents.runtime.tools.contract import integration_reference_types

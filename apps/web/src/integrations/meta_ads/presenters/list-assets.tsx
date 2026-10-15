@@ -24,7 +24,7 @@ export const metaAdsListAssetsPresenter = defineIntegrationReadPresenter(metaAds
   render: (result, entry, args) => (
     <div className="grid min-w-0 gap-4">
       {result.notes.length > 0 ? (
-        <ul className="text-muted-foreground grid gap-1 text-xs">
+        <ul className="text-muted-foreground grid gap-1 text-sm">
           {result.notes.map((note) => (
             <li key={note}>{note}</li>
           ))}

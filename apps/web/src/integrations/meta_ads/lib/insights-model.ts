@@ -29,6 +29,16 @@ export type MetaAdsInsights = {
 // The backend owns which requested fields are amounts in the account currency.
 type MoneyFormat = { currency: string; fields: ReadonlySet<string> }
 
+// Only these add up across rows; ratios, costs and reach do not.
+const ADDITIVE_FIELDS = new Set([
+  "spend",
+  "impressions",
+  "clicks",
+  "inline_link_clicks",
+  "actions",
+  "action_values",
+])
+
 const LEVELS = new Set(["account", "campaign", "adset", "ad"])
 const MODES: ReadonlySet<MetaAdsInsights["mode"]> = new Set(["direct", "background"])
 
@@ -178,6 +188,7 @@ function metricColumn(key: string, field: string, label: string, money: MoneyFor
     key,
     kind,
     label,
+    ...(ADDITIVE_FIELDS.has(field) ? { isMetric: true } : {}),
     // Meta amounts are in major units; an event name ending in "micros" must not rescale them.
     ...(kind === "currency"
       ? { currencyCode: money.currency, unit: "currency-units" as const }

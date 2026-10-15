@@ -10,6 +10,7 @@ import {
   type CreateCampaignArgs,
 } from "@/integrations/meta_ads/lib/create-campaign"
 import {
+  editFields,
   parseCreatedObject,
   type CreatedObjectResult,
 } from "@/integrations/meta_ads/lib/create-summary"
@@ -36,11 +37,14 @@ export const metaAdsCreateCampaignPresenter = createIntegrationWritePresenter({
         prompt: campaignPrompt,
         validateArgs: (value) => createCampaignProblem(parseCreateCampaignArgs(value)),
         renderInvalidDraft: true,
-        renderSummary: (value, fallback, onFieldEdit, disabled) => (
+        renderFields: false,
+        renderSummary: (value, fallback, _onFieldEdit, disabled, controls) => (
           <CreateCampaignApproval
             args={parseCreateCampaignArgs(value) ?? fallback}
             disabled={disabled}
-            onFieldEdit={onFieldEdit}
+            onEdit={(edits) => {
+              editFields(controls, disabled, edits)
+            }}
           />
         ),
       },

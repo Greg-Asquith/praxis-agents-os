@@ -12,6 +12,7 @@ from pydantic_ai import ModelRetry
 
 from services.integrations.http import IntegrationRequestPolicy
 from services.integrations.report_results import ReportResultBudget
+from services.integrations.table_scopes.domain import TableNamespace, TableScopeRewriteError
 
 MAX_AUTHORIZED_REFERENCES = 49
 
@@ -59,6 +60,16 @@ async def run_query(
     query_parameters: tuple[dict[str, object], ...] | None = None,
     permitted_tables: frozenset[tuple[str, str, str]] | None = None,
 ) -> dict[str, Any]:
+    named = _named_tables(query, billing_project_id=billing_project_id)
+    named_outside_context = [
+        ".".join(table) for table in named if (table[0], table[1]) not in allowed_datasets
+    ]
+    if named_outside_context:
+        raise ModelRetry(
+            "The query references tables outside the active context: "
+            + ", ".join(sorted(named_outside_context))
+            + ". Ask the user to change the active context or revise the query."
+        )
     dry_run_query: dict[str, Any] = {
         "query": query,
         "useLegacySql": False,
@@ -99,12 +110,15 @@ async def run_query(
             "BigQuery reported 50 or more referenced tables, so the complete "
             "authorization set cannot be verified. Narrow the query to fewer tables."
         )
+    # BigQuery lists the tables a view reads instead of the view, and those tables can sit in
+    # datasets outside the active context. A view in an active dataset is allowed whatever it
+    # reads, so other datasets' tables pass only when the query names a view.
     outside_context = [
         f"{project_id}.{dataset_id}.{table_id}"
         for project_id, dataset_id, table_id in references
         if (project_id, dataset_id) not in allowed_datasets
     ]
-    if outside_context:
+    if outside_context and not _names_view(named, references):
         raise ModelRetry(
             "The query references tables outside the active context: "
             + ", ".join(sorted(outside_context))
@@ -134,7 +148,7 @@ async def run_query(
             f"{max_bytes_billed}-byte limit. Narrow the query or add a partition filter."
         )
 
-    location = _query_location(references, allowed_datasets)
+    location = _query_location(named, allowed_datasets)
     execution_query: dict[str, Any] = {
         "query": query,
         "useLegacySql": False,
@@ -213,6 +227,35 @@ async def run_query(
     return result
 
 
+def _named_tables(query: str, *, billing_project_id: str) -> set[tuple[str, str, str]]:
+    # Keep sqlglot out of module import.
+    from services.integrations.table_scopes.rewrite import named_tables
+
+    try:
+        coordinates = named_tables(
+            query,
+            default_namespace=TableNamespace(catalog=billing_project_id),
+            dialect="bigquery",
+        )
+    except TableScopeRewriteError as exc:
+        raise ModelRetry(str(exc)) from exc
+    return {(table.catalog, table.schema, table.table) for table in coordinates}
+
+
+def _names_view(
+    named: set[tuple[str, str, str]],
+    references: list[tuple[str, str, str]],
+) -> bool:
+    """Whether BigQuery expanded a named table, which only happens to views."""
+    listed = set(references)
+    return any(
+        table not in listed
+        and "*" not in table[2]
+        and not _is_information_schema_reference(table[1], table[2])
+        for table in named
+    )
+
+
 def _is_information_schema_reference(dataset_id: str, table_id: str) -> bool:
     return dataset_id.upper() == "INFORMATION_SCHEMA" or table_id.upper().startswith(
         "INFORMATION_SCHEMA."
@@ -274,12 +317,12 @@ def _referenced_routines(statistics: Mapping[str, Any]) -> list[tuple[str, str, 
 
 
 def _query_location(
-    references: list[tuple[str, str, str]],
+    named: set[tuple[str, str, str]],
     allowed_datasets: Mapping[tuple[str, str], AllowedDataset],
 ) -> str:
     datasets = (
-        [allowed_datasets[(project_id, dataset_id)] for project_id, dataset_id, _ in references]
-        if references
+        [allowed_datasets[(project_id, dataset_id)] for project_id, dataset_id, _ in named]
+        if named
         else list(allowed_datasets.values())
     )
     locations = {dataset.location for dataset in datasets if dataset.location}

@@ -173,6 +173,18 @@ minor release. Patch releases contain backward-compatible fixes only.
 
 ### Changed
 
+- Meta Ads tool cards are redesigned for readability. Approval cards group
+  every setting in one-line rows that open one at a time, and the operator
+  can edit almost every proposed setting before approving: campaign
+  objective, budget type, bidding, and special ad categories; ad set goal,
+  assets, targeting (including adding locations and interests by search),
+  and placements; each ad's ad sets; budget amounts and which budgets
+  change; and each copy's target ad set. Campaigns, ad sets, ads, and copies
+  are still created paused by default, and the card can choose Active
+  instead. Results sit flat in the tool card, with tables showing a few
+  default columns and the rest under Columns, and warnings use a readable
+  amber.
+
 - Integration writes can record provider IDs as audit checkpoints between
   their pending and final records. Meta Ads video uploads record the video ID
   from Meta's `start` reply before sending any bytes, so an upload interrupted

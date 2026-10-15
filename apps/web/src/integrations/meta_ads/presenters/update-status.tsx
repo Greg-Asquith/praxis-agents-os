@@ -9,6 +9,7 @@ import {
   parseStatusChangeArgs,
   parseStatusChangeResult,
   statusChangeDetails,
+  statusProblem,
   type StatusChangeArgs,
   type StatusChangeResult,
 } from "@/integrations/meta_ads/lib/status-change"
@@ -36,16 +37,17 @@ export const metaAdsUpdateStatusPresenter = createIntegrationWritePresenter({
               ? "Turning these on starts delivery and spends your ad budget."
               : "Pausing stops delivery. Nothing is deleted.",
           // Approval waits until an edited selection is checked, so its evidence is current.
-          validateArgs: (value) =>
-            parseStatusChangeArgs(value)?.needsReview
-              ? "Check the changes before approving."
-              : null,
+          validateArgs: (value) => statusProblem(parseStatusChangeArgs(value)),
           renderInvalidDraft: true,
-          renderSummary: (value, fallback, _onFieldEdit, disabled, controls) => (
+          // The card draws its own status control and object lists, so the generic fields stay off.
+          renderFields: false,
+          renderSummary: (value, fallback, onFieldEdit, disabled, controls) => (
             <StatusApprovalSummary
               args={parseStatusChangeArgs(value) ?? fallback}
               disabled={disabled}
+              onFieldEdit={onFieldEdit}
               onReview={controls.onReview}
+              proposed={fallback}
             />
           ),
         },

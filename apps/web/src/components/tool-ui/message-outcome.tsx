@@ -24,7 +24,7 @@ export type MessageOutcomeView = {
 const TONES: Record<MessageOutcome, { icon: string; title: string }> = {
   applied: { icon: "bg-success/10 text-success", title: "text-success" },
   failed: { icon: "bg-destructive/10 text-destructive", title: "text-destructive" },
-  unverified: { icon: "bg-warning/15 text-warning-foreground", title: "text-warning-foreground" },
+  unverified: { icon: "bg-warning/15 text-warning-text", title: "text-warning-text" },
 }
 
 export function MessageWriteOutcome({

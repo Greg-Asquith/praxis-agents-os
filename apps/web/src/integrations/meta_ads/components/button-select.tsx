@@ -35,7 +35,7 @@ export function ButtonSelect({
       checks={checks}
       disabled={disabled}
       id={id}
-      label="CTA Button"
+      label="Button"
       onChange={(next) => {
         onChange(next === INHERIT ? null : next)
       }}

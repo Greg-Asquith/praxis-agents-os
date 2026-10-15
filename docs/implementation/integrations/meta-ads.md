@@ -8,7 +8,7 @@ history on selected accounts. Agents can list the Pages, Instagram accounts,
 media, posts, pixels, apps, and audiences an account can advertise with, find
 targeting options by name, and estimate how many people a targeting draft
 reaches. With approval, agents can upload workspace images and videos to an
-account's media library, create paused campaigns and paused ad sets, create
+account's media library, create campaigns and ad sets (paused unless asked), create
 image, video, carousel, and existing post ads in existing ad sets, copy ads,
 turn campaigns, ad sets, and ads on or off, and change campaign and ad set
 budget amounts. Building a campaign with its ad sets and ads in one approval,
@@ -647,12 +647,15 @@ The tool works as follows:
    budget to change about four times an hour and rejects more (`613`,
    subcode `1487632`). When the history is truncated or unreadable, the
    counts are lower bounds and the card says recent changes couldn't all be
-   read. A broken rule or rejected dry run blocks approval; the operator
-   declines and asks the agent again. The amounts aren't editable on the
-   card. If an account can't be read, or Meta can't run a dry run, those
+   read. A broken rule or rejected dry run blocks approval. The card edits
+   amounts and removes rows (`updates` is an editable `structured` field);
+   these checks describe the proposed amounts, so an edited amount is
+   checked again in step 2. If an account can't be read, or Meta can't run a dry run, those
    budgets show that they couldn't be checked and stay approvable, because
    execution checks again.
-2. After approval, the tool reads each object and the account minimum again,
+2. After approval, the tool first refuses any row for a campaign or ad set
+   the agent didn't propose, compared by account, type, and ID with
+   `proposed_args`. It then reads each object and the account minimum again,
    applies the same rules, and sends the dry runs again. Any rule problem,
    rejection, or unconfirmed dry run stops the account before anything is
    sent and returns Meta's reason.
@@ -897,27 +900,38 @@ keyed `{source}:{post_id}` under `_posts`, so the card shows Meta's own text,
 picture, and link rather than the agent's copy. It also records the offered
 automatic changes and the button lists.
 
-The card shows the shared settings (Page, Instagram account, link, CTA
-button, and status) as ordinary approval fields. A highlighted note appears
-only when ads would start spending once Meta approves them, naming the
-budget. With more than one ad, the card lists each ad with its media, format,
-ad sets, and check, and can filter to the ads that need attention.
+The card opens with one Paused or Active choice for every ad. Choosing it
+sets the shared status and clears each ad's own. While an AI-generated
+setting is on, the choice is locked to paused and says why. The note under it
+names, per ad set, whether the ads would start spending once Meta approves
+them, naming the budget. With more than one ad, the card lists each ad with
+its media, format, ad sets, and check, and can filter to the ads that need
+attention.
 
-The operator edits one ad at a time: its name, text with character counts,
-and a plain-text Praxis preview for Feed and for Stories and Reels with the
-Page's picture. Each check shows beside its field. An ad can follow the
-shared link, URL tags, CTA button, and status, or hold its own copy. Per-ad
-values that only repeat the shared ones are removed from the display
-arguments, and again at run time for ads the operator didn't edit, so a later
-shared edit reaches those ads.
+The operator edits one ad at a time in one column, moving between ads with
+the previous and next arrows. The Edit tab holds the ad's name, its ad sets
+(chips to remove, a search to add), media, primary text, headline,
+description, website link, and button, with character counts and each check
+beside its field. The Preview tab shows plain-text Praxis previews for Feed
+and for Stories and Reels with the Page's picture. Below the editor,
+collapsible rows hold the URL tags, which also say whether the ad keeps its
+own link, button, and tags, and Advanced Settings. The link and button edit
+the shared values until an ad is given its own copy. Per-ad values that only
+repeat the shared ones are removed from the display arguments, and again at
+run time for ads the operator didn't edit, so a later shared edit reaches
+those ads.
+
+Advanced Settings lists every automatic change in three groups with an AI
+badge on AI-generated ones, a format tag on those that apply to only some
+formats, and Turn All Off.
 
 An image or video ad can change its media and its vertical version. Carousel
-cards edit their media, text, link, and button, and can be reordered,
+cards open one at a time to edit their media, text, link, and button, and can be moved up or down,
 removed down to 2, or added up to 10. The media chooser lists the account's
 library through the `meta_ads_media` resolver and, for images, JPEG and PNG
 workspace Files through the `file` resolver, including a new upload. Video
-ads take ready library videos only. Ad sets change only by asking the agent.
-A File the agent proposed is pinned to the revision shown; one chosen on the
+ads take ready library videos only. An ad's ad sets are searched through the
+`meta_ads_ad_set` resolver, declared on the `ads` field. A File the agent proposed is pinned to the revision shown; one chosen on the
 card is uploaded as it is at approval.
 
 Errors Meta would reject block approval, as do repeated card media, fewer
@@ -934,8 +948,8 @@ collapsed advanced section with a switch each.
 sends the whole edited value, and the server checks it against
 `MetaAdsCreateAdsRequest` (see
 [Entity and record editors](../tool-dispatch.md#entity-and-record-editors)).
-`ads` declares the `meta_ads_media` and `file` entity kinds, which lets the
-card look them up.
+`ads` declares the `meta_ads_media`, `file`, and `meta_ads_ad_set` entity
+kinds, which lets the card look them up, including the ad sets of each ad.
 
 #### Media previews
 
@@ -965,11 +979,12 @@ reaches the browser.
 
 After approval, the tool:
 
-1. Requires the approved account and the ad set IDs the agent proposed for
-   each design; nothing else in the proposal is re-checked, because the card
-   may have fixed it. Media may differ from the proposal, because the card
-   can change it; the next step re-reads all of it.
-2. Re-reads the ad sets and applies the checks above to their live state,
+1. Requires the approved account. Ad sets and media may differ from the
+   proposal, because the card can change them; the next step re-reads all of
+   it.
+2. Re-reads the ad sets through the account's edge (one outside the account
+   isn't found and is refused) and applies the checks above to their live
+   state,
    confirms the account can still advertise as the Page and Instagram
    account, confirms library images exist in this account and videos are
    among its recent videos and ready, re-reads each post through its Page or
@@ -1046,15 +1061,17 @@ The approval card reads each source ad through the account's ads edge and
 shows its picture through the `meta_ads_media` preview kind, a primary-text
 excerpt of up to 125 characters, its format, and the automatic changes its
 creative has on. The excerpt is approval display data only: it isn't returned
-to the agent or recorded in audit evidence. The card edits each copy's name
-and status, and states what `active` means for each target ad set, as the
+to the agent or recorded in audit evidence. The card edits each copy's target
+ad set, name, and status, removes copies, adds a copy of a proposed ad into
+another ad set (`copies` declares the `meta_ads_ad_set` entity kind), and
+states what `active` means for each target ad set, as the
 ad creation card does. A source with an AI-generated change on is always
 copied paused.
 
 After approval, the tool:
 
-1. Requires the approved account and the source ad and target ad set of each
-   copy as proposed; only names and statuses may change on the card.
+1. Requires the approved account and that every copy's source ad is one the
+   agent proposed; any other source is refused. Target ad sets may change.
 2. Re-reads the source ads and target ad sets through the account's edges,
    and refuses archived, deleted, dynamic creative, lead, and messaging ad
    sets, as ad creation does.
@@ -1088,17 +1105,20 @@ doesn't have.
 
 ### Creating campaigns
 
-`meta_ads_create_campaign` creates one campaign, always paused, in one
-approval. It's approval-only, supports Code Mode, has a 120-second timeout,
+`meta_ads_create_campaign` creates one campaign in one approval, paused
+unless `status` is `active`. It's approval-only, supports Code Mode, has a 120-second timeout,
 and is listed in `test_spend_policy.py`. It takes no account argument: the
 campaign goes in the one writable ad account selected in Active Context, and
 the tool asks for exactly one when more are selected. Ad sets are then
 created in it with `meta_ads_create_ad_set`, and nothing runs until it's
-turned on with `meta_ads_update_status`.
+turned on with `meta_ads_update_status` unless it was created active.
 
 #### Arguments and checks before approval
 
 - `name`, up to 400 characters.
+- `status`: `paused` (the default) or `active`, sent as the campaign's
+  `status`. Active lets the campaign deliver as soon as an active ad set and
+  ad exist in it.
 - `objective`: `sales`, `leads`, `traffic`, `engagement`, `awareness`, or
   `app_promotion`, sent as Meta's `OUTCOME_*` objective. `buying_type` is
   always `AUCTION`.
@@ -1134,14 +1154,14 @@ daily flexibility note and the account minimum, the bid strategy and what
 each ad set will need, any special category, and the schedule. It edits the
 name, budget amount, dates, and, under **More settings**, the spending limit.
 Approval is blocked when a daily budget or spending limit is under the
-account's minimum. Changing the objective, budget mode, budget sharing, bid
-strategy, or categories needs the agent: the tool refuses an approval where
-they differ from the proposal.
+account's minimum. Every setting is editable, including status, objective,
+the whole `budget` (mode, amount, sharing), bid strategy, and categories; the
+tool checks the edited request whole and again against the live account.
 
 #### Preparation and execution
 
-After approval, the tool requires the approved account and the proposed
-fixed settings, then:
+After approval, the tool requires the approved account, then checks the
+edited request as it stands:
 
 1. Re-reads the account. A disabled or closed account is refused, as is a
    daily budget under `min_daily_budget`, a lifetime budget under the
@@ -1149,8 +1169,8 @@ fixed settings, then:
    `min_campaign_group_spend_cap`.
 2. Refuses a name already used by an undeleted campaign in the account,
    because a lost reply is found by name.
-3. Builds the body with `status=PAUSED` and asks Meta to check it with
-   `validate_only`; a rejection creates nothing.
+3. Builds the body with `status` (`PAUSED` unless active) and asks Meta to
+   check it with `validate_only`; a rejection creates nothing.
 4. Records pending evidence: objective, budget mode, money in minor units,
    currency, bid strategy, category keys and countries, and schedule.
 5. Sends `POST /act_{id}/campaigns` once. A lost or unclear reply is settled
@@ -1165,11 +1185,12 @@ sets to qualify it.
 
 ### Creating ad sets
 
-`meta_ads_create_ad_set` creates one ad set in an existing campaign, always
-paused, in one approval. It's approval-only, supports Code Mode, has a
+`meta_ads_create_ad_set` creates one ad set in an existing campaign in one
+approval, paused unless `status` is `active`. It's approval-only, supports Code Mode, has a
 120-second timeout, and is listed in `test_spend_policy.py`. Ads can then be
 created in it with `meta_ads_create_ads`, and nothing runs until it's turned
-on with `meta_ads_update_status`.
+on with `meta_ads_update_status` unless it was created active. The campaign is
+the one thing the card can't change.
 
 #### Goals
 
@@ -1242,22 +1263,34 @@ limits, pay per click, and EU names. A custom conversion is shown by its
 name. Approval is blocked when an EU ad set has no names and no account
 defaults, a daily budget is under the minimum, or the custom conversion
 counts events from a pixel other than the one chosen.
-Changing the campaign, goal, places, or detailed targeting needs the agent:
-the tool refuses an approval where they differ from the proposal.
+Everything but the campaign is editable: `status`, `goal`, `page`, `pixel`,
+`app`, `conversion_event`, `custom_conversion_id`, `app_store`, `placements`,
+`bid_strategy`, and the whole `targeting` value. `targeting` is a `structured`
+field that declares the `meta_ads_audience`, `meta_ads_targeting_location`,
+and `meta_ads_targeting_interest` entity kinds, so the card can add places
+and interests as well as remove them. The two targeting kinds search Meta's
+`adgeolocation` and `adinterest` options through
+`entity_resolvers/targeting.py`; a lookup value carries the `kind`, `key`,
+`name`, and `country_code` a location takes, or the `kind`, `key`, and `name`
+an interest takes, and the card copies those fields into the list. Hydration
+confirms a reference by searching its name and matching the key.
 
 #### Preparation and execution
 
 After approval, the tool:
 
-1. Requires the approved account, and the proposed campaign, goal, places,
-   and detailed targeting.
+1. Requires the approved account and the proposed campaign.
 2. Re-reads the campaign through the account's edge, and the Page, pixel,
    app, custom conversion, and audiences through the account. A Page, pixel,
    or app the account can't use is refused, as is an app without a page in
    the chosen store, and a custom conversion that counts another pixel's
    events. Rules such as no lookalikes for special ad categories
    use Meta's own audience subtypes.
-3. Re-checks every campaign rule against the live campaign.
+3. Re-checks every campaign rule against the live campaign, including the
+   goal's fit with the objective, so an edited goal is refused when it doesn't
+   fit. Places and interests nest inside `targeting` and aren't re-resolved on
+   resume; Meta's `validate_only` check in step 8 is what refuses an unknown
+   key.
 4. Reads the account's time zone and EU defaults, and the goal's minimum
    from `minimum_budgets` (`min_daily_budget_imp`, `_high_freq`, or
    `_low_freq`, unverified live), falling back to the account's
@@ -1269,9 +1302,9 @@ After approval, the tool:
    `dsa_beneficiary`; defaults are inherited and not sent.
 6. Refuses a name already used by an ad set in the campaign, because a lost
    reply is found by name.
-7. Builds the body: `status=PAUSED`, the goal's settings, the targeting spec
-   with placements, the promoted object, budgets and bids in minor units,
-   and the schedule. `attribution_spec` isn't sent.
+7. Builds the body: `status` (`PAUSED` unless active), the goal's settings,
+   the targeting spec with placements, the promoted object, budgets and bids
+   in minor units, and the schedule. `attribution_spec` isn't sent.
 8. Asks Meta to check it with `validate_only`; a rejection creates nothing.
 9. Records pending evidence: the goal, campaign, promoted object, money in
    minor units, schedule, placements mode, EU transparency, location keys,

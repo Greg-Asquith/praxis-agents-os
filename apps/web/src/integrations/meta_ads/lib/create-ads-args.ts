@@ -135,10 +135,6 @@ export const RECOMMENDED_LENGTHS = {
 } as const
 export const MIN_CARDS = 2
 export const MAX_CARDS = 10
-export const STATUS_OPTIONS = [
-  { value: "paused", label: "Paused" },
-  { value: "active", label: "Active" },
-] as const
 export const STATUSES: ReadonlySet<AdStatus> = new Set(["paused", "active"])
 const BUDGET_KINDS: ReadonlySet<"daily" | "lifetime" | "campaign"> = new Set([
   "daily",
@@ -180,7 +176,7 @@ export function parseCreateAdsArgs(value: unknown): CreateAdsArgs | null {
       status,
     },
     ads,
-    adSets: parseAdSets(value["_ad_sets"]),
+    adSets: parseAdSets(value["_ad_sets"], rawAds),
     enabledChanges: isStringArray(value["automatic_changes"]) ? value["automatic_changes"] : [],
     catalogue,
     buttons,
@@ -378,11 +374,26 @@ export function adSetName(args: Pick<CreateAdsArgs, "adSets">, adSetId: string):
   return args.adSets.get(adSetId)?.name ?? `Ad set ${adSetId}`
 }
 
-/** Reads the ad sets the card hydrated, keyed by ID. */
-export function parseAdSets(value: unknown): Map<string, AdSetInfo> {
+/** Reads the ad sets the card hydrated, keyed by ID, plus any the operator added on the card. */
+export function parseAdSets(
+  value: unknown,
+  rawAds: readonly Record<string, unknown>[] = []
+): Map<string, AdSetInfo> {
   const adSets = new Map<string, AdSetInfo>()
-  if (!isRecord(value)) return adSets
-  for (const [id, item] of Object.entries(value)) {
+  // An ad set added on the card isn't hydrated yet, so its own reference stands in.
+  const added = rawAds.flatMap((ad): unknown[] =>
+    Array.isArray(ad["ad_sets"]) ? (ad["ad_sets"] as unknown[]) : []
+  )
+  const known = isRecord(value) ? value : {}
+  const entries = [
+    ...added.flatMap((item) =>
+      isRecord(item) && isNonEmptyString(item["adset_id"])
+        ? [[item["adset_id"], item] as const]
+        : []
+    ),
+    ...Object.entries(known),
+  ]
+  for (const [id, item] of entries) {
     if (!isRecord(item)) continue
     const budget = item["budget"]
     adSets.set(id, {

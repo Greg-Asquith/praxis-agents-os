@@ -20,19 +20,19 @@ function budgetLabel(
 const columns: DataColumn[] = [
   { key: "name", label: "Name", kind: "text" },
   { key: "status", label: "Status", kind: "status" },
-  { key: "effective_status", label: "Delivery status", kind: "status" },
-  { key: "review", label: "Review notes", kind: "text" },
+  { key: "effective_status", label: "Delivery Status", kind: "status" },
   { key: "budget", label: "Budget", kind: "text" },
-  { key: "budget_remaining", label: "Budget remaining", kind: "text" },
-  { key: "bid_strategy", label: "Bid strategy", kind: "text" },
-  { key: "bid_amount", label: "Bid amount", kind: "currency" },
-  { key: "start_time", label: "Start", kind: "datetime" },
-  { key: "end_time", label: "End", kind: "datetime" },
+  { key: "review", label: "Review Notes", kind: "text" },
   { key: "objective", label: "Objective", kind: "text" },
-  { key: "optimization_goal", label: "Optimisation goal", kind: "text" },
-  { key: "id", label: "ID", kind: "id" },
-  { key: "campaign_id", label: "Campaign ID", kind: "id" },
-  { key: "adset_id", label: "Ad set ID", kind: "id" },
+  { key: "budget_remaining", label: "Budget Remaining", kind: "text", hidden: true },
+  { key: "bid_strategy", label: "Bid Strategy", kind: "text", hidden: true },
+  { key: "bid_amount", label: "Bid Amount", kind: "currency", hidden: true },
+  { key: "start_time", label: "Start", kind: "datetime", hidden: true },
+  { key: "end_time", label: "End", kind: "datetime", hidden: true },
+  { key: "optimization_goal", label: "Optimisation Goal", kind: "text", hidden: true },
+  { key: "id", label: "ID", kind: "id", hidden: true },
+  { key: "campaign_id", label: "Campaign ID", kind: "id", hidden: true },
+  { key: "adset_id", label: "Ad Set ID", kind: "id", hidden: true },
 ]
 
 export const metaAdsObjectsPresenter = defineIntegrationReadPresenter(metaAdsProvider, {
@@ -53,25 +53,32 @@ export const metaAdsObjectsPresenter = defineIntegrationReadPresenter(metaAdsPro
   render: (result, entry) => {
     const money = (amount: string | null) =>
       amount === null ? "—" : formatCurrencyAmount(amount, result.currency)
-    return result.objects.length > 0 ? (
+    const rows = result.objects.map((object) => ({
+      ...object,
+      name: object.name ?? "Unnamed object",
+      budget: budgetLabel(object.budget, money),
+      budget_remaining: object.budget ? money(object.budget.remaining) : null,
+      bid_strategy: object.bid_strategy
+        ? titleCaseToken(object.bid_strategy.toLowerCase(), object.bid_strategy)
+        : null,
+      objective: object.objective
+        ? titleCaseToken(object.objective.toLowerCase(), object.objective)
+        : null,
+      optimization_goal: object.optimization_goal
+        ? titleCaseToken(object.optimization_goal.toLowerCase(), object.optimization_goal)
+        : null,
+      review: [...(object.review_reasons ?? []), ...(object.issues ?? [])].join(" ") || null,
+    }))
+    // Review notes only apply to ads, so the column stays out of the way otherwise.
+    const hasReview = rows.some((row) => row.review)
+    return rows.length > 0 ? (
       <DataTable
-        columns={columns.map((column) => ({ ...column, currencyCode: result.currency }))}
-        rows={result.objects.map((object) => ({
-          ...object,
-          name: object.name ?? "Unnamed object",
-          budget: budgetLabel(object.budget, money),
-          budget_remaining: object.budget ? money(object.budget.remaining) : null,
-          bid_strategy: object.bid_strategy
-            ? titleCaseToken(object.bid_strategy.toLowerCase(), object.bid_strategy)
-            : null,
-          objective: object.objective
-            ? titleCaseToken(object.objective.toLowerCase(), object.objective)
-            : null,
-          optimization_goal: object.optimization_goal
-            ? titleCaseToken(object.optimization_goal.toLowerCase(), object.optimization_goal)
-            : null,
-          review: [...(object.review_reasons ?? []), ...(object.issues ?? [])].join(" ") || null,
+        columns={columns.map((column) => ({
+          ...column,
+          currencyCode: result.currency,
+          hidden: (column.hidden ?? false) || (column.key === "review" && !hasReview),
         }))}
+        rows={rows}
         pageSize={25}
         exportFilename={`meta-ads-${entry.externalId}-${result.object_type}.csv`}
         truncationNote={

@@ -252,13 +252,13 @@ function listReportFieldsResult(
           </p>
         )}
         {result.truncated && !fieldsShortened ? (
-          <p className="text-warning-foreground text-xs">
+          <p className="text-warning-text text-xs">
             Google Ads reports more matching fields or compatibility values than this result
             includes.
           </p>
         ) : null}
         {compatibilityShortened ? (
-          <p className="text-warning-foreground text-xs">
+          <p className="text-warning-text text-xs">
             One or more compatibility lists are shortened. The counts below show how many values are
             currently displayed.
           </p>
