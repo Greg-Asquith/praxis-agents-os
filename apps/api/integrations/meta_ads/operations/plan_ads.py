@@ -16,8 +16,9 @@ from ..tools.schemas.ads import (
     APP_BUTTONS,
     DEFAULT_BUTTON,
     WEBSITE_BUTTONS,
-    MetaAdsAdDesign,
+    MetaAdsAdContent,
     MetaAdsCreateAdsRequest,
+    SharedAdSettings,
     design_media,
     media_key,
 )
@@ -66,7 +67,8 @@ class PlannedAd:
 
     index: int
     design_index: int
-    design: MetaAdsAdDesign
+    design: MetaAdsAdContent
+    # A launch holds the ad set's key here until the ad set exists.
     adset_id: str
     adset_name: str | None
     name: str
@@ -100,9 +102,12 @@ def ad_set_problem(ad_set: AdSetFacts) -> str | None:
 
 
 def design_problem(
-    design: MetaAdsAdDesign, request: MetaAdsCreateAdsRequest, ad_sets: Mapping[str, AdSetFacts]
+    design: MetaAdsAdContent, request: SharedAdSettings, ad_sets: Sequence[AdSetFacts | None]
 ) -> str | None:
-    """Checks one design against its ad sets: posts, buttons, links, and vertical versions."""
+    """Checks one design against its ad sets: posts, buttons, links, and vertical versions.
+
+    `ad_sets` holds the design's ad sets in order, with None for one no longer available.
+    """
     if design.post is not None:
         if problem := _post_problem(design.post, request):
             return problem
@@ -112,8 +117,7 @@ def design_problem(
     buttons.extend(card.call_to_action for card in design.cards or () if card.call_to_action)
     if not _takes_button(design, request):
         buttons = []
-    for reference in design.ad_sets:
-        ad_set = ad_sets.get(reference.adset_id)
+    for ad_set in ad_sets:
         if ad_set is None:
             return "One of this ad's ad sets is no longer available. Choose it again."
         if problem := ad_set_problem(ad_set):
@@ -129,7 +133,7 @@ def design_problem(
     return None
 
 
-def _post_problem(post: MetaAdsPostReference, request: MetaAdsCreateAdsRequest) -> str | None:
+def _post_problem(post: MetaAdsPostReference, request: SharedAdSettings) -> str | None:
     """Checks the post runs as the call's Page or Instagram account, and can run as an ad."""
     if post.source == "facebook":
         if post.page_id != request.page.page_id:
@@ -150,7 +154,7 @@ def _post_problem(post: MetaAdsPostReference, request: MetaAdsCreateAdsRequest) 
     return None
 
 
-def _takes_button(design: MetaAdsAdDesign, request: MetaAdsCreateAdsRequest) -> bool:
+def _takes_button(design: MetaAdsAdContent, request: SharedAdSettings) -> bool:
     """A Facebook post keeps its own button; an Instagram post takes one only with a link."""
     if design.post is None:
         return True
@@ -160,19 +164,35 @@ def _takes_button(design: MetaAdsAdDesign, request: MetaAdsCreateAdsRequest) -> 
 def plan_ads(
     request: MetaAdsCreateAdsRequest, ad_set_names: Mapping[str, str | None]
 ) -> list[PlannedAd]:
-    """Places every design in each of its ad sets, applying shared values and overrides.
+    """Places every design in each of its ad sets, applying shared values and overrides."""
+    slots = [
+        [
+            (reference.adset_id, ad_set_names.get(reference.adset_id) or reference.label)
+            for reference in design.ad_sets
+        ]
+        for design in request.ads
+    ]
+    return place_ads(request, slots, status=request.status)
 
-    An AI-generated change makes every ad start off, because Meta asks for those ads to
-    be previewed before they run.
+
+def place_ads(
+    request: SharedAdSettings,
+    slots: Sequence[Sequence[tuple[str, str | None]]],
+    *,
+    status: Literal["paused", "active"],
+) -> list[PlannedAd]:
+    """Places each design in its slots, given as ad set ID and name, in the designs' order.
+
+    An ad's own status overrides `status`. An AI-generated change makes every ad start
+    off, because Meta asks for those ads to be previewed before they run.
     """
     enabled = list(request.automatic_changes or ())
     forced_off = has_ai_generated(enabled)
     planned: list[PlannedAd] = []
-    for design_index, design in enumerate(request.ads):
-        for reference in design.ad_sets:
-            adset_name = ad_set_names.get(reference.adset_id) or reference.label
+    for design_index, (design, ad_sets) in enumerate(zip(request.ads, slots, strict=True)):
+        for adset_id, adset_name in ad_sets:
             name = design.name.strip()
-            if len(design.ad_sets) > 1:
+            if len(ad_sets) > 1:
                 name = f"{name} | {adset_name}"
             post = design.post
             # A Facebook post keeps its own link, and no post takes URL tags.
@@ -182,10 +202,10 @@ def plan_ads(
                     index=len(planned),
                     design_index=design_index,
                     design=design,
-                    adset_id=reference.adset_id,
+                    adset_id=adset_id,
                     adset_name=adset_name,
                     name=name[:_MAX_AD_NAME],
-                    status="paused" if forced_off else (design.status or request.status),
+                    status="paused" if forced_off else (design.status or status),
                     link="" if facebook_post else design.link or request.link or "",
                     call_to_action=design.call_to_action
                     or request.call_to_action
@@ -211,7 +231,7 @@ def duplicate_name(planned: Sequence[PlannedAd], existing: Mapping[str, set[str]
     return None
 
 
-def _text_fingerprints(design: MetaAdsAdDesign) -> dict[str, str]:
+def _text_fingerprints(design: MetaAdsAdContent) -> dict[str, str]:
     """Returns SHA-256 hashes of the ad's public text, so evidence never holds the text."""
     values = {
         "primary_text": design.primary_text or None,

@@ -404,16 +404,16 @@ def test_buttons_follow_the_goal():
     call = request(design(call_to_action="SHOP_NOW"))
 
     assert "isn't available for this ad set's goal" in design_problem(
-        call.ads[0], call, {"8": app_ad_set}
+        call.ads[0], call, [app_ad_set]
     )
-    assert design_problem(call.ads[0], call, {"8": ad_set("8")}) is None
+    assert design_problem(call.ads[0], call, [ad_set("8")]) is None
 
 
 def test_dynamic_creative_ad_sets_are_refused():
     call = request(design())
     dynamic = ad_set("8", is_dynamic_creative=True)
 
-    assert "dynamic creative" in design_problem(call.ads[0], call, {"8": dynamic})
+    assert "dynamic creative" in design_problem(call.ads[0], call, [dynamic])
 
 
 def test_a_vertical_version_needs_an_ad_set_that_shows_stories_or_reels():
@@ -425,8 +425,8 @@ def test_a_vertical_version_needs_an_ad_set_that_shows_stories_or_reels():
         "8", placements=MetaAdsPlacements(mode="manual", positions=["instagram:story"])
     )
 
-    assert "Stories or Reels" in design_problem(call.ads[0], call, {"8": feed_only})
-    assert design_problem(call.ads[0], call, {"8": stories}) is None
+    assert "Stories or Reels" in design_problem(call.ads[0], call, [feed_only])
+    assert design_problem(call.ads[0], call, [stories]) is None
 
 
 def post_design(post: MetaAdsPostReference, **values) -> MetaAdsAdDesign:

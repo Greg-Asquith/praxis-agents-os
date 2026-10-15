@@ -316,6 +316,7 @@ def test_each_goal_family_builds_its_meta_settings(overrides, objective, expecte
     plan = plan_ad_set(
         request,
         request.campaign,
+        campaign_id=request.campaign.campaign_id,
         currency="GBP",
         start_time=None,
         end_time=None,

@@ -46,6 +46,7 @@ from ..schemas.ads import (
     UPLOAD_VIDEOS_FIRST,
     MediaKey,
     MetaAdsCreateAdsRequest,
+    SharedAdSettings,
     design_media,
     media_key,
 )
@@ -102,10 +103,17 @@ def distinct_media(request: MetaAdsCreateAdsRequest) -> dict[MediaKey, Any]:
 
 
 def check_designs(request: MetaAdsCreateAdsRequest, ad_sets: Mapping[str, Any]) -> None:
+    raise_design_problems(
+        request, [[ad_sets.get(ref.adset_id) for ref in design.ad_sets] for design in request.ads]
+    )
+
+
+def raise_design_problems(request: SharedAdSettings, ad_sets: Sequence[Sequence[Any]]) -> None:
+    """Refuses the call with the first few designs that don't fit their ad sets."""
     problems = [
         f"{design.name}: {problem}"
-        for design in request.ads
-        if (problem := design_problem(design, request, ad_sets))
+        for design, facts in zip(request.ads, ad_sets, strict=True)
+        if (problem := design_problem(design, request, facts))
     ]
     if problems:
         raise ModelRetry(" ".join(problems[:_MAX_LISTED_PROBLEMS]))

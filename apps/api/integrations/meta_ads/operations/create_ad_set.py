@@ -16,13 +16,13 @@ from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import MetaAdsClient, ad_account_path
 from ..goals import GOALS
-from ..models import MetaAdsObjectBudget
+from ..models import MetaAdsObjectBudget, MetaAdsPlacements, MetaAdsPromotedObject
 from ..money import amount_to_minor
 from ..references import MetaAdsApplicationReference
 from ..throttle import ensure_account_available
 from ..tools.schemas.ad_sets import (
     MetaAdsAdSetPlacements,
-    MetaAdsCreateAdSetRequest,
+    MetaAdsAdSetSettings,
     MetaAdsEuTransparency,
 )
 from ..tools.schemas.budgets import BID_STRATEGIES
@@ -82,7 +82,7 @@ class CampaignFacts(Protocol):
     def share_between_ad_sets(self) -> bool | None: ...
 
 
-def campaign_problems(request: MetaAdsCreateAdSetRequest, campaign: CampaignFacts) -> list[str]:
+def campaign_problems(request: MetaAdsAdSetSettings, campaign: CampaignFacts) -> list[str]:
     """Lists what this campaign won't take: goal, budget, bids, and targeting limits."""
     row = GOALS[request.goal]
     if campaign.status in CLOSED_STATUSES:
@@ -109,7 +109,7 @@ def _objective(value: str | None) -> str:
     return (value or "unknown").removeprefix("OUTCOME_").replace("_", " ").lower()
 
 
-def _budget_problems(request: MetaAdsCreateAdSetRequest, campaign: CampaignFacts) -> list[str]:
+def _budget_problems(request: MetaAdsAdSetSettings, campaign: CampaignFacts) -> list[str]:
     if campaign.budget is not None:
         if request.budget is not None:
             return ["This campaign holds the budget, so leave the ad set's budget out."]
@@ -124,13 +124,13 @@ def _budget_problems(request: MetaAdsCreateAdSetRequest, campaign: CampaignFacts
     return problems
 
 
-def bid_strategy(request: MetaAdsCreateAdSetRequest, campaign: CampaignFacts) -> str:
+def bid_strategy(request: MetaAdsAdSetSettings, campaign: CampaignFacts) -> str:
     """Meta's strategy for the ad set: the campaign's own, or the requested one."""
     requested = BID_STRATEGIES[request.bid_strategy or "highest_volume"]
     return campaign.bid_strategy or requested
 
 
-def _bid_problems(request: MetaAdsCreateAdSetRequest, campaign: CampaignFacts) -> list[str]:
+def _bid_problems(request: MetaAdsAdSetSettings, campaign: CampaignFacts) -> list[str]:
     strategy = bid_strategy(request, campaign)
     if request.bid_strategy and BID_STRATEGIES[request.bid_strategy] != strategy:
         return ["The ad set follows its campaign's bid strategy, so leave bid_strategy out."]
@@ -143,7 +143,7 @@ def _bid_problems(request: MetaAdsCreateAdSetRequest, campaign: CampaignFacts) -
     return []
 
 
-def reaches_eu(request: MetaAdsCreateAdSetRequest) -> bool:
+def reaches_eu(request: MetaAdsAdSetSettings) -> bool:
     countries = {
         location.key if location.kind == "country" else location.country_code
         for location in request.targeting.locations
@@ -169,7 +169,7 @@ class AdSetAccount:
 
 
 async def read_ad_set_account(
-    client: MetaAdsClient, *, account_id: str, request: MetaAdsCreateAdSetRequest
+    client: MetaAdsClient, *, account_id: str, request: MetaAdsAdSetSettings
 ) -> AdSetAccount:
     ensure_account_available(account_id, operation=OPERATION)
     raw = await client.graph_get(
@@ -191,7 +191,7 @@ async def read_ad_set_account(
 
 
 async def _goal_minimum(
-    client: MetaAdsClient, account_id: str, request: MetaAdsCreateAdSetRequest, currency: str
+    client: MetaAdsClient, account_id: str, request: MetaAdsAdSetSettings, currency: str
 ) -> str | None:
     """Reads the goal's daily minimum; None when Meta reports none, so the account's applies."""
     kind = "high_freq" if request.pay_per_click else GOALS[request.goal].minimum
@@ -219,9 +219,7 @@ def _dsa_name(value: Any) -> str | None:
     return " ".join(value.split())[:512] or None
 
 
-def eu_transparency(
-    request: MetaAdsCreateAdSetRequest, account: AdSetAccount
-) -> MetaAdsEuTransparency:
+def eu_transparency(request: MetaAdsAdSetSettings, account: AdSetAccount) -> MetaAdsEuTransparency:
     """Decides how the EU names are given, or fails before the create when they can't be.
 
     Raises:
@@ -237,7 +235,7 @@ def eu_transparency(
 
 
 def minimum_problem(
-    request: MetaAdsCreateAdSetRequest, account: AdSetAccount, days: int | None
+    request: MetaAdsAdSetSettings, account: AdSetAccount, days: int | None
 ) -> str | None:
     """Checks the ad set's own budget against Meta's daily minimum for its goal."""
     if request.budget is None or account.minimum is None:
@@ -271,24 +269,37 @@ class AdSetPlan:
     eu: MetaAdsEuTransparency
     intent_fields: dict[str, str]
 
+    def with_campaign(self, campaign_id: str) -> "AdSetPlan":
+        """Returns the plan with the campaign it goes in, in both the body and the evidence."""
+        return AdSetPlan(
+            body={**self.body, "campaign_id": campaign_id},
+            eu=self.eu,
+            intent_fields={**self.intent_fields, "campaign_id": campaign_id},
+        )
+
 
 def plan_ad_set(
-    request: MetaAdsCreateAdSetRequest,
+    request: MetaAdsAdSetSettings,
     campaign: CampaignFacts,
     *,
+    campaign_id: str | None,
     currency: str,
     start_time: str | None,
     end_time: str | None,
     eu: MetaAdsEuTransparency,
     object_store_url: str | None = None,
+    key: str = AD_SET_KEY,
 ) -> AdSetPlan:
-    """Builds the body and its text-free evidence; created paused, always."""
+    """Builds the body and its text-free evidence; created paused, always.
+
+    A launch plans its ad sets before the campaign exists, so `campaign_id` is None and
+    the body gains it from `with_campaign` once the campaign is created.
+    """
     row = GOALS[request.goal]
     targeting = targeting_spec(request.targeting)
     targeting.update(_placements(request.placements))
     body = {
         "name": request.name,
-        "campaign_id": request.campaign.campaign_id,
         "status": "PAUSED",
         "optimization_goal": row.optimization_goal,
         "billing_event": "LINK_CLICKS" if request.pay_per_click else "IMPRESSIONS",
@@ -305,7 +316,39 @@ def plan_ad_set(
         body["end_time"] = end_time
     if eu == "sent" and request.eu_payer and request.eu_beneficiary:
         body.update(dsa_payor=request.eu_payer, dsa_beneficiary=request.eu_beneficiary)
-    return AdSetPlan(body=body, eu=eu, intent_fields=_intent_fields(request, body, eu))
+    plan = AdSetPlan(body=body, eu=eu, intent_fields=_intent_fields(request, body, eu, key))
+    return plan.with_campaign(campaign_id) if campaign_id else plan
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedAdSet:
+    """A new ad set as ad creation checks it, before it exists."""
+
+    objective: str
+    optimization_goal: str
+    destination_type: str | None
+    promoted_object: MetaAdsPromotedObject | None
+    placements: MetaAdsPlacements
+    status: str = "PAUSED"
+    is_dynamic_creative: bool = False
+
+
+def planned_ad_set(request: MetaAdsAdSetSettings) -> PlannedAdSet:
+    """Describes the ad set the settings make, so a launch can check its ads before approval."""
+    row = GOALS[request.goal]
+    promoted = _promoted_object(request, None)
+    if request.app is not None:
+        # The store page is read at preparation; ad checks only need the app.
+        promoted = {"application_id": request.app.application_id}
+    return PlannedAdSet(
+        objective=row.objective,
+        optimization_goal=row.optimization_goal,
+        destination_type=row.destination_type,
+        promoted_object=MetaAdsPromotedObject.model_validate(promoted) if promoted else None,
+        placements=MetaAdsPlacements(
+            mode=request.placements.mode, positions=list(request.placements.positions)
+        ),
+    )
 
 
 def _placements(placements: MetaAdsAdSetPlacements) -> dict[str, Any]:
@@ -325,7 +368,7 @@ def _placements(placements: MetaAdsAdSetPlacements) -> dict[str, Any]:
 
 
 def _promoted_object(
-    request: MetaAdsCreateAdSetRequest, object_store_url: str | None
+    request: MetaAdsAdSetSettings, object_store_url: str | None
 ) -> dict[str, str] | None:
     if request.page is not None:
         return {"page_id": request.page.page_id}
@@ -341,9 +384,7 @@ def _promoted_object(
     return None
 
 
-def _money(
-    request: MetaAdsCreateAdSetRequest, campaign: CampaignFacts, currency: str
-) -> dict[str, str]:
+def _money(request: MetaAdsAdSetSettings, campaign: CampaignFacts, currency: str) -> dict[str, str]:
     values: dict[str, str] = {}
     if request.budget is not None:
         values[f"{request.budget.kind}_budget"] = str(
@@ -365,13 +406,12 @@ def _money(
 
 
 def _intent_fields(
-    request: MetaAdsCreateAdSetRequest, body: Mapping[str, str], eu: MetaAdsEuTransparency
+    request: MetaAdsAdSetSettings, body: Mapping[str, str], eu: MetaAdsEuTransparency, key: str
 ) -> dict[str, str]:
     """Records IDs, money in minor units, and targeting as keys and counts, never names."""
     targeting = request.targeting
     fields = {
-        "key": AD_SET_KEY,
-        "campaign_id": request.campaign.campaign_id,
+        "key": key,
         "goal": request.goal,
         "status": "PAUSED",
         "locations": ",".join(f"{item.kind}:{item.key}" for item in targeting.locations),

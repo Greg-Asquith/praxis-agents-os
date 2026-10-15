@@ -78,8 +78,9 @@ class MetaAdsAdSetPlacements(MetaAdsStrictModel):
         return self
 
 
-class MetaAdsCreateAdSetRequest(MetaAdsStrictModel):
-    campaign: MetaAdsCampaignReference
+class MetaAdsAdSetSettings(MetaAdsStrictModel):
+    """Everything about a new ad set but its campaign, which a launch creates first."""
+
     name: Annotated[str, Field(max_length=MAX_AD_SET_NAME), AfterValidator(_text)]
     goal: MetaAdsGoal
     targeting: MetaAdsTargeting
@@ -105,9 +106,28 @@ class MetaAdsCreateAdSetRequest(MetaAdsStrictModel):
     )
 
     @model_validator(mode="after")
-    def _check_request(self) -> Self:
-        if problems := _request_problems(self):
+    def _check_settings(self) -> Self:
+        if problems := _settings_problems(self):
             raise ValueError(problems[0])
+        return self
+
+    @property
+    def asset_accounts(self) -> set[str]:
+        """Returns the ad accounts of the Page, pixel, app, and audiences the ad set uses."""
+        references = [self.page, self.pixel, self.app, *self.targeting.audiences]
+        references.extend(self.targeting.excluded_audiences)
+        return {item.account_id for item in references if item is not None}
+
+
+class MetaAdsCreateAdSetRequest(MetaAdsAdSetSettings):
+    campaign: MetaAdsCampaignReference
+
+    @model_validator(mode="after")
+    def _check_account(self) -> Self:
+        if self.asset_accounts - {self.account_id}:
+            raise ValueError(
+                "Use a Page, pixel, app, and audiences from the campaign's ad account."
+            )
         return self
 
     @property
@@ -115,14 +135,10 @@ class MetaAdsCreateAdSetRequest(MetaAdsStrictModel):
         return self.campaign.account_id
 
 
-def _request_problems(request: MetaAdsCreateAdSetRequest) -> list[str]:
+def _settings_problems(request: MetaAdsAdSetSettings) -> list[str]:
     """Rules that hold whatever the campaign is; campaign rules run against the live campaign."""
     row = GOALS[request.goal]
     problems: list[str] = []
-    references = [request.page, request.pixel, request.app, *request.targeting.audiences]
-    references.extend(request.targeting.excluded_audiences)
-    if {item.account_id for item in references if item is not None} - {request.account_id}:
-        problems.append("Use a Page, pixel, app, and audiences from the campaign's ad account.")
     assets = {"page": request.page, "pixel": request.pixel, "app": request.app}
     if row.asset is not None and assets[row.asset] is None:
         problems.append(f"The goal {request.goal} needs a {row.asset}.")

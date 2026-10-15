@@ -13,6 +13,7 @@ from core.exceptions.integration import IntegrationError
 from services.integrations.http import IntegrationRequestPolicy
 
 from ..client import MetaAdsClient, ad_account_path
+from ..models import MetaAdsObjectBudget
 from ..money import amount_to_minor
 from ..throttle import ensure_account_available
 from ..tools.schemas.budgets import BID_STRATEGIES
@@ -100,6 +101,34 @@ def account_problems(
             f"{account.currency}."
         )
     return problems
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedCampaign:
+    """A new campaign as ad set rules check it, before it exists."""
+
+    objective: str
+    budget: MetaAdsObjectBudget | None
+    bid_strategy: str
+    special_ad_categories: list[str]
+    share_between_ad_sets: bool | None
+    status: str = "PAUSED"
+
+
+def planned_campaign(request: MetaAdsCreateCampaignRequest) -> PlannedCampaign:
+    """Describes the campaign the request makes, so a launch can check its ad sets first."""
+    budget = request.budget
+    held = None
+    if budget.amount is not None:
+        kind = "daily" if budget.mode == "campaign_daily" else "lifetime"
+        held = MetaAdsObjectBudget(kind=kind, amount=budget.amount, remaining=None)
+    return PlannedCampaign(
+        objective=OBJECTIVES[request.objective],
+        budget=held,
+        bid_strategy=BID_STRATEGIES[request.bid_strategy],
+        special_ad_categories=[item.category.upper() for item in request.special_ad_categories],
+        share_between_ad_sets=budget.share_between_ad_sets,
+    )
 
 
 @dataclass(frozen=True, slots=True)

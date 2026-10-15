@@ -4,8 +4,8 @@
 
 import re
 from collections import Counter
-from collections.abc import Mapping
-from typing import Annotated, Any, Literal, Self
+from collections.abc import Mapping, Sequence
+from typing import Annotated, Any, Literal, Protocol, Self
 from urllib.parse import urlsplit
 
 from pydantic import AfterValidator, Field, model_validator
@@ -161,11 +161,10 @@ class MetaAdsDisclaimer(MetaAdsStrictModel):
     url: MetaAdsLink | None = None
 
 
-class MetaAdsAdDesign(MetaAdsStrictModel):
-    """One ad design, created once in each of its ad sets."""
+class MetaAdsAdContent(MetaAdsStrictModel):
+    """One ad's creative and settings; where it goes is set by the call that holds it."""
 
     name: Annotated[str, Field(max_length=MAX_NAME_LENGTH), AfterValidator(_ad_text)]
-    ad_sets: list[MetaAdsAdSetReference] = Field(min_length=1, max_length=MAX_AD_SETS)
     format: MetaAdsAdFormat
     primary_text: Annotated[str, Field(max_length=2200), AfterValidator(_primary_text)] | None = (
         Field(default=None, description="Required for every format but existing_post.")
@@ -255,6 +254,12 @@ class MetaAdsAdDesign(MetaAdsStrictModel):
         return self
 
 
+class MetaAdsAdDesign(MetaAdsAdContent):
+    """One ad design, created once in each of its ad sets."""
+
+    ad_sets: list[MetaAdsAdSetReference] = Field(min_length=1, max_length=MAX_AD_SETS)
+
+
 class MetaAdsCreateAdsRequest(MetaAdsStrictModel):
     """Every argument of an ad creation call; shared values apply unless an ad overrides them."""
 
@@ -271,41 +276,12 @@ class MetaAdsCreateAdsRequest(MetaAdsStrictModel):
 
     @model_validator(mode="after")
     def _check_call(self) -> Self:
-        if self.automatic_changes and len(set(self.automatic_changes)) != len(
-            self.automatic_changes
-        ):
-            raise ValueError("Name each automatic change once.")
-        accounts = {self.page.account_id}
-        if self.instagram_account is not None:
-            accounts.add(self.instagram_account.account_id)
-        ad_sets: set[str] = set()
-        files: set[str] = set()
-        total = 0
-        for design in self.ads:
-            ids = [ad_set.adset_id for ad_set in design.ad_sets]
-            if len(set(ids)) != len(ids):
-                raise ValueError("Choose each ad set once per ad.")
-            total += len(ids)
-            ad_sets.update(ids)
-            accounts.update(ad_set.account_id for ad_set in design.ad_sets)
-            if design.post is not None:
-                accounts.add(design.post.account_id)
-            for item in design_media(design):
-                if isinstance(item, FileReference):
-                    files.add(str(item.entity_id))
-                else:
-                    accounts.add(item.account_id)
-        if len(accounts) != 1:
-            raise ValueError("Use one ad account for the Page, ad sets, media, and posts.")
-        if total > MAX_ADS:
-            raise ValueError(f"Create at most {MAX_ADS} ads, counting each ad set an ad goes in.")
-        if len(ad_sets) > MAX_AD_SETS:
-            raise ValueError(f"Use at most {MAX_AD_SETS} ad sets in one call.")
-        if len(files) > MAX_FILES:
-            raise ValueError(f"Use at most {MAX_FILES} workspace Files in one call.")
-        names = Counter(design.name.strip().casefold() for design in self.ads)
-        if any(count > 1 for count in names.values()):
-            raise ValueError("Give each ad a different name.")
+        accounts = {ad_set.account_id for design in self.ads for ad_set in design.ad_sets}
+        check_ads(
+            self,
+            [[ad_set.adset_id for ad_set in design.ad_sets] for design in self.ads],
+            accounts=accounts,
+        )
         return self
 
     @property
@@ -315,6 +291,63 @@ class MetaAdsCreateAdsRequest(MetaAdsStrictModel):
     @property
     def instagram_user_id(self) -> str | None:
         return self.instagram_account.instagram_user_id if self.instagram_account else None
+
+
+class SharedAdSettings(Protocol):
+    """The settings every ad in a call shares unless it sets its own."""
+
+    @property
+    def ads(self) -> Sequence[MetaAdsAdContent]: ...
+    @property
+    def page(self) -> MetaAdsPageReference: ...
+    @property
+    def instagram_account(self) -> MetaAdsInstagramAccountReference | None: ...
+    @property
+    def link(self) -> str | None: ...
+    @property
+    def call_to_action(self) -> str | None: ...
+    @property
+    def url_tags(self) -> str | None: ...
+    @property
+    def automatic_changes(self) -> Sequence[str] | None: ...
+
+
+def check_ads(
+    request: SharedAdSettings, ad_sets: Sequence[Sequence[str]], *, accounts: set[str]
+) -> None:
+    """Checks a call's ads against the per-call limits, given each ad's ad sets in order.
+
+    Raises:
+        ValueError: The ads use more than one ad account, or go over a limit.
+    """
+    changes = request.automatic_changes or ()
+    if len(set(changes)) != len(changes):
+        raise ValueError("Name each automatic change once.")
+    accounts = {*accounts, request.page.account_id}
+    if request.instagram_account is not None:
+        accounts.add(request.instagram_account.account_id)
+    files: set[str] = set()
+    for design, ids in zip(request.ads, ad_sets, strict=True):
+        if len(set(ids)) != len(ids):
+            raise ValueError("Choose each ad set once per ad.")
+        if design.post is not None:
+            accounts.add(design.post.account_id)
+        for item in design_media(design):
+            if isinstance(item, FileReference):
+                files.add(str(item.entity_id))
+            else:
+                accounts.add(item.account_id)
+    if len(accounts) != 1:
+        raise ValueError("Use one ad account for the Page, ad sets, media, and posts.")
+    if sum(len(ids) for ids in ad_sets) > MAX_ADS:
+        raise ValueError(f"Create at most {MAX_ADS} ads, counting each ad set an ad goes in.")
+    if len({item for ids in ad_sets for item in ids}) > MAX_AD_SETS:
+        raise ValueError(f"Use at most {MAX_AD_SETS} ad sets in one call.")
+    if len(files) > MAX_FILES:
+        raise ValueError(f"Use at most {MAX_FILES} workspace Files in one call.")
+    names = Counter(design.name.strip().casefold() for design in request.ads)
+    if any(count > 1 for count in names.values()):
+        raise ValueError("Give each ad a different name.")
 
 
 def follow_shared(values: Mapping[str, Any]) -> list[Any]:
@@ -333,7 +366,7 @@ def follow_shared(values: Mapping[str, Any]) -> list[Any]:
     ]
 
 
-def design_media(design: MetaAdsAdDesign) -> list[MetaAdsMediaReference | FileReference]:
+def design_media(design: MetaAdsAdContent) -> list[MetaAdsMediaReference | FileReference]:
     """Lists every media input of a design, cards included, in order."""
     items = [design.media, design.vertical_media, design.thumbnail]
     for card in design.cards or ():

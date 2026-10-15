@@ -38,7 +38,7 @@ from services.integrations.operations import (
 from ..client import MetaAdsClient
 from ..creative_features import offered_catalogue
 from ..operations.ad_rows import ad_row
-from ..operations.create_ads import create_ads
+from ..operations.create_ads import create_ads, upload_intent_group
 from ..operations.plan_ads import duplicate_name, plan_ads
 from ..operations.upload_media import media_upload_row
 from ..references import (
@@ -287,27 +287,7 @@ def _pending_operation_detail(
 ) -> PendingIntegrationOperationDetail:
     groups: list[IntegrationOperationIntentGroup] = []
     if prepared.sources:
-        groups.append(
-            IntegrationOperationIntentGroup(
-                key="media:upload",
-                action="upload_media",
-                entity_type="meta_ads_media",
-                items=[
-                    IntegrationOperationIntent(
-                        fields={
-                            "key": f"file:{source.file.id}",
-                            "file_id": str(source.file.id),
-                            "revision_id": str(source.revision.id),
-                            "content_hash": source.revision.content_hash,
-                            "content_type": source.revision.content_type,
-                            "size_bytes": source.revision.size_bytes,
-                            "media_type": source.media_type,
-                        }
-                    )
-                    for source in prepared.sources
-                ],
-            )
-        )
+        groups.append(upload_intent_group(prepared.sources))
     groups.append(
         IntegrationOperationIntentGroup(
             key="ads:create",

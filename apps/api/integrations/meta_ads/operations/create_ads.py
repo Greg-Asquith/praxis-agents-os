@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 
 from core.exceptions.integration import IntegrationError
+from services.audit_events import IntegrationOperationIntent, IntegrationOperationIntentGroup
 
 from ..client import MetaAdsClient
 from ..models import MetaAdsPromotedObject
@@ -199,10 +200,10 @@ async def create_ads(
                     poll_seconds=0,
                 )
             except (asyncio.CancelledError, Exception) as exc:
-                run.upload_parents = _keyed_uploads(getattr(exc, "ledger", None))
+                run.upload_parents = keyed_uploads(getattr(exc, "ledger", None))
                 raise
-            run.upload_parents = _keyed_uploads(upload_ledger)
-            resolved.update(_uploaded_media(run.uploads))
+            run.upload_parents = keyed_uploads(upload_ledger)
+            resolved.update(uploaded_media(run.uploads))
         bodies: dict[int, dict[str, str]] = {}
         for ad_run in run.ads:
             ad = ad_run.ad
@@ -221,15 +222,38 @@ async def create_ads(
         if rejected:
             _stop_for_dry_run(run, rejected)
             return run
-        await _send_all(client, account_id, run, bodies)
-        await _read_back(client, account_id, run)
+        await send_ads(client, account_id, run.ads, bodies)
+        await read_back_ads(client, account_id, run.ads)
     except (asyncio.CancelledError, Exception) as exc:
         exc.ledger = run.ledger()
         raise
     return run
 
 
-def _keyed_uploads(ledger: MetaAdsMutationLedger | None) -> list[MetaAdsMutationParent]:
+def upload_intent_group(sources: Sequence[MediaSource]) -> IntegrationOperationIntentGroup:
+    """Records each File to upload with the ads, keyed as `keyed_uploads` keys its outcome."""
+    return IntegrationOperationIntentGroup(
+        key="media:upload",
+        action="upload_media",
+        entity_type="meta_ads_media",
+        items=[
+            IntegrationOperationIntent(
+                fields={
+                    "key": f"file:{source.file.id}",
+                    "file_id": str(source.file.id),
+                    "revision_id": str(source.revision.id),
+                    "content_hash": source.revision.content_hash,
+                    "content_type": source.revision.content_type,
+                    "size_bytes": source.revision.size_bytes,
+                    "media_type": source.media_type,
+                }
+            )
+            for source in sources
+        ],
+    )
+
+
+def keyed_uploads(ledger: MetaAdsMutationLedger | None) -> list[MetaAdsMutationParent]:
     """Keys each File's upload alongside the ads, so one ledger accounts for both."""
     if ledger is None:
         return []
@@ -239,7 +263,8 @@ def _keyed_uploads(ledger: MetaAdsMutationLedger | None) -> list[MetaAdsMutation
     ]
 
 
-def _uploaded_media(uploads: Sequence[MediaUpload]) -> dict[MediaKey, CreativeMedia]:
+def uploaded_media(uploads: Sequence[MediaUpload]) -> dict[MediaKey, CreativeMedia]:
+    """Returns the library image each uploaded File became, by the File's media key."""
     return {
         ("file", upload.file_id): CreativeImage(upload.media_id)
         for upload in uploads
@@ -256,9 +281,13 @@ def _stop_for_dry_run(run: CreateAdsRun, rejected: Mapping[int, str]) -> None:
         ad_run.skip_message = reason or _STOPPED_BY_DRY_RUN
 
 
-async def _send_all(
-    client: MetaAdsClient, account_id: str, run: CreateAdsRun, bodies: Mapping[int, dict[str, str]]
+async def send_ads(
+    client: MetaAdsClient,
+    account_id: str,
+    runs: Sequence[AdRun],
+    bodies: Mapping[int, Mapping[str, str]],
 ) -> None:
+    """Sends each ad with a body once, four at a time; skipped ads are left alone."""
     semaphore = asyncio.Semaphore(_CONCURRENCY)
 
     async def send(ad_run: AdRun) -> None:
@@ -281,14 +310,14 @@ async def _send_all(
             )
 
     async with asyncio.TaskGroup() as group:
-        for ad_run in run.ads:
+        for ad_run in runs:
             if ad_run.ad.index in bodies and ad_run.skip_code is None:
                 group.create_task(send(ad_run))
 
 
-async def _read_back(client: MetaAdsClient, account_id: str, run: CreateAdsRun) -> None:
+async def read_back_ads(client: MetaAdsClient, account_id: str, runs: Sequence[AdRun]) -> None:
     """Reads every new ad once; a failed read leaves the ads created but unverified."""
-    created = {ad_run.created_id: ad_run for ad_run in run.ads if ad_run.created_id}
+    created = {ad_run.created_id: ad_run for ad_run in runs if ad_run.created_id}
     if not created:
         return
     try:

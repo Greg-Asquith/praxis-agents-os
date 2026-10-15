@@ -318,6 +318,7 @@ async def _prepare(
     plan = plan_ad_set(
         request,
         campaign,
+        campaign_id=request.campaign.campaign_id,
         currency=account.currency,
         start_time=schedule.start_time,
         end_time=schedule.end_time,
